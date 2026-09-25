@@ -174,6 +174,7 @@ export function buildHealthMetricsEventsPastView(past: HealthMetricsEventsPast, 
     registrations: period?.registrations ?? null,
     goalMetCount: rows.filter((row) => row.status === 'hit').length,
     goalSetCount: rows.filter((row) => row.status !== 'no-goal' && row.status !== 'unmeasured').length,
+    hasGoals: rows.some((row) => row.status !== 'no-goal'),
     rows,
   };
 }

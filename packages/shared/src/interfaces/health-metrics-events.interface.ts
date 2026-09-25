@@ -172,5 +172,7 @@ export interface HealthMetricsEventsPastView {
   goalMetCount: number;
   /** Listed events with a goal set and a measured outcome — the Y, so X and Y share the chips' rule. */
   goalSetCount: number;
+  /** Whether any listed event has a goal, so goals with no measured outcome never read as unset. */
+  hasGoals: boolean;
   rows: HealthMetricsEventsPastRowView[];
 }

@@ -246,7 +246,7 @@ describe('buildHealthMetricsEventsPastView', () => {
   });
 
   it('counts only goal-set events in the period as the "of Y"', () => {
-    expect(buildHealthMetricsEventsPastView(past, 'COMPLETED_YEAR')).toMatchObject({ eventCount: 1, goalSetCount: 0 });
+    expect(buildHealthMetricsEventsPastView(past, 'COMPLETED_YEAR')).toMatchObject({ eventCount: 1, goalSetCount: 0, hasGoals: false });
   });
 
   it('leaves a period with no header or events unmeasured', () => {
@@ -255,6 +255,7 @@ describe('buildHealthMetricsEventsPastView', () => {
       registrations: null,
       goalMetCount: 0,
       goalSetCount: 0,
+      hasGoals: false,
       rows: [],
     });
   });
@@ -273,7 +274,7 @@ describe('buildHealthMetricsEventsPastView', () => {
     );
 
     expect(view.rows.map((row) => row.status)).toEqual(['hit', 'unmeasured', 'near-miss']);
-    expect(view).toMatchObject({ goalMetCount: 1, goalSetCount: 2 });
+    expect(view).toMatchObject({ goalMetCount: 1, goalSetCount: 2, hasGoals: true });
     expect(view.rows[1]).toMatchObject({ statusLabel: 'Not measured', registrationsLabel: '—', progressPct: null });
   });
 
