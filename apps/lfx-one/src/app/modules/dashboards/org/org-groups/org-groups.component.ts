@@ -119,6 +119,8 @@ export class OrgGroupsComponent {
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
+  // The header names the organization only once the content renders, never beside a page-level state (#2961).
+  protected readonly contentVisible = computed(() => this.emptyState.pageReady() && !this.hasPageState());
 
   // Committee-service B2B endpoints are scoped by org uid, not the Snowflake accountId — mirrors
   // org-people/committee-members. Gate and fetch key both use uid.

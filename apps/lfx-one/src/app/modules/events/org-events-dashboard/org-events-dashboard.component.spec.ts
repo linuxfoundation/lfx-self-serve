@@ -18,7 +18,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { OrgEventsDashboardComponent } from './org-events-dashboard.component';
 
-async function render(state: OrgLensEmptyStateName | null) {
+async function render(state: OrgLensEmptyStateName | null, { settled = true } = {}) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const eventsService = {
@@ -43,7 +43,7 @@ async function render(state: OrgLensEmptyStateName | null) {
           pageState,
           hasPageState: computed(() => pageState() !== null),
           pageReady: signal(true),
-          settled: signal(true),
+          settled: signal(settled),
           retrying: signal(false),
           retry: vi.fn(),
         },
@@ -72,6 +72,16 @@ describe('OrgEventsDashboardComponent', () => {
     const { el, eventsService } = await render('contractor-no-grant');
 
     expect(el.querySelector('[data-testid="org-events-no-access-state"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-events-stat-strip"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-events-main-card"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-events-title"]')?.textContent).not.toContain('Acme Motors, Inc.');
+    expect(eventsService.getOrgEventsSummary).not.toHaveBeenCalled();
+  });
+
+  it('shows a skeleton instead of a blank area while the org context is still settling, without naming the org or reading its events', async () => {
+    const { el, eventsService } = await render(null, { settled: false });
+
+    expect(el.querySelector('[data-testid="org-events-skeleton"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-events-stat-strip"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-events-main-card"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-events-title"]')?.textContent).not.toContain('Acme Motors, Inc.');

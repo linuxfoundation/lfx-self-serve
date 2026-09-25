@@ -96,6 +96,20 @@ async function stubAccountContext(page: Page, opts: { writers: string[] } = { wr
       }),
     })
   );
+  // The sidebar org selector loads its own org-items page on startup; a live list without this org clears
+  // the seeded selection (and the writer grant with it), so stub it as org-profile.spec.ts does.
+  await page.route('**/api/nav/org-items*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ uid: MOCK_UID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null }],
+        next_page_token: null,
+        upstream_failed: false,
+      }),
+    })
+  );
+
   await page.route('**/api/orgs/me/role-grants', (route) =>
     route.fulfill({
       status: 200,

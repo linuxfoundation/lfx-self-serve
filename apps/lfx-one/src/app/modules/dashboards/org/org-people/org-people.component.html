@@ -16,7 +16,28 @@
       [values]="{ correlationId: correlationId() }"
       [retrying]="emptyState.retrying()"
       (retry)="emptyState.retry()" />
-  } @else if (emptyState.settled()) {
+  } @else if (!emptyState.settled()) {
+    <div class="flex flex-col gap-6" data-testid="org-people-skeleton">
+      <div class="flex items-center gap-4 border-b border-gray-200 pb-2">
+        @for (tab of tabs; track tab.id) {
+          <p-skeleton width="6rem" height="1.25rem" />
+        }
+      </div>
+      <div class="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200 bg-white">
+        @for (i of skeletonRows; track i) {
+          <div class="flex items-center gap-4 px-4 py-3">
+            <p-skeleton shape="circle" size="2.25rem" />
+            <div class="flex flex-1 flex-col gap-2">
+              <p-skeleton width="40%" height="0.875rem" />
+              <p-skeleton width="25%" height="0.75rem" />
+            </div>
+            <p-skeleton width="4rem" height="1.25rem" borderRadius="9999px" />
+            <p-skeleton width="5rem" height="1.25rem" borderRadius="9999px" />
+          </div>
+        }
+      </div>
+    </div>
+  } @else {
     <div
       class="flex items-center gap-1 border-b border-gray-200 overflow-x-auto"
       data-testid="org-people-tab-bar"

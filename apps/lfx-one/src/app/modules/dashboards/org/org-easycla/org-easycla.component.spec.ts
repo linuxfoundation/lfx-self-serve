@@ -148,6 +148,24 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('—');
     });
 
+    // #2961: the title names the company only once the content renders.
+    it('keeps the bare title while the page waits for the org list', async () => {
+      navLoaded.set(false);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('Vertex Robotics');
+    });
+
+    it('keeps the bare title beside a page-level state', async () => {
+      hasOrgSelectorAccess.set(false);
+
+      const fixture = await render();
+
+      expect(fixture.nativeElement.querySelector('[data-state="no-organization"]')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('Vertex Robotics');
+    });
+
     it('offers the Sign CLA control once an organization is selected', async () => {
       const fixture = await render();
       const signCla = byTestId(fixture, 'org-easycla-sign-cla');

@@ -10,7 +10,38 @@
       [values]="{ correlationId: correlationId() }"
       [retrying]="emptyState.retrying()"
       (retry)="emptyState.retry()" />
-  } @else if (emptyState.settled()) {
+  } @else if (!emptyState.settled()) {
+    <div class="flex flex-col gap-6" data-testid="memberships-skeleton">
+      <p-skeleton width="16rem" height="2rem" />
+      <div class="flex items-center gap-4 border-b border-gray-200 pb-2">
+        @for (tab of tabs; track tab.id) {
+          <p-skeleton width="8rem" height="1.25rem" />
+        }
+      </div>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        @for (i of [0, 1, 2]; track i) {
+          <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4">
+            <p-skeleton shape="circle" size="2.75rem" />
+            <div class="flex flex-1 flex-col gap-2">
+              <p-skeleton width="3rem" height="1.25rem" />
+              <p-skeleton width="60%" height="0.875rem" />
+            </div>
+          </div>
+        }
+      </div>
+      <div class="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200 bg-white">
+        @for (i of skeletonRows; track i) {
+          <div class="flex items-center gap-4 px-4 py-3">
+            <p-skeleton size="2.25rem" />
+            <p-skeleton width="30%" height="0.875rem" />
+            <p-skeleton width="6rem" height="0.875rem" />
+            <p-skeleton width="6rem" height="0.875rem" />
+            <p-skeleton width="5rem" height="1.25rem" borderRadius="9999px" />
+          </div>
+        }
+      </div>
+    </div>
+  } @else {
     <h1 class="font-display font-light text-2xl" data-testid="memberships-page-title">Membership — {{ companyName() }}</h1>
 
     <div

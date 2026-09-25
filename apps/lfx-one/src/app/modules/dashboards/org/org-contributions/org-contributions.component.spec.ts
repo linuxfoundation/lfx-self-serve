@@ -36,7 +36,7 @@ function personDrawerStub() {
   };
 }
 
-async function render(state: OrgLensEmptyStateName | null) {
+async function render(state: OrgLensEmptyStateName | null, { settled = true } = {}) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
@@ -54,7 +54,7 @@ async function render(state: OrgLensEmptyStateName | null) {
           pageState,
           hasPageState: computed(() => pageState() !== null),
           pageReady: signal(true),
-          settled: signal(true),
+          settled: signal(settled),
           retrying: signal(false),
           retry: vi.fn(),
         },
@@ -76,6 +76,15 @@ describe('OrgContributionsComponent', () => {
     const el = await render('contractor-no-grant');
 
     expect(el.querySelector('[data-testid="org-contributions-no-access-state"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-content-card"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-no-company-empty-state"]')).toBeNull();
+  });
+
+  it('shows a skeleton instead of a blank area while the org context is still settling', async () => {
+    const el = await render(null, { settled: false });
+
+    expect(el.querySelector('[data-testid="org-contributions-skeleton"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-content-card"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-no-company-empty-state"]')).toBeNull();

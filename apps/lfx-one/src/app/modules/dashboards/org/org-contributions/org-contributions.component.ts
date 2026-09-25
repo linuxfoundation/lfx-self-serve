@@ -6,6 +6,7 @@ import { Component, computed, inject, type Signal, signal } from '@angular/core'
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { SkeletonModule } from 'primeng/skeleton';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -51,6 +52,7 @@ import { decorateCommitFeedRow, decorateRepoRow } from './org-contributions.util
   selector: 'lfx-org-contributions',
   imports: [
     DecimalPipe,
+    SkeletonModule,
     ReactiveFormsModule,
     CardComponent,
     CardTabsBarComponent,

@@ -36,7 +36,7 @@ function personDrawerStub() {
   };
 }
 
-async function render(state: OrgLensEmptyStateName | null) {
+async function render(state: OrgLensEmptyStateName | null, { settled = true } = {}) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
@@ -54,7 +54,7 @@ async function render(state: OrgLensEmptyStateName | null) {
           pageState,
           hasPageState: computed(() => pageState() !== null),
           pageReady: signal(true),
-          settled: signal(true),
+          settled: signal(settled),
           retrying: signal(false),
           retry: vi.fn(),
         },
@@ -83,6 +83,15 @@ describe('OrgTrainingComponent', () => {
     const el = await render('contractor-no-grant');
 
     expect(el.querySelector('[data-testid="org-training-no-access-state"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-training-stats"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-training-content-card"]')).toBeNull();
+    expect(el.textContent).not.toContain('Acme Motors, Inc.');
+  });
+
+  it('shows a skeleton instead of a blank area while the org context is still settling, without naming the org', async () => {
+    const el = await render(null, { settled: false });
+
+    expect(el.querySelector('[data-testid="org-training-skeleton"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-training-stats"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-training-content-card"]')).toBeNull();
     expect(el.textContent).not.toContain('Acme Motors, Inc.');

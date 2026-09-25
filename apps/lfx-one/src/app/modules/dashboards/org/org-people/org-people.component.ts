@@ -12,6 +12,7 @@ import { DEFAULT_PEOPLE_TAB_ID, PEOPLE_TABS, VALID_PEOPLE_TAB_IDS } from '@lfx-o
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type { PeopleTabConfig, PeopleTabId } from '@lfx-one/shared/interfaces';
 
@@ -38,6 +39,7 @@ import { TraineesComponent } from './components/trainees/trainees.component';
     ContributorsComponent,
     OrgLensAccessComponent,
     PersonDetailDrawerComponent,
+    SkeletonModule,
   ],
   templateUrl: './org-people.component.html',
 })
@@ -55,6 +57,8 @@ export class OrgPeopleComponent {
   // or null when the page renders.
   protected readonly pageState = this.emptyState.pageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
+  protected readonly contentVisible = computed(() => this.emptyState.settled() && !this.emptyState.hasPageState());
+  protected readonly skeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
 
   private readonly queryParamMap = toSignal(this.route.queryParamMap, {
     initialValue: this.route.snapshot.queryParamMap,
@@ -108,8 +112,8 @@ export class OrgPeopleComponent {
   }
 
   private initHeading(): string {
-    // A page-level state must never name the selected organization, so the title stays generic.
-    const name = this.pageState() ? null : this.companyName();
+    // Name the organization only once the content renders: before settling, the viewer may be a contractor without a grant.
+    const name = this.contentVisible() ? this.companyName() : null;
     return name ? `People — ${name}` : 'People';
   }
 }

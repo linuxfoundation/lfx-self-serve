@@ -8,6 +8,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
+import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, of, skip, switchMap, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
@@ -50,6 +51,7 @@ import { OrgEventsTableComponent } from './components/org-events-table/org-event
     OrgLensEmptyStateComponent,
     SelectModule,
     InputTextModule,
+    SkeletonModule,
     DiscoverEventsButtonComponent,
     EventAttendeesDrawerComponent,
     EventSpeakersDrawerComponent,

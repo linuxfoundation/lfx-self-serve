@@ -32,6 +32,7 @@ import type {
   SortChangeEvent,
 } from '@lfx-one/shared/interfaces';
 import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -52,6 +53,7 @@ import { TrainingEmployeesDrawerComponent } from './components/training-employee
 @Component({
   selector: 'lfx-org-training',
   imports: [
+    SkeletonModule,
     CardComponent,
     CardTabsBarComponent,
     InputTextComponent,

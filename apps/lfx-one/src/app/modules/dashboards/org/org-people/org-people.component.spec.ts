@@ -12,18 +12,25 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AllEmployeesComponent } from './components/all-employees/all-employees.component';
 import { OrgPeopleComponent } from './org-people.component';
 
 // The shared drawer is mounted unconditionally and pulls HttpClient/feature flags; it is not under test here.
 @Component({ selector: 'lfx-person-detail-drawer', template: '' })
 class PersonDetailDrawerStubComponent {}
 
+// The default tab fetches its own data; only the page shell is under test.
+@Component({ selector: 'lfx-org-people-all-employees', template: '' })
+class AllEmployeesStubComponent {}
+
 describe('OrgPeopleComponent', () => {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
+  const settled = signal(true);
   let fixture: ComponentFixture<OrgPeopleComponent>;
 
   beforeEach(async () => {
     pageState.set(null);
+    settled.set(true);
 
     await TestBed.configureTestingModule({
       imports: [OrgPeopleComponent],
@@ -38,7 +45,7 @@ describe('OrgPeopleComponent', () => {
             pageState,
             hasPageState: computed(() => pageState() !== null),
             pageReady: signal(true),
-            settled: signal(true),
+            settled,
             retrying: signal(false),
             retry: vi.fn(),
           },
@@ -46,8 +53,8 @@ describe('OrgPeopleComponent', () => {
       ],
     })
       .overrideComponent(OrgPeopleComponent, {
-        remove: { imports: [PersonDetailDrawerComponent] },
-        add: { imports: [PersonDetailDrawerStubComponent] },
+        remove: { imports: [PersonDetailDrawerComponent, AllEmployeesComponent] },
+        add: { imports: [PersonDetailDrawerStubComponent, AllEmployeesStubComponent] },
       })
       .compileComponents();
 
@@ -64,5 +71,26 @@ describe('OrgPeopleComponent', () => {
     expect(el.querySelector('[data-testid="org-people-tab-bar"]')).toBeNull();
     // The page-level state never names the selected organization.
     expect(el.querySelector('[data-testid="org-people-title"]')?.textContent?.trim()).toBe('People');
+  });
+
+  it('shows a skeleton and an organization-free title while the classifier is settling', async () => {
+    settled.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="org-people-skeleton"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-people-tab-bar"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-people-title"]')?.textContent).not.toContain('Acme');
+  });
+
+  it('names the organization in the title once the content renders', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="org-people-skeleton"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-people-tab-bar"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-people-title"]')?.textContent).toContain('Acme');
   });
 });

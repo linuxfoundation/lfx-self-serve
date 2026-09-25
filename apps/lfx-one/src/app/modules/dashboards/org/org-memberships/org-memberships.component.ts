@@ -10,6 +10,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
 import { TooltipModule } from 'primeng/tooltip';
 import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
+import { SkeletonModule } from 'primeng/skeleton';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
@@ -47,6 +48,7 @@ type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[
     TooltipModule,
     SelectModule,
     InputTextModule,
+    SkeletonModule,
     CardComponent,
     EmptyStateComponent,
     OrgLensEmptyStateComponent,
@@ -64,6 +66,7 @@ export class OrgMembershipsComponent {
 
   // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
   protected readonly pageState = this.emptyState.pageState;
+  protected readonly skeletonRows: readonly number[] = [0, 1, 2, 3, 4];
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly activeTab = signal<OrgMembershipTab>('active');

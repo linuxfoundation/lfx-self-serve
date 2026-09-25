@@ -191,6 +191,8 @@ export class OrgProjectsComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrants.correlationId;
   protected readonly orgContextLoaded = computed(() => this.hasPageState() || this.emptyState.pageReady());
+  // The header names the organization only once the content renders, never beside a page-level state (#2961).
+  protected readonly contentVisible = computed(() => this.emptyState.pageReady() && !this.hasPageState());
 
   protected readonly sortField = computed<OrgProjectsSortField>(() => this.initSortField());
   protected readonly sortDir = computed<SortDirection>(() => (this.queryParamMap().get('dir') === 'asc' ? 'asc' : DEFAULT_ORG_PROJECTS_SORT_DIR));

@@ -22,6 +22,7 @@ function activeResponse(): OrgActiveMembershipsResponse {
 
 async function render() {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
+  const settled = signal(true);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
   TestBed.resetTestingModule();
@@ -40,7 +41,7 @@ async function render() {
           pageState,
           hasPageState: computed(() => pageState() !== null),
           pageReady: signal(true),
-          settled: signal(true),
+          settled,
           retrying: signal(false),
           retry: vi.fn(),
         },
@@ -55,7 +56,7 @@ async function render() {
   const fixture = TestBed.createComponent(OrgMembershipsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, pageState };
+  return { fixture, pageState, settled };
 }
 
 function has(fixture: ComponentFixture<OrgMembershipsComponent>, testid: string): boolean {
@@ -72,6 +73,19 @@ describe('OrgMembershipsComponent', () => {
 
     expect(has(fixture, 'org-memberships-no-access-state')).toBe(true);
     expect(has(fixture, 'memberships-page-title')).toBe(false);
+    expect(has(fixture, 'active-memberships-summary')).toBe(false);
+    expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
+  });
+
+  it('shows a skeleton, and no organization-naming content, while the classifier is settling', async () => {
+    const { fixture, settled } = await render();
+
+    settled.set(false);
+    fixture.detectChanges();
+
+    expect(has(fixture, 'memberships-skeleton')).toBe(true);
+    expect(has(fixture, 'memberships-page-title')).toBe(false);
+    expect(has(fixture, 'memberships-tab-bar')).toBe(false);
     expect(has(fixture, 'active-memberships-summary')).toBe(false);
     expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
   });

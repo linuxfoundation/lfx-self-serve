@@ -134,6 +134,8 @@ export class OrgEasyclaComponent {
    * settled answer about their CLAs before any company was selected.
    */
   protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
+  // The header names the organization only once the content renders, never beside a page-level state (#2961).
+  protected readonly contentVisible = computed(() => this.emptyState.pageReady() && !this.hasPageState());
 
   // ── Data ──────────────────────────────────────────────────────────────────
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
