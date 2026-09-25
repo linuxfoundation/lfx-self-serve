@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
+  HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE,
   HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX,
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
+  HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
@@ -14,6 +17,11 @@ import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
 import type {
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceDelta,
+  HealthMetricsEventsAtAGlancePeriod,
+  HealthMetricsEventsAtAGlanceStatView,
+  HealthMetricsEventsAtAGlanceView,
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastRowView,
@@ -188,7 +196,85 @@ export function formatHealthMetricsEventsPastClosedLabel(eventCount: number | nu
 
 /** `$0` is a measured result; only an unmeasured revenue reads as not available. */
 export function formatHealthMetricsEventsRevenue(value: number | null): string {
-  return value === null ? 'not available' : formatCurrency(value);
+  return value === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : formatCurrency(value);
+}
+
+/** One period's at-a-glance section. For YTD the events total adds the upcoming ones to those held so far. */
+export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEventsAtAGlance, range: HealthMetricsRange): HealthMetricsEventsAtAGlanceView {
+  const period = glance.periods.find((candidate) => candidate.range === range) ?? null;
+  const changes = period?.changes ?? null;
+  const upcoming = range === 'YTD' ? glance.upcomingEvents : 0;
+  const past = period?.pastEvents ?? null;
+  const total = past === null || upcoming === null ? null : past + upcoming;
+  // `null` changes means the period is not compared, so its figures carry no delta at all.
+  const delta = (value: number | null | undefined, unit: 'pct' | 'pp' = 'pct'): HealthMetricsEventsAtAGlanceDelta =>
+    changes ? formatAtAGlanceDelta(value ?? null, unit) : { delta: null, deltaDirection: 'neutral' };
+  const warns = (value: number | null | undefined): boolean => value !== null && value !== undefined && value < HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE;
+  const stat = (key: string, label: string, value: string, change: HealthMetricsEventsAtAGlanceDelta, warn = false): HealthMetricsEventsAtAGlanceStatView => ({
+    key,
+    label,
+    value,
+    ...change,
+    warn,
+  });
+
+  return {
+    measured: period !== null,
+    controlLabel: [formatCountPart(total, 'events'), formatCountPart(past, 'past'), formatCountPart(upcoming, 'upcoming')].join(' · '),
+    baselineLabel: formatAtAGlanceBaseline(range, changes !== null),
+    headline: stat('registrations', 'Total registrations', formatAtAGlanceCount(period?.registrations), delta(changes?.registrations)),
+    side: [
+      stat('attendees', 'Attendees', formatAtAGlanceCount(period?.attendees), delta(changes?.attendees)),
+      stat('show-up-rate', 'Show-up rate', formatShowUpRate(period), delta(changes?.showUpRatePts, 'pp')),
+      stat('events', 'Events held', formatAtAGlanceCount(period?.events), delta(changes?.events)),
+    ],
+    tiles: [
+      stat('registrations', 'Registrations', formatAtAGlanceCount(period?.registrations), delta(changes?.registrations)),
+      stat('attendees', 'Attendees', formatAtAGlanceCount(period?.attendees), delta(changes?.attendees), warns(changes?.attendees)),
+      stat('organizations', 'Organizations', formatAtAGlanceCount(period?.organizations), delta(changes?.organizations)),
+      stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), delta(changes?.speakers), warns(changes?.speakers)),
+      stat('countries', 'Countries', formatAtAGlanceCount(period?.countries), delta(changes?.countries)),
+      { key: 'past-upcoming', label: 'Past / upcoming', value: formatPastUpcoming(past, upcoming), delta: null, deltaDirection: 'neutral', warn: false },
+    ],
+  };
+}
+
+function formatAtAGlanceCount(value: number | null | undefined): string {
+  return value === null || value === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : value.toLocaleString('en-US');
+}
+
+function formatCountPart(value: number | null, noun: string): string {
+  if (value === null) return `${noun} ${HEALTH_METRICS_EVENTS_NOT_AVAILABLE}`;
+
+  return `${value.toLocaleString('en-US')} ${value === 1 && noun === 'events' ? 'event' : noun}`;
+}
+
+function formatShowUpRate(period: HealthMetricsEventsAtAGlancePeriod | null): string {
+  return period?.showUpRate === null || period?.showUpRate === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : `${Math.round(period.showUpRate * 100)}%`;
+}
+
+function formatPastUpcoming(past: number | null, upcoming: number | null): string {
+  if (past === null || upcoming === null) return HEALTH_METRICS_EVENTS_NOT_AVAILABLE;
+
+  return `${past.toLocaleString('en-US')} / ${upcoming.toLocaleString('en-US')}`;
+}
+
+function formatAtAGlanceBaseline(range: HealthMetricsRange, compared: boolean): string {
+  if (!compared) return 'no year-over-year comparison for this period';
+  if (range === 'YTD') return 'all against the same point last year';
+
+  return `all against ${getYearForRange(range) - 1}`;
+}
+
+/** A change as a whole percent (`−25%`) or, for a rate, points at one decimal (`+2.2 pp`); the sign follows the rounded value. */
+function formatAtAGlanceDelta(fraction: number | null, unit: 'pct' | 'pp'): HealthMetricsEventsAtAGlanceDelta {
+  if (fraction === null) return { delta: HEALTH_METRICS_EVENTS_NOT_AVAILABLE, deltaDirection: 'neutral' };
+
+  const rounded = unit === 'pct' ? Math.round(fraction * 100) : Number((fraction * 100).toFixed(1));
+  const magnitude = unit === 'pct' ? `${Math.abs(rounded)}%` : `${Math.abs(rounded).toFixed(1)} pp`;
+  if (rounded === 0) return { delta: magnitude, deltaDirection: 'neutral' };
+
+  return { delta: `${rounded > 0 ? '+' : '−'}${magnitude}`, deltaDirection: rounded > 0 ? 'up' : 'down' };
 }
 
 function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {

@@ -1,19 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
+import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events-at-a-glance.component';
 import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
+
+import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
+
+const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, hasEvents: true };
+
+/** Stands in for the at-a-glance section, whose projection its own spec covers; the test reads its inputs. */
+@Component({ selector: 'lfx-events-at-a-glance', template: '<div data-testid="events-kpi-stub"></div>' })
+class AtAGlanceStubComponent {
+  public readonly glance = input.required<HealthMetricsEventsAtAGlance>();
+  public readonly status = input.required<HealthMetricsEventsAtAGlanceStatus>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
 
 /** Stands in for the forecast section, whose reads its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registration-forecast', template: '<div data-testid="events-forecast-stub"></div>' })
@@ -38,19 +54,23 @@ class PastStubComponent {
 describe('HealthMetricsEventsComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsEventsComponent>;
+  let getEventsAtAGlance: ReturnType<typeof vi.fn>;
 
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, glance: HealthMetricsEventsAtAGlance | Error = GLANCE): Promise<void> {
+    getEventsAtAGlance = vi.fn().mockReturnValue(glance instanceof Error ? throwError(() => glance) : of(glance));
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEventsComponent],
       providers: [
         HealthMetricsChromeService,
+        { provide: AnalyticsService, useValue: { getEventsAtAGlance } },
+        { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
     })
       .overrideComponent(HealthMetricsEventsComponent, {
-        remove: { imports: [EventsRegistrationForecastComponent, EventsPastEventsComponent] },
-        add: { imports: [ForecastStubComponent, PastStubComponent] },
+        remove: { imports: [EventsAtAGlanceComponent, EventsRegistrationForecastComponent, EventsPastEventsComponent] },
+        add: { imports: [AtAGlanceStubComponent, ForecastStubComponent, PastStubComponent] },
       })
       .compileComponents();
 
@@ -63,6 +83,7 @@ describe('HealthMetricsEventsComponent', () => {
   async function sectionsReport(note: string, pastCount: number | null = null): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
+    atAGlanceStub().settled.emit();
     forecast.countsChange.emit(note);
     forecast.settled.emit();
     pastStub.countChange.emit(pastCount);
@@ -70,6 +91,10 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  function atAGlanceStub(): AtAGlanceStubComponent {
+    return fixture.debugElement.query(By.directive(AtAGlanceStubComponent)).componentInstance as AtAGlanceStubComponent;
   }
 
   beforeEach(() => {
@@ -81,7 +106,7 @@ describe('HealthMetricsEventsComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the nine sections in order, with the forecast and past bodies and placeholders for the rest', async () => {
+  it('renders the nine sections in order, with the kpi, forecast and past bodies and placeholders for the rest', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-section-"]')] as HTMLElement[];
 
@@ -89,7 +114,9 @@ describe('HealthMetricsEventsComponent', () => {
     rendered.forEach((element, index) => {
       const key = HEALTH_METRICS_EVENTS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_EVENTS_SECTIONS[index].heading);
-      if (key === 'forecast') {
+      if (key === 'kpi') {
+        expect(element.querySelector('[data-testid="events-kpi-stub"]')).not.toBeNull();
+      } else if (key === 'forecast') {
         expect(element.querySelector('[data-testid="events-forecast-stub"]')).not.toBeNull();
       } else if (key === 'past') {
         expect(element.querySelector('[data-testid="events-past-stub"]')).not.toBeNull();
@@ -148,5 +175,20 @@ describe('HealthMetricsEventsComponent', () => {
 
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-past');
+  });
+
+  it('reads the foundation at a glance once and hands the result to the section', async () => {
+    await setup();
+
+    expect(getEventsAtAGlance).toHaveBeenCalledWith({ foundationSlug: 'acme' });
+    expect(atAGlanceStub().glance()).toEqual(GLANCE);
+    expect(atAGlanceStub().status()).toBe('ready');
+  });
+
+  it('keeps the tab rendering when the read fails, with only the section marked failed', async () => {
+    await setup(null, new Error('warehouse down'));
+
+    expect(atAGlanceStub().status()).toBe('failed');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-forecast-stub"]')).not.toBeNull();
   });
 });

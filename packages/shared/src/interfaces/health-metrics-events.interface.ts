@@ -190,7 +190,7 @@ export interface HealthMetricsEventsAtAGlanceChanges {
   speakers: number | null;
   countries: number | null;
   events: number | null;
-  /** Percentage points, never a percentage change. */
+  /** Percentage points as a fraction (0.022 is +2.2 pp), never a percentage change. */
   showUpRatePts: number | null;
 }
 
@@ -218,4 +218,33 @@ export interface HealthMetricsEventsAtAGlance {
   upcomingEvents: number | null;
   /** `false` only when a read measured no event in any period and none upcoming. */
   hasEvents: boolean;
+}
+
+/** Where the at-a-glance read stands; the Events tab owns the read and hands its state to the section. */
+export type HealthMetricsEventsAtAGlanceStatus = 'loading' | 'failed' | 'ready';
+
+/** A year-over-year delta label; `null` when the period has no comparison, so none is drawn. */
+export interface HealthMetricsEventsAtAGlanceDelta {
+  delta: string | null;
+  deltaDirection: 'up' | 'down' | 'neutral';
+}
+
+/** One figure with its year-over-year delta. */
+export interface HealthMetricsEventsAtAGlanceStatView extends HealthMetricsEventsAtAGlanceDelta {
+  key: string;
+  label: string;
+  value: string;
+  /** A fall steep enough to flag on the tile. */
+  warn: boolean;
+}
+
+/** The section for one period, with every label ready to render. */
+export interface HealthMetricsEventsAtAGlanceView {
+  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
+  measured: boolean;
+  controlLabel: string;
+  baselineLabel: string;
+  headline: HealthMetricsEventsAtAGlanceStatView;
+  side: HealthMetricsEventsAtAGlanceStatView[];
+  tiles: HealthMetricsEventsAtAGlanceStatView[];
 }
