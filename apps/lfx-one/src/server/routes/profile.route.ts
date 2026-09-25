@@ -4,6 +4,7 @@
 import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_SIZE_BYTES } from '@lfx-one/shared/constants';
 import express, { NextFunction, Request, Response, Router } from 'express';
 
+import { InsightsTokensController } from '../controllers/insights-tokens.controller';
 import { ProfileController } from '../controllers/profile.controller';
 import { MicroserviceError } from '../errors/microservice.error';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -11,6 +12,7 @@ import { blockDuringImpersonation } from '../middleware/impersonation-readonly.m
 const router = Router();
 
 const profileController = new ProfileController();
+const insightsTokensController = new InsightsTokensController();
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -101,6 +103,23 @@ router.put('/emails/meeting-invite', blockDuringImpersonation, (req, res, next) 
 
 // GET /api/profile/developer - Get current user's developer token information
 router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
+
+// LFX Insights API tokens (IN-1233) — proxied to lfx-v2-pat-service; eligibility from the member-service
+// tier endpoint. Reads stay open while impersonating (metadata only — the list never carries a secret);
+// create and revoke are blocked: a minted token is a live credential the impersonator would walk away
+// with, and neither action carries the impersonator's identity upstream.
+
+// GET /api/profile/insights-tokens/eligibility - Whether the caller may create tokens (Key Contact check)
+router.get('/insights-tokens/eligibility', (req, res, next) => insightsTokensController.getEligibility(req, res, next));
+
+// GET /api/profile/insights-tokens - List the caller's Insights API tokens
+router.get('/insights-tokens', (req, res, next) => insightsTokensController.listTokens(req, res, next));
+
+// POST /api/profile/insights-tokens - Create a token (secret returned once)
+router.post('/insights-tokens', blockDuringImpersonation, (req, res, next) => insightsTokensController.createToken(req, res, next));
+
+// DELETE /api/profile/insights-tokens/:uid - Revoke one of the caller's tokens
+router.delete('/insights-tokens/:uid', blockDuringImpersonation, (req, res, next) => insightsTokensController.revokeToken(req, res, next));
 
 // Linux.com email alias routes (backed by auth-service + forwards-service via NATS)
 

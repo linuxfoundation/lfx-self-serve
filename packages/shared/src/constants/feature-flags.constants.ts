@@ -203,3 +203,13 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
+/**
+ * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
+ * false: the group stays hidden until LaunchDarkly targeting turns it on, which also keeps it dark
+ * while `lfx-v2-pat-service` and the member-service tier endpoint roll out.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF: the
+ * `/api/profile/insights-tokens` routes stay authenticated and re-check Key Contact eligibility on
+ * create, so this flag controls visibility, never what a user may do.
+ */
+export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
