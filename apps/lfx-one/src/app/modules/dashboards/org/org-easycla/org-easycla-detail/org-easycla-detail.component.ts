@@ -266,8 +266,11 @@ export class OrgEasyclaDetailComponent {
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
-   * the page. Another agreement's flip cannot show through. A confirmed value stays until the list
-   * row itself carries it, including across a project change that does not refetch the list.
+   * the page. Another agreement's flip cannot show through. A settled value is dropped when the
+   * list row carries it, and whenever this page loads the organization's CLA list (on arrival or
+   * an organization switch — not the retry that waits for a just-signed agreement), so another
+   * manager's change shows once that list is loaded again. A running write's value is never dropped, and a
+   * project change does not refetch the list, so the value survives that.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
 
@@ -833,9 +836,9 @@ export class OrgEasyclaDetailComponent {
   /**
    * Turns Auto ECLA on or off for the agreement on screen (#1988).
    *
-   * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
-   * click without a round trip. On success the override stays (the state was written), the
-   * saving flag is cleared, and a success toast names the value written. On failure the override
+   * Optimistic: the remembered value is set to `next` before the PUT lands, so the toggle answers
+   * the click without a round trip. On success the remembered value stays (the state was written),
+   * the saving flag is cleared, and a success toast names the value written. On failure the remembered value
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
@@ -844,8 +847,8 @@ export class OrgEasyclaDetailComponent {
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
-   * shown only while this page is still that agreement. A remembered value stays until the list
-   * row carries it, including after a project change that does not refetch the list.
+   * shown only while this page is still that agreement. A remembered value is dropped once the list
+   * row carries it or the page loads the organization's CLA list again, never while its write is running.
    *
    * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
    */
