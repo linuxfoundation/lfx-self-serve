@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, Location, ViewportScroller } from '@angular/common';
-import { Component, computed, ElementRef, HostListener, inject, OnDestroy } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, HostListener, inject } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -46,10 +46,12 @@ import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.componen
  * framework-rendered anchors (breadcrumb / siblings via `[routerLink]`,
  * search results via `DocsSearchComponent.activate()`) already navigate
  * via Angular's router, so intercepting them at the host level would
- * cause a redundant double `navigateByUrl` to the same URL. External
- * links and in-page anchors (`#section`) fall through to the browser
- * default. Modifier-key clicks (cmd/ctrl/shift/alt) also fall through so
- * "open in new tab" still works.
+ * cause a redundant double `navigateByUrl` to the same URL. In-page
+ * anchors (`#section`) are routed through the router as same-URL fragment
+ * navigations so the docs scroll offset applies — a bare `#frag` would
+ * otherwise resolve against `<base href="/">` and leave the docs page.
+ * External links fall through to the browser default. Modifier-key clicks
+ * (cmd/ctrl/shift/alt) also fall through so "open in new tab" still works.
  */
 @Component({
   selector: 'lfx-docs-article',
@@ -57,7 +59,7 @@ import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.componen
   imports: [RouterLink, DatePipe, DocsSearchComponent, DocsNotFoundComponent],
   templateUrl: './docs-article.component.html',
 })
-export class DocsArticleComponent implements OnDestroy {
+export class DocsArticleComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly docsManifest = inject(DocsManifestService);
@@ -72,7 +74,7 @@ export class DocsArticleComponent implements OnDestroy {
   /** Article resolved by `docsArticleResolver`: the `DocsArticle` on a hit, or `null` on a miss (renders the inline not-found view). */
   protected readonly article = this.initArticle();
 
-  /** Article body as trusted HTML — the build-time sanitize pass is the security boundary (see `initTrustedBodyHtml`). */
+  /** Article body as trusted HTML — build-time-sanitized at the manifest boundary (rationale in the class JSDoc). */
   protected readonly trustedBodyHtml = this.initTrustedBodyHtml();
 
   /** Sibling articles in the same topic, denormalized for cheap renders. Consumed only by `topicArticles`. */
@@ -112,8 +114,11 @@ export class DocsArticleComponent implements OnDestroy {
 
   public constructor() {
     // Router anchor scrolls use getBoundingClientRect math that ignores CSS scroll-margin; the shared
-    // offset applies the same clearance the prose-lfx `scroll-margin-top` gives the native fragment jump.
+    // offset applies the same clearance the prose-lfx `scroll-margin-top` gives the native fragment
+    // jump. The reset lives next to the set via DestroyRef (this file's teardown convention —
+    // takeUntilDestroyed below binds the same way) so the pair can't drift apart.
     this.viewportScroller.setOffset([0, DOCS_ANCHOR_SCROLL_OFFSET_PX]);
+    inject(DestroyRef).onDestroy(() => this.viewportScroller.setOffset([0, 0]));
     // SEO sync — re-applies head tags whenever `article()` changes. We
     // deliberately use `toObservable` + `takeUntilDestroyed` rather than
     // `effect()` because the frontend convention checklist reserves `effect()`
@@ -124,10 +129,6 @@ export class DocsArticleComponent implements OnDestroy {
     toObservable(this.article)
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.applyMetadata());
-  }
-
-  public ngOnDestroy(): void {
-    this.viewportScroller.setOffset([0, 0]);
   }
 
   /** Navigates to the previous page in browser history (back button in the top bar). */
@@ -151,12 +152,27 @@ export class DocsArticleComponent implements OnDestroy {
     }
 
     const href = anchor.getAttribute('href');
+    if (!href) return;
+
+    // Same-page anchors (`#section`): route through the Angular router so the
+    // docs-scoped ViewportScroller offset applies and the URL stays on the
+    // current article. A bare `#frag` would otherwise resolve against
+    // `<base href="/">` and navigate off the docs page entirely.
+    if (href.startsWith('#')) {
+      if (anchor.target && anchor.target !== '_self') {
+        return;
+      }
+      event.preventDefault();
+      void this.router.navigate([], { relativeTo: this.route, fragment: href.slice(1) });
+      return;
+    }
+
     // Use the shared `isDocsPath` predicate so the SPA-navigation contract
     // here, the auth middleware's public-route regex, and the active-state
     // checks in lens-switcher / docs-sidebar-nav all agree on what counts
     // as a docs URL. A bare `[Docs home](/docs)` from authored markdown is
     // intercepted; non-docs prefixes like `/docs-admin` or `/docsx` are not.
-    if (!href || !isDocsPath(href)) {
+    if (!isDocsPath(href)) {
       return;
     }
     if (anchor.target && anchor.target !== '_self') {
@@ -249,8 +265,8 @@ export class DocsArticleComponent implements OnDestroy {
   }
 
   private initTrustedBodyHtml() {
-    // The build-time sanitize-html allowlist (scripts/lib/sanitize.mjs) is the sole sanitization
-    // boundary for this repo-authored content; trusting it keeps the allowlisted heading ids that Angular's render-time sanitize strips.
+    // Trusts the build-time-sanitized body so allowlisted heading ids reach the
+    // DOM — full rationale in the class JSDoc and scripts/lib/sanitize.mjs.
     return computed<SafeHtml | ''>(() => {
       const a = this.article();
       return a ? this.sanitizer.bypassSecurityTrustHtml(a.bodyHtml) : '';
