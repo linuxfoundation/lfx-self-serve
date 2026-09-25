@@ -566,11 +566,7 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
 
-  /**
-   * The organization and signing project the manager question is about, or null when the page is
-   * not an unsigned agreement it could start. Keyed as `orgUid::projectSfid`, the pair ACS scopes
-   * the Sign grant and the designee role to.
-   */
+  /** `orgUid::projectSfid`, the pair ACS scopes the Sign grant and the designee role to; null off an unsigned agreement. */
   private readonly designeePair = computed(() => {
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.signingChoice()?.projectSfid;
@@ -740,9 +736,6 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe((allowed) => this.autoEclaAllowed.set(allowed));
 
-    // Sign pair check on the unsigned overview (#2780), the same hop attestation Continue uses. It
-    // only chooses the copy and whether Start asks the manager question; it never refuses Start,
-    // and a failed hop answers false, which asks the question.
     toObservable(this.designeePair)
       .pipe(
         distinctUntilChanged(),
@@ -1002,11 +995,7 @@ export class OrgEasyclaDetailComponent {
     return { orgUid, chosen };
   }
 
-  /**
-   * Asks Corporate Console's manager question ahead of the step the viewer chose, unless they can
-   * already sign this pair (#2780). Yes assigns them designee and continues into that step; No
-   * opens Identify CLA Manager. The Start lock stays held until whichever step ends the flow.
-   */
+  /** The Start lock stays held until whichever step ends the flow. */
   private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
     if (this.alreadyDesignee()) {
       this.openChosenStep(orgUid, chosen, next);
