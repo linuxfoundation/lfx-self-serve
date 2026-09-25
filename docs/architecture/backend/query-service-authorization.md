@@ -110,8 +110,9 @@ Those methods carry BFF-side auth checks because they are **complete-roster work
 meeting composer's Guests editor (which reconciles edits against the saved list) and the committee
 "import registrants" flow (which fan-outs invites from the roster) — where returning a partial
 result without warning would silently misrepresent the data. The checks enforce stricter
-business-logic constraints (organizer for the composer, committee writer/member for import) beyond
-the viewer-level FGA filter that the tolerant listing relies on. The default listing path also
+business-logic constraints beyond the viewer-level FGA filter that the tolerant listing relies on:
+organizer for the composer; committee writer, or committee member when the committee's
+`join_mode === 'invite_only'`, for the import flow. The default listing path also
 goes through query-service and relies on its built-in FGA filtering.
 
 ---
