@@ -12,7 +12,7 @@ The **Foundation** lens surfaces foundation-level health metrics in two places: 
 
 ## Health metrics on the Foundation overview
 
-The Foundation overview shows a row of health metric cards — including total value of projects, total projects, total members, active contributors, maintainers, and events. Selecting a card opens a drawer with charts and additional detail.
+The Foundation overview shows a row of health metric cards — including total value of projects, total projects, total members, project health scores, active contributors, maintainers, and events. Selecting a card opens a drawer with charts and additional detail.
 
 ### Organization Dependency
 
@@ -20,7 +20,7 @@ The Foundation overview includes an **Organization Dependency** card among its h
 
 Select the card to open a drawer with the top-organization count, a chart comparing that group's contribution share against all other organizations, and a link to detailed contribution metrics in LFX Insights.
 
-The card is visible to board members, executive directors, LF Staff, users with a writer role on the foundation, and users with tenant-wide auditor access.
+The card is visible to board members, executive directors, LF Staff, users with a writer role on the foundation (including root writers), and users with tenant-wide auditor access.
 
 ## Health Metrics page
 
@@ -32,8 +32,7 @@ The **Health Metrics** page (`/foundation/health-metrics`) is available to execu
 - **Outstanding Balance** — unpaid membership invoices
 - **Events** — event attendance and speaker participation
 - **Training & Certification** — certified employees and training enrollments
-- **Code Contribution** — code commits and pull requests
-- **Flywheel Conversion Rate** — how contributors progress toward membership
+- **Code Contribution** — total and new contributors, plus all-time committer, maintainer, and reviewer counts
 - **Board Meeting Participation** — board meeting attendance
 
 ## Related
