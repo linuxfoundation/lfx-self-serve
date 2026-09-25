@@ -206,6 +206,10 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * @param stubList - Installs the CLA Group list response this case needs.
  * @param signatureId - Narrows the group to one agreement; omit unless the case is about that choice.
  * @param permissionAllowed - ACS pair-check stub. Defaults true so mutation cases stay writable unless the case is about a deny.
+ *
+ * A signed Overview reads the activity log for its Recent activity block, so an empty page is
+ * stubbed first. `stubList` runs after it and can install its own `stubActivityLog`, which wins
+ * because Playwright tries the most recently registered route first.
  */
 export async function gotoEasyclaDetail(
   page: Page,
@@ -217,6 +221,7 @@ export async function gotoEasyclaDetail(
   await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
+  await stubActivityLog(page);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -614,6 +619,15 @@ export async function gotoActivityLog(page: Page, options: { initial?: OrgClaAct
     await stubActivityLog(p, options);
   });
   await openActivityLogTab(page);
+}
+
+/** Lands on the signed Overview with the Recent activity block's first page stubbed. */
+export async function gotoRecentActivity(page: Page, initial?: OrgClaActivityLogPage): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubActivityLog(p, { initial });
+  });
+  await expect(page.getByTestId('org-easycla-detail-overview')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
 export async function openActivityLogTab(page: Page): Promise<void> {

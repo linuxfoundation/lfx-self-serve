@@ -8,7 +8,6 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
   CLA_GROUP_SEARCH_DEBOUNCE_MS,
   ORG_CLA_ACTIVITY_LOG_COLUMN_HEADERS,
-  ORG_CLA_ACTIVITY_LOG_EM_DASH,
   ORG_CLA_ACTIVITY_LOG_EMPTY_COPY,
   ORG_CLA_ACTIVITY_LOG_FILTER_EMPTY_COPY,
   ORG_CLA_ACTIVITY_LOG_HEADING,
@@ -17,7 +16,7 @@ import {
   ORG_CLA_ACTIVITY_LOG_SUBHEADER,
 } from '@lfx-one/shared/constants';
 import type { OrgClaActivityLogEntry, OrgClaActivityLogPage, OrgClaActivityLogRow, OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, stripDiacritics } from '@lfx-one/shared/utils';
+import { stripDiacritics, toOrgClaActivityLogDisplayRow } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
@@ -224,20 +223,12 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
   }
 
   private toRow(entry: OrgClaActivityLogEntry): OrgClaActivityLogRow {
-    const actor = entry.actor?.trim() || ORG_CLA_ACTIVITY_LOG_EM_DASH;
-    const summary = entry.summary?.trim() || ORG_CLA_ACTIVITY_LOG_EM_DASH;
-    const whenLabel = entry.when ? formatClaSignedOnInstant(entry.when) : ORG_CLA_ACTIVITY_LOG_EM_DASH;
+    const row = toOrgClaActivityLogDisplayRow(entry);
     // Precomputed lowercase concat, so the per-keystroke filter is O(rows) rather than
     // O(rows × fields × toLowerCase). A term is matched against actor + summary only —
     // deliberately not the ISO date.
-    const searchText = foldForActivitySearch(`${actor}\u0000${summary}`);
-    return {
-      entry,
-      actor,
-      summary,
-      whenLabel,
-      searchText,
-    };
+    const searchText = foldForActivitySearch(`${row.actor}\u0000${row.summary}`);
+    return { ...row, searchText };
   }
 }
 
