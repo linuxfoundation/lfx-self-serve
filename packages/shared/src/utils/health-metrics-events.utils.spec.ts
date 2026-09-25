@@ -64,6 +64,11 @@ describe('resolveHealthMetricsEventsForecastStatus', () => {
     expect(resolveHealthMetricsEventsForecastStatus(event({ forecastAvg: null, forecastHigh: null }))).toBe('no-data');
   });
 
+  it('says No data rather than No goal when both the forecast and the goal are missing', () => {
+    expect(resolveHealthMetricsEventsForecastStatus(event({ forecastAvg: null, forecastHigh: null, goal: null }))).toBe('no-data');
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ forecastAvg: null, goal: null })).kind).toBe('no-data');
+  });
+
   it('withholds the chip when goal and forecast are an order of magnitude apart, either way', () => {
     expect(resolveHealthMetricsEventsForecastStatus(event({ goal: 50 }))).toBe('no-data');
     expect(resolveHealthMetricsEventsForecastStatus(event({ goal: 5000 }))).toBe('no-data');

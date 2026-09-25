@@ -160,10 +160,20 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('says there is nothing to forecast when no upcoming event has a forecast', async () => {
-    await render({ events: [event({ forecastAvg: null })] });
+  it('says there are no upcoming events when the foundation has none', async () => {
+    await render({ events: [] });
 
     expect(query('events-registration-forecast-empty')).not.toBeNull();
+    expect(query('events-registration-forecast-pace')).toBeNull();
+  });
+
+  it('keeps the pace table when upcoming events exist but none has a forecast', async () => {
+    await render({ events: [event({ forecastAvg: null })] });
+
+    expect(query('events-registration-forecast-empty')).toBeNull();
+    expect(query('events-registration-forecast-card')).toBeNull();
+    expect(query('events-registration-forecast-no-forecast')).not.toBeNull();
+    expect(query('events-registration-forecast-row-evt-1')).not.toBeNull();
     expect(getEventsRegistrationForecastCurve).not.toHaveBeenCalled();
   });
 
@@ -212,7 +222,9 @@ describe('EventsRegistrationForecastComponent', () => {
 
   it.each([
     [{ goal: 450 }, 'on-track', 'clear the goal by about 50'],
+    [{ forecastAvg: 450.4, goal: 450 }, 'on-track', 'On track to meet the goal.'],
     [{ goal: 620 }, 'short', 'about 120 short of the 620 goal. There are 40 days left'],
+    [{ forecastAvg: 449.6, goal: 450 }, 'short', 'just short of the 450 goal. There are 40 days left'],
     [{ goal: 150 }, 'stale', '3.3× the goal of 150'],
     [{ goal: 5000 }, 'goal-suspect', 'under a tenth of the goal'],
     [{ goal: 40 }, 'goal-suspect', 'over ten times the goal'],
@@ -265,6 +277,7 @@ describe('EventsRegistrationForecastComponent', () => {
     await render({ events: [event({ goal: 5000, isNewEvent: true })] });
     expect(datasetLabels()).toEqual(['Confidence range', 'Forecast low', 'This year', 'Forecast', 'Today']);
     expect(query('events-registration-forecast-today')?.textContent).toContain('first edition');
+    expect(query('events-registration-forecast-last-year')?.textContent?.trim()).toBe('first edition');
   });
 
   it('keeps the card when only the curve read fails', async () => {

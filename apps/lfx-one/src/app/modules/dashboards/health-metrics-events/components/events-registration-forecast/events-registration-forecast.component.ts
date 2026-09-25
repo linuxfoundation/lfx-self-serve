@@ -142,7 +142,7 @@ export class EventsRegistrationForecastComponent {
   protected readonly nowLabel = computed(() => formatHealthMetricsEventsCount(this.selectedEvent()?.registrationsNow ?? null));
   protected readonly lastYearLabel = computed(() => {
     const event = this.selectedEvent();
-    return event?.isNewEvent ? '—' : formatHealthMetricsEventsCount(event?.priorYearSamePoint ?? null);
+    return event?.isNewEvent ? 'first edition' : formatHealthMetricsEventsCount(event?.priorYearSamePoint ?? null);
   });
   protected readonly goalLabel = computed(() => {
     const goal = this.selectedEvent()?.goal ?? null;

@@ -38,8 +38,10 @@ export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEve
  * The band narrows as the event nears, so the rule calibrates itself.
  */
 export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastStatus {
+  // No forecast outranks no goal: there is nothing to show either way, and the contract says No data.
+  if (event.forecastAvg === null) return 'no-data';
   if (event.goal === null || event.goal <= 0) return 'no-goal';
-  if (event.forecastAvg === null || isHealthMetricsEventsForecastGoalSuspect(event)) return 'no-data';
+  if (isHealthMetricsEventsForecastGoalSuspect(event)) return 'no-data';
   if (event.forecastHigh !== null && event.forecastHigh < event.goal) return 'action';
   if (event.forecastAvg < event.goal) return 'at-risk';
 
@@ -50,8 +52,8 @@ export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEve
 export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastVerdict {
   const base = { forecast: event.forecastAvg, goal: event.goal, gap: 0, ratio: null, daysLeft: event.daysLeft };
 
-  if (event.goal === null || event.goal <= 0) return { ...base, kind: 'no-goal', tone: 'none' };
   if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'none' };
+  if (event.goal === null || event.goal <= 0) return { ...base, kind: 'no-goal', tone: 'none' };
 
   // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
   const ratio = event.forecastAvg / event.goal;
