@@ -153,7 +153,9 @@ export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEven
 /** A closed event's outcome. A miss the model banded as needing attention finished within reach. */
 export function resolveHealthMetricsEventsPastStatus(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastStatus {
   if (event.goal === null) return 'no-goal';
-  if (event.goalMet === true) return 'hit';
+  // An unflagged outcome falls back to final registrations against the goal.
+  const met = event.goalMet ?? (event.registrations !== null && event.registrations >= event.goal);
+  if (met) return 'hit';
 
   return event.paceStatus === HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE ? 'near-miss' : 'missed';
 }

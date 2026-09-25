@@ -148,7 +148,8 @@ export const HEALTH_METRICS_EVENTS_PAST_STATUSES = {
 /** The model's pace band for an event that finished within reach of its goal. */
 export const HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE = 'needs_attention';
 
-/** Closed events read per foundation across the four periods; one past it flags a truncated read. */
+/** Closed events read per foundation across the four periods; one past it flags a truncated read.
+ * Header figures come from the view, so only the table would lose rows; the largest foundation reads under 100. */
 export const HEALTH_METRICS_EVENTS_PAST_EVENT_CAP = 500;
 
 /** Read-failed / no-foundation value: no periods and no events, which the section must not caption as measured. */

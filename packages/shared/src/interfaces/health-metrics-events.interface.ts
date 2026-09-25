@@ -124,7 +124,7 @@ export interface HealthMetricsEventsPastEvent {
   registrations: number | null;
   /** `null` when no goal is set. */
   goal: number | null;
-  /** `null` when no goal is set, so a missing goal never reads as a missed one. */
+  /** `null` when no goal is set, or when the view has not flagged the outcome. */
   goalMet: boolean | null;
   /** `0` is a measured result; only `null` is not available. */
   revenueUsd: number | null;

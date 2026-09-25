@@ -1,6 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="events-past-events">
   @if (loadFailed()) {
     <lfx-empty-state

@@ -37,7 +37,7 @@ export class EventsPastEventsComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav badge: events closed in the selected period; `null` while a read is pending or failed. */
+  /** The sub-nav badge: events closed in the selected period; `null` while a read is pending or failed, and `0` for a foundation with none. */
   public readonly countChange = output<number | null>();
   /** Fires once the event list settles — this section's height changes, moving every anchor below. */
   public readonly settled = output<void>();

@@ -5,7 +5,6 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
-  HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
@@ -209,7 +208,10 @@ export class HealthMetricsEventsService {
       clientMessage: 'Past events are unavailable right now.',
     });
 
-    if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_PAST_UNMEASURED;
+    // A read that succeeds with no rows is a measured zero in every period, not an unmeasured one.
+    if (result.rows.length === 0) {
+      return { periods: HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0, goalMetCount: 0 })), events: [] };
+    }
 
     if (result.rows.length > HEALTH_METRICS_EVENTS_PAST_EVENT_CAP) {
       logger.warning(req, 'get_events_past', 'Past event rows hit the read cap', {

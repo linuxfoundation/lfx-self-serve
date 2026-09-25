@@ -210,6 +210,11 @@ describe('resolveHealthMetricsEventsPastStatus', () => {
   it('reads no goal as no goal, never as a miss', () => {
     expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: null, goalMet: null, paceStatus: null }))).toBe('no-goal');
   });
+
+  it('falls back to final registrations when the outcome is not flagged', () => {
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: 120, goalMet: null }))).toBe('hit');
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: 80, goalMet: null, paceStatus: 'needs_action' }))).toBe('missed');
+  });
 });
 
 describe('buildHealthMetricsEventsPastView', () => {

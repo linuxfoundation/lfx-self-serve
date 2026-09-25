@@ -25,7 +25,6 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
-  HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
 
@@ -279,10 +278,13 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     expect(events[0]).toMatchObject({ goal: null, goalMet: null, paceStatus: null, revenueUsd: null });
   });
 
-  it('returns the unmeasured value when the foundation has no closed events', async () => {
+  it('returns measured zeros for every period when the foundation has no closed events', async () => {
     execute.mockResolvedValue({ rows: [] });
 
-    expect(await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' })).toBe(HEALTH_METRICS_EVENTS_PAST_UNMEASURED);
+    const past = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    expect(past.events).toEqual([]);
+    expect(past.periods).toEqual(HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0, goalMetCount: 0 })));
   });
 
   it('warns and truncates when the read hits the cap', async () => {
