@@ -73,7 +73,7 @@ and `auditor` is derived from `organizer or auditor from project`.
 
 `user:*` is only granted `viewer` on **public** meetings. For a private meeting, a caller must be a
 participant, an organizer (which includes project writers, committee writers, and meeting coordinators),
-or a project auditor. Note that committee *membership* alone does not grant viewer access — access
+or a project auditor. Note that committee _membership_ alone does not grant viewer access — access
 flows through `writer from committee` (i.e. being a committee writer, not just a member). A caller
 with no applicable relation receives 0 registrant records from query-service — the filtering happens
 server-side before the response leaves the platform.
@@ -93,21 +93,26 @@ before the BFF ever sees them.
 
 ## When the BFF does add its own auth check
 
-The BFF adds explicit `checkSingleAccessStrict` calls **only** when:
+The BFF adds explicit access checks (`checkSingleAccess` / `checkSingleAccessStrict`) when:
 
 - The endpoint writes data (creates/updates a resource) — no FGA filtering applies to mutations.
 - The endpoint calls an upstream API (ITX, NATS request/reply) that does **not** go through
   query-service and does not perform per-user filtering of its own.
+- The endpoint enforces stricter business-logic constraints beyond what query-service's FGA
+  filter protects — for example, requiring the `organizer` relation for a complete-roster read
+  even though any `viewer` can access the tolerant listing through query-service.
 
 **Note on `fail_on_partial` registrant paths.** `getAuthorizedCompleteRegistrants` and
 `getAuthorizedRegistrantsForImport` both call `getMeetingRegistrants`, which always reads from
 `/query/resources` — there is no ITX bypass. The `failOnPartial` flag only controls whether the
 page walk aborts on an upstream error (returning a 5xx) rather than returning a partial list.
-Those methods carry BFF-side auth checks because they are **complete-roster workflows** — full
-export or committee import — where returning a partial result without warning would silently
-misrepresent the data. The checks are stricter business-logic gates, not compensations for a
-missing query-service filter. The default listing path also goes through query-service and relies
-on its built-in FGA filtering.
+Those methods carry BFF-side auth checks because they are **complete-roster workflows** — the
+meeting composer's Guests editor (which reconciles edits against the saved list) and the committee
+"import registrants" flow (which fan-outs invites from the roster) — where returning a partial
+result without warning would silently misrepresent the data. The checks enforce stricter
+business-logic constraints (organizer for the composer, committee writer/member for import) beyond
+the viewer-level FGA filter that the tolerant listing relies on. The default listing path also
+goes through query-service and relies on its built-in FGA filtering.
 
 ---
 
