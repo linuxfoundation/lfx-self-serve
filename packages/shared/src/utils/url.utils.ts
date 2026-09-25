@@ -881,7 +881,7 @@ export function refuseUnfetchablePort(parsed: URL): string {
  * REFUSES a non-default PORT, via the same `refuseUnfetchablePort` the fetch path uses: a url
  * this function approves must be one `fetchSafeUrl` would also accept, because campaign-service
  * fetches hero images and sponsor logos server-side. Scheme is deliberately NOT shared -- see
- * `refuseUnfetchablePort` for why `http:` stays allowed here.
+ * `FETCHABLE_PORTS` above for why `http:` stays allowed here.
  *
  * @param value - A candidate URL from a scraped page, a restored brief, or a direct request
  * @returns The canonical absolute http(s) URL with userinfo stripped, or '' when unusable

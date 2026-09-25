@@ -84,8 +84,10 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
  * whitespace string -- takes the label out of `body` there and sends no native button either,
  * so the call to action vanishes from the staged draft while the preview still shows it.
  *
- * Shared by both variants deliberately: A and B are generated through the same endpoint and lose
- * the label the same way, and a second copy of this rule is what let them drift apart before.
+ * Module-private and campaigns-specific by intent, despite the generic signature: the `<div>`
+ * wrapper mirrors how campaign-service renders a destination-less button, so this belongs with
+ * the code that has to agree with that renderer -- not in a shared string utility where the
+ * markup choice would lose its reason.
  */
 function withUnlinkedCta(body: string, unlinkedLabel: string): string {
   if (unlinkedLabel === '') return body;
@@ -1399,7 +1401,10 @@ export class CampaignsComponent {
     // of one question drift the moment they stop being identical -- which is how the vanishing
     // CTA arose in the first place.
     if (!this.emailCopy()?.ctaUrl) return '';
-    return (this.emailCopy()?.cta ?? '').trim();
+    // `sanitizeDisplayText`, matching `emailCtaLabel`. This is the SAME `copy.cta`, and it is
+    // folded into a body that ships -- so a BIDI override or an invisible-only label would reach
+    // a recipient through this path while the linked path refuses it.
+    return sanitizeDisplayText(this.emailCopy()?.cta ?? '');
   });
 
   /**

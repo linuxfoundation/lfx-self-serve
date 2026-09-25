@@ -2351,6 +2351,72 @@ describe('CampaignsComponent — email delivery channel', () => {
      *
      * That is the exact vector this allow-list exists to close, and nothing pinned it.
      */
+    /**
+     * The three predicates this PR moved off bare `.trim()` / raw-body checks. Each mutation
+     * below passed the whole suite before these existed, so the change was unpinned.
+     */
+    it('does not stage modules against a body that sanitizes to nothing', () => {
+      // `emailBodyIsStageable` judges the SANITIZED body. A tracking-pixel-only payload is
+      // non-empty as raw HTML and empty once stripped, so the raw check staged hero/button/
+      // sponsor modules against a body that ships as nothing.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        // Text that exists in the RAW value and vanishes once stripped -- an `<img>` alone has
+        // no text either way, so it cannot tell the two predicates apart.
+        body: '<style>.x{content:"hi"}</style>',
+        cta: '',
+        ctaUrl: '',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailBodyIsStageable()).toBe(false);
+    });
+
+    it.each([
+      ['zero-width spaces', '\u200B\u200B'],
+      ['a soft hyphen', '\u00AD'],
+      ['a Hangul filler', '\u3164'],
+    ])('treats a CTA label of %s as absent, matching the controller', (_label, cta) => {
+      // `emailCtaLabel` runs `sanitizeDisplayText`, which the controller also runs before
+      // dropping an empty `buttonText`. A bare `.trim()` kept these and previewed a label the
+      // draft would not carry.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join us</p>',
+        cta,
+        // Must MATCH the brief's registrationUrl, or `emailCtaIsStageable` is false and the
+        // label short-circuits to '' whatever the sanitizer does -- which would make this test
+        // pass for the wrong reason.
+        ctaUrl: emailBrief.eventDetails.registrationUrl,
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailCtaIsStageable()).toBe(true);
+      expect(internals().emailBodyIsStageable()).toBe(true);
+      expect(internals().emailCtaLabel()).toBe('');
+    });
+
+    it.each([
+      ['zero-width spaces', '\u200B\u200B'],
+      ['a soft hyphen', '\u00AD'],
+    ])('treats a B preheader of %s as absent so B falls back to A', (_label, value) => {
+      // `abTestPreheaderBForSend` sanitizes for the same reason: the controller omits an empty
+      // `previewTextB`, and upstream then preserves A's preview text. A `.trim()` kept these
+      // truthy, so B shipped an invisible preheader instead of inheriting A's.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().abTestForm.controls.preheaderB.setValue(value);
+      fixture.detectChanges();
+
+      expect(internals().abTestPreheaderBForSend()).toBe('');
+    });
+
     it('does not let an invented CTA url whitelist its own host for body links', () => {
       selectEmail();
       internals().emailBriefOutput.set({
