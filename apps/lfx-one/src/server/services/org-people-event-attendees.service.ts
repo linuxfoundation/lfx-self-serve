@@ -22,7 +22,16 @@ import type {
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleEventRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, normalizeToUrl, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarTable,
+  isStoredNullableString,
+  normalizeToUrl,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -273,12 +282,8 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
   ) {
     return false;
   }
-  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
-  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
-  // into a row the mapper then reads, so it has to be a miss.
-  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
-  // through, so demanding a string would turn one null row into a permanent miss for that org.
-  // Absence and wrong types are still rejected — those the mapper cannot survive.
+  // Value checks (policy on `isStoredString`): only the option queries filter NULL keys, so the
+  // detail, event and roster keys checked here are nullable on the uncached path too.
   const personKeyIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const eventIdIndex = ORG_EVENT_DICTIONARY_COLUMNS.indexOf('EVENT_ID');
   const attendeeKeyIndex = ORG_EVENT_ATTENDEE_ROW_COLUMNS.indexOf('PERSON_KEY');
@@ -297,14 +302,4 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
     cache.detailEvents.length === cache.details.r.length &&
     cache.detailEvents.every((index) => Number.isInteger(index) && index >= 0 && index < eventCount)
   );
-}
-
-/** A required stored cell: present (not the absence marker) and a string. */
-function isStoredString(cell: unknown): boolean {
-  return typeof cell === 'string' && !isColumnarAbsent(cell);
-}
-
-/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
-function isStoredNullableString(cell: unknown): boolean {
-  return cell === null || isStoredString(cell);
 }

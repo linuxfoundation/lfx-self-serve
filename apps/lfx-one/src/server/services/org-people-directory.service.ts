@@ -18,7 +18,7 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarTable, isStoredNullableString, isStoredString, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
@@ -41,16 +41,6 @@ function isStringArray(value: unknown): boolean {
 }
 
 /**
- * A stored column holds a real string when it is a string that is not the compact encoder's
- * absence marker. This is what stops "the field was absent" from passing as "the field is a
- * string" — the check the pre-compaction guard got for free when `JSON.stringify` dropped an
- * undefined-valued key.
- */
-function isStoredString(value: unknown): boolean {
-  return typeof value === 'string' && !isColumnarAbsent(value);
-}
-
-/**
  * One stored cell of a cached directory row, checked for exactly the fields the pre-compaction wire
  * guard asserted: the cached value is replayed straight to the client, so a corrupt element would
  * otherwise crash on `sources` spreading or `name.localeCompare`.
@@ -65,7 +55,7 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boo
       return isStoredString(value);
     case 'email':
     case 'lfUsername':
-      return value === null || isStoredString(value);
+      return isStoredNullableString(value);
     case 'sources':
     case 'engagedFoundationIds':
       return isStringArray(value);

@@ -13,7 +13,7 @@ import type {
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isStoredNullableString, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -262,19 +262,12 @@ function isCompactContributorRows(value: unknown): boolean {
   if (!hasExactColumns(cache.projects, ORG_CONTRIBUTOR_PROJECT_COLUMNS) || !hasExactColumns(cache.rows, ORG_CONTRIBUTOR_ROW_COLUMNS)) {
     return false;
   }
-  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
-  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
-  // into a row the mapper then reads, so it has to be a miss.
-  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
-  // through, so demanding a string would turn one null row into a permanent miss for that org.
-  // Absence and wrong types are still rejected — those the mapper cannot survive.
+  // Value checks (policy on `isStoredString`): every checked cell is nullable here. The query groups
+  // on `person_key, project_id` without filtering either, and `CDP_MEMBER_ID` is `MIN(cdp_member_id)`,
+  // which is NULL over an all-NULL group — so the uncached mapper can see a null in any of them.
   const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
   const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
   const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');
-  // `CDP_MEMBER_ID` may be null, not just a string: the query fills it with `MIN(cdp_member_id)`, and
-  // an aggregate over an all-NULL group returns NULL. Prod held no such group when this was written,
-  // but the cache must never be stricter than the uncached path — which passes a NULL straight
-  // through — or one such row would make that org's entry a permanent miss.
   if (
     !cache.rows.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[memberIdIndex])) ||
     !cache.projects.r.every((row) => isStoredNullableString(row[projectIdIndex]))
@@ -289,14 +282,4 @@ function isCompactContributorRows(value: unknown): boolean {
     cache.rowProjects.length === cache.rows.r.length &&
     cache.rowProjects.every((index) => Number.isInteger(index) && index >= 0 && index < projectCount)
   );
-}
-
-/** A required stored cell: present (not the absence marker) and a string. */
-function isStoredString(cell: unknown): boolean {
-  return typeof cell === 'string' && !isColumnarAbsent(cell);
-}
-
-/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
-function isStoredNullableString(cell: unknown): boolean {
-  return cell === null || isStoredString(cell);
 }

@@ -22,7 +22,7 @@ import type {
   TraineeCourseOptionRow,
   TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isStoredNullableString, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
@@ -254,12 +254,8 @@ function isCompactTraineesRaw(value: unknown): boolean {
   ) {
     return false;
   }
-  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
-  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
-  // into a row the mapper then reads, so it has to be a miss.
-  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
-  // through, so demanding a string would turn one null row into a permanent miss for that org.
-  // Absence and wrong types are still rejected — those the mapper cannot survive.
+  // Value checks (policy on `isStoredString`): only the option queries filter NULL keys, so the
+  // detail and roster keys checked here are nullable on the uncached path too.
   const personKeyIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const courseOrCertIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('COURSE_OR_CERT_ID');
   const traineeKeyIndex = ORG_TRAINEE_ROW_COLUMNS.indexOf('PERSON_KEY');
@@ -277,16 +273,6 @@ function isCompactTraineesRaw(value: unknown): boolean {
     cache.detailCourses.length === cache.details.r.length &&
     cache.detailCourses.every((index) => Number.isInteger(index) && index >= 0 && index < courseCount)
   );
-}
-
-/** A required stored cell: present (not the absence marker) and a string. */
-function isStoredString(cell: unknown): boolean {
-  return typeof cell === 'string' && !isColumnarAbsent(cell);
-}
-
-/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
-function isStoredNullableString(cell: unknown): boolean {
-  return cell === null || isStoredString(cell);
 }
 
 /** Normalize Snowflake `Date | string | null` to a full ISO string, or null when missing / unparseable; preserves time-of-day so client-side time-window predicates and tiebreaker chains stay precise. */

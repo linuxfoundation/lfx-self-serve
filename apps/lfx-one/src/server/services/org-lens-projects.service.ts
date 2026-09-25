@@ -21,8 +21,10 @@ import {
   dedupeByKey,
   fromColumnar,
   hasExactColumns,
-  isColumnarAbsent,
   isColumnarTable,
+  isStoredNullableNumber,
+  isStoredNullableString,
+  isStoredString,
   normalizeHealthScoreCategoryV2,
   toColumnar,
   tupleKey,
@@ -1161,11 +1163,11 @@ function isCompactProjectsCache(value: unknown): boolean {
   if (!hasExactColumns(cache.people, ORG_LENS_PROJECT_PEOPLE_COLUMNS) || !hasExactColumns(cache.projects, ORG_LENS_PROJECT_ROW_COLUMNS)) {
     return false;
   }
-  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed. This is the same
-  // set of per-project checks the pre-compaction guard made, applied to the stored cells instead of
-  // to decoded objects — a corrupt entry has to miss rather than decode into a malformed response
-  // the browser then renders. `hasExactColumns` has already proved `k` matches the declared list
-  // position for position, so the cells can be read positionally from that list.
+  // Value checks (policy on `isStoredString`): the same per-project checks the pre-compaction guard
+  // made, applied to the stored cells instead of to decoded objects — a corrupt entry has to miss
+  // rather than decode into a malformed response the browser then renders. `hasExactColumns` has
+  // already proved `k` matches the declared list position for position, so the cells can be read
+  // positionally from that list.
   const slugIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('slug');
   const nameIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('name');
   const healthIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('health');
@@ -1175,9 +1177,6 @@ function isCompactProjectsCache(value: unknown): boolean {
   const healthScoreIndexes = (
     ['healthOverallScore', 'healthMaxScore', 'healthCoveredCategoryCount', 'healthMaintainer', 'healthSecurity', 'healthDevelopment'] as const
   ).map((column) => ORG_LENS_PROJECT_ROW_COLUMNS.indexOf(column));
-  const isStoredString = (cell: unknown): boolean => typeof cell === 'string' && !isColumnarAbsent(cell);
-  const isStoredNullableString = (cell: unknown): boolean => cell === null || isStoredString(cell);
-  const isStoredNumberOrNull = (cell: unknown): boolean => cell === null || typeof cell === 'number';
   const projectValuesValid = cache.projects.r.every((row) => {
     const metricsState = row[metricsStateIndex];
     return (
@@ -1191,15 +1190,14 @@ function isCompactProjectsCache(value: unknown): boolean {
       // An unrecognized band would render as a blank badge rather than the explicit "unavailable"
       // treatment, so it has to be one the UI knows.
       Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, String(row[healthIndex])) &&
-      healthScoreIndexes.every((index) => isStoredNumberOrNull(row[index]))
+      healthScoreIndexes.every((index) => isStoredNullableNumber(row[index]))
     );
   });
   if (!projectValuesValid) {
     return false;
   }
-  // The people dictionary is validated the same way, except that `null` is legal: main's guard
-  // never inspected these cells at all, and `mapPeople` can produce a null `id` or `name` from null
-  // warehouse columns — a guard must never be stricter than the uncached path it caches for.
+  // The people dictionary's cells are nullable: `mapPeople` can produce a null `id` or `name` from
+  // null warehouse columns.
   const peopleValuesValid = cache.people.r.every((row) => row.every((cell) => isStoredNullableString(cell)));
   if (!peopleValuesValid) {
     return false;

@@ -3,7 +3,18 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from './compact-cache.utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  isStoredNullableNumber,
+  isStoredNullableString,
+  isStoredString,
+  toColumnar,
+  tupleKey,
+} from './compact-cache.utils';
 
 interface Row {
   id: string;
@@ -120,6 +131,28 @@ describe('isColumnarAbsent', () => {
     const looksLikeMarker: Row[] = [{ id: 'a', name: '\u0000', count: 1 }];
     const [escapedCell] = toColumnar(looksLikeMarker, ['name']).r[0];
     expect(isColumnarAbsent(escapedCell)).toBe(false);
+  });
+});
+
+describe('isStoredString / isStoredNullableString / isStoredNullableNumber', () => {
+  // The value half of every positional cache guard: each has to tell a real value from the absence
+  // marker, from null and from a wrong type, or a corrupt entry decodes into a row the mapper reads.
+  const [[absentCell, nullCell, stringCell, escapedCell]] = toColumnar<{ a?: string; b: string | null; c: string; d: string }>(
+    [{ b: null, c: 'x', d: '\u0000' }],
+    ['a', 'b', 'c', 'd']
+  ).r;
+
+  it.each([
+    ['the absence marker', absentCell, false, false, false],
+    ['null', nullCell, false, true, true],
+    ['a string', stringCell, true, true, false],
+    ['an escaped real string that looks like the marker', escapedCell, true, true, false],
+    ['a number', 42, false, false, true],
+    ['an object', {}, false, false, false],
+  ])('classifies %s', (_label, cell, storedString, storedNullableString, storedNullableNumber) => {
+    expect(isStoredString(cell)).toBe(storedString);
+    expect(isStoredNullableString(cell)).toBe(storedNullableString);
+    expect(isStoredNullableNumber(cell)).toBe(storedNullableNumber);
   });
 });
 

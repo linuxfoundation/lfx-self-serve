@@ -91,6 +91,35 @@ export function isColumnarAbsent(value: unknown): boolean {
 }
 
 /**
+ * A required stored cell that holds a real string: a string that is not the {@link ABSENT} marker.
+ * This is what stops "the field was absent" from passing as "the field is a string" — the check the
+ * pre-compaction guards got for free when `JSON.stringify` dropped an undefined-valued key.
+ *
+ * These `isStored*` predicates are the value half of a positional cache guard. {@link hasExactColumns}
+ * proves an entry's SHAPE; they prove its VALUES, and a guard needs both — a current-shape entry whose
+ * required cell is absent or mistyped decodes into a row the mapper then reads, so it has to be a miss.
+ *
+ * A guard must never be STRICTER than the uncached path it caches for. Where a column is nullable and
+ * the uncached mapper passes the null straight through, check it with {@link isStoredNullableString}
+ * or {@link isStoredNullableNumber}: demanding a string there would turn one null row into a
+ * permanent miss for the whole entry. Absence and wrong types are still rejected — those the mapper
+ * cannot survive. Call sites state only the column-specific reason a cell is nullable or required.
+ */
+export function isStoredString(cell: unknown): boolean {
+  return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but also accepts `null` — for a nullable column the uncached mapper passes through. */
+export function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
+}
+
+/** A stored `number | null` cell (see {@link isStoredString} for the policy). The {@link ABSENT} marker is a string, so it never passes. */
+export function isStoredNullableNumber(cell: unknown): boolean {
+  return cell === null || typeof cell === 'number';
+}
+
+/**
  * Shape guard for a cached {@link ColumnarTable}. Cheap by design — it checks the envelope, not
  * every row's arity, because the cost is paid on every cache read and `fromColumnar` already treats
  * a short row's tail as absent. Callers layer their own domain guard on the stored or decoded rows.
