@@ -720,10 +720,9 @@ export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
   emailLabel: 'Email address',
   submitLabel: 'Submit Request',
   cancelLabel: 'Cancel',
-  /** `email` is the address the viewer entered. */
-  assigned: (email: string): string => `Request submitted. An email has been sent to ${email} to let them know they are the initial CLA Manager.`,
-  lfLoginRequested: (email: string): string =>
-    `Request submitted. ${email} does not have an LF Login yet, so an email has been sent asking them to create one. They become the initial CLA Manager once they do.`,
+  /** `email` is the address the viewer entered. Neither outcome confirms an email was sent. */
+  assigned: (email: string): string => `${email} is the initial CLA Manager designee.`,
+  lfLoginRequired: (email: string): string => `${email} needs an LF Login before they can become the initial CLA Manager designee.`,
 } as const;
 
 /** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */

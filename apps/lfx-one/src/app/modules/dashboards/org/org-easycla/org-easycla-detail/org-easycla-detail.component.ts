@@ -570,17 +570,12 @@ export class OrgEasyclaDetailComponent {
   /** Pairs the viewer said Yes for in this session, so the question is not asked twice. */
   private readonly assignedPairs = signal<readonly string[]>([]);
 
-  /** The outcome of naming someone else, cleared when the organization or agreement changes. */
   protected readonly designeeNotice = signal<string | null>(null);
 
   /** `orgUid::projectSfid`, the pair ACS scopes the Sign grant and the designee role to; null off an unsigned agreement. */
   private readonly designeePair = computed(() => this.initDesigneePair());
 
-  /**
-   * The viewer may already sign this pair — as a designee, or as a signatory — so Start skips the
-   * question and the overview reads Corporate Console's designee copy. Denied, failed, and not yet
-   * answered are all false: the question is asked, and Start is never refused on this check.
-   */
+  /** The viewer may already sign this pair, as designee or signatory, so Start skips the question; anything short of allowed asks it. */
   protected readonly alreadyDesignee = computed(() => this.initAlreadyDesignee());
 
   /**
@@ -1021,10 +1016,7 @@ export class OrgEasyclaDetailComponent {
     return false;
   }
 
-  /**
-   * Yes: make the viewer the designee, then continue. A refusal leaves them on the overview with
-   * the reason, and no attestation opens.
-   */
+  /** Yes: make the viewer the designee, then continue; a refusal leaves them on the overview with the reason. */
   private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
     this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
       next: () => {
@@ -1050,19 +1042,15 @@ export class OrgEasyclaDetailComponent {
     });
   }
 
-  /**
-   * No: name someone else. Either success is a notice on the overview, including the person who
-   * has no LF Login yet — the CLA service has already emailed them. The viewer is granted nothing,
-   * so the flow ends here and Start is released.
-   */
+  /** No: name someone else. Either success is a notice on the overview; the viewer is granted nothing, so the flow ends here. */
   private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgClaIdentifyManagerResult): void {
     this.claService.nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email }).subscribe({
       next: (response) => {
         if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
         this.signingOpen.set(false);
         this.designeeNotice.set(
-          response.outcome === 'lf-login-requested'
-            ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequested(response.email)
+          response.outcome === 'lf-login-required'
+            ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequired(response.email)
             : ORG_CLA_IDENTIFY_MANAGER_COPY.assigned(response.email)
         );
       },

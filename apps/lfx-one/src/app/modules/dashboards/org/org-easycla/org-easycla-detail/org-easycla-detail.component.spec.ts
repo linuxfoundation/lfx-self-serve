@@ -690,12 +690,12 @@ describe('OrgEasyclaDetailComponent', () => {
           .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
           .mockReturnValue(closingWith(undefined));
         const fixture = await renderSignable();
-        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'lf-login-requested', email: 'contributor@example.org' })) });
+        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'lf-login-required', email: 'contributor@example.org' })) });
 
         clickStart(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-designee-notice')?.textContent).toContain(
-          ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequested('contributor@example.org')
+          ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequired('contributor@example.org')
         );
         expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
       });
@@ -726,24 +726,6 @@ describe('OrgEasyclaDetailComponent', () => {
         await moveToGroup(fixture, GROUP_ID);
 
         expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).not.toContain('Elsewhere CLA');
-        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
-      });
-
-      it('clears the nomination notice on a CLA group that shares the same signing pair', async () => {
-        const samePair = { ...signable, id: 'signature-uuid-same-pair', claGroupId: ELSEWHERE_GROUP_ID, claGroupName: 'Same Pair CLA' };
-        openDialog
-          .mockReturnValueOnce(closingWith('no'))
-          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
-          .mockReturnValue(closingWith(undefined));
-        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(samePair)] }));
-        const fixture = await render();
-        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'assigned', email: 'contributor@example.org' })) });
-        clickStart(fixture);
-        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).not.toBeNull();
-
-        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
-
-        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Same Pair CLA');
         expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
       });
 

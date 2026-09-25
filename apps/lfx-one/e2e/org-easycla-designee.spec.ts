@@ -79,7 +79,7 @@ test.describe('Org Lens EasyCLA — CLA manager question', () => {
   });
 
   test('No nominates the named person and reports it on the overview', async ({ page }) => {
-    await openQuestion(page, (p) => fulfillJson(p, NOMINATE_ROUTE, { outcome: 'lf-login-requested', email: 'contributor@example.org' }));
+    await openQuestion(page, (p) => fulfillJson(p, NOMINATE_ROUTE, { outcome: 'lf-login-required', email: 'contributor@example.org' }));
     const nominate = page.waitForRequest((request) => request.url().endsWith('/designee/nominations') && request.method() === 'POST');
 
     await page.getByTestId('org-easycla-manager-question-no').locator('button').click();
