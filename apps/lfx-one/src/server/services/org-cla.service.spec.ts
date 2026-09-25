@@ -2280,12 +2280,14 @@ describe('OrgClaService.getManagers', () => {
     );
   });
 
-  it('does not fall back to the CLA-group list when the project-scoped read fails with a non-403', async () => {
+  it.each([400, 500])('does not fall back to the CLA-group list when the project-scoped read fails with a %i', async (statusCode) => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
-      .mockRejectedValueOnce(new MicroserviceError('Server Error', 500, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }));
+      .mockRejectedValueOnce(
+        new MicroserviceError('Upstream Error', statusCode, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' })
+      );
 
-    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode: 500 });
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode });
     expect(gatewayFetch).toHaveBeenCalledTimes(2);
     expect(gatewayFetch).not.toHaveBeenCalledWith(
       expect.anything(),
@@ -2298,6 +2300,23 @@ describe('OrgClaService.getManagers', () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
       .mockRejectedValueOnce(new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }))
+      .mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
+    );
+  });
+
+  it('falls back to the CLA-group list when the project-scoped read finds no project', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockRejectedValueOnce(new MicroserviceError('Not Found', 404, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }))
       .mockResolvedValueOnce({ list: [upstreamManager()] });
 
     const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
