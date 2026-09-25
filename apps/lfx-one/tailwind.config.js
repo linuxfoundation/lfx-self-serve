@@ -263,6 +263,9 @@ export default {
               fontWeight: '700',
               color: lfxColors.gray[900],
               letterSpacing: '-0.01em',
+              // Clears the sticky docs topbar on #fragment jumps (63px desktop / 105px mobile);
+              // paired with the docs-scoped ViewportScroller offset in DocsArticleComponent.
+              scrollMarginTop: '128px',
             },
             h1: { fontSize: '2.25rem', lineHeight: '1.15', marginTop: '0', marginBottom: '1rem' },
             // Article sections (markdown `##`) render at h4 scale with a 32px top gap — the

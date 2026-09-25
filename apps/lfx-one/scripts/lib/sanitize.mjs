@@ -7,9 +7,12 @@ import sanitizeHtml from 'sanitize-html';
  * Build-time HTML allowlist for rendered docs articles (research R4).
  *
  * The build pipeline runs marked → cross-link rewriter → THIS sanitizer, then
- * stores the result in the manifest. At runtime, Angular binds the stored
- * string via `[innerHTML]` (NOT `bypassSecurityTrustHtml`), which gives us a
- * second sanitization pass for free.
+ * stores the result in the manifest. This pass is the single sanitization
+ * boundary: at runtime the docs-article component trusts the stored string
+ * via `bypassSecurityTrustHtml` (no second Angular sanitize pass), so
+ * allowlisted attributes like heading ids reach the DOM. Never feed
+ * non-repo-authored content into the manifest without revisiting this
+ * allowlist — the runtime no longer re-sanitizes.
  *
  * Anything not in the allowlist is stripped silently. The intent is to
  * accept the prose, lists, tables, blockquotes, and inline code that show up

@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, Location } from '@angular/common';
-import { Component, computed, ElementRef, HostListener, inject } from '@angular/core';
+import { DatePipe, DOCUMENT, Location, ViewportScroller } from '@angular/common';
+import { Component, computed, ElementRef, HostListener, inject, OnDestroy } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Meta, Title } from '@angular/platform-browser';
+import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { DOCS_CANONICAL_ORIGIN } from '@lfx-one/shared/constants';
 import type { DocsArticle, DocsSiblingLink } from '@lfx-one/shared/interfaces';
@@ -19,9 +19,11 @@ import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.componen
  * Renders one documentation article.
  *
  * Receives the resolved `DocsArticle` from `docsArticleResolver` via
- * `route.data['article']` (T027). The article body — already sanitized and
- * link-rewritten at build time — is bound via `[innerHTML]` inside a
- * `prose-lfx` container (research R12).
+ * `route.data['article']` (T027). The article body — sanitized and
+ * link-rewritten at build time — is bound via `[innerHTML]` as trusted HTML
+ * (`trustedBodyHtml`): the build-time allowlist in `scripts/lib/sanitize.mjs`
+ * is the single sanitization boundary, so allowlisted attributes like heading
+ * ids reach the DOM and `#fragment` deep-links work (research R12).
  *
  * SEO wiring (T028): `Title`, `Meta` (description, OG, Twitter card), and a
  * `<link rel="canonical">` pointing at the configured production origin
@@ -55,7 +57,7 @@ import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.componen
   imports: [RouterLink, DatePipe, DocsSearchComponent, DocsNotFoundComponent],
   templateUrl: './docs-article.component.html',
 })
-export class DocsArticleComponent {
+export class DocsArticleComponent implements OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly docsManifest = inject(DocsManifestService);
@@ -64,9 +66,14 @@ export class DocsArticleComponent {
   private readonly document = inject(DOCUMENT);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly location = inject(Location);
+  private readonly sanitizer = inject(DomSanitizer);
+  private readonly viewportScroller = inject(ViewportScroller);
 
   /** Article resolved by `docsArticleResolver`: the `DocsArticle` on a hit, or `null` on a miss (renders the inline not-found view). */
   protected readonly article = this.initArticle();
+
+  /** Article body as trusted HTML — the build-time sanitize pass is the security boundary (see `initTrustedBodyHtml`). */
+  protected readonly trustedBodyHtml = this.initTrustedBodyHtml();
 
   /** Sibling articles in the same topic, denormalized for cheap renders. Consumed only by `topicArticles`. */
   private readonly siblings = computed(() => {
@@ -104,6 +111,9 @@ export class DocsArticleComponent {
   });
 
   public constructor() {
+    // Router anchor scrolls use getBoundingClientRect math that ignores CSS scroll-margin; offset
+    // them by the same 128px the prose-lfx `scroll-margin-top` applies to the native fragment jump.
+    this.viewportScroller.setOffset([0, 128]);
     // SEO sync — re-applies head tags whenever `article()` changes. We
     // deliberately use `toObservable` + `takeUntilDestroyed` rather than
     // `effect()` because the frontend convention checklist reserves `effect()`
@@ -114,6 +124,10 @@ export class DocsArticleComponent {
     toObservable(this.article)
       .pipe(takeUntilDestroyed())
       .subscribe(() => this.applyMetadata());
+  }
+
+  public ngOnDestroy(): void {
+    this.viewportScroller.setOffset([0, 0]);
   }
 
   /** Navigates to the previous page in browser history (back button in the top bar). */
@@ -232,6 +246,15 @@ export class DocsArticleComponent {
       this.document.head.appendChild(link);
     }
     link.setAttribute('href', href);
+  }
+
+  private initTrustedBodyHtml() {
+    // The build-time sanitize-html allowlist (scripts/lib/sanitize.mjs) is the sole sanitization
+    // boundary for this repo-authored content; trusting it keeps the allowlisted heading ids that Angular's render-time sanitize strips.
+    return computed<SafeHtml | ''>(() => {
+      const a = this.article();
+      return a ? this.sanitizer.bypassSecurityTrustHtml(a.bodyHtml) : '';
+    });
   }
 
   private initArticle() {

@@ -74,6 +74,27 @@ test.describe('Docs portal — markdown rendering (US5)', () => {
     expect(hasIds, 'at least one heading should have a slug id').toBeGreaterThan(0);
   });
 
+  test('fragment URL scrolls the target heading into view', async ({ page }) => {
+    // Stable h2 id from the meetings article's manifest `headings` field; deep enough in the
+    // page that the fragment jump must scroll. Occlusion is asserted separately below.
+    await page.goto('/docs/meetings#public-meeting-access', { waitUntil: 'domcontentloaded' });
+    const target = page.locator('h2#public-meeting-access');
+    await expect(target).toBeInViewport({ timeout: DATA_LOAD_TIMEOUT });
+
+    // toBeInViewport misses occlusion (intersection ≠ uncovered): the sticky topbar must not cover
+    // the target — router anchor scrolls land below it via the docs-scoped ViewportScroller offset.
+    await expect
+      .poll(
+        async () => {
+          const targetTop = await target.evaluate((el) => el.getBoundingClientRect().top);
+          const topbarBottom = await page.getByTestId('docs-article-topbar').evaluate((el) => el.getBoundingClientRect().bottom);
+          return targetTop >= topbarBottom;
+        },
+        { timeout: DATA_LOAD_TIMEOUT }
+      )
+      .toBe(true);
+  });
+
   test('external links open in a new tab with safe rel attributes', async ({ page }) => {
     await page.goto('/docs/meetings', { waitUntil: 'domcontentloaded' });
     const body = page.getByTestId('docs-article-body');
