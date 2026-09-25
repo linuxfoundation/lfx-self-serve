@@ -693,6 +693,33 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
       });
 
+      it('clears the nomination notice when the page moves to another CLA group', async () => {
+        const other = {
+          ...notStarted,
+          id: 'signature-uuid-elsewhere',
+          claGroupId: ELSEWHERE_GROUP_ID,
+          claGroupName: 'Elsewhere CLA',
+          projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+        };
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+        const fixture = await render();
+        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'assigned', email: 'contributor@example.org' })) });
+        clickStart(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).not.toBeNull();
+
+        paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Elsewhere CLA');
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+      });
+
       it('skips the question and shows the designee copy when the viewer can already sign', async () => {
         checkPermission.mockReturnValue(of(true));
         openDialog.mockReturnValue(closingWith(undefined));
