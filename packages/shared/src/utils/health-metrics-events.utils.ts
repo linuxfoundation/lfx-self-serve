@@ -78,10 +78,12 @@ export function filterHealthMetricsEventsForecastable(events: HealthMetricsEvent
   return events.filter((event) => event.forecastAvg !== null);
 }
 
-/** Worst pacing first by registrations against goal; events with no goal go last. */
+/** Worst pacing first by registrations against goal; events with no usable goal go last. */
 export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastEvent[] {
   const pace = (event: HealthMetricsEventsForecastEvent): number =>
-    event.goal === null || event.goal <= 0 ? Number.POSITIVE_INFINITY : (event.registrationsNow ?? 0) / event.goal;
+    event.goal === null || event.goal <= 0 || isHealthMetricsEventsForecastGoalSuspect(event)
+      ? Number.POSITIVE_INFINITY
+      : (event.registrationsNow ?? 0) / event.goal;
 
   return [...events].sort((a, b) => pace(a) - pace(b) || a.eventName.localeCompare(b.eventName));
 }

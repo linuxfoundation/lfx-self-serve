@@ -118,6 +118,11 @@ describe('EventsRegistrationForecastComponent', () => {
     return (chart.data()?.datasets ?? []).map((dataset) => dataset.label ?? '');
   }
 
+  function datasetData(label: string): unknown[] {
+    const chart = fixture.debugElement.query(By.directive(ChartStubComponent)).componentInstance as ChartStubComponent;
+    return chart.data()?.datasets.find((dataset) => dataset.label === label)?.data ?? [];
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
@@ -162,13 +167,16 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(getEventsRegistrationForecastCurve).not.toHaveBeenCalled();
   });
 
-  it('marks a completed year as a closed period', async () => {
-    await render();
+  it('marks a completed year as a closed period, reading nothing and noting no misses', async () => {
+    await render({ events: [event({ goal: 700 })] });
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
     expect(query('events-registration-forecast-closed')?.textContent).toContain('is a closed period');
     expect(query('events-registration-forecast-card')).toBeNull();
+    expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
+    expect(notes.at(-1)).toBe('');
+    expect(lifecycle.at(-1)).toBe('settled');
   });
 
   it('opens the event a deep link names, and writes a picked event back to the URL', async () => {
@@ -232,6 +240,8 @@ describe('EventsRegistrationForecastComponent', () => {
   it('draws the goal and last year, and leaves out a suspect goal and a first edition prior curve', async () => {
     await render();
     expect(datasetLabels()).toEqual(['Confidence range', 'Forecast low', 'This year', 'Last year', 'Forecast', 'Goal', 'Today']);
+    // Today marks the last measured day, whatever the days-left count says.
+    expect(datasetData('Today')).toEqual([null, 250, null]);
 
     TestBed.resetTestingModule();
     await render({ events: [event({ goal: 5000, isNewEvent: true })] });

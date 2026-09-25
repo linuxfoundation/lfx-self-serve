@@ -41,7 +41,8 @@ function eventRow(overrides: Record<string, unknown> = {}) {
     REGISTRATIONS_NOW: 410,
     PRIOR_YEAR_SAME_POINT: 380,
     GOAL: 1000,
-    DAYS_LEFT: 40,
+    // The model counts days left like `days_to_event`, negative before the event.
+    DAYS_LEFT: -40,
     IS_NEW_EVENT: false,
     ...overrides,
   };
@@ -51,10 +52,10 @@ function curveRow(overrides: Record<string, unknown> = {}) {
   return {
     DAYS_TO_EVENT: -41,
     EVENT_REGISTRATION_TYPE: 'In Person',
-    ACTUAL: 400,
-    FORECAST_AVG: null,
-    FORECAST_LOW: null,
-    FORECAST_HIGH: null,
+    PRED_TYPE: 'known',
+    FORECAST_AVG: 400,
+    FORECAST_LOW: 400,
+    FORECAST_HIGH: 400,
     PRIOR_YEAR: 370,
     ...overrides,
   };
@@ -82,6 +83,8 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}`);
+    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id');
+    expect(sql).not.toContain('GROUP BY');
   });
 
   it('maps a row to the event headline', async () => {
@@ -130,23 +133,36 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
 
   it('binds foundation then event, and splits the curve by format without summing', async () => {
     execute.mockResolvedValue({
-      rows: [
-        curveRow(),
-        curveRow({ DAYS_TO_EVENT: -40, ACTUAL: 410, FORECAST_AVG: 410, FORECAST_LOW: 410, FORECAST_HIGH: 410 }),
-        curveRow({ EVENT_REGISTRATION_TYPE: 'Virtual', ACTUAL: 90, PRIOR_YEAR: null }),
-      ],
+      rows: [curveRow(), curveRow({ EVENT_REGISTRATION_TYPE: 'Virtual', FORECAST_AVG: 90, PRIOR_YEAR: null })],
     });
 
     const curve = await new HealthMetricsEventsService().getRegistrationForecastCurve(req, { foundationSlug: 'acme', eventId: 'evt-1' });
 
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['acme', 'evt-1']);
-    expect(sql).toContain('GROUP BY days_to_event, event_registration_type');
+    expect(sql).toContain('pred_type');
+    expect(sql).not.toContain('GROUP BY');
     expect(curve.eventId).toBe('evt-1');
     expect(curve.formats.map((series) => series.format)).toEqual(['In Person', 'Virtual']);
-    expect(curve.formats[0].points).toHaveLength(2);
-    expect(curve.formats[0].points[1]).toEqual({ daysToEvent: -40, actual: 410, forecastAvg: 410, forecastLow: 410, forecastHigh: 410, priorYear: 370 });
     expect(curve.formats[1].points[0]).toMatchObject({ actual: 90, priorYear: null });
+  });
+
+  it('draws known days as this year and predicted days as the forecast, joined at the last known day', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        curveRow({ DAYS_TO_EVENT: -41 }),
+        curveRow({ DAYS_TO_EVENT: -40, FORECAST_AVG: 410, FORECAST_LOW: 410, FORECAST_HIGH: 410 }),
+        curveRow({ DAYS_TO_EVENT: -20, PRED_TYPE: 'predicted', FORECAST_AVG: 600, FORECAST_LOW: 500, FORECAST_HIGH: 700 }),
+      ],
+    });
+
+    const { formats } = await new HealthMetricsEventsService().getRegistrationForecastCurve(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+    expect(formats[0].points).toEqual([
+      { daysToEvent: -41, actual: 400, forecastAvg: null, forecastLow: null, forecastHigh: null, priorYear: 370 },
+      { daysToEvent: -40, actual: 410, forecastAvg: 410, forecastLow: 410, forecastHigh: 410, priorYear: 370 },
+      { daysToEvent: -20, actual: null, forecastAvg: 600, forecastLow: 500, forecastHigh: 700, priorYear: 370 },
+    ]);
   });
 
   it('returns the unmeasured curve when the event has no rows', async () => {

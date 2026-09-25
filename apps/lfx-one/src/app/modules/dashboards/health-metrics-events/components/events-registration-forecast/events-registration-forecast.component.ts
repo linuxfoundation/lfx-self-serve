@@ -84,10 +84,10 @@ export class EventsRegistrationForecastComponent {
   protected readonly query: Signal<HealthMetricsEventsForecastQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
   }));
-  protected readonly response: Signal<HealthMetricsEventsForecast> = this.initResponse();
-
   /** The model is a snapshot of now, so a completed year has nothing left to forecast. */
   protected readonly closedPeriod = computed(() => this.chrome.selectedRange() !== 'YTD');
+  protected readonly response: Signal<HealthMetricsEventsForecast> = this.initResponse();
+
   protected readonly closedTitle = computed(() => `${getYearForRange(this.chrome.selectedRange())} is a closed period`);
 
   protected readonly forecastable = computed(() => filterHealthMetricsEventsForecastable(this.response().events));
@@ -230,18 +230,21 @@ export class EventsRegistrationForecastComponent {
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
 
+    // A closed period reads nothing, so its sub-nav note cannot count misses the section hides.
+    const request = computed(() => ({ query: this.query(), closed: this.closedPeriod() }));
+
     return toSignal(
-      toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
-        tap((query) => {
+      toObservable(request).pipe(
+        distinctUntilChanged((a, b) => a.query.foundationSlug === b.query.foundationSlug && a.closed === b.closed),
+        tap(({ query }) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
           this.countsChange.emit('');
           this.reading.emit();
         }),
-        switchMap((query) =>
-          (query.foundationSlug ? this.analyticsService.getEventsRegistrationForecast(query) : of(HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED)).pipe(
+        switchMap(({ query, closed }) =>
+          (query.foundationSlug && !closed ? this.analyticsService.getEventsRegistrationForecast(query) : of(HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED)).pipe(
             // `AnalyticsService` has already logged the error before rethrowing it.
             catchError(() => {
               this.loadFailed.set(true);
@@ -293,7 +296,8 @@ export class EventsRegistrationForecastComponent {
     const points = this.series()?.points ?? [];
     const event = this.selectedEvent();
     const goal = event && event.goal !== null && event.goal > 0 && !isHealthMetricsEventsForecastGoalSuspect(event) ? event.goal : null;
-    const todayDay = event?.daysLeft === null || event?.daysLeft === undefined ? null : -event.daysLeft;
+    // Today is the last measured day; the model's `pred_type` draws that line, not the days-left count.
+    const todayIndex = points.map((point) => point.actual !== null).lastIndexOf(true);
     const showLastYear = !event?.isNewEvent && points.some((point) => point.priorYear !== null);
 
     return {
@@ -350,7 +354,7 @@ export class EventsRegistrationForecastComponent {
         // No annotation plugin is loaded, so today is a lone point on the measured line.
         {
           label: 'Today',
-          data: points.map((point) => (point.daysToEvent === todayDay ? point.actual : null)),
+          data: points.map((point, index) => (index === todayIndex ? point.actual : null)),
           borderColor: lfxColors.blue[500],
           backgroundColor: lfxColors.blue[500],
           pointRadius: 4,

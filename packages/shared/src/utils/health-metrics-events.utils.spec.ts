@@ -116,6 +116,15 @@ describe('forecast table helpers', () => {
     expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'ahead', 'none']);
   });
 
+  it('sorts a mis-entered goal with the unset ones rather than as the worst pacing', () => {
+    const sorted = sortHealthMetricsEventsForecastRows([
+      event({ eventId: 'suspect', eventName: 'A suspect', goal: 5000 }),
+      event({ eventId: 'behind', registrationsNow: 50, goal: 450 }),
+    ]);
+
+    expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'suspect']);
+  });
+
   it('resolves labels and caps the progress bar at 100%', () => {
     const [row] = buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 1200.4, forecastAvg: 1300, forecastHigh: 1400, goal: 1000 })]);
 

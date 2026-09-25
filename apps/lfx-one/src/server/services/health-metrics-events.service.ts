@@ -49,7 +49,7 @@ interface ForecastEventRow {
 interface ForecastCurveRow {
   DAYS_TO_EVENT: number | null;
   EVENT_REGISTRATION_TYPE: string | null;
-  ACTUAL: number | null;
+  PRED_TYPE: string | null;
   FORECAST_AVG: number | null;
   FORECAST_LOW: number | null;
   FORECAST_HIGH: number | null;
@@ -66,28 +66,29 @@ export class HealthMetricsEventsService {
 
   /**
    * Every upcoming event's event-wide headline. The headline columns repeat on every curve row, so
-   * one group per event reads them once; the model is a snapshot of now, so no period applies.
+   * one modeled row per event is read; the model is a snapshot of now, so no period applies.
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
     // The start-date filter keeps an event whose day has passed out even before the model drops it.
+    // First edition is flagged per format, so an event is new when any of its formats is.
     const sql = `
       SELECT
         event_id,
         event_name,
         event_start_date,
-        MAX(event_forecast_registrations_avg) AS forecast_avg,
-        MAX(event_forecast_registrations_low) AS forecast_low,
-        MAX(event_forecast_registrations_high) AS forecast_high,
-        MAX(final_current_cumulative_registrations) AS registrations_now,
-        MAX(event_registrations_prior_year_same_point) AS prior_year_same_point,
-        MAX(event_registrations_goal) AS goal,
-        MAX(days_left) AS days_left,
-        BOOLOR_AGG(is_new_event) AS is_new_event
+        event_forecast_registrations_avg AS forecast_avg,
+        event_forecast_registrations_low AS forecast_low,
+        event_forecast_registrations_high AS forecast_high,
+        final_current_cumulative_registrations AS registrations_now,
+        event_registrations_prior_year_same_point AS prior_year_same_point,
+        event_registrations_goal AS goal,
+        days_left,
+        BOOLOR_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
       FROM ${REGISTRATION_FORECAST_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND event_start_date >= CURRENT_DATE()
-      GROUP BY event_id, event_name, event_start_date
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_registration_type ASC NULLS LAST, pred_type ASC, days_to_event ASC) = 1
       ORDER BY event_start_date ASC, event_name ASC NULLS LAST, event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}
     `;
@@ -119,23 +120,21 @@ export class HealthMetricsEventsService {
    * cover the same days, so summing them per day would understate any day one side has no row.
    */
   public async getRegistrationForecastCurve(req: Request, query: HealthMetricsEventsForecastCurveQuery): Promise<HealthMetricsEventsForecastCurve> {
-    // `days_to_event` counts up to 0 on the event day, so today is `-days_left`: measured at or
-    // before it, projected from it on. MAX deduplicates rows that repeat one day's values.
+    // One event under the all-projects cut is one row per format, `pred_type` and day, so no roll-up.
     const sql = `
       SELECT
         days_to_event,
         event_registration_type,
-        MAX(CASE WHEN days_to_event <= -days_left THEN cumulative_avg_predicted_registrations END) AS actual,
-        MAX(CASE WHEN days_to_event >= -days_left THEN cumulative_avg_predicted_registrations END) AS forecast_avg,
-        MAX(CASE WHEN days_to_event >= -days_left THEN cumulative_low_predicted_registrations END) AS forecast_low,
-        MAX(CASE WHEN days_to_event >= -days_left THEN cumulative_high_predicted_registrations END) AS forecast_high,
-        MAX(prior_event_cumulative_registrations) AS prior_year
+        pred_type,
+        cumulative_avg_predicted_registrations AS forecast_avg,
+        cumulative_low_predicted_registrations AS forecast_low,
+        cumulative_high_predicted_registrations AS forecast_high,
+        prior_event_cumulative_registrations AS prior_year
       FROM ${REGISTRATION_FORECAST_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND event_id = ?
         AND event_start_date >= CURRENT_DATE()
-      GROUP BY days_to_event, event_registration_type
       ORDER BY event_registration_type ASC NULLS LAST, days_to_event ASC
     `;
 
@@ -165,7 +164,7 @@ function mapForecastEvent(row: ForecastEventRow): HealthMetricsEventsForecastEve
     registrationsNow: toNullableNumber(row.REGISTRATIONS_NOW),
     priorYearSamePoint: toNullableNumber(row.PRIOR_YEAR_SAME_POINT),
     goal: toNullableNumber(row.GOAL),
-    daysLeft: toNullableNumber(row.DAYS_LEFT),
+    daysLeft: toDaysLeft(row.DAYS_LEFT),
     isNewEvent: row.IS_NEW_EVENT === true,
   };
 }
@@ -178,18 +177,40 @@ function groupCurveRows(rows: ForecastCurveRow[]): HealthMetricsEventsForecastCu
 
     const format = row.EVENT_REGISTRATION_TYPE ?? UNTYPED_FORMAT_LABEL;
     const series = byFormat.get(format) ?? { format, points: [] };
+    // The model marks a measured day `known`; every later day is `predicted`.
+    const known = row.PRED_TYPE === 'known';
     series.points.push({
       daysToEvent: Number(row.DAYS_TO_EVENT),
-      actual: toNullableNumber(row.ACTUAL),
-      forecastAvg: toNullableNumber(row.FORECAST_AVG),
-      forecastLow: toNullableNumber(row.FORECAST_LOW),
-      forecastHigh: toNullableNumber(row.FORECAST_HIGH),
+      actual: known ? toNullableNumber(row.FORECAST_AVG) : null,
+      forecastAvg: known ? null : toNullableNumber(row.FORECAST_AVG),
+      forecastLow: known ? null : toNullableNumber(row.FORECAST_LOW),
+      forecastHigh: known ? null : toNullableNumber(row.FORECAST_HIGH),
       priorYear: toNullableNumber(row.PRIOR_YEAR),
     });
     byFormat.set(format, series);
   }
 
-  return [...byFormat.values()];
+  const series = [...byFormat.values()];
+  series.forEach(joinForecastToToday);
+  return series;
+}
+
+/** Starts the forecast and its band at the last measured day, so the dashed line meets the solid one. */
+function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): void {
+  const todayIndex = series.points.map((point) => point.actual !== null).lastIndexOf(true);
+  if (todayIndex < 0 || todayIndex === series.points.length - 1) return;
+
+  const today = series.points[todayIndex];
+
+  today.forecastAvg = today.actual;
+  today.forecastLow = today.actual;
+  today.forecastHigh = today.actual;
+}
+
+/** The model counts days left on the `days_to_event` axis, negative before the event; the UI shows the count. */
+function toDaysLeft(value: unknown): number | null {
+  const daysLeft = toNullableNumber(value);
+  return daysLeft === null ? null : Math.abs(daysLeft);
 }
 
 function toNullableNumber(value: unknown): number | null {
