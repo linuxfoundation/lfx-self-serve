@@ -1216,8 +1216,9 @@ export class OrgClaService {
    * signed yet (#2780) — Yes on "Are you authorized to be a CLA Manager?".
    *
    * The address is the session's, passed in by the controller and never read from the body, so a
-   * caller can only ever assign themselves. The CLA service answers 409 when that address already
-   * holds the role, which is the outcome the caller asked for, so it is reported as assigned.
+   * caller can only ever assign themselves. Upstream already treats an address that holds the
+   * role as success (the producer ignores the role-scope conflict and answers 200); the 409
+   * branch below is defensive, and that answer is likewise reported as assigned.
    */
   public async assignDesignee(req: Request, orgUid: string, projectSfid: string, userEmail: string): Promise<OrgClaDesigneeResponse> {
     const operation = 'org_cla_assign_designee';
@@ -1251,9 +1252,10 @@ export class OrgClaService {
    * Names someone else as the initial CLA Manager designee (#2780) — No on the question.
    *
    * `contactAdmin: false` is fixed: Organization Lens does not offer Corporate Console's "contact
-   * the company admin" branch. Two refusals are successes to the caller. A 409 means the named
-   * person already holds the role. A 400 for a missing LF Login means they need one before they can
-   * become designee; the CLA service sends the same refusal whether or not it emailed them.
+   * the company admin" branch. A named person who already holds the role comes back as 200, because
+   * the producer ignores that role-scope conflict; the 409 branch below is defensive and reports
+   * the same success. A 400 for a missing LF Login means they need one before they can become
+   * designee; the CLA service sends the same refusal whether or not it emailed them.
    */
   public async nominateDesignee(req: Request, orgUid: string, request: OrgClaDesigneeNominationRequest): Promise<OrgClaDesigneeNominationResponse> {
     const operation = 'org_cla_nominate_designee';
