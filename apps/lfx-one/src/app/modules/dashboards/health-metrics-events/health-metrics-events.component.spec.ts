@@ -11,6 +11,7 @@ import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
@@ -18,6 +19,15 @@ import { HealthMetricsEventsComponent } from './health-metrics-events.component'
 @Component({ selector: 'lfx-events-registration-forecast', template: '<div data-testid="events-forecast-stub"></div>' })
 class ForecastStubComponent {
   public readonly countsChange = output<string>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+  public readonly sectionPicked = output<string>();
+}
+
+/** Stands in for Past events, whose reads its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-events-past-events', template: '<div data-testid="events-past-stub"></div>' })
+class PastStubComponent {
+  public readonly countChange = output<number | null>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
   public readonly sectionPicked = output<string>();
@@ -39,8 +49,8 @@ describe('HealthMetricsEventsComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsEventsComponent, {
-        remove: { imports: [EventsRegistrationForecastComponent] },
-        add: { imports: [ForecastStubComponent] },
+        remove: { imports: [EventsRegistrationForecastComponent, EventsPastEventsComponent] },
+        add: { imports: [ForecastStubComponent, PastStubComponent] },
       })
       .compileComponents();
 
@@ -50,10 +60,13 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
   }
 
-  async function forecastReports(note: string): Promise<void> {
-    const stub = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
-    stub.countsChange.emit(note);
-    stub.settled.emit();
+  async function sectionsReport(note: string, pastCount: number | null = null): Promise<void> {
+    const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
+    const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
+    forecast.countsChange.emit(note);
+    forecast.settled.emit();
+    pastStub.countChange.emit(pastCount);
+    pastStub.settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -68,7 +81,7 @@ describe('HealthMetricsEventsComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the nine sections in order, with the forecast body and placeholders for the rest', async () => {
+  it('renders the nine sections in order, with the forecast and past bodies and placeholders for the rest', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-section-"]')] as HTMLElement[];
 
@@ -78,13 +91,15 @@ describe('HealthMetricsEventsComponent', () => {
       expect(element.textContent).toContain(HEALTH_METRICS_EVENTS_SECTIONS[index].heading);
       if (key === 'forecast') {
         expect(element.querySelector('[data-testid="events-forecast-stub"]')).not.toBeNull();
+      } else if (key === 'past') {
+        expect(element.querySelector('[data-testid="events-past-stub"]')).not.toBeNull();
       } else {
         expect(element.textContent).toContain('Awaiting data');
       }
     });
   });
 
-  it('lists every section in the sub-nav, with no badge and the Members note', async () => {
+  it('lists every section in the sub-nav, with no badge before a read and the Members note', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]');
 
@@ -97,9 +112,17 @@ describe('HealthMetricsEventsComponent', () => {
 
   it('shows the note the forecast reports on its sub-nav item', async () => {
     await setup();
-    await forecastReports('2 will miss goal');
+    await sectionsReport('2 will miss goal');
 
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).toContain('2 will miss goal');
+  });
+
+  it('badges Past events with the count it reports', async () => {
+    await setup();
+    await sectionsReport('', 12);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-past"]').textContent).toContain('12');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).not.toMatch(/\d/);
   });
 
   it('scrolls to the section a deep link names', async () => {
@@ -107,7 +130,7 @@ describe('HealthMetricsEventsComponent', () => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // The shell re-lands a held deep link once every data section has settled.
     scrollIntoView.mockClear();
-    await forecastReports('');
+    await sectionsReport('');
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-spon');
@@ -115,7 +138,7 @@ describe('HealthMetricsEventsComponent', () => {
 
   it('scrolls to Past events on every pick from the forecast, not only when the URL changes', async () => {
     await setup('past');
-    await forecastReports('');
+    await sectionsReport('');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
     const stub = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;

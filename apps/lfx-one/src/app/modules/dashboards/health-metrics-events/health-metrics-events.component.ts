@@ -12,6 +12,7 @@ import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 
 import type { HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
@@ -22,7 +23,7 @@ import type { HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-health-metrics-events',
-  imports: [EventsRegistrationForecastComponent, HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent],
+  imports: [EventsPastEventsComponent, EventsRegistrationForecastComponent, HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent],
   templateUrl: './health-metrics-events.component.html',
 })
 export class HealthMetricsEventsComponent {
@@ -33,6 +34,10 @@ export class HealthMetricsEventsComponent {
 
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');
+  // `null` until Past events reports, so the badge never shows a count the section has not read.
+  protected readonly pastCount = signal<number | null>(null);
 
-  protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() => buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }));
+  protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
+    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }, { past: this.pastCount() })
+  );
 }

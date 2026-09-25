@@ -78,6 +78,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/events-registration-forecast-curve',
       call: () => service.getEventsRegistrationForecastCurve({ foundationSlug: 'aaif', eventId: 'evt-1' }),
     },
+    {
+      name: 'getEventsPast',
+      url: '/api/analytics/events-past',
+      // Its empty list renders "no past events in this period", which a swallowed failure would fake.
+      call: () => service.getEventsPast({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

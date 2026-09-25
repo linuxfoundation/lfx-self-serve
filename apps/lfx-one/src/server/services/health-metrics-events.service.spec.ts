@@ -21,7 +21,12 @@ vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
-import { HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED, HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP, HEALTH_METRICS_L2_RANGES } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+  HEALTH_METRICS_L2_RANGES,
+} from '@lfx-one/shared/constants';
 
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
@@ -57,6 +62,33 @@ function curveRow(overrides: Record<string, unknown> = {}) {
     FORECAST_LOW: 400,
     FORECAST_HIGH: 400,
     PRIOR_YEAR: 370,
+    ...overrides,
+  };
+}
+
+function pastRow(overrides: Record<string, unknown> = {}) {
+  return {
+    EVENT_ID: 'past-1',
+    EVENT_NAME: 'Acme Summit',
+    EVENT_START_DATE: new Date('2026-03-10T00:00:00.000Z'),
+    REGISTRATIONS: 900,
+    GOAL: 1000,
+    HAS_GOAL: true,
+    GOAL_MET: false,
+    REVENUE_USD: 0,
+    PACE_STATUS: 'needs_attention',
+    IS_IN_PERIOD_YTD: true,
+    SCOPE_PAST_EVENTS_COUNT_YTD: 4,
+    SCOPE_REGISTRATIONS_COUNT_YTD: 2400,
+    IS_IN_PERIOD_LAST_COMPLETED_YEAR: false,
+    SCOPE_PAST_EVENTS_COUNT_LAST_COMPLETED_YEAR: 7,
+    SCOPE_REGISTRATIONS_COUNT_LAST_COMPLETED_YEAR: 5100,
+    IS_IN_PERIOD_PREV_COMPLETED_YEAR: false,
+    SCOPE_PAST_EVENTS_COUNT_PREV_COMPLETED_YEAR: 0,
+    SCOPE_REGISTRATIONS_COUNT_PREV_COMPLETED_YEAR: 0,
+    IS_IN_PERIOD_3RD_LAST_COMPLETED_YEAR: false,
+    SCOPE_PAST_EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null,
+    SCOPE_REGISTRATIONS_COUNT_3RD_LAST_COMPLETED_YEAR: null,
     ...overrides,
   };
 }
@@ -180,5 +212,83 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
     await expect(new HealthMetricsEventsService().getRegistrationForecastCurve(req, { foundationSlug: 'acme', eventId: 'evt-9' })).resolves.toBe(
       HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED
     );
+  });
+});
+
+describe('HealthMetricsEventsService.getPastEvents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [pastRow()] });
+  });
+
+  it('binds only the foundation, keeps events in some period, newest first, and reads one past the cap', async () => {
+    await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('MARKETING_EVENT_PAST_EVENTS');
+    expect(sql).toContain('is_all_projects = TRUE');
+    expect(sql).toContain('is_in_period_3rd_last_completed_year OR is_in_period_prev_completed_year OR is_in_period_last_completed_year OR is_in_period_ytd');
+    expect(sql).toContain('scope_registrations_count_3rd_last_completed_year');
+    expect(sql).toContain('ORDER BY event_start_date DESC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}`);
+  });
+
+  it('maps an event with the periods it closed in, keeping $0 revenue as measured', async () => {
+    const { events } = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    expect(events).toEqual([
+      {
+        eventId: 'past-1',
+        eventName: 'Acme Summit',
+        eventStartDate: '2026-03-10',
+        registrations: 900,
+        goal: 1000,
+        goalMet: false,
+        revenueUsd: 0,
+        paceStatus: 'needs_attention',
+        ranges: ['YTD'],
+      },
+    ]);
+  });
+
+  it('reads the period headers off the view, keeping a null header unmeasured', async () => {
+    const { periods } = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    expect(periods).toEqual([
+      { range: 'COMPLETED_YEAR_3', eventCount: null, registrations: null },
+      { range: 'COMPLETED_YEAR_2', eventCount: 0, registrations: 0 },
+      { range: 'COMPLETED_YEAR', eventCount: 7, registrations: 5100 },
+      { range: 'YTD', eventCount: 4, registrations: 2400 },
+    ]);
+  });
+
+  it('clears goal, outcome and pace when the view flags no goal, and drops an event with no id', async () => {
+    execute.mockResolvedValue({
+      rows: [pastRow({ HAS_GOAL: false, GOAL: 0, GOAL_MET: false, PACE_STATUS: null, REVENUE_USD: null }), pastRow({ EVENT_ID: null })],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ goal: null, goalMet: null, paceStatus: null, revenueUsd: null });
+  });
+
+  it('returns measured zeros for every period when the foundation has no closed events', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const past = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    expect(past.events).toEqual([]);
+    expect(past.periods).toEqual(HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0 })));
+  });
+
+  it('warns and truncates when the read hits the cap', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1 }, (_, i) => pastRow({ EVENT_ID: `past-${i}` })) });
+
+    const { events } = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    expect(events).toHaveLength(HEALTH_METRICS_EVENTS_PAST_EVENT_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_events_past', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 });

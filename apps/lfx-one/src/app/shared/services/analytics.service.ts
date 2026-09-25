@@ -95,6 +95,8 @@ import {
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
   HealthMetricsEventsForecastQuery,
+  HealthMetricsEventsPast,
+  HealthMetricsEventsPastQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1219,6 +1221,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-forecast-curve', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-registration-forecast-curve failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Every closed event in the four periods, with each period's header totals, for the Events tab. */
+  public getEventsPast(query: HealthMetricsEventsPastQuery): Observable<HealthMetricsEventsPast> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty list renders "no past events", which a swallowed failure would fake.
+    return this.http.get<HealthMetricsEventsPast>('/api/analytics/events-past', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-past failed', { query, error });
         return throwError(() => error);
       })
     );

@@ -4,7 +4,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getRegistrationForecast, getRegistrationForecastCurve } = vi.hoisted(() => ({
+const { getPastEvents, getRegistrationForecast, getRegistrationForecastCurve } = vi.hoisted(() => ({
+  getPastEvents: vi.fn(),
   getRegistrationForecast: vi.fn(),
   getRegistrationForecastCurve: vi.fn(),
 }));
@@ -13,6 +14,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
   HealthMetricsEventsService: class {
     public getRegistrationForecast = getRegistrationForecast;
     public getRegistrationForecastCurve = getRegistrationForecastCurve;
+    public getPastEvents = getPastEvents;
   },
 }));
 // The controller constructs five unrelated domain services; none of them are exercised here.
@@ -27,12 +29,16 @@ vi.mock('../services/logger.service', () => ({
 // `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
-import { HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED, HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
+} from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getEventsRegistrationForecast' | 'getEventsRegistrationForecastCurve';
+type Handler = 'getEventsRegistrationForecast' | 'getEventsRegistrationForecastCurve' | 'getEventsPast';
 
 function call(handler: Handler, queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -115,5 +121,39 @@ describe('AnalyticsController.getEventsRegistrationForecastCurve', () => {
 
     expect(rejectedField(next)).toBe('eventId');
     expect(getRegistrationForecastCurve).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnalyticsController.getEventsPast', () => {
+  beforeEach(() => {
+    getPastEvents.mockReset();
+    getPastEvents.mockResolvedValue(HEALTH_METRICS_EVENTS_PAST_UNMEASURED);
+  });
+
+  it('passes the foundation to the service and returns its response', async () => {
+    const { res, next, promise } = call('getEventsPast', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getPastEvents).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_PAST_UNMEASURED);
+  });
+
+  it.each([{}, { foundationSlug: 'Acme Corp' }])('rejects a missing or malformed foundation (%o)', async (query) => {
+    const { next, promise } = call('getEventsPast', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getPastEvents).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getPastEvents.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsPast', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });

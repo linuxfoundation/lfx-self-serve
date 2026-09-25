@@ -6,9 +6,12 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
+  HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
+  HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
 } from '../constants/health-metrics-events.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { formatCurrency } from './number.utils';
 
 import type {
   HealthMetricsEventsForecastCurveSeries,
@@ -16,13 +19,27 @@ import type {
   HealthMetricsEventsForecastRowView,
   HealthMetricsEventsForecastStatus,
   HealthMetricsEventsForecastVerdict,
+  HealthMetricsEventsPast,
+  HealthMetricsEventsPastEvent,
+  HealthMetricsEventsPastRowView,
+  HealthMetricsEventsPastStatus,
+  HealthMetricsEventsPastView,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSubNavItem,
 } from '../interfaces/health-metrics-events.interface';
+import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 
 /** Sub-nav items for the Events tab. The forecast carries a note but, per the design, no badge. */
-export function buildHealthMetricsEventsSubNavItems(notes: Partial<Record<HealthMetricsEventsSectionKey, string>> = {}): HealthMetricsEventsSubNavItem[] {
-  return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: notes[section.key] ?? '' }));
+export function buildHealthMetricsEventsSubNavItems(
+  notes: Partial<Record<HealthMetricsEventsSectionKey, string>> = {},
+  counts: Partial<Record<HealthMetricsEventsSectionKey, number | null>> = {}
+): HealthMetricsEventsSubNavItem[] {
+  return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({
+    key: section.key,
+    label: section.label,
+    count: counts[section.key] ?? null,
+    note: notes[section.key] ?? '',
+  }));
 }
 
 /** True when goal and forecast differ by an order of magnitude or more — a data-entry problem, not a pace. */
@@ -131,6 +148,70 @@ export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEven
   }
 
   return best?.format ?? null;
+}
+
+/** A closed event's outcome. A miss the model banded as needing attention finished within reach. */
+export function resolveHealthMetricsEventsPastStatus(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastStatus {
+  if (event.goal === null) return 'no-goal';
+  // An unflagged outcome falls back to final registrations against the goal; with neither, it is unmeasured.
+  let met = event.goalMet;
+  if (met === null) {
+    if (event.registrations === null) return 'unmeasured';
+    met = event.registrations >= event.goal;
+  }
+  if (met) return 'hit';
+
+  return event.paceStatus === HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE ? 'near-miss' : 'missed';
+}
+
+/** One period's section: the view's count and registrations, with the goal tally read off the same rows as the chips. */
+export function buildHealthMetricsEventsPastView(past: HealthMetricsEventsPast, range: HealthMetricsRange): HealthMetricsEventsPastView {
+  const period = past.periods.find((candidate) => candidate.range === range);
+  const rows = past.events.filter((event) => event.ranges.some((candidate) => candidate === range)).map(buildPastRowView);
+
+  return {
+    eventCount: period?.eventCount ?? null,
+    registrations: period?.registrations ?? null,
+    goalMetCount: rows.filter((row) => row.status === 'hit').length,
+    goalSetCount: rows.filter((row) => row.status !== 'no-goal' && row.status !== 'unmeasured').length,
+    rows,
+  };
+}
+
+/** The control line: how many events the period closed; `—` when the period is unmeasured. */
+export function formatHealthMetricsEventsPastClosedLabel(eventCount: number | null): string {
+  if (eventCount === null) return '—';
+
+  return `${formatHealthMetricsEventsCount(eventCount)} ${eventCount === 1 ? 'event' : 'events'} closed this period`;
+}
+
+/** `$0` is a measured result; only an unmeasured revenue reads as not available. */
+export function formatHealthMetricsEventsRevenue(value: number | null): string {
+  return value === null ? 'not available' : formatCurrency(value);
+}
+
+function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {
+  const status = resolveHealthMetricsEventsPastStatus(event);
+
+  return {
+    event,
+    status,
+    statusLabel: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].label,
+    statusClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].badgeClass,
+    dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
+    registrationsLabel: formatHealthMetricsEventsCount(event.registrations),
+    goalLabel: formatHealthMetricsEventsCount(event.goal),
+    revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
+    progressPct: resolvePastProgressPct(event),
+    progressClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].progressClass,
+  };
+}
+
+/** Final registrations against goal, capped at 100; null when either is unmeasured, since null is not zero. */
+function resolvePastProgressPct(event: HealthMetricsEventsPastEvent): number | null {
+  if (event.goal === null || event.goal <= 0 || event.registrations === null) return null;
+
+  return Math.min(100, Math.round((event.registrations / event.goal) * 100));
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */

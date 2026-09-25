@@ -1,8 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HEALTH_METRICS_EVENTS_FORECAST_STATUSES, HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
-import type { HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type {
+  HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
+  HEALTH_METRICS_EVENTS_PAST_STATUSES,
+  HEALTH_METRICS_EVENTS_SECTIONS,
+} from '../constants/health-metrics-events.constants';
+import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
@@ -101,4 +105,72 @@ export interface HealthMetricsEventsForecastRowView {
   /** 0–100, `null` with no goal to fill against or no measured registration count. */
   progressPct: number | null;
   progressClass: string;
+}
+
+/** Outcome chip for one closed event; see `resolveHealthMetricsEventsPastStatus` for the rule. */
+export type HealthMetricsEventsPastStatus = keyof typeof HEALTH_METRICS_EVENTS_PAST_STATUSES;
+
+/** Foundation scope for past events; every period ships in one read, so the range stays client-side. */
+export interface HealthMetricsEventsPastQuery {
+  foundationSlug: string;
+}
+
+/** One closed event's final result. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsEventsPastEvent {
+  eventId: string;
+  eventName: string;
+  /** `YYYY-MM-DD`. */
+  eventStartDate: string | null;
+  registrations: number | null;
+  /** `null` when no goal is set. */
+  goal: number | null;
+  /** `null` when no goal is set, or when the view has not flagged the outcome. */
+  goalMet: boolean | null;
+  /** `0` is a measured result; only `null` is not available. */
+  revenueUsd: number | null;
+  /** The model's pace band at close: `healthy`, `needs_attention` or `needs_action`. */
+  paceStatus: string | null;
+  /** The periods this event closed in. */
+  ranges: HealthMetricsL2Range[];
+}
+
+/** One period's header figures, as the view totals them — never re-summed from the table. */
+export interface HealthMetricsEventsPastPeriod {
+  range: HealthMetricsL2Range;
+  eventCount: number | null;
+  registrations: number | null;
+}
+
+/** `GET /api/analytics/events-past` — every closed event in the four periods, plus each period's header. */
+export interface HealthMetricsEventsPast {
+  /** Empty when the foundation has no closed event in any period. */
+  periods: HealthMetricsEventsPastPeriod[];
+  /** Most recent first. */
+  events: HealthMetricsEventsPastEvent[];
+}
+
+/** A past-events table row with its labels and chip resolved once per period. */
+export interface HealthMetricsEventsPastRowView {
+  event: HealthMetricsEventsPastEvent;
+  status: HealthMetricsEventsPastStatus;
+  statusLabel: string;
+  statusClass: string;
+  dateLabel: string;
+  registrationsLabel: string;
+  goalLabel: string;
+  revenueLabel: string;
+  /** 0–100, `null` with no goal to fill against or no measured registration count. */
+  progressPct: number | null;
+  progressClass: string;
+}
+
+/** The section for one period: the view's header figures and the events that closed in it. */
+export interface HealthMetricsEventsPastView {
+  eventCount: number | null;
+  registrations: number | null;
+  /** Listed events whose chip reads "Hit goal" — the X in "Hit goal: X of Y". */
+  goalMetCount: number;
+  /** Listed events with a goal set and a measured outcome — the Y, so X and Y share the chips' rule. */
+  goalSetCount: number;
+  rows: HealthMetricsEventsPastRowView[];
 }

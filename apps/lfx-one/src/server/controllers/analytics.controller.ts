@@ -3516,6 +3516,29 @@ export class AnalyticsController {
     }
   }
 
+  /**
+   * `GET /api/analytics/events-past` — every closed event in the four periods, with each period's
+   * header totals. The client picks the period, so no `range` param reaches the wire.
+   */
+  public async getEventsPast(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_past');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_past');
+
+      const response = await this.healthMetricsEventsService.getPastEvents(req, { foundationSlug });
+
+      logger.success(req, 'get_events_past', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');

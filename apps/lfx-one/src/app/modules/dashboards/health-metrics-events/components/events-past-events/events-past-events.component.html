@@ -1,0 +1,100 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-past-events">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Past events unavailable"
+      subtitle="We could not load past events for this foundation. Refresh the page to try again."
+      data-testid="events-past-events-error" />
+  } @else if (loading()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="events-past-events-loading" aria-hidden="true" />
+  } @else if (view().rows.length === 0 && view().eventCount === null) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Past events unavailable for this period"
+      subtitle="Results for the selected period have not been measured yet. Pick another period to see how earlier events finished."
+      data-testid="events-past-events-unmeasured" />
+  } @else if (view().rows.length === 0) {
+    <lfx-empty-state
+      icon="fa-light fa-calendar-xmark"
+      title="No past events in this period"
+      subtitle="No event closed in the selected period. Pick another period to see how earlier events finished."
+      data-testid="events-past-events-empty" />
+  } @else {
+    <span class="text-[13px] text-gray-500" data-testid="events-past-events-closed">{{ closedLabel() }}</span>
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-end md:justify-between" data-testid="events-past-events-card">
+      <div class="flex flex-col gap-1" data-testid="events-past-events-headline">
+        <span class="text-[13px] text-gray-500">Total registrations</span>
+        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-past-events-registrations">{{ registrationsLabel() }}</span>
+      </div>
+      <div class="flex flex-col gap-0.5" data-testid="events-past-events-goal-met">
+        <span class="text-xs text-gray-500">Hit goal</span>
+        @if (view().goalSetCount === 0) {
+          <span class="text-sm font-medium text-gray-900" data-testid="events-past-events-goal-met-value">no goals set</span>
+        } @else {
+          <span class="text-sm font-medium tabular-nums text-gray-900" data-testid="events-past-events-goal-met-value"
+            >{{ goalMetLabel() }} of {{ goalSetLabel() }}</span
+          >
+        }
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-2" data-testid="events-past-events-results">
+      <h4 class="text-sm font-medium text-gray-900">Every past event &middot; final vs goal</h4>
+      <lfx-table [value]="view().rows" data-testid="events-past-events-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Date</span></th>
+            <th scope="col" class="w-[220px]"><span class="text-xs font-medium text-gray-500">Final registrations vs goal</span></th>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Revenue</span></th>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Status</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-view>
+          <tr [attr.data-testid]="'events-past-events-row-' + view.event.eventId">
+            <td>
+              <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
+            </td>
+            <td>
+              <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
+            </td>
+            <td class="w-[220px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm tabular-nums text-gray-800">{{ view.registrationsLabel }} / {{ view.goalLabel }}</span>
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                  <div class="h-full rounded-full" [class]="view.progressClass" [style.width.%]="view.progressPct ?? 0"></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-past-events-revenue-' + view.event.eventId">{{
+                view.revenueLabel
+              }}</span>
+            </td>
+            <td>
+              <span
+                class="rounded-full px-2 py-0.5 text-xs font-medium"
+                [class]="view.statusClass"
+                [attr.data-testid]="'events-past-events-status-' + view.event.eventId"
+                >{{ view.statusLabel }}</span
+              >
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    </div>
+
+    <p class="flex flex-wrap items-center gap-1 border-t border-gray-100 pt-3 text-[12px] text-gray-400" data-testid="events-past-events-footnote">
+      A closed event's figures are its final result, not a projection.
+      <button type="button" class="text-blue-600 hover:underline" (click)="onViewForecast()" data-testid="events-past-events-forecast-link">
+        See upcoming events in the registration forecast
+      </button>
+    </p>
+  }
+</div>

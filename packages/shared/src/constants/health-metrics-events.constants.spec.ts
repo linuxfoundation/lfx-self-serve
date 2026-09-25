@@ -12,7 +12,7 @@ describe('HEALTH_METRICS_EVENTS_SECTIONS', () => {
   });
 
   it('holds a deep link only for the sections that read data', () => {
-    expect(HEALTH_METRICS_EVENTS_DATA_SECTIONS).toEqual(['forecast']);
+    expect(HEALTH_METRICS_EVENTS_DATA_SECTIONS).toEqual(['forecast', 'past']);
   });
 });
 
