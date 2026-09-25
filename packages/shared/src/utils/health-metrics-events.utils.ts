@@ -1,11 +1,148 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
+import {
+  HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX,
+  HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
+  HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
+  HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
+  HEALTH_METRICS_EVENTS_SECTIONS,
+} from '../constants/health-metrics-events.constants';
+import { formatIsoDateLabel } from './date-time.utils';
 
-import type { HealthMetricsEventsSubNavItem } from '../interfaces/health-metrics-events.interface';
+import type {
+  HealthMetricsEventsForecastCurveSeries,
+  HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsForecastRowView,
+  HealthMetricsEventsForecastStatus,
+  HealthMetricsEventsForecastVerdict,
+  HealthMetricsEventsSectionKey,
+  HealthMetricsEventsSubNavItem,
+} from '../interfaces/health-metrics-events.interface';
 
-/** Sub-nav items for the Events tab. No section reads data yet, so none carries a badge or note. */
-export function buildHealthMetricsEventsSubNavItems(): HealthMetricsEventsSubNavItem[] {
-  return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: '' }));
+/** Sub-nav items for the Events tab. The forecast carries a note but, per the design, no badge. */
+export function buildHealthMetricsEventsSubNavItems(notes: Partial<Record<HealthMetricsEventsSectionKey, string>> = {}): HealthMetricsEventsSubNavItem[] {
+  return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: notes[section.key] ?? '' }));
+}
+
+/** True when goal and forecast differ by an order of magnitude or more — a data-entry problem, not a pace. */
+export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEventsForecastEvent): boolean {
+  if (event.goal === null || event.goal <= 0 || event.forecastAvg === null) return false;
+
+  const ratio = event.forecastAvg / event.goal;
+  return ratio >= HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO || ratio <= 1 / HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO;
+}
+
+/**
+ * EVT-01: upper forecast below goal is Action required, central below goal is At risk, else On track.
+ * The band narrows as the event nears, so the rule calibrates itself.
+ */
+export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastStatus {
+  // No forecast outranks no goal: there is nothing to show either way, and the contract says No data.
+  if (event.forecastAvg === null) return 'no-data';
+  if (event.goal === null || event.goal <= 0) return 'no-goal';
+  if (isHealthMetricsEventsForecastGoalSuspect(event)) return 'no-data';
+  if (event.forecastHigh !== null && event.forecastHigh < event.goal) return 'action';
+  if (event.forecastAvg < event.goal) return 'at-risk';
+
+  return 'on-track';
+}
+
+/** The callout under the headline. A goal 3× under the forecast reads as stale, not as success. */
+export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastVerdict {
+  const base = { forecast: event.forecastAvg, goal: event.goal, gap: 0, ratio: null, daysLeft: event.daysLeft };
+
+  if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'none' };
+  if (event.goal === null || event.goal <= 0) return { ...base, kind: 'no-goal', tone: 'none' };
+
+  // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
+  const ratio = event.forecastAvg / event.goal;
+  if (isHealthMetricsEventsForecastGoalSuspect(event)) return { ...base, kind: 'goal-suspect', tone: 'watch', ratio };
+  if (ratio >= HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO) return { ...base, kind: 'stale', tone: 'watch', ratio };
+
+  // Branch on the raw values, as the chip does, and round only the gap shown.
+  const gap = Math.round(Math.abs(event.forecastAvg - event.goal));
+  if (event.forecastAvg >= event.goal) return { ...base, kind: 'on-track', tone: 'ok', gap };
+
+  return { ...base, kind: 'short', tone: 'act', gap };
+}
+
+/** Sub-nav note: events projected under goal, leaving out the ones whose goal looks mis-entered. */
+export function buildHealthMetricsEventsForecastNote(events: HealthMetricsEventsForecastEvent[]): string {
+  const missing = events.filter((event) => {
+    const status = resolveHealthMetricsEventsForecastStatus(event);
+    return status === 'action' || status === 'at-risk';
+  }).length;
+
+  return missing > 0 ? `${missing} will miss goal` : '';
+}
+
+/** Events a forecast can be drawn for — the selector's pills. */
+export function filterHealthMetricsEventsForecastable(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastEvent[] {
+  return events.filter((event) => event.forecastAvg !== null);
+}
+
+/** Worst pacing first by registrations against goal; events with no usable goal or count go last. */
+export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastEvent[] {
+  const pace = (event: HealthMetricsEventsForecastEvent): number =>
+    isHealthMetricsEventsForecastGoalSuspect(event) ? Number.POSITIVE_INFINITY : (resolveProgressRatio(event) ?? Number.POSITIVE_INFINITY);
+
+  return [...events].sort((a, b) => pace(a) - pace(b) || a.eventName.localeCompare(b.eventName, 'en-US'));
+}
+
+/** The table's rows with every label resolved, so the template formats nothing per render. */
+export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastRowView[] {
+  return sortHealthMetricsEventsForecastRows(events).map((event) => {
+    const status = resolveHealthMetricsEventsForecastStatus(event);
+    const ratio = resolveProgressRatio(event);
+    const pct = ratio === null ? null : Math.round(ratio * 100);
+
+    return {
+      event,
+      status,
+      statusLabel: HEALTH_METRICS_EVENTS_FORECAST_STATUSES[status].label,
+      statusClass: HEALTH_METRICS_EVENTS_FORECAST_STATUSES[status].badgeClass,
+      dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
+      registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
+      goalLabel: formatHealthMetricsEventsCount(event.goal),
+      progressPct: pct === null ? null : Math.min(pct, 100),
+      progressClass: resolveProgressClass(pct),
+    };
+  });
+}
+
+/** Rounded, `en-US`-pinned so the server render and the hydrated one agree; `—` for unmeasured. */
+export function formatHealthMetricsEventsCount(value: number | null): string {
+  return value === null ? '—' : Math.round(value).toLocaleString('en-US');
+}
+
+/** A pill label, truncated with an ellipsis past the design's length. */
+export function truncateHealthMetricsEventsPillName(name: string): string {
+  return name.length > HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX ? `${name.slice(0, HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX - 2)}…` : name;
+}
+
+/** The format the chart opens on: whichever has registered more people so far. */
+export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEventsForecastCurveSeries[]): string | null {
+  let best: { format: string; registrations: number } | null = null;
+
+  for (const series of formats) {
+    const registrations = Math.max(0, ...series.points.map((point) => point.actual ?? 0));
+    if (!best || registrations > best.registrations) best = { format: series.format, registrations };
+  }
+
+  return best?.format ?? null;
+}
+
+/** Registrations now against goal; null when either is unmeasured, since null is not zero. */
+function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number | null {
+  if (event.goal === null || event.goal <= 0 || event.registrationsNow === null) return null;
+
+  return event.registrationsNow / event.goal;
+}
+
+function resolveProgressClass(pct: number | null): string {
+  if (pct === null) return 'bg-gray-200';
+  if (pct >= 90) return 'bg-emerald-500';
+
+  return pct >= 45 ? 'bg-amber-500' : 'bg-red-400';
 }

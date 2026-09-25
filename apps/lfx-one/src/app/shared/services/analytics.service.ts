@@ -91,6 +91,10 @@ import {
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
+  HealthMetricsEventsForecast,
+  HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsForecastCurveQuery,
+  HealthMetricsEventsForecastQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1189,6 +1193,32 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEngagementRepresentatives>('/api/analytics/engagement-representatives', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] engagement-representatives failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Every upcoming event's registration forecast headline for the Events tab. */
+  public getEventsRegistrationForecast(query: HealthMetricsEventsForecastQuery): Observable<HealthMetricsEventsForecast> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty list renders "no upcoming events", which a swallowed failure would fake.
+    return this.http.get<HealthMetricsEventsForecast>('/api/analytics/events-registration-forecast', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registration-forecast failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** One event's registration pacing curve, one series per format. */
+  public getEventsRegistrationForecastCurve(query: HealthMetricsEventsForecastCurveQuery): Observable<HealthMetricsEventsForecastCurve> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the chart says it failed instead of drawing an empty curve.
+    return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-forecast-curve', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registration-forecast-curve failed', { query, error });
         return throwError(() => error);
       })
     );

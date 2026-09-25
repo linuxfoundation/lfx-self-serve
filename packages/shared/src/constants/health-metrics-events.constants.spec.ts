@@ -11,8 +11,8 @@ describe('HEALTH_METRICS_EVENTS_SECTIONS', () => {
     expect(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.key)).toEqual(['forecast', 'past', 'kpi', 'reg', 'rev', 'spon', 'spk', 'orgs', 'geo']);
   });
 
-  it('holds no data section until a section issue wires one', () => {
-    expect(HEALTH_METRICS_EVENTS_DATA_SECTIONS).toEqual([]);
+  it('holds a deep link only for the sections that read data', () => {
+    expect(HEALTH_METRICS_EVENTS_DATA_SECTIONS).toEqual(['forecast']);
   });
 });
 
