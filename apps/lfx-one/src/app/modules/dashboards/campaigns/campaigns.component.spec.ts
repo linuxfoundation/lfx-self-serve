@@ -2418,6 +2418,40 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(bOut.split('Register Now').length - 1).toBe(1);
     });
 
+    it.each([
+      // The PROPERTY, not the one example: any label sanitize-html re-serializes differently
+      // from `escapeHtml`. 'Register Now' round-trips unchanged, which is exactly why the first
+      // version of this guard passed while the bug was still live.
+      //
+      // `marker` is a stable substring of the label that survives BOTH encodings, so the count
+      // measures how many times the call to action appears rather than which encoding won.
+      // `<` is excluded: `sanitizeDisplayText` strips it, so such a label never reaches here.
+      ['an apostrophe', "Don't Miss Out", 'Don&#39;t Miss Out', 'Miss Out'],
+      ['a double quote', 'Say "Hello" Now', 'Say &quot;Hello&quot; Now', 'Now'],
+      ['an ampersand', 'Tom & Jerry', 'Tom &amp; Jerry', 'Jerry'],
+      ['no entities at all', 'Register Now', 'Register Now', 'Register Now'],
+    ])('suppresses the duplicate fold for a label containing %s', (_case, label, serverEncoded, marker) => {
+      // `escapeHtml` ENCODES `'` and `"`; sanitize-html DECODES them on output. Comparing the raw
+      // fragment against the sanitized body therefore missed, and the CTA doubled.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: label,
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      internals().abTestForm.controls.bodyHtmlB.setValue(`<p>B body</p><div><strong>${serverEncoded}</strong></div>`);
+      fixture.detectChanges();
+
+      // The fold-back is armed, so a pass cannot come from doing nothing.
+      expect(internals().emailCtaUnlinkedLabel()).toBe(label);
+
+      const bOut = internals().abTestBodyHtmlBForSend();
+      expect(bOut.split(marker).length - 1).toBe(1);
+    });
+
     it('does not stage modules against a body that sanitizes to nothing', () => {
       // `emailBodyIsStageable` judges the SANITIZED body. A tracking-pixel-only payload is
       // non-empty as raw HTML and empty once stripped, so the raw check staged hero/button/
