@@ -684,7 +684,7 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
       });
 
-      it('reports a person without an LF Login as a sent request, not a failure', async () => {
+      it('reports a person without an LF Login as needing one, not as a failure', async () => {
         openDialog
           .mockReturnValueOnce(closingWith('no'))
           .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
