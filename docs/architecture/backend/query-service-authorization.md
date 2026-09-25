@@ -56,14 +56,14 @@ A question that has come up more than once (most recently in
 
 **For private meetings: No.** `v1_meeting_registrant` documents are indexed with:
 
-```
+```text
 access_check_object  = "v1_meeting:<meeting_uid>"
 access_check_relation = "viewer"
 ```
 
 The FGA model (`lfx-v2-fga-sync/bin/authorization_model.fga`) defines `meeting#viewer` as:
 
-```
+```text
 meeting#viewer = [user:*, committee#member] or participant or organizer or auditor from project
 ```
 
