@@ -4,7 +4,10 @@
 import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
 
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
@@ -18,11 +21,16 @@ import type {
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastQuery,
+  HealthMetricsEventsPast,
+  HealthMetricsEventsPastEvent,
+  HealthMetricsEventsPastPeriod,
+  HealthMetricsEventsPastQuery,
   HealthMetricsL2Range,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 const REGISTRATION_FORECAST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST';
+const PAST_EVENTS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS';
 
 /** Label for a curve row the view left without a registration type. */
 const UNTYPED_FORMAT_LABEL = 'All formats';
@@ -54,6 +62,20 @@ interface ForecastCurveRow {
   FORECAST_LOW: number | null;
   FORECAST_HIGH: number | null;
   PRIOR_YEAR: number | null;
+}
+
+/** Per-period columns (`IS_IN_PERIOD_<SUFFIX>`, `SCOPE_*_<SUFFIX>`) are read by name off the suffix map. */
+interface PastEventRow {
+  EVENT_ID: string | null;
+  EVENT_NAME: string | null;
+  EVENT_START_DATE: Date | string | null;
+  REGISTRATIONS: number | null;
+  GOAL: number | null;
+  HAS_GOAL: boolean | null;
+  GOAL_MET: boolean | null;
+  REVENUE_USD: number | null;
+  PACE_STATUS: string | null;
+  [periodColumn: string]: unknown;
 }
 
 /** The Events tab's view reads, one method per section, each through `executeSnowflakeViewRead`. */
@@ -148,6 +170,94 @@ export class HealthMetricsEventsService {
 
     return { eventId: query.eventId, formats: groupCurveRows(result.rows) };
   }
+
+  /**
+   * Every closed event in the four periods, with each period's header totals. The headers repeat on
+   * every row, so they come off the first; the client picks the period, so one read serves all four.
+   */
+  public async getPastEvents(req: Request, query: HealthMetricsEventsPastQuery): Promise<HealthMetricsEventsPast> {
+    // Suffixes come from a constant map, never from the request, so interpolating them is safe.
+    const suffixes = HEALTH_METRICS_L2_RANGES.map((range) => HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]);
+    const periodColumns = suffixes
+      .map((suffix) => `is_in_period_${suffix}, scope_past_events_count_${suffix}, scope_registrations_count_${suffix}, scope_events_goal_met_count_${suffix}`)
+      .join(',\n        ');
+    const inAnyPeriod = suffixes.map((suffix) => `is_in_period_${suffix}`).join(' OR ');
+
+    const sql = `
+      SELECT
+        event_id,
+        event_name,
+        event_start_date,
+        registrations_count AS registrations,
+        event_registrations_goal AS goal,
+        has_registrations_goal AS has_goal,
+        is_registrations_goal_met AS goal_met,
+        total_event_revenue_usd AS revenue_usd,
+        pace_status,
+        ${periodColumns}
+      FROM ${PAST_EVENTS_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND (${inAnyPeriod})
+      ORDER BY event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<PastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: PAST_EVENTS_VIEW,
+      operation: 'get_events_past',
+      clientMessage: 'Past events are unavailable right now.',
+    });
+
+    if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_PAST_UNMEASURED;
+
+    if (result.rows.length > HEALTH_METRICS_EVENTS_PAST_EVENT_CAP) {
+      logger.warning(req, 'get_events_past', 'Past event rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+      });
+    }
+
+    const events = result.rows
+      .slice(0, HEALTH_METRICS_EVENTS_PAST_EVENT_CAP)
+      .map(mapPastEvent)
+      .filter((event): event is HealthMetricsEventsPastEvent => event !== null);
+
+    return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapPastPeriod(result.rows[0], range)), events };
+  }
+}
+
+function mapPastEvent(row: PastEventRow): HealthMetricsEventsPastEvent | null {
+  if (!row.EVENT_ID) return null;
+
+  // The view's own flag decides "no goal", so a zero or negative goal never reads as missed.
+  const hasGoal = row.HAS_GOAL === true;
+
+  return {
+    eventId: row.EVENT_ID,
+    eventName: row.EVENT_NAME ?? row.EVENT_ID,
+    eventStartDate: toIsoDate(row.EVENT_START_DATE),
+    registrations: toNullableNumber(row.REGISTRATIONS),
+    goal: hasGoal ? toNullableNumber(row.GOAL) : null,
+    goalMet: hasGoal && row.GOAL_MET !== null ? row.GOAL_MET === true : null,
+    revenueUsd: toNullableNumber(row.REVENUE_USD),
+    paceStatus: hasGoal ? row.PACE_STATUS : null,
+    ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IS_IN_PERIOD', range)] === true),
+  };
+}
+
+function mapPastPeriod(row: PastEventRow, range: HealthMetricsL2Range): HealthMetricsEventsPastPeriod {
+  return {
+    range,
+    eventCount: toNullableNumber(row[periodColumn('SCOPE_PAST_EVENTS_COUNT', range)]),
+    registrations: toNullableNumber(row[periodColumn('SCOPE_REGISTRATIONS_COUNT', range)]),
+    goalMetCount: toNullableNumber(row[periodColumn('SCOPE_EVENTS_GOAL_MET_COUNT', range)]),
+  };
+}
+
+/** Snowflake returns unquoted identifiers upper-cased. */
+function periodColumn(prefix: string, range: HealthMetricsL2Range): string {
+  return `${prefix}_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`.toUpperCase();
 }
 
 function mapForecastEvent(row: ForecastEventRow): HealthMetricsEventsForecastEvent | null {

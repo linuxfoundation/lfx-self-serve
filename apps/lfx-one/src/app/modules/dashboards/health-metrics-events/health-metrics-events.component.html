@@ -18,4 +18,11 @@
       (settled)="shell.sectionSettled('forecast')"
       (sectionPicked)="shell.scrollToSection($event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="past">
+    <lfx-events-past-events
+      (countChange)="pastCount.set($event)"
+      (reading)="shell.sectionReading('past')"
+      (settled)="shell.sectionSettled('past')"
+      (sectionPicked)="shell.scrollToSection($event)" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>

@@ -139,6 +139,7 @@ describe.each([
   ['/events-registration-forecast', 'foundationSlug'],
   // The event id rides ahead of the slug so the gate still reads the foundation it is testing.
   ['/events-registration-forecast-curve', 'eventId=evt-1&foundationSlug'],
+  ['/events-past', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });
