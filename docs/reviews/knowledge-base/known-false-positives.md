@@ -1,8 +1,8 @@
-# Known false positives — applied LAST in every review pass
+# Known false positives — applied LAST in the knowledge-base review pass
 
 Findings that match any pattern below MUST be dropped, regardless of which source (rule file, checklist, pattern file) originally produced them. This list is the floor — even a quotable pattern doesn't survive if it matches a known false positive.
 
-Used by the `lfx-skills:lfx-self-serve-learnings-reviewer` subagent (Step 4), and also relevant filter discipline for the `lfx-skills:lfx-self-serve-code-reviewer` subagent.
+Applied by the `/lfx-self-serve-learnings-review` skill (Step 4) to its own findings. The general and security reviewers of the pre-PR round do not read this file; a false positive they raise is rebutted in place, not filtered here.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: lfx-self-serve-learnings-review
-description: "Post-commit empirical-pattern review for lfx-self-serve. Audits the latest commit in the lfx-self-serve repo against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Pass the keyword `branch` to switch to full-branch mode (audits the branch's diff against main — used for the pre-PR full-branch sweep). Renders a markdown review. Invoke after every commit while pre-PR, in parallel with `lfx-self-serve-code-review`."
+description: "Empirical-pattern review for lfx-self-serve. Audits a pinned range in the lfx-self-serve repo against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Reviews exactly the pinned range `base_sha` (merge-base with the PR base) → `target_sha` (branch HEAD); when the caller pins nothing, it pins those two endpoints itself once and never reviews commit by commit. Renders a markdown review. Launched once per branch by `/lfx-skills:lfx-pre-pr-review` (the KB reviewer named in `CLAUDE.md`'s **Pre-PR review** section), in parallel with the general and security reviewers."
 ---
 
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
@@ -8,9 +8,9 @@ description: "Post-commit empirical-pattern review for lfx-self-serve. Audits th
 
 # LFX Self-Serve Learnings Reviewer
 
-You match the latest commit on the local branch against the empirical pattern knowledge base in `docs/reviews/knowledge-base/`. Each pattern entry was extracted from a real PR review comment on this repo. **Findings are gated by KB matches:** every emitted finding must quote a pattern entry's rule ID + a phrase from its `**Pattern:**` or `**Detect:**` clause. If you can't quote, you drop.
+You match the caller's pinned range on the local branch against the empirical pattern knowledge base in `docs/reviews/knowledge-base/`. Each pattern entry was extracted from a real PR review comment on this repo. **Findings are gated by KB matches:** every emitted finding must quote a pattern entry's rule ID + a phrase from its `**Pattern:**` or `**Detect:**` clause. If you can't quote, you drop.
 
-Generic-rubric findings (security / performance / quality / architecture / testing intuitions not grounded in a KB entry) belong to `lfx-self-serve-code-review`, which audits the documented rule surface. You cover the empirical surface — the patterns the bots and human reviewers have actually flagged.
+Generic-rubric findings (security / performance / quality / architecture / testing intuitions not grounded in a KB entry) and documented-rule-surface findings belong to `/lfx-skills:lfx-general-code-review`, which reviews general quality plus this repo's written conventions. You cover the empirical surface — the patterns the bots and human reviewers have actually flagged.
 
 ## Repository scope
 
@@ -35,16 +35,14 @@ Before diffing, locate the `lfx-self-serve` repo root:
 
 Parse the caller's prompt for:
 
-- **`branch`** — OPTIONAL keyword. If present, switch to full-branch mode: audit the branch's diff against main (`origin/main...HEAD`) instead of just the latest commit. Used by the pre-PR full-branch sweep.
+- **`base_sha`** / **`target_sha`** (or a `review exactly: git diff <base_sha> <target_sha>` line) — the pinned range: `base_sha` is the merge-base of the branch with the PR base, `target_sha` is the branch HEAD. When supplied, review exactly that range and never re-derive it from a moving `HEAD` or `origin/main`. When not supplied, pin them yourself once, before anything else: `git fetch origin && base_sha=$(git merge-base origin/main HEAD) && target_sha=$(git rev-parse HEAD)`, then proceed as if the caller had passed them. There is no per-commit mode: the range is always the whole branch between these two endpoints.
 - **`extra: <free text>`** — optional priority hint.
 
 ## Step 1 — Compute the diff
 
 Run all git commands from the `lfx-self-serve` repo root.
 
-Default mode: `git show --stat -p HEAD` — audits only the latest commit (not staged / unstaged work). Use the stat block to drive Step 2's pattern-file routing and the Step 6 report header; abort if empty.
-
-Full-branch mode (`branch` passed): `git fetch origin && git diff --stat origin/main...HEAD && git diff origin/main...HEAD` — the branch's diff against main, i.e., everything HEAD adds vs `origin/main`.
+`git diff --stat <base_sha> <target_sha> && git diff <base_sha> <target_sha>`. Read added or modified code from `<target_sha>:<path>` and deleted code from `<base_sha>:<path>`; never use the working tree as code evidence. Use the stat block to drive Step 2's pattern-file routing and the Step 6 report header; abort with `INCOMPLETE - empty range` if the diff is empty.
 
 If the diff is too big for context, save to `/tmp/learnings-reviewer-diff.patch` and Read changed files individually.
 
@@ -96,7 +94,7 @@ For each pattern entry in every loaded pattern file (excluding `known-false-posi
    - **Citation:** quote the entry's `**Pattern:**` or `**Detect:**` phrase that triggered the match.
 3. **If you can't quote the entry, drop the finding.** The KB is the bar — no quote, no ship.
 
-**Findings without a matching pattern entry do not ship.** Generic code-review intuition belongs to `lfx-self-serve-code-review`.
+**Findings without a matching pattern entry do not ship.** Generic code-review intuition belongs to `/lfx-skills:lfx-general-code-review`.
 
 ## Step 4 — Apply known false positives
 
@@ -108,7 +106,7 @@ If `extra` was passed, prioritise those areas when ordering the report. Don't su
 
 ## Step 6 — Render the report
 
-Lead with what you're reviewing — `<commit-sha> — <subject>` for the default case, or `origin/main...HEAD (<branch-name>, N commits)` if `branch` was passed. Then files changed, additions / deletions, and pattern files loaded.
+Lead with what you're reviewing — `<base_sha>..<target_sha>` (`<branch-name>`, N commits). Then files changed, additions / deletions, and pattern files loaded.
 
 Group findings under `### Critical (N)` (confidence 90-100) and `### Important (N)` (confidence 80-89). Each finding is a bullet of this form (parser-friendly for downstream consumers):
 
@@ -127,7 +125,7 @@ If `extra` was applied, note it.
 ## Scope boundaries — NOT this agent's job
 
 - **PR-shape sanity** (branch / GitHub Issue / commits / DCO+GPG / rebase / diff size) → `/lfx-self-serve-pr-readiness`.
-- **Documented rule-surface audits** (Angular structure, repo rule files, architecture checklists, upstream API contracts, protected files) → `lfx-self-serve-code-review`.
+- **Documented rule-surface audits** (Angular structure, repo rule files, architecture checklists, upstream API contracts, protected files) → `/lfx-skills:lfx-general-code-review`.
 - **Generic code-review intuition** not grounded in a KB pattern entry → drop.
 
 ## Constraints
