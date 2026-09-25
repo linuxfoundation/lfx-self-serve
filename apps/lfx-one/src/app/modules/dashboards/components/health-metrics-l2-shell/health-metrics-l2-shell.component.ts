@@ -314,41 +314,33 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /**
    * Bounds the pane to what is left of the viewport below it, so the page itself has nothing to
    * scroll. The chrome below the pane (gate padding, layout padding, the footer) isn't a fixed pixel
-   * count, so it's measured rather than guessed: the gap between the two-column row's own bottom edge
-   * and the document's bottom edge is exactly that chrome — the footer sits right after the row in
-   * flow, so this gap holds regardless of which column (pane or sub-nav) is currently taller. `<html>`
-   * has no fixed height, so `offsetHeight` reads its in-flow content height — unlike `scrollHeight`,
-   * it ignores overflow from any out-of-flow descendant anywhere in the document (an open `appendTo:
-   * 'body'` dropdown, an absolutely-positioned tooltip), so a re-measure while one is open can't shrink
-   * the pane.
+   * count, so it's measured rather than guessed — but the naive way to measure it (the gap between the
+   * row's own bottom edge and the document's bottom edge) is wrong on this layout: the main layout's
+   * own `min-h-screen` floors the document at the viewport height whenever the page's content is
+   * shorter than that, so that gap can include empty flex-grow slack instead of real chrome. Once the
+   * pane is sized to fit, its own output is exactly what keeps the page that short, so a later
+   * re-measure reads back the same slack and the pane gets stuck too small.
    *
-   * The previous height is cleared before measuring, not just overwritten after: the layout's own
-   * `min-h-screen` floors the document at the viewport height whenever the page's content is shorter
-   * than that, and once the pane is already sized to fit, its old height is exactly what keeps the
-   * content that short. Measuring with it still applied would read back that same floor and land on
-   * the current height again instead of the real answer (e.g. after a resize that leaves the viewport
-   * taller than the page still is). Clearing it lets the pane return to its natural content height for
-   * the measurement, so the document is never floored by its own previous output. Both writes go
-   * straight onto the element rather than through a bound signal, so neither is skipped as a no-op
-   * update, and the scroll position is restored after: a pane briefly free of its `overflow-y-auto`
-   * scrollbar has nothing to hold that position against.
+   * To avoid that, the pane is first grown to fill the viewport on its own — `fillHeight` below — which
+   * forces the document to be at least viewport-tall and removes any flex-grow slack. Only then is the
+   * gap between the document and the viewport (`document.documentElement.scrollHeight - innerHeight`)
+   * read as the real chrome below the row: with the pane already reaching the viewport bottom, nothing
+   * but that chrome can push the document past it. Both writes go straight onto the element rather than
+   * through a bound signal — a single declarative binding can't express two sequential writes with a
+   * layout read in between.
    */
   private measurePanesHeight(): void {
     const pane = this.panes()?.nativeElement;
-    const row = pane?.parentElement;
-    if (!isPlatformBrowser(this.platformId) || !pane || !row) return;
-
-    const scrollTop = pane.scrollTop;
-    pane.style.removeProperty('--l2-panes-height');
+    if (!isPlatformBrowser(this.platformId) || !pane) return;
 
     // Document-relative, so a page that is already scrolled measures the same as one at the top.
     const paneDocumentTop = pane.getBoundingClientRect().top + window.scrollY;
-    const rowDocumentBottom = row.getBoundingClientRect().bottom + window.scrollY;
-    const below = Math.max(document.documentElement.offsetHeight - rowDocumentBottom, 0);
+    const fillHeight = Math.max(Math.round(window.innerHeight - paneDocumentTop), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
+    pane.style.setProperty('--l2-panes-height', `${fillHeight}px`);
 
-    const available = window.innerHeight - paneDocumentTop - below;
-    pane.style.setProperty('--l2-panes-height', `${Math.max(Math.round(available), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX)}px`);
-    pane.scrollTop = scrollTop;
+    const below = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+    const available = Math.max(Math.round(window.innerHeight - paneDocumentTop - below), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
+    pane.style.setProperty('--l2-panes-height', `${available}px`);
   }
 
   /**
