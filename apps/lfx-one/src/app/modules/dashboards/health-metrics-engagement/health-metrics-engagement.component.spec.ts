@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, OutputEmitterRef } from '@angular/core';
+import { Component, output, OutputEmitterRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
+import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -119,7 +120,11 @@ describe('HealthMetricsEngagementComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEngagementComponent],
-      providers: [HealthMetricsChromeService, { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } }],
+      providers: [
+        HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
+      ],
     })
       .overrideComponent(HealthMetricsEngagementComponent, {
         set: {

@@ -21,12 +21,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import {
-  HEALTH_METRICS_L2_PANES_BOTTOM_GUTTER_PX,
-  HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX,
-  HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS,
-  HEALTH_METRICS_L2_SCROLL_KEYS,
-} from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX, HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
 import { buildHealthMetricsL2SectionId, buildHealthMetricsL2SectionViews, isHealthMetricsL2SectionKey } from '@lfx-one/shared/utils';
 import { debounceTime, filter, Subject } from 'rxjs';
 
@@ -74,8 +69,6 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');
   private readonly bodies = contentChildren(HealthMetricsL2SectionDirective);
 
-  // `null` until measured client-side; the CSS variable then bounds the pane so only it scrolls.
-  protected readonly panesHeight = signal<string | null>(null);
   // Held until the sections exist, then again until every async section has settled: a deep link
   // re-scrolls once per read that lands, because each one moves the anchors below it.
   private readonly pendingSection = signal<string | null>(null);
@@ -115,6 +108,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       this.measurePanesHeight();
       this.setupScrollSpy();
       this.observeWindowResize();
+      this.observeDocumentResize();
       // `route.fragment` has already emitted by now, before the section ids existed, so the deep
       // link is replayed here rather than scrolling against an empty document.
       this.rendered = true;
@@ -137,7 +131,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.measurePanesHeight();
       // The pane may have just gained or lost its scrollbar, which changes the spy's root.
-      this.setupScrollSpy();
+      this.rebuildScrollSpyIfRootMoved();
     });
   }
 
@@ -225,6 +219,18 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
+   * The footer renders asynchronously and can change height after the pane's first measurement — a
+   * viewport resize alone would miss that, so the document's own height is watched too.
+   */
+  private observeDocumentResize(): void {
+    if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => this.resize$.next());
+    observer.observe(document.documentElement);
+    this.destroyRef.onDestroy(() => observer.disconnect());
+  }
+
+  /**
    * A deep link waiting on data would scroll back over wherever the reader has moved to, and a failed
    * read leaves it waiting indefinitely — so their own first scroll or keypress supersedes it.
    * Idempotent: every arm calls this, and only the first one that finds no listeners registers them.
@@ -305,15 +311,38 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.scrollTo(key);
   }
 
-  /** Bounds the pane to what is left of the viewport below it, so the page itself has nothing to scroll. */
+  /**
+   * Bounds the pane to what is left of the viewport below it, so the page itself has nothing to
+   * scroll. The chrome below the pane (gate padding, layout padding, the footer) isn't a fixed pixel
+   * count, so it's measured rather than guessed — but the naive way to measure it (the gap between the
+   * row's own bottom edge and the document's bottom edge) is wrong on this layout: the main layout's
+   * own `min-h-screen` floors the document at the viewport height whenever the page's content is
+   * shorter than that, so that gap can include empty flex-grow slack instead of real chrome. Once the
+   * pane is sized to fit, its own output is exactly what keeps the page that short, so a later
+   * re-measure reads back the same slack and the pane gets stuck too small.
+   *
+   * To avoid that, the pane is first grown to fill the viewport on its own — `fillHeight` below — which
+   * forces the document to be at least viewport-tall and removes any flex-grow slack. Only then is the
+   * gap between the document and the viewport read as the real chrome below the row: with the pane
+   * already reaching the viewport bottom, nothing but that chrome can push the document past it. That
+   * gap is read via `offsetHeight`, not `scrollHeight` — `scrollHeight` also counts overflow from any
+   * out-of-flow descendant anywhere in the document (an open `appendTo: 'body'` dropdown or tooltip),
+   * so a re-measure while one is open could shrink the pane. Both writes go straight onto the element
+   * rather than through a bound signal — a single declarative binding can't express two sequential
+   * writes with a layout read in between.
+   */
   private measurePanesHeight(): void {
     const pane = this.panes()?.nativeElement;
     if (!isPlatformBrowser(this.platformId) || !pane) return;
 
     // Document-relative, so a page that is already scrolled measures the same as one at the top.
-    const documentTop = pane.getBoundingClientRect().top + window.scrollY;
-    const available = window.innerHeight - documentTop - HEALTH_METRICS_L2_PANES_BOTTOM_GUTTER_PX;
-    this.panesHeight.set(`${Math.max(Math.round(available), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX)}px`);
+    const paneDocumentTop = pane.getBoundingClientRect().top + window.scrollY;
+    const fillHeight = Math.max(Math.round(window.innerHeight - paneDocumentTop), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
+    pane.style.setProperty('--l2-panes-height', `${fillHeight}px`);
+
+    const below = Math.max(document.documentElement.offsetHeight - window.innerHeight, 0);
+    const available = Math.max(Math.round(window.innerHeight - paneDocumentTop - below), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
+    pane.style.setProperty('--l2-panes-height', `${available}px`);
   }
 
   /**

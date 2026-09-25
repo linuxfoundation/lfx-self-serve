@@ -1,19 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { UserService } from '@services/user.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
 describe('HealthMetricsChromeService', () => {
+  const impersonating = signal(false);
+
   afterEach(() => {
     vi.useRealTimers();
+    impersonating.set(false);
   });
 
   function create(): HealthMetricsChromeService {
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [HealthMetricsChromeService] });
+    TestBed.configureTestingModule({
+      providers: [HealthMetricsChromeService, { provide: UserService, useValue: { impersonating } }],
+    });
     return TestBed.inject(HealthMetricsChromeService);
   }
 
@@ -54,6 +61,17 @@ describe('HealthMetricsChromeService', () => {
 
     service.headerHeightPx.set(120);
     expect(service.stickyTopPx()).toBe(136);
+  });
+
+  // The header shifts down by the fixed impersonation banner while impersonating; anything
+  // pinning below it must add the same amount.
+  it('adds the impersonation banner height to the sticky offset while impersonating', () => {
+    const service = create();
+    service.headerHeightPx.set(120);
+
+    impersonating.set(true);
+
+    expect(service.stickyTopPx()).toBe(178);
   });
 
   it('selects the range off the clicked period, so every tab reads the same one', () => {

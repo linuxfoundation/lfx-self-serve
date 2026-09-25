@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { UserService } from '@services/user.service';
 
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
@@ -53,6 +54,7 @@ export class HealthMetricsGateComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly chrome = inject(HealthMetricsChromeService);
+  protected readonly userService = inject(UserService);
 
   protected readonly basePath = HEALTH_METRICS_BASE_PATH;
   protected readonly tabs: readonly HealthMetricsTab[] = HEALTH_METRICS_TABS;

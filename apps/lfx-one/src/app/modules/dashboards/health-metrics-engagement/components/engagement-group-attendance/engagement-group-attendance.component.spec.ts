@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,6 +65,7 @@ describe('EngagementGroupAttendanceComponent', () => {
         // The drawer this table opens is a PrimeNG p-drawer, whose panel animation needs a provider.
         provideNoopAnimations(),
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementGroupAttendance } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         // The component reads its initial filter and page off the URL, and writes them back.

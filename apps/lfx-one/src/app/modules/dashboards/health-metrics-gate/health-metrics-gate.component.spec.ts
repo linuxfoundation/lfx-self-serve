@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { NgClass } from '@angular/common';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { UserService } from '@services/user.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
@@ -18,11 +19,16 @@ class LegacyStubComponent {}
 
 describe('HealthMetricsGateComponent', () => {
   let fixture: ComponentFixture<HealthMetricsGateComponent>;
+  const impersonating = signal(false);
 
   async function render(overviewEnabled: WritableSignal<boolean>): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [HealthMetricsGateComponent],
-      providers: [provideRouter([]), { provide: FeatureFlagService, useValue: { getBooleanFlag: () => overviewEnabled } }],
+      providers: [
+        provideRouter([]),
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => overviewEnabled } },
+        { provide: UserService, useValue: { impersonating } },
+      ],
     })
       .overrideComponent(HealthMetricsGateComponent, {
         set: { imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, LegacyStubComponent] },
@@ -39,6 +45,7 @@ describe('HealthMetricsGateComponent', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    impersonating.set(false);
   });
 
   it('renders the legacy page, and no tab shell at all, when the flag is off', async () => {
@@ -131,5 +138,14 @@ describe('HealthMetricsGateComponent', () => {
     await render(signal(false));
 
     expect(constructed).toBe(0);
+  });
+
+  it('pins the header below the fixed impersonation banner while impersonating', async () => {
+    impersonating.set(true);
+    await render(signal(true));
+
+    const header = fixture.nativeElement.querySelector('header');
+    expect(header.className).toContain('lg:top-12');
+    expect(header.className).not.toContain('lg:top-0');
   });
 });

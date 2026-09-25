@@ -16,8 +16,15 @@
 
   <!-- The design's `.panes`: the only thing that scrolls. Its height is measured off the viewport so
        the sections scroll inside it and the sub-nav beside it never travels. Below `lg` the height
-       variable goes unused and the page scrolls normally. -->
-  <div #panes class="flex min-w-0 flex-col gap-6 lg:h-[var(--l2-panes-height)] lg:overflow-y-auto lg:pr-2" [style.--l2-panes-height]="panesHeight()">
+       variable goes unused and the page scrolls normally. Set imperatively by measurePanesHeight()
+       rather than bound, because that method makes two sequential writes with a layout read between
+       them — not expressible as a single declarative binding. `relative` makes this pane the
+       containing block for any absolutely-positioned descendant rendered inline rather than through
+       PrimeNG's `appendTo: 'body'` (e.g. the table paginator's rows-per-page dropdown). Without it,
+       such a descendant resolves to an ancestor outside the pane, escapes this element's
+       `overflow-y-auto` clipping, and extends `document.documentElement.scrollHeight` past the
+       viewport — which is what made the whole page scrollable before this was added. -->
+  <div #panes class="relative flex min-w-0 flex-col gap-6 lg:h-[var(--l2-panes-height)] lg:overflow-y-auto lg:pr-2">
     @for (section of sectionViews(); track section.key) {
       @let body = bodyByKey().get(section.key);
       <section
