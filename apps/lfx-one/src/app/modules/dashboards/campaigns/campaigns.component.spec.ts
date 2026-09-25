@@ -1889,6 +1889,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestBodyHtmlB: Signal<string>;
     abTestBodyHtmlBPreview: Signal<string>;
     abTestPreheaderBForSend: Signal<string>;
+    abTestBodyHtmlBForSend: Signal<string>;
+    emailBodyHtmlForSend: Signal<string>;
     abTestPreheaderBPreview: Signal<string>;
     emailPreheaderPreview: Signal<string>;
     abTestForm: {
@@ -2355,6 +2357,38 @@ describe('CampaignsComponent — email delivery channel', () => {
      * The three predicates this PR moved off bare `.trim()` / raw-body checks. Each mutation
      * below passed the whole suite before these existed, so the change was unpinned.
      */
+    it('folds a refused CTA into BOTH variants, or neither', () => {
+      // This flipped twice under review, because two true premises point opposite ways: B has no
+      // CTA of its own (its generation discards `cta`/`ctaUrl`), but when the destination is
+      // REFUSED no button ships for either variant -- `emailCtaLabel` is '' so `onStageEmailSend`
+      // sends no `buttonText`/`buttonUrl` at all. There is no widget to double-render against,
+      // and folding into A alone makes B silently drop the call to action.
+      //
+      // Asserting the two bodies AGREE pins the invariant rather than either half of it.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        // Supplied and refused: not the brief's registrationUrl.
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      // No button ships, so nothing could be duplicated.
+      expect(internals().emailCtaLabel()).toBe('');
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+
+      const aHasLabel = internals().emailBodyHtmlForSend().includes('Register Now');
+      const bHasLabel = internals().abTestBodyHtmlBForSend().includes('Register Now');
+
+      expect(aHasLabel).toBe(true);
+      expect(bHasLabel).toBe(aHasLabel);
+    });
+
     it('does not stage modules against a body that sanitizes to nothing', () => {
       // `emailBodyIsStageable` judges the SANITIZED body. A tracking-pixel-only payload is
       // non-empty as raw HTML and empty once stripped, so the raw check staged hero/button/

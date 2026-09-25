@@ -1229,7 +1229,7 @@ export class CampaignsComponent {
   protected readonly emailBodyHtmlPreview = computed<string>(() => stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations()));
 
   /**
-   * Variant B's body with resource-loading markup removed, for the PREVIEW only.
+   * Variant B's body with resource-loading markup removed, before the refused-CTA fold-back.
    *
    * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
    * through the server's sanitizer. Angular's own sanitization strips scripts and handlers but
@@ -1239,8 +1239,9 @@ export class CampaignsComponent {
    * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
    * runtime, so there is no `<img>` in the template source to find.
    *
-   * Staging uses this same normalized value (via `abTestBodyHtmlBForSend`, which adds nothing to
-   * it -- B has no call to action of its own), so the preview and the draft cannot disagree.
+   * Nothing binds this directly: both the B preview panel and the staging payload read
+   * `abTestBodyHtmlBForSend`, which wraps this value. Keeping the two separate is what lets the
+   * fold-back apply to the panel and the draft identically.
    */
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
 
@@ -1423,15 +1424,22 @@ export class CampaignsComponent {
   protected readonly emailBodyHtmlForSend = computed<string>(() => withUnlinkedCta(this.emailBodyHtmlPreview(), this.emailCtaUnlinkedLabel()));
 
   /**
-   * Variant B's body as it will be STAGED.
+   * Variant B's body as it will be STAGED, with the same refused-CTA fold-back A gets.
    *
-   * No CTA fold-back, unlike variant A, and the asymmetry is deliberate: B has no call to action
-   * of its own. `onGenerateAbTestCopy` keeps only `subject`, `body` and `preheader` from B's
-   * generation and discards `cta`/`ctaUrl`, and the controller's A/B payload carries only
-   * `subjectB`, `bodyHtmlB` and `previewTextB` -- no button fields -- so B shares A's button
-   * widget upstream. Folding A's label into B's body would render the call to action twice.
+   * Two reviewers reached opposite conclusions here, and both premises are true -- they answer
+   * different questions:
+   *
+   * B has no CTA of its OWN: `onGenerateAbTestCopy` keeps only `subject`, `body` and `preheader`
+   * and discards `cta`/`ctaUrl`, and the A/B payload carries no button fields. So B normally
+   * shares A's button widget, and folding A's label in would double-render it.
+   *
+   * But this fold-back only runs when `emailCtaUnlinkedLabel` is non-empty, which happens ONLY
+   * when the destination was refused -- and in that case `emailCtaLabel` is '' too, so
+   * `onStageEmailSend` sends no `buttonText`/`buttonUrl` at all. There is no widget to duplicate.
+   * Without the fold-back A ships the label inline and B silently drops it, which is the drift
+   * this signal exists to prevent.
    */
-  protected readonly abTestBodyHtmlBForSend = computed<string>(() => this.abTestBodyHtmlBPreview());
+  protected readonly abTestBodyHtmlBForSend = computed<string>(() => withUnlinkedCta(this.abTestBodyHtmlBPreview(), this.emailCtaUnlinkedLabel()));
 
   /**
    * The hero image's HOST, for a preview that describes the image without fetching it.
