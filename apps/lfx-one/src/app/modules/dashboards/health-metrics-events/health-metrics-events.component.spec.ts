@@ -9,7 +9,7 @@ import { HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
@@ -56,8 +56,8 @@ describe('HealthMetricsEventsComponent', () => {
   let fixture: ComponentFixture<HealthMetricsEventsComponent>;
   let getEventsAtAGlance: ReturnType<typeof vi.fn>;
 
-  async function setup(initialFragment: string | null = null, glance: HealthMetricsEventsAtAGlance | Error = GLANCE): Promise<void> {
-    getEventsAtAGlance = vi.fn().mockReturnValue(glance instanceof Error ? throwError(() => glance) : of(glance));
+  async function setup(initialFragment: string | null = null, glance: HealthMetricsEventsAtAGlance | Error | Observable<never> = GLANCE): Promise<void> {
+    getEventsAtAGlance = vi.fn().mockReturnValue(read(glance));
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEventsComponent],
       providers: [
@@ -91,6 +91,12 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  function read(glance: HealthMetricsEventsAtAGlance | Error | Observable<never>): Observable<HealthMetricsEventsAtAGlance> {
+    if (glance instanceof Observable) return glance;
+
+    return glance instanceof Error ? throwError(() => glance) : of(glance);
   }
 
   function atAGlanceStub(): AtAGlanceStubComponent {
@@ -190,5 +196,23 @@ describe('HealthMetricsEventsComponent', () => {
 
     expect(atAGlanceStub().status()).toBe('failed');
     expect(fixture.nativeElement.querySelector('[data-testid="events-forecast-stub"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
+  });
+
+  it('swaps the whole shell for one empty state when the foundation has no events', async () => {
+    await setup(null, { ...GLANCE, upcomingEvents: 0, hasEvents: false });
+    const empty = fixture.nativeElement.querySelector('[data-testid="events-empty"]');
+
+    expect(empty.textContent).toContain('No events yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid^="events-section-"]')).toBeNull();
+  });
+
+  it('renders the shell straight away while the read is still in flight', async () => {
+    await setup(null, NEVER);
+
+    expect(atAGlanceStub().status()).toBe('loading');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
   });
 });

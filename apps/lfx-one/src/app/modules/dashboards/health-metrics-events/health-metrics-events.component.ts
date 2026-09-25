@@ -12,6 +12,7 @@ import {
   HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
@@ -31,6 +32,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
 @Component({
   selector: 'lfx-health-metrics-events',
   imports: [
+    EmptyStateComponent,
     EventsAtAGlanceComponent,
     EventsPastEventsComponent,
     EventsRegistrationForecastComponent,
@@ -61,6 +63,8 @@ export class HealthMetricsEventsComponent {
   // Owned here rather than by the section, since the same read decides whether the tab has any events.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
+  // Only a landed read can say there are none; a pending or failed one keeps the shell.
+  protected readonly noEvents = computed(() => this.glanceStatus() === 'ready' && !this.glance().hasEvents);
 
   private initGlance(): Signal<HealthMetricsEventsAtAGlance> {
     if (!isPlatformBrowser(this.platformId)) {
