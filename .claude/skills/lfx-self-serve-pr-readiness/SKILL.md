@@ -6,9 +6,9 @@ description: >
   conventional-commit format, rebase status, DCO + GPG signing per
   commit, total diff size, and protected files touched) against the
   target base branch. Does NOT
-  audit code; the review protocol is `/lfx-skills:lfx-pre-pr-review`, which
-  `CLAUDE.md`'s **Pre-PR review** section points at. Run once, after that
-  round's single fix commit (if any) is complete, and before opening the PR.
+  audit code. It is the first half of the `Preflight` value in `CLAUDE.md`'s
+  **Pre-PR review** section: run it against the clean, committed tree, then
+  `/preflight`.
 context: fork
 allowed-tools: Bash, Read, Glob, Grep
 ---
@@ -17,7 +17,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 You are checking whether **local commits are shaped correctly to open as a PR** — branch name, GitHub Issue references in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
-This skill does NOT audit code. The review protocol is `/lfx-skills:lfx-pre-pr-review`, which `CLAUDE.md`'s **Pre-PR review** section points at; this check runs after that round, once, before the PR is opened. Before running it, confirm the work that precedes it is complete: the one pre-PR review round has returned all its reports, its accepted findings are fixed in the single fix commit (or there was nothing to fix), the deterministic checks pass, and the tree is clean. If any of that is outstanding, stop and finish it first. A remedy this check requires goes into that same single fix commit or a history rewrite of local commits, as the lifecycle prescribes — never an extra commit, and never a rerun of the reviewers.
+This skill does NOT audit code. Where it sits in the pre-PR sequence is defined by `CLAUDE.md`'s **Pre-PR review** section, whose `Preflight` value invokes it first, then `/preflight`. Its only precondition is a clean, committed tree; it does not require `/preflight` or any other check to have run.
 
 The PR-shape checklist lives in `references/pr-shape.md` and is walked directly in this body.
 
@@ -129,6 +129,6 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 ## Companion skills & subagents
 
-- The single pre-PR review round of the whole branch and its one fix commit: `/lfx-skills:lfx-pre-pr-review`, pointed at by `CLAUDE.md`'s **Pre-PR review** section, and required before this check.
-- `/preflight` — mechanical checks (license, format, lint, build, protected files). Run after this passes.
+- `CLAUDE.md`'s **Pre-PR review** section — owns the local review lifecycle (via `/lfx-skills:lfx-pre-pr-review`) and the `Preflight` value that sequences this check.
+- `/preflight` — mechanical checks (license, guards, format, lint, types, tests, build, markdown lint, protected files). Runs after this check, never before it.
 - `/lfx-review-pr` — post-PR reviewer. Not part of pre-PR.

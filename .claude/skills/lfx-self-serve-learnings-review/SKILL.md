@@ -1,6 +1,6 @@
 ---
 name: lfx-self-serve-learnings-review
-description: "Empirical-pattern review for lfx-self-serve. Audits a pinned range in the lfx-self-serve repo against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Reviews the exact `base_sha`/`target_sha` range the caller pins; without pins, pass the keyword `branch` to audit the branch's diff against main, otherwise it audits the latest commit. Renders a markdown review. Launched once per branch by `/lfx-skills:lfx-pre-pr-review` (the KB reviewer named in `CLAUDE.md`'s **Pre-PR review** section), in parallel with the general and security reviewers."
+description: "Empirical-pattern review for lfx-self-serve. Audits a pinned range in the lfx-self-serve repo against `docs/reviews/knowledge-base/` — patterns extracted from past PR review comments on this repo. May be launched from the LFX workspace root, but always operates in `lfx-self-serve`. Findings are gated by KB matches: every finding must quote a pattern entry; unsourced findings are dropped. Reviews exactly the pinned range `base_sha` (merge-base with the PR base) → `target_sha` (branch HEAD); when the caller pins nothing, it pins those two endpoints itself once and never reviews commit by commit. Renders a markdown review. Launched once per branch by `/lfx-skills:lfx-pre-pr-review` (the KB reviewer named in `CLAUDE.md`'s **Pre-PR review** section), in parallel with the general and security reviewers."
 ---
 
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
@@ -35,19 +35,14 @@ Before diffing, locate the `lfx-self-serve` repo root:
 
 Parse the caller's prompt for:
 
-- **`base_sha`** / **`target_sha`** (or a `review exactly: git diff <base_sha> <target_sha>` line) — the pinned range. When supplied, these win: review exactly that range and ignore `branch` / latest-commit defaults. Never re-derive the range from a moving `HEAD` or `origin/main`.
-- **`branch`** — OPTIONAL keyword, used only when no pins are supplied. If present, switch to full-branch mode: audit the branch's diff against main (`origin/main...HEAD`) instead of just the latest commit.
+- **`base_sha`** / **`target_sha`** (or a `review exactly: git diff <base_sha> <target_sha>` line) — the pinned range: `base_sha` is the merge-base of the branch with the PR base, `target_sha` is the branch HEAD. When supplied, review exactly that range and never re-derive it from a moving `HEAD` or `origin/main`. When not supplied, pin them yourself once, before anything else: `git fetch origin && base_sha=$(git merge-base origin/main HEAD) && target_sha=$(git rev-parse HEAD)`, then proceed as if the caller had passed them. There is no per-commit mode: the range is always the whole branch between these two endpoints.
 - **`extra: <free text>`** — optional priority hint.
 
 ## Step 1 — Compute the diff
 
 Run all git commands from the `lfx-self-serve` repo root.
 
-Pinned mode (`base_sha`/`target_sha` supplied): `git diff --stat <base_sha> <target_sha> && git diff <base_sha> <target_sha>`. Read added or modified code from `<target_sha>:<path>` and deleted code from `<base_sha>:<path>`; never use the working tree as code evidence.
-
-Default mode (no pins, no `branch`): `git show --stat -p HEAD` — audits only the latest commit (not staged / unstaged work). Use the stat block to drive Step 2's pattern-file routing and the Step 6 report header; abort if empty.
-
-Full-branch mode (no pins, `branch` passed): `git fetch origin && git diff --stat origin/main...HEAD && git diff origin/main...HEAD` — the branch's diff against main, i.e., everything HEAD adds vs `origin/main`.
+`git diff --stat <base_sha> <target_sha> && git diff <base_sha> <target_sha>`. Read added or modified code from `<target_sha>:<path>` and deleted code from `<base_sha>:<path>`; never use the working tree as code evidence. Use the stat block to drive Step 2's pattern-file routing and the Step 6 report header; abort with `INCOMPLETE - empty range` if the diff is empty.
 
 If the diff is too big for context, save to `/tmp/learnings-reviewer-diff.patch` and Read changed files individually.
 
@@ -111,7 +106,7 @@ If `extra` was passed, prioritise those areas when ordering the report. Don't su
 
 ## Step 6 — Render the report
 
-Lead with what you're reviewing — `<base_sha>..<target_sha>` for a pinned range, `<commit-sha> — <subject>` for the default case, or `origin/main...HEAD (<branch-name>, N commits)` if `branch` was passed. Then files changed, additions / deletions, and pattern files loaded.
+Lead with what you're reviewing — `<base_sha>..<target_sha>` (`<branch-name>`, N commits). Then files changed, additions / deletions, and pattern files loaded.
 
 Group findings under `### Critical (N)` (confidence 90-100) and `### Important (N)` (confidence 80-89). Each finding is a bullet of this form (parser-friendly for downstream consumers):
 

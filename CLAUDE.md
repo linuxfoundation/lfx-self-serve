@@ -249,7 +249,7 @@ Placement decision trees ("where does my component go?", "do I need a new module
 > launching the reviewers, before the fix commit, before opening the PR.
 
 - KB review skill: `/lfx-self-serve-learnings-review`
-- Preflight: `./check-headers.sh && yarn format:check && yarn lint:check && yarn check-types && yarn test && yarn build`
+- Preflight: `/lfx-self-serve-pr-readiness origin/main`, then `/preflight --report-only`
 
 ## Post-PR review
 

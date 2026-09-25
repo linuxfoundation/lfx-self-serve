@@ -221,9 +221,9 @@ US4 is largely a property emerging from US1 (the route table at T020/T021 and th
 - [x] T060 Run `yarn lint:check && yarn format:check && yarn check-types` from the repo root; fix any drift introduced by US1–US6 implementation.
 - [x] T061 Run `yarn build` end-to-end and confirm the generated `dist/lfx-one/browser/assets/docs/search-index.json` and `apps/lfx-one/dist-docs/sitemap.xml` are present and valid against their schemas.
 - [ ] T062 Run [quickstart.md](./quickstart.md) end-to-end on a clean checkout — add a fixture article, build, hit it in incognito, run the validation scripts — and update `quickstart.md` if any step has drifted.
-- [ ] T063 Invoke the `/preflight` skill (license headers, format, lint, build, protected-file check) per `CLAUDE.md` work-cycle policy.
-- [ ] T064 Run the single pre-PR review round of the whole branch per `CLAUDE.md` § **Pre-PR review** (load `/lfx-skills:lfx-pre-pr-review` and follow it). Land accepted findings in the single fix commit before opening the PR.
-- [ ] T065 Run the `/lfx-self-serve-pr-readiness` skill against `main` and clear every CRITICAL finding before opening the PR.
+- [ ] T063 Run the pre-PR review round of the whole branch and its single fix commit per `CLAUDE.md` § **Pre-PR review**.
+- [ ] T064 Run `/lfx-self-serve-pr-readiness origin/main` (first half of that section's `Preflight` value) and clear every CRITICAL finding.
+- [ ] T065 Run `/preflight --report-only` (second half of the `Preflight` value) and fix any failure before opening the PR.
 
 ---
 
@@ -336,6 +336,6 @@ US1 must be merged or shared first because US2/US3/US5 depend on its components 
 - [Story] labels (US1–US6) trace each implementation task back to the spec.md user story.
 - The Foundational phase intentionally produces no user-visible behavior; it exists so each user story phase can be a complete, demoable increment.
 - Tests are story-scoped Playwright E2E specs (one per story, scoped to that story's acceptance scenarios). Per `CLAUDE.md`, the project does not enforce TDD; tests can be authored alongside or after implementation, but they MUST pass before the story is considered complete.
-- Per `CLAUDE.md` § **Pre-PR review**: run one local review of the whole branch once the implementation is complete (never after individual commits), fold every required fix into the single fix commit, and clear `/lfx-self-serve-pr-readiness` and `/preflight` before pushing.
+- Before pushing, follow `CLAUDE.md` § **Pre-PR review** (T063–T065, in that order).
 - All shared types live in `@lfx-one/shared`; no module-level interfaces inside `apps/lfx-one/`.
 - The build script outputs are gitignored (T004) — they are deterministic artifacts of `docs/user/` and the build script.
