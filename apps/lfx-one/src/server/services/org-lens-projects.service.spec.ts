@@ -453,6 +453,7 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
 
   it.each([
     ['a non-string slug', 'slug', 42],
+    ['a non-string name', 'name', 42],
     ['an unknown metricsState', 'metricsState', 'partial'],
     ['a non-numeric healthOverallScore', 'healthOverallScore', '88'],
     ['an unrecognized health band', 'health', 'golden'],
@@ -469,6 +470,32 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
       corrupted[stored.projects.k.indexOf(column)] = corruptValue;
       return corrupted;
     });
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
+  // The people dictionary allows null in every cell but still rejects absence and wrong types. Each
+  // column is corrupted on its own, so the check has to cover the whole row, not just its first cell.
+  it.each(
+    (['id', 'name', 'avatarUrl'] as const).flatMap((column) =>
+      (
+        [
+          ['absent', '\u0000'],
+          ['a number', 42],
+          ['an object', {}],
+        ] as const
+      ).map(([label, corrupt]) => [column, label, corrupt] as const)
+    )
+  )('treats a stored entry whose people.%s cell is %s as a miss', async (column, _label, corrupt) => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+    const [key] = [...cacheValues.keys()];
+    const stored = storedValue();
+    const index = stored.people.k.indexOf(column);
+    stored.people.r = stored.people.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 

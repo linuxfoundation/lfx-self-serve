@@ -217,18 +217,33 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     expect(cacheValues.size).toBe(1);
   });
 
-  it.each([
-    ['absent', '\u0000'],
-    ['a number', 42],
-    ['an object', {}],
-  ])('treats a stored entry whose required COURSE_OR_CERT_ID cell is %s as a miss', async (_label, corrupt) => {
+  // Every required cell the guard checks, crossed with every way a cell can be corrupt, so dropping
+  // any one of the three checks fails a case here.
+  it.each(
+    (
+      [
+        ['details', 'PERSON_KEY'],
+        ['details', 'COURSE_OR_CERT_ID'],
+        ['traineeRows', 'PERSON_KEY'],
+      ] as const
+    ).flatMap(([table, column]) =>
+      (
+        [
+          ['absent', '\u0000'],
+          ['a number', 42],
+          ['an object', {}],
+        ] as const
+      ).map(([label, corrupt]) => [table, column, label, corrupt] as const)
+    )
+  )('treats a stored entry whose required %s.%s cell is %s as a miss', async (table, column, _label, corrupt) => {
     // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
     // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
     await service.getTrainees(ACCOUNT);
     const [key] = [...cacheValues.keys()];
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
-    const index = stored.details.k.indexOf('COURSE_OR_CERT_ID');
-    stored.details.r = stored.details.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
+    const target = stored[table];
+    const index = target.k.indexOf(column);
+    target.r = target.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
     cacheValues.set(key, JSON.stringify(stored));
     const warehouseReads = execute.mock.calls.length;
 
