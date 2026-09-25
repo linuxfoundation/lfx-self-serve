@@ -35,19 +35,6 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
 }
 
 /**
- * One open tag and where it starts, so a caller can read the text around it.
- *
- * A local `type`, not a shared interface: it never crosses a module boundary -- `openTags` is
- * module-private and both consumers are in this file. Sibling helpers here (`url-validation.ts`,
- * `member-v1-mapping.helper.ts`) declare their own local shapes the same way; the shared
- * `interfaces/` package is for types that travel.
- */
-interface OpenTag {
-  tag: string;
-  index: number;
-}
-
-/**
  * Yields every `<tagName ...>` open tag in the document, with its position.
  *
  * LAZY, not an array: `extractSponsors` stops at `MAX_SPONSORS`, and materializing every match
@@ -67,7 +54,7 @@ interface OpenTag {
  * bounded by the tag and cannot be grown by the attacker.
  */
 
-function* openTags(html: string, tagName: string): Generator<OpenTag> {
+function* openTags(html: string, tagName: string): Generator<{ tag: string; index: number }> {
   const re = new RegExp(`<${tagName}\\b[^<>]*>`, 'gi');
   // The INDEX rides along, not just the tag text. `extractSponsors` reads a context window
   // before each `<img>` to decide whether it sits in a sponsor section, so a helper that
