@@ -94,6 +94,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private pendingSectionTimer?: ReturnType<typeof setTimeout>;
   /** Set while the reader-intent listeners are registered; nulled by the removal it performs. */
   private removeIntentListeners: (() => void) | null = null;
+  // False until the first render, when the section anchors exist and a held fragment can land.
+  private rendered = false;
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
   // Two of the observers' inputs, so a content change that moves neither costs nothing. The sticky
@@ -115,7 +117,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       this.observeWindowResize();
       // `route.fragment` has already emitted by now, before the section ids existed, so the deep
       // link is replayed here rather than scrolling against an empty document.
+      this.rendered = true;
       this.settlePendingSection();
+      // With nothing left to settle there is no later reflow, so this replay is the only one needed.
+      if (this.unsettledSections.size === 0) this.clearPendingSection();
     });
     // The activation band hangs off the sticky header, which the gate measures after first paint —
     // rebuild the observer whenever that height settles rather than hard-coding a pixel offset.
@@ -148,9 +153,9 @@ export class HealthMetricsL2ShellComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((key) => {
-        // Only a link arriving before the data settles needs the second scroll; once every section
-        // has reported, the anchors are stable and a held key would yank the pane back.
-        if (this.unsettledSections.size > 0) this.armPendingSection(key);
+        // Held before first render, when no anchor exists yet, or while data can still move it; after
+        // both, the anchors are stable and a held key would yank the pane back.
+        if (!this.rendered || this.unsettledSections.size > 0) this.armPendingSection(key);
         this.scrollTo(key);
       });
   }

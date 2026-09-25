@@ -59,7 +59,8 @@ const HOST_TEMPLATE = `
 })
 class TestHostComponent {
   protected readonly sections = SECTIONS;
-  protected readonly dataSections = DATA_SECTIONS;
+  // Writable so a test can build a tab whose sections are all placeholders.
+  public dataSections: readonly string[] = DATA_SECTIONS;
   protected readonly items = ITEMS;
 }
 
@@ -148,7 +149,7 @@ describe('HealthMetricsL2ShellComponent', () => {
    * `initialFragment` is seeded before creation because that is when the real `ActivatedRoute`
    * replays it — the deep-link path only exists on that first emission.
    */
-  async function setup(initialFragment: string | null = null, platformId?: string): Promise<void> {
+  async function setup(initialFragment: string | null = null, platformId?: string, dataSections: readonly string[] = DATA_SECTIONS): Promise<void> {
     fragment = new BehaviorSubject<string | null>(initialFragment);
 
     await TestBed.configureTestingModule({
@@ -166,6 +167,7 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     fixture = TestBed.createComponent(TestHostComponent);
     chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
+    fixture.componentInstance.dataSections = dataSections;
     fixture.detectChanges();
     // Flushes `afterNextRender`, which is where the scroll-spy is wired up.
     await fixture.whenStable();
@@ -173,11 +175,11 @@ describe('HealthMetricsL2ShellComponent', () => {
   }
 
   /** Rebuilds the fixture, for a test that needs a different URL or document at creation. */
-  async function resetup(initialFragment: string | null = null, platformId?: string): Promise<void> {
+  async function resetup(initialFragment: string | null = null, platformId?: string, dataSections?: readonly string[]): Promise<void> {
     fixture.destroy();
     TestBed.resetTestingModule();
     FakeIntersectionObserver.instances = [];
-    await setup(initialFragment, platformId);
+    await setup(initialFragment, platformId, dataSections);
   }
 
   beforeEach(async () => {
@@ -612,6 +614,19 @@ describe('HealthMetricsL2ShellComponent', () => {
     await flush();
 
     expect(scrollIntoView()).not.toHaveBeenCalled();
+  });
+
+  // A tab of placeholders has nothing to settle, so only the first render can land the link.
+  it('replays an initial fragment once for a tab with no data sections', async () => {
+    await resetup('gamma', undefined, []);
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
+
+    // Released straight after that replay: a later settle finds no held key to scroll back to.
+    fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance.sectionSettled('alpha');
+    await flush();
+
+    expect(scrollIntoView()).toHaveBeenCalledTimes(1);
   });
 
   it('schedules no expiry timer on the server, where the deep link is never replayed', async () => {

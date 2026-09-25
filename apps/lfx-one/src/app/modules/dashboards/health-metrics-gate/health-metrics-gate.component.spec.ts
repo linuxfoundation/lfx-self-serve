@@ -69,7 +69,7 @@ describe('HealthMetricsGateComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="legacy-stub"]')).toBeNull();
   });
 
-  it('renders every tab, linking only the two whose Level 2 page exists', async () => {
+  it('renders every tab, linking only the three whose Level 2 page exists', async () => {
     await render(signal(true));
 
     const labels = Array.from<Element>(fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-tab-"]')).map((el) => el.textContent?.trim());
@@ -79,8 +79,9 @@ describe('HealthMetricsGateComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-engagement"]').getAttribute('href')).toBe(
       '/foundation/health-metrics/engagement'
     );
-    // The four unbuilt tabs hold their place rather than being omitted, so the bar doesn't reshuffle.
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-events"]').getAttribute('href')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-events"]').getAttribute('href')).toBe('/foundation/health-metrics/events');
+    // The three unbuilt tabs hold their place rather than being omitted, so the bar doesn't reshuffle.
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-members"]').getAttribute('href')).toBeNull();
   });
 
   it('measures the sticky header via ResizeObserver and publishes it as the shared sticky offset', async () => {

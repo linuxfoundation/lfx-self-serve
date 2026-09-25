@@ -900,6 +900,8 @@ This is a request fault, not a Snowflake outage, so it does not count toward the
 queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
 exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
 `expectInvalidIdentifier`). `SnowflakeService` then records a success, so that caller must alert on the error itself.
+A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
+which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
 
 Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeService` throws carries the generic
 `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
