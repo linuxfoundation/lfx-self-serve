@@ -1381,7 +1381,8 @@ describe('CampaignController.createCampaign cutover', () => {
     // Every display field, under the names the CONTROLLER emits: `preheader` is renamed to
     // `previewText` on the wire (and `preheaderB` to `previewTextB`), so asserting the payload
     // key rather than the request key is what makes this test about what actually ships.
-    // `buttonText` is absent here by design -- the allow-list drops it without a `buttonUrl`.
+    // `buttonText` IS present: the fixture supplies a `buttonUrl`, without which the allow-list
+    // would drop the pair together -- which is why the url above is not incidental to this test.
     for (const key of ['subject', 'previewText', 'subjectB', 'previewTextB', 'buttonText']) {
       expect(cfg[key]).not.toContain('\u202E');
       expect(cfg[key]).toContain('evil');

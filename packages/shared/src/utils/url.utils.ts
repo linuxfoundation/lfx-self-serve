@@ -878,12 +878,12 @@ export function refuseUnfetchablePort(parsed: URL): string {
  * dropped because these URLs are fetched server-side and rendered into a SENT email, so embedded
  * credentials would travel into the message and every log that records the fetch.
  *
- * @param value - A candidate URL from a scraped page, a restored brief, or a direct request
  * REFUSES a non-default PORT, via the same `refuseUnfetchablePort` the fetch path uses: a url
  * this function approves must be one `fetchSafeUrl` would also accept, because campaign-service
  * fetches hero images and sponsor logos server-side. Scheme is deliberately NOT shared -- see
  * `refuseUnfetchablePort` for why `http:` stays allowed here.
  *
+ * @param value - A candidate URL from a scraped page, a restored brief, or a direct request
  * @returns The canonical absolute http(s) URL with userinfo stripped, or '' when unusable
  */
 export function canonicalHttpUrl(value: unknown): string {

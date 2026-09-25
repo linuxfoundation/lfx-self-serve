@@ -1212,19 +1212,6 @@ export class CampaignsComponent {
   });
 
   /**
-   * Variant B's body with resource-loading markup removed, for the PREVIEW only.
-   *
-   * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
-   * through the server's sanitizer. Angular's own sanitization strips scripts and handlers but
-   * deliberately KEEPS `<img src="https://…">`, so pasting image or tracking-pixel markup into
-   * the B textarea made the operator's browser issue that request while merely previewing.
-   *
-   * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
-   * runtime, so there is no `<img>` in the template source to find.
-   *
-   * Staging uses this same normalized value, so the preview and the draft cannot disagree.
-   */
-  /**
    * Variant A's body with body links judged against the VALIDATED destination.
    *
    * `copy.body` arrives from the service already stripped of resource-loading markup and with its
@@ -1239,6 +1226,20 @@ export class CampaignsComponent {
    */
   protected readonly emailBodyHtmlPreview = computed<string>(() => stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations()));
 
+  /**
+   * Variant B's body with resource-loading markup removed, for the PREVIEW only.
+   *
+   * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
+   * through the server's sanitizer. Angular's own sanitization strips scripts and handlers but
+   * deliberately KEEPS `<img src="https://…">`, so pasting image or tracking-pixel markup into
+   * the B textarea made the operator's browser issue that request while merely previewing.
+   *
+   * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
+   * runtime, so there is no `<img>` in the template source to find.
+   *
+   * Staging builds on this value via `abTestBodyHtmlBForSend`, which appends a refused CTA's
+   * label. The B panel binds THAT, not this, so the preview and the draft cannot disagree.
+   */
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
