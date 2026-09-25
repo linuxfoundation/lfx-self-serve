@@ -67,6 +67,17 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // read as a foundation where nobody is in that group.
       call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getEventsRegistrationForecast',
+      url: '/api/analytics/events-registration-forecast',
+      // Its empty list renders "no upcoming events to forecast", which a swallowed failure would fake.
+      call: () => service.getEventsRegistrationForecast({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEventsRegistrationForecastCurve',
+      url: '/api/analytics/events-registration-forecast-curve',
+      call: () => service.getEventsRegistrationForecastCurve({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

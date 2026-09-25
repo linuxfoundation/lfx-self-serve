@@ -1,12 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- No section projects a body yet; each one's issue adds its template and data-section key. -->
+<!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
 <lfx-health-metrics-l2-shell
+  #shell
   [sections]="sections"
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
-  [subNavItems]="subNavItems"
+  [subNavItems]="subNavItems()"
   navLabel="Events sections"
   testIdPrefix="events"
-  [crossReferenceNote]="crossReferenceNote" />
+  [crossReferenceNote]="crossReferenceNote">
+  <ng-template lfxHealthMetricsL2Section="forecast">
+    <lfx-events-registration-forecast
+      (countsChange)="forecastNote.set($event)"
+      (reading)="shell.sectionReading('forecast')"
+      (settled)="shell.sectionSettled('forecast')" />
+  </ng-template>
+</lfx-health-metrics-l2-shell>

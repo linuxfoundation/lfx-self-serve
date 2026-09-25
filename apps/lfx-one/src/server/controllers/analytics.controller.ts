@@ -13,6 +13,7 @@ import { AuthenticationError, ServiceValidationError } from '../errors';
 import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
+import { HealthMetricsEventsService } from '../services/health-metrics-events.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -22,6 +23,9 @@ import { getEffectiveEmail } from '../utils/auth-helper';
 
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
+
+/** Allowed pattern for an event id query parameter. */
+const EVENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Group-type cuts the Engagement group-attendance filter accepts. */
 const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => filter.key));
@@ -39,6 +43,7 @@ export class AnalyticsController {
   private readonly orgInvolvementService: OrgInvolvementService;
   private readonly projectService: ProjectService;
   private readonly healthMetricsEngagementService: HealthMetricsEngagementService;
+  private readonly healthMetricsEventsService: HealthMetricsEventsService;
 
   public constructor() {
     this.userService = new UserService();
@@ -46,6 +51,7 @@ export class AnalyticsController {
     this.orgInvolvementService = new OrgInvolvementService();
     this.projectService = new ProjectService();
     this.healthMetricsEngagementService = new HealthMetricsEngagementService();
+    this.healthMetricsEventsService = new HealthMetricsEventsService();
   }
 
   /**
@@ -3449,6 +3455,78 @@ export class AnalyticsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * `GET /api/analytics/events-registration-forecast` — every upcoming event's forecast headline.
+   * The model is a snapshot of now, so no `range` param reaches the wire.
+   */
+  public async getEventsRegistrationForecast(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registration_forecast');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registration_forecast');
+
+      const response = await this.healthMetricsEventsService.getRegistrationForecast(req, { foundationSlug });
+
+      logger.success(req, 'get_events_registration_forecast', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-registration-forecast-curve` — one event's pacing curve per format.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsRegistrationForecastCurve(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registration_forecast_curve');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registration_forecast_curve');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_registration_forecast_curve',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_registration_forecast_curve',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getRegistrationForecastCurve(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_registration_forecast_curve', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        format_count: response.formats.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** A required, well-formed `foundationSlug` query param for the Events handlers. */
+  private getValidatedFoundationSlug(req: Request, operation: string): string {
+    const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+    if (!foundationSlug) {
+      throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', { operation });
+    }
+    if (!SLUG_PATTERN.test(foundationSlug)) {
+      throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
+    }
+
+    return foundationSlug;
   }
 
   /**
