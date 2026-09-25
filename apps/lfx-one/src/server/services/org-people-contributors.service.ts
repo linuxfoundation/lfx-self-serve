@@ -262,9 +262,11 @@ function isCompactContributorRows(value: unknown): boolean {
   if (!hasExactColumns(cache.projects, ORG_CONTRIBUTOR_PROJECT_COLUMNS) || !hasExactColumns(cache.rows, ORG_CONTRIBUTOR_ROW_COLUMNS)) {
     return false;
   }
-  // Value checks (policy on `isStoredString`): every checked cell is nullable here. The query groups
-  // on `person_key, project_id` without filtering either, and `CDP_MEMBER_ID` is `MIN(cdp_member_id)`,
-  // which is NULL over an all-NULL group — so the uncached mapper can see a null in any of them.
+  // Value checks (policy on `isStoredString`). `ContributorPersonProjectRow` types these three cells
+  // as `string`, and the wire contract relies on it (its docs call `personKey` and `cdpMemberId`
+  // always present), but the SQL cannot guarantee it: it groups on `person_key, project_id` without
+  // filtering either, and `MIN(cdp_member_id)` is NULL over an all-NULL group. Accepting null here
+  // defends against a value the interface doesn't declare, so one such row can't pin a permanent miss.
   const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
   const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
   const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');

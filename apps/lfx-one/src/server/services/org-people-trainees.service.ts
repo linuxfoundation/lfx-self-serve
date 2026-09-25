@@ -254,8 +254,9 @@ function isCompactTraineesRaw(value: unknown): boolean {
   ) {
     return false;
   }
-  // Value checks (policy on `isStoredString`): only the option queries filter NULL keys, so the
-  // detail and roster keys checked here are nullable on the uncached path too.
+  // Value checks (policy on `isStoredString`). The row interfaces type these keys as `string`, but
+  // only the option queries filter NULL keys in SQL. Accepting null here defends against a value the
+  // interface doesn't declare, so a warehouse NULL can't make the whole entry a permanent miss.
   const personKeyIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const courseOrCertIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('COURSE_OR_CERT_ID');
   const traineeKeyIndex = ORG_TRAINEE_ROW_COLUMNS.indexOf('PERSON_KEY');

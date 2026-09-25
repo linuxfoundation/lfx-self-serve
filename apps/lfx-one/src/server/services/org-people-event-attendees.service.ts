@@ -282,8 +282,9 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
   ) {
     return false;
   }
-  // Value checks (policy on `isStoredString`): only the option queries filter NULL keys, so the
-  // detail, event and roster keys checked here are nullable on the uncached path too.
+  // Value checks (policy on `isStoredString`). The row interfaces type these keys as `string`, but
+  // only the option queries filter NULL keys in SQL. Accepting null here defends against a value the
+  // interface doesn't declare, so a warehouse NULL can't make the whole entry a permanent miss.
   const personKeyIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const eventIdIndex = ORG_EVENT_DICTIONARY_COLUMNS.indexOf('EVENT_ID');
   const attendeeKeyIndex = ORG_EVENT_ATTENDEE_ROW_COLUMNS.indexOf('PERSON_KEY');
