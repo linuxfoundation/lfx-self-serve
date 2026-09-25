@@ -241,7 +241,8 @@ Placement decision trees ("where does my component go?", "do I need a new module
 >
 > 1. **Review once.** Load `/lfx-skills:lfx-pre-pr-review` with the Skill
 >    tool and follow it. It runs **one** review round of the whole branch —
->    general, security and knowledge-base reviewers in parallel — and lands
+>    general and security reviewers, plus the knowledge-base reviewer where
+>    the repo has one, in parallel — and lands
 >    **all accepted findings from that round in exactly one fix commit**
 >    (none if there is nothing to fix). Do not work from memory: **reload the
 >    skill before each step** of the round — before launching the reviewers
