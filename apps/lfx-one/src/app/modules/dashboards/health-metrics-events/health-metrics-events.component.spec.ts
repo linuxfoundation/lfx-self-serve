@@ -20,6 +20,7 @@ class ForecastStubComponent {
   public readonly countsChange = output<string>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
+  public readonly sectionPicked = output<string>();
 }
 
 // Covers only what Events wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
@@ -110,5 +111,19 @@ describe('HealthMetricsEventsComponent', () => {
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-spon');
+  });
+
+  it('scrolls to Past events on every pick from the forecast, not only when the URL changes', async () => {
+    await setup('past');
+    await forecastReports('');
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    const stub = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
+    stub.sectionPicked.emit('past');
+    stub.sectionPicked.emit('past');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-past');
   });
 });

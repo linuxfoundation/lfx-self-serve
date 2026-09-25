@@ -46,6 +46,7 @@ import type {
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastQuery,
+  HealthMetricsEventsSectionKey,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -71,6 +72,8 @@ export class EventsRegistrationForecastComponent {
   public readonly settled = output<void>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
+  /** The closed-period cross-link; the L2 shell owns scrolling, so a repeat click still lands. */
+  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
@@ -227,9 +230,8 @@ export class EventsRegistrationForecastComponent {
     this.format.set(format);
   }
 
-  /** The L2 shell scrolls to a section from the URL fragment, so the link only sets it. */
   protected onViewPastEvents(): void {
-    void this.router.navigate([], { relativeTo: this.route, fragment: 'past', queryParamsHandling: 'preserve' });
+    this.sectionPicked.emit('past');
   }
 
   private initResponse(): Signal<HealthMetricsEventsForecast> {

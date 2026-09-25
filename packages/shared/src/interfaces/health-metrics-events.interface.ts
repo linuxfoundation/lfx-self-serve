@@ -84,7 +84,7 @@ export interface HealthMetricsEventsForecastVerdict {
   goal: number | null;
   /** Registrations over (on track) or under (short) the goal. */
   gap: number;
-  /** Forecast over goal, for the stale-goal copy. */
+  /** Forecast over goal, for the stale and goal-suspect copy; null when there is no goal or forecast. */
   ratio: number | null;
   daysLeft: number | null;
 }
@@ -98,7 +98,7 @@ export interface HealthMetricsEventsForecastRowView {
   dateLabel: string;
   registrationsLabel: string;
   goalLabel: string;
-  /** 0–100, `null` with no goal to fill against. */
+  /** 0–100, `null` with no goal to fill against or no measured registration count. */
   progressPct: number | null;
   progressClass: string;
 }

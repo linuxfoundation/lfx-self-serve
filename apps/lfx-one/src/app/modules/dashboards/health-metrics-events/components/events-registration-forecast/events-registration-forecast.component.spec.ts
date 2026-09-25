@@ -188,9 +188,11 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(notes.at(-1)).toBe('');
     expect(lifecycle.at(-1)).toBe('settled');
 
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const picked: string[] = [];
+    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     fixture.componentInstance['onViewPastEvents']();
-    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ fragment: 'past', queryParamsHandling: 'preserve' }));
+    fixture.componentInstance['onViewPastEvents']();
+    expect(picked).toEqual(['past', 'past']);
   });
 
   it('names each event pill with its date, so same-named editions stay distinct', async () => {
