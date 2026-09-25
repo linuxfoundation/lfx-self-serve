@@ -52,6 +52,9 @@ export * from './search.interface';
 // Meeting attachment interfaces
 export * from './meeting-attachment.interface';
 
+// Meeting details V2 view-model interfaces
+export * from './meeting-view-model.interface';
+
 // Dashboard metric interfaces (unified)
 export * from './dashboard-metric.interface';
 export * from './metric-trend.interface';
