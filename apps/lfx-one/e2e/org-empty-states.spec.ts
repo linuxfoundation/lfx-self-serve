@@ -22,6 +22,7 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
+import { LENS_COOKIE_KEY } from '@lfx-one/shared/constants/lens.constants';
 import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants/org-lens-empty-state.constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -290,6 +291,21 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
 
+    // The profile route declares the Me lens, so every way in switches — not only the in-app link:
+    // a deep link, a refresh or back/forward while the Organization lens is the saved one.
+    test('S2a′: opening the profile directly with the Organization lens saved lands in the Me lens', async ({ page, baseURL }) => {
+      // Scoped to baseURL, not a hardcoded host: on an E2E_BASE_URL override a localhost cookie would
+      // never reach the app, and the Me fallback would pass this test without exercising the route lens.
+      await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'org', url: baseURL ?? 'http://localhost:4200' }]);
+
+      await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
+    });
+
     // Unheld and nonexistent are one scenario at the wire (spec 050 DR-002), so S2b and S2d share
     // one body and both pin their wording to the same registry entry — that is what makes them
     // byte-identical (FR-017) rather than merely similar.
@@ -453,7 +469,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
 
     // FR-012 / "never say no access when the truth is a failed lookup": an LF-team caller holds
     // every organization, so even with own rows an unresolvable address is not a wrong-organization
-    // case — the invite wins, and the own rows stay available beneath it.
+    // case — the invite wins, and the own rows are not listed (staff reach any org through search).
     test('S2f: an LF-team caller with own organizations still sees the search invite, never wrong-organization', async ({ page }) => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ isStaff: true, writers: [ORG_A_UID] }),
