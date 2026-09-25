@@ -275,7 +275,7 @@ describe('buildHealthMetricsEventsPastView', () => {
 
     expect(view.rows.map((row) => row.status)).toEqual(['hit', 'unmeasured', 'near-miss']);
     expect(view).toMatchObject({ goalMetCount: 1, goalSetCount: 2, hasGoals: true });
-    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not measured', registrationsLabel: '—', progressPct: null });
+    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not tracked', registrationsLabel: '—', progressPct: null });
   });
 
   it('resolves row labels, capping the bar and drawing none without a goal', () => {

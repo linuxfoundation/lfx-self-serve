@@ -143,7 +143,7 @@ export const HEALTH_METRICS_EVENTS_PAST_STATUSES = {
   'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700', progressClass: 'bg-amber-500' },
   missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700', progressClass: 'bg-red-400' },
   'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
-  unmeasured: { label: 'Not measured', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
+  unmeasured: { label: 'Not tracked', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
 } as const;
 
 /** The model's pace band for an event that finished within reach of its goal. */
