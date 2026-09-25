@@ -5,18 +5,13 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { ORG_CLA_IDENTIFY_MANAGER_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaDesigneeNominationRequest, OrgClaDesigneeNominationValidation } from '@lfx-one/shared/interfaces';
+import type { OrgClaIdentifyManagerField, OrgClaIdentifyManagerResult } from '@lfx-one/shared/interfaces';
 import { validateOrgClaDesigneeNomination } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { map } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-
-type IdentifyManagerField = keyof OrgClaDesigneeNominationValidation;
-
-/** What the dialog closes with. The detail page adds the signing project and sends it. */
-export type OrgEasyclaIdentifyManagerResult = Omit<OrgClaDesigneeNominationRequest, 'projectSfid'>;
 
 export function orgClaIdentifyManagerDialogConfig(): DynamicDialogConfig {
   return {
@@ -57,7 +52,7 @@ export class OrgEasyclaIdentifyManagerDialogComponent {
     if (this.form.invalid) return;
 
     const { fullName, email } = this.form.getRawValue();
-    const result: OrgEasyclaIdentifyManagerResult = { fullName: fullName.trim(), email: email.trim() };
+    const result: OrgClaIdentifyManagerResult = { fullName: fullName.trim(), email: email.trim() };
     this.dialogRef.close(result);
   }
 
@@ -66,15 +61,15 @@ export class OrgEasyclaIdentifyManagerDialogComponent {
   }
 
   // Static so the form-field initializers above can call it before an instance exists.
-  private static fieldValidator(field: IdentifyManagerField): ValidatorFn {
+  private static fieldValidator(field: OrgClaIdentifyManagerField): ValidatorFn {
     return (control: AbstractControl): ValidationErrors | null => {
       const message = validateOrgClaDesigneeNomination({ [field]: (control.value as string) ?? '' })[field];
       return message ? { invalid: message } : null;
     };
   }
 
-  private readErrors(): Record<IdentifyManagerField, string | undefined> {
-    const errorFor = (field: IdentifyManagerField): string | undefined => {
+  private readErrors(): Record<OrgClaIdentifyManagerField, string | undefined> {
+    const errorFor = (field: OrgClaIdentifyManagerField): string | undefined => {
       const control = this.form.controls[field];
       return control.touched && control.invalid ? (control.errors?.['invalid'] as string) : undefined;
     };

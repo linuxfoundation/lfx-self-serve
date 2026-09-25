@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaDesigneeRefusal, OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -727,7 +727,7 @@ export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
 } as const;
 
 /** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */
-export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<(typeof ORG_CLA_DESIGNEE_REFUSALS)[number], string> = {
+export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string> = {
   'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
   'no-lf-login': 'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Contact support.',
   sanctioned: 'Your organization cannot sign this CLA at this time. Contact support for more information.',

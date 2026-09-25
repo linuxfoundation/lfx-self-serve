@@ -3,12 +3,10 @@
 
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { ORG_CLA_MANAGER_QUESTION_COPY } from '@lfx-one/shared/constants';
+import type { OrgClaManagerAnswer } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
-
-/** What the viewer answered. Dismissing the dialog closes with `undefined`, which answers neither. */
-export type OrgEasyclaManagerAnswer = 'yes' | 'no';
 
 export function orgClaManagerQuestionDialogConfig(): DynamicDialogConfig {
   return {
@@ -35,7 +33,7 @@ export class OrgEasyclaManagerQuestionDialogComponent {
 
   protected readonly copy = ORG_CLA_MANAGER_QUESTION_COPY;
 
-  protected answer(answer: OrgEasyclaManagerAnswer): void {
+  protected answer(answer: OrgClaManagerAnswer): void {
     this.dialogRef.close(answer);
   }
 }

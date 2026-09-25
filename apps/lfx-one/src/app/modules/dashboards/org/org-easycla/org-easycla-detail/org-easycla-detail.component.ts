@@ -8,12 +8,15 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
   OrgClaCoverageChip,
+  OrgClaDesigneeNextStep,
   OrgClaDesigneeRefusal,
   OrgClaDetailTab,
   OrgClaDetailTabView,
   OrgClaGroup,
   OrgClaGroupList,
   OrgClaGroupPickerResult,
+  OrgClaIdentifyManagerResult,
+  OrgClaManagerAnswer,
   OrgClaSignAttestations,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
@@ -97,12 +100,10 @@ import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '.
 import {
   orgClaIdentifyManagerDialogConfig,
   OrgEasyclaIdentifyManagerDialogComponent,
-  type OrgEasyclaIdentifyManagerResult,
 } from '../org-easycla-identify-manager-dialog/org-easycla-identify-manager-dialog.component';
 import {
   orgClaManagerQuestionDialogConfig,
   OrgEasyclaManagerQuestionDialogComponent,
-  type OrgEasyclaManagerAnswer,
 } from '../org-easycla-manager-question-dialog/org-easycla-manager-question-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
@@ -112,9 +113,6 @@ import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.com
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
 import { OrgEasyclaRecentActivityComponent } from './org-easycla-recent-activity.component';
-
-/** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
-type DesigneeNextStep = 'attest' | 'mail';
 
 /** The refusal sentence for a designee write, read from the BFF's upstream code; anything else is unknown. */
 function designeeRefusalCopy(error: unknown): string {
@@ -996,7 +994,7 @@ export class OrgEasyclaDetailComponent {
   }
 
   /** The Start lock stays held until whichever step ends the flow. */
-  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
+  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
     if (this.alreadyDesignee()) {
       this.openChosenStep(orgUid, chosen, next);
       return;
@@ -1005,7 +1003,7 @@ export class OrgEasyclaDetailComponent {
     const questionRef = this.dialogService.open(OrgEasyclaManagerQuestionDialogComponent, orgClaManagerQuestionDialogConfig()) as DynamicDialogRef;
     this.uncommittedSigningDialog = questionRef;
 
-    this.whenSigningDialogEnds(questionRef, (answer: OrgEasyclaManagerAnswer) => {
+    this.whenSigningDialogEnds(questionRef, (answer: OrgClaManagerAnswer) => {
       // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
       // the answer names no organization or agreement.
       this.afterDialogTornDown(questionRef, () => {
@@ -1016,7 +1014,7 @@ export class OrgEasyclaDetailComponent {
     });
   }
 
-  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
+  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
     if (next === 'attest') this.confirmThenHandOff(orgUid, chosen);
     else this.openSendByEmailIfContextHeld(orgUid, chosen);
   }
@@ -1040,7 +1038,7 @@ export class OrgEasyclaDetailComponent {
    * Yes: make the viewer the designee, then continue. A refusal leaves them on the overview with
    * the reason, and no attestation opens. An assignment the page has moved away from is dropped.
    */
-  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
     let answered = false;
     this.claService
       .assignDesignee(orgUid, chosen.projectSfid)
@@ -1069,7 +1067,7 @@ export class OrgEasyclaDetailComponent {
     const identifyRef = this.dialogService.open(OrgEasyclaIdentifyManagerDialogComponent, orgClaIdentifyManagerDialogConfig()) as DynamicDialogRef;
     this.uncommittedSigningDialog = identifyRef;
 
-    this.whenSigningDialogEnds(identifyRef, (result: OrgEasyclaIdentifyManagerResult) => {
+    this.whenSigningDialogEnds(identifyRef, (result: OrgClaIdentifyManagerResult) => {
       if (!this.signingContextHeld(orgUid, chosen)) return;
       this.nominateDesignee(orgUid, chosen, result);
     });
@@ -1080,7 +1078,7 @@ export class OrgEasyclaDetailComponent {
    * has no LF Login yet — the CLA service has already emailed them. The viewer is granted nothing,
    * so the flow ends here and Start is released.
    */
-  private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgEasyclaIdentifyManagerResult): void {
+  private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgClaIdentifyManagerResult): void {
     const pair = `${orgUid}::${chosen.projectSfid}`;
     this.claService
       .nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email })
