@@ -186,6 +186,43 @@ export const VALKEY_CACHE = {
   /** Cap for the post-`fn()` release attempt made after an `acquireLock` that already came back `unavailable` (LFXV2 #2241) — that call just spent up to `LOCK_OP_TIMEOUT_MS` finding the backend unresponsive, so the release doesn't get another full budget on top of it. The release is best-effort either way (the lock's own `PX` TTL is the real backstop), so a short cap here only trims tail latency on an already-degraded request; it never affects correctness. */
   DEGRADED_LOCK_RELEASE_TIMEOUT_MS: 250,
 
-  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
+  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. Stays the default for every sub-resource absent from `MAX_VALUE_BYTES_BY_SUBRESOURCE`. */
   MAX_VALUE_BYTES: 1_048_576,
+
+  /**
+   * Per-sub-resource overrides of `MAX_VALUE_BYTES` (GH-1906), keyed by
+   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v2`.
+   * The trailing per-request discriminators a sub-resource may carry (a time range, a param
+   * signature, a person key) are deliberately *not* part of the lookup key: one cap covers every
+   * variant of a cache, and no identifier can reach this table. See `ValkeyService.maxBytesFor`,
+   * which resolves the key and is used by BOTH the write (`setJson`) and read (`parseCachedJson`)
+   * size checks — a cap raised on only one of them would write entries that every read rejects.
+   *
+   * An entry here is a deliberate, measured exception, not a knob: raising a cap means a single
+   * Valkey value of that size is worth the memory and the parse cost on every read. Every entry
+   * MUST cite the measured compact size it was sized from and the date it was measured, so a later
+   * reader can tell a still-justified cap from one whose payload has since shrunk (or grown).
+   *
+   * Sized at the measured compact maximum × ~1.25, rounded up to a whole MiB, so an org growing a
+   * quarter again doesn't silently fall out of the cache. `Readonly` on purpose: these are release
+   * decisions, not a runtime knob, and a test that reached in to overwrite one would be changing
+   * production behaviour for every later test in the run.
+   */
+  MAX_VALUE_BYTES_BY_SUBRESOURCE: {
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,050,250
+    // bytes for the largest org measured (down from 4,446,040 pre-compaction).
+    // This roster compacts least of the five (×2.2) because its rows are mostly long values —
+    // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
+    'org-lens-sf:v1:people-all:v2': 3 * 1_048_576,
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
+    // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
+    // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
+    // every detail row — so the remaining excess is real data, not repetition.
+    'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,443,884
+    // bytes for the largest org measured (down from 6,440,061 pre-compaction). Same irreducible
+    // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
+    // every row, so there is nothing left to deduplicate.
+    'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
+  } as Readonly<Record<string, number>>,
 } as const;

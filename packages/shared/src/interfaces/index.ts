@@ -10,6 +10,9 @@ export * from './committee.interface';
 // Compact Valkey cache storage shapes (GH-1906)
 export * from './compact-cache.interface';
 
+// Compact Valkey storage shapes for the per-org Org Lens caches (GH-1906)
+export * from './org-cache-compact.interface';
+
 // Member interfaces
 export * from './member.interface';
 

@@ -11,8 +11,8 @@ import type { ColumnarTable, DedupedValues } from '../interfaces/compact-cache.i
  * `undefined`-valued key entirely, so on a cache MISS an optional field the source left unset
  * never reaches the client — while collapsing it to `null` at encode time would make the same
  * response come back carrying `"field": null` on a HIT. That is a wire difference between a warm
- * and a cold cache for every optional field in the Org Lens payloads (`accessBadge` on a roster
- * row, `project_uid` / `job_title` / `reason` / `avatar` / `username` on a seat), and
+ * and a cold cache for every optional field in a compacted payload (`noActivityYet`, which only
+ * the Org Lens no-activity fallback rows carry, is the case this was found on), and
  * cache-hit-only divergence is the worst class of bug to trace.
  *
  * The encoding is collision-free, by escaping rather than by hoping no real value matches:
@@ -27,9 +27,9 @@ import type { ColumnarTable, DedupedValues } from '../interfaces/compact-cache.i
  * a string nested inside an array or object cell is never inspected on decode, so it needs none.
  *
  * Trailing absent values are deliberately NOT trimmed off the encoded row, even though
- * {@link fromColumnar} would decode a short tail as absent: a caller's guard may assert
- * `row.length === k.length` to reject corrupt entries (the Org Lens per-user seat and directory
- * guards do), and trimming would make every such entry fail that check and silently never hit.
+ * {@link fromColumnar} would decode a short tail as absent: {@link hasExactColumns} asserts that
+ * every row holds one value per declared column, so a trimmed row would fail that check and the
+ * entry would silently never hit.
  */
 const ABSENT = '\u0000';
 
@@ -122,8 +122,8 @@ export function hasExactColumns(table: ColumnarTable, keys: readonly string[]): 
 
 /**
  * Deduplicates `items` by `keyOf` for cache storage (GH-1906), so a value repeated across many rows
- * — a project's people, a seat's committee, an attendee's event — is stored once and referenced by
- * index everywhere else.
+ * — a project's people, an attendee's event, a trainee's course, a contributor's project — is
+ * stored once and referenced by index everywhere else.
  *
  * First occurrence wins: later duplicates are dropped rather than overwriting, so the retained
  * value matches the row order the caller already sorted by.
@@ -139,4 +139,26 @@ export function dedupeByKey<T>(items: readonly T[], keyOf: (item: T) => string):
     }
   }
   return { values, indexOf };
+}
+
+/**
+ * Builds a collision-free dictionary key from the exact tuple of fields a caller deduplicates on
+ * (GH-1906). Every dictionary here keys on the WHOLE tuple rather than on the natural id, because
+ * upstream copies those fields onto each row and two rows sharing an id can disagree; collapsing
+ * them onto the first one seen would make a decoded response differ from the uncached one.
+ *
+ * Two ambiguities this avoids, both of which silently merge distinct values:
+ *
+ * - Joining with a separator is ambiguous whenever that character is legal inside a value, and for
+ *   display names and URLs every character is. `['p', 'a\u0000b', 'c']` and `['p', 'a', 'b\u0000c']`
+ *   join to the same string under any single-character separator.
+ * - `JSON.stringify` of the array alone is ambiguous between `undefined` and `null`, because an
+ *   array serializes an `undefined` element as `null`.
+ *
+ * So each value is stringified on its own — `undefined` becomes `''`, which `JSON.stringify` can
+ * never produce for anything else — and the parts are joined with `\u0001`. That separator cannot
+ * appear in a part, because `JSON.stringify` escapes every control character inside a string.
+ */
+export function tupleKey(values: readonly unknown[]): string {
+  return values.map((value) => (value === undefined ? '' : JSON.stringify(value))).join('\u0001');
 }
