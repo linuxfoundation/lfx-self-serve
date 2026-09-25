@@ -190,6 +190,9 @@ describe('HealthMetricsL2ShellComponent', () => {
     // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
     // skip the end sentinel entirely.
     Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 50 });
+    // measurePanesHeight() reads offsetHeight instead (see its own doc comment); same default so the
+    // pane-height tests below don't need their own stub for the unclamped case.
+    Object.defineProperty(document.documentElement, 'offsetHeight', { configurable: true, value: window.innerHeight + 50 });
     // Not implemented in jsdom, and the deep-link path calls it on a real section element.
     Element.prototype.scrollIntoView = vi.fn();
 
@@ -201,6 +204,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     // The getElementById spies below would otherwise survive into the next TestBed render.
     vi.restoreAllMocks();
     delete (document.documentElement as unknown as { scrollHeight?: number }).scrollHeight;
+    delete (document.documentElement as unknown as { offsetHeight?: number }).offsetHeight;
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
@@ -248,7 +252,10 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   it('clamps the pane to the minimum height when the chrome below the row exceeds the viewport', async () => {
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 10 });
+    // Same row-bottom stub as the test above, so the clamp is driven by the oversized offsetHeight
+    // below rather than by jsdom's default zero rects (which would clamp regardless of that value).
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: window.innerHeight } as unknown as DOMRect);
+    Object.defineProperty(document.documentElement, 'offsetHeight', { configurable: true, value: window.innerHeight * 10 });
     await resetup();
 
     const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;

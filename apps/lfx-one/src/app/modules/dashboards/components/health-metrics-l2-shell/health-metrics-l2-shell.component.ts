@@ -316,9 +316,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * scroll. The chrome below the pane (gate padding, layout padding, the footer) isn't a fixed pixel
    * count, so it's measured rather than guessed: the gap between the two-column row's own bottom edge
    * and the document's bottom edge is exactly that chrome — the footer sits right after the row in
-   * flow, so this gap holds regardless of which column (pane or sub-nav) is currently taller. Written
-   * straight onto the element rather than through a bound signal, so a same-value re-measurement
-   * (e.g. after a resize that doesn't change the outcome) isn't skipped as a no-op update.
+   * flow, so this gap holds regardless of which column (pane or sub-nav) is currently taller. `<html>`
+   * has no fixed height, so `offsetHeight` reads its in-flow content height — unlike `scrollHeight`,
+   * it ignores overflow from any out-of-flow descendant anywhere in the document (an open `appendTo:
+   * 'body'` dropdown, an absolutely-positioned tooltip), so a re-measure while one is open can't shrink
+   * the pane. Written straight onto the element rather than through a bound signal, so a same-value
+   * re-measurement (e.g. after a resize that doesn't change the outcome) isn't skipped as a no-op
+   * update.
    */
   private measurePanesHeight(): void {
     const pane = this.panes()?.nativeElement;
@@ -328,7 +332,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     // Document-relative, so a page that is already scrolled measures the same as one at the top.
     const paneDocumentTop = pane.getBoundingClientRect().top + window.scrollY;
     const rowDocumentBottom = row.getBoundingClientRect().bottom + window.scrollY;
-    const below = Math.max(document.documentElement.scrollHeight - rowDocumentBottom, 0);
+    const below = Math.max(document.documentElement.offsetHeight - rowDocumentBottom, 0);
 
     const available = window.innerHeight - paneDocumentTop - below;
     pane.style.setProperty('--l2-panes-height', `${Math.max(Math.round(available), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX)}px`);
