@@ -255,6 +255,9 @@ router.get('/events-registration-forecast-curve', requireDashboardAccess, (req, 
 // Health Metrics Events "Past events" section (#2965)
 router.get('/events-past', requireDashboardAccess, (req, res, next) => analyticsController.getEventsPast(req, res, next));
 
+// Health Metrics Events "At a glance" section (#2966)
+router.get('/events-at-a-glance', requireDashboardAccess, (req, res, next) => analyticsController.getEventsAtAGlance(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

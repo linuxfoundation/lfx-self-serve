@@ -292,3 +292,97 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     expect(warning).toHaveBeenCalledWith(req, 'get_events_past', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 });
+
+function glanceRow(overrides: Record<string, unknown> = {}) {
+  return {
+    UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 3,
+    REGISTRATIONS_COUNT_YTD: 2000,
+    ATTENDEES_COUNT_YTD: 1500,
+    ORGANIZATIONS_COUNT_YTD: 400,
+    SPEAKERS_COUNT_YTD: 90,
+    COUNTRIES_COUNT_YTD: 30,
+    EVENTS_COUNT_YTD: 4,
+    PAST_EVENTS_COUNT_YTD: 4,
+    SHOW_UP_RATE_YTD: 0.75,
+    REGISTRATIONS_CHANGE_PCT_YTD: -0.1,
+    ATTENDEES_CHANGE_PCT_YTD: -0.35,
+    ORGANIZATIONS_CHANGE_PCT_YTD: 0,
+    SPEAKERS_CHANGE_PCT_YTD: null,
+    COUNTRIES_CHANGE_PCT_YTD: 0.2,
+    EVENTS_CHANGE_PCT_YTD: 0.5,
+    SHOW_UP_RATE_CHANGE_PTS_YTD: -0.02,
+    EVENTS_COUNT_LAST_COMPLETED_YEAR: 6,
+    EVENTS_COUNT_PREV_COMPLETED_YEAR: 5,
+    SHOW_UP_RATE_PREV_COMPLETED_YEAR: null,
+    EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: 0,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsEventsService.getAtAGlance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [glanceRow()] });
+  });
+
+  it('binds only the foundation and reads its rollup row, asking for change columns only where the view has them', async () => {
+    await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('MARKETING_EVENT_AT_A_GLANCE');
+    expect(sql).toContain('is_all_projects = TRUE');
+    expect(sql).toContain('show_up_rate_change_pts_last_completed_year');
+    expect(sql).toContain('past_events_count_3rd_last_completed_year');
+    expect(sql).not.toContain('change_pct_prev_completed_year');
+    expect(sql).not.toContain('past_events_change_pct');
+  });
+
+  it('maps a compared period, keeping a null change not available and a zero change measured', async () => {
+    const { periods, upcomingEvents, hasEvents } = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    expect(upcomingEvents).toBe(3);
+    expect(hasEvents).toBe(true);
+    expect(periods.find((period) => period.range === 'YTD')).toEqual({
+      range: 'YTD',
+      registrations: 2000,
+      attendees: 1500,
+      organizations: 400,
+      speakers: 90,
+      countries: 30,
+      events: 4,
+      pastEvents: 4,
+      showUpRate: 0.75,
+      changes: { registrations: -0.1, attendees: -0.35, organizations: 0, speakers: null, countries: 0.2, events: 0.5, showUpRatePts: -0.02 },
+    });
+  });
+
+  it('leaves an uncompared period without changes and keeps its unmeasured show-up rate null', async () => {
+    const { periods } = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+    const period = periods.find((candidate) => candidate.range === 'COMPLETED_YEAR_2');
+
+    expect(period).toMatchObject({ events: 5, showUpRate: null, changes: null });
+    expect(periods.map((candidate) => candidate.range)).toEqual(HEALTH_METRICS_L2_RANGES);
+  });
+
+  it('reads a foundation with no rollup row as having held no event', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    expect(glance.hasEvents).toBe(false);
+    expect(glance.upcomingEvents).toBe(0);
+    expect(glance.periods.map((period) => period.events)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('reads only measured zeros everywhere as no events, never an unmeasured count', async () => {
+    const none = { UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 0, EVENTS_COUNT_YTD: 0, EVENTS_COUNT_LAST_COMPLETED_YEAR: 0, EVENTS_COUNT_PREV_COMPLETED_YEAR: 0 };
+    execute
+      .mockResolvedValueOnce({ rows: [glanceRow(none)] })
+      .mockResolvedValueOnce({ rows: [glanceRow({ ...none, EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null })] });
+    const service = new HealthMetricsEventsService();
+
+    expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(false);
+    expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(true);
+  });
+});

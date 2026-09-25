@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsPast,
   HealthMetricsEventsSectionKey,
 } from '../interfaces/health-metrics-events.interface';
+import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -157,3 +159,9 @@ export const HEALTH_METRICS_EVENTS_PAST_EVENT_CAP = 500;
 
 /** Read-failed / no-foundation value: no periods and no events, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_PAST_UNMEASURED: HealthMetricsEventsPast = { periods: [], events: [] };
+
+/** The periods the at-a-glance view compares with the year before; the two oldest carry no change columns. */
+export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
+
+/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as "No events yet". */
+export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
