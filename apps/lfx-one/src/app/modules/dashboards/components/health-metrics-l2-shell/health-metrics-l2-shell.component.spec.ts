@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, PLATFORM_ID } from '@angular/core';
+import { Component, output, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS } from '@lfx-one/shared/constants';
+import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -156,6 +157,7 @@ describe('HealthMetricsL2ShellComponent', () => {
       imports: [TestHostComponent],
       providers: [
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
         ...(platformId ? [{ provide: PLATFORM_ID, useValue: platformId }] : []),
       ],
@@ -187,7 +189,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
     // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
     // skip the end sentinel entirely.
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 3 });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 50 });
     // Not implemented in jsdom, and the deep-link path calls it on a real section element.
     Element.prototype.scrollIntoView = vi.fn();
 
@@ -231,11 +233,27 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(activeKey()).toBe('alpha');
   });
 
-  it('bounds the scrolling pane to what is left of the viewport, so only it scrolls', () => {
+  it('bounds the scrolling pane to what is left of the viewport, measuring the chrome below the row', async () => {
+    // jsdom lays out nothing, so the row's own bottom edge (pane.parentElement) is stubbed to land
+    // exactly at the viewport bottom — the stubbed document is 50px taller than that, which
+    // measurePanesHeight() reads as 50px of chrome (gate padding, layout padding, the footer) below
+    // the row, regardless of which column inside it is taller.
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: window.innerHeight } as unknown as DOMRect);
+    await resetup();
+
     const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
 
     expect(panes.className).toContain('lg:overflow-y-auto');
-    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - 24}px`);
+    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - 50}px`);
+  });
+
+  it('clamps the pane to the minimum height when the chrome below the row exceeds the viewport', async () => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 10 });
+    await resetup();
+
+    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
+
+    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe('320px');
   });
 
   it('observes each section heading below the measured sticky header', () => {

@@ -3,9 +3,6 @@
 
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
-/** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */
-export const HEALTH_METRICS_L2_PANES_BOTTOM_GUTTER_PX = 24;
-
 /** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
 export const HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX = 320;
 
