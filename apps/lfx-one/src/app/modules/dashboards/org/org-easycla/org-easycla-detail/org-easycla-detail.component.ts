@@ -8,6 +8,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
   OrgClaCoverageChip,
+  OrgClaDesigneeRefusal,
   OrgClaDetailTab,
   OrgClaDetailTabView,
   OrgClaGroup,
@@ -20,7 +21,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_DESIGNEE_REFUSAL_COPY,
+  ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
@@ -90,6 +94,16 @@ import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import {
+  orgClaIdentifyManagerDialogConfig,
+  OrgEasyclaIdentifyManagerDialogComponent,
+  type OrgEasyclaIdentifyManagerResult,
+} from '../org-easycla-identify-manager-dialog/org-easycla-identify-manager-dialog.component';
+import {
+  orgClaManagerQuestionDialogConfig,
+  OrgEasyclaManagerQuestionDialogComponent,
+  type OrgEasyclaManagerAnswer,
+} from '../org-easycla-manager-question-dialog/org-easycla-manager-question-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
@@ -98,6 +112,17 @@ import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.com
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
 import { OrgEasyclaRecentActivityComponent } from './org-easycla-recent-activity.component';
+
+/** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
+type DesigneeNextStep = 'attest' | 'mail';
+
+/** The refusal sentence for a designee write, read from the BFF's upstream code; anything else is unknown. */
+function designeeRefusalCopy(error: unknown): string {
+  const code = error instanceof HttpErrorResponse ? (error.error as { upstreamCode?: unknown } | null)?.upstreamCode : undefined;
+  return typeof code === 'string' && Object.hasOwn(ORG_CLA_DESIGNEE_REFUSAL_COPY, code)
+    ? ORG_CLA_DESIGNEE_REFUSAL_COPY[code as OrgClaDesigneeRefusal]
+    : ORG_CLA_DESIGNEE_REFUSAL_COPY.unknown;
+}
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -539,6 +564,45 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
+  protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
+
+  /**
+   * The organization and signing project the manager question is about, or null when the page is
+   * not an unsigned agreement it could start. Keyed as `orgUid::projectSfid`, the pair ACS scopes
+   * the Sign grant and the designee role to.
+   */
+  private readonly designeePair = computed(() => {
+    const orgUid = this.selectedOrgUid();
+    const projectSfid = this.signingChoice()?.projectSfid;
+    return this.notStarted() && orgUid && projectSfid ? `${orgUid}::${projectSfid}` : null;
+  });
+
+  /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
+  private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
+
+  /** Pairs the viewer said Yes for in this session, so the question is not asked twice. */
+  private readonly assignedPairs = signal<readonly string[]>([]);
+
+  /**
+   * The viewer may already sign this pair — as a designee, or as a signatory — so Start skips the
+   * question and the overview reads Corporate Console's designee copy. Denied, failed, and not yet
+   * answered are all false: the question is asked, and Start is never refused on this check.
+   */
+  protected readonly alreadyDesignee = computed(() => {
+    const pair = this.designeePair();
+    if (!pair) return false;
+    const check = this.signCheck();
+    return this.assignedPairs().includes(pair) || (check?.pair === pair && check.allowed);
+  });
+
+  private readonly designeeNoticeState = signal<{ pair: string; text: string } | null>(null);
+
+  /** The outcome of naming someone else, shown only while the page is still on that pair. */
+  protected readonly designeeNotice = computed(() => {
+    const notice = this.designeeNoticeState();
+    return notice && notice.pair === this.designeePair() ? notice.text : null;
+  });
+
   /**
    * The preview mode restores from history / cookie change, so the selected organization can arrive
    * out of step with the choice the preview was made for. The constructor subscribes to this same
@@ -676,6 +740,22 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe((allowed) => this.autoEclaAllowed.set(allowed));
 
+    // Sign pair check on the unsigned overview (#2780), the same hop attestation Continue uses. It
+    // only chooses the copy and whether Start asks the manager question; it never refuses Start,
+    // and a failed hop answers false, which asks the question.
+    toObservable(this.designeePair)
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => this.signCheck.set(null)),
+        switchMap((pair) => {
+          if (!pair) return of(null);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'sign', projectSfid).pipe(map((allowed) => ({ pair, allowed })));
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((check) => this.signCheck.set(check));
+
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
     // `cannotPreview`, because the group address is the one a named signing overview will claim and
@@ -741,7 +821,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.confirmThenHandOff(context.orgUid, context.chosen);
+    this.continueAsManager(context.orgUid, context.chosen, 'attest');
   }
 
   /**
@@ -755,7 +835,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.openSendByEmailIfContextHeld(context.orgUid, context.chosen);
+    this.continueAsManager(context.orgUid, context.chosen, 'mail');
   }
 
   protected onDownload(): void {
@@ -920,6 +1000,118 @@ export class OrgEasyclaDetailComponent {
     if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return null;
 
     return { orgUid, chosen };
+  }
+
+  /**
+   * Asks Corporate Console's manager question ahead of the step the viewer chose, unless they can
+   * already sign this pair (#2780). Yes assigns them designee and continues into that step; No
+   * opens Identify CLA Manager. The Start lock stays held until whichever step ends the flow.
+   */
+  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
+    if (this.alreadyDesignee()) {
+      this.openChosenStep(orgUid, chosen, next);
+      return;
+    }
+
+    const questionRef = this.dialogService.open(OrgEasyclaManagerQuestionDialogComponent, orgClaManagerQuestionDialogConfig()) as DynamicDialogRef;
+    this.uncommittedSigningDialog = questionRef;
+
+    this.whenSigningDialogEnds(questionRef, (answer: OrgEasyclaManagerAnswer) => {
+      // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
+      // the answer names no organization or agreement.
+      this.afterDialogTornDown(questionRef, () => {
+        if (!this.signingContextHeld(orgUid, chosen)) return;
+        if (answer === 'yes') this.assignDesignee(orgUid, chosen, next);
+        else this.openIdentifyManager(orgUid, chosen);
+      });
+    });
+  }
+
+  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
+    if (next === 'attest') this.confirmThenHandOff(orgUid, chosen);
+    else this.openSendByEmailIfContextHeld(orgUid, chosen);
+  }
+
+  /** Whether the page is still on this organization and signing pair; releases Start when it is not. */
+  private signingContextHeld(orgUid: string, chosen: OrgClaGroupPickerResult): boolean {
+    const currentChoice = this.signingChoice();
+    if (
+      this.accountContext.selectedAccount()?.uid === orgUid &&
+      currentChoice?.claGroupId === chosen.claGroupId &&
+      currentChoice.projectSfid === chosen.projectSfid
+    ) {
+      return true;
+    }
+    this.signingOpen.set(false);
+    this.leavePreviewIfContextLost();
+    return false;
+  }
+
+  /**
+   * Yes: make the viewer the designee, then continue. A refusal leaves them on the overview with
+   * the reason, and no attestation opens. An assignment the page has moved away from is dropped.
+   */
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: DesigneeNextStep): void {
+    let answered = false;
+    this.claService
+      .assignDesignee(orgUid, chosen.projectSfid)
+      .pipe(
+        takeUntil(this.contextChanged$),
+        finalize(() => {
+          if (!answered) this.signingOpen.set(false);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          answered = true;
+          this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
+          if (this.signingContextHeld(orgUid, chosen)) this.openChosenStep(orgUid, chosen, next);
+        },
+        error: (error: unknown) => {
+          answered = true;
+          this.signingOpen.set(false);
+          this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
+        },
+      });
+  }
+
+  private openIdentifyManager(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const identifyRef = this.dialogService.open(OrgEasyclaIdentifyManagerDialogComponent, orgClaIdentifyManagerDialogConfig()) as DynamicDialogRef;
+    this.uncommittedSigningDialog = identifyRef;
+
+    this.whenSigningDialogEnds(identifyRef, (result: OrgEasyclaIdentifyManagerResult) => {
+      if (!this.signingContextHeld(orgUid, chosen)) return;
+      this.nominateDesignee(orgUid, chosen, result);
+    });
+  }
+
+  /**
+   * No: name someone else. Either success is a notice on the overview, including the person who
+   * has no LF Login yet — the CLA service has already emailed them. The viewer is granted nothing,
+   * so the flow ends here and Start is released.
+   */
+  private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgEasyclaIdentifyManagerResult): void {
+    const pair = `${orgUid}::${chosen.projectSfid}`;
+    this.claService
+      .nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email })
+      .pipe(
+        takeUntil(this.contextChanged$),
+        finalize(() => this.signingOpen.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (response) => {
+          const text =
+            response.outcome === 'lf-login-requested'
+              ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequested(response.email)
+              : ORG_CLA_IDENTIFY_MANAGER_COPY.assigned(response.email);
+          this.designeeNoticeState.set({ pair, text });
+        },
+        error: (error: unknown) => {
+          this.messageService.add({ severity: 'error', summary: 'Request not sent', detail: designeeRefusalCopy(error) });
+        },
+      });
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
