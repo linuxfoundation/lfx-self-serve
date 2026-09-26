@@ -3,8 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, isMissingObjectError, warning } = vi.hoisted(() => ({
+const { execute, isMissingObjectError, loggerError, warning } = vi.hoisted(() => ({
   execute: vi.fn(),
+  loggerError: vi.fn(),
   isMissingObjectError: vi.fn(() => false),
   warning: vi.fn(),
 }));
@@ -18,7 +19,7 @@ vi.mock('./snowflake.service', () => ({
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
 
 import {
@@ -380,12 +381,13 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     execute
       .mockResolvedValueOnce({ rows: [glanceRow(none)] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [glanceRow({ ...none, EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null })] });
     const service = new HealthMetricsEventsService();
 
     expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(false);
     expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(true);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
   });
 
   it.each([
@@ -404,18 +406,44 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
         ],
       },
     ],
-  ])('keeps the tab for %s when an older event or one past this year exists', async (_case, rollup) => {
+  ])('keeps the tab for %s when an older event exists, without reading the forecast', async (_case, rollup) => {
     execute.mockResolvedValueOnce(rollup).mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
 
     const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[1];
     expect(glance.hasEvents).toBe(true);
-    expect(binds).toEqual(['acme', 'acme']);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(binds).toEqual(['acme']);
     // Past events carry no period filter, so an event older than the four periods still counts.
-    expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+UNION ALL/);
-    expect(sql).toContain('MARKETING_EVENT_REGISTRATION_FORECAST');
+    expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+LIMIT 1/);
+  });
+
+  it('keeps the tab when the only event is still to come, reading the forecast after past events', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[2];
+    expect(glance.hasEvents).toBe(true);
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST');
     expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+  });
+
+  it('logs a missing view under the one view the failed read names', async () => {
+    const missing = new Error('Object does not exist');
+    isMissingObjectError.mockReturnValueOnce(true);
+    execute.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(missing);
+
+    await expect(new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' })).rejects.toBe(missing);
+
+    expect(loggerError).toHaveBeenCalledWith(req, 'get_events_at_a_glance_missing_object', expect.any(Number), missing, {
+      snowflake_expected_missing_object: 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST',
+    });
   });
 
   it('skips the event check for a foundation whose rollup already shows events', async () => {

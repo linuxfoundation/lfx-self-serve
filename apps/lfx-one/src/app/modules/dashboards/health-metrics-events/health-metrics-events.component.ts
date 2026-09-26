@@ -84,21 +84,18 @@ export class HealthMetricsEventsComponent {
           foundationSeen = foundationSeen || foundationSlug !== '';
           this.glanceStatus.set('loading');
         }),
-        switchMap((foundationSlug) => {
-          if (!foundationSlug) {
-            if (foundationSeen) this.glanceStatus.set('ready');
-            return of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
-          }
-
-          return this.analyticsService.getEventsAtAGlance({ foundationSlug }).pipe(
-            tap(() => this.glanceStatus.set('ready')),
+        switchMap((foundationSlug) =>
+          (foundationSlug ? this.analyticsService.getEventsAtAGlance({ foundationSlug }) : of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED)).pipe(
             // `AnalyticsService` has already logged the error before rethrowing it.
             catchError(() => {
               this.glanceStatus.set('failed');
               return of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
+            }),
+            tap(() => {
+              if (foundationSeen && this.glanceStatus() !== 'failed') this.glanceStatus.set('ready');
             })
-          );
-        })
+          )
+        )
       ),
       { initialValue: HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED }
     );

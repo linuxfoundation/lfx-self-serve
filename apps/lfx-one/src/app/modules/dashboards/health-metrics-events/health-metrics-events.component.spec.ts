@@ -105,6 +105,13 @@ describe('HealthMetricsEventsComponent', () => {
     return glance instanceof Error ? throwError(() => glance) : of(glance);
   }
 
+  async function selectFoundation(slug: string | null): Promise<void> {
+    selectedFoundation.set(slug === null ? null : { slug });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
   function atAGlanceStub(): AtAGlanceStubComponent {
     return fixture.debugElement.query(By.directive(AtAGlanceStubComponent)).componentInstance as AtAGlanceStubComponent;
   }
@@ -236,18 +243,33 @@ describe('HealthMetricsEventsComponent', () => {
     expect(atAGlanceStub().glance()).toEqual(GLANCE);
   });
 
-  it('settles the section when a loaded foundation is cleared, so the shell stops waiting on it', async () => {
-    await setup();
+  it('settles the section when the foundation is cleared mid-read, so the shell stops waiting on it', async () => {
+    await setup(null, NEVER);
+    expect(atAGlanceStub().status()).toBe('loading');
 
-    selectedFoundation.set(null);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await selectFoundation(null);
 
     expect(getEventsAtAGlance).toHaveBeenCalledTimes(1);
     expect(atAGlanceStub().status()).toBe('ready');
     expect(atAGlanceStub().glance()).toEqual(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
     expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
+  });
+
+  it('reads again and returns to loading when a foundation is picked after a clear, then settles on the next clear', async () => {
+    await setup();
+    await selectFoundation(null);
+    const next = new Subject<HealthMetricsEventsAtAGlance>();
+    getEventsAtAGlance.mockReturnValue(next.asObservable());
+
+    await selectFoundation('globex');
+
+    expect(getEventsAtAGlance).toHaveBeenLastCalledWith({ foundationSlug: 'globex' });
+    expect(atAGlanceStub().status()).toBe('loading');
+
+    await selectFoundation(null);
+
+    expect(next.observed).toBe(false);
+    expect(atAGlanceStub().status()).toBe('ready');
   });
 
   it('holds the section at loading while no foundation has resolved yet', async () => {

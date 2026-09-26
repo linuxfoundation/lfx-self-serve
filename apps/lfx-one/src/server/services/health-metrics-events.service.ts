@@ -242,7 +242,7 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapPastPeriod(result.rows[0], range)), events };
   }
 
-  /** The foundation's reach in each of the four periods, off its one precomputed rollup row. */
+  /** The foundation's reach in each of the four periods, off its one precomputed rollup row; a rollup with no events falls back to `hasAnyEvent`. */
   public async getAtAGlance(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<HealthMetricsEventsAtAGlance> {
     // Prefixes and suffixes come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
@@ -291,12 +291,16 @@ export class HealthMetricsEventsService {
   /** Whether the foundation has ever held an event, or has one still to come in any year. */
   private async hasAnyEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
     // The past view keeps every closed event whatever its age; the rollup only covers four periods.
-    const sql = `
+    const pastSql = `
       SELECT 1 AS has_event
       FROM ${PAST_EVENTS_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-      UNION ALL
+      LIMIT 1
+    `;
+    if (await this.hasRow(req, PAST_EVENTS_VIEW, pastSql, [query.foundationSlug])) return true;
+
+    const upcomingSql = `
       SELECT 1 AS has_event
       FROM ${REGISTRATION_FORECAST_VIEW}
       WHERE foundation_slug = ?
@@ -304,10 +308,13 @@ export class HealthMetricsEventsService {
         AND event_start_date >= CURRENT_DATE()
       LIMIT 1
     `;
+    return this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug]);
+  }
 
-    const binds = [query.foundationSlug, query.foundationSlug];
+  /** One guarded existence read, so a missing object is logged under the one view it names. */
+  private async hasRow(req: Request, view: string, sql: string, binds: string[]): Promise<boolean> {
     const result = await executeSnowflakeViewRead<{ HAS_EVENT: number }>(this.snowflakeService, req, sql, binds, {
-      view: `${PAST_EVENTS_VIEW}, ${REGISTRATION_FORECAST_VIEW}`,
+      view,
       operation: 'get_events_at_a_glance',
       clientMessage: 'Events at a glance is unavailable right now.',
     });
