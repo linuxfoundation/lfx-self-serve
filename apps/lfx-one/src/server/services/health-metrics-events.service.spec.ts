@@ -365,7 +365,7 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     expect(periods.map((candidate) => candidate.range)).toEqual(HEALTH_METRICS_L2_RANGES);
   });
 
-  it('reads a foundation with no rollup row and nothing upcoming as having held no event', async () => {
+  it('reads a foundation with no rollup row and no event ever held or to come as having none', async () => {
     execute.mockResolvedValue({ rows: [] });
 
     const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
@@ -404,19 +404,21 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
         ],
       },
     ],
-  ])('keeps the tab for %s when the forecast holds an event past this year', async (_case, rollup) => {
+  ])('keeps the tab for %s when an older event or one past this year exists', async (_case, rollup) => {
     execute.mockResolvedValueOnce(rollup).mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
 
     const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[1];
     expect(glance.hasEvents).toBe(true);
-    expect(binds).toEqual(['acme']);
+    expect(binds).toEqual(['acme', 'acme']);
+    // Past events carry no period filter, so an event older than the four periods still counts.
+    expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+UNION ALL/);
     expect(sql).toContain('MARKETING_EVENT_REGISTRATION_FORECAST');
     expect(sql).toContain('event_start_date >= CURRENT_DATE()');
   });
 
-  it('skips the upcoming check for a foundation whose rollup already shows events', async () => {
+  it('skips the event check for a foundation whose rollup already shows events', async () => {
     await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
 
     expect(execute).toHaveBeenCalledTimes(1);

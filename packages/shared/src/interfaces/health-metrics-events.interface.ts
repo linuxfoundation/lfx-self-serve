@@ -216,7 +216,7 @@ export interface HealthMetricsEventsAtAGlance {
   periods: HealthMetricsEventsAtAGlancePeriod[];
   /** Events from today to the end of the current year; the view does not split it by period. */
   upcomingEvents: number | null;
-  /** `false` only when no period held an event and the forecast holds none still to come, in any year. */
+  /** `false` only when the foundation has never held an event and has none still to come, in any year. */
   hasEvents: boolean;
 }
 

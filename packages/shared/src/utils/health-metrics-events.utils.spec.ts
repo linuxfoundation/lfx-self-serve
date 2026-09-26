@@ -286,6 +286,22 @@ describe('buildHealthMetricsEventsPastView', () => {
     expect(view.rows[1]).toMatchObject({ statusLabel: 'Not tracked', registrationsLabel: '—', progressPct: null });
   });
 
+  it('reads a period of only unset and untracked goals as having goals, none of them tracked', () => {
+    const view = buildHealthMetricsEventsPastView(
+      {
+        periods: [{ range: 'YTD', eventCount: 2, registrations: 300 }],
+        events: [
+          pastEvent({ eventId: 'no-goal', goal: null, goalMet: null, paceStatus: null }),
+          pastEvent({ eventId: 'unmeasured', goal: 100, registrations: null, goalMet: null }),
+        ],
+      },
+      'YTD'
+    );
+
+    expect(view.rows.map((row) => row.status)).toEqual(['no-goal', 'unmeasured']);
+    expect(view).toMatchObject({ goalMetCount: 0, goalSetCount: 0, hasGoals: true });
+  });
+
   it('resolves row labels, capping the bar and drawing none without a goal', () => {
     const [hit, noGoal] = buildHealthMetricsEventsPastView(past, 'YTD').rows;
 

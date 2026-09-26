@@ -9,7 +9,7 @@ import { HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, NEVER, Observable, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
@@ -55,15 +55,17 @@ describe('HealthMetricsEventsComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsEventsComponent>;
   let getEventsAtAGlance: ReturnType<typeof vi.fn>;
+  let selectedFoundation: ReturnType<typeof signal<{ slug: string }>>;
 
   async function setup(initialFragment: string | null = null, glance: HealthMetricsEventsAtAGlance | Error | Observable<never> = GLANCE): Promise<void> {
     getEventsAtAGlance = vi.fn().mockReturnValue(read(glance));
+    selectedFoundation = signal({ slug: 'acme' });
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEventsComponent],
       providers: [
         HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getEventsAtAGlance } },
-        { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
@@ -206,6 +208,28 @@ describe('HealthMetricsEventsComponent', () => {
     expect(empty.textContent).toContain('No events yet');
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid^="events-section-"]')).toBeNull();
+  });
+
+  it("drops a landed empty state back to loading on a foundation switch, never showing the next one's as empty", async () => {
+    await setup(null, { ...GLANCE, upcomingEvents: 0, hasEvents: false });
+    const next = new Subject<HealthMetricsEventsAtAGlance>();
+    getEventsAtAGlance.mockReturnValue(next.asObservable());
+
+    selectedFoundation.set({ slug: 'globex' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getEventsAtAGlance).toHaveBeenLastCalledWith({ foundationSlug: 'globex' });
+    expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]')).not.toBeNull();
+    expect(atAGlanceStub().status()).toBe('loading');
+
+    next.next(GLANCE);
+    fixture.detectChanges();
+
+    expect(atAGlanceStub().status()).toBe('ready');
+    expect(atAGlanceStub().glance()).toEqual(GLANCE);
   });
 
   it('renders the shell straight away while the read is still in flight', async () => {
