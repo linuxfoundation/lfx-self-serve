@@ -74,24 +74,31 @@ export class HealthMetricsEventsComponent {
     }
 
     const slug = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
+    // Latches on the first non-empty slug: an unresolved foundation holds the skeleton, a cleared one settles.
+    let foundationSeen = false;
 
     return toSignal(
       toObservable(slug).pipe(
         distinctUntilChanged(),
-        tap(() => this.glanceStatus.set('loading')),
-        switchMap((foundationSlug) =>
-          // An unresolved foundation holds the skeleton rather than reading an empty scope.
-          foundationSlug
-            ? this.analyticsService.getEventsAtAGlance({ foundationSlug }).pipe(
-                tap(() => this.glanceStatus.set('ready')),
-                // `AnalyticsService` has already logged the error before rethrowing it.
-                catchError(() => {
-                  this.glanceStatus.set('failed');
-                  return of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
-                })
-              )
-            : of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED)
-        )
+        tap((foundationSlug) => {
+          foundationSeen = foundationSeen || foundationSlug !== '';
+          this.glanceStatus.set('loading');
+        }),
+        switchMap((foundationSlug) => {
+          if (!foundationSlug) {
+            if (foundationSeen) this.glanceStatus.set('ready');
+            return of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
+          }
+
+          return this.analyticsService.getEventsAtAGlance({ foundationSlug }).pipe(
+            tap(() => this.glanceStatus.set('ready')),
+            // `AnalyticsService` has already logged the error before rethrowing it.
+            catchError(() => {
+              this.glanceStatus.set('failed');
+              return of(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
+            })
+          );
+        })
       ),
       { initialValue: HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED }
     );

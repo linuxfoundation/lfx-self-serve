@@ -5,7 +5,7 @@ import { Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED, HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -55,11 +55,15 @@ describe('HealthMetricsEventsComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsEventsComponent>;
   let getEventsAtAGlance: ReturnType<typeof vi.fn>;
-  let selectedFoundation: ReturnType<typeof signal<{ slug: string }>>;
+  let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
 
-  async function setup(initialFragment: string | null = null, glance: HealthMetricsEventsAtAGlance | Error | Observable<never> = GLANCE): Promise<void> {
+  async function setup(
+    initialFragment: string | null = null,
+    glance: HealthMetricsEventsAtAGlance | Error | Observable<never> = GLANCE,
+    initialSlug: string | null = 'acme'
+  ): Promise<void> {
     getEventsAtAGlance = vi.fn().mockReturnValue(read(glance));
-    selectedFoundation = signal({ slug: 'acme' });
+    selectedFoundation = signal<{ slug: string } | null>(initialSlug === null ? null : { slug: initialSlug });
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEventsComponent],
       providers: [
@@ -230,6 +234,27 @@ describe('HealthMetricsEventsComponent', () => {
 
     expect(atAGlanceStub().status()).toBe('ready');
     expect(atAGlanceStub().glance()).toEqual(GLANCE);
+  });
+
+  it('settles the section when a loaded foundation is cleared, so the shell stops waiting on it', async () => {
+    await setup();
+
+    selectedFoundation.set(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getEventsAtAGlance).toHaveBeenCalledTimes(1);
+    expect(atAGlanceStub().status()).toBe('ready');
+    expect(atAGlanceStub().glance()).toEqual(HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED);
+    expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
+  });
+
+  it('holds the section at loading while no foundation has resolved yet', async () => {
+    await setup(null, GLANCE, null);
+
+    expect(getEventsAtAGlance).not.toHaveBeenCalled();
+    expect(atAGlanceStub().status()).toBe('loading');
   });
 
   it('renders the shell straight away while the read is still in flight', async () => {
