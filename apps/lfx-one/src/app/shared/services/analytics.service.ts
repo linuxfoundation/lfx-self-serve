@@ -91,6 +91,8 @@ import {
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceQuery,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
@@ -1234,6 +1236,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsPast>('/api/analytics/events-past', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-past failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** The foundation's reach in each of the four periods, for the Events tab's at-a-glance strip. */
+  public getEventsAtAGlance(query: HealthMetricsEventsAtAGlanceQuery): Observable<HealthMetricsEventsAtAGlance> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: a swallowed failure would read as "No events yet" and blank the whole tab.
+    return this.http.get<HealthMetricsEventsAtAGlance>('/api/analytics/events-at-a-glance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-at-a-glance failed', { query, error });
         return throwError(() => error);
       })
     );

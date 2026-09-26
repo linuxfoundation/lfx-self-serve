@@ -2,27 +2,38 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
-<lfx-health-metrics-l2-shell
-  #shell
-  [sections]="sections"
-  [idPrefix]="idPrefix"
-  [dataSections]="dataSections"
-  [subNavItems]="subNavItems()"
-  navLabel="Events sections"
-  testIdPrefix="events"
-  [crossReferenceNote]="crossReferenceNote">
-  <ng-template lfxHealthMetricsL2Section="forecast">
-    <lfx-events-registration-forecast
-      (countsChange)="forecastNote.set($event)"
-      (reading)="shell.sectionReading('forecast')"
-      (settled)="shell.sectionSettled('forecast')"
-      (sectionPicked)="shell.scrollToSection($event)" />
-  </ng-template>
-  <ng-template lfxHealthMetricsL2Section="past">
-    <lfx-events-past-events
-      (countChange)="pastCount.set($event)"
-      (reading)="shell.sectionReading('past')"
-      (settled)="shell.sectionSettled('past')"
-      (sectionPicked)="shell.scrollToSection($event)" />
-  </ng-template>
-</lfx-health-metrics-l2-shell>
+@if (noEvents()) {
+  <lfx-empty-state
+    icon="fa-light fa-calendar-days"
+    title="No events yet"
+    subtitle="Once an event is created in LFX Events, registrations, the forecast, revenue, sponsorship and speakers all appear here."
+    data-testid="events-empty" />
+} @else {
+  <lfx-health-metrics-l2-shell
+    #shell
+    [sections]="sections"
+    [idPrefix]="idPrefix"
+    [dataSections]="dataSections"
+    [subNavItems]="subNavItems()"
+    navLabel="Events sections"
+    testIdPrefix="events"
+    [crossReferenceNote]="crossReferenceNote">
+    <ng-template lfxHealthMetricsL2Section="kpi">
+      <lfx-events-at-a-glance [glance]="glance()" [status]="glanceStatus()" (reading)="shell.sectionReading('kpi')" (settled)="shell.sectionSettled('kpi')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="forecast">
+      <lfx-events-registration-forecast
+        (countsChange)="forecastNote.set($event)"
+        (reading)="shell.sectionReading('forecast')"
+        (settled)="shell.sectionSettled('forecast')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="past">
+      <lfx-events-past-events
+        (countChange)="pastCount.set($event)"
+        (reading)="shell.sectionReading('past')"
+        (settled)="shell.sectionSettled('past')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </ng-template>
+  </lfx-health-metrics-l2-shell>
+}

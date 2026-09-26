@@ -84,6 +84,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // Its empty list renders "no past events in this period", which a swallowed failure would fake.
       call: () => service.getEventsPast({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getEventsAtAGlance',
+      url: '/api/analytics/events-at-a-glance',
+      // A swallowed failure would fake measured zeros, or once the empty state lands, "No events yet".
+      call: () => service.getEventsAtAGlance({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

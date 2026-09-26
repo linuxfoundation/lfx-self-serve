@@ -172,5 +172,79 @@ export interface HealthMetricsEventsPastView {
   goalMetCount: number;
   /** Listed events with a goal set and a measured outcome — the Y, so X and Y share the chips' rule. */
   goalSetCount: number;
+  /** Whether any listed event has a goal, so goals with no measured outcome never read as unset. */
+  hasGoals: boolean;
   rows: HealthMetricsEventsPastRowView[];
+}
+
+/** Foundation scope for the at-a-glance strip; every period ships in one read, so the range stays client-side. */
+export interface HealthMetricsEventsAtAGlanceQuery {
+  foundationSlug: string;
+}
+
+/** Year-over-year changes as fractions (−0.25 is −25%). Every `null` is not available, never zero. */
+export interface HealthMetricsEventsAtAGlanceChanges {
+  registrations: number | null;
+  attendees: number | null;
+  organizations: number | null;
+  speakers: number | null;
+  countries: number | null;
+  events: number | null;
+  /** Percentage points as a fraction (0.022 is +2.2 pp), never a percentage change. */
+  showUpRatePts: number | null;
+}
+
+/** One period's reach, as the view totals it. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsEventsAtAGlancePeriod {
+  range: HealthMetricsL2Range;
+  registrations: number | null;
+  attendees: number | null;
+  organizations: number | null;
+  speakers: number | null;
+  countries: number | null;
+  /** Events held in the period; for YTD that is the events held so far. */
+  events: number | null;
+  pastEvents: number | null;
+  /** Attendees over registrations, 0–1; `null` with no registrations, since that rate is undefined. */
+  showUpRate: number | null;
+  /** `null` for a period the view does not compare with the year before. */
+  changes: HealthMetricsEventsAtAGlanceChanges | null;
+}
+
+/** `GET /api/analytics/events-at-a-glance` — the foundation's reach in each of the four periods. */
+export interface HealthMetricsEventsAtAGlance {
+  periods: HealthMetricsEventsAtAGlancePeriod[];
+  /** Events from today to the end of the current year; the view does not split it by period. */
+  upcomingEvents: number | null;
+  /** `false` only when the foundation has never held an event and has none still to come, in any year. */
+  hasEvents: boolean;
+}
+
+/** Where the at-a-glance read stands; the Events tab owns the read and hands its state to the section. */
+export type HealthMetricsEventsAtAGlanceStatus = 'loading' | 'failed' | 'ready';
+
+/** A year-over-year delta label; `null` when the period has no comparison, so none is drawn. */
+export interface HealthMetricsEventsAtAGlanceDelta {
+  delta: string | null;
+  deltaDirection: 'up' | 'down' | 'neutral';
+}
+
+/** One figure with its year-over-year delta. */
+export interface HealthMetricsEventsAtAGlanceStatView extends HealthMetricsEventsAtAGlanceDelta {
+  key: string;
+  label: string;
+  value: string;
+  /** A fall steep enough to flag on the tile. */
+  warn: boolean;
+}
+
+/** The section for one period, with every label ready to render. */
+export interface HealthMetricsEventsAtAGlanceView {
+  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
+  measured: boolean;
+  controlLabel: string;
+  baselineLabel: string;
+  headline: HealthMetricsEventsAtAGlanceStatView;
+  side: HealthMetricsEventsAtAGlanceStatView[];
+  tiles: HealthMetricsEventsAtAGlanceStatView[];
 }

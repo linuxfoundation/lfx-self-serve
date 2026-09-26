@@ -33,8 +33,10 @@
       </div>
       <div class="flex flex-col gap-0.5" data-testid="events-past-events-goal-met">
         <span class="text-xs text-gray-500">Hit goal</span>
-        @if (view().goalSetCount === 0) {
+        @if (!view().hasGoals) {
           <span class="text-sm font-medium text-gray-900" data-testid="events-past-events-goal-met-value">no goals set</span>
+        } @else if (view().goalSetCount === 0) {
+          <span class="text-sm font-medium text-gray-900" data-testid="events-past-events-goal-met-value">not tracked</span>
         } @else {
           <span class="text-sm font-medium tabular-nums text-gray-900" data-testid="events-past-events-goal-met-value"
             >{{ goalMetLabel() }} of {{ goalSetLabel() }}</span

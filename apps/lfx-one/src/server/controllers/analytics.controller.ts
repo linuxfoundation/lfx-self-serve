@@ -3539,6 +3539,29 @@ export class AnalyticsController {
     }
   }
 
+  /**
+   * `GET /api/analytics/events-at-a-glance` — the foundation's reach in each of the four periods.
+   * The client picks the period, so no `range` param reaches the wire.
+   */
+  public async getEventsAtAGlance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_at_a_glance');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_at_a_glance');
+
+      const response = await this.healthMetricsEventsService.getAtAGlance(req, { foundationSlug });
+
+      logger.success(req, 'get_events_at_a_glance', startTime, {
+        foundation_slug: foundationSlug,
+        has_events: response.hasEvents,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');

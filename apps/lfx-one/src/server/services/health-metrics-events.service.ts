@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
@@ -14,6 +15,9 @@ import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
 import type {
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlancePeriod,
+  HealthMetricsEventsAtAGlanceQuery,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
@@ -30,6 +34,10 @@ import type { Request } from 'express';
 
 const REGISTRATION_FORECAST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST';
 const PAST_EVENTS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS';
+const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE';
+
+/** At-a-glance count prefixes, each suffixed per period; the change columns reuse them. */
+const AT_A_GLANCE_COUNT_PREFIXES = ['registrations', 'attendees', 'organizations', 'speakers', 'countries', 'events', 'past_events'] as const;
 
 /** Label for a curve row the view left without a registration type. */
 const UNTYPED_FORMAT_LABEL = 'All formats';
@@ -74,6 +82,12 @@ interface PastEventRow {
   GOAL_MET: boolean | null;
   REVENUE_USD: number | null;
   PACE_STATUS: string | null;
+  [periodColumn: string]: unknown;
+}
+
+/** One foundation's rollup row; every column is period-suffixed except the upcoming count. */
+interface AtAGlanceRow {
+  UPCOMING_EVENTS_COUNT_CURRENT_YEAR: number | null;
   [periodColumn: string]: unknown;
 }
 
@@ -227,6 +241,114 @@ export class HealthMetricsEventsService {
 
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapPastPeriod(result.rows[0], range)), events };
   }
+
+  /** The foundation's reach in each of the four periods, off its one precomputed rollup row; a rollup with no events falls back to `hasAnyEvent`. */
+  public async getAtAGlance(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<HealthMetricsEventsAtAGlance> {
+    // Prefixes and suffixes come from constants, never from the request, so interpolating them is safe.
+    const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
+      const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
+      const columns = [...AT_A_GLANCE_COUNT_PREFIXES.map((prefix) => `${prefix}_count_${suffix}`), `show_up_rate_${suffix}`];
+      if (!HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES.includes(range)) return columns;
+
+      const changes = AT_A_GLANCE_COUNT_PREFIXES.filter((prefix) => prefix !== 'past_events').map((prefix) => `${prefix}_change_pct_${suffix}`);
+      return [...columns, ...changes, `show_up_rate_change_pts_${suffix}`];
+    }).join(',\n        ');
+
+    const sql = `
+      SELECT
+        upcoming_events_count_current_year,
+        ${periodColumns}
+      FROM ${AT_A_GLANCE_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+      LIMIT 1
+    `;
+
+    const result = await executeSnowflakeViewRead<AtAGlanceRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: AT_A_GLANCE_VIEW,
+      operation: 'get_events_at_a_glance',
+      clientMessage: 'Events at a glance is unavailable right now.',
+    });
+
+    const row = result.rows[0];
+    // No row is a slug the rollup does not seed, a measured zero; the event check still decides.
+    if (!row) {
+      logger.debug(req, 'get_events_at_a_glance', 'No at-a-glance row for the foundation', { foundation_slug: query.foundationSlug });
+      const hasEvents = await this.hasAnyEvent(req, query);
+      return { periods: HEALTH_METRICS_L2_RANGES.map(buildZeroAtAGlancePeriod), upcomingEvents: 0, hasEvents };
+    }
+
+    const periods = HEALTH_METRICS_L2_RANGES.map((range) => mapAtAGlancePeriod(row, range));
+    const upcomingEvents = toNullableNumber(row.UPCOMING_EVENTS_COUNT_CURRENT_YEAR);
+    // An unmeasured count could hide an event, so only measured zeros everywhere read as none held.
+    const eventCounts = [upcomingEvents, ...periods.map((period) => period.events)];
+
+    const hasEvents = eventCounts.some((value) => value !== 0) || (await this.hasAnyEvent(req, query));
+
+    return { periods, upcomingEvents, hasEvents };
+  }
+
+  /** Whether the foundation has ever held an event, or has one still to come in any year. */
+  private async hasAnyEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
+    // The past view keeps every closed event whatever its age; the rollup only covers four periods.
+    const pastSql = `
+      SELECT 1 AS has_event
+      FROM ${PAST_EVENTS_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+      LIMIT 1
+    `;
+    if (await this.hasRow(req, PAST_EVENTS_VIEW, pastSql, [query.foundationSlug])) return true;
+
+    const upcomingSql = `
+      SELECT 1 AS has_event
+      FROM ${REGISTRATION_FORECAST_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND event_start_date >= CURRENT_DATE()
+      LIMIT 1
+    `;
+    return this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug]);
+  }
+
+  /** One guarded existence read, so a missing object is logged under the one view it names. */
+  private async hasRow(req: Request, view: string, sql: string, binds: string[]): Promise<boolean> {
+    const result = await executeSnowflakeViewRead<{ HAS_EVENT: number }>(this.snowflakeService, req, sql, binds, {
+      view,
+      operation: 'get_events_at_a_glance',
+      clientMessage: 'Events at a glance is unavailable right now.',
+    });
+
+    return result.rows.length > 0;
+  }
+}
+
+function mapAtAGlancePeriod(row: AtAGlanceRow, range: HealthMetricsL2Range): HealthMetricsEventsAtAGlancePeriod {
+  const count = (prefix: string): number | null => toNullableNumber(row[periodColumn(`${prefix}_count`, range)]);
+  const change = (prefix: string): number | null => toNullableNumber(row[periodColumn(`${prefix}_change_pct`, range)]);
+
+  return {
+    range,
+    registrations: count('registrations'),
+    attendees: count('attendees'),
+    organizations: count('organizations'),
+    speakers: count('speakers'),
+    countries: count('countries'),
+    events: count('events'),
+    pastEvents: count('past_events'),
+    showUpRate: toNullableNumber(row[periodColumn('show_up_rate', range)]),
+    changes: HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES.includes(range)
+      ? {
+          registrations: change('registrations'),
+          attendees: change('attendees'),
+          organizations: change('organizations'),
+          speakers: change('speakers'),
+          countries: change('countries'),
+          events: change('events'),
+          showUpRatePts: toNullableNumber(row[periodColumn('show_up_rate_change_pts', range)]),
+        }
+      : null,
+  };
 }
 
 function mapPastEvent(row: PastEventRow): HealthMetricsEventsPastEvent | null {
@@ -253,6 +375,22 @@ function mapPastPeriod(row: PastEventRow, range: HealthMetricsL2Range): HealthMe
     range,
     eventCount: toNullableNumber(row[periodColumn('SCOPE_PAST_EVENTS_COUNT', range)]),
     registrations: toNullableNumber(row[periodColumn('SCOPE_REGISTRATIONS_COUNT', range)]),
+  };
+}
+
+/** A measured-zero period for a foundation the view has no row for; with nothing held, nothing changed. */
+function buildZeroAtAGlancePeriod(range: HealthMetricsL2Range): HealthMetricsEventsAtAGlancePeriod {
+  return {
+    range,
+    registrations: 0,
+    attendees: 0,
+    organizations: 0,
+    speakers: 0,
+    countries: 0,
+    events: 0,
+    pastEvents: 0,
+    showUpRate: null,
+    changes: null,
   };
 }
 

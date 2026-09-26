@@ -3,8 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, isMissingObjectError, warning } = vi.hoisted(() => ({
+const { execute, isMissingObjectError, loggerError, warning } = vi.hoisted(() => ({
   execute: vi.fn(),
+  loggerError: vi.fn(),
   isMissingObjectError: vi.fn(() => false),
   warning: vi.fn(),
 }));
@@ -18,7 +19,7 @@ vi.mock('./snowflake.service', () => ({
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
 
 import {
@@ -290,5 +291,164 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
 
     expect(events).toHaveLength(HEALTH_METRICS_EVENTS_PAST_EVENT_CAP);
     expect(warning).toHaveBeenCalledWith(req, 'get_events_past', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
+  });
+});
+
+function glanceRow(overrides: Record<string, unknown> = {}) {
+  return {
+    UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 3,
+    REGISTRATIONS_COUNT_YTD: 2000,
+    ATTENDEES_COUNT_YTD: 1500,
+    ORGANIZATIONS_COUNT_YTD: 400,
+    SPEAKERS_COUNT_YTD: 90,
+    COUNTRIES_COUNT_YTD: 30,
+    EVENTS_COUNT_YTD: 4,
+    PAST_EVENTS_COUNT_YTD: 4,
+    SHOW_UP_RATE_YTD: 0.75,
+    REGISTRATIONS_CHANGE_PCT_YTD: -0.1,
+    ATTENDEES_CHANGE_PCT_YTD: -0.35,
+    ORGANIZATIONS_CHANGE_PCT_YTD: 0,
+    SPEAKERS_CHANGE_PCT_YTD: null,
+    COUNTRIES_CHANGE_PCT_YTD: 0.2,
+    EVENTS_CHANGE_PCT_YTD: 0.5,
+    SHOW_UP_RATE_CHANGE_PTS_YTD: -0.02,
+    EVENTS_COUNT_LAST_COMPLETED_YEAR: 6,
+    EVENTS_COUNT_PREV_COMPLETED_YEAR: 5,
+    SHOW_UP_RATE_PREV_COMPLETED_YEAR: null,
+    EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: 0,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsEventsService.getAtAGlance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [glanceRow()] });
+  });
+
+  it('binds only the foundation and reads its rollup row, asking for change columns only where the view has them', async () => {
+    await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('MARKETING_EVENT_AT_A_GLANCE');
+    expect(sql).toContain('is_all_projects = TRUE');
+    expect(sql).toContain('show_up_rate_change_pts_last_completed_year');
+    expect(sql).toContain('past_events_count_3rd_last_completed_year');
+    expect(sql).not.toContain('change_pct_prev_completed_year');
+    expect(sql).not.toContain('past_events_change_pct');
+  });
+
+  it('maps a compared period, keeping a null change not available and a zero change measured', async () => {
+    const { periods, upcomingEvents, hasEvents } = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    expect(upcomingEvents).toBe(3);
+    expect(hasEvents).toBe(true);
+    expect(periods.find((period) => period.range === 'YTD')).toEqual({
+      range: 'YTD',
+      registrations: 2000,
+      attendees: 1500,
+      organizations: 400,
+      speakers: 90,
+      countries: 30,
+      events: 4,
+      pastEvents: 4,
+      showUpRate: 0.75,
+      changes: { registrations: -0.1, attendees: -0.35, organizations: 0, speakers: null, countries: 0.2, events: 0.5, showUpRatePts: -0.02 },
+    });
+  });
+
+  it('leaves an uncompared period without changes and keeps its unmeasured show-up rate null', async () => {
+    const { periods } = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+    const period = periods.find((candidate) => candidate.range === 'COMPLETED_YEAR_2');
+
+    expect(period).toMatchObject({ events: 5, showUpRate: null, changes: null });
+    expect(periods.map((candidate) => candidate.range)).toEqual(HEALTH_METRICS_L2_RANGES);
+  });
+
+  it('reads a foundation with no rollup row and no event ever held or to come as having none', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    expect(glance.hasEvents).toBe(false);
+    expect(glance.upcomingEvents).toBe(0);
+    expect(glance.periods.map((period) => period.events)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('reads only measured zeros everywhere as no events, never an unmeasured count', async () => {
+    const none = { UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 0, EVENTS_COUNT_YTD: 0, EVENTS_COUNT_LAST_COMPLETED_YEAR: 0, EVENTS_COUNT_PREV_COMPLETED_YEAR: 0 };
+    execute
+      .mockResolvedValueOnce({ rows: [glanceRow(none)] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [glanceRow({ ...none, EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null })] });
+    const service = new HealthMetricsEventsService();
+
+    expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(false);
+    expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ['no rollup row', { rows: [] }],
+    [
+      'an all-zero rollup row',
+      {
+        rows: [
+          glanceRow({
+            UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 0,
+            EVENTS_COUNT_YTD: 0,
+            EVENTS_COUNT_LAST_COMPLETED_YEAR: 0,
+            EVENTS_COUNT_PREV_COMPLETED_YEAR: 0,
+            EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: 0,
+          }),
+        ],
+      },
+    ],
+  ])('keeps the tab for %s when an older event exists, without reading the forecast', async (_case, rollup) => {
+    execute.mockResolvedValueOnce(rollup).mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[1];
+    expect(glance.hasEvents).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(binds).toEqual(['acme']);
+    // Past events carry no period filter, so an event older than the four periods still counts.
+    expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+LIMIT 1/);
+  });
+
+  it('keeps the tab when the only event is still to come, reading the forecast after past events', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[2];
+    expect(glance.hasEvents).toBe(true);
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST');
+    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+  });
+
+  it('logs a missing view under the one view the failed read names', async () => {
+    const missing = new Error('Object does not exist');
+    isMissingObjectError.mockReturnValueOnce(true);
+    execute.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockRejectedValueOnce(missing);
+
+    await expect(new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' })).rejects.toBe(missing);
+
+    expect(loggerError).toHaveBeenCalledWith(req, 'get_events_at_a_glance_missing_object', expect.any(Number), missing, {
+      snowflake_expected_missing_object: 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST',
+    });
+  });
+
+  it('skips the event check for a foundation whose rollup already shows events', async () => {
+    await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

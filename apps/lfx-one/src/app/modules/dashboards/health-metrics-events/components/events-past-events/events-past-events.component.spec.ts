@@ -159,6 +159,13 @@ describe('EventsPastEventsComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled', 'settled', 'settled']);
   });
 
+  it('reads goals with no measured outcome as not tracked, never as unset', async () => {
+    await render(past({ events: [pastEvent({ registrations: null, goalMet: null })] }));
+
+    expect(text('events-past-events-goal-met-value')).toBe('not tracked');
+    expect(text('events-past-events-status-past-1')).toBe('Not tracked');
+  });
+
   it('marks a within-reach miss as just missed', async () => {
     await render(past({ events: [pastEvent({ registrations: 900, goalMet: false, paceStatus: 'needs_attention' })] }));
 
