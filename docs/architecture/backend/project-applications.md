@@ -49,6 +49,8 @@ The upstream accept route takes no body. Per #3037, the formation team chooses t
 2. It revises the complete answer map, adding `application.parent_project_uid`.
 3. It accepts at the revision the revise returned.
 
+Both write guards — the accept pre-check and the revise parent-key guard below — use the strict membership check (`isFormationTeamMemberStrict`, backed by `checkSingleAccessStrict`). If the access check is unavailable, the write aborts with that error before anything is sent upstream. It is never treated as "not a member", so a stored parent is never silently dropped and an outage never shows up as a 403. Only the browser's `GET /access` probe uses the fail-closed variant.
+
 Upstream, `parent_project_uid` is an ordinary answer key that any `writer` can change. The BFF strips it from every create. When a revise carries it and the caller is not on the formation team, the BFF drops the key and still sends the revise. Refusing instead would lock the submitter out of their own proposal after an accept that recorded the parent but then failed. Because accept can fail after that first write, the UI never retries an accept: a 404 drops the application, and any other failure is treated as a stale revision and reloads.
 
 ## Validation and privacy
