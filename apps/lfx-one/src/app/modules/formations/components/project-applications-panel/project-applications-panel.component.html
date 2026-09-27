@@ -65,8 +65,8 @@
           <lfx-table
             [value]="filteredApplications()"
             [loading]="loading()"
-            [paginator]="filteredApplications().length > pageSize"
-            [rows]="pageSize"
+            [paginator]="filteredApplications().length > 10"
+            [rows]="rows()"
             [first]="pageFirst()"
             (onPage)="onPage($event)"
             [rowsPerPageOptions]="[10, 25, 50]"

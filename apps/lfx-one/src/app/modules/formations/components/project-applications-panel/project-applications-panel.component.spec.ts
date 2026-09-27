@@ -10,7 +10,7 @@ import { ProjectApplicationService } from '@services/project-application.service
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { ProjectApplicationsPanelComponent } from './project-applications-panel.component';
@@ -118,6 +118,16 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     expect(component.applications()[0].state).toBe('denied');
   });
 
+  it('clamps using the chosen page size, and writes the clamp back', async () => {
+    const rows = Array.from({ length: 26 }, (_, index) => buildApplication({ uid: `app-${index}` }));
+    const { component } = await mount('staff', rows);
+    component.onPage({ first: 25, rows: 25 });
+
+    component.onDeleted('app-25');
+    expect(component.pageFirst()).toBe(0);
+    expect((component as unknown as { first: () => number }).first()).toBe(0);
+  });
+
   it('pulls the paginator back when a delete empties the last page', async () => {
     const rows = Array.from({ length: 11 }, (_, index) => buildApplication({ uid: `app-${index}` }));
     const { component } = await mount('staff', rows);
@@ -141,6 +151,20 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     fixture.detectChanges();
     expect(component.hasError()).toBe(false);
     expect(component.applications()).toHaveLength(1);
+  });
+
+  it('cancels a superseded load, so an older response landing late is never applied', async () => {
+    const { component } = await mount('submitter', [buildApplication({ uid: 'initial' })]);
+    const older = new Subject<ProjectApplication[]>();
+    const newer = new Subject<ProjectApplication[]>();
+    getApplications.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+
+    component.retry();
+    component.retry();
+    newer.next([buildApplication({ uid: 'newer' })]);
+    older.next([buildApplication({ uid: 'older' })]);
+
+    expect(component.applications().map((app) => app.uid)).toEqual(['newer']);
   });
 
   it('filters by state', async () => {

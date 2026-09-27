@@ -152,7 +152,7 @@ export class ProjectApplicationDrawerComponent {
     const application = this.application();
     if (!application) return;
     this.errorMessage.set(null);
-    this.run('revise', this.projectApplicationService.revise(application, answers), 'Proposal updated', true, () => this.editing.set(false));
+    this.run('revise', application.uid, this.projectApplicationService.revise(application, answers), 'Proposal updated', true, () => this.editing.set(false));
   }
 
   protected onWithdraw(): void {
@@ -162,7 +162,7 @@ export class ProjectApplicationDrawerComponent {
       'Withdraw this proposal?',
       'The formation team will stop reviewing it. The proposal is kept, but it can no longer be revised, accepted or denied.',
       'Withdraw',
-      () => this.run('withdraw', this.projectApplicationService.withdraw(application), 'Proposal withdrawn')
+      () => this.run('withdraw', application.uid, this.projectApplicationService.withdraw(application), 'Proposal withdrawn')
     );
   }
 
@@ -170,7 +170,7 @@ export class ProjectApplicationDrawerComponent {
     const application = this.application();
     if (!application) return;
     this.confirm('Deny this proposal?', 'The proposal is kept with a Denied status. The submitter is not notified automatically.', 'Deny', () =>
-      this.run('deny', this.projectApplicationService.deny(application), 'Proposal denied')
+      this.run('deny', application.uid, this.projectApplicationService.deny(application), 'Proposal denied')
     );
   }
 
@@ -188,7 +188,7 @@ export class ProjectApplicationDrawerComponent {
             this.deleted.emit(application.uid);
             this.visible.set(false);
           },
-          error: (error: unknown) => this.handleWriteError(error),
+          error: (error: unknown) => this.handleWriteError(error, application.uid),
         });
     });
   }
@@ -234,11 +234,18 @@ export class ProjectApplicationDrawerComponent {
         },
         // Accept is two upstream writes (record the parent, then accept). Any failure may have landed
         // after the first, so the held revision can no longer be trusted: always reload, never retry.
-        error: (error: unknown) => this.handleAcceptError(error),
+        error: (error: unknown) => this.handleAcceptError(error, application.uid),
       });
   }
 
-  private run(action: string, request$: Observable<ProjectApplicationWriteResult>, successSummary: string, inline = false, onSuccess?: () => void): void {
+  private run(
+    action: string,
+    uid: string,
+    request$: Observable<ProjectApplicationWriteResult>,
+    successSummary: string,
+    inline = false,
+    onSuccess?: () => void
+  ): void {
     this.busyAction.set(action);
     request$.pipe(finalize(() => this.busyAction.set(null))).subscribe({
       next: (result) => {
@@ -246,24 +253,22 @@ export class ProjectApplicationDrawerComponent {
         onSuccess?.();
         this.changed.emit(result.application);
       },
-      error: (error: unknown) => this.handleWriteError(error, inline),
+      error: (error: unknown) => this.handleWriteError(error, uid, inline),
     });
   }
 
   /**
-   * 412/404 mean the held copy is no longer current — never replay; close any edit state and have the
-   * list reload so the user sees the latest before trying again. Anything else shows the server's safe
-   * message (inline while editing, so the form keeps the user's changes).
+   * Neither case is replayed. A 412 closes any edit state and emits `stale` (the list reloads); a 404 emits
+   * `gone` with the UID the failed write was issued for — captured at request time, never the application
+   * open now, which may have changed while the request was in flight — so the list drops it. Anything else
+   * shows the server's safe message (inline while editing, so the form keeps the user's changes).
    */
-  private handleWriteError(error: unknown, inline = false): void {
+  private handleWriteError(error: unknown, uid: string, inline = false): void {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     if (status === 404) {
-      const uid = this.application()?.uid;
       this.messageService.add({ severity: 'warn', summary: 'This proposal is no longer available' });
       this.editing.set(false);
-      if (uid) {
-        this.gone.emit(uid);
-      }
+      this.gone.emit(uid);
       return;
     }
     if (status === 412) {
@@ -284,10 +289,10 @@ export class ProjectApplicationDrawerComponent {
     this.messageService.add({ severity: 'error', summary: 'Action failed', detail: message });
   }
 
-  private handleAcceptError(error: unknown): void {
+  private handleAcceptError(error: unknown, uid: string): void {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     if (status === 412 || status === 404) {
-      this.handleWriteError(error);
+      this.handleWriteError(error, uid);
       return;
     }
     this.messageService.add({

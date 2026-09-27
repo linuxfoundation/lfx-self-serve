@@ -57,11 +57,12 @@ export class FormationsQueueComponent {
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
 
-  private readonly isFormationTeam: Signal<boolean> = toSignal(this.projectApplicationService.getAccess(), { initialValue: false });
+  /** `null` until the access check answers. */
+  private readonly isFormationTeam: Signal<boolean | null> = toSignal(this.projectApplicationService.getAccess(), { initialValue: null });
   private readonly requestedTab: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('tab'))), { initialValue: null });
   /** The proposals tab exists only on The Linux Foundation, and only for formation-team members. */
   protected readonly showProposalsTab = computed(
-    () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam()
+    () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam() === true
   );
   /** A `?tab=proposals` link the caller can't use falls back to the formations list. */
   protected readonly pageTab: Signal<ProjectApplicationTab> = computed(() =>
@@ -69,6 +70,17 @@ export class FormationsQueueComponent {
       ? PROJECT_APPLICATION_TABS.proposals
       : PROJECT_APPLICATION_TABS.formations
   );
+
+  /**
+   * Whether the formations read should run: only on the formations tab, and — for a `?tab=proposals` deep
+   * link — only once the access check has answered, so a cold load doesn't fire a read it then discards.
+   */
+  private readonly formationsReadActive: Signal<boolean> = computed(() => {
+    if (this.requestedTab() === PROJECT_APPLICATION_TABS.proposals && this.isFormationTeam() === null) {
+      return false;
+    }
+    return this.pageTab() === PROJECT_APPLICATION_TABS.formations;
+  });
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
@@ -85,6 +97,11 @@ export class FormationsQueueComponent {
   });
 
   protected onPageTabChange(tab: string): void {
+    // Returning to Formations recreates the table with its default pill and search, so reset the filters to
+    // match — the same reason as onRetry below.
+    if (tab === PROJECT_APPLICATION_TABS.formations) {
+      this.filters.set({ subStage: undefined, search: '' });
+    }
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { tab: tab === PROJECT_APPLICATION_TABS.proposals ? tab : null },
@@ -123,9 +140,9 @@ export class FormationsQueueComponent {
     );
     return toSignal(
       // The formations read is skipped while the Project proposals tab is showing (#3037) — nothing renders it.
-      combineLatest([this.refresh$, toObservable(this.filters), foundationUid$, toObservable(this.pageTab).pipe(distinctUntilChanged())]).pipe(
-        switchMap(([, filters, foundationUid, pageTab]) => {
-          if (pageTab === PROJECT_APPLICATION_TABS.proposals) {
+      combineLatest([this.refresh$, toObservable(this.filters), foundationUid$, toObservable(this.formationsReadActive).pipe(distinctUntilChanged())]).pipe(
+        switchMap(([, filters, foundationUid, readActive]) => {
+          if (!readActive) {
             return EMPTY;
           }
           this.loadFailed.set(false);

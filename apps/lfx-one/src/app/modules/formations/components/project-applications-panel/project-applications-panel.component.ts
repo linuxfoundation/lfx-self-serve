@@ -56,7 +56,6 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   // === Template constants ===
   protected readonly stateFilterOptions: FilterPillOption[] = PROJECT_APPLICATION_STATE_FILTER_OPTIONS;
   protected readonly proposeRoute = ['/formations/propose'];
-  protected readonly pageSize = 10;
 
   // === Forms ===
   public readonly searchForm = new FormGroup({
@@ -69,6 +68,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   protected readonly searchTerm = signal('');
   protected readonly stateFilter = signal<string>('all');
   protected readonly first = signal(0);
+  protected readonly rows = signal(10);
   protected readonly selectedUid = signal<string | null>(null);
   protected readonly drawerVisible = signal(false);
   private readonly fetched = signal<ProjectApplication[]>([]);
@@ -129,6 +129,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
 
   protected onPage(event: TablePageEvent): void {
     this.first.set(event.first);
+    this.rows.set(event.rows);
   }
 
   protected resetFilters(): void {
@@ -152,6 +153,8 @@ export class ProjectApplicationsPanelComponent implements OnInit {
     this.projectApplicationService.recordDeleted(this.mode(), uid);
     this.selectedUid.set(null);
     this.drawerVisible.set(false);
+    // Write the clamp back so a later reload that grows the list can't snap the view to a stale offset.
+    this.first.set(this.pageFirst());
   }
 
   /** A 412: drop the local copy for the open application so the fresh read wins, then reload. */
@@ -207,7 +210,8 @@ export class ProjectApplicationsPanelComponent implements OnInit {
       if (first < total) {
         return first;
       }
-      return Math.floor((total - 1) / this.pageSize) * this.pageSize;
+      const rows = this.rows();
+      return Math.floor((total - 1) / rows) * rows;
     });
   }
 }

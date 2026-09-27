@@ -107,7 +107,7 @@
                 <tr [attr.data-testid]="'my-formations-row-' + row.formation_uid">
                   <td>
                     <!-- Lands on the project's formation checklist — the same destination the Pending Actions
-                       "View item" control uses (#2732); the route's data switches into the project lens. -->
+                         "View item" control uses (#2732); the route's data switches into the project lens. -->
                     <a
                       [routerLink]="[checklistPath]"
                       [queryParams]="{ project: row.project_slug }"

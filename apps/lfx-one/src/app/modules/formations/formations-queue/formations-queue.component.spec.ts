@@ -177,13 +177,16 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
 });
 
 describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
+  let getFormationsQueue: ReturnType<typeof vi.fn>;
+
   const render = async (options: { slug: string | null; isFormationTeam: boolean; tab?: string }): Promise<ComponentFixture<FormationsQueueComponent>> => {
     TestBed.resetTestingModule();
+    getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
     await TestBed.configureTestingModule({
       imports: [FormationsQueueComponent],
       providers: [
         provideRouter([]),
-        { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(createEmptyFormationsQueueResponse())) } },
+        { provide: FormationService, useValue: { getFormationsQueue } },
         {
           provide: ProjectContextService,
           useValue: {
@@ -226,8 +229,9 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
     expect(query(fixture, 'formations-queue-proposals')).toBeNull();
   });
 
-  it('renders the staff queue for ?tab=proposals', async () => {
+  it('renders the staff queue for ?tab=proposals and skips the formations read', async () => {
     const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'proposals' });
+    expect(getFormationsQueue).not.toHaveBeenCalled();
     expect(query(fixture, 'formations-queue-proposals')).not.toBeNull();
     expect(query(fixture, 'project-applications-staff')).not.toBeNull();
   });

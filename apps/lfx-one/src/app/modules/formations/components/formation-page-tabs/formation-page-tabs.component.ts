@@ -10,7 +10,8 @@ import type { FilterPillOption } from '@lfx-one/shared/interfaces';
  * proposals) and the foundation Formations queue (formations | project proposals). Same visual as the
  * Akrites dashboard tab bar and the same ARIA tab pattern as `program-detail-header`: roving tabindex,
  * Arrow/Home/End navigation, and each tab `aria-controls` a host-rendered `role="tabpanel"` whose id is
- * `<idPrefix>-panel-<tab id>` (see {@link panelId}). The host page owns the selection (kept in `?tab=`).
+ * `<idPrefix>-panel-<tab id>`, labelled by `<idPrefix>-tab-<tab id>` — hosts must build their panel id and
+ * `aria-labelledby` in exactly that format. The host page owns the selection (kept in `?tab=`).
  */
 @Component({
   selector: 'lfx-formation-page-tabs',

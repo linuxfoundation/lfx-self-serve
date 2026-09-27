@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import type { Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationAcceptDialogComponent } from './project-application-accept-dialog.component';
@@ -23,8 +23,9 @@ const PARENT = { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project;
 
 describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
   const setup = async () => {
+    TestBed.resetTestingModule();
     const close = vi.fn();
-    const searchProjects = vi.fn(() => of([PARENT, { uid: '', name: 'No uid', slug: 'none' } as Project]));
+    const searchProjects = vi.fn<(query: string) => Observable<Project[]>>(() => of([PARENT, { uid: '', name: 'No uid', slug: 'none' } as Project]));
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationAcceptDialogComponent],
       providers: [
@@ -43,6 +44,20 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
     component.search({ query: 'p' });
     expect(searchProjects).not.toHaveBeenCalled();
     component.search({ query: 'pa' });
+    expect(component.suggestions()).toEqual([PARENT]);
+  });
+
+  it('drops a superseded search, so a slow older response cannot replace newer results', async () => {
+    const { component, searchProjects } = await setup();
+    const older = new Subject<Project[]>();
+    const newer = new Subject<Project[]>();
+    searchProjects.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+
+    component.search({ query: 'pa' });
+    component.search({ query: 'par' });
+    newer.next([PARENT]);
+    older.next([{ uid: 'stale-uid', name: 'Stale', slug: 'stale' } as Project]);
+
     expect(component.suggestions()).toEqual([PARENT]);
   });
 
