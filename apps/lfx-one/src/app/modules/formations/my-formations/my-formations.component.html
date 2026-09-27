@@ -28,7 +28,7 @@
     idPrefix="my-formations-page-tabs"
     (tabChange)="onPageTabChange($event)" />
 
-  <div role="tabpanel" [id]="'my-formations-page-tabs-panel-' + pageTab()" [attr.aria-labelledby]="'my-formations-page-tabs-tab-' + pageTab()">
+  <div role="tabpanel" [attr.id]="'my-formations-page-tabs-panel-' + pageTab()" [attr.aria-labelledby]="'my-formations-page-tabs-tab-' + pageTab()">
     @if (pageTab() === tabs.proposals) {
       <lfx-project-applications-panel mode="submitter" data-testid="my-formations-proposals" />
     } @else if (hasError()) {

@@ -68,8 +68,8 @@ export class ProjectApplicationDrawerComponent {
   public readonly changed = output<ProjectApplication>();
   /** The application was deleted. */
   public readonly deleted = output<string>();
-  /** The held revision is stale (412) — reload before any further write. */
-  public readonly stale = output<void>();
+  /** The held revision is stale (412); carries the UID the write targeted — reload before any further write. */
+  public readonly stale = output<string>();
   /** A write found the application already gone (404); carries its UID so the list drops it. */
   public readonly gone = output<string>();
 
@@ -279,7 +279,7 @@ export class ProjectApplicationDrawerComponent {
         detail: 'The latest version has been loaded. Review it and try again.',
       });
       this.editing.set(false);
-      this.stale.emit();
+      this.stale.emit(uid);
       return;
     }
     const message = extractErrorMessage(error, 'Something went wrong. Please try again.');
@@ -301,7 +301,7 @@ export class ProjectApplicationDrawerComponent {
       summary: 'The proposal could not be accepted',
       detail: `${extractErrorMessage(error, 'Something went wrong.')} The latest version has been loaded; check it before trying again.`,
     });
-    this.stale.emit();
+    this.stale.emit(uid);
   }
 
   /** Every confirm here is for a hard-to-undo decision, so the accept button is always styled as danger. */

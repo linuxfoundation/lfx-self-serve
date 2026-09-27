@@ -151,18 +151,19 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   /** The caller deleted it, or a write found it already gone (404): either way it must not reappear. */
   protected onDeleted(uid: string): void {
     this.projectApplicationService.recordDeleted(this.mode(), uid);
-    this.selectedUid.set(null);
-    this.drawerVisible.set(false);
+    // Only close the drawer if it still shows that application — a late 404 for one the user has since
+    // navigated away from must not close (and lose edits on) a different, unrelated proposal.
+    if (uid === this.selectedUid()) {
+      this.selectedUid.set(null);
+      this.drawerVisible.set(false);
+    }
     // Write the clamp back so a later reload that grows the list can't snap the view to a stale offset.
     this.first.set(this.pageFirst());
   }
 
-  /** A 412: drop the local copy for the open application so the fresh read wins, then reload. */
-  protected onStale(): void {
-    const uid = this.selectedUid();
-    if (uid) {
-      this.projectApplicationService.forget(this.mode(), uid);
-    }
+  /** A 412: drop the local copy of the application the stale write targeted so the fresh read wins, then reload. */
+  protected onStale(uid: string): void {
+    this.projectApplicationService.forget(this.mode(), uid);
     this.load$.next();
   }
 

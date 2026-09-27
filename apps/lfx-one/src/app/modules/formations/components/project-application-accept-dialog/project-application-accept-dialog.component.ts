@@ -52,12 +52,11 @@ export class ProjectApplicationAcceptDialogComponent {
       )
       .subscribe((projects) => this.suggestions.set(projects.filter((project) => !!project.uid)));
 
-    // Typing after a selection makes the field hold text, not a project: the old choice must not survive
-    // to Confirm while different text is displayed.
+    // The control is the source of truth: only a project with a UID is a selection. With forceSelection,
+    // PrimeNG writes `null` (not the typed text) when unmatched input blurs — which a click on Confirm does —
+    // so anything that isn't a project clears the choice and Confirm can't send one the field no longer shows.
     this.form.controls.parent.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
-      if (typeof value === 'string') {
-        this.selectedParent.set(null);
-      }
+      this.selectedParent.set(this.asProject(value));
     });
   }
 
@@ -79,8 +78,14 @@ export class ProjectApplicationAcceptDialogComponent {
   }
 
   protected onConfirm(): void {
-    const parent = this.selectedParent();
-    if (!parent?.uid) return;
+    // Re-read the control rather than trusting the signal alone: whatever the field holds now is what is sent.
+    const parent = this.asProject(this.form.controls.parent.value);
+    if (!parent) return;
     this.dialogRef.close(parent);
+  }
+
+  // === Private Helpers ===
+  private asProject(value: Project | string | null): Project | null {
+    return value !== null && typeof value === 'object' && !!value.uid ? value : null;
   }
 }

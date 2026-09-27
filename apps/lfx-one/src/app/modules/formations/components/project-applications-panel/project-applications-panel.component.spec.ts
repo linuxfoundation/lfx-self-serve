@@ -22,7 +22,8 @@ interface PanelAccess {
   hasError: () => boolean;
   onChanged: (application: ProjectApplication) => void;
   onDeleted: (uid: string) => void;
-  onStale: () => void;
+  onStale: (uid: string) => void;
+  selectedUid: () => string | null;
   onPage: (event: { first: number; rows: number }) => void;
   open: (application: ProjectApplication) => void;
   retry: () => void;
@@ -113,7 +114,7 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     component.onChanged(buildApplication({ uid: 'a', state: 'withdrawn', revision: 2 }));
 
     getApplications.mockReturnValue(of([buildApplication({ uid: 'a', state: 'denied', revision: 3 })]));
-    component.onStale();
+    component.onStale('a');
 
     expect(component.applications()[0].state).toBe('denied');
   });
@@ -126,6 +127,23 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
     component.onDeleted('app-25');
     expect(component.pageFirst()).toBe(0);
     expect((component as unknown as { first: () => number }).first()).toBe(0);
+  });
+
+  it('a late 404 for another application drops it without closing the one now open', async () => {
+    const { component } = await mount('staff', [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b' })]);
+    component.open(buildApplication({ uid: 'b' }));
+    component.onDeleted('a');
+    expect(component.selectedUid()).toBe('b');
+    expect(component.applications().map((app) => app.uid)).toEqual(['b']);
+  });
+
+  it('a late 412 forgets the overlay of the application it targeted, not the one now open', async () => {
+    const { component } = await mount('staff', [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b' })]);
+    component.onChanged(buildApplication({ uid: 'a', state: 'withdrawn', revision: 2 }));
+    component.onChanged(buildApplication({ uid: 'b', state: 'denied', revision: 2 }));
+    component.open(buildApplication({ uid: 'b' }));
+    component.onStale('a');
+    expect(component.applications().map((app) => `${app.uid}:${app.state}`)).toEqual(['a:submitted', 'b:denied']);
   });
 
   it('pulls the paginator back when a delete empties the last page', async () => {

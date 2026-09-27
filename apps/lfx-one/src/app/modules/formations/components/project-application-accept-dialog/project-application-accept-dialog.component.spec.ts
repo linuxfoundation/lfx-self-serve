@@ -36,7 +36,7 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
     }).compileComponents();
     const fixture = TestBed.createComponent(ProjectApplicationAcceptDialogComponent);
     fixture.detectChanges();
-    return { component: fixture.componentInstance as unknown as DialogAccess, close, searchProjects };
+    return { component: fixture.componentInstance as unknown as DialogAccess, form: fixture.componentInstance.form, close, searchProjects };
   };
 
   it('searches only from two characters and drops results without a uid', async () => {
@@ -62,26 +62,37 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
   });
 
   it('closes with the chosen parent only after one is selected', async () => {
-    const { component, close } = await setup();
+    const { component, form, close } = await setup();
     component.onConfirm();
     expect(close).not.toHaveBeenCalled();
 
+    form.controls.parent.setValue(PARENT);
     component.onSelected({ value: PARENT });
     component.onConfirm();
     expect(close).toHaveBeenCalledWith(PARENT);
   });
 
-  it('typing after a selection clears it, so Confirm cannot send a parent the field no longer shows', async () => {
-    const { component, close } = await setup();
+  it('an unmatched entry blurring to null (forceSelection) clears the choice, so Confirm sends nothing', async () => {
+    const { component, form, close } = await setup();
+    form.controls.parent.setValue(PARENT);
     component.onSelected({ value: PARENT });
-    (component as unknown as { form: { controls: { parent: { setValue: (v: string) => void } } } }).form.controls.parent.setValue('Other');
+    // What PrimeNG writes on blur when the typed text matches no suggestion under forceSelection.
+    form.controls.parent.setValue(null);
     component.onConfirm();
     expect(close).not.toHaveBeenCalled();
   });
 
+  it('confirms with the project the field holds', async () => {
+    const { component, form, close } = await setup();
+    form.controls.parent.setValue(PARENT);
+    component.onConfirm();
+    expect(close).toHaveBeenCalledWith(PARENT);
+  });
+
   it('clearing the selection blocks confirm again, and cancel closes empty', async () => {
-    const { component, close } = await setup();
-    component.onSelected({ value: PARENT });
+    const { component, form, close } = await setup();
+    form.controls.parent.setValue(PARENT);
+    form.controls.parent.setValue(null);
     component.onCleared();
     component.onConfirm();
     expect(close).not.toHaveBeenCalled();

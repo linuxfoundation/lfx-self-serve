@@ -26,8 +26,8 @@ export class ProjectApplicationService {
   private readonly http = inject(HttpClient);
 
   /**
-   * Write results the index hasn't caught up with yet, per list mode, overlaid on every read
-   * (`reconcile`). Root-scoped so it outlives a panel destroyed by a tab switch; entries are pruned once
+   * Write results the index hasn't caught up with yet, per list mode. The list applies them to every read
+   * (`reconcileProjectApplications`); {@link reconcile} prunes them once a read catches up. Root-scoped so it outlives a panel destroyed by a tab switch; entries are pruned once
    * a read returns the same or a newer revision (or confirms a deletion). In memory only — never browser
    * storage — and gone on any full navigation, including sign-out and impersonation changes.
    */
@@ -120,8 +120,9 @@ export class ProjectApplicationService {
   }
 
   /**
-   * Merges a fresh read with the overlay, then prunes what the read has caught up on: overlay entries the
-   * read now carries at the same or a newer revision, and deletions the read no longer returns.
+   * Prunes this mode's overlay against a fresh read: drops overlay entries the read now carries at the same or a
+   * newer revision, and deletions the read no longer returns. It does not merge — the list applies the overlay
+   * to each read itself, via `reconcileProjectApplications` (shared utils).
    */
   public reconcile(mode: ProjectApplicationViewMode, fetched: ProjectApplication[]): void {
     const byUid = new Map(fetched.map((application) => [application.uid, application]));

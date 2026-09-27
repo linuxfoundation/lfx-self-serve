@@ -80,9 +80,13 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     const deleted: string[] = [];
     const gone: string[] = [];
     let staleCount = 0;
+    const staleUids: string[] = [];
     fixture.componentInstance.changed.subscribe((app) => changed.push(app));
     fixture.componentInstance.deleted.subscribe((uid) => deleted.push(uid));
-    fixture.componentInstance.stale.subscribe(() => staleCount++);
+    fixture.componentInstance.stale.subscribe((uid) => {
+      staleUids.push(uid);
+      staleCount++;
+    });
     fixture.componentInstance.gone.subscribe((uid) => gone.push(uid));
     fixture.detectChanges();
     return {
@@ -97,6 +101,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
       deleted,
       gone,
       staleCount: () => staleCount,
+      staleUids,
     };
   };
 
@@ -189,13 +194,14 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(changed).toHaveLength(0);
   });
 
-  it('a stale revise leaves edit mode and asks for a reload', async () => {
-    const { component, service, staleCount } = await setup('submitter');
+  it('a stale revise leaves edit mode and asks for a reload of the application it targeted', async () => {
+    const { component, service, staleCount, staleUids } = await setup('submitter');
     service.revise.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 412 })));
     component.startEditing();
     component.onRevise({ project_name: 'Renamed' });
     expect(component.editing()).toBe(false);
     expect(staleCount()).toBe(1);
+    expect(staleUids).toEqual(['3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c']);
   });
 
   it('a 404 reports the application as gone instead of reloading', async () => {

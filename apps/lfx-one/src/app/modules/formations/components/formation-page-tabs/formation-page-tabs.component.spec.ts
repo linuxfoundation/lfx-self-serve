@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FilterPillOption } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationPageTabsComponent } from './formation-page-tabs.component';
 
@@ -79,6 +79,25 @@ describe('FormationPageTabsComponent (#3037)', () => {
   it('ignores other keys without preventing their default', () => {
     expect(press('Enter').defaultPrevented).toBe(false);
     expect(emitted).toEqual([]);
+  });
+
+  describe('focus', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      fixture.nativeElement.remove();
+    });
+
+    it('moves focus to the newly selected tab after the keypress', () => {
+      document.body.appendChild(fixture.nativeElement);
+      vi.useFakeTimers();
+      press('ArrowRight');
+      vi.runAllTimers();
+      expect(document.activeElement?.id).toBe('tabs-tab-middle');
+
+      press('End');
+      vi.runAllTimers();
+      expect(document.activeElement?.id).toBe('tabs-tab-proposals');
+    });
   });
 
   it('clicking an inactive tab emits its id; clicking the active one does not', () => {
