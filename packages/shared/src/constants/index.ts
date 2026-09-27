@@ -119,6 +119,7 @@ export * from './social-listening.constants';
 export * from './formation.constants';
 export * from './formation-template.constants';
 export * from './formation-people.constants';
+export * from './project-application.constants';
 export * from './github-url.constants';
 export * from './health-metrics-engagement.constants';
 export * from './health-metrics-events.constants';

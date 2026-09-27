@@ -91,6 +91,7 @@ export * from './project-stage.utils';
 export * from './formation-checklist.utils';
 export * from './formation-me.utils';
 export * from './formation-people.utils';
+export * from './project-application.utils';
 export * from './health-metrics-engagement.utils';
 export * from './health-metrics-events.utils';
 export * from './health-metrics-l2.utils';

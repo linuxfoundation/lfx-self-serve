@@ -387,3 +387,4 @@ export * from './feature-flag.interface';
 // Formation checklist + Formations queue interfaces (GH-1958)
 export * from './formation-checklist.interface';
 export * from './formation-people.interface';
+export * from './project-application.interface';
