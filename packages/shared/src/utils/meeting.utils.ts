@@ -545,6 +545,30 @@ export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: Meeti
 }
 
 /**
+ * Duration (minutes) for the start {@link getUpcomingMeetingStartTime} resolves.
+ *
+ * An explicit occurrence's duration wins. Otherwise the occurrence whose start instant matches
+ * that upcoming start, so an extended or shortened slot is not measured with the series length.
+ * The series `duration` is the fallback when the list has no matching occurrence:
+ * `next_occurrence_start_time` carries no duration, and the list `occurrences` array is not
+ * always usable (LFXV2-2054), so it must not override the upcoming start.
+ */
+export function resolveUpcomingMeetingDurationMinutes(meeting: Meeting, occurrence?: MeetingOccurrence | null): number {
+  if (occurrence) {
+    return occurrence.duration ?? meeting?.duration ?? 0;
+  }
+  const start = getUpcomingMeetingStartTime(meeting);
+  const startMs = start ? Date.parse(start) : Number.NaN;
+  if (!Number.isNaN(startMs)) {
+    const matched = meeting?.occurrences?.find((item) => Date.parse(item.start_time) === startMs);
+    if (matched && Number.isFinite(matched.duration)) {
+      return matched.duration;
+    }
+  }
+  return meeting?.duration ?? 0;
+}
+
+/**
  * Check if a meeting can be joined based on current time
  * @param meeting The meeting object
  * @param occurrence Optional specific occurrence (for recurring meetings)
@@ -644,7 +668,7 @@ export function selectNextUpcomingMeeting(meetings: Meeting[], now = new Date())
     if (Number.isNaN(startMs)) {
       continue;
     }
-    const endMs = startMs + (meeting.duration ?? 0) * 60_000 + MEETING_END_BUFFER_MS;
+    const endMs = startMs + resolveUpcomingMeetingDurationMinutes(meeting) * 60_000 + MEETING_END_BUFFER_MS;
     if (nowMs > endMs) {
       continue;
     }

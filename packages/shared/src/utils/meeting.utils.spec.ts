@@ -463,6 +463,37 @@ describe('selectNextUpcomingMeeting', () => {
     expect(selectNextUpcomingMeeting([ended], now)).toBeNull();
   });
 
+  it('drops a series whose next_occurrence_start_time has already ended', () => {
+    const stale = buildMeetingFixture({
+      id: 'stale',
+      start_time: '2024-01-04T15:00:00Z',
+      duration: 60,
+      next_occurrence_start_time: '2026-09-01T15:00:00Z',
+      recurrence: weekly,
+    });
+    const upcoming = buildMeetingFixture({
+      id: 'upcoming',
+      start_time: '2026-10-01T15:00:00Z',
+      duration: 60,
+    });
+
+    expect(selectNextUpcomingMeeting([stale, upcoming], now)?.id).toBe('upcoming');
+    expect(selectNextUpcomingMeeting([stale], now)).toBeNull();
+  });
+
+  it('keeps an extended occurrence when the series duration would already have ended', () => {
+    const extended = buildMeetingFixture({
+      id: 'extended',
+      start_time: '2024-01-04T15:00:00Z',
+      duration: 10,
+      next_occurrence_start_time: '2026-09-27T11:00:00Z',
+      recurrence: weekly,
+      occurrences: [occurrence({ occurrence_id: 'occ-extended', start_time: '2026-09-27T11:00:00Z', duration: 90 })],
+    });
+
+    expect(selectNextUpcomingMeeting([extended], now)?.id).toBe('extended');
+  });
+
   it('keeps an in-progress meeting inside the post-meeting buffer', () => {
     const inProgress = buildMeetingFixture({
       id: 'live',

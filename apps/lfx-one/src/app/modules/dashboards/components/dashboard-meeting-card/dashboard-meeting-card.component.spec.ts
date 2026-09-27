@@ -45,7 +45,10 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
 describe('DashboardMeetingCardComponent', () => {
   let fixture: ComponentFixture<DashboardMeetingCardComponent>;
 
+  let getPastMeetingRecording: ReturnType<typeof vi.fn>;
+
   const render = async (meeting: Meeting, options?: { occurrence?: MeetingOccurrence | null; pastMeeting?: boolean }): Promise<void> => {
+    getPastMeetingRecording = vi.fn(() => of(null));
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [DashboardMeetingCardComponent],
@@ -55,7 +58,7 @@ describe('DashboardMeetingCardComponent', () => {
         { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
         {
           provide: MeetingService,
-          useValue: { getPublicMeetingJoinUrl: vi.fn(() => of(null)), getPastMeetingRecording: vi.fn(() => of(null)) },
+          useValue: { getPublicMeetingJoinUrl: vi.fn(() => of(null)), getPastMeetingRecording },
         },
       ],
     }).compileComponents();
@@ -96,5 +99,33 @@ describe('DashboardMeetingCardComponent', () => {
     });
 
     expect(fixture.componentInstance.meetingStartTime()).toBe('2026-09-01T15:00:00Z');
+  });
+
+  it('opens the join window for the next occurrence, not the series origin', async () => {
+    const nextStart = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    await render(
+      buildMeeting({
+        start_time: '2024-01-04T15:00:00Z',
+        duration: 60,
+        next_occurrence_start_time: nextStart,
+      })
+    );
+
+    expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+  });
+
+  it('does not load a recording for a future occurrence whose series origin is past', async () => {
+    const nextStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    await render(
+      buildMeeting({
+        start_time: '2024-01-04T15:00:00Z',
+        duration: 60,
+        recording_enabled: true,
+        next_occurrence_start_time: nextStart,
+      })
+    );
+
+    expect(getPastMeetingRecording).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.recordingShareUrl()).toBeNull();
   });
 });
