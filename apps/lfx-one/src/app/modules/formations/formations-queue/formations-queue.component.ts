@@ -3,24 +3,52 @@
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
+import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectContextService } from '@services/project-context.service';
-import type { FormationQueueTiles, FormationsQueueFilterState, FormationsQueueResponse, StatCardItem } from '@lfx-one/shared/interfaces';
-import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
+import type {
+  FilterPillOption,
+  FormationQueueTiles,
+  FormationsQueueFilterState,
+  FormationsQueueResponse,
+  ProjectApplicationTab,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
+import {
+  createEmptyFormationsQueueResponse,
+  FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
+  LF_FOUNDATION_ROOT_SLUG,
+  PROJECT_APPLICATION_TABS,
+} from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, map, of, switchMap } from 'rxjs';
 
+import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
+import { ProjectApplicationsPanelComponent } from '../components/project-applications-panel/project-applications-panel.component';
 
+/**
+ * Foundation-lens Formations queue. #3037 adds a "Project proposals" page tab (`?tab=proposals`) — the
+ * formation team's review queue for project applications. Applications have no parent, so the queue is
+ * never scoped to a project tree; it is offered only on The Linux Foundation (`tlf`) and only to
+ * `team:formation` members. Query-service still filters every document by the caller's access.
+ */
 @Component({
   selector: 'lfx-formations-queue',
-  imports: [StatCardGridComponent, FormationsTableComponent],
+  imports: [FormationPageTabsComponent, FormationsTableComponent, ProjectApplicationsPanelComponent, StatCardGridComponent],
   templateUrl: './formations-queue.component.html',
   styleUrl: './formations-queue.component.scss',
 })
 export class FormationsQueueComponent {
   private readonly formationService = inject(FormationService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectApplicationService = inject(ProjectApplicationService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  protected readonly pageTabOptions: FilterPillOption[] = FORMATIONS_QUEUE_PAGE_TAB_OPTIONS;
+  protected readonly tabs = PROJECT_APPLICATION_TABS;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -28,6 +56,19 @@ export class FormationsQueueComponent {
   // would flash "No formations yet" for one frame.
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
+
+  private readonly isFormationTeam: Signal<boolean> = toSignal(this.projectApplicationService.getAccess(), { initialValue: false });
+  private readonly requestedTab: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('tab'))), { initialValue: null });
+  /** The proposals tab exists only on The Linux Foundation, and only for formation-team members. */
+  protected readonly showProposalsTab = computed(
+    () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam()
+  );
+  /** A `?tab=proposals` link the caller can't use falls back to the formations list. */
+  protected readonly pageTab: Signal<ProjectApplicationTab> = computed(() =>
+    this.showProposalsTab() && this.requestedTab() === PROJECT_APPLICATION_TABS.proposals
+      ? PROJECT_APPLICATION_TABS.proposals
+      : PROJECT_APPLICATION_TABS.formations
+  );
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
@@ -42,6 +83,15 @@ export class FormationsQueueComponent {
       ? `${foundation.name}'s formations between Prospect and Active.`
       : 'Every foundation, project, and child project between Prospect and Active.';
   });
+
+  protected onPageTabChange(tab: string): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: tab === PROJECT_APPLICATION_TABS.proposals ? tab : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   protected onFiltersChange(filters: FormationsQueueFilterState): void {
     this.filters.set(filters);

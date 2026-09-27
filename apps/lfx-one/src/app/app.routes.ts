@@ -709,6 +709,16 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/formations/my-formations/my-formations.component').then((m) => m.MyFormationsComponent),
       },
       {
+        // Propose a project (#3037) — the intake form behind My Formations' header CTA. Open to any
+        // signed-in user (no project grant needed), same Me lens and the same `formation-enabled`
+        // dark-launch gate as My Formations above.
+        path: 'formations/propose',
+        title: 'Propose a project',
+        data: { lens: 'me' },
+        canMatch: [formationMeEnabledGuard],
+        loadComponent: () => import('./modules/formations/propose-project/propose-project.component').then((m) => m.ProposeProjectComponent),
+      },
+      {
         path: 'me/events',
         redirectTo: 'events',
         pathMatch: 'full',

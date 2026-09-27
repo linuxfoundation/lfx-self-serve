@@ -1,0 +1,55 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+# Project Applications BFF
+
+"Propose a project" (#3037) lets any signed-in user submit a project application. The LF formation team then reviews it. The backend is `lfx-v2-formation-service`'s `/project-applications` routes (#1962). Reads go through query-service.
+
+## Routes
+
+Everything is mounted at `/api/project-applications` (`routes/project-applications.route.ts`). The global `authMiddleware` requires a session for every route. Writes also use `blockDuringImpersonation`.
+
+| Route                           | Upstream                                                                          | Token   |
+| ------------------------------- | --------------------------------------------------------------------------------- | ------- |
+| `GET /mine`                     | `GET /query/resources?type=project_application&tags=submitter:<username>`         | user    |
+| `GET /queue`                    | `GET /query/resources?type=project_application` (no project-tree filter)          | user    |
+| `GET /access`                   | access-check `team:formation#member`                                              | user    |
+| `POST /`                        | `POST /project-applications`                                                      | **M2M** |
+| `PUT /:uid`                     | `PUT /project-applications/{uid}` (`If-Match`)                                    | user    |
+| `POST /:uid/withdraw` · `/deny` | `POST /project-applications/{uid}/withdraw` · `/deny` (`If-Match`)                | user    |
+| `POST /:uid/accept`             | `PUT /project-applications/{uid}`, then `POST /project-applications/{uid}/accept` | user    |
+| `DELETE /:uid`                  | `DELETE /project-applications/{uid}` (`If-Match`, 204)                            | user    |
+
+## Why create uses M2M
+
+The formation-service contract has the UI authenticate **as itself** on create. The gateway admits only `team:global_project_application_admin`, and the self-serve M2M principal is the member of that team. That way any signed-in user can propose a project without needing a per-user grant.
+
+This counts as the "explicit privileged upstream call" case in `.claude/rules/development-rules.md`:
+
+- The route requires a session and refuses impersonation.
+- The M2M token is scoped to this one call with `{ bearerToken }`.
+- The submitter's `username`, `name` and `email` are copied from the session into the payload, so the application is attributable to the person who submitted it. The browser only ever sends `application`.
+
+## Concurrency
+
+Every mutation forwards the application's `revision` as a bare-digit `If-Match`, checked by `parseIfMatch`. Upstream returns the next revision in `ETag`, and the BFF passes it through.
+
+A `412` becomes `PreconditionFailedError`. The UI never replays a write after a 412; it reloads and lets the user try again.
+
+query-service lags behind successful writes. The UI therefore overlays each write result on the next read (`reconcileProjectApplications`) instead of refetching straight away.
+
+## Accept and the parent project
+
+The upstream accept route takes no body. Per #3037, the formation team chooses the parent project when accepting, and the new project is created downstream from the accepted application. Accept therefore runs as two upstream calls:
+
+1. The BFF checks that the caller is in `team:formation`. This is a guard, not the authorization: revise only needs `writer`, so a submitter could otherwise commit the revise and then be refused the accept.
+2. It revises the complete answer map, adding `application.parent_project_uid`.
+3. It accepts at the revision the revise returned.
+
+Upstream, `parent_project_uid` is an ordinary answer key that any `writer` can change. The BFF refuses a revise that carries it unless the caller is on the formation team.
+
+## Validation and privacy
+
+`validateProjectApplicationAnswers` (shared utils) mirrors formation-service's canonical-field rules, so a bad payload gets a field-specific 400 before any upstream call. Unknown keys are kept as they are.
+
+Answers, emails and upstream messages are never logged. Only the uid, status, reason and counts are logged. Read responses are `Cache-Control: private, no-store`.
