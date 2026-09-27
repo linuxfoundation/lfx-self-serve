@@ -17,6 +17,7 @@ import type {
   ProjectApplication,
   ProjectApplicationAnswers,
   ProjectApplicationAnswerSection,
+  ProjectApplicationRow,
   ProjectApplicationStateMeta,
   ProjectApplicationValidationIssue,
   UpstreamProjectApplication,
@@ -61,6 +62,18 @@ export function getProjectApplicationStateMeta(state: string | null | undefined)
     return PROJECT_APPLICATION_UNKNOWN_STATE_META;
   }
   return PROJECT_APPLICATION_STATE_META[state] ?? { ...PROJECT_APPLICATION_UNKNOWN_STATE_META, label: humanizeProjectApplicationKey(state) };
+}
+
+/** Display name for an application: its proposed project name, or a placeholder. */
+export function getProjectApplicationDisplayName(application: Pick<ProjectApplication, 'application'> | null | undefined): string {
+  const name = application?.application?.project_name;
+  return typeof name === 'string' && name.trim() ? name.trim() : 'Untitled proposal';
+}
+
+/** Decorates an application with the display values the list renders. */
+export function toProjectApplicationRow(application: ProjectApplication): ProjectApplicationRow {
+  const meta = getProjectApplicationStateMeta(application.state);
+  return { ...application, displayName: getProjectApplicationDisplayName(application), stateLabel: meta.label, stateSeverity: meta.severity };
 }
 
 /** Only a `submitted` application can still be revised, withdrawn, accepted or denied. */

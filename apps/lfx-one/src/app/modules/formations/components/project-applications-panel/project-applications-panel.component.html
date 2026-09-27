@@ -93,23 +93,23 @@
                     type="button"
                     class="lfx-table-name-link text-left text-sm text-gray-900 font-medium hover:underline bg-transparent border-0 p-0 cursor-pointer break-words"
                     (click)="open(application)"
-                    [attr.aria-label]="'Open proposal ' + projectName(application)"
+                    [attr.aria-label]="'Open proposal ' + application.displayName"
                     [attr.data-testid]="'project-applications-open-' + application.uid">
-                    {{ projectName(application) }}
+                    {{ application.displayName }}
                   </button>
                 </td>
                 @if (isStaff()) {
                   <td class="text-sm" [attr.data-testid]="'project-applications-submitter-' + application.uid">
                     <div class="flex flex-col min-w-0">
-                      <span class="text-gray-900 truncate">{{ application.submitter_name || application.submitter_username }}</span>
-                      <span class="text-xs text-gray-500 truncate">{{ application.submitter_email }}</span>
+                      <span class="text-gray-900 break-words">{{ application.submitter_name || application.submitter_username }}</span>
+                      <span class="text-xs text-gray-500 break-all">{{ application.submitter_email }}</span>
                     </div>
                   </td>
                 }
                 <td>
                   <lfx-tag
-                    [value]="stateMeta(application).label"
-                    [severity]="stateMeta(application).severity"
+                    [value]="application.stateLabel"
+                    [severity]="application.stateSeverity"
                     [attr.data-testid]="'project-applications-state-' + application.uid" />
                 </td>
                 <td class="text-sm text-gray-700">{{ application.created_at | date: 'mediumDate' }}</td>
@@ -126,8 +126,7 @@
 <lfx-project-application-drawer
   [application]="selectedApplication()"
   [mode]="mode()"
-  [visible]="drawerVisible()"
-  (visibleChange)="drawerVisible.set($event)"
+  [(visible)]="drawerVisible"
   (changed)="onChanged($event)"
   (deleted)="onDeleted($event)"
   (stale)="onStale()" />

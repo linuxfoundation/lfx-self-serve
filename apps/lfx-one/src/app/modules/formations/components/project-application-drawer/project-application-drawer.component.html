@@ -48,7 +48,8 @@
                 severity="primary"
                 size="small"
                 [disabled]="busy()"
-                (onClick)="openAcceptDialog()"
+                [loading]="busyAction() === 'accept'"
+                (onClick)="onAccept()"
                 data-testid="project-application-drawer-accept" />
               <lfx-button
                 label="Deny"
@@ -124,69 +125,5 @@
     </div>
   }
 </p-drawer>
-
-<!-- Accept: the formation team places the new project under a parent before the backend creates it. -->
-<p-dialog
-  [visible]="acceptDialogVisible()"
-  (visibleChange)="acceptDialogVisible.set($event)"
-  [modal]="true"
-  [draggable]="false"
-  [resizable]="false"
-  header="Accept proposal"
-  styleClass="w-[92vw] max-w-lg"
-  data-testid="project-application-accept-dialog">
-  <div class="flex flex-col gap-4">
-    <p class="text-sm text-gray-600 m-0">
-      Accepting creates <span class="font-medium text-gray-900">{{ projectName() }}</span> as a new project. Choose the parent project it belongs under.
-    </p>
-    <div class="flex flex-col gap-1.5">
-      <label for="project-application-accept-parent" class="text-sm text-gray-700">Parent project <span class="text-red-600" aria-hidden="true">*</span></label>
-      <lfx-autocomplete
-        [form]="acceptForm"
-        control="parent"
-        inputId="project-application-accept-parent"
-        [suggestions]="parentSuggestions()"
-        optionLabel="name"
-        dataKey="uid"
-        [minLength]="2"
-        [forceSelection]="true"
-        [showClear]="true"
-        appendTo="body"
-        placeholder="Search projects…"
-        styleClass="w-full"
-        dataTestId="project-application-accept-parent"
-        (completeMethod)="searchParents($event)"
-        (onSelect)="onParentSelected($event)"
-        (onClear)="onParentCleared()">
-        <ng-template #item let-project>
-          <div class="flex flex-col">
-            <span class="text-sm text-gray-900">{{ project.name }}</span>
-            <span class="text-xs text-gray-500">{{ project.slug }}</span>
-          </div>
-        </ng-template>
-      </lfx-autocomplete>
-    </div>
-  </div>
-  <ng-template #footer>
-    <div class="flex items-center justify-end gap-2">
-      <lfx-button
-        label="Cancel"
-        severity="secondary"
-        [text]="true"
-        size="small"
-        (onClick)="closeAcceptDialog()"
-        data-testid="project-application-accept-cancel" />
-      <lfx-button
-        label="Accept proposal"
-        icon="fa-light fa-circle-check"
-        severity="primary"
-        size="small"
-        [loading]="busyAction() === 'accept'"
-        [disabled]="!selectedParent() || busy()"
-        (onClick)="confirmAccept()"
-        data-testid="project-application-accept-confirm" />
-    </div>
-  </ng-template>
-</p-dialog>
 
 <p-confirmDialog key="project-application-drawer" />

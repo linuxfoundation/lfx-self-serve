@@ -3,31 +3,35 @@
 
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, effect, inject, input, model, output, Signal, signal, untracked } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
+import { Component, computed, DestroyRef, inject, input, model, output, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type {
   Project,
   ProjectApplication,
+  ProjectApplicationAcceptDialogData,
   ProjectApplicationAnswers,
   ProjectApplicationAnswerSection,
   ProjectApplicationStateMeta,
   ProjectApplicationViewMode,
   ProjectApplicationWriteResult,
 } from '@lfx-one/shared/interfaces';
-import { buildProjectApplicationAnswerSections, getProjectApplicationStateMeta, isProjectApplicationOpen } from '@lfx-one/shared/utils';
+import {
+  buildProjectApplicationAnswerSections,
+  getProjectApplicationDisplayName,
+  getProjectApplicationStateMeta,
+  isProjectApplicationOpen,
+} from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
-import { ProjectService } from '@services/project.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogModule } from 'primeng/dialog';
 import { DrawerModule } from 'primeng/drawer';
-import { finalize, Observable, take } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { combineLatest, distinctUntilChanged, finalize, map, Observable, take } from 'rxjs';
 
+import { ProjectApplicationAcceptDialogComponent } from '../project-application-accept-dialog/project-application-accept-dialog.component';
 import { ProjectApplicationFormComponent } from '../project-application-form/project-application-form.component';
 
 /**
@@ -42,25 +46,16 @@ import { ProjectApplicationFormComponent } from '../project-application-form/pro
  */
 @Component({
   selector: 'lfx-project-application-drawer',
-  imports: [
-    AutocompleteComponent,
-    ButtonComponent,
-    ConfirmDialogModule,
-    DatePipe,
-    DialogModule,
-    DrawerModule,
-    ProjectApplicationFormComponent,
-    ReactiveFormsModule,
-    TagComponent,
-  ],
+  imports: [ButtonComponent, ConfirmDialogModule, DatePipe, DrawerModule, ProjectApplicationFormComponent, TagComponent],
   templateUrl: './project-application-drawer.component.html',
 })
 export class ProjectApplicationDrawerComponent {
   // === Services ===
   private readonly projectApplicationService = inject(ProjectApplicationService);
-  private readonly projectService = inject(ProjectService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
   public readonly application = input<ProjectApplication | null>(null);
@@ -74,11 +69,6 @@ export class ProjectApplicationDrawerComponent {
   /** The held revision is stale or the application is gone — reload before any further write. */
   public readonly stale = output<void>();
 
-  // === Forms ===
-  public readonly acceptForm = new FormGroup({
-    parent: new FormControl<Project | string | null>(null),
-  });
-
   // === Models ===
   public readonly visible = model<boolean>(false);
 
@@ -86,19 +76,13 @@ export class ProjectApplicationDrawerComponent {
   protected readonly editing = signal(false);
   protected readonly busyAction = signal<string | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
-  protected readonly acceptDialogVisible = signal(false);
-  protected readonly parentSuggestions = signal<Project[]>([]);
-  protected readonly selectedParent = signal<Project | null>(null);
 
   // === Computed Signals ===
   protected readonly stateMeta: Signal<ProjectApplicationStateMeta> = computed(() => getProjectApplicationStateMeta(this.application()?.state));
   protected readonly sections: Signal<ProjectApplicationAnswerSection[]> = computed(() =>
     buildProjectApplicationAnswerSections(this.application()?.application)
   );
-  protected readonly projectName = computed(() => {
-    const name = this.application()?.application?.project_name;
-    return typeof name === 'string' && name.trim() ? name : 'Untitled proposal';
-  });
+  protected readonly projectName: Signal<string> = computed(() => getProjectApplicationDisplayName(this.application()));
   protected readonly isOpen = computed(() => {
     const application = this.application();
     return application ? isProjectApplicationOpen(application) : false;
@@ -108,18 +92,20 @@ export class ProjectApplicationDrawerComponent {
 
   // === Constructor ===
   public constructor() {
-    // A different application (or a closed drawer) always starts in read mode with no stale error.
-    effect(() => {
-      const uid = this.application()?.uid;
-      const open = this.visible();
-      untracked(() => {
-        if (!uid || !open) {
-          this.acceptDialogVisible.set(false);
-        }
+    // Opening a different application, or closing the drawer, always returns to read mode with no stale
+    // error. Keyed on the UID so a successful write (same UID, new revision) doesn't reset anything itself.
+    combineLatest([
+      toObservable(this.application).pipe(
+        map((application) => application?.uid ?? null),
+        distinctUntilChanged()
+      ),
+      toObservable(this.visible),
+    ])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
         this.editing.set(false);
         this.errorMessage.set(null);
       });
-    });
   }
 
   // === Protected Methods ===
@@ -178,47 +164,42 @@ export class ProjectApplicationDrawerComponent {
     });
   }
 
-  protected openAcceptDialog(): void {
-    this.acceptForm.reset({ parent: null });
-    this.selectedParent.set(null);
-    this.parentSuggestions.set([]);
-    this.acceptDialogVisible.set(true);
-  }
-
-  protected closeAcceptDialog(): void {
-    this.acceptDialogVisible.set(false);
-  }
-
-  protected searchParents(event: AutoCompleteCompleteEvent): void {
-    const query = (event.query ?? '').trim();
-    if (query.length < 2) {
-      this.parentSuggestions.set([]);
-      return;
-    }
-    this.projectService
-      .searchProjects(query)
-      .pipe(take(1))
-      .subscribe((projects) => this.parentSuggestions.set(projects.filter((project) => !!project.uid)));
-  }
-
-  protected onParentSelected(event: AutoCompleteSelectEvent): void {
-    this.selectedParent.set((event.value as Project) ?? null);
-  }
-
-  protected onParentCleared(): void {
-    this.selectedParent.set(null);
-  }
-
-  protected confirmAccept(): void {
+  /** Opens the parent-project picker; accepting runs only once the team has chosen a parent. */
+  protected onAccept(): void {
     const application = this.application();
-    const parent = this.selectedParent();
-    if (!application || !parent?.uid) return;
-    this.run('accept', this.projectApplicationService.accept(application, parent.uid), `Proposal accepted under ${parent.name}`, false, () =>
-      this.acceptDialogVisible.set(false)
-    );
+    if (!application) return;
+    const data: ProjectApplicationAcceptDialogData = { projectName: this.projectName() };
+    const ref = this.dialogService.open(ProjectApplicationAcceptDialogComponent, {
+      header: 'Accept proposal',
+      width: '520px',
+      modal: true,
+      closable: true,
+      data,
+    });
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((parent: Project | undefined) => {
+      if (parent?.uid) {
+        this.acceptUnder(application, parent);
+      }
+    });
   }
 
   // === Private Helpers ===
+  private acceptUnder(application: ProjectApplication, parent: Project): void {
+    this.busyAction.set('accept');
+    this.projectApplicationService
+      .accept(application, parent.uid)
+      .pipe(finalize(() => this.busyAction.set(null)))
+      .subscribe({
+        next: (result) => {
+          this.messageService.add({ severity: 'success', summary: `Proposal accepted under ${parent.name}` });
+          this.changed.emit(result.application);
+        },
+        // Accept is two upstream writes (record the parent, then accept). Any failure may have landed
+        // after the first, so the held revision can no longer be trusted: always reload, never retry.
+        error: (error: unknown) => this.handleAcceptError(error),
+      });
+  }
+
   private run(action: string, request$: Observable<ProjectApplicationWriteResult>, successSummary: string, inline = false, onSuccess?: () => void): void {
     this.busyAction.set(action);
     request$.pipe(finalize(() => this.busyAction.set(null))).subscribe({
@@ -245,7 +226,6 @@ export class ProjectApplicationDrawerComponent {
         detail: status === 412 ? 'The latest version has been loaded. Review it and try again.' : undefined,
       });
       this.editing.set(false);
-      this.acceptDialogVisible.set(false);
       this.stale.emit();
       return;
     }
@@ -255,6 +235,20 @@ export class ProjectApplicationDrawerComponent {
       return;
     }
     this.messageService.add({ severity: 'error', summary: 'Action failed', detail: message });
+  }
+
+  private handleAcceptError(error: unknown): void {
+    const status = error instanceof HttpErrorResponse ? error.status : 0;
+    if (status === 412 || status === 404) {
+      this.handleWriteError(error);
+      return;
+    }
+    this.messageService.add({
+      severity: 'error',
+      summary: 'The proposal could not be accepted',
+      detail: `${extractErrorMessage(error, 'Something went wrong.')} The latest version has been loaded; check it before trying again.`,
+    });
+    this.stale.emit();
   }
 
   /** Every confirm here is for a hard-to-undo decision, so the accept button is always styled as danger. */

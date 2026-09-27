@@ -46,7 +46,7 @@ The upstream accept route takes no body. Per #3037, the formation team chooses t
 2. It revises the complete answer map, adding `application.parent_project_uid`.
 3. It accepts at the revision the revise returned.
 
-Upstream, `parent_project_uid` is an ordinary answer key that any `writer` can change. The BFF refuses a revise that carries it unless the caller is on the formation team.
+Upstream, `parent_project_uid` is an ordinary answer key that any `writer` can change. When a revise carries it and the caller is not on the formation team, the BFF drops the key and still sends the revise. Refusing instead would lock the submitter out of their own proposal after an accept that recorded the parent but then failed. Because accept can fail after that first write, the UI treats every accept failure as a stale revision and reloads.
 
 ## Validation and privacy
 

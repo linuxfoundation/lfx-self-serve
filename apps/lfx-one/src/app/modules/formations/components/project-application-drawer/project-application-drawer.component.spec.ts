@@ -5,9 +5,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { Project, ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
-import { ProjectService } from '@services/project.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationDrawerComponent } from './project-application-drawer.component';
@@ -19,8 +19,7 @@ interface DrawerAccess {
   onWithdraw: () => void;
   onDeny: () => void;
   onDelete: () => void;
-  onParentSelected: (event: { value: Project }) => void;
-  confirmAccept: () => void;
+  onAccept: () => void;
 }
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -50,12 +49,15 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
       revise: vi.fn(),
     };
     const messages = { add: vi.fn() };
+    // The accept dialog closes with whatever the test pushes through `dialogClose`.
+    const dialogClose = new Subject<Project | undefined>();
+    const dialog = { open: vi.fn(() => ({ onClose: dialogClose.asObservable() })) };
 
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationDrawerComponent],
       providers: [
         { provide: ProjectApplicationService, useValue: service },
-        { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
+        { provide: DialogService, useValue: dialog },
         { provide: MessageService, useValue: messages },
         ConfirmationService,
       ],
@@ -84,6 +86,8 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
       service,
       messages,
       confirmation,
+      dialog,
+      dialogClose,
       changed,
       deleted,
       staleCount: () => staleCount,
@@ -123,13 +127,18 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(deleted).toEqual(['3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c']);
   });
 
-  it('accepts under the chosen parent', async () => {
-    const { component, service, changed } = await setup('staff');
-    component.confirmAccept();
+  it('does nothing when the accept dialog is cancelled', async () => {
+    const { component, service, dialog, dialogClose } = await setup('staff');
+    component.onAccept();
+    expect(dialog.open).toHaveBeenCalledTimes(1);
+    dialogClose.next(undefined);
     expect(service.accept).not.toHaveBeenCalled();
+  });
 
-    component.onParentSelected({ value: { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project });
-    component.confirmAccept();
+  it('accepts under the parent chosen in the dialog', async () => {
+    const { component, service, changed, dialogClose } = await setup('staff');
+    component.onAccept();
+    dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
     expect(service.accept).toHaveBeenCalledWith(expect.objectContaining({ revision: 4 }), 'parent-uid');
     expect(changed[0].state).toBe('accepted');
   });
@@ -142,6 +151,15 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(staleCount()).toBe(1);
     expect(changed).toHaveLength(0);
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+  });
+
+  it('reloads after any accept failure, since the parent may already be recorded', async () => {
+    const { component, service, staleCount, messages, dialogClose } = await setup('staff');
+    service.accept.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'Upstream unavailable' } })));
+    component.onAccept();
+    dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
+    expect(staleCount()).toBe(1);
+    expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'The proposal could not be accepted' }));
   });
 
   it('shows the server message for any other failure', async () => {

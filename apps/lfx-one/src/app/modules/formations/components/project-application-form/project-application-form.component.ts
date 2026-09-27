@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, input, output, Signal, signal, untracked } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -16,6 +16,7 @@ import {
   PROJECT_APPLICATION_CHAT_OPTIONS,
   PROJECT_APPLICATION_DESCRIPTION_MAX,
   PROJECT_APPLICATION_FIELD_LABELS,
+  PROJECT_APPLICATION_FORMATION_LIST_MAX,
   PROJECT_APPLICATION_LICENSE_OPTIONS,
   PROJECT_APPLICATION_MISSION_MAX,
   PROJECT_APPLICATION_SPEC_OPTIONS,
@@ -65,6 +66,7 @@ export class ProjectApplicationFormComponent {
   protected readonly descriptionMax = PROJECT_APPLICATION_DESCRIPTION_MAX;
   protected readonly missionMax = PROJECT_APPLICATION_MISSION_MAX;
   protected readonly textMax = PROJECT_APPLICATION_TEXT_MAX;
+  protected readonly formationListMax = PROJECT_APPLICATION_FORMATION_LIST_MAX;
 
   // === Forms ===
   public readonly form = new FormGroup({
@@ -95,9 +97,12 @@ export class ProjectApplicationFormComponent {
   // === Writable Signals ===
   private readonly formationListValue = signal('');
   private readonly descriptionValue = signal('');
+  /** Per-control "show the error" state, refreshed on every form event so the template reads a signal. */
+  protected readonly invalid = signal<Record<string, boolean>>({});
 
   // === Computed Signals ===
   protected readonly formationListPreview = computed(() => parseEmailList(this.formationListValue()));
+  protected readonly formationListInvalidText = computed(() => this.formationListPreview().invalid.join(', '));
   protected readonly descriptionLength: Signal<number> = computed(() => this.descriptionValue().length);
   protected readonly sectionClass = computed(() =>
     this.layout() === 'page' ? 'flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6' : 'flex flex-col gap-4 border-b border-gray-100 pb-6'
@@ -108,24 +113,22 @@ export class ProjectApplicationFormComponent {
     this.form.controls.formation_list.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.formationListValue.set(value ?? ''));
     this.form.controls.description.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.descriptionValue.set(value ?? ''));
 
+    this.form.events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.refreshInvalid());
+
     // Seed from the held answers whenever a different application is bound (drawer revise).
-    effect(() => {
-      const answers = this.initialAnswers();
-      untracked(() => this.patchFromAnswers(answers));
-    });
+    toObservable(this.initialAnswers)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((answers) => this.patchFromAnswers(answers));
   }
 
   // === Protected Methods ===
-  protected isInvalid(control: keyof typeof this.form.controls): boolean {
-    const field = this.form.controls[control];
-    return field.invalid && (field.touched || field.dirty);
-  }
 
   protected onSubmit(): void {
     if (this.submitting()) {
       return;
     }
     this.form.markAllAsTouched();
+    this.refreshInvalid();
     if (this.form.invalid) {
       return;
     }
@@ -137,6 +140,15 @@ export class ProjectApplicationFormComponent {
   }
 
   // === Private Helpers ===
+  private refreshInvalid(): void {
+    const next: Record<string, boolean> = {};
+    for (const [key, control] of Object.entries(this.form.controls)) {
+      next[key] = control.invalid && (control.touched || control.dirty);
+    }
+    next['formation_list_over_max'] = this.form.controls.formation_list.hasError('emailListMax');
+    this.invalid.set(next);
+  }
+
   private patchFromAnswers(answers: ProjectApplicationAnswers | null): void {
     const source = answers ?? {};
     const text = (key: string): string => (typeof source[key] === 'string' ? (source[key] as string) : '');

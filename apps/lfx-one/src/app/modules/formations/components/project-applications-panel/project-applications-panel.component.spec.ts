@@ -7,6 +7,7 @@ import type { ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/sh
 import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +54,7 @@ describe('ProjectApplicationsPanelComponent (#3037)', () => {
         { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
+        DialogService,
       ],
     }).compileComponents();
     const fixture: ComponentFixture<ProjectApplicationsPanelComponent> = TestBed.createComponent(ProjectApplicationsPanelComponent);

@@ -1,0 +1,46 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="project-application-accept-dialog">
+  <p class="text-sm text-gray-600 m-0">
+    Accepting creates <span class="font-medium text-gray-900">{{ data.projectName }}</span> as a new project. Choose the parent project it belongs under.
+  </p>
+  <div class="flex flex-col gap-1.5">
+    <label for="project-application-accept-parent" class="text-sm text-gray-700">Parent project <span class="text-red-600" aria-hidden="true">*</span></label>
+    <lfx-autocomplete
+      [form]="form"
+      control="parent"
+      inputId="project-application-accept-parent"
+      [suggestions]="suggestions()"
+      optionLabel="name"
+      dataKey="uid"
+      [minLength]="2"
+      [forceSelection]="true"
+      [showClear]="true"
+      appendTo="body"
+      placeholder="Search projects…"
+      styleClass="w-full"
+      dataTestId="project-application-accept-parent"
+      (completeMethod)="search($event)"
+      (onSelect)="onSelected($event)"
+      (onClear)="onCleared()">
+      <ng-template #item let-project>
+        <div class="flex flex-col">
+          <span class="text-sm text-gray-900">{{ project.name }}</span>
+          <span class="text-xs text-gray-500">{{ project.slug }}</span>
+        </div>
+      </ng-template>
+    </lfx-autocomplete>
+  </div>
+  <div class="flex items-center justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" (onClick)="onCancel()" data-testid="project-application-accept-cancel" />
+    <lfx-button
+      label="Accept proposal"
+      icon="fa-light fa-circle-check"
+      severity="primary"
+      size="small"
+      [disabled]="!selectedParent()"
+      (onClick)="onConfirm()"
+      data-testid="project-application-accept-confirm" />
+  </div>
+</div>

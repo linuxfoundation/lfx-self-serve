@@ -10,6 +10,12 @@ export const PROJECT_APPLICATION_TABS = {
   proposals: 'proposals',
 } as const;
 
+/** Browser-facing BFF base path for project applications. */
+export const PROJECT_APPLICATION_API_BASE_PATH = '/api/project-applications';
+
+/** `Cache-Control` for every project-application BFF response — answers are private. */
+export const PROJECT_APPLICATION_CACHE_CONTROL = 'private, no-store';
+
 /** Answer key the BFF writes the formation team's chosen parent project to before accepting. */
 export const PROJECT_APPLICATION_PARENT_KEY = 'parent_project_uid';
 

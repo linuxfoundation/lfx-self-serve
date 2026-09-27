@@ -89,6 +89,7 @@ test.describe('Propose a project — submitter (#3037)', () => {
   test('revises with If-Match, keeping answers the form does not render', async ({ page }) => {
     const state = await mockProjectApplicationApis(page, [buildProposal({ revision: 3 })]);
     await gotoMyFormations(page);
+    await waitForHydration(page);
     await page.getByTestId('my-formations-page-tabs-proposals').click();
 
     await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click({ timeout: DATA_LOAD_TIMEOUT });
@@ -113,6 +114,7 @@ test.describe('Propose a project — submitter (#3037)', () => {
   test('withdraws after confirmation, then deletes after confirmation', async ({ page }) => {
     const state = await mockProjectApplicationApis(page, [buildProposal({ revision: 2 })]);
     await gotoMyFormations(page);
+    await waitForHydration(page);
     await page.getByTestId('my-formations-page-tabs-proposals').click();
     await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click({ timeout: DATA_LOAD_TIMEOUT });
 
@@ -126,6 +128,33 @@ test.describe('Propose a project — submitter (#3037)', () => {
     await confirmDialog(page, 'Delete');
     await expect(page.getByTestId(`project-applications-row-${PROPOSAL_UID}`)).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
     expect(state.requests.find((request) => request.method === 'DELETE')?.ifMatch).toBe('3');
+  });
+});
+
+test.describe('Project proposals — empty and no-results states (#3037)', () => {
+  test('a submitter with no proposals sees the empty state with a Propose CTA', async ({ page }) => {
+    await mockProjectApplicationApis(page, []);
+    await gotoMyFormations(page);
+    await waitForHydration(page);
+    await page.getByTestId('my-formations-page-tabs-proposals').click();
+
+    const empty = page.getByTestId('project-applications-empty-state');
+    await expect(empty).toContainText('No proposals yet', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(empty.getByRole('link', { name: 'Propose a project' }).or(empty.getByRole('button', { name: 'Propose a project' }))).toBeVisible();
+    await expect(page.getByTestId('project-applications-table')).toHaveCount(0);
+  });
+
+  test('a search with no match shows No results, and Reset restores the row', async ({ page }) => {
+    await mockProjectApplicationApis(page, [buildProposal()]);
+    await gotoMyFormations(page);
+    await waitForHydration(page);
+    await page.getByTestId('my-formations-page-tabs-proposals').click();
+    await expect(page.getByTestId(`project-applications-row-${PROPOSAL_UID}`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.locator('[data-test="project-applications-search-input"]').fill('no such proposal');
+    await expect(page.getByTestId('project-applications-no-results')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('project-applications-no-results').getByRole('button', { name: 'Reset filters' }).click();
+    await expect(page.getByTestId(`project-applications-row-${PROPOSAL_UID}`)).toBeVisible();
   });
 });
 
@@ -164,6 +193,7 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     skipWhenAuthMissing(page);
     await page.goto('/foundation/formations?project=tlf&tab=proposals', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
+    await waitForHydration(page);
     return state;
   }
 
@@ -192,6 +222,14 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     await page.getByTestId('project-application-drawer-deny').click();
     await confirmDialog(page, 'Deny');
     await expect(page.getByTestId(`project-applications-state-${PROPOSAL_UID}`)).toContainText('Denied', { timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('an empty queue shows the staff empty state', async ({ page }) => {
+    const state = await gotoLfFormations(page, true);
+    state.applications = [];
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForHydration(page);
+    await expect(page.getByTestId('project-applications-empty-state')).toContainText('No project proposals yet', { timeout: DATA_LOAD_TIMEOUT });
   });
 
   test('hides the proposals tab from a caller outside the formation team', async ({ page }) => {

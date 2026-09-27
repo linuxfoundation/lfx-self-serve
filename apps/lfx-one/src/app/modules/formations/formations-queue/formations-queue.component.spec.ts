@@ -8,6 +8,7 @@ import { FormationService } from '@services/formation.service';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import type { FormationsQueueResponse, ProjectContext } from '@lfx-one/shared/interfaces';
@@ -199,6 +200,7 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
+        DialogService,
       ],
     }).compileComponents();
 

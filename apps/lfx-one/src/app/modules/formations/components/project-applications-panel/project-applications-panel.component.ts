@@ -12,8 +12,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PROJECT_APPLICATION_STATE_FILTER_OPTIONS } from '@lfx-one/shared/constants';
-import type { FilterPillOption, ProjectApplication, ProjectApplicationStateMeta, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
-import { getProjectApplicationStateMeta, reconcileProjectApplications, upsertProjectApplication } from '@lfx-one/shared/utils';
+import type { FilterPillOption, ProjectApplication, ProjectApplicationRow, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
+import { reconcileProjectApplications, toProjectApplicationRow, upsertProjectApplication } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
 import type { TablePageEvent } from 'primeng/table';
 import { debounceTime } from 'rxjs';
@@ -75,10 +75,10 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   private readonly deletedUids = signal<ReadonlySet<string>>(new Set());
 
   // === Computed Signals ===
-  protected readonly applications: Signal<ProjectApplication[]> = computed(() =>
-    reconcileProjectApplications(this.fetched(), this.localWrites(), this.deletedUids())
+  protected readonly applications: Signal<ProjectApplicationRow[]> = computed(() =>
+    reconcileProjectApplications(this.fetched(), this.localWrites(), this.deletedUids()).map(toProjectApplicationRow)
   );
-  protected readonly filteredApplications: Signal<ProjectApplication[]> = this.initFilteredApplications();
+  protected readonly filteredApplications: Signal<ProjectApplicationRow[]> = this.initFilteredApplications();
   protected readonly selectedApplication: Signal<ProjectApplication | null> = computed(
     () => this.applications().find((application) => application.uid === this.selectedUid()) ?? null
   );
@@ -105,15 +105,6 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   }
 
   // === Protected Methods ===
-  protected stateMeta(application: ProjectApplication): ProjectApplicationStateMeta {
-    return getProjectApplicationStateMeta(application.state);
-  }
-
-  protected projectName(application: ProjectApplication): string {
-    const name = application.application?.project_name;
-    return typeof name === 'string' && name.trim() ? name : 'Untitled proposal';
-  }
-
   protected onStateFilterChange(state: string): void {
     this.first.set(0);
     this.stateFilter.set(state);
@@ -162,7 +153,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
   }
 
   // === Private Initializers ===
-  private initFilteredApplications(): Signal<ProjectApplication[]> {
+  private initFilteredApplications(): Signal<ProjectApplicationRow[]> {
     return computed(() => {
       const term = this.searchTerm().trim().toLowerCase();
       const state = this.stateFilter();
@@ -172,7 +163,7 @@ export class ProjectApplicationsPanelComponent implements OnInit {
       }
       if (term) {
         rows = rows.filter((application) =>
-          [this.projectName(application), application.submitter_name, application.submitter_email].some((value) => (value ?? '').toLowerCase().includes(term))
+          [application.displayName, application.submitter_name, application.submitter_email].some((value) => (value ?? '').toLowerCase().includes(term))
         );
       }
       return rows;

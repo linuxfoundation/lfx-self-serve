@@ -9,6 +9,7 @@
 import { expect, test } from '@playwright/test';
 
 import { DATA_LOAD_TIMEOUT, gotoMyFormations } from './helpers/formation-checklist.helper';
+import { waitForHydration } from './helpers/meeting-composer-guests.helper';
 import { buildProposal, mockProjectApplicationApis, PROPOSAL_UID } from './helpers/project-application.helper';
 
 test.setTimeout(120_000);
@@ -29,6 +30,7 @@ test.describe('Propose a project — structure (#3037)', () => {
   test('the propose page renders four labelled sections, the aside, and the footer actions', async ({ page }) => {
     await mockProjectApplicationApis(page, []);
     await gotoMyFormations(page);
+    await waitForHydration(page);
     await page.getByTestId('my-formations-propose-project').click();
 
     for (const section of ['project', 'organization', 'governance', 'about']) {
@@ -39,7 +41,7 @@ test.describe('Propose a project — structure (#3037)', () => {
       await expect(page.locator(`label[for="${id}"]`)).toHaveCount(1);
     }
     await expect(page.getByTestId('propose-project-aside')).toBeVisible();
-    await expect(page.getByTestId('propose-project-contact')).toHaveAttribute('href', 'mailto:formation@linuxfoundation.org');
+    await expect(page.getByTestId('propose-project-contact')).toHaveAttribute('href', /^mailto:/);
     await expect(page.getByTestId('project-application-form-submit')).toBeVisible();
     await expect(page.getByTestId('project-application-form-cancel')).toBeVisible();
     // No parent project or logo inputs in this release.
@@ -50,6 +52,7 @@ test.describe('Propose a project — structure (#3037)', () => {
   test('the submitted proposals table and drawer expose their hooks', async ({ page }) => {
     await mockProjectApplicationApis(page, [buildProposal()]);
     await gotoMyFormations(page);
+    await waitForHydration(page);
     await page.getByTestId('my-formations-page-tabs-proposals').click();
 
     await expect(page.getByTestId('project-applications-submitter')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

@@ -4,6 +4,7 @@
 import { FORMATION_TEAM_NAME, PROJECT_APPLICATION_PARENT_KEY } from '@lfx-one/shared/constants';
 import type {
   ProjectApplication,
+  ProjectApplicationAction,
   ProjectApplicationAnswers,
   ProjectApplicationWriteResult,
   QueryServiceResponse,
@@ -21,8 +22,6 @@ import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-
-type ApplicationAction = 'withdraw' | 'accept' | 'deny';
 
 /**
  * BFF for project applications — "Propose a project" (#3037), backed by `lfx-v2-formation-service`'s
@@ -163,7 +162,7 @@ export class ProjectApplicationService {
     }
   }
 
-  private transition(req: Request, uid: string, ifMatch: string, action: ApplicationAction): Promise<ProjectApplicationWriteResult> {
+  private transition(req: Request, uid: string, ifMatch: string, action: ProjectApplicationAction): Promise<ProjectApplicationWriteResult> {
     return this.write(req, uid, `/project-applications/${encodeURIComponent(uid)}/${action}`, 'POST', ifMatch, undefined, `${action}_project_application`);
   }
 

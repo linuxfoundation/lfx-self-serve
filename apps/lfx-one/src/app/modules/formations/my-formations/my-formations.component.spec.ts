@@ -8,6 +8,7 @@ import { FormationService } from '@services/formation.service';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -314,6 +315,7 @@ describe('MyFormationsComponent — Propose a project (#3037)', () => {
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
+        DialogService,
         { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(tab ? { tab } : {})) } },
       ],
     }).compileComponents();

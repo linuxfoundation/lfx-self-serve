@@ -191,15 +191,20 @@ describe('mutations', () => {
 
   it('revise without a parent key skips the formation-team check', async () => {
     await send('PUT', `/${UID}`, { application: { project_name: 'X' } }, { 'If-Match': '2' });
-    expect(service.assertFormationTeamMember).not.toHaveBeenCalled();
+    expect(service.isFormationTeamMember).not.toHaveBeenCalled();
   });
 
-  it('revise carrying parent_project_uid requires the formation team', async () => {
-    const { AuthorizationError } = await import('../errors');
-    service.assertFormationTeamMember.mockRejectedValue(new AuthorizationError('no', { code: 'PROJECT_APPLICATION_FORBIDDEN' }));
+  it('revise drops parent_project_uid sent by a caller outside the formation team, and still revises', async () => {
+    service.isFormationTeamMember.mockResolvedValue(false);
     const res = await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
-    expect(res.status).toBe(403);
-    expect(service.revise).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' });
+  });
+
+  it('revise keeps parent_project_uid for a formation-team member', async () => {
+    service.isFormationTeamMember.mockResolvedValue(true);
+    await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
+    expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X', parent_project_uid: PARENT_UID });
   });
 
   it('refuses a mutation without If-Match', async () => {

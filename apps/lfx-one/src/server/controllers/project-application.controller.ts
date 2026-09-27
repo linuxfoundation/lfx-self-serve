@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PROJECT_APPLICATION_PARENT_KEY, UUID_REGEX } from '@lfx-one/shared/constants';
+import { PROJECT_APPLICATION_CACHE_CONTROL, PROJECT_APPLICATION_PARENT_KEY, UUID_REGEX } from '@lfx-one/shared/constants';
 import type { ProjectApplicationAnswers, ProjectApplicationWriteResult } from '@lfx-one/shared/interfaces';
 import { validateProjectApplicationAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -12,16 +12,13 @@ import { logger } from '../services/logger.service';
 import { projectApplicationService } from '../services/project-application.service';
 import { getEffectiveEmail, getEffectiveName, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 
-/** Private answers: never cache, never share. */
-const PRIVATE_NO_STORE = 'private, no-store';
-
 /** `GET /api/project-applications/mine` — the signed-in user's own proposals (My Formations → Submitted proposals). */
 export const listMyProjectApplications = async (req: Request, res: Response, next: NextFunction) => {
   const startTime = logger.startOperation(req, 'list_my_project_applications');
   try {
     const username = await requireUsername(req, 'list_my_project_applications');
     const applications = await projectApplicationService.listMine(req, username);
-    res.set('Cache-Control', PRIVATE_NO_STORE);
+    res.set('Cache-Control', PROJECT_APPLICATION_CACHE_CONTROL);
     logger.success(req, 'list_my_project_applications', startTime, { count: applications.length });
     return res.json(applications);
   } catch (error) {
@@ -35,7 +32,7 @@ export const listProjectApplicationQueue = async (req: Request, res: Response, n
   try {
     await requireUsername(req, 'list_project_application_queue');
     const applications = await projectApplicationService.listQueue(req);
-    res.set('Cache-Control', PRIVATE_NO_STORE);
+    res.set('Cache-Control', PROJECT_APPLICATION_CACHE_CONTROL);
     logger.success(req, 'list_project_application_queue', startTime, { count: applications.length });
     return res.json(applications);
   } catch (error) {
@@ -49,7 +46,7 @@ export const getProjectApplicationAccess = async (req: Request, res: Response, n
   try {
     await requireUsername(req, 'get_project_application_access');
     const isFormationTeam = await projectApplicationService.isFormationTeamMember(req);
-    res.set('Cache-Control', PRIVATE_NO_STORE);
+    res.set('Cache-Control', PROJECT_APPLICATION_CACHE_CONTROL);
     logger.success(req, 'get_project_application_access', startTime, { is_formation_team: isFormationTeam });
     return res.json({ is_formation_team: isFormationTeam });
   } catch (error) {
@@ -91,10 +88,11 @@ export const createProjectApplication = async (req: Request, res: Response, next
 
 /**
  * `PUT /api/project-applications/:uid` — replace the complete answer map. `parent_project_uid` is the
- * formation team's placement choice, so only a formation-team member may send it (unchanged answers are
- * echoed back whole, so a team member's revise carries it through). Upstream stores it as an ordinary
- * answer that any `writer` could rewrite; this keeps the placement from being set through this BFF by a
- * submitter.
+ * formation team's placement choice. Upstream stores it as an ordinary answer any `writer` could
+ * rewrite, so this BFF drops it from a revise sent by anyone outside the formation team rather than
+ * refusing the revise: an accept that recorded the parent and then failed leaves the key in the
+ * submitter's held answers, and refusing would lock them out of editing their own proposal. The team
+ * sets the parent again at accept.
  */
 export const reviseProjectApplication = async (req: Request, res: Response, next: NextFunction) => {
   const operation = 'revise_project_application';
@@ -103,8 +101,8 @@ export const reviseProjectApplication = async (req: Request, res: Response, next
     const uid = parseUid(req, operation);
     const ifMatch = parseIfMatch(req, operation);
     const application = parseAnswers(req, operation);
-    if (application[PROJECT_APPLICATION_PARENT_KEY] !== undefined) {
-      await projectApplicationService.assertFormationTeamMember(req, operation);
+    if (application[PROJECT_APPLICATION_PARENT_KEY] !== undefined && !(await projectApplicationService.isFormationTeamMember(req))) {
+      delete application[PROJECT_APPLICATION_PARENT_KEY];
     }
     const result = await projectApplicationService.revise(req, uid, ifMatch, application);
     return sendWriteResult(req, res, operation, startTime, result);
@@ -209,7 +207,7 @@ function sendWriteResult(req: Request, res: Response, operation: string, startTi
   if (result.etag) {
     res.set('ETag', result.etag);
   }
-  res.set('Cache-Control', PRIVATE_NO_STORE);
+  res.set('Cache-Control', PROJECT_APPLICATION_CACHE_CONTROL);
   logger.success(req, operation, startTime, { uid: result.application.uid, state: result.application.state, revision: result.application.revision });
   return res.json(result);
 }

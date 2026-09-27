@@ -14,6 +14,9 @@ export type ProjectApplicationState = 'submitted' | 'withdrawn' | 'accepted' | '
 /** Who is looking at an application: the submitter's own list, or the formation team's review queue. */
 export type ProjectApplicationViewMode = 'submitter' | 'staff';
 
+/** formation-service state-transition routes under `/project-applications/{uid}/`. */
+export type ProjectApplicationAction = 'withdraw' | 'accept' | 'deny';
+
 /** Page-level tab ids on My Formations and the foundation Formations queue. */
 export type ProjectApplicationTab = (typeof PROJECT_APPLICATION_TABS)[keyof typeof PROJECT_APPLICATION_TABS];
 
@@ -144,6 +147,18 @@ export interface ProjectApplicationOption<T = string> {
 export interface ProjectApplicationSectionConfig {
   title: string;
   keys: string[];
+}
+
+/** A list row with its display values precomputed, so templates only read fields. */
+export interface ProjectApplicationRow extends ProjectApplication {
+  displayName: string;
+  stateLabel: string;
+  stateSeverity: TagSeverity;
+}
+
+/** Data handed to the accept dialog. */
+export interface ProjectApplicationAcceptDialogData {
+  projectName: string;
 }
 
 /** A single answer rendered in the application detail view. */
