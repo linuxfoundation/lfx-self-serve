@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
@@ -131,27 +131,97 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
     expect(service.isActiveProjectConfidential()).toBe(false);
   });
 
-  it('resolves the announcement date via PermissionsService, triggered by the active-project fetch', () => {
+  it('resolves the announcement date via PermissionsService for a formation-stage writer', () => {
     const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
     httpGet.mockReturnValue(of({ announcement_date: '2026-09-01' }));
-    getProject.mockReturnValue(of(project('Formation - Engaged', 'announce-project')));
+    getProject.mockReturnValue(of({ ...project('Formation - Engaged', 'announce-project'), writer: true }));
     service.setProject({ ...CONTEXT, uid: 'announce-project' }, false);
     TestBed.inject(ApplicationRef).tick();
 
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/announce-project/permissions');
     expect(service.activeProjectAnnouncementDate()).toBe('2026-09-01');
     expect(service.activeProjectAnnouncementDateLoading()).toBe(false);
     expect(service.activeProjectAnnouncementDateHasError()).toBe(false);
+    expect(service.activeProjectAnnouncementDateReadable()).toBe(true);
+  });
+
+  it('resolves the announcement date for a formation-stage auditor who is not a writer', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockReturnValue(of({ announcement_date: '2026-10-01' }));
+    getProject.mockImplementation((_id: string, _current?: boolean, options?: { auditor?: boolean }) => {
+      if (options?.auditor) {
+        return of({ ...project('Formation - Engaged', 'auditor-project'), auditor: true });
+      }
+      return of(project('Formation - Engaged', 'auditor-project'));
+    });
+    service.setProject({ ...CONTEXT, uid: 'auditor-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(getProject).toHaveBeenCalledWith('auditor-project', false, { auditor: true });
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/auditor-project/permissions');
+    expect(service.activeProjectAnnouncementDate()).toBe('2026-10-01');
+    expect(service.activeProjectAnnouncementDateReadable()).toBe(true);
+  });
+
+  it('does not read project settings for a non-formation project (GH-2794)', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockClear();
+    getProject.mockReturnValue(of({ ...project('Active', 'active-project'), writer: true }));
+    service.setProject({ ...CONTEXT, uid: 'active-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(service.activeProjectAnnouncementDate()).toBeNull();
+    expect(service.activeProjectAnnouncementDateLoading()).toBe(false);
+    expect(service.activeProjectAnnouncementDateHasError()).toBe(false);
+    expect(service.activeProjectAnnouncementDateReadable()).toBe(false);
+  });
+
+  it('does not read project settings for a formation-stage caller who is neither writer nor auditor (GH-2794)', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockClear();
+    getProject.mockImplementation((_id: string, _current?: boolean, options?: { auditor?: boolean }) => {
+      if (options?.auditor) {
+        return of({ ...project('Formation - Engaged', 'visitor-project'), auditor: false });
+      }
+      return of(project('Formation - Engaged', 'visitor-project'));
+    });
+    service.setProject({ ...CONTEXT, uid: 'visitor-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(getProject).toHaveBeenCalledWith('visitor-project', false, { auditor: true });
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(service.activeProjectAnnouncementDate()).toBeNull();
+    expect(service.activeProjectAnnouncementDateHasError()).toBe(false);
+    expect(service.activeProjectAnnouncementDateReadable()).toBe(false);
   });
 
   it('reports the announcement-date error state independently of the Formation signals', () => {
     const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     httpGet.mockReturnValue(throwError(() => new Error('network error')));
-    getProject.mockReturnValue(of(project('Formation - Engaged', 'error-project')));
+    getProject.mockReturnValue(of({ ...project('Formation - Engaged', 'error-project'), writer: true }));
     service.setProject({ ...CONTEXT, uid: 'error-project' }, false);
     TestBed.inject(ApplicationRef).tick();
 
     expect(service.activeProjectAnnouncementDateHasError()).toBe(true);
     expect(service.activeProjectFormationSubStage()).toBe('Engaged');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('does not console.error when settings answers 403 (GH-2794)', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    httpGet.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, statusText: 'Forbidden' })));
+    getProject.mockReturnValue(of({ ...project('Formation - Engaged', 'forbidden-project'), writer: true }));
+    service.setProject({ ...CONTEXT, uid: 'forbidden-project' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectAnnouncementDateHasError()).toBe(true);
+    expect(service.activeProjectAnnouncementDate()).toBeNull();
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('stays false with no active project fetched when unauthenticated (LFXV2-3266 auth gate)', () => {

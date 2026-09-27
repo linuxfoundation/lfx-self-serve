@@ -110,6 +110,7 @@ describe('FormationCardComponent', () => {
             activeProjectAnnouncementDate: announcementDate,
             activeProjectAnnouncementDateLoading: announcementDateLoading,
             activeProjectAnnouncementDateHasError: announcementDateHasError,
+            activeProjectAnnouncementDateReadable: signal(true),
           },
         },
       ],
@@ -203,6 +204,7 @@ describe('FormationCardComponent', () => {
         'activeProjectAnnouncementDate',
         'activeProjectAnnouncementDateLoading',
         'activeProjectAnnouncementDateHasError',
+        'activeProjectAnnouncementDateReadable',
       ];
       const stub = {};
       for (const member of members) {

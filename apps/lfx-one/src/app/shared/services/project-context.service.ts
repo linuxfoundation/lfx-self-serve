@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
@@ -58,6 +59,13 @@ export class ProjectContextService {
   private readonly projectSelection: WritableSignal<ProjectContext | null> = signal<ProjectContext | null>(null);
   private readonly announcementDateLoading: WritableSignal<boolean> = signal(true);
   private readonly announcementDateHasError: WritableSignal<boolean> = signal(false);
+  /**
+   * True only once this context is allowed to read project settings. Upstream gates
+   * `GET /projects/:uid/settings` on the `auditor` relation (writer implies auditor). Callers
+   * who are neither never see a date, and must not be shown "Not set" for a value they
+   * were not allowed to read.
+   */
+  private readonly announcementDateReadable: WritableSignal<boolean> = signal(false);
 
   /**
    * The context kind declared by the current route (`route.data.lens`), when it declares one.
@@ -103,7 +111,9 @@ export class ProjectContextService {
    * sidebar card (GH-1955) — do not add another independent `getProject`/`getProjectSettings`
    * fetch for Formation-derived state; read this signal and its siblings below
    * (`isActiveProjectInFormation`, `isActiveProjectConfidential`, `activeProjectAnnouncementDate`)
-   * instead.
+   * instead. The announcement-date pipeline's auditor probe is not one of those: it reuses
+   * `FormationCardComponent`'s `getProject(uid, false, { auditor: true })` cache key, and only
+   * to decide whether settings may be read (GH-2794).
    */
   public readonly activeProjectFormationSubStage: Signal<string | null> = computed(() => getFormationSubStageLabel(this.activeProject()?.stage));
 
@@ -122,11 +132,15 @@ export class ProjectContextService {
    * Announcement-date tri-state for the current active context, shared by `FormationCardComponent`
    * and `ProjectDashboardComponent` (GH-1955) so both ride one `PermissionsService.getProjectSettings`
    * fetch instead of two independent ones. Read {@link activeProjectAnnouncementDateLoading} /
-   * {@link activeProjectAnnouncementDateHasError} alongside this for the loading/error state.
+   * {@link activeProjectAnnouncementDateHasError} alongside this for the loading/error state, and
+   * {@link activeProjectAnnouncementDateReadable} to tell "no date" apart from "this caller may
+   * not read settings" (GH-2794).
    */
   public readonly activeProjectAnnouncementDate: Signal<string | null> = this.initActiveProjectAnnouncementDate();
   public readonly activeProjectAnnouncementDateLoading: Signal<boolean> = this.announcementDateLoading.asReadonly();
   public readonly activeProjectAnnouncementDateHasError: Signal<boolean> = this.announcementDateHasError.asReadonly();
+  /** False when the date was not requested — non-formation projects, or a caller who is neither writer nor auditor. */
+  public readonly activeProjectAnnouncementDateReadable: Signal<boolean> = this.announcementDateReadable.asReadonly();
 
   /**
    * The active context's project `stage` (e.g. `"Formation - Exploratory"`). `ProjectContext`
@@ -404,28 +418,64 @@ export class ProjectContextService {
     );
   }
 
+  /**
+   * Settings live behind the project `auditor` relation. The shared project fetch already
+   * carries `writer` (which implies auditor), so a writer can go straight to settings.
+   * Everyone else on a formation-stage project gets one auditor check — the same
+   * `getProject(uid, false, { auditor: true })` `FormationCardComponent` already makes, so
+   * the two share a cache entry — and settings are read only when that comes back true.
+   * A contributor opening an ordinary project overview never hits `/permissions` (GH-2794).
+   */
   private initActiveProjectAnnouncementDate(): Signal<string | null> {
     return toSignal(
       toObservable(this.activeProject).pipe(
-        filter((project): project is NonNullable<typeof project> => !!project?.uid),
-        tap(() => {
-          this.announcementDateLoading.set(true);
-          this.announcementDateHasError.set(false);
-        }),
-        switchMap((project) =>
-          this.permissionsService.getProjectSettings(project.uid).pipe(
-            map((settings) => settings.announcement_date || null),
-            tap(() => this.announcementDateLoading.set(false)),
-            catchError((error) => {
-              console.error('ProjectContextService: failed to load announcement date', error);
-              this.announcementDateLoading.set(false);
-              this.announcementDateHasError.set(true);
+        switchMap((project) => {
+          if (!project?.uid || !isFormationStage(project.stage)) {
+            this.clearAnnouncementDate();
+            return of(null);
+          }
+          if (project.writer === true) {
+            return this.fetchAnnouncementDate(project.uid);
+          }
+          this.clearAnnouncementDate();
+          return this.projectService.getProject(project.uid, false, { auditor: true }).pipe(
+            switchMap((checked) => {
+              if (checked?.auditor === true) {
+                return this.fetchAnnouncementDate(project.uid);
+              }
               return of(null);
             })
-          )
-        )
+          );
+        })
       ),
       { initialValue: null }
+    );
+  }
+
+  private clearAnnouncementDate(): void {
+    this.announcementDateLoading.set(false);
+    this.announcementDateHasError.set(false);
+    this.announcementDateReadable.set(false);
+  }
+
+  private fetchAnnouncementDate(uid: string): Observable<string | null> {
+    this.announcementDateLoading.set(true);
+    this.announcementDateHasError.set(false);
+    this.announcementDateReadable.set(true);
+    return this.permissionsService.getProjectSettings(uid).pipe(
+      map((settings) => settings.announcement_date || null),
+      tap(() => this.announcementDateLoading.set(false)),
+      catchError((error) => {
+        // A 403 here is upstream refusing a caller the auditor check said was allowed.
+        // It is an authorization outcome, not a failed load — logging it as a console
+        // error is what put GH-2794 into RUM.
+        if (!(error instanceof HttpErrorResponse && error.status === 403)) {
+          console.error('ProjectContextService: failed to load announcement date', error);
+        }
+        this.announcementDateLoading.set(false);
+        this.announcementDateHasError.set(true);
+        return of(null);
+      })
     );
   }
 
