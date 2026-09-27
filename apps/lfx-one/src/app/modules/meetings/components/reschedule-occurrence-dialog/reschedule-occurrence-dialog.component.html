@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="reschedule-occurrence-dialog">
+  <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 flex flex-col gap-2">
+    <span class="text-sm font-medium text-gray-900">{{ occurrence.title || meeting.title || 'Untitled Meeting' }}</span>
+    <span class="text-sm text-gray-600" data-testid="reschedule-occurrence-current">
+      Currently {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' }} ·
+      {{ occurrence.start_time | meetingTime: occurrence.duration : 'time' }}
+    </span>
+    <span class="text-xs text-gray-500 flex items-center gap-2">
+      <i class="fa-light fa-repeat text-blue-500"></i>
+      Only this occurrence changes. The rest of the series keeps its schedule.
+    </span>
+  </div>
+
+  <form [formGroup]="form" class="flex flex-col gap-4" (ngSubmit)="onConfirm()">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="flex flex-col gap-1.5">
+        <label for="reschedule-occurrence-date" class="text-sm font-medium text-gray-900">Date <span class="text-red-500">*</span></label>
+        <lfx-calendar
+          [form]="form"
+          control="startDate"
+          appendTo="body"
+          inputId="reschedule-occurrence-date"
+          placeholder="Select date"
+          [minDate]="minDate"
+          styleClass="w-full"
+          data-testid="reschedule-occurrence-date" />
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="reschedule-occurrence-time" class="text-sm font-medium text-gray-900">Time <span class="text-red-500">*</span></label>
+        <lfx-time-picker
+          [form]="form"
+          control="startTime"
+          inputId="reschedule-occurrence-time"
+          placeholder="Select time"
+          styleClass="w-full"
+          data-testid="reschedule-occurrence-time" />
+        @if (showTimeFormatError()) {
+          <p class="text-sm text-red-600" data-testid="reschedule-occurrence-time-format-error">Enter a time like 9:30 AM</p>
+        }
+      </div>
+    </div>
+
+    @if (showFutureError()) {
+      <p class="text-sm text-red-600" data-testid="reschedule-occurrence-future-error">The occurrence must be rescheduled to a time in the future</p>
+    }
+
+    <div class="flex flex-col gap-1.5">
+      <label for="reschedule-occurrence-duration" class="text-sm font-medium text-gray-900">Duration <span class="text-red-500">*</span></label>
+      <div class="flex items-center gap-2">
+        <lfx-input-number
+          [form]="form"
+          control="duration"
+          size="small"
+          inputId="reschedule-occurrence-duration"
+          [placeholder]="minDuration + '–' + maxDuration"
+          styleClass="w-[7.5rem]"
+          [describedBy]="showDurationError() ? 'reschedule-occurrence-duration-error' : null"
+          [invalid]="showDurationError()"
+          data-testid="reschedule-occurrence-duration" />
+        <span class="text-sm text-gray-500">minutes</span>
+      </div>
+      @if (showDurationError()) {
+        <p id="reschedule-occurrence-duration-error" class="text-sm text-red-600" data-testid="reschedule-occurrence-duration-error">
+          Duration must be a whole number between {{ minDuration }} and {{ maxDuration }} minutes
+        </p>
+      }
+    </div>
+
+    <p class="text-xs text-gray-500" data-testid="reschedule-occurrence-timezone">Times are in the meeting's timezone: {{ timezoneLabel }}</p>
+  </form>
+
+  @if (errorMessage(); as message) {
+    <lfx-message severity="error" icon="fa-light fa-triangle-exclamation" [text]="message" data-testid="reschedule-occurrence-error" />
+  }
+
+  <div class="flex justify-end gap-3">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      type="button"
+      [disabled]="isSaving()"
+      (click)="onCancel()"
+      data-testid="reschedule-occurrence-cancel-button">
+    </lfx-button>
+
+    <lfx-button
+      [label]="isSaving() ? 'Saving...' : 'Reschedule Occurrence'"
+      severity="info"
+      size="small"
+      type="button"
+      [icon]="isSaving() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-calendar-pen'"
+      [disabled]="!canSave()"
+      (click)="onConfirm()"
+      data-testid="reschedule-occurrence-confirm-button">
+    </lfx-button>
+  </div>
+</div>

@@ -115,17 +115,43 @@
                 }
               </div>
 
-              <!-- Right: Copy Link Button -->
-              <lfx-button
-                [icon]="'fa-light fa-copy'"
-                [rounded]="true"
-                size="small"
-                severity="secondary"
-                [text]="true"
-                (onClick)="handleCopyLink()"
-                [attr.data-testid]="'meeting-copy-link-button'"
-                [pTooltip]="'Copy meeting link'">
-              </lfx-button>
+              <!-- Right: Occurrence actions (organizers only) + Copy Link Button -->
+              <div class="flex items-center gap-1">
+                @if (canManageOccurrence()) {
+                  <lfx-button
+                    icon="fa-light fa-calendar-pen"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    ariaLabel="Reschedule this occurrence"
+                    (onClick)="rescheduleCurrentOccurrence()"
+                    data-testid="meeting-reschedule-occurrence-button"
+                    pTooltip="Reschedule this occurrence">
+                  </lfx-button>
+                  <lfx-button
+                    icon="fa-light fa-ban"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    ariaLabel="Cancel this occurrence"
+                    (onClick)="cancelCurrentOccurrence()"
+                    data-testid="meeting-cancel-occurrence-button"
+                    pTooltip="Cancel this occurrence">
+                  </lfx-button>
+                }
+                <lfx-button
+                  [icon]="'fa-light fa-copy'"
+                  [rounded]="true"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="handleCopyLink()"
+                  [attr.data-testid]="'meeting-copy-link-button'"
+                  [pTooltip]="'Copy meeting link'">
+                </lfx-button>
+              </div>
             </div>
 
             <!-- Content Row: Title/Details + Join Button (if immediate) -->

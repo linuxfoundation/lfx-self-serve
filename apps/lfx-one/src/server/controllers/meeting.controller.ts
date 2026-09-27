@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   AttachmentCategory,
@@ -18,6 +18,7 @@ import {
   MeetingRegistrant,
   PresignAttachmentRequest,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
@@ -369,6 +370,75 @@ export class MeetingController {
       res.status(204).send();
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /meetings/:uid/occurrences/:occurrenceId
+   *
+   * Reschedules one occurrence of a recurring meeting. Only `start_time` and `duration` are forwarded:
+   * upstream treats any recurrence on this endpoint as a change to all following occurrences.
+   */
+  public async updateOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, occurrenceId } = req.params;
+    const body = (req.body ?? {}) as Partial<UpdateMeetingOccurrenceRequest>;
+    const startTime = logger.startOperation(req, 'update_occurrence', {
+      meeting_id: uid,
+      occurrence_id: occurrenceId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_occurrence',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const newStartTime = typeof body.start_time === 'string' ? body.start_time.trim() : '';
+      const newStartMs = Date.parse(newStartTime);
+      const duration = body.duration;
+      const fieldErrors: Record<string, string> = {};
+
+      if (!/^\d+$/.test(occurrenceId ?? '')) {
+        fieldErrors['occurrenceId'] = 'Occurrence ID must be a Unix timestamp';
+      }
+
+      const startTimeError = this.getOccurrenceStartTimeError(newStartTime, newStartMs);
+      if (startTimeError) {
+        fieldErrors['start_time'] = startTimeError;
+      }
+
+      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_CUSTOM_DURATION) {
+        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_CUSTOM_DURATION}`;
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        return next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Occurrence update validation failed', {
+            operation: 'update_occurrence',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const normalizedStartTime = new Date(newStartMs).toISOString();
+      await this.meetingService.updateOccurrence(req, uid, occurrenceId, { start_time: normalizedStartTime, duration: duration as number });
+
+      logger.success(req, 'update_occurrence', startTime, {
+        meeting_id: uid,
+        occurrence_id: occurrenceId,
+        start_time: normalizedStartTime,
+        duration,
+        status_code: 204,
+      });
+
+      res.status(204).send();
+    } catch (error) {
       next(error);
     }
   }
@@ -2261,5 +2331,22 @@ export class MeetingController {
     // from the absent header — and anything past `2^53 - 1` has already lost precision, so the value
     // recorded is not the one the header carried.
     return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+
+  /** Returns the validation message for a rescheduled occurrence start, or `null` when it is usable. */
+  private getOccurrenceStartTimeError(value: string, parsedMs: number): string | null {
+    if (!value) {
+      return 'Start time is required';
+    }
+
+    if (Number.isNaN(parsedMs)) {
+      return 'Start time must be an RFC3339 date-time';
+    }
+
+    if (parsedMs <= Date.now()) {
+      return 'Start time must be in the future';
+    }
+
+    return null;
   }
 }

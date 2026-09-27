@@ -3,7 +3,7 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_updated: 2026-08-19
+last_updated: 2026-09-27
 intercom_collection: Meetings
 ---
 
@@ -20,7 +20,14 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 Select the edit (pencil) icon on a meeting you organize, or open the meeting's detail view and choose to edit it. Editing is only available for upcoming meetings. You can update the title, date, time, agenda, recurrence pattern, and platform/feature settings.
 
-For a meeting that's part of a recurring series, an edit currently applies only to that single occurrence — there's no option to apply it to the whole series or to future occurrences. This is separate from the delete/cancel scope below, which does let you act on the whole series.
+For a meeting that's part of a recurring series, selecting edit first asks what to change:
+
+- **Only this occurrence** — opens a **Reschedule Occurrence** dialog where you pick a new date, start time, and duration for that one instance. The time is read in the series' own timezone, and the rest of the series keeps its schedule. Title, agenda, recurrence pattern, and settings can't be changed per occurrence.
+- **The entire series** — opens the full editor, and your changes apply to every occurrence in the series.
+
+## Reschedule or cancel one occurrence from the join page
+
+On the join page of a recurring meeting you organize, the header shows **Reschedule this occurrence** and **Cancel this occurrence** buttons next to **Copy meeting link**. They act on the occurrence the page is currently showing — use the occurrence navigation to pick a different one first. After a reschedule, the page moves to the occurrence at its new time; after a cancel, it moves to the next upcoming occurrence. These buttons don't appear for past occurrences.
 
 ## Manage guests and registrants
 

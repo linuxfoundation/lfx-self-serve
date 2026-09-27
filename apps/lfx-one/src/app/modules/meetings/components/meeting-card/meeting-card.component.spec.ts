@@ -199,6 +199,75 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(navigate).toHaveBeenCalledWith(['/meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
   });
 
+  describe('recurring meetings', () => {
+    const OCCURRENCE = { occurrence_id: '1893456000', start_time: '2030-01-01T00:00:00.000Z', duration: 30 };
+    const RECURRING = { ...MEETING, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE] } as unknown as Meeting;
+
+    let dialogOpen: ReturnType<typeof vi.fn>;
+    let dialogResults: Subject<unknown>[];
+
+    /** Mounts over a recurring meeting and makes each `dialogService.open` hand back its own close stream. */
+    async function mountRecurring(): Promise<MeetingCardComponent> {
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true }));
+      dialogResults = [];
+      dialogOpen = vi.fn(() => {
+        const onClose = new Subject<unknown>();
+        dialogResults.push(onClose);
+        return { onClose };
+      });
+      TestBed.overrideProvider(DialogService, { useValue: { open: dialogOpen } });
+      return mount(RECURRING);
+    }
+
+    it('asks which scope to edit before opening any editor', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
+      expect(composerOpen).not.toHaveBeenCalled();
+    });
+
+    it('opens the series editor when the organizer picks the whole series', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'series' });
+
+      expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the reschedule dialog for that occurrence when the organizer picks only this one', async () => {
+      const component = await mountRecurring();
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
+
+      expect(composerOpen).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(2);
+      expect(dialogOpen.mock.calls[1][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
+
+      dialogResults[1].next({ confirmed: true, start_time: '2030-01-02T00:00:00.000Z' });
+
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence rescheduled' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when the scope dialog is dismissed', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+      dialogResults[0].next(undefined);
+
+      expect(composerOpen).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('still re-checks access before the pre-v2 editor, and still refuses a revoked organizer', async () => {
     meetingsV2Enabled.set(false);
     getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));

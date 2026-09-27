@@ -58,6 +58,8 @@ import {
   MeetingCancelOccurrenceResult,
   MeetingOccurrence,
   MeetingRecurrence,
+  MeetingRescheduleOccurrenceResult,
+  RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
   MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
@@ -91,6 +93,8 @@ import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-o
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
+import { RecurringMeetingEditOptionsComponent } from '../../components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
+import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 
 @Component({
   selector: 'lfx-meeting-card',
@@ -374,19 +378,13 @@ export class MeetingCardComponent implements OnInit {
             return;
           }
 
-          // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
-          // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
-          // full-page editor through the router, which is what this button did before v2.
-          if (!this.meetingsV2Enabled()) {
-            void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+          const occurrence = meeting.recurrence ? (this.occurrence() ?? getCurrentOrNextOccurrence(meeting)) : null;
+          if (occurrence) {
+            this.showEditScopeModal(meeting, occurrence);
             return;
           }
 
-          this.composer.open({
-            mode: 'edit',
-            meetingUid: meeting.id,
-            projectUid: meeting.project_uid,
-          });
+          this.openSeriesEditor(meeting);
         },
         error: (error: unknown) => this.reportEditProbeFailure(error),
       });
@@ -641,6 +639,72 @@ export class MeetingCardComponent implements OnInit {
           detail: result.error,
         });
       }
+    });
+  }
+
+  private openSeriesEditor(meeting: Meeting): void {
+    // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
+    // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
+    // full-page editor through the router, which is what this button did before v2.
+    if (!this.meetingsV2Enabled()) {
+      void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+      return;
+    }
+
+    this.composer.open({
+      mode: 'edit',
+      meetingUid: meeting.id,
+      projectUid: meeting.project_uid,
+    });
+  }
+
+  private showEditScopeModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    const dialogRef = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
+      header: 'Edit Recurring Meeting',
+      width: '500px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: RecurringMeetingEditScopeResult | undefined) => {
+      if (!result?.proceed) {
+        return;
+      }
+
+      if (result.scope === 'series') {
+        this.openSeriesEditor(meeting);
+        return;
+      }
+
+      this.showRescheduleOccurrenceModal(meeting, occurrence);
+    });
+  }
+
+  private showRescheduleOccurrenceModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
+      header: 'Reschedule Occurrence',
+      width: '520px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+      if (!result?.confirmed) {
+        return;
+      }
+
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Occurrence rescheduled',
+        detail: 'Only this occurrence was moved. The rest of the series is unchanged.',
+      });
+      // Same refresh the parent runs after an occurrence is cancelled: the list has to re-read the
+      // series to pick up the occurrence under its new start time (which is also its new id).
+      this.meetingDeleted.emit();
     });
   }
 
