@@ -122,7 +122,7 @@ export class ProjectApplicationService {
    * `formation_team`. The membership pre-check keeps a non-team caller from committing the revise and
    * then being refused the accept. The gateway's check on accept remains the real authorization. A
    * failure after the revise landed still throws; the caller's held revision is then stale, so the UI
-   * refreshes (412 path) rather than replaying either write.
+   * never replays either write — it drops the application on a 404 and reloads on anything else.
    */
   public async accept(
     req: Request,

@@ -39,7 +39,9 @@ Every mutation after create forwards the application's `revision` as a bare-digi
 
 A `412` becomes `PreconditionFailedError`. The UI never replays a write after a 412; it reloads and lets the user try again.
 
-query-service lags behind successful writes. The UI therefore overlays each write result on the next read (`reconcileProjectApplications`) instead of refetching straight away.
+query-service lags behind successful writes. The UI therefore records each write result in an overlay in the root-scoped browser `ProjectApplicationService`, kept per list mode (`submitter` / `staff`), and applies it to every read instead of refetching straight away. Because the overlay is root-scoped, it survives a tab switch that destroys the list. `reconcile` prunes an entry once a read returns the same or a newer revision, or stops returning a deleted UID.
+
+A 404 on any write means the application is gone: the UI drops it from the list (`recordDeleted`) rather than reloading.
 
 ## Accept and the parent project
 
@@ -49,7 +51,7 @@ The upstream accept route takes no body. Per #3037, the formation team chooses t
 2. It revises the complete answer map, adding `application.parent_project_uid`.
 3. It accepts at the revision the revise returned.
 
-Both write guards — the accept pre-check and the revise parent-key guard below — use the strict membership check (`isFormationTeamMemberStrict`, backed by `checkSingleAccessStrict`). If the access check is unavailable, the write aborts with that error before anything is sent upstream. It is never treated as "not a member", so a stored parent is never silently dropped and an outage never shows up as a 403. Only the browser's `GET /access` probe uses the fail-closed variant.
+Both write guards — the accept pre-check and the revise parent-key guard below — use the strict membership check (`isFormationTeamMemberStrict`, backed by `checkSingleAccessStrict`). If the access check is unavailable, the write aborts before anything is sent upstream and the upstream error passes through to the caller (for example a 503). It is never treated as "not a member", so a stored parent is never silently dropped and an outage never shows up as a 403. Only the browser's `GET /access` probe uses the lenient `isFormationTeamMember` (`checkSingleAccess`), which reads an outage as "not a member" so the Project proposals tab stays hidden.
 
 Upstream, `parent_project_uid` is an ordinary answer key that any `writer` can change. The BFF strips it from every create. When a revise carries it and the caller is not on the formation team, the BFF drops the key and still sends the revise. Refusing instead would lock the submitter out of their own proposal after an accept that recorded the parent but then failed. Because accept can fail after that first write, the UI never retries an accept: a 404 drops the application, and any other failure is treated as a stale revision and reloads.
 

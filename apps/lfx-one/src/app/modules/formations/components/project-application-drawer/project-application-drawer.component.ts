@@ -233,7 +233,8 @@ export class ProjectApplicationDrawerComponent {
           this.changed.emit(result.application);
         },
         // Accept is two upstream writes (record the parent, then accept). Any failure may have landed
-        // after the first, so the held revision can no longer be trusted: always reload, never retry.
+        // after the first, so the held revision can no longer be trusted: never retry — a 404 drops the
+        // application, anything else reloads.
         error: (error: unknown) => this.handleAcceptError(error, application.uid),
       });
   }
