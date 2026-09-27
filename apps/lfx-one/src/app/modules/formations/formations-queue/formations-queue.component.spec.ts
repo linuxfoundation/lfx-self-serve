@@ -12,7 +12,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import type { FormationsQueueResponse, ProjectContext } from '@lfx-one/shared/interfaces';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationsQueueComponent } from './formations-queue.component';
@@ -179,7 +179,11 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
 describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
   let getFormationsQueue: ReturnType<typeof vi.fn>;
 
-  const render = async (options: { slug: string | null; isFormationTeam: boolean; tab?: string }): Promise<ComponentFixture<FormationsQueueComponent>> => {
+  const render = async (options: {
+    slug: string | null;
+    isFormationTeam: boolean | Observable<boolean>;
+    tab?: string;
+  }): Promise<ComponentFixture<FormationsQueueComponent>> => {
     TestBed.resetTestingModule();
     getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
     await TestBed.configureTestingModule({
@@ -198,7 +202,7 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         {
           provide: ProjectApplicationService,
           useValue: {
-            getAccess: () => of(options.isFormationTeam),
+            getAccess: () => (typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam),
             getApplications: () => of([]),
             overlay: () => signal([]),
             deletedUids: () => signal(new Set<string>()),
@@ -234,6 +238,27 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
     expect(getFormationsQueue).not.toHaveBeenCalled();
     expect(query(fixture, 'formations-queue-proposals')).not.toBeNull();
     expect(query(fixture, 'project-applications-staff')).not.toBeNull();
+  });
+
+  it('holds the formations read on a cold ?tab=proposals load until the access check answers', async () => {
+    const access = new Subject<boolean>();
+    const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable(), tab: 'proposals' });
+    expect(getFormationsQueue).not.toHaveBeenCalled();
+
+    // Not on the formation team: the proposals tab isn't available, so the formations list loads now.
+    access.next(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the formations read skipped once access confirms a formation-team member', async () => {
+    const access = new Subject<boolean>();
+    const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable(), tab: 'proposals' });
+    access.next(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getFormationsQueue).not.toHaveBeenCalled();
   });
 
   it('hides the tab from a caller outside the formation team, even with ?tab=proposals', async () => {

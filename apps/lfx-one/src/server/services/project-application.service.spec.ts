@@ -12,6 +12,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
 const checkSingleAccess = vi.fn();
+const checkSingleAccessStrict = vi.fn();
 const generateM2MToken = vi.fn();
 const warning = vi.fn();
 
@@ -24,6 +25,7 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccess = (...args: unknown[]) => checkSingleAccess(...args);
+    public checkSingleAccessStrict = (...args: unknown[]) => checkSingleAccessStrict(...args);
   },
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: (...args: unknown[]) => generateM2MToken(...args) }));
@@ -223,7 +225,7 @@ describe('ProjectApplicationService', () => {
 
   describe('accept', () => {
     it('revises with the chosen parent, then accepts at the revision revise returned', async () => {
-      checkSingleAccess.mockResolvedValueOnce(true);
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
       proxyRequestWithResponse
         .mockResolvedValueOnce({
           data: upstreamApp({ revision: 6, application: { project_name: 'X', parent_project_uid: PARENT_UID } }),
@@ -250,15 +252,22 @@ describe('ProjectApplicationService', () => {
       expect(result).toMatchObject({ etag: '7', application: { state: 'accepted', revision: 7 } });
     });
 
+    it('aborts without writing when membership cannot be verified (access-check outage)', async () => {
+      checkSingleAccessStrict.mockRejectedValueOnce(new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE', { errorBody: {} }));
+
+      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 503 });
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    });
+
     it('refuses a caller outside the formation team before writing anything', async () => {
-      checkSingleAccess.mockResolvedValueOnce(false);
+      checkSingleAccessStrict.mockResolvedValueOnce(false);
 
       await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 403, code: 'PROJECT_APPLICATION_FORBIDDEN' });
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
     it('propagates a failed accept after the revise landed, without retrying, using the revised If-Match', async () => {
-      checkSingleAccess.mockResolvedValueOnce(true);
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
       proxyRequestWithResponse
         .mockResolvedValueOnce({ data: upstreamApp({ revision: 6 }), headers: { etag: '6' } })
         .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT', { errorBody: { reason: 'invalid_transition', message: 'Not open' } }));
@@ -269,7 +278,7 @@ describe('ProjectApplicationService', () => {
     });
 
     it('does not accept when the revise is refused', async () => {
-      checkSingleAccess.mockResolvedValueOnce(true);
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
       proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED', { errorBody: {} }));
 
       await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 412 });

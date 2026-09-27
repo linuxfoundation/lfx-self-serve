@@ -66,6 +66,14 @@ export class ProjectApplicationService {
   }
 
   /**
+   * The same check for write decisions: an access-check outage throws instead of reading as "not a member",
+   * so a write aborts rather than silently dropping the stored parent or misreporting the outage as a 403.
+   */
+  public async isFormationTeamMemberStrict(req: Request): Promise<boolean> {
+    return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /**
    * Submits an application as the signed-in user. The identity is copied from the session by the
    * controller, never from the browser. M2M is the credential the formation-service contract requires
    * for create (the self-serve principal is the trusted intake client); the route has already
@@ -133,7 +141,7 @@ export class ProjectApplicationService {
    * only to avoid a half-applied multi-step write; upstream OpenFGA remains the authorization.
    */
   public async assertFormationTeamMember(req: Request, operation: string): Promise<void> {
-    if (!(await this.isFormationTeamMember(req))) {
+    if (!(await this.isFormationTeamMemberStrict(req))) {
       throw new AuthorizationError('Only the formation team can perform this action', {
         operation,
         service: 'formation_service',

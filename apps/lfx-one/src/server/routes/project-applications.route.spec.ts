@@ -19,6 +19,7 @@ const service = {
   listMine: vi.fn(),
   listQueue: vi.fn(),
   isFormationTeamMember: vi.fn(),
+  isFormationTeamMemberStrict: vi.fn(),
   create: vi.fn(),
   revise: vi.fn(),
   withdraw: vi.fn(),
@@ -196,20 +197,28 @@ describe('mutations', () => {
 
   it('revise without a parent key skips the formation-team check', async () => {
     await send('PUT', `/${UID}`, { application: { project_name: 'X' } }, { 'If-Match': '2' });
-    expect(service.isFormationTeamMember).not.toHaveBeenCalled();
+    expect(service.isFormationTeamMemberStrict).not.toHaveBeenCalled();
   });
 
   it('revise drops parent_project_uid sent by a caller outside the formation team, and still revises', async () => {
-    service.isFormationTeamMember.mockResolvedValue(false);
+    service.isFormationTeamMemberStrict.mockResolvedValue(false);
     const res = await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
     expect(res.status).toBe(200);
     expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' });
   });
 
   it('revise keeps parent_project_uid for a formation-team member', async () => {
-    service.isFormationTeamMember.mockResolvedValue(true);
+    service.isFormationTeamMemberStrict.mockResolvedValue(true);
     await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
     expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X', parent_project_uid: PARENT_UID });
+  });
+
+  it('revise aborts, and writes nothing, when membership cannot be verified', async () => {
+    const { MicroserviceError } = await import('../errors/microservice.error');
+    service.isFormationTeamMemberStrict.mockRejectedValueOnce(new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE', { errorBody: {} }));
+    const res = await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
+    expect(res.status).toBe(503);
+    expect(service.revise).not.toHaveBeenCalled();
   });
 
   it('refuses a mutation without If-Match', async () => {

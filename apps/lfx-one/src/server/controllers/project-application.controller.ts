@@ -103,7 +103,7 @@ export const reviseProjectApplication = async (req: Request, res: Response, next
     const uid = parseUid(req, operation);
     const ifMatch = parseIfMatch(req, operation);
     const application = parseAnswers(req, operation);
-    if (application[PROJECT_APPLICATION_PARENT_KEY] !== undefined && !(await projectApplicationService.isFormationTeamMember(req))) {
+    if (application[PROJECT_APPLICATION_PARENT_KEY] !== undefined && !(await projectApplicationService.isFormationTeamMemberStrict(req))) {
       delete application[PROJECT_APPLICATION_PARENT_KEY];
     }
     const result = await projectApplicationService.revise(req, uid, ifMatch, application);
