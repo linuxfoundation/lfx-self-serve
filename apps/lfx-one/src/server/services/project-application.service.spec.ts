@@ -257,6 +257,17 @@ describe('ProjectApplicationService', () => {
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
+    it('propagates a failed accept after the revise landed, without retrying, using the revised If-Match', async () => {
+      checkSingleAccess.mockResolvedValueOnce(true);
+      proxyRequestWithResponse
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6 }), headers: { etag: '6' } })
+        .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT', { errorBody: { reason: 'invalid_transition', message: 'Not open' } }));
+
+      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 409, code: 'INVALID_TRANSITION' });
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+      expect(proxyRequestWithResponse.mock.calls[1][6]).toEqual({ 'If-Match': '6' });
+    });
+
     it('does not accept when the revise is refused', async () => {
       checkSingleAccess.mockResolvedValueOnce(true);
       proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED', { errorBody: {} }));

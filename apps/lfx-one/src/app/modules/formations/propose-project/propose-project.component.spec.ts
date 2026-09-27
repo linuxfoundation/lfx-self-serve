@@ -24,7 +24,7 @@ const CREATED = { uid: 'new-uid', state: 'submitted', revision: 1, application: 
 describe('ProposeProjectComponent (#3037)', () => {
   const setup = async (create: ReturnType<typeof vi.fn>) => {
     TestBed.resetTestingModule();
-    const service = { create, setPendingCreated: vi.fn() };
+    const service = { create, recordWrite: vi.fn() };
     const messages = { add: vi.fn() };
     await TestBed.configureTestingModule({
       imports: [ProposeProjectComponent],
@@ -42,7 +42,7 @@ describe('ProposeProjectComponent (#3037)', () => {
     component.onSubmit({ project_name: 'Example' });
 
     expect(service.create).toHaveBeenCalledWith({ project_name: 'Example' });
-    expect(service.setPendingCreated).toHaveBeenCalledWith(CREATED);
+    expect(service.recordWrite).toHaveBeenCalledWith('submitter', CREATED);
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
     expect(navigate).toHaveBeenCalledWith(['/formations'], { queryParams: { tab: 'proposals' } });
     expect(component.submitting()).toBe(false);
@@ -56,7 +56,7 @@ describe('ProposeProjectComponent (#3037)', () => {
 
     expect(component.errorMessage()).toBe('project_website must be an http or https URL');
     expect(component.submitting()).toBe(false);
-    expect(service.setPendingCreated).not.toHaveBeenCalled();
+    expect(service.recordWrite).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
   });
 

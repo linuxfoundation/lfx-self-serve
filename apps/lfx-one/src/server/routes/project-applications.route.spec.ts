@@ -139,6 +139,11 @@ describe('create', () => {
     });
   });
 
+  it('never forwards a parent_project_uid at create time', async () => {
+    await send('POST', '/', { application: { project_name: 'Example', parent_project_uid: PARENT_UID } });
+    expect(service.create.mock.calls[0][1].application).toEqual({ project_name: 'Example' });
+  });
+
   it('falls back to the username when the session has no display name', async () => {
     auth.getEffectiveName.mockReturnValue(null);
     await send('POST', '/', { application: {} });

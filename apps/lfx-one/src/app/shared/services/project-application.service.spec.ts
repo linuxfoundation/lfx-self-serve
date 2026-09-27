@@ -102,10 +102,37 @@ describe('ProjectApplicationService (#3037)', () => {
     remove.flush(null, { status: 204, statusText: 'No Content' });
   });
 
-  it('hands a just-created application over exactly once', () => {
-    const created = buildApplication();
-    service.setPendingCreated(created);
-    expect(service.consumePendingCreated()).toBe(created);
-    expect(service.consumePendingCreated()).toBeNull();
+  it('keeps write overlays per mode and prunes them once a read catches up', () => {
+    service.recordWrite('submitter', buildApplication({ revision: 8, state: 'withdrawn' }));
+    expect(
+      service
+        .overlay('submitter')()
+        .map((app) => app.state)
+    ).toEqual(['withdrawn']);
+    expect(service.overlay('staff')()).toEqual([]);
+
+    // A read still at the older revision keeps the overlay; one at the same revision prunes it.
+    service.reconcile('submitter', [buildApplication({ revision: 7 })]);
+    expect(service.overlay('submitter')()).toHaveLength(1);
+    service.reconcile('submitter', [buildApplication({ revision: 8, state: 'withdrawn' })]);
+    expect(service.overlay('submitter')()).toEqual([]);
+  });
+
+  it('remembers deletions until the index stops returning them', () => {
+    service.recordWrite('staff', buildApplication());
+    service.recordDeleted('staff', UID);
+    expect(service.overlay('staff')()).toEqual([]);
+    expect([...service.deletedUids('staff')()]).toEqual([UID]);
+
+    service.reconcile('staff', [buildApplication()]);
+    expect([...service.deletedUids('staff')()]).toEqual([UID]);
+    service.reconcile('staff', []);
+    expect([...service.deletedUids('staff')()]).toEqual([]);
+  });
+
+  it('forget drops one overlay entry so the next read wins', () => {
+    service.recordWrite('submitter', buildApplication());
+    service.forget('submitter', UID);
+    expect(service.overlay('submitter')()).toEqual([]);
   });
 });

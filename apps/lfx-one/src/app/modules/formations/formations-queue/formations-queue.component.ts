@@ -22,7 +22,7 @@ import {
   LF_FOUNDATION_ROOT_SLUG,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, map, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
@@ -122,8 +122,12 @@ export class FormationsQueueComponent {
       distinctUntilChanged()
     );
     return toSignal(
-      combineLatest([this.refresh$, toObservable(this.filters), foundationUid$]).pipe(
-        switchMap(([, filters, foundationUid]) => {
+      // The formations read is skipped while the Project proposals tab is showing (#3037) — nothing renders it.
+      combineLatest([this.refresh$, toObservable(this.filters), foundationUid$, toObservable(this.pageTab).pipe(distinctUntilChanged())]).pipe(
+        switchMap(([, filters, foundationUid, pageTab]) => {
+          if (pageTab === PROJECT_APPLICATION_TABS.proposals) {
+            return EMPTY;
+          }
           this.loadFailed.set(false);
           this.loading.set(true);
           return this.formationService.getFormationsQueue(filters.subStage, filters.search, foundationUid).pipe(

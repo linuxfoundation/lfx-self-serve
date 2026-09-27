@@ -56,6 +56,14 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
     expect(close).toHaveBeenCalledWith(PARENT);
   });
 
+  it('typing after a selection clears it, so Confirm cannot send a parent the field no longer shows', async () => {
+    const { component, close } = await setup();
+    component.onSelected({ value: PARENT });
+    (component as unknown as { form: { controls: { parent: { setValue: (v: string) => void } } } }).form.controls.parent.setValue('Other');
+    component.onConfirm();
+    expect(close).not.toHaveBeenCalled();
+  });
+
   it('clearing the selection blocks confirm again, and cancel closes empty', async () => {
     const { component, close } = await setup();
     component.onSelected({ value: PARENT });

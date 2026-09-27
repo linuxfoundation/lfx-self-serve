@@ -45,8 +45,8 @@ export class ProposeProjectComponent {
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({
         next: (result) => {
-          // query-service lags the write — hand the created application to the list so it shows at once.
-          this.projectApplicationService.setPendingCreated(result.application);
+          // query-service lags the write — record it so Submitted proposals shows it at once.
+          this.projectApplicationService.recordWrite('submitter', result.application);
           this.messageService.add({
             severity: 'success',
             summary: 'Proposal submitted',

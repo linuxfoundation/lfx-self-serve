@@ -20,6 +20,9 @@ interface DrawerAccess {
   onDeny: () => void;
   onDelete: () => void;
   onAccept: () => void;
+  onRevise: (answers: Record<string, unknown>) => void;
+  startEditing: () => void;
+  errorMessage: () => string | null;
 }
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -46,7 +49,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
       deny: vi.fn(() => of({ application: buildApplication({ state: 'denied', revision: 5 }), etag: '5' })),
       accept: vi.fn(() => of({ application: buildApplication({ state: 'accepted', revision: 6 }), etag: '6' })),
       remove: vi.fn(() => of(undefined)),
-      revise: vi.fn(),
+      revise: vi.fn(() => of({ application: buildApplication({ revision: 5, application: { project_name: 'Renamed' } }), etag: '5' })),
     };
     const messages = { add: vi.fn() };
     // The accept dialog closes with whatever the test pushes through `dialogClose`.
@@ -75,10 +78,12 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     fixture.componentRef.setInput('mode', mode);
     const changed: ProjectApplication[] = [];
     const deleted: string[] = [];
+    const gone: string[] = [];
     let staleCount = 0;
     fixture.componentInstance.changed.subscribe((app) => changed.push(app));
     fixture.componentInstance.deleted.subscribe((uid) => deleted.push(uid));
     fixture.componentInstance.stale.subscribe(() => staleCount++);
+    fixture.componentInstance.gone.subscribe((uid) => gone.push(uid));
     fixture.detectChanges();
     return {
       fixture,
@@ -90,6 +95,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
       dialogClose,
       changed,
       deleted,
+      gone,
       staleCount: () => staleCount,
     };
   };
@@ -160,6 +166,44 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
     expect(staleCount()).toBe(1);
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'The proposal could not be accepted' }));
+  });
+
+  it('revise saves, leaves edit mode and emits the returned application', async () => {
+    const { component, service, changed } = await setup('submitter');
+    component.startEditing();
+    component.onRevise({ project_name: 'Renamed' });
+    expect(service.revise).toHaveBeenCalledWith(expect.objectContaining({ revision: 4 }), { project_name: 'Renamed' });
+    expect(component.editing()).toBe(false);
+    expect(changed[0].application.project_name).toBe('Renamed');
+  });
+
+  it('a refused revise keeps the form open with the server message inline', async () => {
+    const { component, service, changed } = await setup('submitter');
+    service.revise.mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'project_website must be an http or https URL' } }))
+    );
+    component.startEditing();
+    component.onRevise({ project_name: 'Renamed' });
+    expect(component.editing()).toBe(true);
+    expect(component.errorMessage()).toBe('project_website must be an http or https URL');
+    expect(changed).toHaveLength(0);
+  });
+
+  it('a stale revise leaves edit mode and asks for a reload', async () => {
+    const { component, service, staleCount } = await setup('submitter');
+    service.revise.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 412 })));
+    component.startEditing();
+    component.onRevise({ project_name: 'Renamed' });
+    expect(component.editing()).toBe(false);
+    expect(staleCount()).toBe(1);
+  });
+
+  it('a 404 reports the application as gone instead of reloading', async () => {
+    const { component, service, gone, staleCount } = await setup('submitter');
+    service.withdraw.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+    component.onWithdraw();
+    expect(gone).toEqual(['3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c']);
+    expect(staleCount()).toBe(0);
   });
 
   it('shows the server message for any other failure', async () => {

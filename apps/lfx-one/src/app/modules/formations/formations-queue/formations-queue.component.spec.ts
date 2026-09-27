@@ -194,7 +194,13 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         },
         {
           provide: ProjectApplicationService,
-          useValue: { getAccess: () => of(options.isFormationTeam), getApplications: () => of([]), consumePendingCreated: () => null },
+          useValue: {
+            getAccess: () => of(options.isFormationTeam),
+            getApplications: () => of([]),
+            overlay: () => signal([]),
+            deletedUids: () => signal(new Set<string>()),
+            reconcile: vi.fn(),
+          },
         },
         { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(options.tab ? { tab: options.tab } : {})) } },
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },

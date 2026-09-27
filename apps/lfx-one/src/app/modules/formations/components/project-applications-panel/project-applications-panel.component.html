@@ -65,9 +65,9 @@
           <lfx-table
             [value]="filteredApplications()"
             [loading]="loading()"
-            [paginator]="filteredApplications().length > 10"
-            [rows]="10"
-            [first]="first()"
+            [paginator]="filteredApplications().length > pageSize"
+            [rows]="pageSize"
+            [first]="pageFirst()"
             (onPage)="onPage($event)"
             [rowsPerPageOptions]="[10, 25, 50]"
             dataKey="uid"
@@ -129,4 +129,5 @@
   [(visible)]="drawerVisible"
   (changed)="onChanged($event)"
   (deleted)="onDeleted($event)"
+  (gone)="onDeleted($event)"
   (stale)="onStale()" />

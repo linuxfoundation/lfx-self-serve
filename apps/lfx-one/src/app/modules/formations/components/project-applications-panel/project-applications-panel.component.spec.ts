@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
@@ -8,18 +10,22 @@ import { ProjectApplicationService } from '@services/project-application.service
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { Observable, of, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { ProjectApplicationsPanelComponent } from './project-applications-panel.component';
 
 interface PanelAccess {
   applications: () => ProjectApplication[];
   filteredApplications: () => ProjectApplication[];
+  pageFirst: () => number;
+  hasError: () => boolean;
   onChanged: (application: ProjectApplication) => void;
   onDeleted: (uid: string) => void;
   onStale: () => void;
+  onPage: (event: { first: number; rows: number }) => void;
   open: (application: ProjectApplication) => void;
+  retry: () => void;
   onStateFilterChange: (state: string) => void;
 }
 
@@ -40,78 +46,113 @@ function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectA
 }
 
 describe('ProjectApplicationsPanelComponent (#3037)', () => {
-  const setup = async (mode: ProjectApplicationViewMode, fetched: ProjectApplication[], pending: ProjectApplication | null = null) => {
+  let service: ProjectApplicationService;
+  let getApplications: MockInstance<ProjectApplicationService['getApplications']>;
+
+  beforeEach(async () => {
     TestBed.resetTestingModule();
-    const service = {
-      getApplications: vi.fn(() => of(fetched)),
-      consumePendingCreated: vi.fn(() => pending),
-    };
     await TestBed.configureTestingModule({
       imports: [ProjectApplicationsPanelComponent],
       providers: [
         provideRouter([]),
-        { provide: ProjectApplicationService, useValue: service },
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
         DialogService,
       ],
     }).compileComponents();
+    service = TestBed.inject(ProjectApplicationService);
+    getApplications = vi.spyOn(service, 'getApplications');
+  });
+
+  const mount = async (mode: ProjectApplicationViewMode, fetched: ProjectApplication[] | Observable<ProjectApplication[]>) => {
+    getApplications.mockReturnValue(Array.isArray(fetched) ? of(fetched) : fetched);
     const fixture: ComponentFixture<ProjectApplicationsPanelComponent> = TestBed.createComponent(ProjectApplicationsPanelComponent);
     fixture.componentRef.setInput('mode', mode);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    return { fixture, component: fixture.componentInstance as unknown as PanelAccess, service };
+    return { fixture, component: fixture.componentInstance as unknown as PanelAccess };
   };
 
   it('loads the caller’s own proposals in submitter mode and the queue in staff mode', async () => {
-    const mine = await setup('submitter', []);
-    expect(mine.service.getApplications).toHaveBeenCalledWith('submitter');
-    const staff = await setup('staff', []);
-    expect(staff.service.getApplications).toHaveBeenCalledWith('staff');
-    expect(staff.service.consumePendingCreated).not.toHaveBeenCalled();
+    await mount('submitter', []);
+    expect(getApplications).toHaveBeenLastCalledWith('submitter');
+    await mount('staff', []);
+    expect(getApplications).toHaveBeenLastCalledWith('staff');
   });
 
   it('shows a just-submitted proposal before the index has caught up', async () => {
-    const { component } = await setup('submitter', [], buildApplication({ uid: 'new' }));
+    service.recordWrite('submitter', buildApplication({ uid: 'new' }));
+    const { component } = await mount('submitter', []);
     expect(component.applications().map((app) => app.uid)).toEqual(['new']);
   });
 
-  it('keeps a local write over a lagging index read, and drops deleted rows', async () => {
-    const { component, service, fixture } = await setup('submitter', [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b' })]);
+  it('keeps write and delete overlays across a destroyed and recreated panel (tab switch)', async () => {
+    const lagging = [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b' })];
+    const first = await mount('submitter', lagging);
+    first.component.onChanged(buildApplication({ uid: 'a', state: 'withdrawn', revision: 2 }));
+    first.component.onDeleted('b');
+    first.fixture.destroy();
 
-    component.onChanged(buildApplication({ uid: 'a', state: 'withdrawn', revision: 2 }));
-    component.onDeleted('b');
-    // The next read still returns the stale index docs.
-    service.getApplications.mockReturnValue(of([buildApplication({ uid: 'a' }), buildApplication({ uid: 'b' })]));
-    component.onStale();
-    fixture.detectChanges();
+    const second = await mount('submitter', lagging);
+    expect(second.component.applications().map((app) => `${app.uid}:${app.state}`)).toEqual(['a:withdrawn']);
+  });
 
-    expect(component.applications().map((app) => `${app.uid}:${app.state}`)).toEqual(['a:withdrawn']);
+  it('never shows a staff-side write in the submitter list', async () => {
+    service.recordWrite('staff', buildApplication({ uid: 'someone-elses' }));
+    const { component } = await mount('submitter', []);
+    expect(component.applications()).toEqual([]);
   });
 
   it('on a stale write, lets the fresh read win for the open application', async () => {
-    const { component, service } = await setup('submitter', [buildApplication({ uid: 'a' })]);
+    const { component } = await mount('submitter', [buildApplication({ uid: 'a' })]);
     component.open(buildApplication({ uid: 'a' }));
     component.onChanged(buildApplication({ uid: 'a', state: 'withdrawn', revision: 2 }));
 
-    service.getApplications.mockReturnValue(of([buildApplication({ uid: 'a', state: 'denied', revision: 3 })]));
+    getApplications.mockReturnValue(of([buildApplication({ uid: 'a', state: 'denied', revision: 3 })]));
     component.onStale();
 
     expect(component.applications()[0].state).toBe('denied');
   });
 
+  it('pulls the paginator back when a delete empties the last page', async () => {
+    const rows = Array.from({ length: 11 }, (_, index) => buildApplication({ uid: `app-${index}` }));
+    const { component } = await mount('staff', rows);
+    component.onPage({ first: 10, rows: 10 });
+    expect(component.pageFirst()).toBe(10);
+
+    component.onDeleted('app-10');
+    expect(component.pageFirst()).toBe(0);
+  });
+
+  it('shows the error state when the read fails, and Retry reads again', async () => {
+    const { component, fixture } = await mount(
+      'submitter',
+      throwError(() => new Error('boom'))
+    );
+    expect(component.hasError()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="project-applications-error"]')).not.toBeNull();
+
+    getApplications.mockReturnValue(of([buildApplication()]));
+    component.retry();
+    fixture.detectChanges();
+    expect(component.hasError()).toBe(false);
+    expect(component.applications()).toHaveLength(1);
+  });
+
   it('filters by state', async () => {
-    const { component } = await setup('staff', [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b', state: 'denied' })]);
+    const { component } = await mount('staff', [buildApplication({ uid: 'a' }), buildApplication({ uid: 'b', state: 'denied' })]);
     component.onStateFilterChange('denied');
     expect(component.filteredApplications().map((app) => app.uid)).toEqual(['b']);
   });
 
   it('renders the submitter column only in staff mode', async () => {
-    const staff = await setup('staff', [buildApplication({ uid: 'a' })]);
+    const staff = await mount('staff', [buildApplication({ uid: 'a' })]);
     expect(staff.fixture.nativeElement.querySelector('[data-testid="project-applications-submitter-a"]')).not.toBeNull();
-    const mine = await setup('submitter', [buildApplication({ uid: 'a' })]);
+    const mine = await mount('submitter', [buildApplication({ uid: 'a' })]);
     expect(mine.fixture.nativeElement.querySelector('[data-testid="project-applications-submitter-a"]')).toBeNull();
   });
 });

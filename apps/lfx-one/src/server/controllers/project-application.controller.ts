@@ -72,6 +72,8 @@ export const createProjectApplication = async (req: Request, res: Response, next
       });
     }
     const application = parseAnswers(req, operation);
+    // Nobody places a project at submit time — the formation team chooses the parent at accept.
+    delete application[PROJECT_APPLICATION_PARENT_KEY];
 
     const result = await projectApplicationService.create(req, {
       submitter_username: username,

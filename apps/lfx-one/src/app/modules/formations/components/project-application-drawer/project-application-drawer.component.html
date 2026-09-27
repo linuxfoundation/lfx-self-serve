@@ -5,13 +5,19 @@
   [(visible)]="visible"
   position="right"
   [modal]="true"
-  styleClass="xl:w-[50%] lg:w-[60%] md:w-[75%] sm:w-[92%] w-full"
-  [attr.aria-labelledby]="'project-application-drawer-title'"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
   data-testid="project-application-drawer">
   <ng-template #header>
     @if (application(); as app) {
       <div class="flex flex-col gap-1.5 min-w-0">
-        <h2 id="project-application-drawer-title" class="text-lg font-semibold text-gray-900 break-words m-0" data-testid="project-application-drawer-title">
+        <h2
+          #titleRef
+          id="project-application-drawer-title"
+          tabindex="-1"
+          class="text-lg font-semibold text-gray-900 break-words m-0 focus:outline-none"
+          data-testid="project-application-drawer-title">
           {{ projectName() }}
         </h2>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">

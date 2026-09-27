@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, model, output, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, input, model, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -29,7 +29,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
-import { combineLatest, distinctUntilChanged, finalize, map, Observable, take } from 'rxjs';
+import { combineLatest, distinctUntilChanged, filter, finalize, map, Observable, pairwise, take } from 'rxjs';
 
 import { ProjectApplicationAcceptDialogComponent } from '../project-application-accept-dialog/project-application-accept-dialog.component';
 import { ProjectApplicationFormComponent } from '../project-application-form/project-application-form.component';
@@ -40,8 +40,8 @@ import { ProjectApplicationFormComponent } from '../project-application-form/pro
  * backend creates the new project under — and deny. Revise/withdraw/accept/deny are offered only while
  * the application is `submitted`; delete is always offered and always confirmed.
  *
- * Every write sends the held revision as `If-Match`. A 412 (another write won) or 404 (deleted
- * elsewhere) is never replayed: the drawer closes its edit state and asks the parent list to reload.
+ * Every write sends the held revision as `If-Match`. Neither a 412 (another write won) nor a 404 (deleted
+ * elsewhere) is replayed: a 412 asks the list to reload; a 404 asks it to drop the application.
  * Answers render as plain text only.
  */
 @Component({
@@ -56,6 +56,8 @@ export class ProjectApplicationDrawerComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   // === Inputs ===
   public readonly application = input<ProjectApplication | null>(null);
@@ -66,8 +68,13 @@ export class ProjectApplicationDrawerComponent {
   public readonly changed = output<ProjectApplication>();
   /** The application was deleted. */
   public readonly deleted = output<string>();
-  /** The held revision is stale or the application is gone — reload before any further write. */
+  /** The held revision is stale (412) — reload before any further write. */
   public readonly stale = output<void>();
+  /** A write found the application already gone (404); carries its UID so the list drops it. */
+  public readonly gone = output<string>();
+
+  // === View queries ===
+  private readonly titleRef = viewChild<ElementRef<HTMLElement>>('titleRef');
 
   // === Models ===
   public readonly visible = model<boolean>(false);
@@ -89,6 +96,10 @@ export class ProjectApplicationDrawerComponent {
   });
   protected readonly isStaff = computed(() => this.mode() === 'staff');
   protected readonly busy = computed(() => this.busyAction() !== null);
+  /** p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. */
+  protected readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' } };
+  /** The element that had focus when the drawer opened, handed focus back on every close path. */
+  private opener: HTMLElement | null = null;
 
   // === Constructor ===
   public constructor() {
@@ -106,9 +117,27 @@ export class ProjectApplicationDrawerComponent {
         this.editing.set(false);
         this.errorMessage.set(null);
       });
+
+    // Hand focus back to the opener on every close — PrimeNG emits (onHide) only for its own Escape/mask
+    // close, never for a programmatic visible.set(false) such as the post-delete close.
+    toObservable(this.visible)
+      .pipe(
+        pairwise(),
+        filter(([was, is]) => was && !is),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.restoreFocus());
   }
 
   // === Protected Methods ===
+  /** Moves focus into the drawer (its title) and remembers the opener to return to on close. */
+  protected onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const active = this.document.activeElement;
+    this.opener = active instanceof HTMLElement ? active : null;
+    this.titleRef()?.nativeElement.focus();
+  }
+
   protected startEditing(): void {
     this.errorMessage.set(null);
     this.editing.set(true);
@@ -184,6 +213,15 @@ export class ProjectApplicationDrawerComponent {
   }
 
   // === Private Helpers ===
+  private restoreFocus(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const opener = this.opener;
+    this.opener = null;
+    if (opener?.isConnected) {
+      setTimeout(() => opener.focus());
+    }
+  }
+
   private acceptUnder(application: ProjectApplication, parent: Project): void {
     this.busyAction.set('accept');
     this.projectApplicationService
@@ -219,11 +257,20 @@ export class ProjectApplicationDrawerComponent {
    */
   private handleWriteError(error: unknown, inline = false): void {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
-    if (status === 412 || status === 404) {
+    if (status === 404) {
+      const uid = this.application()?.uid;
+      this.messageService.add({ severity: 'warn', summary: 'This proposal is no longer available' });
+      this.editing.set(false);
+      if (uid) {
+        this.gone.emit(uid);
+      }
+      return;
+    }
+    if (status === 412) {
       this.messageService.add({
         severity: 'warn',
-        summary: status === 412 ? 'This proposal changed since you opened it' : 'This proposal is no longer available',
-        detail: status === 412 ? 'The latest version has been loaded. Review it and try again.' : undefined,
+        summary: 'This proposal changed since you opened it',
+        detail: 'The latest version has been loaded. Review it and try again.',
       });
       this.editing.set(false);
       this.stale.emit();

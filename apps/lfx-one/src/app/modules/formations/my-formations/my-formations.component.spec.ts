@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import type { MyFormationSummary, MyFormationWorkResponse } from '@lfx-one/shared/interfaces';
@@ -311,7 +312,10 @@ describe('MyFormationsComponent — Propose a project (#3037)', () => {
           provide: FormationService,
           useValue: { getMyFormationWork: () => new BehaviorSubject(complete([formation()])).asObservable(), invalidateMyFormationWork: vi.fn() },
         },
-        { provide: ProjectApplicationService, useValue: { getApplications: () => of([]), consumePendingCreated: () => null } },
+        {
+          provide: ProjectApplicationService,
+          useValue: { getApplications: () => of([]), overlay: () => signal([]), deletedUids: () => signal(new Set<string>()), reconcile: vi.fn() },
+        },
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,

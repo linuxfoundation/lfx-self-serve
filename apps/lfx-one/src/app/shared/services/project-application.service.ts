@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, Signal, signal } from '@angular/core';
 import type {
   AcceptProjectApplicationRequest,
   CreateProjectApplicationRequest,
@@ -13,6 +13,7 @@ import type {
   ProjectApplicationViewMode,
 } from '@lfx-one/shared/interfaces';
 import { PROJECT_APPLICATION_API_BASE_PATH } from '@lfx-one/shared/constants';
+import { upsertProjectApplication } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 
 /**
@@ -25,11 +26,19 @@ export class ProjectApplicationService {
   private readonly http = inject(HttpClient);
 
   /**
-   * The application a just-finished submit returned, handed from the propose page to the
-   * "Submitted proposals" list so it renders immediately — query-service lags a successful write.
-   * In memory only, and consumed once.
+   * Write results the index hasn't caught up with yet, per list mode, overlaid on every read
+   * (`reconcile`). Root-scoped so it outlives a panel destroyed by a tab switch; entries are pruned once
+   * a read returns the same or a newer revision (or confirms a deletion). In memory only — never browser
+   * storage — and gone on any full navigation, including sign-out and impersonation changes.
    */
-  private pendingCreated: ProjectApplication | null = null;
+  private readonly overlays = {
+    submitter: signal<ProjectApplication[]>([]),
+    staff: signal<ProjectApplication[]>([]),
+  };
+  private readonly deletions = {
+    submitter: signal<ReadonlySet<string>>(new Set()),
+    staff: signal<ReadonlySet<string>>(new Set()),
+  };
 
   /**
    * Rethrows rather than defaulting to `[]`: an empty list would read as "no proposals" when the read
@@ -85,14 +94,39 @@ export class ProjectApplicationService {
     return this.http.delete<void>(this.applicationPath(application.uid), this.ifMatch(application)).pipe(take(1));
   }
 
-  public setPendingCreated(application: ProjectApplication): void {
-    this.pendingCreated = application;
+  /** The overlay for one list mode, as a signal so the list recomputes when a write lands. */
+  public overlay(mode: ProjectApplicationViewMode): Signal<ProjectApplication[]> {
+    return this.overlays[mode].asReadonly();
   }
 
-  public consumePendingCreated(): ProjectApplication | null {
-    const pending = this.pendingCreated;
-    this.pendingCreated = null;
-    return pending;
+  public deletedUids(mode: ProjectApplicationViewMode): Signal<ReadonlySet<string>> {
+    return this.deletions[mode].asReadonly();
+  }
+
+  /** Records a successful write (including create) so every list shows it before the index does. */
+  public recordWrite(mode: ProjectApplicationViewMode, application: ProjectApplication): void {
+    this.overlays[mode].update((list) => upsertProjectApplication(list, application));
+  }
+
+  /** Records a deletion — the caller's own, or a 404 proving the application is gone. */
+  public recordDeleted(mode: ProjectApplicationViewMode, uid: string): void {
+    this.overlays[mode].update((list) => list.filter((application) => application.uid !== uid));
+    this.deletions[mode].update((set) => new Set([...set, uid]));
+  }
+
+  /** Drops the overlay entry for one application so the next read wins (after a 412). */
+  public forget(mode: ProjectApplicationViewMode, uid: string): void {
+    this.overlays[mode].update((list) => list.filter((application) => application.uid !== uid));
+  }
+
+  /**
+   * Merges a fresh read with the overlay, then prunes what the read has caught up on: overlay entries the
+   * read now carries at the same or a newer revision, and deletions the read no longer returns.
+   */
+  public reconcile(mode: ProjectApplicationViewMode, fetched: ProjectApplication[]): void {
+    const byUid = new Map(fetched.map((application) => [application.uid, application]));
+    this.overlays[mode].update((list) => list.filter((local) => (byUid.get(local.uid)?.revision ?? -1) < local.revision));
+    this.deletions[mode].update((set) => new Set([...set].filter((uid) => byUid.has(uid))));
   }
 
   private applicationPath(uid: string): string {
