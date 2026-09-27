@@ -107,9 +107,15 @@ export class ProjectApplicationService {
 
   /**
    * Records the formation team's chosen parent, then accepts. formation-service's accept route takes no
-   * body, so the parent travels as `application.parent_project_uid` via a revise first; accept then runs
-   * at the revision that revise returned. A failure after the revise landed still throws — the caller's
-   * held revision is now stale, so the UI refreshes (412 path) rather than replaying either write.
+   * body, so the parent travels as `application.parent_project_uid` (a product decision on #3037 — the
+   * downstream project create reads it; formation-service itself keeps it as an unknown answer key) via a
+   * revise first, and accept then runs at the revision that revise returned.
+   *
+   * Revise is guarded upstream on `writer`, which the submitter also holds, while accept needs
+   * `formation_team`. The membership pre-check keeps a non-team caller from committing the revise and
+   * then being refused the accept. The gateway's check on accept remains the real authorization. A
+   * failure after the revise landed still throws; the caller's held revision is then stale, so the UI
+   * refreshes (412 path) rather than replaying either write.
    */
   public async accept(
     req: Request,
@@ -118,8 +124,24 @@ export class ProjectApplicationService {
     application: ProjectApplicationAnswers,
     parentProjectUid: string
   ): Promise<ProjectApplicationWriteResult> {
+    await this.assertFormationTeamMember(req, 'accept_project_application');
     const revised = await this.revise(req, uid, ifMatch, { ...application, [PROJECT_APPLICATION_PARENT_KEY]: parentProjectUid });
     return this.transition(req, uid, String(revised.application.revision), 'accept');
+  }
+
+  /**
+   * Refuses the call unless the caller is on the formation team. Used for BFF-side guards that exist
+   * only to avoid a half-applied multi-step write; upstream OpenFGA remains the authorization.
+   */
+  public async assertFormationTeamMember(req: Request, operation: string): Promise<void> {
+    if (!(await this.isFormationTeamMember(req))) {
+      throw new AuthorizationError('Only the formation team can perform this action', {
+        operation,
+        service: 'formation_service',
+        path: req.path,
+        code: 'PROJECT_APPLICATION_FORBIDDEN',
+      });
+    }
   }
 
   /** Deletes the application and its indexed document. Upstream returns 204. */
@@ -202,8 +224,9 @@ export class ProjectApplicationService {
 
   /**
    * Maps formation-service write errors onto BFF error classes by status and `reason` — mirroring
-   * `FormationService.mapFormationWriteError`. The upstream message names the field and expected shape
-   * without echoing the submitted value, so it is safe to surface. Answers are never logged.
+   * `FormationService.mapFormationWriteError`. The upstream message names the field and expected shape;
+   * at most it quotes the caller's own input back to them (e.g. a `formation_list` entry), so it is safe to
+   * show the caller. Only uid, status and reason are logged — never answers or messages.
    */
   private mapWriteError(error: unknown, req: Request, operation: string, uid: string): unknown {
     if (!isMicroserviceError(error)) {

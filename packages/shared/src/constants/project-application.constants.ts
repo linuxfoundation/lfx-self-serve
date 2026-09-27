@@ -45,6 +45,21 @@ export const PROJECT_APPLICATION_CANONICAL_KEYS = [
   'description',
 ] as const;
 
+/** Answer keys formation-service validates as http(s) URLs. */
+export const PROJECT_APPLICATION_URL_KEYS: ReadonlySet<string> = new Set(['project_repository_url', 'project_website']);
+
+/** URL answer keys that must also carry a hostname (the repository rule; the website rule does not). */
+export const PROJECT_APPLICATION_URL_KEYS_REQUIRING_HOST: ReadonlySet<string> = new Set(['project_repository_url']);
+
+/** Answer keys formation-service validates as booleans. */
+export const PROJECT_APPLICATION_BOOLEAN_KEYS: ReadonlySet<string> = new Set(['is_spec_project']);
+
+/** Answer keys formation-service validates as lists of email strings. */
+export const PROJECT_APPLICATION_EMAIL_LIST_KEYS: ReadonlySet<string> = new Set(['formation_list']);
+
+/** Answer keys formation-service validates with the legal-contact email rule. */
+export const PROJECT_APPLICATION_EMAIL_KEYS: ReadonlySet<string> = new Set(['legal_contact_email']);
+
 /** UI labels per answer key. Keys missing here fall back to a humanized key in the detail view. */
 export const PROJECT_APPLICATION_FIELD_LABELS: Record<string, string> = {
   project_name: 'Project name',

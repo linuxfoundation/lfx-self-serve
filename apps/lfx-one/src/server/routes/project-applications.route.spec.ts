@@ -25,6 +25,7 @@ const service = {
   accept: vi.fn(),
   deny: vi.fn(),
   remove: vi.fn(),
+  assertFormationTeamMember: vi.fn(),
 };
 const auth = {
   getUsernameFromAuth: vi.fn(),
@@ -90,6 +91,7 @@ beforeEach(() => {
     fn.mockResolvedValue({ application: APP, etag: '3' });
   }
   service.remove.mockResolvedValue(undefined);
+  service.assertFormationTeamMember.mockResolvedValue(undefined);
 });
 
 function send(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
@@ -185,6 +187,19 @@ describe('mutations', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('etag')).toBe('3');
     expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', answers);
+  });
+
+  it('revise without a parent key skips the formation-team check', async () => {
+    await send('PUT', `/${UID}`, { application: { project_name: 'X' } }, { 'If-Match': '2' });
+    expect(service.assertFormationTeamMember).not.toHaveBeenCalled();
+  });
+
+  it('revise carrying parent_project_uid requires the formation team', async () => {
+    const { AuthorizationError } = await import('../errors');
+    service.assertFormationTeamMember.mockRejectedValue(new AuthorizationError('no', { code: 'PROJECT_APPLICATION_FORBIDDEN' }));
+    const res = await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
+    expect(res.status).toBe(403);
+    expect(service.revise).not.toHaveBeenCalled();
   });
 
   it('refuses a mutation without If-Match', async () => {

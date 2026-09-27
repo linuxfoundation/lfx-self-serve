@@ -193,6 +193,14 @@ describe('validateProjectApplicationAnswers', () => {
     expect(issues.some((issue) => issue.message.includes('nobody'))).toBe(false);
   });
 
+  it('accepts legacy formation contacts upstream still accepts', () => {
+    expect(validateProjectApplicationAnswers({ formation_list: ['a@localhost', 'a@b@c'] })).toEqual([]);
+  });
+
+  it('refuses a legal contact with surrounding whitespace, as upstream does', () => {
+    expect(validateProjectApplicationAnswers({ legal_contact_email: ' legal@example.org' }).map((issue) => issue.field)).toEqual(['legal_contact_email']);
+  });
+
   it('flags a formation list with a non-email entry', () => {
     expect(validateProjectApplicationAnswers({ formation_list: ['ok@example.org', 'nope'] })).toEqual([
       { field: 'formation_list', message: 'formation_list must be a list of email addresses' },

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { UUID_REGEX } from '@lfx-one/shared/constants';
+import { PROJECT_APPLICATION_PARENT_KEY, UUID_REGEX } from '@lfx-one/shared/constants';
 import type { ProjectApplicationAnswers, ProjectApplicationWriteResult } from '@lfx-one/shared/interfaces';
 import { validateProjectApplicationAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -89,7 +89,13 @@ export const createProjectApplication = async (req: Request, res: Response, next
   }
 };
 
-/** `PUT /api/project-applications/:uid` — replace the complete answer map. */
+/**
+ * `PUT /api/project-applications/:uid` — replace the complete answer map. `parent_project_uid` is the
+ * formation team's placement choice, so only a formation-team member may send it (unchanged answers are
+ * echoed back whole, so a team member's revise carries it through). Upstream stores it as an ordinary
+ * answer that any `writer` could rewrite; this keeps the placement from being set through this BFF by a
+ * submitter.
+ */
 export const reviseProjectApplication = async (req: Request, res: Response, next: NextFunction) => {
   const operation = 'revise_project_application';
   const startTime = logger.startOperation(req, operation);
@@ -97,6 +103,9 @@ export const reviseProjectApplication = async (req: Request, res: Response, next
     const uid = parseUid(req, operation);
     const ifMatch = parseIfMatch(req, operation);
     const application = parseAnswers(req, operation);
+    if (application[PROJECT_APPLICATION_PARENT_KEY] !== undefined) {
+      await projectApplicationService.assertFormationTeamMember(req, operation);
+    }
     const result = await projectApplicationService.revise(req, uid, ifMatch, application);
     return sendWriteResult(req, res, operation, startTime, result);
   } catch (error) {
@@ -120,7 +129,8 @@ export const withdrawProjectApplication = async (req: Request, res: Response, ne
 
 /**
  * `POST /api/project-applications/:uid/accept` — body `{ parent_project_uid, application }`. The parent is
- * required: the backend creates the project from the accepted application and needs its placement.
+ * required: per #3037 the formation team places the project at accept time, and the downstream project
+ * create reads it from the accepted application's answers.
  */
 export const acceptProjectApplication = async (req: Request, res: Response, next: NextFunction) => {
   const operation = 'accept_project_application';

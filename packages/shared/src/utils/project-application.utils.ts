@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  PROJECT_APPLICATION_BOOLEAN_KEYS,
+  PROJECT_APPLICATION_CANONICAL_KEYS,
+  PROJECT_APPLICATION_EMAIL_KEYS,
+  PROJECT_APPLICATION_EMAIL_LIST_KEYS,
   PROJECT_APPLICATION_FIELD_LABELS,
   PROJECT_APPLICATION_SECTIONS,
   PROJECT_APPLICATION_STATE_META,
   PROJECT_APPLICATION_UNKNOWN_STATE_META,
+  PROJECT_APPLICATION_URL_KEYS,
+  PROJECT_APPLICATION_URL_KEYS_REQUIRING_HOST,
 } from '../constants/project-application.constants';
-import { EMAIL_REGEX } from '../constants/regex.constants';
 import type {
   ProjectApplication,
   ProjectApplicationAnswers,
@@ -17,13 +22,6 @@ import type {
   UpstreamProjectApplication,
   UpstreamProjectApplicationDoc,
 } from '../interfaces/project-application.interface';
-
-/** Answer keys validated as URLs; the repository also requires a hostname (formation-service rule). */
-const URL_KEYS_REQUIRING_HOST = new Set(['project_repository_url']);
-const URL_KEYS = new Set(['project_repository_url', 'project_website']);
-const BOOLEAN_KEYS = new Set(['is_spec_project']);
-const LIST_KEYS = new Set(['formation_list']);
-const EMAIL_KEYS = new Set(['legal_contact_email']);
 
 /** Normalizes a query-service `project_application` document onto the browser shape. */
 export function normalizeProjectApplicationDoc(doc: UpstreamProjectApplicationDoc): ProjectApplication {
@@ -57,7 +55,7 @@ export function normalizeUpstreamProjectApplication(app: UpstreamProjectApplicat
   };
 }
 
-/** Label + tag severity for a state; unseen states render their raw value rather than breaking. */
+/** Label + tag severity for a state; an unseen state renders its humanized value rather than breaking. */
 export function getProjectApplicationStateMeta(state: string | null | undefined): ProjectApplicationStateMeta {
   if (!state) {
     return PROJECT_APPLICATION_UNKNOWN_STATE_META;
@@ -195,15 +193,15 @@ export function validateProjectApplicationAnswers(answers: unknown): ProjectAppl
       continue;
     }
 
-    if (BOOLEAN_KEYS.has(key)) {
+    if (PROJECT_APPLICATION_BOOLEAN_KEYS.has(key)) {
       if (typeof value !== 'boolean') {
         issues.push({ field: key, message: `${key} must be true or false` });
       }
       continue;
     }
 
-    if (LIST_KEYS.has(key)) {
-      if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !EMAIL_REGEX.test(entry.trim().toLowerCase()))) {
+    if (PROJECT_APPLICATION_EMAIL_LIST_KEYS.has(key)) {
+      if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || !isFormationContactEmail(entry))) {
         issues.push({ field: key, message: `${key} must be a list of email addresses` });
       }
       continue;
@@ -224,12 +222,13 @@ export function validateProjectApplicationAnswers(answers: unknown): ProjectAppl
       continue;
     }
 
-    if (URL_KEYS.has(key) && !isHttpUrl(trimmed, URL_KEYS_REQUIRING_HOST.has(key))) {
+    if (PROJECT_APPLICATION_URL_KEYS.has(key) && !isHttpUrl(trimmed, PROJECT_APPLICATION_URL_KEYS_REQUIRING_HOST.has(key))) {
       issues.push({ field: key, message: `${key} must be an http or https URL` });
       continue;
     }
 
-    if (EMAIL_KEYS.has(key) && !isLegalContactEmail(trimmed)) {
+    // Checked untrimmed, as upstream does: surrounding whitespace is refused there too.
+    if (PROJECT_APPLICATION_EMAIL_KEYS.has(key) && !isLegalContactEmail(value)) {
       issues.push({ field: key, message: `${key} must be an email address` });
     }
   }
@@ -247,6 +246,17 @@ export function isLegalContactEmail(value: string): boolean {
   return at > 0 && at === value.lastIndexOf('@') && at < value.length - 1;
 }
 
+/**
+ * formation-service's formation-contact rule, kept deliberately shallow for legacy payloads: after trimming,
+ * the first `@` is at neither edge and there is no space. The intake form applies a stricter check to new input;
+ * this one must not, or a stored application with a legacy entry could never be revised or accepted.
+ */
+export function isFormationContactEmail(value: string): boolean {
+  const trimmed = value.trim();
+  const at = trimmed.indexOf('@');
+  return at > 0 && at < trimmed.length - 1 && !trimmed.includes(' ');
+}
+
 /** http(s) URL check; `requireHost` mirrors the repository rule (the website rule does not require one). */
 export function isHttpUrl(value: string, requireHost: boolean): boolean {
   let parsed: URL;
@@ -262,7 +272,7 @@ export function isHttpUrl(value: string, requireHost: boolean): boolean {
 }
 
 function isCanonicalKey(key: string): boolean {
-  return key in PROJECT_APPLICATION_FIELD_LABELS && key !== 'parent_project_uid';
+  return (PROJECT_APPLICATION_CANONICAL_KEYS as readonly string[]).includes(key);
 }
 
 function containsNul(value: unknown): boolean {

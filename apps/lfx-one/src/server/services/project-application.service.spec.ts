@@ -223,6 +223,7 @@ describe('ProjectApplicationService', () => {
 
   describe('accept', () => {
     it('revises with the chosen parent, then accepts at the revision revise returned', async () => {
+      checkSingleAccess.mockResolvedValueOnce(true);
       proxyRequestWithResponse
         .mockResolvedValueOnce({
           data: upstreamApp({ revision: 6, application: { project_name: 'X', parent_project_uid: PARENT_UID } }),
@@ -249,7 +250,15 @@ describe('ProjectApplicationService', () => {
       expect(result).toMatchObject({ etag: '7', application: { state: 'accepted', revision: 7 } });
     });
 
+    it('refuses a caller outside the formation team before writing anything', async () => {
+      checkSingleAccess.mockResolvedValueOnce(false);
+
+      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 403, code: 'PROJECT_APPLICATION_FORBIDDEN' });
+      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    });
+
     it('does not accept when the revise is refused', async () => {
+      checkSingleAccess.mockResolvedValueOnce(true);
       proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED', { errorBody: {} }));
 
       await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 412 });
