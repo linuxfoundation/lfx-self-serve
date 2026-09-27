@@ -111,7 +111,7 @@ export class ProjectContextService {
    * sidebar card (GH-1955) — do not add another independent `getProject`/`getProjectSettings`
    * fetch for Formation-derived state; read this signal and its siblings below
    * (`isActiveProjectInFormation`, `isActiveProjectConfidential`, `activeProjectAnnouncementDate`)
-   * instead. The announcement-date pipeline's auditor probe is not one of those: it reuses
+   * instead. {@link projectSettingsAccess} is the one settings-read probe: it reuses
    * `FormationCardComponent`'s `getProject(uid, false, { auditor: true })` cache key, and only
    * to decide whether settings may be read (GH-2794).
    */
@@ -127,6 +127,15 @@ export class ProjectContextService {
    * display label, not a stage identity, and can drift independently of the stage enum.
    */
   public readonly isActiveProjectConfidential: Signal<boolean> = computed(() => this.activeProject()?.stage === ProjectStage.FormationConfidential);
+
+  /**
+   * Whether the caller may read `GET /projects/:uid/settings` for the active project, tagged
+   * with that project's uid. Upstream gates the read on `auditor`, and writer implies auditor.
+   * `canRead` is false when the caller is neither, or when the auditor check fails — that is
+   * not an empty settings document. Shared by the announcement-date pipeline and
+   * `ProjectStaffCardComponent` so a project overview makes the check once (GH-2794).
+   */
+  public readonly projectSettingsAccess: Signal<{ uid: string; canRead: boolean } | null> = this.initProjectSettingsAccess();
 
   /**
    * Announcement-date tri-state for the current active context, shared by `FormationCardComponent`
@@ -419,33 +428,49 @@ export class ProjectContextService {
   }
 
   /**
-   * Settings live behind the project `auditor` relation. The shared project fetch already
-   * carries `writer` (which implies auditor), so a writer can go straight to settings.
-   * Everyone else on a formation-stage project gets one auditor check — the same
-   * `getProject(uid, false, { auditor: true })` `FormationCardComponent` already makes, so
-   * the two share a cache entry — and settings are read only when that comes back true.
-   * A contributor opening an ordinary project overview never hits `/permissions` (GH-2794).
+   * One auditor probe per active project, shared with `FormationCardComponent`'s
+   * `getProject(uid, false, { auditor: true })` cache key. A writer on the shared project
+   * fetch skips it. The probe's own `writer` flag is accepted too: the server omits
+   * `auditor` for writers, and that response can disagree with the session-cached project
+   * if the writer flag there goes stale.
    */
-  private initActiveProjectAnnouncementDate(): Signal<string | null> {
+  private initProjectSettingsAccess(): Signal<{ uid: string; canRead: boolean } | null> {
     return toSignal(
       toObservable(this.activeProject).pipe(
         switchMap((project) => {
-          if (!project?.uid || !isFormationStage(project.stage)) {
+          if (!project?.uid) {
+            return of(null);
+          }
+          const uid = project.uid;
+          if (project.writer === true) {
+            return of({ uid, canRead: true });
+          }
+          return this.projectService.getProject(uid, false, { auditor: true }).pipe(
+            map((checked) => ({
+              uid,
+              canRead: checked?.writer === true || checked?.auditor === true,
+            }))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /**
+   * The date is only rendered for a formation-stage project, and only when
+   * {@link projectSettingsAccess} says this caller may read settings. Anyone else never
+   * hits `/permissions` (GH-2794).
+   */
+  private initActiveProjectAnnouncementDate(): Signal<string | null> {
+    return toSignal(
+      combineLatest([toObservable(this.activeProject), toObservable(this.projectSettingsAccess)]).pipe(
+        switchMap(([project, access]) => {
+          if (!project?.uid || !isFormationStage(project.stage) || access?.uid !== project.uid || !access.canRead) {
             this.clearAnnouncementDate();
             return of(null);
           }
-          if (project.writer === true) {
-            return this.fetchAnnouncementDate(project.uid);
-          }
-          this.clearAnnouncementDate();
-          return this.projectService.getProject(project.uid, false, { auditor: true }).pipe(
-            switchMap((checked) => {
-              if (checked?.auditor === true) {
-                return this.fetchAnnouncementDate(project.uid);
-              }
-              return of(null);
-            })
-          );
+          return this.fetchAnnouncementDate(project.uid);
         })
       ),
       { initialValue: null }

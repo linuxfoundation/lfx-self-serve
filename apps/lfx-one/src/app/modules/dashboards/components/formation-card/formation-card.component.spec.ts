@@ -66,9 +66,10 @@ describe('FormationCardComponent', () => {
       settingsResult?: Observable<ProjectSettings>;
       projectOverrides?: Partial<Project>;
       getProjectResult?: Partial<Project>;
+      readable?: boolean;
     } = {}
   ): Promise<void> {
-    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult } = options;
+    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult, readable = true } = options;
     TestBed.resetTestingModule();
     getProjectSpy = vi.fn(() => of(project(stage, { ...projectOverrides, auditor, ...getProjectResult })));
 
@@ -110,7 +111,7 @@ describe('FormationCardComponent', () => {
             activeProjectAnnouncementDate: announcementDate,
             activeProjectAnnouncementDateLoading: announcementDateLoading,
             activeProjectAnnouncementDateHasError: announcementDateHasError,
-            activeProjectAnnouncementDateReadable: signal(true),
+            activeProjectAnnouncementDateReadable: signal(readable),
           },
         },
       ],
@@ -176,6 +177,15 @@ describe('FormationCardComponent', () => {
     await render('Formation - Engaged', true, { sfid: null });
 
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
+  });
+
+  it('omits the announcement date in context mode when the caller may not read settings', async () => {
+    await render('Formation - Engaged', false, { readable: false });
+
+    expect(text()).not.toContain('Announcement date');
+    expect(text()).not.toContain('Not set');
+    expect(text()).toContain('project-one');
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-error"]')).toBeNull();
   });
 
   it('formats the announcement date via the shared ISO-date label, and falls back to "Not set"', async () => {
@@ -257,6 +267,13 @@ describe('FormationCardComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
     }
+
+    it('still shows the checklist announcement date when context settings are unreadable', async () => {
+      await renderWithInput(formation());
+
+      expect(text()).toContain('Announcement date');
+      expect(text()).toContain('Oct 25, 2026');
+    });
 
     it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {
       await renderWithInput(formation());

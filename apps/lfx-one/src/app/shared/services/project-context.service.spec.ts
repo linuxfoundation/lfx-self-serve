@@ -194,6 +194,66 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
     expect(service.activeProjectAnnouncementDate()).toBeNull();
     expect(service.activeProjectAnnouncementDateHasError()).toBe(false);
     expect(service.activeProjectAnnouncementDateReadable()).toBe(false);
+    expect(service.projectSettingsAccess()).toEqual({ uid: 'visitor-project', canRead: false });
+  });
+
+  it('does not read settings when the auditor check fails (GH-2794)', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockClear();
+    getProject.mockImplementation((_id: string, _current?: boolean, options?: { auditor?: boolean }) => {
+      if (options?.auditor) {
+        return of(null);
+      }
+      return of(project('Formation - Engaged', 'failed-auditor'));
+    });
+    service.setProject({ ...CONTEXT, uid: 'failed-auditor' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(service.projectSettingsAccess()).toEqual({ uid: 'failed-auditor', canRead: false });
+    expect(service.activeProjectAnnouncementDateReadable()).toBe(false);
+    expect(service.activeProjectAnnouncementDateHasError()).toBe(false);
+  });
+
+  it('treats a writer flag on the auditor-check response as allowed to read settings', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockReturnValue(of({ announcement_date: '2026-11-01' }));
+    getProject.mockImplementation((_id: string, _current?: boolean, options?: { auditor?: boolean }) => {
+      if (options?.auditor) {
+        return of({ ...project('Formation - Engaged', 'stale-writer'), writer: true });
+      }
+      return of(project('Formation - Engaged', 'stale-writer'));
+    });
+    service.setProject({ ...CONTEXT, uid: 'stale-writer' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(httpGet).toHaveBeenCalledWith('/api/projects/stale-writer/permissions');
+    expect(service.activeProjectAnnouncementDate()).toBe('2026-11-01');
+    expect(service.projectSettingsAccess()).toEqual({ uid: 'stale-writer', canRead: true });
+  });
+
+  it('does not read settings when the project changes before the auditor check resolves', () => {
+    const httpGet = TestBed.inject(HttpClient).get as ReturnType<typeof vi.fn>;
+    httpGet.mockClear();
+    const pending = new Subject<Project | null>();
+    getProject.mockImplementation((_id: string, _current?: boolean, options?: { auditor?: boolean }) => {
+      if (options?.auditor) {
+        return pending;
+      }
+      return of(project('Formation - Engaged', 'pending-formation'));
+    });
+    service.setProject({ ...CONTEXT, uid: 'pending-formation' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    getProject.mockReturnValue(of(project('Active', 'active-after')));
+    service.setProject({ ...CONTEXT, uid: 'active-after' }, false);
+    TestBed.inject(ApplicationRef).tick();
+    pending.next({ ...project('Formation - Engaged', 'pending-formation'), auditor: true });
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(service.activeProjectAnnouncementDateReadable()).toBe(false);
+    expect(service.projectSettingsAccess()).toEqual({ uid: 'active-after', canRead: false });
   });
 
   it('reports the announcement-date error state independently of the Formation signals', () => {

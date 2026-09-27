@@ -11,7 +11,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, filter, map, merge, of, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, map, merge, of, Subject, switchMap, take, tap } from 'rxjs';
 
 import { StaffEditDialogComponent } from './staff-edit-dialog/staff-edit-dialog.component';
 
@@ -98,22 +98,31 @@ export class ProjectStaffCardComponent {
     this.refresh$.next();
   }
 
+  /**
+   * Settings are auditor-gated. The card is mounted on every project dashboard, so an
+   * ungated read is the 403 GH-2794 set out to stop. Wait for {@link ProjectContextService.projectSettingsAccess}
+   * and skip the request when this uid is not one the caller may read.
+   */
   private initSettings(): Signal<ProjectSettings | null> {
+    const load$ = combineLatest([toObservable(this.projectUid), toObservable(this.projectContextService.projectSettingsAccess)]);
     return toSignal(
       merge(
-        toObservable(this.projectUid),
+        load$,
         // Post-save refresh re-reads the current uid; the dialog invalidates the shareReplay
         // settings cache before it closes, so this never replays the pre-save document.
-        this.refresh$.pipe(map(() => this.projectUid()))
+        this.refresh$.pipe(map(() => [this.projectUid(), this.projectContextService.projectSettingsAccess()] as const))
       ).pipe(
-        filter((uid): uid is string => !!uid),
-        tap(() => {
+        switchMap(([uid, access]) => {
+          if (!uid || access?.uid !== uid || !access.canRead) {
+            this.loading.set(false);
+            this.hasError.set(false);
+            this.loaded.set(false);
+            return of(null);
+          }
           this.loading.set(true);
           this.hasError.set(false);
           this.loaded.set(false);
-        }),
-        switchMap((uid) =>
-          this.permissionsService.getProjectSettings(uid).pipe(
+          return this.permissionsService.getProjectSettings(uid).pipe(
             tap(() => {
               this.loading.set(false);
               this.loaded.set(true);
@@ -124,8 +133,8 @@ export class ProjectStaffCardComponent {
               this.loaded.set(false);
               return of(null);
             })
-          )
-        )
+          );
+        })
       ),
       { initialValue: null }
     );

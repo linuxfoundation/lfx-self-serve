@@ -124,9 +124,11 @@ class ProjectContextService {
   isActiveProjectInFormation: Signal<boolean>;
   activeProjectFormationSubStage: Signal<string | null>;
   isActiveProjectConfidential: Signal<boolean>; // true only for ProjectStage.FormationConfidential
-  activeProjectAnnouncementDate: Signal<string | null>; // via PermissionsService.getProjectSettings
+  projectSettingsAccess: Signal<{ uid: string; canRead: boolean } | null>; // writer, or auditor via getProject(uid, { auditor: true }); gates every settings read
+  activeProjectAnnouncementDate: Signal<string | null>; // settings read, formation-stage only, and only when projectSettingsAccess.canRead
   activeProjectAnnouncementDateLoading: Signal<boolean>;
   activeProjectAnnouncementDateHasError: Signal<boolean>;
+  activeProjectAnnouncementDateReadable: Signal<boolean>; // false when the date was not requested (non-formation, or the caller may not read settings)
 
   // Stage signals (#2754) — the project-lens sidebar and its landing page key off these
   activeProjectStage: Signal<string | null>; // e.g. "Formation - Exploratory"; fetched per context, null while resolving or absent

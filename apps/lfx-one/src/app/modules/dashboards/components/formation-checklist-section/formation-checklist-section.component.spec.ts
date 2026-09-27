@@ -110,6 +110,7 @@ function buildSharedProviders(fetchResult: Observable<FormationChecklistResponse
         activeProjectAnnouncementDate: signal<string | null>(null),
         activeProjectAnnouncementDateLoading: signal(false),
         activeProjectAnnouncementDateHasError: signal(false),
+        activeProjectAnnouncementDateReadable: signal(false),
       },
     },
   ];
