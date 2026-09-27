@@ -3,7 +3,7 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ProjectSettings, StaffEditDialogData, UserInfo } from '@lfx-one/shared/interfaces';
+import { ProjectSettings, ProjectSettingsAccess, StaffEditDialogData, UserInfo } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -16,7 +16,7 @@ import { StaffEditDialogComponent } from './staff-edit-dialog/staff-edit-dialog.
 describe('ProjectStaffCardComponent', () => {
   let fixture: ComponentFixture<ProjectStaffCardComponent>;
   let canWrite: WritableSignal<boolean>;
-  let projectSettingsAccess: WritableSignal<{ uid: string; canRead: boolean } | null>;
+  let projectSettingsAccess: WritableSignal<ProjectSettingsAccess | null>;
   /**
    * The context's resolved project. The card's gate requires its uid to match the card's own
    * `projectUid`, so the default agrees with the rendered project and only the transition test
@@ -47,7 +47,7 @@ describe('ProjectStaffCardComponent', () => {
 
   beforeEach(() => {
     canWrite = signal(false);
-    projectSettingsAccess = signal<{ uid: string; canRead: boolean } | null>({ uid: 'project-1', canRead: true });
+    projectSettingsAccess = signal<ProjectSettingsAccess | null>({ uid: 'project-1', canRead: true });
     activeProject = signal<{ uid: string } | null>({ uid: 'project-1' });
     getProjectSettings = vi.fn(() => of(buildSettings()));
     onClose = new Subject<unknown>();

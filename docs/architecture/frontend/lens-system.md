@@ -124,7 +124,7 @@ class ProjectContextService {
   isActiveProjectInFormation: Signal<boolean>;
   activeProjectFormationSubStage: Signal<string | null>;
   isActiveProjectConfidential: Signal<boolean>; // true only for ProjectStage.FormationConfidential
-  projectSettingsAccess: Signal<{ uid: string; canRead: boolean } | null>; // writer, or auditor via getProject(uid, { auditor: true }); gates every settings read
+  projectSettingsAccess: Signal<ProjectSettingsAccess | null>; // writer, or auditor via getProject(uid, { auditor: true }); gates every settings read
   activeProjectAnnouncementDate: Signal<string | null>; // settings read, formation-stage only, and only when projectSettingsAccess.canRead
   activeProjectAnnouncementDateLoading: Signal<boolean>;
   activeProjectAnnouncementDateHasError: Signal<boolean>;

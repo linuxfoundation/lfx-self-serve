@@ -8,7 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { MeetingWriteAccess, Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MeetingWriteAccess, Project, ProjectContext, ProjectSettingsAccess } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
@@ -135,7 +135,7 @@ export class ProjectContextService {
    * not an empty settings document. Shared by the announcement-date pipeline and
    * `ProjectStaffCardComponent` so a project overview makes the check once (GH-2794).
    */
-  public readonly projectSettingsAccess: Signal<{ uid: string; canRead: boolean } | null> = this.initProjectSettingsAccess();
+  public readonly projectSettingsAccess: Signal<ProjectSettingsAccess | null> = this.initProjectSettingsAccess();
 
   /**
    * Announcement-date tri-state for the current active context, shared by `FormationCardComponent`
@@ -434,7 +434,7 @@ export class ProjectContextService {
    * `auditor` for writers, and that response can disagree with the session-cached project
    * if the writer flag there goes stale.
    */
-  private initProjectSettingsAccess(): Signal<{ uid: string; canRead: boolean } | null> {
+  private initProjectSettingsAccess(): Signal<ProjectSettingsAccess | null> {
     return toSignal(
       toObservable(this.activeProject).pipe(
         switchMap((project) => {

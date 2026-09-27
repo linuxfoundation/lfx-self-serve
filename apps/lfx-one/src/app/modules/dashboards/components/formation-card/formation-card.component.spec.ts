@@ -268,13 +268,6 @@ describe('FormationCardComponent', () => {
       fixture.detectChanges();
     }
 
-    it('still shows the checklist announcement date when context settings are unreadable', async () => {
-      await renderWithInput(formation());
-
-      expect(text()).toContain('Announcement date');
-      expect(text()).toContain('Oct 25, 2026');
-    });
-
     it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {
       await renderWithInput(formation());
 
