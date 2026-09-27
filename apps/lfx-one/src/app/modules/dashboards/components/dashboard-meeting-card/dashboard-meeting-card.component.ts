@@ -11,6 +11,7 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getUpcomingMeetingStartTime,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
@@ -135,7 +136,14 @@ export class DashboardMeetingCardComponent {
     return computed(() => {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
-      return occurrence?.start_time || meeting.start_time;
+      if (this.pastMeeting()) {
+        return occurrence?.start_time || meeting.start_time;
+      }
+      // Recurring series keep their origin in start_time. Upcoming cards prefer the resolved
+      // occurrence, then next_occurrence_start_time, and only then the series origin — the same
+      // rule as meeting-card (LFXV2-2054). Groups Overview passes no occurrence, so without this
+      // the Next Meeting badge showed the series origin (GH-2907).
+      return getUpcomingMeetingStartTime(meeting, occurrence) || meeting.start_time;
     });
   }
 

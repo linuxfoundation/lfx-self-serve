@@ -71,6 +71,7 @@ import {
   sanitizeMeetingCommittees,
   sanitizeMeetingCommitteeUids,
   selectCommitteeCadenceMeeting,
+  selectNextUpcomingMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
   toMeetingApiVotingStatuses,
@@ -406,6 +407,80 @@ describe('selectCommitteeCadenceMeeting', () => {
     // @ts-expect-error — intentionally deleting a required field to exercise the truthy check
     delete noRecurrenceField.recurrence;
     expect(selectCommitteeCadenceMeeting([noRecurrenceField, recurring])).toBe(recurring);
+  });
+});
+
+describe('selectNextUpcomingMeeting', () => {
+  const now = new Date('2026-09-27T12:00:00Z');
+  const weekly = { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '4' };
+
+  it('returns null when there are no meetings', () => {
+    expect(selectNextUpcomingMeeting([], now)).toBeNull();
+  });
+
+  it('keeps a recurring series whose origin has ended when a future occurrence remains', () => {
+    const series = buildMeetingFixture({
+      id: 'series',
+      start_time: '2024-01-04T15:00:00Z',
+      duration: 60,
+      next_occurrence_start_time: '2026-10-01T15:00:00Z',
+      recurrence: weekly,
+    });
+
+    expect(selectNextUpcomingMeeting([series], now)?.id).toBe('series');
+  });
+
+  it('ranks by the next occurrence, not the series origin', () => {
+    const olderSeries = buildMeetingFixture({
+      id: 'older-series',
+      start_time: '2024-01-04T15:00:00Z',
+      duration: 60,
+      next_occurrence_start_time: '2026-10-08T15:00:00Z',
+      recurrence: weekly,
+    });
+    const soonerOneOff = buildMeetingFixture({
+      id: 'sooner',
+      start_time: '2026-09-30T15:00:00Z',
+      duration: 30,
+    });
+
+    expect(selectNextUpcomingMeeting([olderSeries, soonerOneOff], now)?.id).toBe('sooner');
+  });
+
+  it('drops a meeting that has already ended and has no next occurrence', () => {
+    const ended = buildMeetingFixture({
+      id: 'ended',
+      start_time: '2026-09-01T15:00:00Z',
+      duration: 60,
+    });
+    const upcoming = buildMeetingFixture({
+      id: 'upcoming',
+      start_time: '2026-10-01T15:00:00Z',
+      duration: 60,
+    });
+
+    expect(selectNextUpcomingMeeting([ended, upcoming], now)?.id).toBe('upcoming');
+    expect(selectNextUpcomingMeeting([ended], now)).toBeNull();
+  });
+
+  it('keeps an in-progress meeting inside the post-meeting buffer', () => {
+    const inProgress = buildMeetingFixture({
+      id: 'live',
+      start_time: '2026-09-27T11:30:00Z',
+      duration: 60,
+    });
+
+    expect(selectNextUpcomingMeeting([inProgress], now)?.id).toBe('live');
+  });
+
+  it('does not mutate the input array', () => {
+    const later = buildMeetingFixture({ id: 'later', start_time: '2026-10-02T15:00:00Z', duration: 30 });
+    const sooner = buildMeetingFixture({ id: 'sooner', start_time: '2026-09-28T15:00:00Z', duration: 30 });
+    const input = [later, sooner];
+
+    selectNextUpcomingMeeting(input, now);
+
+    expect(input.map((meeting) => meeting.id)).toEqual(['later', 'sooner']);
   });
 });
 
