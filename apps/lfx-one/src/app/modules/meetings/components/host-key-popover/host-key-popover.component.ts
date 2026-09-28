@@ -8,7 +8,6 @@ import { LoadableState, Meeting, MeetingOccurrence, PastMeeting } from '@lfx-one
 import { isWithinHostKeyWindow } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { Popover, PopoverModule } from 'primeng/popover';
-import { TooltipModule } from 'primeng/tooltip';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 
 import { HostKeyPanelComponent } from '../host-key-panel/host-key-panel.component';
@@ -19,8 +18,10 @@ import { HostKeyPanelComponent } from '../host-key-panel/host-key-panel.componen
  */
 @Component({
   selector: 'lfx-host-key-popover',
-  imports: [ButtonComponent, HostKeyPanelComponent, PopoverModule, TooltipModule],
+  imports: [ButtonComponent, HostKeyPanelComponent, PopoverModule],
   templateUrl: './host-key-popover.component.html',
+  // Host sits in the card's equal-width button row — collapse it when the trigger isn't eligible.
+  host: { '[class.hidden]': '!triggerVisible()' },
 })
 export class HostKeyPopoverComponent {
   private readonly meetingService = inject(MeetingService);
