@@ -8,10 +8,13 @@ import {
   buildProjectApplicationAnswerSections,
   formatProjectApplicationAnswer,
   getProjectApplicationStateMeta,
+  getProjectApplicationStatusCallout,
   isLegalContactEmail,
   isProjectApplicationOpen,
   normalizeProjectApplicationDoc,
   reconcileProjectApplications,
+  toProjectApplicationEmailLink,
+  toProjectApplicationUrlLink,
   upsertProjectApplication,
   validateProjectApplicationAnswers,
 } from './project-application.utils';
@@ -98,15 +101,69 @@ describe('buildProjectApplicationAnswerSections', () => {
       project_website: '',
     });
     expect(sections.map((section) => section.title)).toEqual(['Project', 'Governance and licensing', 'Other answers']);
+    const text = { kind: 'text', links: [], long: false, labelHidden: false };
     expect(sections[1].rows).toEqual([
-      { key: 'license', label: 'Code license', value: 'MIT' },
-      { key: 'is_spec_project', label: 'Will the project publish a specification or standard?', value: 'No' },
+      { key: 'license', label: 'Code license', value: 'MIT', ...text },
+      { key: 'is_spec_project', label: 'Will the project publish a specification or standard?', value: 'No', ...text },
     ]);
-    expect(sections[2].rows).toEqual([{ key: 'future_question', label: 'Future question', value: 'kept' }]);
+    expect(sections[2].rows).toEqual([{ key: 'future_question', label: 'Future question', value: 'kept', ...text }]);
+  });
+
+  it('links URL and email answers, one link per formation contact', () => {
+    const sections = buildProjectApplicationAnswerSections({
+      project_repository_url: 'https://github.com/example/repo',
+      project_website: 'example.org',
+      legal_contact_email: 'legal@example.org',
+      formation_list: ['a@example.org', 'b@example.org?cc=x@example.org'],
+    });
+    const rows = sections.flatMap((section) => section.rows);
+    const byKey = (key: string) => rows.find((row) => row.key === key);
+    expect(byKey('project_repository_url')?.links).toEqual([
+      { text: 'https://github.com/example/repo', href: 'https://github.com/example/repo', external: true },
+    ]);
+    expect(byKey('project_website')?.links).toEqual([{ text: 'example.org', href: null, external: true }]);
+    expect(byKey('legal_contact_email')?.links).toEqual([{ text: 'legal@example.org', href: 'mailto:legal@example.org', external: false }]);
+    expect(byKey('formation_list')?.kind).toBe('email-list');
+    expect(byKey('formation_list')?.links.map((link) => link.href)).toEqual(['mailto:a@example.org', null]);
+  });
+
+  it('flags long-form answers and hides a label that repeats its one-answer section title', () => {
+    const sections = buildProjectApplicationAnswerSections({ mission_statement: 'Mission', license: 'MIT', description: 'About' });
+    const governance = sections.find((section) => section.title === 'Governance and licensing');
+    const about = sections.find((section) => section.title === 'About the project');
+    expect(governance?.rows.map((row) => [row.key, row.long, row.labelHidden])).toEqual([
+      ['license', false, false],
+      ['mission_statement', true, false],
+    ]);
+    expect(about?.rows).toEqual([expect.objectContaining({ key: 'description', long: true, labelHidden: true })]);
   });
 
   it('returns no sections for an empty map', () => {
     expect(buildProjectApplicationAnswerSections(undefined)).toEqual([]);
+  });
+});
+
+describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
+  it('links only http(s) URLs with a host', () => {
+    expect(toProjectApplicationUrlLink('http://example.org').href).toBe('http://example.org');
+    expect(toProjectApplicationUrlLink('javascript:alert(1)').href).toBeNull();
+    expect(toProjectApplicationUrlLink('ftp://example.org').href).toBeNull();
+  });
+
+  it('links only a plain single address', () => {
+    expect(toProjectApplicationEmailLink('legal@example.org').href).toBe('mailto:legal@example.org');
+    expect(toProjectApplicationEmailLink('legal@example').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@example.org&body=x').href).toBeNull();
+  });
+});
+
+describe('getProjectApplicationStatusCallout', () => {
+  it('words the explainer per persona and returns null for an unseen state', () => {
+    expect(getProjectApplicationStatusCallout('submitted', 'submitter')?.text).toContain('reviewing your proposal');
+    expect(getProjectApplicationStatusCallout('submitted', 'staff')?.text).toContain('accept or deny');
+    expect(getProjectApplicationStatusCallout('denied', 'staff')).toEqual(expect.objectContaining({ severity: 'warn' }));
+    expect(getProjectApplicationStatusCallout('archived', 'staff')).toBeNull();
+    expect(getProjectApplicationStatusCallout(undefined, 'submitter')).toBeNull();
   });
 });
 

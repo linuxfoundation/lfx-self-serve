@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { PROJECT_APPLICATION_TABS } from '../constants/project-application.constants';
-import type { TagSeverity } from './components.interface';
+import type { MessageSeverity, TagSeverity } from './components.interface';
 
 /**
  * Where an application stands (#3037). `submitted`, `withdrawn`, `accepted` and `denied` are the agreed wire
@@ -161,17 +161,50 @@ export interface ProjectApplicationAcceptDialogData {
   projectName: string;
 }
 
+/** How the detail view renders an answer: plain text, or one link per entry. */
+export type ProjectApplicationAnswerKind = 'text' | 'url' | 'email' | 'email-list';
+
+/** One linkable entry of a URL or email answer. `href` is `null` when the entry isn't a safe link target. */
+export interface ProjectApplicationAnswerLink {
+  text: string;
+  href: string | null;
+  /** Opens in a new tab — true for http(s) links, false for `mailto:`. */
+  external: boolean;
+}
+
 /** A single answer rendered in the application detail view. */
 export interface ProjectApplicationAnswerRow {
   key: string;
   label: string;
   value: string;
+  kind: ProjectApplicationAnswerKind;
+  /** The answer's entries as links; empty for a `text` answer, which renders `value`. */
+  links: ProjectApplicationAnswerLink[];
+  /** Long-form prose, rendered full width under its label rather than in the value column. */
+  long: boolean;
+  /** The label repeats the section title (a one-answer section), so it is shown to screen readers only. */
+  labelHidden: boolean;
 }
 
 /** One titled group of answers in the application detail view. */
 export interface ProjectApplicationAnswerSection {
   title: string;
   rows: ProjectApplicationAnswerRow[];
+}
+
+/** The state explainer shown under the detail drawer's header. */
+export interface ProjectApplicationStatusCallout {
+  severity: MessageSeverity;
+  icon: string;
+  text: string;
+}
+
+/** Status explainer copy per state, worded for each persona. */
+export interface ProjectApplicationStatusCalloutCopy {
+  severity: MessageSeverity;
+  icon: string;
+  submitter: string;
+  staff: string;
 }
 
 /** Result of validating an answer map against the backend's canonical-field rules. */

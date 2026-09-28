@@ -7,19 +7,27 @@ import {
   PROJECT_APPLICATION_EMAIL_KEYS,
   PROJECT_APPLICATION_EMAIL_LIST_KEYS,
   PROJECT_APPLICATION_FIELD_LABELS,
+  PROJECT_APPLICATION_LONG_TEXT_KEYS,
+  PROJECT_APPLICATION_MAILTO_EMAIL_REGEX,
   PROJECT_APPLICATION_SECTIONS,
   PROJECT_APPLICATION_STATE_META,
+  PROJECT_APPLICATION_STATUS_CALLOUTS,
   PROJECT_APPLICATION_UNKNOWN_STATE_META,
   PROJECT_APPLICATION_URL_KEYS,
   PROJECT_APPLICATION_URL_KEYS_REQUIRING_HOST,
 } from '../constants/project-application.constants';
 import type {
   ProjectApplication,
+  ProjectApplicationAnswerKind,
+  ProjectApplicationAnswerLink,
+  ProjectApplicationAnswerRow,
   ProjectApplicationAnswers,
   ProjectApplicationAnswerSection,
   ProjectApplicationRow,
   ProjectApplicationStateMeta,
+  ProjectApplicationStatusCallout,
   ProjectApplicationValidationIssue,
+  ProjectApplicationViewMode,
   UpstreamProjectApplication,
   UpstreamProjectApplicationDoc,
 } from '../interfaces/project-application.interface';
@@ -128,24 +136,100 @@ export function buildProjectApplicationAnswerSections(answers: ProjectApplicatio
     const rows = section.keys
       .map((key) => {
         known.add(key);
-        return { key, label: getProjectApplicationFieldLabel(key), value: formatProjectApplicationAnswer(source[key]) };
+        return buildProjectApplicationAnswerRow(key, source[key]);
       })
       .filter((row) => row.value !== '');
     if (rows.length > 0) {
-      sections.push({ title: section.title, rows });
+      sections.push({ title: section.title, rows: hideRedundantLabel(section.title, rows) });
     }
   }
 
   const otherRows = Object.keys(source)
     .filter((key) => !known.has(key))
     .sort()
-    .map((key) => ({ key, label: getProjectApplicationFieldLabel(key), value: formatProjectApplicationAnswer(source[key]) }))
+    .map((key) => buildProjectApplicationAnswerRow(key, source[key]))
     .filter((row) => row.value !== '');
   if (otherRows.length > 0) {
     sections.push({ title: 'Other answers', rows: otherRows });
   }
 
   return sections;
+}
+
+/** One answer as the detail view renders it: URL and email answers carry their entries as links. */
+export function buildProjectApplicationAnswerRow(key: string, raw: unknown): ProjectApplicationAnswerRow {
+  const value = formatProjectApplicationAnswer(raw);
+  const kind = getProjectApplicationAnswerKind(key);
+  return {
+    key,
+    label: getProjectApplicationFieldLabel(key),
+    value,
+    kind,
+    links: value ? toProjectApplicationAnswerLinks(kind, raw, value) : [],
+    long: PROJECT_APPLICATION_LONG_TEXT_KEYS.has(key),
+    labelHidden: false,
+  };
+}
+
+/** Link target for a URL answer — only an absolute http(s) URL with a host is linked; anything else stays text. */
+export function toProjectApplicationUrlLink(text: string): ProjectApplicationAnswerLink {
+  return { text, href: isHttpUrl(text, true) ? text : null, external: true };
+}
+
+/**
+ * Link target for an email answer. Only a plain single address becomes a `mailto:` link — stricter than the
+ * stored-value rules, so a legacy entry carrying `?`, `&` or other mailto-header characters stays text.
+ */
+export function toProjectApplicationEmailLink(text: string): ProjectApplicationAnswerLink {
+  return { text, href: PROJECT_APPLICATION_MAILTO_EMAIL_REGEX.test(text) ? `mailto:${text}` : null, external: false };
+}
+
+/** The state explainer for the detail drawer, worded for the persona viewing it; `null` for an unseen state. */
+export function getProjectApplicationStatusCallout(state: string | null | undefined, mode: ProjectApplicationViewMode): ProjectApplicationStatusCallout | null {
+  const copy = state ? PROJECT_APPLICATION_STATUS_CALLOUTS[state] : undefined;
+  if (!copy) {
+    return null;
+  }
+  return { severity: copy.severity, icon: copy.icon, text: mode === 'staff' ? copy.staff : copy.submitter };
+}
+
+function getProjectApplicationAnswerKind(key: string): ProjectApplicationAnswerKind {
+  if (PROJECT_APPLICATION_URL_KEYS.has(key)) {
+    return 'url';
+  }
+  if (PROJECT_APPLICATION_EMAIL_KEYS.has(key)) {
+    return 'email';
+  }
+  if (PROJECT_APPLICATION_EMAIL_LIST_KEYS.has(key)) {
+    return 'email-list';
+  }
+  return 'text';
+}
+
+function toProjectApplicationAnswerLinks(kind: ProjectApplicationAnswerKind, raw: unknown, value: string): ProjectApplicationAnswerLink[] {
+  switch (kind) {
+    case 'url':
+      return [toProjectApplicationUrlLink(value)];
+    case 'email':
+      return [toProjectApplicationEmailLink(value)];
+    case 'email-list': {
+      const entries = Array.isArray(raw) ? raw.map((entry) => formatProjectApplicationAnswer(entry)) : value.split(',');
+      return entries
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => toProjectApplicationEmailLink(entry));
+    }
+    default:
+      return [];
+  }
+}
+
+/** A one-answer section whose label repeats the section title shows the label to screen readers only. */
+function hideRedundantLabel(title: string, rows: ProjectApplicationAnswerRow[]): ProjectApplicationAnswerRow[] {
+  if (rows.length === 1 && rows[0].label === title) {
+    return [{ ...rows[0], labelHidden: true }];
+  }
+  return rows;
 }
 
 /**
