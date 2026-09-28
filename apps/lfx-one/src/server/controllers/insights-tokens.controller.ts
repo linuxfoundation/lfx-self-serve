@@ -17,7 +17,7 @@ import { logger } from '../services/logger.service';
 export class InsightsTokensController {
   private readonly insightsTokensService = new InsightsTokensService();
 
-  /** GET /api/profile/insights-tokens */
+  /** GET /api/profile/insights-tokens — Key Contacts only; the service re-checks eligibility first. */
   public async listTokens(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'list_insights_tokens');
 
@@ -83,7 +83,7 @@ export class InsightsTokensController {
     }
   }
 
-  /** DELETE /api/profile/insights-tokens/:uid — not gated on eligibility so ex-Key-Contacts can still revoke. */
+  /** DELETE /api/profile/insights-tokens/:uid — Key Contacts only; the service re-checks eligibility first. */
   public async revokeToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'revoke_insights_token');
     const uid = req.params['uid'];

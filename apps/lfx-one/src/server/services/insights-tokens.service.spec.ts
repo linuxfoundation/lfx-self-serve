@@ -57,7 +57,44 @@ describe('InsightsTokensService', () => {
     service = new InsightsTokensService();
   });
 
+  const eligible = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false };
+
+  describe('Key Contact gate', () => {
+    const operations: [string, (s: InsightsTokensService) => Promise<unknown>][] = [
+      ['listTokens', (s) => s.listTokens(req)],
+      ['createToken', (s) => s.createToken(req, 'ci-pipeline')],
+      ['revokeToken', (s) => s.revokeToken(req, patToken.uid)],
+    ];
+
+    it.each(operations)('%s refuses a non-Key-Contact with 403 not_key_contact, without calling the PAT service', async (_name, run) => {
+      vi.spyOn(service, 'getEligibility').mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: false });
+
+      const error = (await run(service).catch((e: unknown) => e)) as MicroserviceError;
+
+      expect(service.getEligibility).toHaveBeenCalledWith(req);
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(403);
+      expect(error.toResponse()).toMatchObject({ upstreamCode: 'not_key_contact' });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it.each(operations)('%s refuses with 503 eligibility_unavailable when the Key Contact check could not complete', async (_name, run) => {
+      vi.spyOn(service, 'getEligibility').mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: true });
+
+      const error = (await run(service).catch((e: unknown) => e)) as MicroserviceError;
+
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(503);
+      expect(error.toResponse()).toMatchObject({ upstreamCode: 'eligibility_unavailable' });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listTokens', () => {
+    beforeEach(() => {
+      vi.spyOn(service, 'getEligibility').mockResolvedValue(eligible);
+    });
+
     it('forces the insights audience and maps snake_case to camelCase', async () => {
       proxyRequest.mockResolvedValueOnce({ tokens: [patToken, { ...patToken, uid: 'u2', last_used_at: '2026-09-22T08:30:00Z' }] });
 
@@ -77,33 +114,8 @@ describe('InsightsTokensService', () => {
   });
 
   describe('createToken', () => {
-    const eligible = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false };
-
     beforeEach(() => {
       vi.spyOn(service, 'getEligibility').mockResolvedValue(eligible);
-    });
-
-    it('re-checks eligibility and refuses a non-Key-Contact with 403 not_key_contact, without calling the PAT service', async () => {
-      vi.mocked(service.getEligibility).mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: false });
-
-      const error = (await service.createToken(req, 'ci-pipeline').catch((e: unknown) => e)) as MicroserviceError;
-
-      expect(service.getEligibility).toHaveBeenCalledWith(req);
-      expect(error).toBeInstanceOf(MicroserviceError);
-      expect(error.statusCode).toBe(403);
-      expect(error.toResponse()).toMatchObject({ upstreamCode: 'not_key_contact' });
-      expect(proxyRequest).not.toHaveBeenCalled();
-    });
-
-    it('refuses with 503 eligibility_unavailable when the Key Contact check could not complete', async () => {
-      vi.mocked(service.getEligibility).mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: true });
-
-      const error = (await service.createToken(req, 'ci-pipeline').catch((e: unknown) => e)) as MicroserviceError;
-
-      expect(error).toBeInstanceOf(MicroserviceError);
-      expect(error.statusCode).toBe(503);
-      expect(error.toResponse()).toMatchObject({ upstreamCode: 'eligibility_unavailable' });
-      expect(proxyRequest).not.toHaveBeenCalled();
     });
 
     it('posts name with the fixed audience using the user bearer and returns the secret once', async () => {
@@ -145,6 +157,10 @@ describe('InsightsTokensService', () => {
   });
 
   describe('revokeToken', () => {
+    beforeEach(() => {
+      vi.spyOn(service, 'getEligibility').mockResolvedValue(eligible);
+    });
+
     it('deletes by uid', async () => {
       proxyRequest.mockResolvedValueOnce(undefined);
       await service.revokeToken(req, patToken.uid);

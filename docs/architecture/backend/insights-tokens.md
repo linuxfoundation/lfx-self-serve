@@ -2,7 +2,7 @@
 
 ## Overview
 
-Key Contacts of a member organization create long-lived `lfi_…` tokens for the LFX Insights public API from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over two upstream services and adds one server-side rule: only a Key Contact may create a token.
+Key Contacts of a member organization create long-lived `lfi_…` tokens for the LFX Insights public API from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over two upstream services and adds one server-side rule: only a Key Contact may list, create or revoke tokens.
 
 The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`). The flag defaults to `false`, so SSR renders nothing. `AccountSettingsComponent` also holds the flag at `false` until `afterNextRender`, so a non-production localStorage override cannot render the group on the first client pass and mismatch the SSR DOM.
 
@@ -10,12 +10,12 @@ The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` Launc
 
 All four routes live in `profile.route.ts` and are handled by `insights-tokens.controller.ts`. While impersonating, list and eligibility stay readable and resolve to the impersonated user (the list is metadata only and never carries a secret). Create and revoke are mounted with `blockDuringImpersonation`: a minted token is a live credential the impersonator would keep, and neither call carries the impersonator's identity upstream. `profile.route.spec.ts` pins that split. The UI loads both reads and disables the create and revoke buttons while impersonating. List, eligibility and create responses set `Cache-Control: no-store`. Revoke returns an empty `204`.
 
-| Route                                          | Upstream call                                          | Token     |
-| ---------------------------------------------- | ------------------------------------------------------ | --------- |
-| `GET /api/profile/insights-tokens`             | PAT service `GET /tokens?audience=insights`            | User      |
-| `GET /api/profile/insights-tokens/eligibility` | Member service `GET /b2b_orgs/member-tiers/{username}` | M2M       |
-| `POST /api/profile/insights-tokens`            | Eligibility check, then PAT service `POST /tokens`     | M2M, User |
-| `DELETE /api/profile/insights-tokens/:uid`     | PAT service `DELETE /tokens/{uid}`                     | User      |
+| Route                                          | Upstream call                                                       | Token     |
+| ---------------------------------------------- | ------------------------------------------------------------------- | --------- |
+| `GET /api/profile/insights-tokens`             | Eligibility check, then PAT service `GET /tokens?audience=insights` | M2M, User |
+| `GET /api/profile/insights-tokens/eligibility` | Member service `GET /b2b_orgs/member-tiers/{username}`              | M2M       |
+| `POST /api/profile/insights-tokens`            | Eligibility check, then PAT service `POST /tokens`                  | M2M, User |
+| `DELETE /api/profile/insights-tokens/:uid`     | Eligibility check, then PAT service `DELETE /tokens/{uid}`          | M2M, User |
 
 Both upstreams are reached through `LFX_V2_SERVICE`, so no new env var is needed. The BFF always sets `audience: "insights"` itself; the client never sends it. Upstream snake_case is mapped to camelCase in `insights-tokens.service.ts`.
 
@@ -42,7 +42,13 @@ PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass throug
 
 The secret is returned exactly once. It exists only in the reveal dialog's data, and the list displays `lfi_{lookupId}` followed by a mask. Tokens do not expire; they stay valid until revoked.
 
-List and revoke are **not** gated on eligibility. A user who loses Key Contact status can still see and revoke their existing tokens.
+## Key Contact gate on every token call
+
+List, create and revoke all run the same check, `InsightsTokensService.assertKeyContact`, before calling the PAT service, and fail with the same `503 eligibility_unavailable` or `403 not_key_contact` described above. Only the eligibility endpoint is ungated, because the UI needs it to explain why the group is locked.
+
+A user who loses Key Contact status therefore loses access to their existing tokens too: they can no longer list or revoke them, and those tokens stay valid until revoked some other way (the PAT service, or an admin). This is a product decision.
+
+The `insights-public-api` LaunchDarkly flag is enforced in the UI only. The server has only env-var flags (`server-feature-flag.helper.ts`), which cannot target individual users, so the server gate is Key Contact status alone.
 
 ## Related Documentation
 
