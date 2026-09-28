@@ -37,7 +37,10 @@
     </div>
   } @else {
     @if (eligibilityCheckFailed()) {
-      <div class="flex items-start justify-between gap-4 p-4 rounded-xl bg-amber-50 border border-amber-100" data-testid="insights-tokens-eligibility-error">
+      <div
+        class="flex items-start justify-between gap-4 p-4 rounded-xl bg-amber-50 border border-amber-100"
+        role="alert"
+        data-testid="insights-tokens-eligibility-error">
         <div class="flex gap-3">
           <i class="fa-light fa-triangle-exclamation text-amber-600 mt-0.5 shrink-0" aria-hidden="true"></i>
           <div class="flex flex-col gap-1">
@@ -69,7 +72,7 @@
         </div>
       </div>
     } @else if (loadError()) {
-      <div class="flex items-center justify-between gap-4 py-2" data-testid="insights-tokens-error">
+      <div class="flex items-center justify-between gap-4 py-2" role="alert" data-testid="insights-tokens-error">
         <p class="text-sm text-slate-600">We couldn't load your LFX Insights API tokens.</p>
         <lfx-button
           type="button"
