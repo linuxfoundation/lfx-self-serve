@@ -54,7 +54,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Public Meetings](./public-meetings.md)                           | Unauthenticated meeting access, M2M token flow                                  |
 | [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md) | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
 | [Gatewaze Embed Proxy](./gw-proxy.md)                             | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
-| [Project Applications](./project-applications.md)                 | Propose-a-project BFF, M2M create, If-Match, revise-then-accept parent          |
+| [Project Applications](./project-applications.md)                 | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
 
 ### Committee Management
 
