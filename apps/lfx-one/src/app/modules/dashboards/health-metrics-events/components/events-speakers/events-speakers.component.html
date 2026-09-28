@@ -97,7 +97,7 @@
           @for (bar of view().organizations; track bar.key) {
             <li class="flex flex-col gap-1" [attr.data-testid]="'events-speakers-organization-' + bar.key">
               <div class="flex items-baseline justify-between gap-2 text-[13px]">
-                <span class="truncate text-gray-700">{{ bar.label }}</span>
+                <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
                 <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-organization-' + bar.key + '-value'">{{ bar.valueLabel }}</span>
               </div>
               <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">

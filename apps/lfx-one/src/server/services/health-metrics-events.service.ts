@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
@@ -519,7 +520,6 @@ export class HealthMetricsEventsService {
     return { years };
   }
 
-  /** The headline totals alone, for a foundation the revenue view has no row for; no overview row either is unmeasured. */
   /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
@@ -558,7 +558,9 @@ export class HealthMetricsEventsService {
     // Flags, ranges, groups and the cap come from constants, never from the request, so interpolating them is safe.
     const periodCase = HEALTH_METRICS_L2_RANGES.map((range) => `WHEN is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} THEN '${range}'`).join(' ');
     const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(' OR ');
-    const tabGroups = (['accepted', 'in-review'] as const).map((group) => `'${HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].viewValue}'`).join(', ');
+    const tabGroups = HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS.flatMap(({ id }) => (id === 'all' ? [] : [id]))
+      .map((group) => `'${HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].viewValue}'`)
+      .join(', ');
     const cap = HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS;
 
     const sql = `
@@ -592,6 +594,7 @@ export class HealthMetricsEventsService {
     return result.rows;
   }
 
+  /** The headline totals alone, for a foundation the revenue view has no row for; no overview row either is unmeasured. */
   private async getOverviewRevenuePeriods(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenuePeriod[]> {
     const columns = HEALTH_METRICS_L2_RANGES.map((range) => `revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(',\n        ');
     const sql = `

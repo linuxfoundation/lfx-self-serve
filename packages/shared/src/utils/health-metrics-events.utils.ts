@@ -404,7 +404,7 @@ export function buildHealthMetricsEventsSpeakersView(
       isPartialYear: yearRange === 'YTD',
     })),
     organizations: buildSpeakersBars(organizations),
-    individualLabel: individual ? `${individual.toLocaleString('en-US')} proposals submitted` : null,
+    individualLabel: individual ? `${formatProposalCount(individual)} submitted` : null,
     proposals: speakers.proposals
       .filter((proposal) => proposal.range === range && (tab === 'all' || proposal.statusGroup === tab))
       .sort(compareProposalsByRecency)

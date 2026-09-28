@@ -756,6 +756,9 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     ]);
     expect(view.individualLabel).toBe('1,351 proposals submitted');
     expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
+    expect(buildHealthMetricsEventsSpeakersView(speakers({ unaffiliated: [{ range: 'YTD', submitted: 1 }] }), 'YTD', 'all').individualLabel).toBe(
+      '1 proposal submitted'
+    );
   });
 
   it("lists the period's proposals most recent first, filtered by the tab", () => {
