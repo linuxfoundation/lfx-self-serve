@@ -10,12 +10,7 @@ import type { Popover } from 'primeng/popover';
 
 import type { HealthScore, OrgLensHealthPopupRow } from '@lfx-one/shared/interfaces';
 
-/**
- * Shared Org Lens health popup — a PrimeNG popover bound to a health badge on the Projects
- * table and the project-detail hero. Content ports the Insights health-score tooltip (dot headline,
- * raw-score bar with a dotted unavailable remainder, generated description, three `/40 /35 /25` rows).
- * Hosts open it on badge hover/focus and schedule-hide on leave/blur (see `scheduleHide`).
- */
+// Health badge popover shared by the Projects table and project-detail hero; hosts open it and call scheduleHide on leave.
 @Component({
   selector: 'lfx-org-health-popup',
   imports: [PopoverModule],
