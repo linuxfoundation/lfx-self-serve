@@ -6,6 +6,7 @@ import type {
   CreateInsightsTokenResponse,
   InsightsToken,
   InsightsTokenEligibility,
+  InsightsTokenEligibleOrg,
   MemberOrgTier,
   PatServiceCreateResponse,
   PatServiceListResponse,
@@ -13,11 +14,37 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { getDefaultMessageForStatus } from '../helpers/http-status.helper';
+
 import { MicroserviceError } from '../errors/microservice.error';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+
+/**
+ * The PAT service's refusal with its prose dropped, keeping status, code and the upstream error code.
+ *
+ * A `token_name_taken` refusal's `message` repeats the requested token name, and
+ * `MicroserviceError.fromMicroserviceResponse` copies that sentence into `message` and the raw body
+ * into `error_body`, both of which the API error handler logs. Same approach as `withoutUpstreamBody`
+ * in `cla.service.ts`, except the discriminating `error` code is kept: the create dialog maps it
+ * (as `upstreamCode`) to its inline message, and it names no one.
+ */
+function withoutPatRefusalText(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError)) return error;
+
+  const upstreamCode = typeof error.errorBody?.['error'] === 'string' ? error.errorBody['error'] : undefined;
+  return new MicroserviceError(getDefaultMessageForStatus(error.statusCode), error.statusCode, error.code, {
+    operation: error.operation,
+    service: error.service,
+    path: error.path,
+    errorBody: upstreamCode ? { error: upstreamCode } : undefined,
+    originalMessage: error.originalMessage,
+    transportFailure: error.transportFailure,
+    clientMessage: error.clientMessage,
+  });
+}
 
 /**
  * LFX Insights API tokens (IN-1233). Token CRUD proxies `lfx-v2-pat-service` with the user's own
@@ -44,15 +71,20 @@ export class InsightsTokensService {
 
   /** Issues a token. The plaintext secret is returned exactly once by the PAT service. */
   public async createToken(req: Request, name: string): Promise<CreateInsightsTokenResponse> {
-    const response = await this.microserviceProxy.proxyRequest<PatServiceCreateResponse>(
-      req,
-      'LFX_V2_SERVICE',
-      '/tokens',
-      'POST',
-      { v: '1' },
-      { name, audience: INSIGHTS_TOKEN_AUDIENCE }
-    );
-    // Never log the name or the secret; the token uid is enough to trace the call.
+    let response: PatServiceCreateResponse;
+    try {
+      response = await this.microserviceProxy.proxyRequest<PatServiceCreateResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        '/tokens',
+        'POST',
+        { v: '1' },
+        { name, audience: INSIGHTS_TOKEN_AUDIENCE }
+      );
+    } catch (error) {
+      throw withoutPatRefusalText(error);
+    }
+    // The secret is never logged; the token uid is enough to trace the call.
     logger.debug(req, 'create_insights_token', 'PAT service issued Insights token', { token_uid: response.token.uid });
     return { token: this.toInsightsToken(response.token), secret: response.secret };
   }
@@ -95,15 +127,17 @@ export class InsightsTokensService {
         { bearerToken: m2mToken }
       );
 
+      // Eligibility keys on the org uid: member-service omits `company_name` when the Account has none,
+      // and a Key Contact of such an org is still eligible. The name is carried only when present.
       const seen = new Set<string>();
-      const orgs = (Array.isArray(tiers) ? tiers : [])
-        .filter((tier) => !!tier.company_name?.trim())
-        .filter((tier) => {
-          if (seen.has(tier.b2b_org_uid)) return false;
-          seen.add(tier.b2b_org_uid);
-          return true;
-        })
-        .map((tier) => ({ uid: tier.b2b_org_uid, name: (tier.company_name as string).trim() }));
+      const orgs: InsightsTokenEligibleOrg[] = [];
+      for (const tier of Array.isArray(tiers) ? tiers : []) {
+        const uid = tier.b2b_org_uid?.trim();
+        if (!uid || seen.has(uid)) continue;
+        seen.add(uid);
+        const name = tier.company_name?.trim();
+        orgs.push(name ? { uid, name } : { uid });
+      }
 
       logger.debug(req, 'get_insights_token_eligibility', 'Resolved member tiers', {
         tier_count: Array.isArray(tiers) ? tiers.length : 0,

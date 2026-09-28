@@ -23,7 +23,7 @@ Both upstreams are reached through `LFX_V2_SERVICE`, so no new env var is needed
 
 The member-tiers endpoint returns one entry per org where the user is a Key Contact. It accepts only M2M callers in the FGA team `member_tiers_caller`. The service therefore generates an M2M token and passes it as `{ bearerToken }` through `ApiRequestOptions`; it never mutates `req.bearerToken`. See "Authentication: User Tokens vs M2M Tokens" in `.claude/rules/development-rules.md`.
 
-- Any entry with a non-empty `company_name` makes the user eligible. The `tier` value is not inspected.
+- Any entry with a non-empty `b2b_org_uid` makes the user eligible. The `tier` value is not inspected. `company_name` is optional upstream; when it is missing the org is returned without a `name`, and the UI does not show one.
 - An empty list, or a session with no username, returns `INSIGHTS_TOKEN_INELIGIBLE`, which has `checkFailed: false`.
 - An upstream or M2M error fails closed with `INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE`. That value has `canCreate: false` and `checkFailed: true`. The failure is logged at warning level with only its status and error code, because the tier URL, and so the error's path, carries the username.
 
@@ -38,7 +38,7 @@ The member-tiers endpoint returns one entry per org where the user is a Key Cont
 3. If `!canCreate`, it returns `403` with `upstreamCode: not_key_contact`.
 4. Otherwise it calls PAT service create and returns `201 { token, secret }`.
 
-PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass through `MicroserviceError` as `upstreamCode`. The codes are listed in `INSIGHTS_TOKEN_ERROR_CODES`.
+PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass through `MicroserviceError` as `upstreamCode`. The codes are listed in `INSIGHTS_TOKEN_ERROR_CODES`. Before rethrowing, the service drops the refusal's prose, keeping only status and code (the `withoutUpstreamBody` approach from `cla.service.ts`), because a `token_name_taken` message repeats the token name and the error handler logs both `message` and `error_body`.
 
 The secret is returned exactly once, and only by create; list responses carry `lookupId` but never the secret. Tokens do not expire; they stay valid until revoked.
 
