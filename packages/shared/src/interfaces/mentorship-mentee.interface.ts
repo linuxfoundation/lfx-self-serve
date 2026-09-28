@@ -345,9 +345,7 @@ export interface MentorshipMenteePastApplication {
   projectName: string;
   termName: string;
   /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
-  lastTaskUpdatedOn: string;
-  /** BFF pre-formatted display string (e.g. `'Jul 10, 2026'`). Rendered verbatim — no `DatePipe` needed. */
-  decidedOn: string;
+  createdOn: string;
   outcome: MentorshipMenteePastOutcome;
 }
 

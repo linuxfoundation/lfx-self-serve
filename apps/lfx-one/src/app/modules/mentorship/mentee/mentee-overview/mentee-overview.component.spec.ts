@@ -129,13 +129,20 @@ describe('MenteeOverviewComponent', () => {
     expect(text).toContain('Not selected');
   });
 
-  it('labels the date column "Last Updated" not "Submitted"', async () => {
+  it('labels the date column "Submitted" not "Last Updated"', async () => {
     await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
     const headers = Array.from(element().querySelectorAll('th'));
-    const lastUpdatedHeader = headers.find((th) => th.textContent?.trim() === 'Last Updated');
-    expect(lastUpdatedHeader).toBeDefined();
     const submittedHeader = headers.find((th) => th.textContent?.trim() === 'Submitted');
-    expect(submittedHeader).toBeUndefined();
+    expect(submittedHeader).toBeDefined();
+    const lastUpdatedHeader = headers.find((th) => th.textContent?.trim() === 'Last Updated');
+    expect(lastUpdatedHeader).toBeUndefined();
+  });
+
+  it('shows the submitted date and drops the "Decided" column', async () => {
+    await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
+    const headers = Array.from(element().querySelectorAll('th')).map((th) => th.textContent?.trim());
+    expect(headers).not.toContain('Decided');
+    expect(element().textContent).toContain('Feb 12, 2026');
   });
 
   it('emits applicant phase and open task count', async () => {
