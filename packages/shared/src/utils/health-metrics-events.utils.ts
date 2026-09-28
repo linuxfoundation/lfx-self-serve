@@ -375,8 +375,8 @@ function formatRevenueSplit(registrationShare: number | null): string {
   return `${registrationPct} / ${100 - registrationPct}`;
 }
 
-function formatRevenueGoal(event: HealthMetricsEventsRevenueEvent, goal: number | null): string {
-  if (event.goalWithheld) return HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD;
+function formatRevenueGoal(goal: number | null, withheld: boolean): string {
+  if (withheld) return HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD;
   return goal === null ? '' : formatCurrency(goal);
 }
 
@@ -385,9 +385,9 @@ function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetr
     event,
     dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
     registrationLabel: formatHealthMetricsEventsRevenue(event.registrationUsd),
-    registrationGoalLabel: formatRevenueGoal(event, event.registrationGoal),
+    registrationGoalLabel: formatRevenueGoal(event.registrationGoal, event.registrationGoalWithheld),
     sponsorshipLabel: formatHealthMetricsEventsRevenue(event.sponsorshipUsd),
-    sponsorshipGoalLabel: formatRevenueGoal(event, event.sponsorshipGoal),
+    sponsorshipGoalLabel: formatRevenueGoal(event.sponsorshipGoal, event.sponsorshipGoalWithheld),
   };
 }
 

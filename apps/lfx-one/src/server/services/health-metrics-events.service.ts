@@ -618,7 +618,10 @@ function mapRevenuePeriod(row: RevenueRow, range: HealthMetricsL2Range): HealthM
 function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | null {
   if (!row.EVENT_ID) return null;
 
+  // Both goals share one goal currency, so an unconverted one withholds every goal set.
   const hasUnconvertedGoal = row.HAS_UNCONVERTED_REVENUE_GOAL === true;
+  const registrationGoal = toRevenueGoal(row.REGISTRATION_REVENUE_GOAL);
+  const sponsorshipGoal = toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL);
 
   return {
     eventId: row.EVENT_ID,
@@ -626,11 +629,11 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     eventStartDate: toIsoDate(row.EVENT_START_DATE),
     registrationUsd: toNullableNumber(row.REGISTRATION_REVENUE_USD),
     sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_REVENUE_USD),
-    // Both goals share one goal currency, so an unconverted one withholds both.
-    registrationGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.REGISTRATION_REVENUE_GOAL),
-    sponsorshipGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL),
+    registrationGoal: hasUnconvertedGoal ? null : registrationGoal,
+    sponsorshipGoal: hasUnconvertedGoal ? null : sponsorshipGoal,
     hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true,
-    goalWithheld: hasUnconvertedGoal,
+    registrationGoalWithheld: hasUnconvertedGoal && registrationGoal !== null,
+    sponsorshipGoalWithheld: hasUnconvertedGoal && sponsorshipGoal !== null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
   };
 }

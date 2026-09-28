@@ -450,7 +450,8 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       registrationGoal: 145000,
       sponsorshipGoal: null,
       hasUnconverted: false,
-      goalWithheld: false,
+      registrationGoalWithheld: false,
+      sponsorshipGoalWithheld: false,
       ranges: ['YTD'],
       ...overrides,
     };
@@ -515,11 +516,11 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
   });
 
-  it('labels a withheld goal instead of leaving it blank, without marking the revenue', () => {
-    const event = revenueEvent({ registrationGoal: null, goalWithheld: true });
+  it('labels a withheld goal instead of leaving it blank, without marking the revenue or an unset goal', () => {
+    const event = revenueEvent({ registrationGoal: null, registrationGoalWithheld: true });
     const view = buildHealthMetricsEventsRevenueView(revenue({ events: [event] }), 'YTD');
 
-    expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: 'goal not in USD' });
+    expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: '' });
     expect(view.hasUnconverted).toBe(false);
   });
 
