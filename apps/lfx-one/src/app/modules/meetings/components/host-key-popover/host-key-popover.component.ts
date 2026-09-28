@@ -29,14 +29,15 @@ export class HostKeyPopoverComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly loadTrigger$ = new Subject<void>();
-  // Minute ticker so the window gate re-evaluates as time passes — a bare `new Date()` inside the
-  // computed is not reactive, so a card left open across the 70/40-minute boundaries would never flip.
-  private readonly now: WritableSignal<Date> = signal(new Date());
 
   public readonly meeting = input.required<Meeting | PastMeeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
   public readonly pastMeeting = input<boolean>(false);
+
+  private readonly loadTrigger$ = new Subject<void>();
+  // Minute ticker so the window gate re-evaluates as time passes — a bare `new Date()` inside the
+  // computed is not reactive, so a card left open across the 70/40-minute boundaries would never flip.
+  private readonly now: WritableSignal<Date> = signal(new Date());
 
   public readonly triggerVisible: Signal<boolean> = this.initTriggerVisible();
   public readonly state: Signal<LoadableState<Meeting | null>> = this.initState();
@@ -61,9 +62,8 @@ export class HostKeyPopoverComponent {
 
   private initTriggerVisible(): Signal<boolean> {
     return computed(() => {
-      // Organizer-only by design: the server also authorizes direct Zoom co-hosts (FGA `host`
-      // relation), but the card's action section is an organizer surface — co-hosts still see the
-      // key on the join page via can_view_host_key. Fails closed; the server is the real boundary.
+      // Organizer-only by design; the server separately authorizes Zoom co-hosts (FGA host relation) —
+      // co-hosts see the key on the join page via can_view_host_key. Fails closed; the server is the real boundary.
       if (this.pastMeeting() || !this.meeting().organizer) {
         return false;
       }
