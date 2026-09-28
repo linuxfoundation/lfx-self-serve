@@ -20,6 +20,7 @@ import {
   ActiveWeeksStreakRow,
   ApiGatewayUserProfile,
   IndexedVote,
+  IndexedVoteResponse,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -1435,8 +1436,10 @@ export class UserService {
     // Parent-vote keying per the upstream indexer contract (lfx-v2-voting-service
     // docs/indexer-contract.md): `vote_uid` is the parent's v2 UID (what `/votes/{uid}` expects)
     // and `poll_id` its v1 alias. `vote_id` is NOT a parent key — it is the response row's own
-    // v1 id (same value as the row's `uid`), so it can never substitute here.
-    //
+    // v1 id (same value as the row's `uid`), so it can never substitute here. Shared by both
+    // sets below so the fallback rule lives in exactly one place.
+    const parentVoteId = (r: IndexedVoteResponse): string | undefined => r.vote_uid ?? r.poll_id;
+
     // "Any responded row wins" — the same rule getMyVotes applies (GH #2985): the widened
     // identity query can return both an awaiting and a responded row for the same vote (e.g. an
     // email-only invite row plus a username-keyed re-invite row), and such a vote is cast,
@@ -1444,7 +1447,7 @@ export class UserService {
     const respondedVoteIds = new Set(
       responses
         .filter((r) => r.vote_status === IndexedVoteResponseStatus.RESPONDED)
-        .map((r) => r.vote_uid ?? r.poll_id)
+        .map(parentVoteId)
         .filter((uid): uid is string => !!uid)
     );
 
@@ -1452,7 +1455,7 @@ export class UserService {
       new Set(
         responses
           .filter((r) => r.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE && !r.voter_removed)
-          .map((r) => r.vote_uid ?? r.poll_id)
+          .map(parentVoteId)
           .filter((uid): uid is string => !!uid)
           .filter((uid) => !respondedVoteIds.has(uid))
       )

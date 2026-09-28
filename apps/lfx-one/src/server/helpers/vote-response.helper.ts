@@ -35,7 +35,9 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * Identity resolution: `getUsernameFromAuth` + `stripAuthPrefix` + `getEffectiveEmail`, matched
  * via `filters_or` on `user_email` / `username` (whichever are present — raw email, no
  * lowercasing beyond what `getEffectiveEmail` already applies). Returns `[]` when the request
- * carries neither identity.
+ * carries neither identity. Every fetched row is re-checked against the resolved identity before
+ * being returned (defense in depth — `filters_or` match semantics are upstream's contract);
+ * drops are logged via `dropped_count`.
  *
  * Deliberately NOT `filter_grants=direct`: the voting service only emits the invitee FGA
  * tuple when the invitee has a non-empty `Username` (upstream contract:

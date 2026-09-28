@@ -679,6 +679,16 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
     expect(actions.some((action) => action.type === 'Vote')).toBe(false);
   });
 
+  it('excludes rows keyed only by vote_id — the response row own v1 id, never a parent key (GH #2985)', async () => {
+    // vote_id-only legacy row: no vote_uid/poll_id means no parent key, so the row must not
+    // produce a pending action (the dropped `?? vote_id` fallback would have mis-keyed it).
+    routeByType([{ vote_id: 'v1-row-1', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' }], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
   it('excludes removed voters even when the row is still awaiting_response', async () => {
     routeByType([{ ...awaitingRow, voter_removed: true }], [activeVoteDoc]);
 
