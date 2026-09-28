@@ -8,6 +8,7 @@ import type {
   HealthMetricsEventsPast,
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthMetricOption,
+  HealthMetricsEventsRevenue,
   HealthMetricsEventsSectionKey,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
@@ -60,6 +61,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
       'The two money lines events generate. Registration revenue is what attendees pay; sponsorship is what companies pay. They are driven by different teams and behave differently, so they are never merged into one figure.',
     footnote: '',
     footnoteCaution: false,
+    headingBadge: 'Provisional',
   },
   {
     key: 'spon',
@@ -101,7 +103,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past', 'reg'] as const satisfies readonly HealthMetricsEventsSectionKey[];
+export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past', 'reg', 'rev'] as const satisfies readonly HealthMetricsEventsSectionKey[];
 
 /** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
 export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE = "An organization's event record also appears in Members";
@@ -194,6 +196,22 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS: readonly
 
 /** Share of a pandemic year's total that must be virtual before the callout calls it a virtual peak. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE = 0.5;
+
+/** Events read per foundation across the four periods; one past it flags a truncated read. */
+export const HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP = 500;
+
+/** Read-failed / no-foundation value: no periods and no events, which the section must not caption as measured. */
+export const HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED: HealthMetricsEventsRevenue = { periods: [], events: [] };
+
+/** The periods the revenue view compares with the year before; the oldest carries no change columns. */
+export const HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2'];
+
+/** Right-aligned note in the section header while the revenue figures are provisional. */
+export const HEALTH_METRICS_EVENTS_REVENUE_PENDING_NOTE = 'All figures pending validation';
+
+/** Footer note for revenue that stayed in local currency; the marker flags each affected cell. */
+export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE =
+  'Events are billed in local currency. Registration revenue marked * includes amounts not yet converted to USD, so those figures and the totals built on them are incomplete.';
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';

@@ -9,6 +9,8 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
+  HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES,
+  HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
@@ -34,6 +36,10 @@ import type {
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthQuery,
   HealthMetricsEventsRegistrationsGrowthYear,
+  HealthMetricsEventsRevenue,
+  HealthMetricsEventsRevenueEvent,
+  HealthMetricsEventsRevenuePeriod,
+  HealthMetricsEventsRevenueQuery,
   HealthMetricsL2Range,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -42,6 +48,19 @@ const REGISTRATION_FORECAST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_R
 const PAST_EVENTS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS';
 const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE';
 const REGISTRATIONS_GROWTH_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_GROWTH';
+const REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE';
+const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE';
+
+/** Each period's window on `event_start_date`, matching the windows the view totals its headline over. */
+const REVENUE_PERIOD_PREDICATES: Record<HealthMetricsL2Range, string> = {
+  YTD: "event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()",
+  COMPLETED_YEAR: completedYearPredicate(1),
+  COMPLETED_YEAR_2: completedYearPredicate(2),
+  COMPLETED_YEAR_3: completedYearPredicate(3),
+};
+
+/** Revenue headline metrics, each suffixed per period; the change columns reuse them. */
+const REVENUE_METRICS = ['total', 'registration', 'sponsorship'] as const;
 
 /** At-a-glance count prefixes, each suffixed per period; the change columns reuse them. */
 const AT_A_GLANCE_COUNT_PREFIXES = ['registrations', 'attendees', 'organizations', 'speakers', 'countries', 'events', 'past_events'] as const;
@@ -108,6 +127,23 @@ interface RegistrationsGrowthRow {
   IN_PERSON_ATTENDEES: number | null;
   VIRTUAL_ATTENDEES: number | null;
 }
+
+/** Per-event revenue plus the foundation headline, which repeats on every row; `IN_PERIOD_<SUFFIX>` is computed in the read. */
+interface RevenueRow {
+  EVENT_ID: string | null;
+  EVENT_NAME: string | null;
+  EVENT_START_DATE: Date | string | null;
+  REGISTRATION_REVENUE_USD: number | null;
+  SPONSORSHIP_REVENUE_USD: number | null;
+  REGISTRATION_REVENUE_GOAL: number | null;
+  SPONSORSHIP_REVENUE_GOAL: number | null;
+  HAS_UNCONVERTED_REGISTRATION_REVENUE: boolean | null;
+  HAS_UNCONVERTED_REVENUE_GOAL: boolean | null;
+  [periodColumn: string]: unknown;
+}
+
+/** The foundation's Events revenue from the overview view, which carries no split. */
+type OverviewRevenueRow = Record<string, unknown>;
 
 /** The Events tab's view reads, one method per section, each through `executeSnowflakeViewRead`. */
 export class HealthMetricsEventsService {
@@ -306,6 +342,72 @@ export class HealthMetricsEventsService {
     return { periods, upcomingEvents, hasEvents };
   }
 
+  /**
+   * Each period's revenue headline and every event in the four periods. Events outside every period sort
+   * last so the headline still has a row to come off, and are dropped before the table sees them.
+   */
+  public async getRevenue(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenue> {
+    // Metrics, suffixes and predicates come from constants, never from the request, so interpolating them is safe.
+    const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
+      const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
+      const columns = [
+        ...REVENUE_METRICS.map((metric) => `foundation_${metric}_revenue_usd_${suffix}`),
+        `foundation_registration_revenue_share_pct_${suffix}`,
+        `foundation_sponsorship_revenue_share_pct_${suffix}`,
+        `foundation_has_unconverted_registration_revenue_${suffix}`,
+        `(${REVENUE_PERIOD_PREDICATES[range]}) AS in_period_${suffix}`,
+      ];
+      if (!HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES.includes(range)) return columns;
+
+      return [...columns, ...REVENUE_METRICS.map((metric) => `foundation_${metric}_revenue_change_pct_${suffix}`)];
+    }).join(',\n        ');
+    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `(${REVENUE_PERIOD_PREDICATES[range]})`).join(' OR ');
+
+    const sql = `
+      SELECT
+        event_id,
+        event_name,
+        event_start_date,
+        registration_revenue_usd,
+        sponsorship_revenue_usd,
+        registration_revenue_goal,
+        sponsorship_revenue_goal,
+        has_unconverted_registration_revenue,
+        has_unconverted_revenue_goal,
+        ${periodColumns}
+      FROM ${REVENUE_VIEW}
+      WHERE foundation_slug = ?
+      ORDER BY IFF(${inAnyPeriod}, 0, 1), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<RevenueRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: REVENUE_VIEW,
+      operation: 'get_events_revenue',
+      clientMessage: 'Event revenue is unavailable right now.',
+    });
+
+    const row = result.rows[0];
+    if (!row) {
+      logger.debug(req, 'get_events_revenue', 'No event revenue rows for the foundation', { foundation_slug: query.foundationSlug });
+      return { periods: await this.getOverviewRevenuePeriods(req, query), events: [] };
+    }
+
+    if (result.rows.length > HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP) {
+      logger.warning(req, 'get_events_revenue', 'Event revenue rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+      });
+    }
+
+    const events = result.rows
+      .slice(0, HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP)
+      .map(mapRevenueEvent)
+      .filter((event): event is HealthMetricsEventsRevenueEvent => event !== null && event.ranges.length > 0);
+
+    return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events };
+  }
+
   /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
@@ -352,6 +454,38 @@ export class HealthMetricsEventsService {
     }
 
     return { years };
+  }
+
+  /** The headline totals alone, for a foundation the revenue view has no row for; with no split, nothing else is measured. */
+  private async getOverviewRevenuePeriods(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenuePeriod[]> {
+    const columns = HEALTH_METRICS_L2_RANGES.map((range) => `revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(',\n        ');
+    const sql = `
+      SELECT
+        ${columns}
+      FROM ${OVERVIEW_REVENUE_VIEW}
+      WHERE foundation_slug = ?
+        AND LOWER(revenue_domain) = 'events'
+      LIMIT 1
+    `;
+
+    const result = await executeSnowflakeViewRead<OverviewRevenueRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: OVERVIEW_REVENUE_VIEW,
+      operation: 'get_events_revenue',
+      clientMessage: 'Event revenue is unavailable right now.',
+    });
+
+    const row = result.rows[0];
+    return HEALTH_METRICS_L2_RANGES.map((range) => ({
+      range,
+      // No overview row either is a foundation with no event revenue: a measured zero.
+      totalUsd: row ? toNullableNumber(row[periodColumn('REVENUE_USD', range)]) : 0,
+      registrationUsd: row ? null : 0,
+      sponsorshipUsd: row ? null : 0,
+      registrationShare: null,
+      sponsorshipShare: null,
+      hasUnconverted: false,
+      changes: null,
+    }));
   }
 
   /** Whether the foundation has ever held an event, or has one still to come in any year. */
@@ -458,6 +592,57 @@ function buildZeroAtAGlancePeriod(range: HealthMetricsL2Range): HealthMetricsEve
     showUpRate: null,
     changes: null,
   };
+}
+
+function mapRevenuePeriod(row: RevenueRow, range: HealthMetricsL2Range): HealthMetricsEventsRevenuePeriod {
+  const usd = (metric: string): number | null => toNullableNumber(row[periodColumn(`foundation_${metric}_revenue_usd`, range)]);
+  const change = (metric: string): number | null => toNullableNumber(row[periodColumn(`foundation_${metric}_revenue_change_pct`, range)]);
+
+  return {
+    range,
+    totalUsd: usd('total'),
+    registrationUsd: usd('registration'),
+    sponsorshipUsd: usd('sponsorship'),
+    registrationShare: toNullableNumber(row[periodColumn('foundation_registration_revenue_share_pct', range)]),
+    sponsorshipShare: toNullableNumber(row[periodColumn('foundation_sponsorship_revenue_share_pct', range)]),
+    hasUnconverted: row[periodColumn('foundation_has_unconverted_registration_revenue', range)] === true,
+    changes: HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES.includes(range)
+      ? { total: change('total'), registration: change('registration'), sponsorship: change('sponsorship') }
+      : null,
+  };
+}
+
+function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | null {
+  if (!row.EVENT_ID) return null;
+
+  const hasUnconvertedGoal = row.HAS_UNCONVERTED_REVENUE_GOAL === true;
+
+  return {
+    eventId: row.EVENT_ID,
+    eventName: row.EVENT_NAME ?? row.EVENT_ID,
+    eventStartDate: toIsoDate(row.EVENT_START_DATE),
+    registrationUsd: toNullableNumber(row.REGISTRATION_REVENUE_USD),
+    sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_REVENUE_USD),
+    // A goal left in local currency cannot sit against a USD figure, so it is withheld with the event marked.
+    registrationGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.REGISTRATION_REVENUE_GOAL),
+    sponsorshipGoal: toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL),
+    hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true || hasUnconvertedGoal,
+    ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
+  };
+}
+
+/** A goal of zero or less is no goal set, the same rule the view's goal-met flag uses. */
+function toRevenueGoal(value: unknown): number | null {
+  const goal = toNullableNumber(value);
+  return goal !== null && goal > 0 ? goal : null;
+}
+
+/** The whole calendar year `yearsBack` years before this one, as the view's completed-year windows read it. */
+function completedYearPredicate(yearsBack: number): string {
+  const yearStart = "DATE_TRUNC('YEAR', CURRENT_DATE())";
+  const start = `DATEADD(YEAR, -${yearsBack}, ${yearStart})`;
+  const nextStart = yearsBack === 1 ? yearStart : `DATEADD(YEAR, -${yearsBack - 1}, ${yearStart})`;
+  return `event_start_date >= ${start} AND event_start_date < ${nextStart}`;
 }
 
 /** Snowflake returns unquoted identifiers upper-cased. */

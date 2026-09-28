@@ -29,6 +29,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
+  HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
 
@@ -560,5 +561,166 @@ describe('HealthMetricsEventsService.getRegistrationsGrowth', () => {
 
     expect(years).toHaveLength(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP);
     expect(warning).toHaveBeenCalledWith(req, 'get_events_registrations_growth', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
+  });
+});
+
+function revenueRow(overrides: Record<string, unknown> = {}) {
+  return {
+    EVENT_ID: 'rev-1',
+    EVENT_NAME: 'Acme Summit',
+    EVENT_START_DATE: new Date('2026-03-10T00:00:00.000Z'),
+    REGISTRATION_REVENUE_USD: 180000,
+    SPONSORSHIP_REVENUE_USD: 78000,
+    REGISTRATION_REVENUE_GOAL: 200000,
+    SPONSORSHIP_REVENUE_GOAL: 0,
+    HAS_UNCONVERTED_REGISTRATION_REVENUE: false,
+    HAS_UNCONVERTED_REVENUE_GOAL: false,
+    FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
+    FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
+    FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
+    FOUNDATION_REGISTRATION_REVENUE_SHARE_PCT_YTD: 0.7,
+    FOUNDATION_SPONSORSHIP_REVENUE_SHARE_PCT_YTD: 0.3,
+    FOUNDATION_HAS_UNCONVERTED_REGISTRATION_REVENUE_YTD: false,
+    FOUNDATION_TOTAL_REVENUE_CHANGE_PCT_YTD: 0.06,
+    FOUNDATION_REGISTRATION_REVENUE_CHANGE_PCT_YTD: 0,
+    FOUNDATION_SPONSORSHIP_REVENUE_CHANGE_PCT_YTD: null,
+    IN_PERIOD_YTD: true,
+    FOUNDATION_TOTAL_REVENUE_USD_LAST_COMPLETED_YEAR: 400000,
+    FOUNDATION_REGISTRATION_REVENUE_USD_LAST_COMPLETED_YEAR: 300000,
+    FOUNDATION_SPONSORSHIP_REVENUE_USD_LAST_COMPLETED_YEAR: 100000,
+    FOUNDATION_REGISTRATION_REVENUE_SHARE_PCT_LAST_COMPLETED_YEAR: null,
+    FOUNDATION_SPONSORSHIP_REVENUE_SHARE_PCT_LAST_COMPLETED_YEAR: null,
+    FOUNDATION_HAS_UNCONVERTED_REGISTRATION_REVENUE_LAST_COMPLETED_YEAR: true,
+    IN_PERIOD_LAST_COMPLETED_YEAR: false,
+    FOUNDATION_TOTAL_REVENUE_USD_3RD_LAST_COMPLETED_YEAR: 0,
+    FOUNDATION_REGISTRATION_REVENUE_USD_3RD_LAST_COMPLETED_YEAR: 0,
+    FOUNDATION_SPONSORSHIP_REVENUE_USD_3RD_LAST_COMPLETED_YEAR: 0,
+    FOUNDATION_HAS_UNCONVERTED_REGISTRATION_REVENUE_3RD_LAST_COMPLETED_YEAR: false,
+    IN_PERIOD_3RD_LAST_COMPLETED_YEAR: false,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsEventsService.getRevenue', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [revenueRow()] });
+  });
+
+  it('binds only the foundation, sorts events outside every period last, and reads one past the cap', async () => {
+    await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['acme']);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(sql).toContain('MARKETING_EVENT_REVENUE');
+    expect(sql).toContain("event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()) AS in_period_ytd");
+    expect(sql).toContain(
+      "event_start_date >= DATEADD(YEAR, -1, DATE_TRUNC('YEAR', CURRENT_DATE())) AND event_start_date < DATE_TRUNC('YEAR', CURRENT_DATE())) AS in_period_last_completed_year"
+    );
+    expect(sql).toContain('foundation_total_revenue_change_pct_prev_completed_year');
+    expect(sql).not.toContain('change_pct_3rd_last_completed_year');
+    expect(sql).toContain('ORDER BY IFF(');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}`);
+  });
+
+  it('maps an event with the periods it falls in, withholding a zero goal', async () => {
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(events).toEqual([
+      {
+        eventId: 'rev-1',
+        eventName: 'Acme Summit',
+        eventStartDate: '2026-03-10',
+        registrationUsd: 180000,
+        sponsorshipUsd: 78000,
+        registrationGoal: 200000,
+        sponsorshipGoal: null,
+        hasUnconverted: false,
+        ranges: ['YTD'],
+      },
+    ]);
+  });
+
+  it('reads each period headline off the first row, with changes only for the compared periods', async () => {
+    const { periods } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(periods.find((period) => period.range === 'YTD')).toEqual({
+      range: 'YTD',
+      totalUsd: 258000,
+      registrationUsd: 180000,
+      sponsorshipUsd: 78000,
+      registrationShare: 0.7,
+      sponsorshipShare: 0.3,
+      hasUnconverted: false,
+      changes: { total: 0.06, registration: 0, sponsorship: null },
+    });
+    expect(periods.find((period) => period.range === 'COMPLETED_YEAR')).toMatchObject({ registrationShare: null, hasUnconverted: true });
+    expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ totalUsd: 0, changes: null });
+  });
+
+  it('withholds a goal left in local currency and marks the event, dropping one outside every period or with no id', async () => {
+    execute.mockResolvedValue({
+      rows: [revenueRow({ HAS_UNCONVERTED_REVENUE_GOAL: true }), revenueRow({ EVENT_ID: 'rev-2', IN_PERIOD_YTD: false }), revenueRow({ EVENT_ID: null })],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ eventId: 'rev-1', registrationGoal: null, hasUnconverted: true });
+  });
+
+  it('keeps the headline when no event falls in any period', async () => {
+    execute.mockResolvedValue({ rows: [revenueRow({ IN_PERIOD_YTD: false })] });
+
+    const revenue = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(revenue.events).toEqual([]);
+    expect(revenue.periods.find((period) => period.range === 'YTD')?.totalUsd).toBe(258000);
+  });
+
+  it('falls back to the overview total alone when the revenue view has no row for the foundation', async () => {
+    execute.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
+      rows: [{ REVENUE_USD_YTD: 1200, REVENUE_USD_LAST_COMPLETED_YEAR: null, REVENUE_USD_PREV_COMPLETED_YEAR: 0, REVENUE_USD_3RD_LAST_COMPLETED_YEAR: 5 }],
+    });
+
+    const revenue = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[1];
+    expect(sql).toContain('HEALTH_OVERVIEW_REVENUE');
+    expect(sql).toContain("LOWER(revenue_domain) = 'events'");
+    expect(binds).toEqual(['acme']);
+    expect(revenue.events).toEqual([]);
+    expect(revenue.periods.find((period) => period.range === 'YTD')).toEqual({
+      range: 'YTD',
+      totalUsd: 1200,
+      registrationUsd: null,
+      sponsorshipUsd: null,
+      registrationShare: null,
+      sponsorshipShare: null,
+      hasUnconverted: false,
+      changes: null,
+    });
+    expect(revenue.periods.find((period) => period.range === 'COMPLETED_YEAR')?.totalUsd).toBeNull();
+  });
+
+  it('reads a foundation with no row in either view as measured zeros', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const { periods } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(periods).toHaveLength(HEALTH_METRICS_L2_RANGES.length);
+    expect(periods.every((period) => period.totalUsd === 0 && period.registrationUsd === 0 && period.sponsorshipUsd === 0 && period.changes === null)).toBe(
+      true
+    );
+  });
+
+  it('warns and truncates when the read hits the cap', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) => revenueRow({ EVENT_ID: `rev-${i}` })) });
+
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(events).toHaveLength(HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 });

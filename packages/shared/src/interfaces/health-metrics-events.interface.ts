@@ -305,3 +305,76 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
   pandemicNote: string | null;
 }
+
+/** Foundation scope for event revenue; every period ships in one read, so the range stays client-side. */
+export interface HealthMetricsEventsRevenueQuery {
+  foundationSlug: string;
+}
+
+/** Year-over-year revenue changes as fractions. Every `null` is not available, never zero. */
+export interface HealthMetricsEventsRevenueChanges {
+  total: number | null;
+  registration: number | null;
+  sponsorship: number | null;
+}
+
+/** One period's headline, in USD as the view totals it. Revenue is signed, since refunds count against it. */
+export interface HealthMetricsEventsRevenuePeriod {
+  range: HealthMetricsL2Range;
+  totalUsd: number | null;
+  registrationUsd: number | null;
+  sponsorshipUsd: number | null;
+  /** 0–1; `null` when the total is zero or part of it could not be converted to USD. */
+  registrationShare: number | null;
+  sponsorshipShare: number | null;
+  /** Some registration revenue in the period stayed in local currency, so the USD figures run short. */
+  hasUnconverted: boolean;
+  /** `null` for a period the view does not compare with the year before. */
+  changes: HealthMetricsEventsRevenueChanges | null;
+}
+
+/** One event's revenue against its goals, in USD. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsEventsRevenueEvent {
+  eventId: string;
+  eventName: string;
+  /** `YYYY-MM-DD`. */
+  eventStartDate: string | null;
+  registrationUsd: number | null;
+  sponsorshipUsd: number | null;
+  /** `null` when no goal is set. */
+  registrationGoal: number | null;
+  sponsorshipGoal: number | null;
+  /** Some of the event's registration revenue or goal stayed in local currency. */
+  hasUnconverted: boolean;
+  /** The periods the event falls in. */
+  ranges: HealthMetricsL2Range[];
+}
+
+/** `GET /api/analytics/events-revenue` — each period's headline and every event in the four periods. */
+export interface HealthMetricsEventsRevenue {
+  periods: HealthMetricsEventsRevenuePeriod[];
+  /** Most recent first. */
+  events: HealthMetricsEventsRevenueEvent[];
+}
+
+/** A revenue-by-event row with its labels resolved once per period. */
+export interface HealthMetricsEventsRevenueRowView {
+  event: HealthMetricsEventsRevenueEvent;
+  dateLabel: string;
+  registrationLabel: string;
+  /** Empty when no goal is set. */
+  registrationGoalLabel: string;
+  sponsorshipLabel: string;
+  sponsorshipGoalLabel: string;
+}
+
+/** The section for one period, with every label ready to render. */
+export interface HealthMetricsEventsRevenueView {
+  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
+  measured: boolean;
+  headline: HealthMetricsEventsAtAGlanceStatView;
+  side: HealthMetricsEventsAtAGlanceStatView[];
+  rows: HealthMetricsEventsRevenueRowView[];
+  /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
+  hasUnconverted: boolean;
+}

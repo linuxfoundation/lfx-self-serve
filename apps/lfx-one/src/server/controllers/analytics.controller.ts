@@ -3582,6 +3582,26 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/events-revenue` — each period's revenue headline and every event in the four periods. */
+  public async getEventsRevenue(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_revenue');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_revenue');
+
+      const response = await this.healthMetricsEventsService.getRevenue(req, { foundationSlug });
+
+      logger.success(req, 'get_events_revenue', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');
