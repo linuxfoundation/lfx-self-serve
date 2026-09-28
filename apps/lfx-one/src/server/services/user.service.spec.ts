@@ -591,7 +591,9 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
   const pastEnd = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
   const activeVoteDoc = { vote_uid: 'vote-active', name: 'Active Ballot', status: 'active', end_time: futureEnd, project_uid: 'project-1' };
-  const awaitingRow = { vote_uid: 'vote-active', vote_status: 'awaiting_response', voter_removed: false };
+  // Rows carry the request's resolved identity (`username: 'testuser'`) so they survive the
+  // helper's server-side identity re-check; getEffectiveEmail is mocked unset in this file.
+  const awaitingRow = { vote_uid: 'vote-active', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' };
 
   let service: UserService;
 
@@ -666,6 +668,17 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
     expect(actions.some((action) => action.type === 'Vote')).toBe(false);
   });
 
+  it('excludes a vote with both an awaiting row and a responded row for the same vote_uid', async () => {
+    // Duplicate-row case the widened identity query admits (e.g. an email-keyed invite row plus
+    // a username-keyed row from a later re-invite): My Votes' "any responded row wins" rule must
+    // win here too, or Pending Actions and My Votes disagree on the same vote.
+    routeByType([awaitingRow, { ...awaitingRow, vote_status: 'responded' }], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
   it('excludes removed voters even when the row is still awaiting_response', async () => {
     routeByType([{ ...awaitingRow, voter_removed: true }], [activeVoteDoc]);
 
@@ -677,8 +690,8 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
   it('excludes votes whose parent is not active or has already ended', async () => {
     routeByType(
       [
-        { vote_uid: 'vote-ended', vote_status: 'awaiting_response', voter_removed: false },
-        { vote_uid: 'vote-expired', vote_status: 'awaiting_response', voter_removed: false },
+        { vote_uid: 'vote-ended', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' },
+        { vote_uid: 'vote-expired', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' },
       ],
       [
         { ...activeVoteDoc, vote_uid: 'vote-ended', status: 'ended' },

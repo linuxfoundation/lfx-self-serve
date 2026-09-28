@@ -1412,12 +1412,13 @@ export class UserService {
    * `filters_or` query (`user_email` / `username`) My Votes reads, so the two surfaces can never
    * diverge. This replaced `filter_grants=direct`, which silently dropped email-only invitees:
    * the voting service only emits the invitee FGA tuple when the invitee has a non-empty
-   * `Username` (upstream contract linked in `fetchCurrentUserVoteResponses`). The trade-off: the index no longer pre-filters to granted rows, so we paginate
-   * all of the user's vote_response rows (responded included) — per-user cardinality is small
-   * (dozens), the same trade-off `fetchAllUserRsvps` already makes in this aggregation. When
-   * `projectUid` is provided it is pushed server-side (`filters`) to drop out-of-scope rows
-   * before pagination. The remaining `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`
-   * checks stay client-side.
+   * `Username` (upstream contract linked in `fetchCurrentUserVoteResponses`). The trade-off: the
+   * index no longer pre-filters to granted rows, so we paginate all of the user's vote_response
+   * rows (responded included) — per-user cardinality is assumed small (dozens; validate against
+   * the helper's `row_count` log), the same trade-off `fetchAllUserRsvps` already makes in this
+   * aggregation. When `projectUid` is provided it is pushed server-side (`filters`) to drop
+   * out-of-scope rows before pagination. The remaining client-side checks are
+   * `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`.
    *
    * Parent `vote` rows are fetched in a single batched query-service call (`type=vote` + `filters_or`
    * on each pending `vote_uid`) instead of per-vote REST. The indexed `vote` doc carries `name`,
@@ -1431,6 +1432,17 @@ export class UserService {
       failOnPartial: true,
     });
 
+    // "Any responded row wins" — the same rule getMyVotes applies (GH #2985): the widened
+    // identity query can return both an awaiting and a responded row for the same vote (e.g. an
+    // email-only invite row plus a username-keyed re-invite row), and such a vote is cast,
+    // never pending.
+    const respondedVoteIds = new Set(
+      responses
+        .filter((r) => r.vote_status === IndexedVoteResponseStatus.RESPONDED)
+        .map((r) => r.vote_uid ?? r.vote_id ?? r.poll_id)
+        .filter((uid): uid is string => !!uid)
+    );
+
     // `vote_uid` is the v2 parent poll UID (what `/votes/{uid}` expects); `vote_id` and `poll_id`
     // are v1 fallbacks per the upstream indexer contract. None of these is the individual-response id.
     const pendingVoteUids = Array.from(
@@ -1439,6 +1451,7 @@ export class UserService {
           .filter((r) => r.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE && !r.voter_removed)
           .map((r) => r.vote_uid ?? r.vote_id ?? r.poll_id)
           .filter((uid): uid is string => !!uid)
+          .filter((uid) => !respondedVoteIds.has(uid))
       )
     );
     if (pendingVoteUids.length === 0) return [];

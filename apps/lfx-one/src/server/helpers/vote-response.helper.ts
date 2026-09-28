@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { IndexedVoteResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import { maskIdentifierForLogs } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from '../services/logger.service';
@@ -27,26 +28,21 @@ export interface FetchCurrentUserVoteResponsesOptions {
 /**
  * The single identity-keyed current-user `vote_response` row source (GH #2985): every read
  * that resolves "the indexed participation rows of the user behind this request" by identity
- * goes through here so My Votes and Pending Actions can never diverge again. The one
- * current-user read NOT routed here is `VoteService.createVoteResponse`'s post-cast index
- * poll — it matches a known `vote_response_uid` rather than resolving identity, and its
- * `filter_grants` reliance means it can never observe an email-only invitee's just-cast row
- * (a known gap, outside #2985's scope).
+ * goes through here so My Votes and Pending Actions can never diverge. The one current-user
+ * read NOT routed here is `VoteService.createVoteResponse`'s post-cast index poll — it matches
+ * a known `vote_response_uid` rather than resolving identity (see the known-gap note there).
  *
- * Identity resolution mirrors the proven My Votes surface exactly: `getUsernameFromAuth`
- * + `stripAuthPrefix` + `getEffectiveEmail`, matched via `filters_or` on
- * `user_email` / `username` (whichever are present — raw email, no lowercasing beyond what
- * `getEffectiveEmail` already applies, matching `getMyVotes` verbatim). Returns `[]` when
- * the request carries neither identity.
+ * Identity resolution: `getUsernameFromAuth` + `stripAuthPrefix` + `getEffectiveEmail`, matched
+ * via `filters_or` on `user_email` / `username` (whichever are present — raw email, no
+ * lowercasing beyond what `getEffectiveEmail` already applies). Returns `[]` when the request
+ * carries neither identity.
  *
  * Deliberately NOT `filter_grants=direct`: the voting service only emits the invitee FGA
  * tuple when the invitee has a non-empty `Username` (upstream contract:
  * https://github.com/linuxfoundation/lfx-v2-voting-service/blob/main/docs/fga-contract.md),
  * so email-only invitees' rows are invisible to grant-based filtering even though they are
  * legitimate pending votes. The query service accepts identity `filters_or` without
- * `filter_grants` (the parameter is optional — `docs/architecture/backend/pagination.md`),
- * and this exact query shape already serves My Votes in production; also observed against
- * the dev query service during #2985.
+ * `filter_grants` (the parameter is optional — `docs/architecture/backend/pagination.md`).
  */
 export async function fetchCurrentUserVoteResponses(
   req: Request,
@@ -62,7 +58,7 @@ export async function fetchCurrentUserVoteResponses(
   }
 
   logger.debug(req, 'fetch_current_user_vote_responses', 'Fetching vote_response rows for current user', {
-    username,
+    username: maskIdentifierForLogs(username),
     has_email: !!email,
     has_filters: !!options.filters?.length,
   });
@@ -86,5 +82,15 @@ export async function fetchCurrentUserVoteResponses(
 
   logger.debug(req, 'fetch_current_user_vote_responses', 'Fetched vote_response rows', { row_count: rows.length });
 
-  return rows;
+  // Defense in depth: re-check each row against the resolved identity rather than trusting the
+  // index's `filters_or` match semantics alone (exact-term vs analyzed matching is upstream's
+  // contract). A row that fails this check is not the caller's by definition.
+  const ownedRows = rows.filter((r) => (!!email && r.user_email?.toLowerCase() === email) || (!!username && r.username === username));
+  if (ownedRows.length < rows.length) {
+    logger.debug(req, 'fetch_current_user_vote_responses', 'Dropped rows failing the identity re-check', {
+      dropped_count: rows.length - ownedRows.length,
+    });
+  }
+
+  return ownedRows;
 }

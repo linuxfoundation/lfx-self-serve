@@ -483,6 +483,9 @@ export class VoteService {
       req,
       operation: 'create_vote_response_poll',
       pollFn: async () => {
+        // Known gap (GH #2985): filter_grants=direct never matches email-only invitees (the voting
+        // service emits no invitee FGA tuple for them), so this poll always times out for those
+        // users — see fetchCurrentUserVoteResponses.
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(
           req,
           'LFX_V2_SERVICE',
@@ -575,8 +578,8 @@ export class VoteService {
 
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
     // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift. The find
-    // guard is what makes the IndexedVoteResponse → MyVoteResponse narrowing (uid/vote_uid
-    // required) sound.
+    // guard guarantees only `uid`/`vote_uid`; the cast still narrows the indexer's broader
+    // `vote_status` string unchecked (pre-existing).
     const match = responses.find((r) => r?.vote_uid === voteUid && (!!r?.uid || !!r?.vote_id));
     if (match && !match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
