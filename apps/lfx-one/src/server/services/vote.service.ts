@@ -576,25 +576,29 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
+    // The find guard applies the shared parent-key rule (`vote_uid ?? poll_id` — the same key
+    // the list surfaced this vote under) and requires a usable row id.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
+      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
-    let responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] });
+    let match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] }));
 
     // Legacy poll_id-only rows carry no `vote_uid` (GH #2985): fall back to a poll_id-scoped
     // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
     // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
     // The query service supports a single `filters_or` group (spent on identity), so the two
-    // scoped queries run sequentially; only legacy rows pay for the second call.
-    if (responses.length === 0) {
-      responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] });
+    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
+    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
+    // non-match must still fall through to the legacy key.
+    if (!match) {
+      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
     }
 
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
-    // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift. The find
-    // guard applies the shared parent-key rule (`vote_uid ?? poll_id` — the same key the list
-    // surfaced this vote under); the cast still narrows the indexer's broader `vote_status`
-    // string unchecked (pre-existing).
-    const match = responses.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+    // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift. The cast
+    // still narrows the indexer's broader `vote_status` string unchecked (pre-existing).
     if (match && !match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
       return { ...match, uid: match.vote_id } as MyVoteResponse;

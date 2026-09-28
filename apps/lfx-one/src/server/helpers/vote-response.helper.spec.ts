@@ -16,6 +16,8 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { IndexedVoteResponse } from '@lfx-one/shared/interfaces';
+
 const { getEffectiveEmail, getRawEffectiveEmail, getUsernameFromAuth } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn(),
   getRawEffectiveEmail: vi.fn(),
@@ -35,7 +37,7 @@ vi.mock('../utils/auth-helper', async () => {
 });
 
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
-import { fetchCurrentUserVoteResponses } from './vote-response.helper';
+import { fetchCurrentUserVoteResponses, getParentVoteId } from './vote-response.helper';
 
 describe('fetchCurrentUserVoteResponses', () => {
   const req = {} as Request;
@@ -232,5 +234,21 @@ describe('fetchCurrentUserVoteResponses', () => {
     proxyRequest.mockResolvedValueOnce(page([{ uid: 'vr-1', user_email: 'spec-user@example.org' }], 'cursor-2')).mockRejectedValueOnce(new Error('boom'));
 
     await expect(fetchCurrentUserVoteResponses(req, proxy)).resolves.toEqual([{ uid: 'vr-1', user_email: 'spec-user@example.org' }]);
+  });
+});
+
+describe('getParentVoteId', () => {
+  // The single parent-key rule shared by My Votes, Pending Actions, and the drawer read (GH
+  // #2985): `vote_uid` wins when present, `poll_id` is the v1 alias, `vote_id` is never a parent.
+  it('prefers vote_uid when both parent keys are present', () => {
+    expect(getParentVoteId({ vote_uid: 'v2-uid', poll_id: 'v1-poll', vote_id: 'v1-row' } as IndexedVoteResponse)).toBe('v2-uid');
+  });
+
+  it('falls back to poll_id for legacy rows carrying no vote_uid', () => {
+    expect(getParentVoteId({ poll_id: 'v1-poll', vote_id: 'v1-row' } as IndexedVoteResponse)).toBe('v1-poll');
+  });
+
+  it('returns undefined when neither parent key is present — vote_id alone is not a parent key', () => {
+    expect(getParentVoteId({ vote_id: 'v1-row' } as IndexedVoteResponse)).toBeUndefined();
   });
 });

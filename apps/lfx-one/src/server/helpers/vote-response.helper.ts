@@ -37,7 +37,10 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * twice when its raw casing differs from the lowercased effective value: the index stores the
  * invitee email exactly as entered (no upstream normalization) and the query service matches
  * `filters_or` with case-sensitive exact `term` clauses, so a mixed-case stored email only
- * matches its raw casing (GH #2985; canonical index-time normalization tracked in #3063). Returns `[]`
+ * matches its raw casing (GH #2985). The two clauses reproduce only the caller's OIDC-claim
+ * casings — an invitation entered in a THIRD casing is still missed: the query-service contract
+ * has no case-insensitive filter operator for this helper to call, so complete coverage needs
+ * canonical index-time normalization + reindex, tracked in #3063. Returns `[]`
  * when the request carries neither identity. Every fetched row is re-checked against the
  * resolved identity before being returned (defense in depth — `filters_or` match semantics are
  * upstream's contract); the re-check compares BOTH identity fields case-insensitively so an
@@ -106,9 +109,13 @@ export async function fetchCurrentUserVoteResponses(
 
   // Defense in depth: re-check each row against the resolved identity rather than trusting the
   // index's `filters_or` match semantics alone (exact-term vs analyzed matching is upstream's
-  // contract). Both identity fields compare case-insensitively (username casing from the IdP is
-  // not guaranteed to match the index's). A row that fails this check is not the caller's by
-  // definition.
+  // contract). Both identity fields compare case-insensitively. The case-insensitive username
+  // side cannot merge case-differing identities through any reachable path: under the query
+  // service's exact `term` clauses a case-mismatched username row can never be returned by the
+  // `username:` clause in the first place, and a row arriving via the email clause is already
+  // kept by the email branch — the lowercased comparison only guards hypothetical upstream
+  // analyzed-matching drift, where it prevents drops rather than enabling merges. A row that
+  // fails this check is not the caller's by definition.
   const ownedRows = rows.filter(
     (r) => (!!email && r.user_email?.toLowerCase() === email) || (!!username && r.username?.toLowerCase() === username.toLowerCase())
   );

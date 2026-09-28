@@ -1143,6 +1143,46 @@ describe('VoteService', () => {
       expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID });
     });
 
+    it('returns null after exactly two scoped queries when neither vote_uid nor poll_id matches', async () => {
+      // The double-empty outcome (genuinely nonexistent/foreign vote) is the most common real
+      // path — pin the bounded two-call contract so the fallback can never silently loop or
+      // widen (companion to the poll_id fallback spec above).
+      proxyRequest.mockResolvedValue({ resources: [] });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        1,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`vote_uid:${VOTE_UID}`] })
+      );
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        2,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`poll_id:${VOTE_UID}`] })
+      );
+    });
+
+    it('falls back to poll_id when the vote_uid query returns only non-matching rows', async () => {
+      // Owned but foreign-vote rows (loosely-analyzed vote_uid filter) must not suppress the
+      // legacy fallback — the trigger is "no match", not "no rows".
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-other', vote_uid: 'v0000000-0000-0000-0000-00000000d999', username: 'spec-user' } }] })
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-legacy-1', poll_id: VOTE_UID, user_email: 'spec-user@example.org' } }] });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID });
+    });
+
     it('falls back to vote_id when the indexer left uid empty, logging the drift', async () => {
       proxyRequest.mockResolvedValue({ resources: [{ data: { vote_id: 'v1-row-9', vote_uid: VOTE_UID, username: 'spec-user' } }] });
 
