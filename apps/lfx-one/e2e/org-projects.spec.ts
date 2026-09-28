@@ -512,15 +512,16 @@ test.describe('Org Projects', () => {
     await expect(badge).toHaveText('Healthy - Partial');
     await badge.focus();
     await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy (52/65)');
-    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('— /35');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(badge).toHaveAttribute(
       'aria-label',
       'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
     // The 35 points no covered category can earn render as a dotted remainder; no partial chrome in the popup.
     await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveAttribute('style', /width:\s*35%/);
-    await expect(page.getByTestId('org-health-popup')).not.toContainText('*');
-    await expect(page.getByTestId('org-health-popup')).not.toContainText('Partial');
+    await expect(page.getByTestId('org-health-popup-content')).toContainText('Maintainer Health');
+    await expect(page.getByTestId('org-health-popup-content')).not.toContainText('*');
+    await expect(page.getByTestId('org-health-popup-content')).not.toContainText('Partial');
   });
 
   test('renders the unavailable popup block for projects without a v2 score', async ({ page }) => {

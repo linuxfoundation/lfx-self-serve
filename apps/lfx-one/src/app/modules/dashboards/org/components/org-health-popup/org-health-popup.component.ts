@@ -36,7 +36,7 @@ export class OrgHealthPopupComponent {
   protected readonly barFillPercent = computed(() => Math.min(Math.max(this.score() ?? 0, 0), 100));
   protected readonly barMissingPercent = computed(() => {
     const max = this.maxScore();
-    return max != null && max < 100 ? 100 - max : 0;
+    return max == null ? 0 : Math.min(Math.max(100 - max, 0), 100 - this.barFillPercent());
   });
   protected readonly barFillColor = computed(() => {
     const band = this.label();
@@ -44,7 +44,10 @@ export class OrgHealthPopupComponent {
   });
   protected readonly description = computed(() => getHealthScoreDescription(this.label(), this.maintainer(), this.security(), this.development()));
   protected readonly rows = computed<OrgLensHealthPopupRow[]>(() =>
-    HEALTH_SCORE_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon, score: String(this[c.key]() ?? '— '), max: c.max }))
+    HEALTH_SCORE_CATEGORIES.map((c) => {
+      const value = this[c.key]();
+      return { key: c.key, name: c.name, icon: c.icon, score: value == null ? null : String(value), max: c.max };
+    })
   );
 
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));

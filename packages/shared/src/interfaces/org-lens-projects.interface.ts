@@ -150,8 +150,8 @@ export interface OrgLensHealthPopupRow {
   name: string;
   /** FontAwesome icon name (e.g. `heart-pulse`). */
   icon: string;
-  /** Category score (e.g. `32`) or `— ` when uncovered (renders `— /35`). */
-  score: string;
+  /** Category score (e.g. `32`), or `null` when the category is uncovered (the popup renders a dash). */
+  score: string | null;
   /** Fixed denominator (40 / 35 / 25). */
   max: number;
 }

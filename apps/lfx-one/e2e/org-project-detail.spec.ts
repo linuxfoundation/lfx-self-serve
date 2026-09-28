@@ -538,7 +538,7 @@ test.describe('Org Project Detail — hero health popup', () => {
     await page.getByTestId('project-detail-health-badge').hover();
     await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy (52/65)');
     await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('30/40');
-    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('— /35');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(page.getByTestId('org-health-popup-row-development')).toContainText('22/25');
     await expect(page.getByTestId('org-health-popup-link')).toHaveCount(0);
     await expect(page.getByTestId('org-health-popup-bar-missing')).toBeVisible();
