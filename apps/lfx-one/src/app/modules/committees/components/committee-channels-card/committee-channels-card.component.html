@@ -26,7 +26,7 @@
               >{{ firstMl.group_name }}</a
             >
           } @else {
-            <span class="text-[12.5px] font-semibold text-gray-900" [title]="firstMl.group_name">{{ firstMl.group_name }}</span>
+            <span class="text-[12.5px] font-semibold text-gray-900">{{ firstMl.group_name }}</span>
           }
           @if (firstMl.public) {
             <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
@@ -77,7 +77,7 @@
                       >{{ ml.group_name }}</a
                     >
                   } @else {
-                    <span class="text-[12.5px] font-semibold text-gray-900" [title]="ml.group_name">{{ ml.group_name }}</span>
+                    <span class="text-[12.5px] font-semibold text-gray-900">{{ ml.group_name }}</span>
                   }
                   @if (ml.public) {
                     <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
