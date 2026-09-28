@@ -541,6 +541,7 @@ export class HealthMetricsEventsService {
         FROM ${ORGANIZATIONS_VIEW}
         WHERE foundation_slug = ?
           AND is_all_projects = TRUE
+          AND account_id IS NOT NULL
           AND (${active})
       ),
       matched AS (

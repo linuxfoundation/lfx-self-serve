@@ -988,6 +988,8 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     expect(sql).toContain('registrations_share_of_scope_max_3rd_last_completed_year AS registrations_share');
     expect(sql).toContain('sort_rank_3rd_last_completed_year AS sort_rank');
     expect(sql).toContain('AND is_all_projects = TRUE');
+    // The mapper drops a row with no account id, so the counts must not include it either.
+    expect(sql).toContain('AND account_id IS NOT NULL');
     expect(sql).toContain('events_count_3rd_last_completed_year > 0');
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC');
     expect(sql).not.toContain('ILIKE');

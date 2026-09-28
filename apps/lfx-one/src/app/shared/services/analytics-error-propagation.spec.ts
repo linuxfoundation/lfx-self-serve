@@ -134,6 +134,15 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     });
   }
 
+  // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
+  it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {
+    service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25 }).subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
+    expect(req.request.urlWithParams).toContain('search=A%2BE');
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
   afterEach(() => {
     http.verify();
   });
