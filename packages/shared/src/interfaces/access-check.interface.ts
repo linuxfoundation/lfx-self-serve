@@ -47,12 +47,18 @@ export type AccessCheckResourceType =
   | 'b2b_org';
 export type AccessCheckAccessType =
   | 'writer'
+  /** `project` only: `writer or global_writer`. Staff whose access is a per-project global-team grant hold this, not bare `writer`. */
+  | 'writer_guard'
   | 'viewer'
   | 'auditor'
+  /** `project` only: `auditor or global_auditor`. `global_writer` does not compose into it, so pair it with `writer_guard` where writers must also pass. */
+  | 'auditor_guard'
   | 'organizer'
   | 'meeting_coordinator'
   | 'host'
   | 'member'
   | 'marketing_auditor'
   | 'campaign_manager'
-  | 'marketing_ops';
+  /** Scheduled for removal from the model once `team:marketing-ops` moves to `global_marketing_ops`; drop it here first. */
+  | 'marketing_ops'
+  | 'global_marketing_ops';

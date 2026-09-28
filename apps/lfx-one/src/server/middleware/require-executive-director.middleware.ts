@@ -18,8 +18,8 @@ const ED: PersonaType = 'executive-director';
 // Holding the ED persona is necessary but not sufficient: the persona is scoped to specific
 // foundations, so a caller who is an ED for foundation A must not be able to read foundation B
 // by passing B's slug. When the request names a foundation, it is checked against the slugs the
-// caller actually holds the persona for. Root writers and LF staff bypass the scope check —
-// they are already trusted across foundations elsewhere in the app.
+// caller actually holds the persona for. LF staff bypass the scope check; a root writer passes
+// it when it also holds `writer_guard` on the named foundation.
 export async function requireExecutiveDirector(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     // 'none' — this middleware never reads isMarketingAuditor/isCampaignManager, so skip both
@@ -73,13 +73,20 @@ export async function requireExecutiveDirector(req: Request, res: Response, next
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped ED endpoints stay allowed.
-    if (!requestedSlug || result.isRootWriter || result.isLFStaff) {
+    if (!requestedSlug || result.isLFStaff) {
       next();
       return;
     }
 
     const edSlugs = (result.personaProjects?.[ED] ?? []).map((project) => project.projectSlug);
     if (edSlugs.includes(requestedSlug)) {
+      next();
+      return;
+    }
+
+    // A root writer is trusted per project, not across the board: the ROOT check admits
+    // `global_writer`, which is withheld on some projects, so the named project must agree.
+    if (result.isRootWriter && (await personaDetectionService.checkProjectWriter(req, requestedSlug))) {
       next();
       return;
     }
