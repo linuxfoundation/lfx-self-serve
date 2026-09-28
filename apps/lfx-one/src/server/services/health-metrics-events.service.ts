@@ -51,7 +51,10 @@ const REGISTRATIONS_GROWTH_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_RE
 const REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE';
 const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE';
 
-/** Each period's window on `event_start_date`, matching the windows the view totals its headline over. */
+/**
+ * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
+ * per-event period flags yet; once it does, read those columns and delete this.
+ */
 const REVENUE_PERIOD_PREDICATES: Record<HealthMetricsL2Range, string> = {
   YTD: "event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()",
   COMPLETED_YEAR: completedYearPredicate(1),
@@ -623,9 +626,9 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     eventStartDate: toIsoDate(row.EVENT_START_DATE),
     registrationUsd: toNullableNumber(row.REGISTRATION_REVENUE_USD),
     sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_REVENUE_USD),
-    // A goal left in local currency cannot sit against a USD figure, so it is withheld with the event marked.
+    // Both goals share one goal currency, so an unconverted one withholds both and marks the event.
     registrationGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.REGISTRATION_REVENUE_GOAL),
-    sponsorshipGoal: toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL),
+    sponsorshipGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL),
     hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true || hasUnconvertedGoal,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
   };

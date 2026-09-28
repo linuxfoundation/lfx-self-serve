@@ -93,12 +93,9 @@
                   [attr.data-testid]="'events-revenue-registration-' + view.event.eventId">
                   <span [attr.data-testid]="'events-revenue-registration-value-' + view.event.eventId">{{ view.registrationLabel }}</span>
                   @if (view.event.hasUnconverted) {
-                    <span
-                      class="text-amber-600"
-                      title="Includes local-currency amounts not yet converted to USD"
-                      [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId"
-                      >*</span
-                    >
+                    <!-- The footer note explains the marker; screen readers get the same text inline. -->
+                    <span class="text-amber-600" aria-hidden="true" [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId">*</span>
+                    <span class="sr-only">(includes local-currency amounts not yet converted to USD)</span>
                   }
                   @if (view.registrationGoalLabel) {
                     <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-registration-goal-' + view.event.eventId"

@@ -659,15 +659,19 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ totalUsd: 0, changes: null });
   });
 
-  it('withholds a goal left in local currency and marks the event, dropping one outside every period or with no id', async () => {
+  it('withholds both goals left in local currency and marks the event, dropping one outside every period or with no id', async () => {
     execute.mockResolvedValue({
-      rows: [revenueRow({ HAS_UNCONVERTED_REVENUE_GOAL: true }), revenueRow({ EVENT_ID: 'rev-2', IN_PERIOD_YTD: false }), revenueRow({ EVENT_ID: null })],
+      rows: [
+        revenueRow({ HAS_UNCONVERTED_REVENUE_GOAL: true, SPONSORSHIP_REVENUE_GOAL: 60000 }),
+        revenueRow({ EVENT_ID: 'rev-2', IN_PERIOD_YTD: false }),
+        revenueRow({ EVENT_ID: null }),
+      ],
     });
 
     const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ eventId: 'rev-1', registrationGoal: null, hasUnconverted: true });
+    expect(events[0]).toMatchObject({ eventId: 'rev-1', registrationGoal: null, sponsorshipGoal: null, hasUnconverted: true });
   });
 
   it('keeps the headline when no event falls in any period', async () => {
