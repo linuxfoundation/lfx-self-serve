@@ -26,6 +26,18 @@ export interface FetchCurrentUserVoteResponsesOptions {
 }
 
 /**
+ * The single parent-vote keying rule for a `vote_response` row (GH #2985): `vote_uid` is the
+ * parent's v2 UID (what `/votes/{uid}` expects) and `poll_id` its v1 alias. `vote_id` is NOT a
+ * parent key — it is the response row's own v1 id. `vote_uid` wins when present, with an empty
+ * string counting as absent (truthiness, matching the indexer-empty-field guards around it).
+ * Shared by every surface that keys rows by parent vote (My Votes, Pending Actions, the
+ * single-vote drawer read) so they can never diverge on how a legacy poll_id-only row is keyed.
+ */
+export function getParentVoteId(r: IndexedVoteResponse): string | undefined {
+  return r.vote_uid || r.poll_id;
+}
+
+/**
  * The single identity-keyed current-user `vote_response` row source (GH #2985): every read
  * that resolves "the indexed participation rows of the user behind this request" by identity
  * goes through here so My Votes and Pending Actions can never diverge. The one current-user
@@ -37,15 +49,17 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * twice when its raw casing differs from the lowercased effective value: the index stores the
  * invitee email exactly as entered (no upstream normalization) and the query service matches
  * `filters_or` with case-sensitive exact `term` clauses, so a mixed-case stored email only
- * matches its raw casing (GH #2985). The two clauses reproduce only the caller's OIDC-claim
- * casings — an invitation entered in a THIRD casing is still missed: the query-service contract
- * has no case-insensitive filter operator for this helper to call, so complete coverage needs
- * canonical index-time normalization + reindex, tracked in #3063. Returns `[]`
- * when the request carries neither identity. Every fetched row is re-checked against the
- * resolved identity before being returned (defense in depth — `filters_or` match semantics are
- * upstream's contract); the re-check compares BOTH identity fields case-insensitively so an
- * upstream drift toward analyzed/case-insensitive matching can never make it narrower than
- * intended on either field. Drops are logged via `dropped_count`.
+ * matches its raw casing (GH #2985). The two clauses reproduce only the two casings resolved
+ * for the effective identity (the impersonation target's stored email under Admin Mode, else
+ * the caller's OIDC `email` claim) — an invitation entered in a THIRD casing is still missed:
+ * the query-service contract has no case-insensitive filter operator for this helper to call,
+ * so complete coverage needs canonical index-time normalization + reindex, tracked in #3063.
+ * Returns `[]` when the request carries neither identity. Every fetched row is re-checked
+ * against the resolved identity before being returned (defense in depth — `filters_or` match
+ * semantics are upstream's contract); the re-check compares `user_email` case-insensitively
+ * (the caller side is already lowercased) and `username` case-sensitively, so an upstream drift
+ * toward analyzed matching fails closed on the username side rather than merging case-differing
+ * identities. Drops are logged via `dropped_count`.
  *
  * Deliberately NOT `filter_grants=direct`: the voting service only emits the invitee FGA
  * tuple when the invitee has a non-empty `Username` (upstream contract:
@@ -54,17 +68,6 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * legitimate pending votes. The query service accepts identity `filters_or` without
  * `filter_grants` (the parameter is optional — `docs/architecture/backend/pagination.md`).
  */
-/**
- * The single parent-vote keying rule for a `vote_response` row (GH #2985): `vote_uid` is the
- * parent's v2 UID (what `/votes/{uid}` expects) and `poll_id` its v1 alias. `vote_id` is NOT a
- * parent key — it is the response row's own v1 id. Shared by every surface that keys rows by
- * parent vote (My Votes, Pending Actions, the single-vote drawer read) so they can never
- * diverge on how a legacy poll_id-only row is keyed.
- */
-export function getParentVoteId(r: IndexedVoteResponse): string | undefined {
-  return r.vote_uid ?? r.poll_id;
-}
-
 export async function fetchCurrentUserVoteResponses(
   req: Request,
   proxy: MicroserviceProxyService,
@@ -109,16 +112,13 @@ export async function fetchCurrentUserVoteResponses(
 
   // Defense in depth: re-check each row against the resolved identity rather than trusting the
   // index's `filters_or` match semantics alone (exact-term vs analyzed matching is upstream's
-  // contract). Both identity fields compare case-insensitively. The case-insensitive username
-  // side cannot merge case-differing identities through any reachable path: under the query
-  // service's exact `term` clauses a case-mismatched username row can never be returned by the
-  // `username:` clause in the first place, and a row arriving via the email clause is already
-  // kept by the email branch — the lowercased comparison only guards hypothetical upstream
-  // analyzed-matching drift, where it prevents drops rather than enabling merges. A row that
-  // fails this check is not the caller's by definition.
-  const ownedRows = rows.filter(
-    (r) => (!!email && r.user_email?.toLowerCase() === email) || (!!username && r.username?.toLowerCase() === username.toLowerCase())
-  );
+  // contract). `user_email` compares case-insensitively (the caller side is already lowercased);
+  // `username` compares case-sensitively — under the current exact-`term` contract the username
+  // branch keeps nothing the email branch wouldn't, and if upstream ever drifts to analyzed
+  // matching the exact compare fails closed: a case-differing username row is dropped rather
+  // than risk merging distinct identities (LFID username case-uniqueness is not a contract this
+  // repo can cite). A row that fails this check is not the caller's by definition.
+  const ownedRows = rows.filter((r) => (!!email && r.user_email?.toLowerCase() === email) || (!!username && r.username === username));
   if (ownedRows.length < rows.length) {
     logger.debug(req, 'fetch_current_user_vote_responses', 'Dropped rows failing the identity re-check', {
       dropped_count: rows.length - ownedRows.length,

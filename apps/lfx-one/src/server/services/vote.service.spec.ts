@@ -1140,7 +1140,7 @@ describe('VoteService', () => {
         'GET',
         expect.objectContaining({ filters: [`poll_id:${VOTE_UID}`] })
       );
-      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID });
+      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID, vote_uid: VOTE_UID });
     });
 
     it('returns null after exactly two scoped queries when neither vote_uid nor poll_id matches', async () => {
@@ -1180,7 +1180,7 @@ describe('VoteService', () => {
       const result = await service.getMyVoteResponse(req, VOTE_UID);
 
       expect(proxyRequest).toHaveBeenCalledTimes(2);
-      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID });
+      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID, vote_uid: VOTE_UID });
     });
 
     it('falls back to vote_id when the indexer left uid empty, logging the drift', async () => {

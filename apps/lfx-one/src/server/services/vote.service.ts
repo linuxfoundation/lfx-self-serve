@@ -576,7 +576,7 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    // The find guard applies the shared parent-key rule (`vote_uid ?? poll_id` — the same key
+    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
     // the list surfaced this vote under) and requires a usable row id.
     const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
       rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
@@ -596,14 +596,22 @@ export class VoteService {
       match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
     }
 
+    if (!match) return null;
+
+    // A legacy poll_id-only row carries no `vote_uid`, but `MyVoteResponse.vote_uid` is required —
+    // normalize it to the validated parent key (`findMatch` guarantees `getParentVoteId(match) ===
+    // voteUid`, the key the list surfaced this vote under) so the payload honors the shared
+    // response contract. The cast still narrows the indexer's broader `vote_status` string
+    // unchecked (pre-existing).
+    const response = { ...match, vote_uid: voteUid } as MyVoteResponse;
+
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
-    // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift. The cast
-    // still narrows the indexer's broader `vote_status` string unchecked (pre-existing).
-    if (match && !match.uid && match.vote_id) {
+    // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift.
+    if (!match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
-      return { ...match, uid: match.vote_id } as MyVoteResponse;
+      response.uid = match.vote_id;
     }
-    return (match as MyVoteResponse | undefined) ?? null;
+    return response;
   }
 
   // ============================================

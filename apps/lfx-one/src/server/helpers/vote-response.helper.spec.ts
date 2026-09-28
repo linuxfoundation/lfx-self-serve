@@ -194,8 +194,8 @@ describe('fetchCurrentUserVoteResponses', () => {
 
   it('drops rows that fail the server-side identity re-check', async () => {
     // Defense in depth: the index's filters_or match semantics are upstream's contract, so every
-    // row is re-checked against the resolved identity (both identity comparisons are
-    // case-insensitive).
+    // row is re-checked against the resolved identity (email case-insensitively, username
+    // case-sensitively).
     proxyRequest.mockResolvedValue(
       page([
         { uid: 'vr-1', user_email: 'SPEC-USER@example.org' },
@@ -213,14 +213,15 @@ describe('fetchCurrentUserVoteResponses', () => {
     ]);
   });
 
-  it('keeps a row whose stored username casing differs from the resolved one', async () => {
-    // The re-check compares usernames case-insensitively — a case-insensitive upstream match
-    // (analyzed-mapping drift) must not be narrowed back to exact-match here.
+  it('drops a row whose stored username casing differs from the resolved one', async () => {
+    // The re-check compares usernames case-sensitively: if upstream ever drifts to analyzed
+    // (case-insensitive) matching, the exact compare fails closed — a case-differing username
+    // row is dropped rather than risk merging distinct identities.
     proxyRequest.mockResolvedValue(page([{ uid: 'vr-1', username: 'Spec-User' }]));
 
     const rows = await fetchCurrentUserVoteResponses(req, proxy);
 
-    expect(rows).toEqual([{ uid: 'vr-1', username: 'Spec-User' }]);
+    expect(rows).toEqual([]);
   });
 
   it('fails closed on a later-page failure when failOnPartial is set', async () => {
@@ -239,13 +240,18 @@ describe('fetchCurrentUserVoteResponses', () => {
 
 describe('getParentVoteId', () => {
   // The single parent-key rule shared by My Votes, Pending Actions, and the drawer read (GH
-  // #2985): `vote_uid` wins when present, `poll_id` is the v1 alias, `vote_id` is never a parent.
+  // #2985): `vote_uid` wins when present (an empty string counts as absent), `poll_id` is the
+  // v1 alias, `vote_id` is never a parent.
   it('prefers vote_uid when both parent keys are present', () => {
     expect(getParentVoteId({ vote_uid: 'v2-uid', poll_id: 'v1-poll', vote_id: 'v1-row' } as IndexedVoteResponse)).toBe('v2-uid');
   });
 
   it('falls back to poll_id for legacy rows carrying no vote_uid', () => {
     expect(getParentVoteId({ poll_id: 'v1-poll', vote_id: 'v1-row' } as IndexedVoteResponse)).toBe('v1-poll');
+  });
+
+  it('treats an empty-string vote_uid as absent, falling back to poll_id', () => {
+    expect(getParentVoteId({ vote_uid: '', poll_id: 'v1-poll' } as IndexedVoteResponse)).toBe('v1-poll');
   });
 
   it('returns undefined when neither parent key is present — vote_id alone is not a parent key', () => {
