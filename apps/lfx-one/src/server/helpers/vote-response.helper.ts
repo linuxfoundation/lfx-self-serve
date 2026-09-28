@@ -25,9 +25,13 @@ export interface FetchCurrentUserVoteResponsesOptions {
 }
 
 /**
- * The single current-user `vote_response` row source (GH #2985): every read that needs
- * "the indexed participation rows of the user behind this request" goes through here so
- * My Votes and Pending Actions can never diverge again.
+ * The single identity-keyed current-user `vote_response` row source (GH #2985): every read
+ * that resolves "the indexed participation rows of the user behind this request" by identity
+ * goes through here so My Votes and Pending Actions can never diverge again. The one
+ * current-user read NOT routed here is `VoteService.createVoteResponse`'s post-cast index
+ * poll — it matches a known `vote_response_uid` rather than resolving identity, and its
+ * `filter_grants` reliance means it can never observe an email-only invitee's just-cast row
+ * (a known gap, outside #2985's scope).
  *
  * Identity resolution mirrors the proven My Votes surface exactly: `getUsernameFromAuth`
  * + `stripAuthPrefix` + `getEffectiveEmail`, matched via `filters_or` on
@@ -36,10 +40,13 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * the request carries neither identity.
  *
  * Deliberately NOT `filter_grants=direct`: the voting service only emits the invitee FGA
- * tuple when the invitee has a non-empty `Username`, so email-only invitees' rows are
- * invisible to grant-based filtering even though they are legitimate pending votes.
- * Verified against the dev query service: identity `filters_or` without `filter_grants`
- * returns the caller's rows.
+ * tuple when the invitee has a non-empty `Username` (upstream contract:
+ * https://github.com/linuxfoundation/lfx-v2-voting-service/blob/main/docs/fga-contract.md),
+ * so email-only invitees' rows are invisible to grant-based filtering even though they are
+ * legitimate pending votes. The query service accepts identity `filters_or` without
+ * `filter_grants` (the parameter is optional — `docs/architecture/backend/pagination.md`),
+ * and this exact query shape already serves My Votes in production; also observed against
+ * the dev query service during #2985.
  */
 export async function fetchCurrentUserVoteResponses(
   req: Request,

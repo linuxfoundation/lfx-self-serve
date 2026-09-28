@@ -1412,7 +1412,7 @@ export class UserService {
    * `filters_or` query (`user_email` / `username`) My Votes reads, so the two surfaces can never
    * diverge. This replaced `filter_grants=direct`, which silently dropped email-only invitees:
    * the voting service only emits the invitee FGA tuple when the invitee has a non-empty
-   * `Username`. The trade-off: the index no longer pre-filters to granted rows, so we paginate
+   * `Username` (upstream contract linked in `fetchCurrentUserVoteResponses`). The trade-off: the index no longer pre-filters to granted rows, so we paginate
    * all of the user's vote_response rows (responded included) — per-user cardinality is small
    * (dozens), the same trade-off `fetchAllUserRsvps` already makes in this aggregation. When
    * `projectUid` is provided it is pushed server-side (`filters`) to drop out-of-scope rows

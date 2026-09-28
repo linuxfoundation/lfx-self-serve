@@ -704,4 +704,27 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
 
     expect(actions.some((action) => action.type === 'Vote')).toBe(false);
   });
+
+  it('fails closed when a LATER vote_response page errors (failOnPartial), instead of acting on partial rows', async () => {
+    // The first-page degradation test above can't pin failOnPartial — page-1 failures propagate
+    // either way. Here page 1 succeeds with a live page_token and page 2 rejects (non-5xx: no
+    // retry): with failOnPartial dropped the paginator would return the partial page-1 row and a
+    // bogus Cast Vote action would be emitted, so this test discriminates.
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; page_token?: string }) => {
+      if (params?.type === 'vote_response') {
+        if (!params.page_token) {
+          return Promise.resolve({ resources: [{ id: 'item:0', data: awaitingRow }], page_token: 'cursor-2' } as QueryServiceResponse<object>);
+        }
+        return Promise.reject(new Error('boom'));
+      }
+      if (params?.type === 'vote') {
+        return queryPage([activeVoteDoc]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
 });

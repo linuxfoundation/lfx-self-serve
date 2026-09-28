@@ -1045,4 +1045,63 @@ describe('VoteService', () => {
       expect(proxyRequest).not.toHaveBeenCalled();
     });
   });
+
+  describe('getMyVoteResponse', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000d301';
+
+    beforeEach(() => {
+      getUsernameFromAuth.mockResolvedValue('spec-user');
+      getEffectiveEmail.mockReturnValue('spec-user@example.org');
+      // Drive the helper's fetchPage callback through the mocked paginator (mirrors getVotes'
+      // drainPages) so the outgoing query params stay observable on proxyRequest.
+      fetchAllQueryResources.mockImplementation(
+        async (_req: unknown, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<unknown>>): Promise<unknown[]> => {
+          const page = await fetchPage();
+          return page.resources.map((r) => r.data);
+        }
+      );
+    });
+
+    it('narrows on vote_uid via filters, ANDed with the identity filters_or disjunction', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: VOTE_UID, vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE } }] });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'vote_response',
+        filters: [`vote_uid:${VOTE_UID}`],
+        filters_or: ['user_email:spec-user@example.org', 'username:spec-user'],
+      });
+      expect(result).toMatchObject({ uid: 'vr-1', vote_uid: VOTE_UID });
+    });
+
+    it('returns null when the only indexed row belongs to a different vote', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: 'v0000000-0000-0000-0000-00000000d999' } }] });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+    });
+
+    it('falls back to vote_id when the indexer left uid empty, logging the drift', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_id: 'v1-row-9', vote_uid: VOTE_UID } }] });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(result).toMatchObject({ uid: 'v1-row-9', vote_uid: VOTE_UID });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_my_vote_response',
+        'vote_response row missing uid; falling back to vote_id',
+        expect.objectContaining({ vote_uid: VOTE_UID, vote_id: 'v1-row-9' })
+      );
+    });
+
+    it('returns null without any upstream call when the request carries neither username nor email', async () => {
+      getUsernameFromAuth.mockResolvedValue(null);
+      getEffectiveEmail.mockReturnValue(null);
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
 });
