@@ -13,13 +13,17 @@
       control="name"
       inputId="insights-token-name"
       placeholder="e.g. Weekly health report"
-      [maxlength]="maxLength"
       [required]="true"
-      [invalid]="!!errorMessage()"
-      [describedBy]="errorMessage() ? 'insights-token-name-error' : null"
+      [invalid]="!!errorMessage() || tooLong()"
+      [describedBy]="nameDescribedBy()"
       autocomplete="off"
       dataTest="insights-token-create-name-input">
     </lfx-input-text>
+    @if (tooLong()) {
+      <p id="insights-token-name-length" class="text-xs text-red-600" data-testid="insights-token-create-length-error">
+        Use {{ maxLength }} characters or fewer.
+      </p>
+    }
     @if (errorMessage()) {
       <p id="insights-token-name-error" class="text-xs text-red-600" role="alert" data-testid="insights-token-create-error">{{ errorMessage() }}</p>
     }

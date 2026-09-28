@@ -38,6 +38,7 @@ describe('InsightsTokenRevealDialogComponent', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     TestBed.resetTestingModule();
@@ -58,8 +59,17 @@ describe('InsightsTokenRevealDialogComponent', () => {
   it('never builds a DOM node holding the secret, which Session Replay could record', async () => {
     create({ name: 'ci-pipeline', secret: 'lfi_secret' });
 
+    // Spy on insertion, not just the final DOM: a fallback that appends a textarea and removes it
+    // again would leave body clean afterwards but still be captured by Session Replay.
+    const appendChild = vi.spyOn(Node.prototype, 'appendChild');
+    const insertBefore = vi.spyOn(Node.prototype, 'insertBefore');
+
     await component['copy']();
 
+    for (const [node] of [...appendChild.mock.calls, ...insertBefore.mock.calls]) {
+      expect((node as Node).textContent ?? '').not.toContain('lfi_secret');
+      expect((node as HTMLTextAreaElement).value ?? '').not.toContain('lfi_secret');
+    }
     expect(document.body.innerHTML).not.toContain('lfi_secret');
   });
 

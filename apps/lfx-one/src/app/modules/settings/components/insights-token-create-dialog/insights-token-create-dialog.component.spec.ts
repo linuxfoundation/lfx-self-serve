@@ -42,6 +42,18 @@ describe('InsightsTokenCreateDialogComponent', () => {
     expect(component['canSubmit']()).toBe(true);
   });
 
+  it('counts the name in code points, like the server, so 100 emoji fit and 101 do not', () => {
+    component['form'].controls.name.setValue('😀'.repeat(100));
+    expect(component['tooLong']()).toBe(false);
+    expect(component['canSubmit']()).toBe(true);
+    expect(component['form'].valid).toBe(true);
+
+    component['form'].controls.name.setValue('😀'.repeat(101));
+    expect(component['tooLong']()).toBe(true);
+    expect(component['canSubmit']()).toBe(false);
+    expect(component['form'].controls.name.hasError('maxCodePoints')).toBe(true);
+  });
+
   it('creates with the trimmed name and closes with the response', () => {
     const created = { token: { uid: 't-1' }, secret: 'lfi_x' };
     service.createToken.mockReturnValue(of(created));

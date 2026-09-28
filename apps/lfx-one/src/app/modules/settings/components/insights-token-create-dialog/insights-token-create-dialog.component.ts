@@ -9,6 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR, INSIGHTS_TOKEN_ERROR_MESSAGES, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { CreateInsightsTokenResponse, InsightsTokenErrorCode } from '@lfx-one/shared/interfaces';
+import { codePointLength } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { InsightsTokensService } from '@services/insights-tokens.service';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { finalize } from 'rxjs';
@@ -30,14 +32,18 @@ export class InsightsTokenCreateDialogComponent {
 
   protected readonly headingId = InsightsTokenCreateDialogComponent.headingId;
   protected readonly maxLength = INSIGHTS_TOKEN_NAME_MAX_LENGTH;
+  // Code points, not UTF-16 units, to match the BFF and the PAT service's rune count; so no native maxlength either.
   protected readonly form = new FormGroup({
-    name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(INSIGHTS_TOKEN_NAME_MAX_LENGTH)] }),
+    name: new FormControl('', { nonNullable: true, validators: [Validators.required, maxCodePointsValidator(INSIGHTS_TOKEN_NAME_MAX_LENGTH)] }),
   });
   protected readonly submitting = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
-  protected readonly canSubmit = computed(
-    () => this.trimmedName().length > 0 && this.trimmedName().length <= INSIGHTS_TOKEN_NAME_MAX_LENGTH && !this.submitting()
-  );
+  protected readonly tooLong = computed(() => codePointLength(this.trimmedName()) > INSIGHTS_TOKEN_NAME_MAX_LENGTH);
+  protected readonly nameDescribedBy = computed(() => {
+    if (this.errorMessage()) return 'insights-token-name-error';
+    return this.tooLong() ? 'insights-token-name-length' : null;
+  });
+  protected readonly canSubmit = computed(() => this.trimmedName().length > 0 && !this.tooLong() && !this.submitting());
 
   private readonly nameValue = toSignal(this.form.controls.name.valueChanges, { initialValue: this.form.controls.name.value });
   private readonly trimmedName = computed(() => this.nameValue().trim());
