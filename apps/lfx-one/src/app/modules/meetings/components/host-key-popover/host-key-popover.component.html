@@ -10,6 +10,7 @@
     severity="secondary"
     styleClass="w-full"
     data-testid="host-controls-button"
+    [ariaExpanded]="hostKeyPopover.overlayVisible"
     (onClick)="onTriggerClick($event, hostKeyPopover)"></lfx-button>
   <p-popover #hostKeyPopover>
     <div class="flex w-72 flex-col gap-2 p-1" data-testid="host-key-popover-content">
@@ -28,7 +29,7 @@
           <lfx-host-key-panel [hostKey]="hostKey" />
         } @else {
           <p class="text-sm text-gray-600" data-testid="host-key-empty">
-            The host key isn't available right now. It's only visible to meeting hosts, starting 70 minutes before the meeting.
+            The host key isn't available right now. It's only visible to meeting hosts, starting {{ hostKeyEarlyMinutes }} minutes before the meeting.
           </p>
         }
       }

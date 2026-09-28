@@ -219,9 +219,8 @@ export class MeetingJoinComponent implements OnInit {
   private optimisticAdditional = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
-  // Single gate for the host-key callout: the BFF authorized this viewer (and sent a key) AND the
-  // meeting is inside the 70-min pre / 40-min post window applied server-side to can_view_host_key.
-  // The frontend does not re-derive the window — it trusts the BFF's flag directly.
+  // Single gate for the host-key callout: BFF authorized (can_view_host_key + key sent) and inside the
+  // 70-min pre / 40-min post window applied server-side. The frontend trusts the BFF's flag directly.
   protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisible(this.meeting()));
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);

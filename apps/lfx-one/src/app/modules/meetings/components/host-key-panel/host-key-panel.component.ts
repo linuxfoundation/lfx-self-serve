@@ -1,16 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { _IdGenerator } from '@angular/cdk/a11y';
 import { Clipboard } from '@angular/cdk/clipboard';
-import { Component, inject, input, signal } from '@angular/core';
+import { Component, inject, input, linkedSignal } from '@angular/core';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-
-// aria-describedby needs a unique idref per instance: the panel renders once per card popover.
-let helpIdCounter = 0;
 
 @Component({
   selector: 'lfx-host-key-panel',
@@ -23,8 +21,15 @@ export class HostKeyPanelComponent {
 
   public readonly hostKey = input.required<string>();
 
-  public readonly revealed = signal(false);
-  protected readonly helpId = `host-key-help-${helpIdCounter++}`;
+  // Re-mask when a different meeting's key arrives on the same instance (same-instance navigation) —
+  // the join page used to key reveal state on the meeting id; linkedSignal restores that guarantee here.
+  public readonly revealed = linkedSignal(() => {
+    this.hostKey();
+    return false;
+  });
+  // aria-describedby needs a unique idref per instance (one panel per card popover) — CDK's generator
+  // is APP_ID-scoped and SSR-safe, unlike a module-level counter.
+  protected readonly helpId = inject(_IdGenerator).getId('host-key-help-');
 
   public toggleReveal(): void {
     this.revealed.update((current) => !current);
