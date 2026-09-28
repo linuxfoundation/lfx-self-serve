@@ -99,6 +99,8 @@ import {
   HealthMetricsEventsForecastQuery,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastQuery,
+  HealthMetricsEventsRegistrationsGrowth,
+  HealthMetricsEventsRegistrationsGrowthQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1249,6 +1251,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsAtAGlance>('/api/analytics/events-at-a-glance', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-at-a-glance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Every year the foundation held events, for the Events tab's registrations & growth section. */
+  public getEventsRegistrationsGrowth(query: HealthMetricsEventsRegistrationsGrowthQuery): Observable<HealthMetricsEventsRegistrationsGrowth> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a history with no years.
+    return this.http.get<HealthMetricsEventsRegistrationsGrowth>('/api/analytics/events-registrations-growth', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registrations-growth failed', { query, error });
         return throwError(() => error);
       })
     );

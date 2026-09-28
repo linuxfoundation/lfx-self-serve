@@ -35,5 +35,11 @@
         (settled)="shell.sectionSettled('past')"
         (sectionPicked)="shell.scrollToSection($event)" />
     </ng-template>
+    <ng-template lfxHealthMetricsL2Section="reg">
+      <lfx-events-registrations-growth
+        (reading)="shell.sectionReading('reg')"
+        (settled)="shell.sectionSettled('reg')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </ng-template>
   </lfx-health-metrics-l2-shell>
 }

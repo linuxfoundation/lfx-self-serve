@@ -6,6 +6,8 @@ import type {
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsPast,
+  HealthMetricsEventsRegistrationsGrowth,
+  HealthMetricsEventsRegistrationsGrowthMetricOption,
   HealthMetricsEventsSectionKey,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
@@ -99,7 +101,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past'] as const satisfies readonly HealthMetricsEventsSectionKey[];
+export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past', 'reg'] as const satisfies readonly HealthMetricsEventsSectionKey[];
 
 /** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
 export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE = "An organization's event record also appears in Members";
@@ -168,6 +170,21 @@ export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAt
 
 /** A year-over-year fall steeper than this flags the Attendees and Speakers tiles. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE = -0.3;
+
+/** Years read per foundation; one past it flags a truncated read. The longest history spans under ten. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP = 100;
+
+/** Read-failed / no-foundation value: no years, which the section must not caption as measured. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED: HealthMetricsEventsRegistrationsGrowth = { years: [] };
+
+/** The toggle over the chart and table; the first option is the default. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS: readonly HealthMetricsEventsRegistrationsGrowthMetricOption[] = [
+  { id: 'registrations', label: 'Registrations' },
+  { id: 'attendees', label: 'Attendees' },
+];
+
+/** Years whose virtual peak the pandemic callout explains. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS: readonly number[] = [2020, 2021];
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';

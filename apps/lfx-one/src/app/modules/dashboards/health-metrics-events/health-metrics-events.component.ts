@@ -22,6 +22,7 @@ import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-s
 import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events-at-a-glance.component';
 import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
+import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
@@ -37,6 +38,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
     EventsAtAGlanceComponent,
     EventsPastEventsComponent,
     EventsRegistrationForecastComponent,
+    EventsRegistrationsGrowthComponent,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
   ],

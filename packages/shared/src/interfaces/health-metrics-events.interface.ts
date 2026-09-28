@@ -6,6 +6,7 @@ import type {
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
 } from '../constants/health-metrics-events.constants';
+import type { FilterPillOption } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -247,4 +248,60 @@ export interface HealthMetricsEventsAtAGlanceView {
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   tiles: HealthMetricsEventsAtAGlanceStatView[];
+}
+
+/** Foundation scope for registrations & growth; the section is not period-scoped, so every year ships. */
+export interface HealthMetricsEventsRegistrationsGrowthQuery {
+  foundationSlug: string;
+}
+
+/** One year's registrations and attendees, split by format. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsEventsRegistrationsGrowthYear {
+  year: number;
+  /** The current year, still open, so it reads short against the complete years. */
+  isPartialYear: boolean;
+  totalRegistrations: number | null;
+  inPersonRegistrations: number | null;
+  virtualRegistrations: number | null;
+  totalAttendees: number | null;
+  inPersonAttendees: number | null;
+  virtualAttendees: number | null;
+}
+
+/** `GET /api/analytics/events-registrations-growth` — the foundation's years with events, oldest first. */
+export interface HealthMetricsEventsRegistrationsGrowth {
+  years: HealthMetricsEventsRegistrationsGrowthYear[];
+}
+
+/** Which count the section's toggle shows; it switches the chart and the table together. */
+export type HealthMetricsEventsRegistrationsGrowthMetric = 'registrations' | 'attendees';
+
+/** A toggle pill whose id is the metric it selects. */
+export interface HealthMetricsEventsRegistrationsGrowthMetricOption extends FilterPillOption {
+  id: HealthMetricsEventsRegistrationsGrowthMetric;
+}
+
+/** One year of the chart and table; a gap year between the first and last reads as no events recorded. */
+export interface HealthMetricsEventsRegistrationsGrowthRowView {
+  year: number;
+  /** `false` for a gap year, which the table dashes and the chart leaves empty rather than zeroed. */
+  recorded: boolean;
+  isPartialYear: boolean;
+  total: number | null;
+  inPerson: number | null;
+  virtual: number | null;
+  totalLabel: string;
+  inPersonLabel: string;
+  /** A dash when no virtual count was recorded, per the design. */
+  virtualLabel: string;
+}
+
+/** The section for one metric, with every year from the first to the last. */
+export interface HealthMetricsEventsRegistrationsGrowthView {
+  rows: HealthMetricsEventsRegistrationsGrowthRowView[];
+  /** Years spanned, gap years included, so the count matches the table. */
+  yearCount: number;
+  hasPartialYear: boolean;
+  /** Whether a pandemic year has events recorded, which is when the callout explains the virtual peak. */
+  hasPandemicYears: boolean;
 }

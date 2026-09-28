@@ -26,6 +26,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
 
@@ -450,5 +451,80 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
 
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+});
+
+function growthRow(overrides: Record<string, unknown> = {}) {
+  return {
+    YEAR: 2025,
+    IS_PARTIAL_YEAR: false,
+    TOTAL_REGISTRATIONS: 1200,
+    IN_PERSON_REGISTRATIONS: 1000,
+    VIRTUAL_REGISTRATIONS: 200,
+    TOTAL_ATTENDEES: 900,
+    IN_PERSON_ATTENDEES: 800,
+    VIRTUAL_ATTENDEES: 0,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsEventsService.getRegistrationsGrowth', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [growthRow()] });
+  });
+
+  it('binds only the foundation, reads the all-projects rollup oldest first, and one past the cap', async () => {
+    await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('MARKETING_EVENT_REGISTRATIONS_GROWTH');
+    expect(sql).toContain('is_all_projects = TRUE');
+    expect(sql).toContain('ORDER BY year ASC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP + 1}`);
+  });
+
+  it('maps a year, keeping a zero count as measured', async () => {
+    const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
+
+    expect(years).toEqual([
+      {
+        year: 2025,
+        isPartialYear: false,
+        totalRegistrations: 1200,
+        inPersonRegistrations: 1000,
+        virtualRegistrations: 200,
+        totalAttendees: 900,
+        inPersonAttendees: 800,
+        virtualAttendees: 0,
+      },
+    ]);
+  });
+
+  it('keeps a null count unmeasured, reads a null partial flag as complete, and drops a row with no year', async () => {
+    execute.mockResolvedValue({ rows: [growthRow({ TOTAL_ATTENDEES: null, IS_PARTIAL_YEAR: null }), growthRow({ YEAR: null })] });
+
+    const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
+
+    expect(years).toHaveLength(1);
+    expect(years[0]).toMatchObject({ totalAttendees: null, isPartialYear: false });
+  });
+
+  it('returns no years when the foundation has none', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    expect(await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' })).toEqual({ years: [] });
+  });
+
+  it('warns and truncates when the read hits the cap', async () => {
+    execute.mockResolvedValue({
+      rows: Array.from({ length: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP + 1 }, (_, i) => growthRow({ YEAR: 1900 + i })),
+    });
+
+    const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
+
+    expect(years).toHaveLength(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_events_registrations_growth', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 });

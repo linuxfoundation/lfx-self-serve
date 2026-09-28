@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
@@ -28,6 +29,9 @@ import type {
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastPeriod,
   HealthMetricsEventsPastQuery,
+  HealthMetricsEventsRegistrationsGrowth,
+  HealthMetricsEventsRegistrationsGrowthQuery,
+  HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsL2Range,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -35,6 +39,7 @@ import type { Request } from 'express';
 const REGISTRATION_FORECAST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST';
 const PAST_EVENTS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS';
 const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE';
+const REGISTRATIONS_GROWTH_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_GROWTH';
 
 /** At-a-glance count prefixes, each suffixed per period; the change columns reuse them. */
 const AT_A_GLANCE_COUNT_PREFIXES = ['registrations', 'attendees', 'organizations', 'speakers', 'countries', 'events', 'past_events'] as const;
@@ -89,6 +94,17 @@ interface PastEventRow {
 interface AtAGlanceRow {
   UPCOMING_EVENTS_COUNT_CURRENT_YEAR: number | null;
   [periodColumn: string]: unknown;
+}
+
+interface RegistrationsGrowthRow {
+  YEAR: number | null;
+  IS_PARTIAL_YEAR: boolean | null;
+  TOTAL_REGISTRATIONS: number | null;
+  IN_PERSON_REGISTRATIONS: number | null;
+  VIRTUAL_REGISTRATIONS: number | null;
+  TOTAL_ATTENDEES: number | null;
+  IN_PERSON_ATTENDEES: number | null;
+  VIRTUAL_ATTENDEES: number | null;
 }
 
 /** The Events tab's view reads, one method per section, each through `executeSnowflakeViewRead`. */
@@ -288,6 +304,46 @@ export class HealthMetricsEventsService {
     return { periods, upcomingEvents, hasEvents };
   }
 
+  /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
+  public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
+    const sql = `
+      SELECT
+        year,
+        is_partial_year,
+        total_registrations,
+        in_person_registrations,
+        virtual_registrations,
+        total_attendees,
+        in_person_attendees,
+        virtual_attendees
+      FROM ${REGISTRATIONS_GROWTH_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+      ORDER BY year ASC
+      LIMIT ${HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<RegistrationsGrowthRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: REGISTRATIONS_GROWTH_VIEW,
+      operation: 'get_events_registrations_growth',
+      clientMessage: 'Registrations and growth are unavailable right now.',
+    });
+
+    if (result.rows.length > HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP) {
+      logger.warning(req, 'get_events_registrations_growth', 'Registrations growth rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
+      });
+    }
+
+    const years = result.rows
+      .slice(0, HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP)
+      .map(mapRegistrationsGrowthYear)
+      .filter((year): year is HealthMetricsEventsRegistrationsGrowthYear => year !== null);
+
+    return { years };
+  }
+
   /** Whether the foundation has ever held an event, or has one still to come in any year. */
   private async hasAnyEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
     // The past view keeps every closed event whatever its age; the rollup only covers four periods.
@@ -460,6 +516,23 @@ function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): vo
 function toDaysLeft(value: unknown): number | null {
   const daysLeft = toNullableNumber(value);
   return daysLeft === null ? null : Math.max(0, Math.abs(daysLeft) - 1);
+}
+
+/** A row without a year cannot be placed on the chart, so it is dropped rather than guessed. */
+function mapRegistrationsGrowthYear(row: RegistrationsGrowthRow): HealthMetricsEventsRegistrationsGrowthYear | null {
+  const year = toNullableNumber(row.YEAR);
+  if (year === null || !Number.isInteger(year)) return null;
+
+  return {
+    year,
+    isPartialYear: row.IS_PARTIAL_YEAR === true,
+    totalRegistrations: toNullableNumber(row.TOTAL_REGISTRATIONS),
+    inPersonRegistrations: toNullableNumber(row.IN_PERSON_REGISTRATIONS),
+    virtualRegistrations: toNullableNumber(row.VIRTUAL_REGISTRATIONS),
+    totalAttendees: toNullableNumber(row.TOTAL_ATTENDEES),
+    inPersonAttendees: toNullableNumber(row.IN_PERSON_ATTENDEES),
+    virtualAttendees: toNullableNumber(row.VIRTUAL_ATTENDEES),
+  };
 }
 
 function toNullableNumber(value: unknown): number | null {

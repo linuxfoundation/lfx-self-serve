@@ -11,6 +11,7 @@ import {
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_SECTIONS,
 } from '../constants/health-metrics-events.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -32,6 +33,11 @@ import type {
   HealthMetricsEventsPastRowView,
   HealthMetricsEventsPastStatus,
   HealthMetricsEventsPastView,
+  HealthMetricsEventsRegistrationsGrowth,
+  HealthMetricsEventsRegistrationsGrowthMetric,
+  HealthMetricsEventsRegistrationsGrowthRowView,
+  HealthMetricsEventsRegistrationsGrowthView,
+  HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSubNavItem,
 } from '../interfaces/health-metrics-events.interface';
@@ -239,6 +245,29 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
   };
 }
 
+/** Every year from the first to the last with events, oldest first; a gap year is left unrecorded, never zeroed. */
+export function buildHealthMetricsEventsRegistrationsGrowthView(
+  growth: HealthMetricsEventsRegistrationsGrowth,
+  metric: HealthMetricsEventsRegistrationsGrowthMetric
+): HealthMetricsEventsRegistrationsGrowthView {
+  const byYear = new Map(growth.years.map((year) => [year.year, year]));
+  const years = [...byYear.keys()];
+  if (years.length === 0) return { rows: [], yearCount: 0, hasPartialYear: false, hasPandemicYears: false };
+
+  const first = Math.min(...years);
+  const last = Math.max(...years);
+  const rows = Array.from({ length: last - first + 1 }, (_, index) =>
+    buildRegistrationsGrowthRowView(first + index, byYear.get(first + index) ?? null, metric)
+  );
+
+  return {
+    rows,
+    yearCount: rows.length,
+    hasPartialYear: rows.some((row) => row.isPartialYear),
+    hasPandemicYears: rows.some((row) => row.recorded && HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS.includes(row.year)),
+  };
+}
+
 function formatAtAGlanceCount(value: number | null | undefined): string {
   return value === null || value === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : value.toLocaleString('en-US');
 }
@@ -313,4 +342,32 @@ function resolveProgressClass(pct: number | null): string {
   if (pct >= 90) return 'bg-emerald-500';
 
   return pct >= 45 ? 'bg-amber-500' : 'bg-red-400';
+}
+
+function buildRegistrationsGrowthRowView(
+  year: number,
+  data: HealthMetricsEventsRegistrationsGrowthYear | null,
+  metric: HealthMetricsEventsRegistrationsGrowthMetric
+): HealthMetricsEventsRegistrationsGrowthRowView {
+  if (data === null) {
+    return { year, recorded: false, isPartialYear: false, total: null, inPerson: null, virtual: null, totalLabel: '—', inPersonLabel: '—', virtualLabel: '—' };
+  }
+
+  const attendees = metric === 'attendees';
+  const total = attendees ? data.totalAttendees : data.totalRegistrations;
+  const inPerson = attendees ? data.inPersonAttendees : data.inPersonRegistrations;
+  const virtual = attendees ? data.virtualAttendees : data.virtualRegistrations;
+
+  return {
+    year,
+    recorded: true,
+    isPartialYear: data.isPartialYear,
+    total,
+    inPerson,
+    virtual,
+    totalLabel: formatHealthMetricsEventsCount(total),
+    inPersonLabel: formatHealthMetricsEventsCount(inPerson),
+    // The design dashes a year with no virtual count, since most in-person-only years record zero.
+    virtualLabel: virtual === 0 ? '—' : formatHealthMetricsEventsCount(virtual),
+  };
 }

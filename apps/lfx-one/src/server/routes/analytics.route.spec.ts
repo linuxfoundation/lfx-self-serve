@@ -141,6 +141,7 @@ describe.each([
   ['/events-registration-forecast-curve', 'eventId=evt-1&foundationSlug'],
   ['/events-past', 'foundationSlug'],
   ['/events-at-a-glance', 'foundationSlug'],
+  ['/events-registrations-growth', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

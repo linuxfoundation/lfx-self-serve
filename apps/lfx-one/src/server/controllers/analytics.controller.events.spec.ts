@@ -4,11 +4,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getAtAGlance, getPastEvents, getRegistrationForecast, getRegistrationForecastCurve } = vi.hoisted(() => ({
+const { getAtAGlance, getPastEvents, getRegistrationForecast, getRegistrationForecastCurve, getRegistrationsGrowth } = vi.hoisted(() => ({
   getAtAGlance: vi.fn(),
   getPastEvents: vi.fn(),
   getRegistrationForecast: vi.fn(),
   getRegistrationForecastCurve: vi.fn(),
+  getRegistrationsGrowth: vi.fn(),
 }));
 
 vi.mock('../services/health-metrics-events.service', () => ({
@@ -17,6 +18,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getRegistrationForecastCurve = getRegistrationForecastCurve;
     public getPastEvents = getPastEvents;
     public getAtAGlance = getAtAGlance;
+    public getRegistrationsGrowth = getRegistrationsGrowth;
   },
 }));
 // The controller constructs five unrelated domain services; none of them are exercised here.
@@ -36,12 +38,13 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getEventsRegistrationForecast' | 'getEventsRegistrationForecastCurve' | 'getEventsPast' | 'getEventsAtAGlance';
+type Handler = 'getEventsRegistrationForecast' | 'getEventsRegistrationForecastCurve' | 'getEventsPast' | 'getEventsAtAGlance' | 'getEventsRegistrationsGrowth';
 
 function call(handler: Handler, queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -189,6 +192,40 @@ describe('AnalyticsController.getEventsAtAGlance', () => {
     getAtAGlance.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsAtAGlance', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsRegistrationsGrowth', () => {
+  beforeEach(() => {
+    getRegistrationsGrowth.mockReset();
+    getRegistrationsGrowth.mockResolvedValue(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED);
+  });
+
+  it('passes the foundation to the service and returns its response', async () => {
+    const { res, next, promise } = call('getEventsRegistrationsGrowth', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getRegistrationsGrowth).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED);
+  });
+
+  it.each([{}, { foundationSlug: 'Acme Corp' }])('rejects a missing or malformed foundation (%o)', async (query) => {
+    const { next, promise } = call('getEventsRegistrationsGrowth', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getRegistrationsGrowth).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getRegistrationsGrowth.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsRegistrationsGrowth', { foundationSlug: 'acme' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

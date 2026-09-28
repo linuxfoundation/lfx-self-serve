@@ -16,6 +16,7 @@ import { HealthMetricsChromeService } from '../health-metrics-gate/health-metric
 import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events-at-a-glance.component';
 import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
+import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
@@ -49,6 +50,14 @@ class PastStubComponent {
   public readonly sectionPicked = output<string>();
 }
 
+/** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-events-registrations-growth', template: '<div data-testid="events-reg-stub"></div>' })
+class RegistrationsGrowthStubComponent {
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+  public readonly sectionPicked = output<string>();
+}
+
 // Covers only what Events wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
 // and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsEventsComponent', () => {
@@ -75,8 +84,8 @@ describe('HealthMetricsEventsComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsEventsComponent, {
-        remove: { imports: [EventsAtAGlanceComponent, EventsRegistrationForecastComponent, EventsPastEventsComponent] },
-        add: { imports: [AtAGlanceStubComponent, ForecastStubComponent, PastStubComponent] },
+        remove: { imports: [EventsAtAGlanceComponent, EventsRegistrationForecastComponent, EventsPastEventsComponent, EventsRegistrationsGrowthComponent] },
+        add: { imports: [AtAGlanceStubComponent, ForecastStubComponent, PastStubComponent, RegistrationsGrowthStubComponent] },
       })
       .compileComponents();
 
@@ -94,6 +103,7 @@ describe('HealthMetricsEventsComponent', () => {
     forecast.settled.emit();
     pastStub.countChange.emit(pastCount);
     pastStub.settled.emit();
+    (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -125,7 +135,7 @@ describe('HealthMetricsEventsComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the nine sections in order, with the kpi, forecast and past bodies and placeholders for the rest', async () => {
+  it('renders the nine sections in order, with the kpi, forecast, past and reg bodies and placeholders for the rest', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-section-"]')] as HTMLElement[];
 
@@ -139,6 +149,8 @@ describe('HealthMetricsEventsComponent', () => {
         expect(element.querySelector('[data-testid="events-forecast-stub"]')).not.toBeNull();
       } else if (key === 'past') {
         expect(element.querySelector('[data-testid="events-past-stub"]')).not.toBeNull();
+      } else if (key === 'reg') {
+        expect(element.querySelector('[data-testid="events-reg-stub"]')).not.toBeNull();
       } else {
         expect(element.textContent).toContain('Awaiting data');
       }

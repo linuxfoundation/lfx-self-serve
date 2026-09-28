@@ -10,6 +10,7 @@ import {
   buildHealthMetricsEventsForecastNote,
   buildHealthMetricsEventsForecastRowViews,
   buildHealthMetricsEventsPastView,
+  buildHealthMetricsEventsRegistrationsGrowthView,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsPastClosedLabel,
@@ -28,6 +29,7 @@ import type {
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
+  HealthMetricsEventsRegistrationsGrowthYear,
 } from '../interfaces/health-metrics-events.interface';
 
 function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): HealthMetricsEventsForecastEvent {
@@ -416,5 +418,90 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
 
   it('marks a period missing from the read as unmeasured', () => {
     expect(buildHealthMetricsEventsAtAGlanceView(glance(), 'COMPLETED_YEAR_4').measured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
+  function growthYear(overrides: Partial<HealthMetricsEventsRegistrationsGrowthYear> = {}): HealthMetricsEventsRegistrationsGrowthYear {
+    return {
+      year: 2023,
+      isPartialYear: false,
+      totalRegistrations: 1200,
+      inPersonRegistrations: 1000,
+      virtualRegistrations: 200,
+      totalAttendees: 900,
+      inPersonAttendees: 800,
+      virtualAttendees: 100,
+      ...overrides,
+    };
+  }
+
+  it('lists every year oldest first, whatever order the read returned', () => {
+    const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2024 }), growthYear({ year: 2023 })] }, 'registrations');
+
+    expect(view.rows.map((row) => row.year)).toEqual([2023, 2024]);
+    expect(view.yearCount).toBe(2);
+  });
+
+  it('switches every figure between registrations and attendees', () => {
+    const registrations = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').rows[0];
+    const attendees = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'attendees').rows[0];
+
+    expect([registrations.totalLabel, registrations.inPersonLabel, registrations.virtualLabel]).toEqual(['1,200', '1,000', '200']);
+    expect([attendees.totalLabel, attendees.inPersonLabel, attendees.virtualLabel]).toEqual(['900', '800', '100']);
+  });
+
+  it('fills a gap year as unrecorded, never as zero', () => {
+    const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2021 }), growthYear({ year: 2023 })] }, 'registrations');
+    const gap = view.rows[1];
+
+    expect(view.rows.map((row) => row.year)).toEqual([2021, 2022, 2023]);
+    expect(view.yearCount).toBe(3);
+    expect(gap).toMatchObject({ year: 2022, recorded: false, total: null, inPerson: null, virtual: null });
+    expect([gap.totalLabel, gap.inPersonLabel, gap.virtualLabel]).toEqual(['—', '—', '—']);
+  });
+
+  it('dashes a zero virtual count but keeps a zero total', () => {
+    const row = buildHealthMetricsEventsRegistrationsGrowthView(
+      { years: [growthYear({ totalRegistrations: 0, inPersonRegistrations: 0, virtualRegistrations: 0 })] },
+      'registrations'
+    ).rows[0];
+
+    expect([row.totalLabel, row.inPersonLabel, row.virtualLabel]).toEqual(['0', '0', '—']);
+    expect(row.virtual).toBe(0);
+  });
+
+  it('dashes an unmeasured count', () => {
+    const row = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ totalAttendees: null })] }, 'attendees').rows[0];
+
+    expect(row.total).toBeNull();
+    expect(row.totalLabel).toBe('—');
+  });
+
+  it('flags a partial year', () => {
+    const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(), growthYear({ year: 2024, isPartialYear: true })] }, 'registrations');
+
+    expect(view.hasPartialYear).toBe(true);
+    expect(view.rows.map((row) => row.isPartialYear)).toEqual([false, true]);
+    expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').hasPartialYear).toBe(false);
+  });
+
+  it('flags pandemic years only when one has events recorded', () => {
+    const recorded = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2021 }), growthYear()] }, 'registrations');
+    const spannedOnly = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2019 }), growthYear({ year: 2022 })] }, 'registrations');
+    const after = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations');
+
+    expect(recorded.hasPandemicYears).toBe(true);
+    expect(spannedOnly.hasPandemicYears).toBe(false);
+    expect(after.hasPandemicYears).toBe(false);
+  });
+
+  it('returns no rows for no years', () => {
+    expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [] }, 'registrations')).toEqual({
+      rows: [],
+      yearCount: 0,
+      hasPartialYear: false,
+      hasPandemicYears: false,
+    });
   });
 });

@@ -3562,6 +3562,26 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/events-registrations-growth` — every year the foundation held events; the section is not period-scoped. */
+  public async getEventsRegistrationsGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registrations_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registrations_growth');
+
+      const response = await this.healthMetricsEventsService.getRegistrationsGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_events_registrations_growth', startTime, {
+        foundation_slug: foundationSlug,
+        year_count: response.years.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');
