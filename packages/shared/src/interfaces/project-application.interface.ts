@@ -40,7 +40,7 @@ export interface ProjectApplicationAnswers {
   agreement_type?: string;
   is_spec_project?: boolean;
   description?: string;
-  /** Parent project the formation team chose at accept time; written by the BFF's revise-then-accept. */
+  /** Parent project the formation team chose at accept time; recorded by the BFF before it creates the project. */
   parent_project_uid?: string;
   /** Slug the formation team chose for the project created at accept time (#1995). */
   project_slug?: string;
@@ -166,6 +166,8 @@ export interface ProjectApplicationRow extends ProjectApplication {
 /** Data handed to the accept dialog. */
 export interface ProjectApplicationAcceptDialogData {
   projectName: string;
+  /** Slug an earlier, failed accept recorded; prefilled so a retry keeps the project that may already exist. */
+  projectSlug?: string;
 }
 
 /** What the accept dialog closes with: the parent the new project goes under, and its slug. */

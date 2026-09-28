@@ -38,7 +38,7 @@ export class ProjectApplicationAcceptDialogComponent {
   // === Forms ===
   public readonly form = new FormGroup({
     parent: new FormControl<Project | string | null>(null),
-    slug: new FormControl<string>(projectSlugFromName(this.data?.projectName), {
+    slug: new FormControl<string>(this.data?.projectSlug || projectSlugFromName(this.data?.projectName), {
       nonNullable: true,
       validators: [Validators.required, projectSlugValidator()],
     }),

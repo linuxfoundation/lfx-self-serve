@@ -219,7 +219,11 @@ export class ProjectApplicationDrawerComponent {
   protected onAccept(): void {
     const application = this.application();
     if (!application) return;
-    const data: ProjectApplicationAcceptDialogData = { projectName: this.projectName() };
+    const recordedSlug = application.application.project_slug;
+    const data: ProjectApplicationAcceptDialogData = {
+      projectName: this.projectName(),
+      ...(typeof recordedSlug === 'string' && recordedSlug && { projectSlug: recordedSlug }),
+    };
     const ref = this.dialogService.open(ProjectApplicationAcceptDialogComponent, {
       header: 'Accept proposal',
       width: '520px',

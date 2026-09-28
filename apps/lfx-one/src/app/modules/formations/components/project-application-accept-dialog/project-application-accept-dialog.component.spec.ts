@@ -22,7 +22,7 @@ interface DialogAccess {
 const PARENT = { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project;
 
 describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
-  const setup = async (projectName = 'Example Project') => {
+  const setup = async (projectName = 'Example Project', projectSlug?: string) => {
     TestBed.resetTestingModule();
     const close = vi.fn();
     const searchProjects = vi.fn<(query: string) => Observable<Project[]>>(() => of([PARENT, { uid: '', name: 'No uid', slug: 'none' } as Project]));
@@ -30,7 +30,7 @@ describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
       imports: [ProjectApplicationAcceptDialogComponent],
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { projectName } } },
+        { provide: DynamicDialogConfig, useValue: { data: { projectName, projectSlug } } },
         { provide: ProjectService, useValue: { searchProjects } },
       ],
     }).compileComponents();
@@ -92,6 +92,11 @@ describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
   it('prefills the slug from the proposed project name', async () => {
     const { form } = await setup('LFX One');
     expect(form.controls.slug.value).toBe('lfx-one');
+  });
+
+  it('prefills the slug an earlier accept recorded, so a retry keeps the project that may already exist', async () => {
+    const { form } = await setup('LFX One', 'lfx-one-v2');
+    expect(form.controls.slug.value).toBe('lfx-one-v2');
   });
 
   it('blocks confirm on an invalid or empty slug, and closes with the edited slug once valid', async () => {

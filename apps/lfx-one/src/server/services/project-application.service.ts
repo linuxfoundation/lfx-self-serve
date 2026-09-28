@@ -29,6 +29,7 @@ import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { ProjectService } from './project.service';
 
 /**
  * BFF for project applications — "Propose a project" (#3037), backed by `lfx-v2-formation-service`'s
@@ -45,6 +46,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 export class ProjectApplicationService {
   private readonly microserviceProxy = new MicroserviceProxyService();
   private readonly accessCheckService = new AccessCheckService();
+  private readonly projectService = new ProjectService();
 
   /**
    * The signed-in user's own applications. The `submitter:` tag narrows the search; query-service's
@@ -128,7 +130,9 @@ export class ProjectApplicationService {
    * 2. Create the project in project-service under that parent with the caller's own token — project-service's
    *    FGA decides whether they may create under the parent — then revise again to record its `project_uid`.
    *    When the answers already carry a `project_uid` (a retry after the create landed but a later step
-   *    failed), the create is skipped so the project is never created twice.
+   *    failed), the create is skipped and the recorded parent and slug are kept, so the project is never
+   *    created twice. When the uid was lost before it was recorded, the create's slug conflict adopts the
+   *    earlier project if it is under the same parent with the same name.
    * 3. Accept at the latest revision.
    *
    * The create comes before the accept so a refused create (slug taken, no permission) leaves the application
@@ -146,17 +150,23 @@ export class ProjectApplicationService {
     projectSlug: string
   ): Promise<ProjectApplicationWriteResult> {
     await this.assertFormationTeamMember(req, 'accept_project_application');
+    // Once the project exists, its recorded parent and slug are the truth: a retry must not rewrite them to
+    // choices that no longer describe the project.
+    const recordedProjectUid = this.recordedString(application, PROJECT_APPLICATION_PROJECT_UID_KEY);
+    const parent = (recordedProjectUid && this.recordedString(application, PROJECT_APPLICATION_PARENT_KEY)) || parentProjectUid;
+    const slug = (recordedProjectUid && this.recordedString(application, PROJECT_APPLICATION_SLUG_KEY)) || projectSlug;
+
     let current = await this.revise(req, uid, ifMatch, {
       ...application,
-      [PROJECT_APPLICATION_PARENT_KEY]: parentProjectUid,
-      [PROJECT_APPLICATION_SLUG_KEY]: projectSlug,
+      [PROJECT_APPLICATION_PARENT_KEY]: parent,
+      [PROJECT_APPLICATION_SLUG_KEY]: slug,
     });
 
-    const existingProjectUid = current.application.application[PROJECT_APPLICATION_PROJECT_UID_KEY];
-    if (typeof existingProjectUid === 'string' && existingProjectUid) {
+    const existingProjectUid = this.recordedString(current.application.application, PROJECT_APPLICATION_PROJECT_UID_KEY);
+    if (existingProjectUid) {
       logger.info(req, 'accept_project_application', 'Project already created for this application; skipping create', { uid, project_uid: existingProjectUid });
     } else {
-      const project = await this.createProject(req, uid, buildCreateProjectRequest(current.application.application, parentProjectUid, projectSlug));
+      const project = await this.createProject(req, uid, buildCreateProjectRequest(current.application.application, parent, slug));
       current = await this.revise(req, uid, String(current.application.revision), {
         ...current.application.application,
         [PROJECT_APPLICATION_PROJECT_UID_KEY]: project.uid,
@@ -211,8 +221,43 @@ export class ProjectApplicationService {
       logger.info(req, operation, 'Created project for accepted application', { uid, project_uid: project.uid, slug: body.slug });
       return project;
     } catch (error) {
+      if (isMicroserviceError(error) && error.statusCode === 409) {
+        const adopted = await this.findProjectCreatedEarlier(req, body);
+        if (adopted) {
+          logger.warning(req, operation, "Slug conflict is this application's own earlier create; adopting that project", {
+            uid,
+            project_uid: adopted.uid,
+            slug: body.slug,
+          });
+          return adopted;
+        }
+      }
       throw this.mapCreateProjectError(error, req, operation, uid, body.slug);
     }
+  }
+
+  /**
+   * After a slug conflict, finds the project an earlier accept of this same application created but never got
+   * to record — its uid lost to a failed follow-up revise, or wiped by a submitter's revise (which drops staff
+   * keys). It is adopted only when it sits under the same parent with the same name; anything else is a
+   * genuine conflict. A failed lookup reads as "not found", so the caller surfaces the conflict.
+   */
+  private async findProjectCreatedEarlier(req: Request, body: CreateProjectRequest): Promise<Project | null> {
+    try {
+      const { exists, uid } = await this.projectService.getProjectIdBySlug(req, body.slug);
+      if (!exists || !uid) {
+        return null;
+      }
+      const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${encodeURIComponent(uid)}`, 'GET');
+      return project?.parent_uid === body.parent_uid && project.name === body.name ? project : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private recordedString(answers: ProjectApplicationAnswers, key: string): string {
+    const value = answers[key];
+    return typeof value === 'string' ? value : '';
   }
 
   private transition(req: Request, uid: string, ifMatch: string, action: ProjectApplicationAction): Promise<ProjectApplicationWriteResult> {
@@ -331,7 +376,7 @@ export class ProjectApplicationService {
           code: 'PROJECT_CREATE_FORBIDDEN',
         });
       case 409:
-        return new ConflictError(`The project slug "${slug}" is already in use; choose another`, 'PROJECT_SLUG_CONFLICT', options);
+        return new ConflictError(`The project slug "${slug}" is already used by another project; choose another`, 'PROJECT_SLUG_CONFLICT', options);
       default:
         return error;
     }

@@ -58,7 +58,7 @@ The upstream accept route takes no body and creates nothing. Accepting creates t
    - `legal_entity_type` = `Subproject`
    - `category` = `Standards` when `is_spec_project` is true
 
-   Blank optional answers are left out. It then revises again, adding `application.project_uid`. If the answers already carry a `project_uid`, both steps are skipped. That happens on a retry after the create landed but a later step failed, so the project is never created twice.
+   Blank optional answers are left out. It then revises again, adding `application.project_uid`. If the answers already carry a `project_uid`, both steps are skipped, and the recorded parent and slug are kept even if the dialog sent new ones. That happens on a retry after the create landed but a later step failed, so the project is never created twice. The uid can also be lost before it is recorded, when the follow-up revise fails or a submitter's revise drops the staff keys. In that case the retried create gets a 409 on the slug. The BFF then looks the slug up with `getProjectIdBySlug` and reads the project. It adopts the project only if it sits under the same parent with the same name.
 
 4. It accepts at the latest revision.
 
@@ -66,7 +66,7 @@ The create comes before the accept. A refused create therefore leaves the applic
 
 | project-service status | BFF error             | Code                       |
 | ---------------------- | --------------------- | -------------------------- |
-| 409                    | `ConflictError`       | `PROJECT_SLUG_CONFLICT`    |
+| 409 (not adoptable)    | `ConflictError`       | `PROJECT_SLUG_CONFLICT`    |
 | 403                    | `AuthorizationError`  | `PROJECT_CREATE_FORBIDDEN` |
 | 400                    | `InvalidRequestError` | `INVALID_PROJECT`          |
 
