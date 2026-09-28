@@ -168,11 +168,12 @@ test.describe('Docs portal — markdown rendering (US5)', () => {
     const target = page.locator('h2#fund-types');
     await expect(target).toBeInViewport({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Scroll away; the heading ends up well below the fold, where it would
-    // stay forever if the re-click were swallowed by the router.
+    // Scroll away; the heading must end up fully below the fold — anything
+    // still inside the viewport already satisfies the landing predicate
+    // below, so the test would pass even if the re-click never scrolled.
     await page.evaluate(() => window.scrollTo(0, 0));
     const topBefore = await target.evaluate((el) => el.getBoundingClientRect().top);
-    expect(topBefore).toBeGreaterThan(500);
+    expect(topBefore).toBeGreaterThan(page.viewportSize()?.height ?? 720);
 
     await body.locator('a[href="/docs/crowdfunding/manage-initiatives#fund-types"]').first().click();
     await expect(page).toHaveURL(/\/docs\/crowdfunding\/manage-initiatives#fund-types$/);

@@ -72,15 +72,23 @@ function dropUnsafeHeadingId(tagName, attribs) {
 }
 
 /**
- * Sanitizes a rendered HTML body and post-processes external links to add
- * `rel="noopener noreferrer"` and `target="_blank"`. Internal `/docs/...`
- * links are left as same-tab navigation so the runtime click-interceptor
- * (research R16) can convert them to `Router.navigateByUrl()` calls.
+ * Sanitizes a rendered HTML body and post-processes links: bare `#fragment`
+ * hrefs (raw-HTML anchors pass marked untouched) are resolved against the
+ * article's own URL, and external links get `rel="noopener noreferrer"` and
+ * `target="_blank"`. Internal `/docs/...` links are left as same-tab
+ * navigation so the runtime click-interceptor (research R16) can convert
+ * them to `Router.navigateByUrl()` calls.
  *
  * @param {string} html
+ * @param {string} articleUrl  The article's own absolute `/docs/...` URL
+ *   (`docsArticleUrl(slug)` in marked-config.mjs) — the base that bare
+ *   `#fragment` hrefs resolve against. A surviving `#fragment` would
+ *   otherwise resolve against `<base href="/">` at runtime and leave the
+ *   docs page on activations the SPA click interceptor never sees
+ *   (`auxclick` middle-clicks, context-menu opens, copied links).
  * @returns {string}
  */
-export function sanitizeDocsHtml(html) {
+export function sanitizeDocsHtml(html, articleUrl) {
   return sanitizeHtml(html, {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: {
@@ -111,15 +119,22 @@ export function sanitizeDocsHtml(html) {
       h6: dropUnsafeHeadingId,
       a: (tagName, attribs) => {
         const href = attribs.href ?? '';
+        // Bare `#fragment` — a same-page anchor from raw-HTML markdown, which
+        // marked passes through untouched. Resolve it against the article's
+        // own URL so every activation path (including middle-click and
+        // context-menu opens, which bypass the runtime click interceptor)
+        // lands on the article section instead of `<base href="/">`.
+        const resolvedHref = href.startsWith('#') ? `${articleUrl}${href}` : href;
         // Protocol-relative URLs (//host or /\host) are external — don't
         // match them as internal just because they start with '/'.
-        const isProtocolRelative = href.startsWith('//') || href.startsWith('/\\');
-        const isInternal = (href.startsWith('/') && !isProtocolRelative) || href.startsWith('#');
+        const isProtocolRelative = resolvedHref.startsWith('//') || resolvedHref.startsWith('/\\');
+        const isInternal = resolvedHref.startsWith('/') && !isProtocolRelative;
         if (isInternal) {
           // Strip target/rel that may have leaked through from authored HTML;
-          // keep them for external only.
+          // keep them for external only. The internal branch implies a
+          // non-empty href, so overriding it never synthesizes an attribute.
           const { target: _t, rel: _r, ...rest } = attribs;
-          return { tagName, attribs: rest };
+          return { tagName, attribs: { ...rest, href: resolvedHref } };
         }
         return {
           tagName,

@@ -47,17 +47,20 @@ import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.componen
  * search results via `DocsSearchComponent.activate()`) already navigate
  * via Angular's router, so intercepting them at the host level would
  * cause a redundant double `navigateByUrl` to the same URL. In-page
- * anchors ship as the article's absolute `/docs/...#section` URL (rewritten
- * at build time in `marked-config.mjs`; surviving bare `#frag` hrefs from
- * raw-HTML markdown are resolved against the article in the handler) and
- * route through the router as same-URL fragment navigations so the docs
- * scroll offset applies. Re-clicks on the already-active fragment scroll
- * directly via `ViewportScroller.scrollToAnchor`, because the router drops
- * same-URL navigations (`onSameUrlNavigation` defaults to `'ignore'`).
+ * anchors ship as the article's absolute `/docs/...#section` URL — authored
+ * markdown links are rewritten at build time in `marked-config.mjs` and
+ * raw-HTML anchors in `sanitize.mjs`, so no bare `#frag` ever reaches the
+ * DOM — and route through the router as same-URL fragment navigations so
+ * the docs scroll offset applies. Re-clicks on the already-active fragment
+ * scroll directly via `ViewportScroller.scrollToAnchor`, because the router
+ * drops same-URL navigations (`onSameUrlNavigation` defaults to `'ignore'`).
  * External links fall through to the browser default. Modifier-key clicks
  * (cmd/ctrl/shift/alt) also fall through — the article-absolute hrefs make
  * native "open in new tab" land on the right section instead of resolving
- * `#frag` against `<base href="/">` (the app root).
+ * `#frag` against `<base href="/">` (the app root). Middle-clicks arrive as
+ * `auxclick` (which this `click` listener never sees) and context-menu
+ * opens bypass listeners entirely; both are covered by the build-time
+ * rewrite, not by this handler.
  */
 @Component({
   selector: 'lfx-docs-article',
@@ -156,22 +159,14 @@ export class DocsArticleComponent {
     const href = anchor.getAttribute('href');
     if (!href) return;
 
-    const current = this.article();
-    // Same-page anchors: authored `#fragment` links reach the DOM already
-    // rewritten to the article's absolute `/docs/...#fragment` URL (build-time
-    // rewrite in marked-config.mjs). A surviving bare `#frag` (raw HTML passes
-    // marked untouched) is resolved against the article here — natively it
-    // would resolve against `<base href="/">` and leave the docs page.
-    const resolvedHref = href.startsWith('#') && current ? `${current.url}${href}` : href;
-
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-      // Modifier/middle clicks bypass SPA navigation and use the DOM href
-      // natively (open-in-new-tab). A bare `#frag` would resolve against
-      // `<base href="/">` and land on the app root — hand the browser the
-      // article-absolute URL so the native path lands on the article too.
-      if (resolvedHref !== href) {
-        anchor.setAttribute('href', resolvedHref);
-      }
+      // Modifier/non-primary clicks bypass SPA navigation and use the DOM
+      // href natively (open-in-new-tab). Nothing to resolve here: same-page
+      // fragments reach the DOM already rewritten to the article-absolute
+      // `/docs/...#fragment` URL (build time — marked-config.mjs for authored
+      // markdown, sanitize.mjs for raw-HTML anchors), so the native path
+      // lands on the article section instead of resolving a bare `#frag`
+      // against `<base href="/">`.
       return;
     }
 
@@ -180,7 +175,7 @@ export class DocsArticleComponent {
     // checks in lens-switcher / docs-sidebar-nav all agree on what counts
     // as a docs URL. A bare `[Docs home](/docs)` from authored markdown is
     // intercepted; non-docs prefixes like `/docs-admin` or `/docsx` are not.
-    if (!isDocsPath(resolvedHref)) {
+    if (!isDocsPath(href)) {
       return;
     }
     if (anchor.target && anchor.target !== '_self') {
@@ -189,9 +184,10 @@ export class DocsArticleComponent {
 
     event.preventDefault();
 
-    const hashIndex = resolvedHref.indexOf('#');
-    if (hashIndex !== -1 && current && resolvedHref.slice(0, hashIndex) === current.url) {
-      const targetFragment = resolvedHref.slice(hashIndex + 1);
+    const current = this.article();
+    const hashIndex = href.indexOf('#');
+    if (hashIndex !== -1 && current && href.slice(0, hashIndex) === current.url) {
+      const targetFragment = href.slice(hashIndex + 1);
       // Re-clicking the link for the fragment already in the URL is a
       // same-URL navigation, which the router drops (onSameUrlNavigation
       // defaults to 'ignore') — scroll directly instead. scrollToAnchor
@@ -203,7 +199,7 @@ export class DocsArticleComponent {
       }
     }
 
-    void this.router.navigateByUrl(resolvedHref);
+    void this.router.navigateByUrl(href);
   }
 
   /**

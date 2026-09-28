@@ -88,7 +88,7 @@ export function buildDocsManifest({ records }) {
     };
     const marked = createMarked(ctx);
     const rawHtml = marked.parse(record.body);
-    const bodyHtml = sanitizeDocsHtml(typeof rawHtml === 'string' ? rawHtml : '');
+    const bodyHtml = sanitizeDocsHtml(typeof rawHtml === 'string' ? rawHtml : '', docsArticleUrl(record.slug));
     const bodyText = htmlToPlainText(bodyHtml);
 
     // FR-028 front-matter fallbacks.
