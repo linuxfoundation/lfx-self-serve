@@ -46,7 +46,7 @@ The secret is returned exactly once, and only by create; list responses carry `l
 
 List, create and revoke all run the same check, `InsightsTokensService.assertKeyContact`, before calling the PAT service, and fail with the same `503 eligibility_unavailable` or `403 not_key_contact` described above. Only the eligibility endpoint is ungated, because the UI needs it to explain why the group is locked.
 
-A user who loses Key Contact status therefore loses access to their existing tokens too: they can no longer list or revoke them, and those tokens stay valid until revoked some other way (the PAT service, or an admin). This is a product decision.
+A user who loses Key Contact status therefore loses access to their existing tokens too: they can no longer list or revoke them. This is a product decision. The tokens stay valid at the PAT service until revoked some other way (the PAT service, or an admin), but they stop working against the Insights API. The Insights Worker re-checks org and tier on every exchange and fails closed with a `403` once its tier cache expires (about 10 minutes), per [Insights ADR-0010](https://github.com/linuxfoundation/insights/pull/1879). That ADR also expects Self-Serve to revoke a user's PATs when their membership lapses; nothing does that automatically yet.
 
 The `insights-public-api` LaunchDarkly flag is enforced in the UI only. The server has only env-var flags (`server-feature-flag.helper.ts`), which cannot target individual users, so the server gate is Key Contact status alone.
 
