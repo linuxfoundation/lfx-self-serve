@@ -494,7 +494,7 @@ export class HealthMetricsEventsService {
     });
   }
 
-  /** Whether the foundation has ever held an event, or has one still to come in any year. */
+  /** Whether the foundation has ever held an event, has one still to come in any year, or has event revenue recorded. */
   private async hasAnyEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
     // The past view keeps every closed event whatever its age; the rollup only covers four periods.
     const pastSql = `
@@ -514,7 +514,28 @@ export class HealthMetricsEventsService {
         AND event_start_date >= CURRENT_DATE()
       LIMIT 1
     `;
-    return this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug]);
+    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug])) return true;
+
+    // Revenue can outlive the events views' rows; hiding the tab would hide the revenue section with it.
+    const revenueSql = `
+      SELECT 1 AS has_event
+      FROM ${REVENUE_VIEW}
+      WHERE foundation_slug = ?
+      LIMIT 1
+    `;
+    if (await this.hasRow(req, REVENUE_VIEW, revenueSql, [query.foundationSlug])) return true;
+
+    // The overview zero-fills every foundation, so only a non-zero total is revenue recorded.
+    const recorded = HEALTH_METRICS_L2_RANGES.map((range) => `revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} <> 0`).join(' OR ');
+    const overviewSql = `
+      SELECT 1 AS has_event
+      FROM ${OVERVIEW_REVENUE_VIEW}
+      WHERE foundation_slug = ?
+        AND LOWER(revenue_domain) = 'events'
+        AND (${recorded})
+      LIMIT 1
+    `;
+    return this.hasRow(req, OVERVIEW_REVENUE_VIEW, overviewSql, [query.foundationSlug]);
   }
 
   /** One guarded existence read, so a missing object is logged under the one view it names. */

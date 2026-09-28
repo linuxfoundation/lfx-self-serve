@@ -386,12 +386,14 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
       .mockResolvedValueOnce({ rows: [glanceRow(none)] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [glanceRow({ ...none, EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null })] });
     const service = new HealthMetricsEventsService();
 
     expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(false);
     expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(true);
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(6);
   });
 
   it.each([
@@ -436,6 +438,42 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     expect(binds).toEqual(['acme']);
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST');
     expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+  });
+
+  it('keeps the tab for a foundation with revenue rows but no event in the events views', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[3];
+    expect(glance.hasEvents).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(4);
+    expect(binds).toEqual(['acme']);
+    expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_REVENUE\s+WHERE foundation_slug = \?\s+LIMIT 1/);
+  });
+
+  it('keeps the tab when only the overview records event revenue, so the fallback headline shows', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[4];
+    expect(glance.hasEvents).toBe(true);
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE');
+    expect(sql).toContain("LOWER(revenue_domain) = 'events'");
+    // The overview zero-fills every foundation, so a zero row must not keep the tab.
+    expect(sql).toContain('revenue_usd_ytd <> 0');
+    expect(sql).toContain('revenue_usd_3rd_last_completed_year <> 0');
   });
 
   it('logs a missing view under the one view the failed read names', async () => {
