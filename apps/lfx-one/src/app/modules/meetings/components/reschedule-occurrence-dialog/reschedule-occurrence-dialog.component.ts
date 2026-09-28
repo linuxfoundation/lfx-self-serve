@@ -37,7 +37,8 @@ export class RescheduleOccurrenceDialogComponent {
   public readonly timezoneLabel: string = getLongTimezoneName(this.occurrence.start_time, this.timezone) || this.timezone;
   public readonly minDuration = MIN_CUSTOM_DURATION;
   public readonly maxDuration = MAX_CUSTOM_DURATION;
-  public readonly minDate: Date = new Date();
+  // The picker shows the series' local calendar, so "today" has to be today in that zone, not the viewer's.
+  public readonly minDate: Date = new Date(toZonedTime(new Date(), this.timezone).setHours(0, 0, 0, 0));
   public readonly form: FormGroup = this.initializeForm();
 
   public readonly isSaving = signal(false);
@@ -110,7 +111,7 @@ export class RescheduleOccurrenceDialogComponent {
   private initializeForm(): FormGroup {
     const occurrenceStart = new Date(this.occurrence.start_time);
 
-    return new FormGroup(
+    const form = new FormGroup(
       {
         startDate: new FormControl<Date | null>(toZonedTime(occurrenceStart, this.timezone), [Validators.required]),
         startTime: new FormControl(formatTo12HourInTimezone(occurrenceStart, this.timezone), [Validators.required, timeFormatValidator()]),
@@ -125,6 +126,15 @@ export class RescheduleOccurrenceDialogComponent {
       },
       { validators: futureDateTimeValidator() }
     );
+
+    // An occurrence created elsewhere can carry a duration outside what this form accepts; show why
+    // Save is disabled up front instead of waiting for the organizer to touch a field they didn't change.
+    const duration = form.get('duration');
+    if (duration?.invalid) {
+      duration.markAsTouched();
+    }
+
+    return form;
   }
 
   private initFormRevision(): Signal<number> {

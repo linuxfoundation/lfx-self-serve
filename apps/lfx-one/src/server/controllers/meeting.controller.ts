@@ -378,7 +378,8 @@ export class MeetingController {
    * PUT /meetings/:uid/occurrences/:occurrenceId
    *
    * Reschedules one occurrence of a recurring meeting. Only `start_time` and `duration` are forwarded:
-   * upstream treats any recurrence on this endpoint as a change to all following occurrences.
+   * upstream rejects a recurrence here unless `all_following_occurrences` is set, which would widen
+   * the change from this occurrence to every later one.
    */
   public async updateOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, occurrenceId } = req.params;

@@ -24,12 +24,13 @@ const OCCURRENCE = { occurrence_id: '1893492000', start_time: '2030-01-01T10:00:
 describe('RescheduleOccurrenceDialogComponent', () => {
   let updateOccurrence: ReturnType<typeof vi.fn>;
   let close: ReturnType<typeof vi.fn>;
+  let occurrence: MeetingOccurrence;
 
   async function mount(): Promise<RescheduleOccurrenceDialogComponent> {
     TestBed.configureTestingModule({
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { meeting: MEETING, occurrence: OCCURRENCE } } },
+        { provide: DynamicDialogConfig, useValue: { data: { meeting: MEETING, occurrence } } },
         { provide: MeetingService, useValue: { updateOccurrence } },
       ],
     });
@@ -44,6 +45,7 @@ describe('RescheduleOccurrenceDialogComponent', () => {
   beforeEach(() => {
     updateOccurrence = vi.fn().mockReturnValue(of(undefined));
     close = vi.fn();
+    occurrence = OCCURRENCE;
   });
 
   it('prefills the current slot in the series timezone and refuses to save it unchanged', async () => {
@@ -117,6 +119,14 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     component.onConfirm();
 
     expect(component.errorMessage()).toBe('You do not have permission to reschedule this occurrence.');
+  });
+
+  it('shows the duration error up front when the existing occurrence is longer than the form allows', async () => {
+    occurrence = { ...OCCURRENCE, duration: 600 };
+    const component = await mount();
+
+    expect(component.showDurationError()).toBe(true);
+    expect(component.canSave()).toBe(false);
   });
 
   it('closes unconfirmed on cancel without writing', async () => {

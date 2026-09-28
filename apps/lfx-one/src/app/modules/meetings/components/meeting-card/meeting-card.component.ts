@@ -378,7 +378,7 @@ export class MeetingCardComponent implements OnInit {
             return;
           }
 
-          const occurrence = meeting.recurrence ? (this.occurrence() ?? getCurrentOrNextOccurrence(meeting)) : null;
+          const occurrence = fresh.recurrence ? this.resolveEditOccurrence(fresh) : null;
           if (occurrence) {
             this.showEditScopeModal(meeting, occurrence);
             return;
@@ -656,6 +656,20 @@ export class MeetingCardComponent implements OnInit {
       meetingUid: meeting.id,
       projectUid: meeting.project_uid,
     });
+  }
+
+  /**
+   * The occurrence a recurring-meeting edit targets, read off the just-fetched meeting.
+   * @description `occurrence()` is derived from the list payload the card rendered with, which another
+   * organizer may have moved or cancelled since. An occurrence the parent passed in explicitly still
+   * decides which slot is meant, but its current values come from `fresh`.
+   */
+  private resolveEditOccurrence(fresh: Meeting): MeetingOccurrence | null {
+    const pinned = this.occurrenceInput();
+    if (pinned) {
+      return fresh.occurrences?.find((candidate) => candidate.occurrence_id === pinned.occurrence_id) ?? pinned;
+    }
+    return getCurrentOrNextOccurrence(fresh);
   }
 
   private showEditScopeModal(meeting: Meeting, occurrence: MeetingOccurrence): void {

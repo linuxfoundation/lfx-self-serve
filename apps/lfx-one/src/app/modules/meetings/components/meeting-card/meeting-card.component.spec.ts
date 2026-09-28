@@ -257,6 +257,16 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(refreshed).toHaveBeenCalledTimes(1);
     });
 
+    it('picks the occurrence from the fresh read, not the list payload the card rendered with', async () => {
+      const moved = { ...OCCURRENCE, occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z' };
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [moved] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893542400' }) }));
+    });
+
     it('does nothing when the scope dialog is dismissed', async () => {
       const component = await mountRecurring();
 

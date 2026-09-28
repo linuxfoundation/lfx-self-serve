@@ -994,9 +994,6 @@ export class MeetingJoinComponent implements OnInit {
     this.password.set(fromQuery || this.statePassword());
   }
 
-  // The password the composer's post-create toast hands over in router navigation state.
-  // `history` is browser-only, so the read is guarded; on the server the query param is the only
-  // source a page has.
   /**
    * Re-reads the series after an occurrence was moved or cancelled and points the page at the right one.
    * @description The `occurrence` query param is the occurrence's start instant, and a reschedule gives
@@ -1015,6 +1012,9 @@ export class MeetingJoinComponent implements OnInit {
     this.refreshTrigger$.next();
   }
 
+  // The password the composer's post-create toast hands over in router navigation state.
+  // `history` is browser-only, so the read is guarded; on the server the query param is the only
+  // source a page has.
   private statePassword(): string | null {
     if (!isPlatformBrowser(this.platformId)) {
       return null;

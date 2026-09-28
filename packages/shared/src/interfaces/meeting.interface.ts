@@ -1379,8 +1379,8 @@ export interface MeetingCancelOccurrenceResult {
 
 /**
  * Request body for rescheduling a single occurrence of a recurring meeting
- * @description Carries no `recurrence`: upstream rejects a recurrence on a single-occurrence update,
- * and sending one is what turns the change into "this and all following occurrences".
+ * @description Carries no `recurrence`: upstream rejects one unless `all_following_occurrences` is set,
+ * which would widen the change from this occurrence to every later one.
  */
 export interface UpdateMeetingOccurrenceRequest {
   /** New start time of the occurrence in RFC3339 format */

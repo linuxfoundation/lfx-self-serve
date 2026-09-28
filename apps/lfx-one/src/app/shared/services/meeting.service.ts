@@ -350,7 +350,7 @@ export class MeetingService {
   }
 
   public updateOccurrence(meetingId: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Observable<void> {
-    return this.http.put<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`, payload).pipe(
+    return this.http.put<void>(`/api/meetings/${encodeURIComponent(meetingId)}/occurrences/${encodeURIComponent(occurrenceId)}`, payload).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(meetingId))
     );
