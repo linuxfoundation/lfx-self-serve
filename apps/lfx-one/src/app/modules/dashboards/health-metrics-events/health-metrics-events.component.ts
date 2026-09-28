@@ -24,6 +24,7 @@ import { EventsPastEventsComponent } from './components/events-past-events/event
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 import { EventsRevenueComponent } from './components/events-revenue/events-revenue.component';
+import { EventsSpeakersComponent } from './components/events-speakers/events-speakers.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
@@ -41,6 +42,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
     EventsRegistrationForecastComponent,
     EventsRegistrationsGrowthComponent,
     EventsRevenueComponent,
+    EventsSpeakersComponent,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
   ],
@@ -58,13 +60,14 @@ export class HealthMetricsEventsComponent {
 
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');
+  protected readonly speakersNote = signal<string>('');
   // `null` until Past events reports, so the badge never shows a count the section has not read.
   protected readonly pastCount = signal<number | null>(null);
   // Owned here rather than by the section, since the same read decides whether the tab has any events.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
-    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }, { past: this.pastCount() })
+    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote(), spk: this.speakersNote() }, { past: this.pastCount() })
   );
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();

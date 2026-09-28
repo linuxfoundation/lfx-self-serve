@@ -3602,6 +3602,27 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/events-speakers` — each period's proposal pipeline, the top organizations and the latest proposals. */
+  public async getEventsSpeakers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_speakers');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_speakers');
+
+      const response = await this.healthMetricsEventsService.getSpeakers(req, { foundationSlug });
+
+      logger.success(req, 'get_events_speakers', startTime, {
+        foundation_slug: foundationSlug,
+        organization_count: response.organizations.length,
+        proposal_count: response.proposals.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');

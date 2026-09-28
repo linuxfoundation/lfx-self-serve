@@ -30,6 +30,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
 
@@ -797,5 +798,135 @@ describe('HealthMetricsEventsService.getRevenue', () => {
 
     expect(events).toHaveLength(HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP);
     expect(warning).not.toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.anything());
+  });
+});
+
+describe('HealthMetricsEventsService.getSpeakers', () => {
+  function drilldownRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ACCOUNT_ID: null,
+      ACCOUNT_NAME: null,
+      IS_ALL_ORGANIZATIONS: true,
+      IS_UNAFFILIATED_ORGANIZATION: false,
+      PROPOSALS_SUBMITTED_COUNT_YTD: 6283,
+      PROPOSALS_ACCEPTED_COUNT_YTD: 348,
+      PROPOSALS_IN_REVIEW_COUNT_YTD: 3447,
+      PROPOSALS_DECLINED_COUNT_YTD: 2488,
+      SPEAKERS_COUNT_YTD: 3559,
+      ACCEPTANCE_RATE_YTD: '0.055388',
+      SORT_RANK_YTD: null,
+      SPEAKERS_COUNT_CHANGE_PCT_YTD: '-0.143029',
+      PROPOSALS_SUBMITTED_COUNT_3RD_LAST_COMPLETED_YEAR: 8017,
+      ...overrides,
+    };
+  }
+
+  function proposalRow(overrides: Record<string, unknown> = {}) {
+    return {
+      PROPOSAL_KEY: 'p-1',
+      PERIOD: 'YTD',
+      ACCOUNT_NAME: 'Acme Motors',
+      SPEAKER_NAME: 'Speaker One',
+      EVENT_NAME: 'Acme Summit',
+      SESSION_TITLE: 'A talk',
+      SUBMISSION_DATE: new Date('2026-03-10T00:00:00.000Z'),
+      SUBMISSION_STATUS_ORIGINAL: 'Waitlisted',
+      PROPOSAL_STATUS_GROUP: 'In review',
+      IS_UNAFFILIATED_PROPOSAL: false,
+      ...overrides,
+    };
+  }
+
+  function mockReads(drilldown: Record<string, unknown>[], proposals: Record<string, unknown>[]) {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('ORG_DRILLDOWN') ? drilldown : proposals }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReads(
+      [
+        drilldownRow(),
+        drilldownRow({ IS_ALL_ORGANIZATIONS: false, IS_UNAFFILIATED_ORGANIZATION: true, PROPOSALS_SUBMITTED_COUNT_YTD: 1351 }),
+        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-a', ACCOUNT_NAME: 'Acme Motors', PROPOSALS_SUBMITTED_COUNT_YTD: 324, SORT_RANK_YTD: 1 }),
+        drilldownRow({ IS_ALL_ORGANIZATIONS: false, ACCOUNT_ID: 'org-b', ACCOUNT_NAME: 'Beta Coastal', SORT_RANK_YTD: 9, SORT_RANK_LAST_COMPLETED_YEAR: 4 }),
+      ],
+      [proposalRow()]
+    );
+  });
+
+  it('binds only the foundation in both reads and keeps the latest few per period and tab', async () => {
+    await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    const [drilldownSql, drilldownBinds] = execute.mock.calls.find(([sql]) => sql.includes('ORG_DRILLDOWN')) ?? [];
+    const [listSql, listBinds] = execute.mock.calls.find(([sql]) => sql.includes('PROPOSALS_LIST')) ?? [];
+    expect(drilldownBinds).toEqual(['acme']);
+    expect(listBinds).toEqual(['acme']);
+    expect(drilldownSql).toContain('sort_rank_3rd_last_completed_year <= 5');
+    expect(drilldownSql).toContain('speakers_count_change_pct_last_completed_year');
+    expect(drilldownSql).not.toContain('change_pct_prev_completed_year');
+    expect(listSql).toContain("WHEN is_ytd THEN 'YTD'");
+    expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
+    expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);
+    expect(listSql).not.toContain('job_title');
+  });
+
+  it('maps the scope row per period, with the speakers change only where compared', async () => {
+    const { periods } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+
+    expect(periods).toHaveLength(HEALTH_METRICS_L2_RANGES.length);
+    expect(periods.find((period) => period.range === 'YTD')).toEqual({
+      range: 'YTD',
+      submitted: 6283,
+      accepted: 348,
+      inReview: 3447,
+      declined: 2488,
+      speakers: 3559,
+      acceptanceRate: 0.055388,
+      changes: { speakers: -0.143029 },
+    });
+    expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ submitted: 8017, changes: null });
+  });
+
+  it('keeps organizations to the periods they rank in and the unaffiliated row apart', async () => {
+    const { organizations, unaffiliated } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+
+    expect(organizations).toEqual([
+      { accountId: 'org-a', accountName: 'Acme Motors', periods: [{ range: 'YTD', rank: 1, submitted: 324 }] },
+      { accountId: 'org-b', accountName: 'Beta Coastal', periods: [{ range: 'COMPLETED_YEAR', rank: 4, submitted: null }] },
+    ]);
+    expect(unaffiliated.find((entry) => entry.range === 'YTD')).toEqual({ range: 'YTD', submitted: 1351 });
+  });
+
+  it('maps a proposal with its status group and drops one with no key or period', async () => {
+    mockReads([drilldownRow()], [proposalRow(), proposalRow({ PROPOSAL_KEY: null }), proposalRow({ PROPOSAL_KEY: 'p-2', PERIOD: null })]);
+
+    const { proposals } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+
+    expect(proposals).toEqual([
+      {
+        proposalKey: 'p-1',
+        range: 'YTD',
+        speakerName: 'Speaker One',
+        organizationName: 'Acme Motors',
+        unaffiliated: false,
+        eventName: 'Acme Summit',
+        sessionTitle: 'A talk',
+        submissionDate: '2026-03-10',
+        status: 'Waitlisted',
+        statusGroup: 'in-review',
+      },
+    ]);
+  });
+
+  it('returns no periods when the foundation has no scope row', async () => {
+    mockReads([], []);
+
+    await expect(new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' })).resolves.toEqual({
+      periods: [],
+      organizations: [],
+      unaffiliated: [],
+      proposals: [],
+    });
   });
 });

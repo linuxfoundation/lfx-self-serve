@@ -102,6 +102,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no event revenue.
       call: () => service.getEventsRevenue({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getEventsSpeakers',
+      url: '/api/analytics/events-speakers',
+      // A swallowed failure would read as a foundation with no proposals.
+      call: () => service.getEventsSpeakers({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

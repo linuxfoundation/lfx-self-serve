@@ -18,6 +18,7 @@ import { EventsPastEventsComponent } from './components/events-past-events/event
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 import { EventsRevenueComponent } from './components/events-revenue/events-revenue.component';
+import { EventsSpeakersComponent } from './components/events-speakers/events-speakers.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
@@ -66,6 +67,14 @@ class RevenueStubComponent {
   public readonly reading = output<void>();
 }
 
+/** Stands in for Speakers & proposals, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-events-speakers', template: '<div data-testid="events-spk-stub"></div>' })
+class SpeakersStubComponent {
+  public readonly noteChange = output<string>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
 // Covers only what Events wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
 // and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsEventsComponent', () => {
@@ -99,9 +108,19 @@ describe('HealthMetricsEventsComponent', () => {
             EventsPastEventsComponent,
             EventsRegistrationsGrowthComponent,
             EventsRevenueComponent,
+            EventsSpeakersComponent,
           ],
         },
-        add: { imports: [AtAGlanceStubComponent, ForecastStubComponent, PastStubComponent, RegistrationsGrowthStubComponent, RevenueStubComponent] },
+        add: {
+          imports: [
+            AtAGlanceStubComponent,
+            ForecastStubComponent,
+            PastStubComponent,
+            RegistrationsGrowthStubComponent,
+            RevenueStubComponent,
+            SpeakersStubComponent,
+          ],
+        },
       })
       .compileComponents();
 
@@ -111,7 +130,7 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
   }
 
-  async function sectionsReport(note: string, pastCount: number | null = null): Promise<void> {
+  async function sectionsReport(note: string, pastCount: number | null = null, speakersNote = ''): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
     atAGlanceStub().settled.emit();
@@ -121,6 +140,9 @@ describe('HealthMetricsEventsComponent', () => {
     pastStub.settled.emit();
     (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit();
     (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit();
+    const speakersStub = fixture.debugElement.query(By.directive(SpeakersStubComponent)).componentInstance as SpeakersStubComponent;
+    speakersStub.noteChange.emit(speakersNote);
+    speakersStub.settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -152,7 +174,7 @@ describe('HealthMetricsEventsComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the nine sections in order, with the kpi, forecast, past, reg and rev bodies and placeholders for the rest', async () => {
+  it('renders the nine sections in order, with the kpi, forecast, past, reg, rev and spk bodies and placeholders for the rest', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-section-"]')] as HTMLElement[];
 
@@ -170,6 +192,8 @@ describe('HealthMetricsEventsComponent', () => {
         expect(element.querySelector('[data-testid="events-reg-stub"]')).not.toBeNull();
       } else if (key === 'rev') {
         expect(element.querySelector('[data-testid="events-rev-stub"]')).not.toBeNull();
+      } else if (key === 'spk') {
+        expect(element.querySelector('[data-testid="events-spk-stub"]')).not.toBeNull();
       } else {
         expect(element.textContent).toContain('Awaiting data');
       }
@@ -192,6 +216,13 @@ describe('HealthMetricsEventsComponent', () => {
     await sectionsReport('2 will miss goal');
 
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).toContain('2 will miss goal');
+  });
+
+  it('shows the note Speakers & proposals reports on its sub-nav item', async () => {
+    await setup();
+    await sectionsReport('', null, 'down 30% YoY');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk"]').textContent).toContain('down 30% YoY');
   });
 
   it('badges Past events with the count it reports', async () => {

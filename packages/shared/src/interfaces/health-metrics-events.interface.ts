@@ -5,6 +5,7 @@ import type {
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
 } from '../constants/health-metrics-events.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
@@ -388,4 +389,129 @@ export interface HealthMetricsEventsRevenueView {
   hasUnconverted: boolean;
   /** Whether the period's totals leave out unconverted revenue, so the headline and registration stat are marked. */
   headlineUnconverted: boolean;
+}
+
+/** Foundation scope for speakers and proposals; every period ships in one read, so the range stays client-side. */
+export interface HealthMetricsEventsSpeakersQuery {
+  foundationSlug: string;
+}
+
+/** A proposal's review outcome, grouped as the view groups the original CFP statuses. */
+export type HealthMetricsEventsSpeakersStatusGroup = keyof typeof HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS;
+
+/** The tabs over the section; each but `all` keeps the proposals in one status group. */
+export type HealthMetricsEventsSpeakersTab = 'all' | 'accepted' | 'in-review';
+
+/** A tab pill whose id is the status it keeps. */
+export interface HealthMetricsEventsSpeakersTabOption extends FilterPillOption {
+  id: HealthMetricsEventsSpeakersTab;
+}
+
+/** Year-over-year changes as fractions. Every `null` is not available, never zero. */
+export interface HealthMetricsEventsSpeakersChanges {
+  speakers: number | null;
+}
+
+/** One period's pipeline for the whole foundation. Every `null` is not available, never zero. */
+export interface HealthMetricsEventsSpeakersPeriod {
+  range: HealthMetricsL2Range;
+  submitted: number | null;
+  accepted: number | null;
+  inReview: number | null;
+  declined: number | null;
+  speakers: number | null;
+  /** 0–1, accepted over submitted. */
+  acceptanceRate: number | null;
+  /** `null` for a period the view does not compare with the year before. */
+  changes: HealthMetricsEventsSpeakersChanges | null;
+}
+
+/** Proposals one proposer submitted in a period. */
+export interface HealthMetricsEventsSpeakersPeriodCount {
+  range: HealthMetricsL2Range;
+  submitted: number | null;
+}
+
+/** An organization's place in a period's ranking by proposals submitted. */
+export interface HealthMetricsEventsSpeakersOrganizationPeriod extends HealthMetricsEventsSpeakersPeriodCount {
+  rank: number;
+}
+
+/** An organization ranked in the top few for at least one period. */
+export interface HealthMetricsEventsSpeakersOrganization {
+  accountId: string;
+  accountName: string;
+  /** Only the periods it ranks in the top few for. */
+  periods: HealthMetricsEventsSpeakersOrganizationPeriod[];
+}
+
+/** One recent proposal. The speaker's name is personal data, so it is rendered and never logged. */
+export interface HealthMetricsEventsSpeakersProposal {
+  proposalKey: string;
+  range: HealthMetricsL2Range;
+  speakerName: string;
+  /** `null` when the proposal carries no organization. */
+  organizationName: string | null;
+  /** The speaker proposed as an individual, not for an organization. */
+  unaffiliated: boolean;
+  eventName: string;
+  sessionTitle: string;
+  /** `YYYY-MM-DD`. */
+  submissionDate: string | null;
+  /** The original CFP status, e.g. `Waitlisted`. */
+  status: string;
+  statusGroup: HealthMetricsEventsSpeakersStatusGroup | null;
+}
+
+/** `GET /api/analytics/events-speakers` — each period's pipeline, the top organizations and the latest proposals. */
+export interface HealthMetricsEventsSpeakers {
+  periods: HealthMetricsEventsSpeakersPeriod[];
+  organizations: HealthMetricsEventsSpeakersOrganization[];
+  /** Proposals from speakers with no organization, kept out of the organization ranking. */
+  unaffiliated: HealthMetricsEventsSpeakersPeriodCount[];
+  /** The latest few per period and tab, most recent first. */
+  proposals: HealthMetricsEventsSpeakersProposal[];
+}
+
+/** One ranked bar, scaled against the longest in its list. */
+export interface HealthMetricsEventsSpeakersBarView {
+  key: string;
+  label: string;
+  valueLabel: string;
+  /** 0–100. */
+  widthPct: number;
+}
+
+/** One column of the proposals-per-year chart. */
+export interface HealthMetricsEventsSpeakersYearView {
+  year: number;
+  submitted: number | null;
+  /** The year is still open, so it will read short against the complete years. */
+  isPartialYear: boolean;
+}
+
+/** A recent-proposals row with its labels resolved. */
+export interface HealthMetricsEventsSpeakersProposalRowView {
+  proposal: HealthMetricsEventsSpeakersProposal;
+  organizationLabel: string;
+  dateLabel: string;
+  statusClass: string;
+}
+
+/** The section for one period and tab, with every label ready to render. */
+export interface HealthMetricsEventsSpeakersView {
+  /** `false` when the read carried no period at all, so the section says so rather than pointing at another period. */
+  foundationMeasured: boolean;
+  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
+  measured: boolean;
+  /** The tab's proposal count, e.g. `6,283 proposals`. */
+  countLabel: string;
+  headline: HealthMetricsEventsAtAGlanceStatView;
+  side: HealthMetricsEventsAtAGlanceStatView[];
+  statusBars: HealthMetricsEventsSpeakersBarView[];
+  years: HealthMetricsEventsSpeakersYearView[];
+  organizations: HealthMetricsEventsSpeakersBarView[];
+  /** Individual speakers' proposals, e.g. `1,351 proposals submitted`; `null` when there are none. */
+  individualLabel: string | null;
+  proposals: HealthMetricsEventsSpeakersProposalRowView[];
 }

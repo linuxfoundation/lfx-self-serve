@@ -103,6 +103,8 @@ import {
   HealthMetricsEventsRegistrationsGrowthQuery,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1279,6 +1281,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsRevenue>('/api/analytics/events-revenue', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-revenue failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Each period's proposal pipeline, the top organizations and the latest proposals, for the Events tab's speakers section. */
+  public getEventsSpeakers(query: HealthMetricsEventsSpeakersQuery): Observable<HealthMetricsEventsSpeakers> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a measured zero.
+    return this.http.get<HealthMetricsEventsSpeakers>('/api/analytics/events-speakers', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-speakers failed', { query, error });
         return throwError(() => error);
       })
     );

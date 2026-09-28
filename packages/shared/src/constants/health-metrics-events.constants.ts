@@ -10,6 +10,8 @@ import type {
   HealthMetricsEventsRegistrationsGrowthMetricOption,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsSectionKey,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersTabOption,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
@@ -103,7 +105,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past', 'reg', 'rev'] as const satisfies readonly HealthMetricsEventsSectionKey[];
+export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past', 'reg', 'rev', 'spk'] as const satisfies readonly HealthMetricsEventsSectionKey[];
 
 /** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
 export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE = "An organization's event record also appears in Members";
@@ -218,6 +220,35 @@ export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SCREEN_READER_TEXT = '(le
 
 /** Stands in for a goal set in a currency with no USD rate, so it never reads as no goal. */
 export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';
+
+/** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED: HealthMetricsEventsSpeakers = { periods: [], organizations: [], unaffiliated: [], proposals: [] };
+
+/** The periods the speakers view compares with the year before; the two oldest carry no change columns. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
+
+/** Organizations ranked per period; individual speakers sit on their own line, outside the ranking. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 5;
+
+/** Recent proposals listed per period and tab. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS = 10;
+
+/** Status groups as the view names them, with each group's badge. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS = {
+  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700' },
+  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700' },
+  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600' },
+} as const;
+
+/** Badge for a proposal whose status the view left ungrouped. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS = 'bg-gray-100 text-gray-600';
+
+/** The tabs over the section; the first is the default. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS: readonly HealthMetricsEventsSpeakersTabOption[] = [
+  { id: 'all', label: 'All proposals' },
+  { id: 'accepted', label: 'Accepted' },
+  { id: 'in-review', label: 'In review' },
+];
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';

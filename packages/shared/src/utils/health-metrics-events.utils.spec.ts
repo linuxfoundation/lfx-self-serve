@@ -12,6 +12,8 @@ import {
   buildHealthMetricsEventsPastView,
   buildHealthMetricsEventsRegistrationsGrowthView,
   buildHealthMetricsEventsRevenueView,
+  buildHealthMetricsEventsSpeakersNote,
+  buildHealthMetricsEventsSpeakersView,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsPastClosedLabel,
@@ -34,6 +36,9 @@ import type {
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueEvent,
   HealthMetricsEventsRevenuePeriod,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersPeriod,
+  HealthMetricsEventsSpeakersProposal,
 } from '../interfaces/health-metrics-events.interface';
 
 function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): HealthMetricsEventsForecastEvent {
@@ -646,5 +651,169 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
       hasPartialYear: false,
       pandemicNote: null,
     });
+  });
+});
+
+describe('buildHealthMetricsEventsSpeakersView', () => {
+  function speakersPeriod(overrides: Partial<HealthMetricsEventsSpeakersPeriod> = {}): HealthMetricsEventsSpeakersPeriod {
+    return {
+      range: 'YTD',
+      submitted: 6283,
+      accepted: 348,
+      inReview: 3447,
+      declined: 2488,
+      speakers: 3559,
+      acceptanceRate: 0.055388,
+      changes: { speakers: -0.143029 },
+      ...overrides,
+    };
+  }
+
+  function proposal(overrides: Partial<HealthMetricsEventsSpeakersProposal> = {}): HealthMetricsEventsSpeakersProposal {
+    return {
+      proposalKey: 'p-1',
+      range: 'YTD',
+      speakerName: 'Speaker One',
+      organizationName: 'Acme Motors',
+      unaffiliated: false,
+      eventName: 'Summit',
+      sessionTitle: 'A talk',
+      submissionDate: '2026-03-10',
+      status: 'Accepted',
+      statusGroup: 'accepted',
+      ...overrides,
+    };
+  }
+
+  function speakers(overrides: Partial<HealthMetricsEventsSpeakers> = {}): HealthMetricsEventsSpeakers {
+    return {
+      periods: [speakersPeriod(), speakersPeriod({ range: 'COMPLETED_YEAR_3', submitted: 4000, changes: null })],
+      organizations: [
+        { accountId: 'org-b', accountName: 'Vendor Corp', periods: [{ range: 'YTD', submitted: 200, rank: 2 }] },
+        { accountId: 'org-a', accountName: 'Acme Motors', periods: [{ range: 'YTD', submitted: 400, rank: 1 }] },
+        { accountId: 'org-c', accountName: 'Other Co', periods: [{ range: 'COMPLETED_YEAR', submitted: 90, rank: 1 }] },
+      ],
+      unaffiliated: [{ range: 'YTD', submitted: 1351 }],
+      proposals: [
+        proposal({ proposalKey: 'p-old', submissionDate: '2026-01-02', status: 'Waitlisted', statusGroup: 'in-review' }),
+        proposal(),
+        proposal({ proposalKey: 'p-ind', unaffiliated: true, organizationName: null, status: 'Rejected', statusGroup: 'declined' }),
+        proposal({ proposalKey: 'p-prev', range: 'COMPLETED_YEAR' }),
+      ],
+      ...overrides,
+    };
+  }
+
+  it('builds the headline and side stats with the speakers change', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(true);
+    expect(view.countLabel).toBe('6,283 proposals');
+    expect(view.headline).toMatchObject({ key: 'accepted', label: 'Accepted proposals', value: '348', delta: null });
+    expect(view.side.map((stat) => stat.value)).toEqual(['6,283', '6%', '3,559']);
+    expect(view.side[2]).toMatchObject({ delta: '−14%', deltaDirection: 'down' });
+  });
+
+  it('leaves the speakers stat without a delta for an uncompared period', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR_3', 'all');
+
+    expect(view.side[2]).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+
+  it('counts the chosen tab, singular for one', () => {
+    const data = speakers({ periods: [speakersPeriod({ inReview: 1 })] });
+
+    expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'accepted').countLabel).toBe('348 proposals');
+    expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'in-review').countLabel).toBe('1 proposal');
+  });
+
+  it('ranks the status bars by count, scaled against the largest', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.statusBars.map((bar) => bar.key)).toEqual(['in-review', 'declined', 'accepted']);
+    expect(view.statusBars[0]).toMatchObject({ label: 'In review', valueLabel: '3,447', widthPct: 100 });
+    expect(view.statusBars[2].widthPct).toBeCloseTo((348 / 3447) * 100);
+  });
+
+  it('charts the four years oldest first, marking the open one partial', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.years).toEqual([
+      { year: getYearForRange('COMPLETED_YEAR_3'), submitted: 4000, isPartialYear: false },
+      { year: getYearForRange('COMPLETED_YEAR_2'), submitted: null, isPartialYear: false },
+      { year: getYearForRange('COMPLETED_YEAR'), submitted: null, isPartialYear: false },
+      { year: getYearForRange('YTD'), submitted: 6283, isPartialYear: true },
+    ]);
+  });
+
+  it("ranks the period's organizations and keeps individuals on their own line", () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(view.organizations).toEqual([
+      { key: 'org-a', label: 'Acme Motors', valueLabel: '400', widthPct: 100 },
+      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200', widthPct: 50 },
+    ]);
+    expect(view.individualLabel).toBe('1,351 proposals submitted');
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
+  });
+
+  it("lists the period's proposals most recent first, filtered by the tab", () => {
+    const all = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+
+    expect(all.proposals.map((row) => row.proposal.proposalKey)).toEqual(['p-1', 'p-ind', 'p-old']);
+    expect(all.proposals[1]).toMatchObject({ organizationLabel: 'Individual', statusClass: 'bg-gray-100 text-gray-600' });
+    expect(all.proposals[0]).toMatchObject({ organizationLabel: 'Acme Motors', statusClass: 'bg-emerald-50 text-emerald-700' });
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'in-review').proposals.map((row) => row.proposal.proposalKey)).toEqual(['p-old']);
+  });
+
+  it('caps the list at ten and shows a dash for a missing organization or date', () => {
+    const many = Array.from({ length: 12 }, (_, index) => proposal({ proposalKey: `p-${String(index).padStart(2, '0')}` }));
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ proposals: many }), 'YTD', 'all');
+
+    expect(view.proposals).toHaveLength(10);
+    const bare = buildHealthMetricsEventsSpeakersView(
+      speakers({ proposals: [proposal({ organizationName: null, submissionDate: null, statusGroup: null })] }),
+      'YTD',
+      'all'
+    );
+    expect(bare.proposals[0]).toMatchObject({ organizationLabel: '—', dateLabel: '—', statusClass: 'bg-gray-100 text-gray-600' });
+  });
+
+  it('reads as unmeasured with no period, and as foundation-unmeasured with none at all', () => {
+    const missing = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all');
+    const empty = buildHealthMetricsEventsSpeakersView(speakers({ periods: [] }), 'YTD', 'all');
+
+    expect(missing).toMatchObject({ foundationMeasured: true, measured: false, countLabel: '' });
+    expect(empty.foundationMeasured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsSpeakersNote', () => {
+  function withChange(speakersChange: number | null): HealthMetricsEventsSpeakers {
+    return {
+      periods: [
+        {
+          range: 'YTD',
+          submitted: 10,
+          accepted: 1,
+          inReview: 5,
+          declined: 4,
+          speakers: 8,
+          acceptanceRate: 0.1,
+          changes: { speakers: speakersChange },
+        },
+      ],
+      organizations: [],
+      unaffiliated: [],
+      proposals: [],
+    };
+  }
+
+  it('notes a steep fall and stays empty otherwise', () => {
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'YTD')).toBe('down 42% YoY');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.14), 'YTD')).toBe('');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(null), 'YTD')).toBe('');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'COMPLETED_YEAR')).toBe('');
   });
 });

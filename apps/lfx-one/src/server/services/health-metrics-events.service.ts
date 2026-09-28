@@ -11,6 +11,10 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
+  HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
@@ -40,6 +44,13 @@ import type {
   HealthMetricsEventsRevenueEvent,
   HealthMetricsEventsRevenuePeriod,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersOrganization,
+  HealthMetricsEventsSpeakersPeriod,
+  HealthMetricsEventsSpeakersPeriodCount,
+  HealthMetricsEventsSpeakersProposal,
+  HealthMetricsEventsSpeakersQuery,
+  HealthMetricsEventsSpeakersStatusGroup,
   HealthMetricsL2Range,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -50,6 +61,8 @@ const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE
 const REGISTRATIONS_GROWTH_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_GROWTH';
 const REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE';
 const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE';
+const SPEAKERS_DRILLDOWN_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_ORG_DRILLDOWN';
+const SPEAKERS_LIST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST';
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -67,6 +80,9 @@ const REVENUE_METRICS = ['total', 'registration', 'sponsorship'] as const;
 
 /** At-a-glance count prefixes, each suffixed per period; the change columns reuse them. */
 const AT_A_GLANCE_COUNT_PREFIXES = ['registrations', 'attendees', 'organizations', 'speakers', 'countries', 'events', 'past_events'] as const;
+
+/** Speakers count prefixes, each suffixed per period. */
+const SPEAKERS_COUNT_PREFIXES = ['proposals_submitted', 'proposals_accepted', 'proposals_in_review', 'proposals_declined', 'speakers'] as const;
 
 /** Label for a curve row the view left without a registration type. */
 const UNTYPED_FORMAT_LABEL = 'All formats';
@@ -143,6 +159,29 @@ interface RevenueRow {
   HAS_UNCONVERTED_REGISTRATION_REVENUE: boolean | null;
   HAS_UNCONVERTED_REVENUE_GOAL: boolean | null;
   [periodColumn: string]: unknown;
+}
+
+/** The foundation scope row, a ranked organization or the unaffiliated row; every count is period-suffixed. */
+interface SpeakersDrilldownRow {
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  IS_ALL_ORGANIZATIONS: boolean | null;
+  IS_UNAFFILIATED_ORGANIZATION: boolean | null;
+  [periodColumn: string]: unknown;
+}
+
+/** One proposal; `PERIOD` is computed in the read. The speaker's name is personal data, so it is never logged. */
+interface SpeakerProposalRow {
+  PROPOSAL_KEY: string | null;
+  PERIOD: HealthMetricsL2Range | null;
+  ACCOUNT_NAME: string | null;
+  SPEAKER_NAME: string | null;
+  EVENT_NAME: string | null;
+  SESSION_TITLE: string | null;
+  SUBMISSION_DATE: Date | string | null;
+  SUBMISSION_STATUS_ORIGINAL: string | null;
+  PROPOSAL_STATUS_GROUP: string | null;
+  IS_UNAFFILIATED_PROPOSAL: boolean | null;
 }
 
 /** The foundation's Events revenue from the overview view, which carries no split. */
@@ -413,6 +452,25 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events, eventsMeasured: true };
   }
 
+  /** Each period's proposal pipeline, the top organizations and the latest proposals per period and tab. */
+  public async getSpeakers(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<HealthMetricsEventsSpeakers> {
+    const [drilldown, proposals] = await Promise.all([this.getSpeakersDrilldown(req, query), this.getSpeakerProposals(req, query)]);
+    const scope = drilldown.find((row) => row.IS_ALL_ORGANIZATIONS === true);
+    if (!scope) {
+      logger.debug(req, 'get_events_speakers', 'No speaker proposals scope row for the foundation', { foundation_slug: query.foundationSlug });
+    }
+
+    return {
+      periods: scope ? HEALTH_METRICS_L2_RANGES.map((range) => mapSpeakersPeriod(scope, range)) : [],
+      organizations: drilldown
+        .filter((row) => row.IS_ALL_ORGANIZATIONS !== true && row.IS_UNAFFILIATED_ORGANIZATION !== true)
+        .map(mapSpeakersOrganization)
+        .filter((organization): organization is HealthMetricsEventsSpeakersOrganization => organization !== null),
+      unaffiliated: mapSpeakersUnaffiliated(drilldown.find((row) => row.IS_UNAFFILIATED_ORGANIZATION === true)),
+      proposals: proposals.map(mapSpeakerProposal).filter((proposal): proposal is HealthMetricsEventsSpeakersProposal => proposal !== null),
+    };
+  }
+
   /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
@@ -462,6 +520,78 @@ export class HealthMetricsEventsService {
   }
 
   /** The headline totals alone, for a foundation the revenue view has no row for; no overview row either is unmeasured. */
+  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
+    // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
+    const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
+      const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
+      const columns = [...SPEAKERS_COUNT_PREFIXES.map((prefix) => `${prefix}_count_${suffix}`), `acceptance_rate_${suffix}`, `sort_rank_${suffix}`];
+      return HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES.includes(range) ? [...columns, `speakers_count_change_pct_${suffix}`] : columns;
+    }).join(',\n        ');
+    const ranked = HEALTH_METRICS_L2_RANGES.map(
+      (range) => `sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} <= ${HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS}`
+    ).join(' OR ');
+
+    const sql = `
+      SELECT
+        account_id,
+        account_name,
+        is_all_organizations,
+        is_unaffiliated_organization,
+        ${periodColumns}
+      FROM ${SPEAKERS_DRILLDOWN_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND (is_all_organizations = TRUE OR is_unaffiliated_organization = TRUE OR ${ranked})
+    `;
+
+    const result = await executeSnowflakeViewRead<SpeakersDrilldownRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: SPEAKERS_DRILLDOWN_VIEW,
+      operation: 'get_events_speakers',
+      clientMessage: 'Speakers and proposals are unavailable right now.',
+    });
+    return result.rows;
+  }
+
+  /** The latest few proposals per period, overall and for each tab's status group, so every tab fills without another read. */
+  private async getSpeakerProposals(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakerProposalRow[]> {
+    // Flags, ranges, groups and the cap come from constants, never from the request, so interpolating them is safe.
+    const periodCase = HEALTH_METRICS_L2_RANGES.map((range) => `WHEN is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} THEN '${range}'`).join(' ');
+    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(' OR ');
+    const tabGroups = (['accepted', 'in-review'] as const).map((group) => `'${HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].viewValue}'`).join(', ');
+    const cap = HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS;
+
+    const sql = `
+      SELECT
+        proposal_key,
+        CASE ${periodCase} END AS period,
+        account_name,
+        speaker_name,
+        event_name,
+        session_title,
+        submission_date,
+        submission_status_original,
+        proposal_status_group,
+        is_unaffiliated_proposal
+      FROM ${SPEAKERS_LIST_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND (${inAnyPeriod})
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY period ORDER BY submission_date DESC NULLS LAST, proposal_key) <= ${cap}
+        OR (
+          proposal_status_group IN (${tabGroups})
+          AND ROW_NUMBER() OVER (PARTITION BY period, proposal_status_group ORDER BY submission_date DESC NULLS LAST, proposal_key) <= ${cap}
+        )
+    `;
+
+    const result = await executeSnowflakeViewRead<SpeakerProposalRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: SPEAKERS_LIST_VIEW,
+      operation: 'get_events_speakers',
+      clientMessage: 'Speakers and proposals are unavailable right now.',
+    });
+    return result.rows;
+  }
+
   private async getOverviewRevenuePeriods(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenuePeriod[]> {
     const columns = HEALTH_METRICS_L2_RANGES.map((range) => `revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(',\n        ');
     const sql = `
@@ -660,6 +790,65 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     sponsorshipGoalWithheld: hasUnconvertedGoal && sponsorshipGoal !== null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
   };
+}
+
+function mapSpeakersPeriod(row: SpeakersDrilldownRow, range: HealthMetricsL2Range): HealthMetricsEventsSpeakersPeriod {
+  const count = (prefix: string): number | null => toNullableNumber(row[periodColumn(`${prefix}_count`, range)]);
+
+  return {
+    range,
+    submitted: count('proposals_submitted'),
+    accepted: count('proposals_accepted'),
+    inReview: count('proposals_in_review'),
+    declined: count('proposals_declined'),
+    speakers: count('speakers'),
+    acceptanceRate: toNullableNumber(row[periodColumn('acceptance_rate', range)]),
+    changes: HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES.includes(range)
+      ? { speakers: toNullableNumber(row[periodColumn('speakers_count_change_pct', range)]) }
+      : null,
+  };
+}
+
+/** Keeps only the periods the organization ranks in the top few for; `null` when it has no id or no such period. */
+function mapSpeakersOrganization(row: SpeakersDrilldownRow): HealthMetricsEventsSpeakersOrganization | null {
+  if (!row.ACCOUNT_ID) return null;
+
+  const periods = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
+    const rank = toNullableNumber(row[periodColumn('sort_rank', range)]);
+    if (rank === null || rank > HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS) return [];
+    return [{ range, rank, submitted: toNullableNumber(row[periodColumn('proposals_submitted_count', range)]) }];
+  });
+  if (periods.length === 0) return null;
+
+  return { accountId: row.ACCOUNT_ID, accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID, periods };
+}
+
+function mapSpeakersUnaffiliated(row: SpeakersDrilldownRow | undefined): HealthMetricsEventsSpeakersPeriodCount[] {
+  if (!row) return [];
+
+  return HEALTH_METRICS_L2_RANGES.map((range) => ({ range, submitted: toNullableNumber(row[periodColumn('proposals_submitted_count', range)]) }));
+}
+
+function mapSpeakerProposal(row: SpeakerProposalRow): HealthMetricsEventsSpeakersProposal | null {
+  if (!row.PROPOSAL_KEY || !row.PERIOD) return null;
+
+  return {
+    proposalKey: row.PROPOSAL_KEY,
+    range: row.PERIOD,
+    speakerName: row.SPEAKER_NAME ?? '',
+    organizationName: row.ACCOUNT_NAME,
+    unaffiliated: row.IS_UNAFFILIATED_PROPOSAL === true,
+    eventName: row.EVENT_NAME ?? '',
+    sessionTitle: row.SESSION_TITLE ?? '',
+    submissionDate: toIsoDate(row.SUBMISSION_DATE),
+    status: row.SUBMISSION_STATUS_ORIGINAL ?? row.PROPOSAL_STATUS_GROUP ?? '',
+    statusGroup: toSpeakersStatusGroup(row.PROPOSAL_STATUS_GROUP),
+  };
+}
+
+function toSpeakersStatusGroup(value: string | null): HealthMetricsEventsSpeakersStatusGroup | null {
+  const groups = Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS) as HealthMetricsEventsSpeakersStatusGroup[];
+  return groups.find((group) => HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].viewValue === value) ?? null;
 }
 
 /** A goal of zero or less is no goal set, the same rule the view's goal-met flag uses. */
