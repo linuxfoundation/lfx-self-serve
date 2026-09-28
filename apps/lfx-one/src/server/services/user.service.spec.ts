@@ -643,6 +643,9 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
         ? queryPage([
             { ...openSurveyRow, uid: 'expired', survey_cutoff_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
             { ...openSurveyRow, uid: 'legacy', survey_title: null },
+            // Literal 'open' status classifies OPEN without consulting the cutoff — the parseable-cutoff
+            // guard in fetchPendingSurveyResponses must still exclude this row.
+            { ...openSurveyRow, uid: 'open-no-cutoff', survey_status: 'open', survey_cutoff_date: undefined },
           ])
         : queryPage([])
     );
@@ -650,6 +653,62 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+  });
+
+  it('skips rows whose survey link is missing or off the SURVEY_LINK_ALLOWLIST, keeping valid rows', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response'
+        ? queryPage([
+            openSurveyRow,
+            { ...openSurveyRow, uid: 'off-allowlist', survey_link: 'https://surveys.example.com/r/1' },
+            { ...openSurveyRow, uid: 'no-link', survey_link: undefined },
+          ])
+        : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0].buttonLink).toBe('https://www.research.net/r/ABC123');
+  });
+
+  it('emits one action per survey (earliest cutoff) across duplicate per-committee invitation rows', async () => {
+    const laterCutoff = {
+      ...openSurveyRow,
+      uid: 'resp-open-toc',
+      survey_cutoff_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      project: { name: 'Other Project' },
+    };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([laterCutoff, openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0].badge).toBe('Acme Project');
+  });
+
+  it('orders survey actions by soonest cutoff first, regardless of index order', async () => {
+    const laterSurvey = {
+      ...openSurveyRow,
+      uid: 'resp-later',
+      survey_uid: 'survey-later',
+      survey_title: 'Later Survey',
+      survey_cutoff_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([laterSurvey, openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey').map((action) => action.text)).toEqual([
+      expect.stringContaining('Board Satisfaction Survey'),
+      expect.stringContaining('Later Survey'),
+    ]);
   });
 
   it('degrades to no survey rows when the survey_response read fails, without failing the aggregation', async () => {

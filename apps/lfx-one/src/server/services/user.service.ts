@@ -426,7 +426,7 @@ export class UserService {
    * @param req - Express request object
    * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
    * @param email - User email
-   * @param projectSlug - Optional project slug; omit for unscoped survey aggregation
+   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items)
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
    * @returns Array of pending action items
@@ -1703,12 +1703,27 @@ export class UserService {
       failOnPartial: true,
     });
 
-    return rows.filter((row) => {
-      // Rows predating survey-field denormalization carry no title/cutoff — they can't be proven
-      // open or rendered meaningfully, so they're excluded (the issue's "no noise" requirement).
+    const openRows = rows.filter((row) => {
+      // Legacy rows can lack the denormalized title/cutoff (getMySurveys guards the same fields) —
+      // they can't be proven open or rendered meaningfully, so they're excluded ("no noise" bar, #2987).
       if (!row.survey_title) return false;
+      // A literal 'open' status classifies OPEN without consulting the cutoff — require a parseable
+      // cutoff explicitly; transformSurveysToActions renders it as the due date.
+      if (!row.survey_cutoff_date || Number.isNaN(new Date(row.survey_cutoff_date).getTime())) return false;
       return getSurveyDisplayStatus({ survey_status: row.survey_status, survey_cutoff_date: row.survey_cutoff_date }) === SurveyStatus.OPEN;
     });
+
+    // One action per survey: the index holds a row per survey × committee invitation, and
+    // identical "Submit Survey" rows would crowd the capped card (#2987). Keep the earliest cutoff
+    // (parseable per the filter above); a still-unanswered co-invitation re-surfaces on next load.
+    const earliestBySurvey = new Map<string, SurveyResponseRecord>();
+    for (const row of openRows) {
+      const kept = earliestBySurvey.get(row.survey_uid);
+      if (!kept || new Date(row.survey_cutoff_date as string).getTime() < new Date(kept.survey_cutoff_date as string).getTime()) {
+        earliestBySurvey.set(row.survey_uid, row);
+      }
+    }
+    return [...earliestBySurvey.values()];
   }
 
   /**
@@ -1717,7 +1732,11 @@ export class UserService {
    */
   private transformSurveysToActions(req: Request, rows: SurveyResponseRecord[]): PendingActionItem[] {
     const items: PendingActionItem[] = [];
-    for (const row of rows) {
+    // Soonest cutoff first — the old Snowflake source ordered SURVEY_CUTOFF_DATE ASC, and the
+    // frontend renders server order sliced to the card's display limit. Cutoffs are guaranteed
+    // parseable by the fetch filter above.
+    const sorted = [...rows].sort((a, b) => new Date(a.survey_cutoff_date as string).getTime() - new Date(b.survey_cutoff_date as string).getTime());
+    for (const row of sorted) {
       const buttonLink = row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
       // A pending action without a valid link can't be acted on — skip rather than render a dead
       // button. The row still shows in My Surveys, so the survey is not hidden altogether.
@@ -1726,7 +1745,7 @@ export class UserService {
         continue;
       }
 
-      // The OPEN filter already proved survey_cutoff_date parses and is in the future.
+      // The fetch filter already excluded rows without a parseable cutoff.
       const cutoffDate = new Date(row.survey_cutoff_date as string);
       const formattedDate = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const displayDate = cutoffDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
