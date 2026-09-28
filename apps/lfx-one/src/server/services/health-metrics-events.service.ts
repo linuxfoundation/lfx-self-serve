@@ -338,10 +338,18 @@ export class HealthMetricsEventsService {
       });
     }
 
-    const years = result.rows
-      .slice(0, HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP)
-      .map(mapRegistrationsGrowthYear)
-      .filter((year): year is HealthMetricsEventsRegistrationsGrowthYear => year !== null);
+    const kept = result.rows.slice(0, HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP);
+    const years = kept.map(mapRegistrationsGrowthYear).filter((year): year is HealthMetricsEventsRegistrationsGrowthYear => year !== null);
+
+    // A dropped year would otherwise vanish from the chart without a trace of the bad row.
+    if (years.length < kept.length) {
+      logger.warning(req, 'get_events_registrations_growth', 'Registrations growth rows dropped for a missing or implausible year', {
+        foundation_slug: query.foundationSlug,
+        dropped_count: kept.length - years.length,
+        min_year: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
+        max_year: new Date().getUTCFullYear() + HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
+      });
+    }
 
     return { years };
   }

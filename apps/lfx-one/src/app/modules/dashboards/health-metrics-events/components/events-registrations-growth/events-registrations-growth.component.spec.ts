@@ -184,9 +184,13 @@ describe('EventsRegistrationsGrowthComponent', () => {
     expect(query('events-registrations-growth-footnote')).toBeNull();
   });
 
-  it('explains the pandemic peak only when a pandemic year has virtual counts', async () => {
+  it('explains the pandemic peak in the selected metric only when a pandemic year was mostly virtual', async () => {
     await render();
-    expect(query('events-registrations-growth-pandemic-note')).not.toBeNull();
+    expect(text('events-registrations-growth-pandemic-note')).toContain('2020–21 registrations were mostly virtual');
+
+    (query('filter-pill-attendees') as HTMLButtonElement).click();
+    await settle();
+    expect(text('events-registrations-growth-pandemic-note')).toContain('2020–21 attendees were mostly virtual');
 
     TestBed.resetTestingModule();
     lifecycle = [];
@@ -234,6 +238,20 @@ describe('EventsRegistrationsGrowthComponent', () => {
 
     expect(getEventsRegistrationsGrowth).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
+  });
+
+  it('re-reads on a switch to another foundation, clearing an earlier failure and settling again', async () => {
+    await render(new Error('boom'));
+    expect(query('events-registrations-growth-error')).not.toBeNull();
+
+    getEventsRegistrationsGrowth.mockReturnValue(of(growth()));
+    selectedFoundation.set({ slug: 'beta' });
+    await settle();
+
+    expect(getEventsRegistrationsGrowth).toHaveBeenLastCalledWith({ foundationSlug: 'beta' });
+    expect(lifecycle).toEqual(['reading', 'settled', 'reading', 'settled']);
+    expect(query('events-registrations-growth-error')).toBeNull();
+    expect(query('events-registrations-growth-table')).not.toBeNull();
   });
 
   it('renders the skeleton on the server without reading', async () => {

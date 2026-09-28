@@ -11,6 +11,7 @@ import {
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_SECTIONS,
 } from '../constants/health-metrics-events.constants';
@@ -252,7 +253,7 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
 ): HealthMetricsEventsRegistrationsGrowthView {
   const byYear = new Map(growth.years.map((year) => [year.year, year]));
   const years = [...byYear.keys()];
-  if (years.length === 0) return { rows: [], yearCount: 0, hasPartialYear: false, hasPandemicYears: false };
+  if (years.length === 0) return { rows: [], yearCount: 0, hasPartialYear: false, pandemicNote: null };
 
   const first = Math.min(...years);
   const last = Math.max(...years);
@@ -264,8 +265,30 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
     rows,
     yearCount: rows.length,
     hasPartialYear: rows.some((row) => row.isPartialYear),
-    hasPandemicYears: rows.some((row) => HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS.includes(row.year) && (row.virtual ?? 0) > 0),
+    pandemicNote: formatRegistrationsGrowthPandemicNote(rows, metric),
   };
+}
+
+/** Explains the pandemic years only when one was mostly virtual, so a small virtual count never reads as a peak. */
+function formatRegistrationsGrowthPandemicNote(
+  rows: HealthMetricsEventsRegistrationsGrowthRowView[],
+  metric: HealthMetricsEventsRegistrationsGrowthMetric
+): string | null {
+  const years = HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS;
+  const mostlyVirtual = rows.some(
+    (row) =>
+      years.includes(row.year) &&
+      row.virtual !== null &&
+      row.total !== null &&
+      row.total > 0 &&
+      row.virtual / row.total >= HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE
+  );
+  if (!mostlyVirtual) return null;
+
+  const first = Math.min(...years);
+  const last = Math.max(...years);
+  const label = first === last ? `${first}` : `${first}–${String(last).slice(-2)}`;
+  return `${label} ${metric} were mostly virtual during the pandemic, so the years since read as a return to in-person rather than a collapse.`;
 }
 
 function formatAtAGlanceCount(value: number | null | undefined): string {

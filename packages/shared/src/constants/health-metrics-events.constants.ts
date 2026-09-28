@@ -183,12 +183,17 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS: readonly
   { id: 'attendees', label: 'Attendees' },
 ];
 
-/** Years outside this window are dropped as bad data, so one stray row cannot fill decades of gap years. */
+/** Lower bound of the plausible year window; earlier years are dropped as bad data, so one stray row cannot fill decades of gap years. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR = 2000;
+
+/** Upper bound of that window, as years past the current UTC year. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD = 5;
 
-/** Years whose virtual peak the pandemic callout explains. */
+/** Years whose virtual peak the pandemic callout explains; the callout's year label is built from them. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS: readonly number[] = [2020, 2021];
+
+/** Share of a pandemic year's total that must be virtual before the callout calls it a virtual peak. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE = 0.5;
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';

@@ -302,6 +302,6 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   /** Years spanned, gap years included, so the count matches the table. */
   yearCount: number;
   hasPartialYear: boolean;
-  /** Whether a pandemic year has a measured virtual count for the metric, which the callout explains. */
-  hasPandemicYears: boolean;
+  /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
+  pandemicNote: string | null;
 }

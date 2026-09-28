@@ -513,15 +513,36 @@ describe('HealthMetricsEventsService.getRegistrationsGrowth', () => {
     expect(years[0]).toMatchObject({ totalAttendees: null, isPartialYear: false });
   });
 
-  it('drops a year outside the plausible window, so one stray row cannot stretch the gap fill', async () => {
-    const tooFar = new Date().getUTCFullYear() + HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD + 1;
+  it('drops and reports a year outside the plausible window, so one stray row cannot stretch the gap fill', async () => {
+    const maxYear = new Date().getUTCFullYear() + HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD;
     execute.mockResolvedValue({
-      rows: [growthRow({ YEAR: 0 }), growthRow({ YEAR: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR - 1 }), growthRow(), growthRow({ YEAR: tooFar })],
+      rows: [
+        growthRow({ YEAR: 0 }),
+        growthRow({ YEAR: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR - 1 }),
+        growthRow(),
+        growthRow({ YEAR: maxYear + 1 }),
+      ],
     });
 
     const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
 
-    expect(years).toHaveLength(1);
+    expect(years.map((year) => year.year)).toEqual([2025]);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_events_registrations_growth',
+      expect.any(String),
+      expect.objectContaining({ foundation_slug: 'acme', dropped_count: 3, min_year: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR, max_year: maxYear })
+    );
+  });
+
+  it('keeps the first and last years of the plausible window without warning', async () => {
+    const maxYear = new Date().getUTCFullYear() + HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD;
+    execute.mockResolvedValue({ rows: [growthRow({ YEAR: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR }), growthRow({ YEAR: maxYear })] });
+
+    const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
+
+    expect(years.map((year) => year.year)).toEqual([HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR, maxYear]);
+    expect(warning).not.toHaveBeenCalled();
   });
 
   it('returns no years when the foundation has none', async () => {
