@@ -398,7 +398,7 @@ export class HealthMetricsEventsService {
 
     // In-period events sort first, so the list lost one only when the first row past the cap is in a period.
     const dropped = result.rows[HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP];
-    if (dropped && (mapRevenueEvent(dropped)?.ranges.length ?? 0) > 0) {
+    if (dropped && HEALTH_METRICS_L2_RANGES.some((range) => dropped[periodColumn('IN_PERIOD', range)] === true)) {
       logger.warning(req, 'get_events_revenue', 'Event revenue rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
@@ -483,16 +483,15 @@ export class HealthMetricsEventsService {
     // Matches the Overview tab, which reads a missing row as no data rather than zero revenue.
     if (!row) return [];
 
-    return HEALTH_METRICS_L2_RANGES.map((range) => ({
-      range,
-      totalUsd: toNullableNumber(row[periodColumn('REVENUE_USD', range)]),
-      registrationUsd: null,
-      sponsorshipUsd: null,
-      registrationShare: null,
-      sponsorshipShare: null,
-      hasUnconverted: false,
-      changes: null,
-    }));
+    // A null total is no data for that period, as on the Overview tab, so the period is left out.
+    return HEALTH_METRICS_L2_RANGES.flatMap((range) => {
+      const totalUsd = toNullableNumber(row[periodColumn('REVENUE_USD', range)]);
+      if (totalUsd === null) return [];
+
+      return [
+        { range, totalUsd, registrationUsd: null, sponsorshipUsd: null, registrationShare: null, sponsorshipShare: null, hasUnconverted: false, changes: null },
+      ];
+    });
   }
 
   /** Whether the foundation has ever held an event, or has one still to come in any year. */

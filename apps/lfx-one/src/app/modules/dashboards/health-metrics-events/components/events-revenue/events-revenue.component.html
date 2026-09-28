@@ -11,6 +11,12 @@
       data-testid="events-revenue-error" />
   } @else if (loading()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="events-revenue-loading" aria-hidden="true" />
+  } @else if (!view().foundationMeasured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Event revenue unavailable"
+      subtitle="No event revenue has been recorded for this foundation yet."
+      data-testid="events-revenue-foundation-unmeasured" />
   } @else if (!view().measured) {
     <lfx-empty-state
       icon="fa-light fa-circle-question"
@@ -26,7 +32,7 @@
           <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-revenue-headline-value">{{ view().headline.value }}</span>
           @if (view().headlineUnconverted) {
             <span class="text-amber-600" aria-hidden="true" data-testid="events-revenue-headline-unconverted">*</span>
-            <span class="sr-only">{{ unconvertedSr }}</span>
+            <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
           }
           @if (view().headline.delta !== null) {
             <span
@@ -50,7 +56,7 @@
               <span [attr.data-testid]="'events-revenue-side-' + stat.key + '-value'">{{ stat.value }}</span>
               @if (stat.key === 'registration' && view().headlineUnconverted) {
                 <span class="text-amber-600" aria-hidden="true" data-testid="events-revenue-side-registration-unconverted">*</span>
-                <span class="sr-only">{{ unconvertedSr }}</span>
+                <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
               }
               @if (stat.delta !== null) {
                 <span
@@ -105,7 +111,7 @@
                   @if (view.event.hasUnconverted) {
                     <!-- The footer note explains the marker; screen readers get the same text inline. -->
                     <span class="text-amber-600" aria-hidden="true" [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId">*</span>
-                    <span class="sr-only">{{ unconvertedSr }}</span>
+                    <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
                   }
                   @if (view.registrationGoalLabel) {
                     <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-registration-goal-' + view.event.eventId"

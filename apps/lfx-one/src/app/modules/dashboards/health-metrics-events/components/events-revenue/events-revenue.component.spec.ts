@@ -171,7 +171,7 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-registration-goal-rev-2')).toBeNull();
     expect(text('events-revenue-sponsorship-goal-rev-2')).toBe('/ $50K');
     expect(text('events-revenue-side-split-value')).toBe('not available');
-    expect(text('events-revenue-unconverted-note')).toContain('leaves out amounts not yet converted to USD');
+    expect(text('events-revenue-unconverted-note')).toContain('leave out registration revenue not yet converted to USD');
     expect(text('events-revenue-headline-unconverted')).toBe('*');
     expect(text('events-revenue-side-registration-unconverted')).toBe('*');
     expect(query('events-revenue-side-sponsorship-unconverted')).toBeNull();
@@ -210,6 +210,15 @@ describe('EventsRevenueComponent', () => {
     await pickRange('COMPLETED_YEAR_3');
 
     expect(query('events-revenue-unmeasured')).not.toBeNull();
+    expect(query('events-revenue-foundation-unmeasured')).toBeNull();
+    expect(query('events-revenue-hero')).toBeNull();
+  });
+
+  it('says the foundation has no revenue recorded, not to pick another period, when no period was read', async () => {
+    await render(revenue({ periods: [], events: [], eventsMeasured: false }));
+
+    expect(text('events-revenue-foundation-unmeasured')).toContain('No event revenue has been recorded for this foundation yet.');
+    expect(query('events-revenue-unmeasured')).toBeNull();
     expect(query('events-revenue-hero')).toBeNull();
   });
 

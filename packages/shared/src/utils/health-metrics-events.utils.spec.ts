@@ -536,7 +536,11 @@ describe('buildHealthMetricsEventsRevenueView', () => {
   });
 
   it('marks a period missing from the read as unmeasured', () => {
-    expect(buildHealthMetricsEventsRevenueView(revenue(), 'COMPLETED_YEAR_4').measured).toBe(false);
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'COMPLETED_YEAR_4')).toMatchObject({ foundationMeasured: true, measured: false });
+  });
+
+  it('marks the whole foundation unmeasured when the read carried no period at all', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [] }), 'YTD')).toMatchObject({ foundationMeasured: false, measured: false });
   });
 });
 

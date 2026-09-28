@@ -272,6 +272,7 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
   const rows = revenue.events.filter((event) => event.ranges.some((candidate) => candidate === range)).map(buildRevenueRowView);
 
   return {
+    foundationMeasured: revenue.periods.length > 0,
     measured: period !== null,
     headline: stat('total', 'Total event revenue', period?.totalUsd, delta(changes?.total)),
     side: [

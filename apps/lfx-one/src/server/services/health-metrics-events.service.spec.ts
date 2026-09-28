@@ -718,7 +718,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
       hasUnconverted: false,
       changes: null,
     });
-    expect(revenue.periods.find((period) => period.range === 'COMPLETED_YEAR')?.totalUsd).toBeNull();
+    expect(revenue.periods.map((period) => period.range).sort()).toEqual(['COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'YTD']);
   });
 
   it('reads a foundation with no row in either view as unmeasured, never as zero revenue', async () => {
@@ -735,6 +735,17 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     expect(events).toHaveLength(HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
+  });
+
+  it('warns when the in-period row past the cap has no event id', async () => {
+    const rows = Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) =>
+      revenueRow({ EVENT_ID: i < HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP ? `rev-${i}` : null })
+    );
+    execute.mockResolvedValue({ rows });
+
+    await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
     expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 

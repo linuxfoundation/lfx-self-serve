@@ -375,6 +375,8 @@ export interface HealthMetricsEventsRevenueRowView {
 
 /** The section for one period, with every label ready to render. */
 export interface HealthMetricsEventsRevenueView {
+  /** `false` when the read carried no period at all, so the section says so rather than pointing at another period. */
+  foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
   headline: HealthMetricsEventsAtAGlanceStatView;
