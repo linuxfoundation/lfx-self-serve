@@ -30,8 +30,17 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // thing — encoded, serialized, guarded and decoded — instead of the fetcher's own object handed
 // straight back, which would test nothing about the stored shape.
 const cache = vi.hoisted(() => ({ entry: null as string | null, accept: null as ((value: unknown) => boolean) | null, readThroughs: 0 }));
+// Discarding the caller's seat entry empties the miniature store, so a post-reassign read is a real
+// miss that re-drains — the behaviour the Board/Committee tabs' `retry()` depends on.
+const invalidatePerUserCache = vi.hoisted(() =>
+  vi.fn(async (namespace: string) => {
+    if (namespace === 'org-seats:v2') cache.entry = null;
+    return true;
+  })
+);
 vi.mock('./valkey.service', () => ({
   invalidateOrgGroupsCache: vi.fn(),
+  invalidatePerUserCache,
   withPerUserCache: async (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
     cache.readThroughs += 1;
     cache.accept = accept ?? null;
@@ -44,6 +53,12 @@ vi.mock('./valkey.service', () => ({
     return fresh;
   },
 }));
+// The People services' foundation-name enrichment reaches project-service; the seat mapping itself
+// is not what these tests are about.
+vi.mock('./committee-seat-assignment.mapper', () => ({
+  enrichFoundationNames: vi.fn(async () => new Map()),
+  toAssignment: (s: CommitteeServiceOrgSeat) => ({ seatId: s.uid, committeeUid: s.committee_uid }),
+}));
 
 // The `@lfx-one/shared/*` barrels pull Angular into this node-environment suite. The compact-cache
 // helpers and the filter-safety predicates are re-exported from their REAL modules: the whole point
@@ -54,7 +69,8 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
-  VALKEY_CACHE: { ORG_SEATS_NAMESPACE: 'org-seats:v2', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
+  isVotingStatus: () => true,
+  VALKEY_CACHE: { ORG_SEATS_NAMESPACE: 'org-seats:v2', ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
 }));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/utils/compact-cache.utils')),
@@ -65,6 +81,8 @@ import type { Request } from 'express';
 
 import { resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
+import { OrgPeopleBoardMembersService } from './org-people-board-members.service';
+import { OrgPeopleCommitteeMembersService } from './org-people-committee-members.service';
 
 const ORG = '0014100000Te2ovAAB';
 const req = {} as unknown as Request;
@@ -296,5 +314,52 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — coalescing (GH-1906)
     expect(proxyRequest).toHaveBeenCalledTimes(2);
     expect(first[0].uid).toBe('seat-1');
     expect(second[0].uid).toBe('seat-2');
+  });
+});
+
+describe('seat reassign — caller cache invalidation', () => {
+  const body = { committeeUid: 'c-1', firstName: 'Ana', lastName: 'Silva', email: 'asilva@lfx-partner.example' };
+  // Every BFF reassign path: the Memberships page, and the People → Committee / Board tabs.
+  const paths: [string, () => Promise<unknown>][] = [
+    ['Memberships reassign', () => new OrgLensBoardCommitteeService().reassignSeat(req, ORG, 'foundation-1', 'seat-1', body)],
+    ['People Committee reassign', () => new OrgPeopleCommitteeMembersService().reassignSeat(req, ORG, 'seat-1', body)],
+    ['People Board reassign', () => new OrgPeopleBoardMembersService().reassignSeat(req, ORG, 'seat-1', body)],
+  ];
+
+  /** Drain answers with `roster`; the reassign PUT resolves with `reassigned` or rejects with `failure`. */
+  function upstream(roster: () => CommitteeServiceOrgSeat[], reassign: () => Promise<CommitteeServiceOrgSeat>): void {
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, method: string) => (method === 'PUT' ? reassign() : page(roster())));
+  }
+
+  it.each(paths)('%s: the caller’s next roster read reflects the reassignment', async (_label, reassign) => {
+    let current = seat({ first_name: 'Devon', email: 'dclarke@lfx-partner.example' });
+    const updated = seat({ first_name: 'Ana', email: 'asilva@lfx-partner.example' });
+    upstream(
+      () => [current],
+      async () => {
+        current = updated;
+        return updated;
+      }
+    );
+    const service = new OrgLensBoardCommitteeService();
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('dclarke@lfx-partner.example');
+
+    await reassign();
+
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v3', 'tester', ORG);
+  });
+
+  it.each(paths)('%s: an upstream failure leaves the caller’s caches alone', async (_label, reassign) => {
+    upstream(
+      () => [seat()],
+      async () => {
+        throw new Error('committee-service 403');
+      }
+    );
+
+    await expect(reassign()).rejects.toThrow('committee-service 403');
+    expect(invalidatePerUserCache).not.toHaveBeenCalled();
   });
 });

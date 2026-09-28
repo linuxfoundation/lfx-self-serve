@@ -28,7 +28,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
-import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
+import { invalidateOrgGroupsCache, invalidatePerUserCache, withPerUserCache } from './valkey.service';
 
 /**
  * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
@@ -159,7 +159,7 @@ export class OrgLensBoardCommitteeService {
     // well as on the People-tab reassign. Unconditional rather than gated on category: a board
     // reassign discarding the entry costs one rebuild, whereas missing a non-board one serves
     // wrong counts for the whole retention window.
-    await invalidateOrgGroupsCache(accountId);
+    await Promise.all([invalidateOrgGroupsCache(accountId), this.invalidateCallerSeatCaches(req, accountId)]);
 
     logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
       org_uid: accountId,
@@ -167,6 +167,21 @@ export class OrgLensBoardCommitteeService {
       committee_category: upstream.committee_category,
     });
     return { accountId, foundationId, seat };
+  }
+
+  /**
+   * Best-effort discard of the caller's own per-user seat roster and People directory for one org,
+   * after a successful seat write. The Board/Committee tabs re-fetch immediately after a reassign,
+   * and without this the caller's 30-second entries would serve the pre-reassign seat back to them.
+   * Keyed by the same effective username `fetchAllOrgSeats` / `OrgPeopleDirectoryService.getLive`
+   * build their keys from; other callers' entries are left to their TTL. `del` never throws.
+   */
+  public async invalidateCallerSeatCaches(req: Request, orgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    await Promise.all([
+      invalidatePerUserCache(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid),
+      invalidatePerUserCache(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid),
+    ]);
   }
 
   /**

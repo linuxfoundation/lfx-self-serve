@@ -13,6 +13,7 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE, votingStatusPillClass } from '@lfx-one/shared/constants';
@@ -68,6 +69,7 @@ export class CommitteeMembersComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Individuals', 'Committees', 'Foundations with committee members'];
@@ -268,6 +270,7 @@ export class CommitteeMembersComponent {
     );
 
     const results = await Promise.allSettled(ops);
+    this.directory.invalidate(orgUid);
     this.retry();
 
     const total = intent.selected.length;
@@ -316,6 +319,7 @@ export class CommitteeMembersComponent {
       summary: 'Committee role updated',
       life: 3000,
     });
+    this.directory.invalidate(orgUid);
     this.retry();
   }
 
