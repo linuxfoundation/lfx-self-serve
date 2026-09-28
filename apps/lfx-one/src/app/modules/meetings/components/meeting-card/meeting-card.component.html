@@ -419,6 +419,7 @@
               data-testid="view-guests-button"
               (click)="onRegistrantsToggle()">
             </lfx-button>
+            <lfx-host-key-popover class="w-full" [meeting]="meeting()" [occurrence]="occurrence()" [pastMeeting]="pastMeeting()" />
             @if (canToggleRsvpView()) {
               <lfx-button
                 class="w-full"

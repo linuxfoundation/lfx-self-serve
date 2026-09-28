@@ -52,7 +52,7 @@ import {
   MentorshipMenteeUpNextTaskStatus,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 /**
@@ -72,7 +72,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeOverviewComponent {
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly menteeService = inject(MentorshipMenteeService);
   private readonly comingSoonService = inject(MentorshipComingSoonService);
 
   /** Emitted when the API response phase is known. */
@@ -196,7 +196,7 @@ export class MenteeOverviewComponent {
           this.loadError.set(null);
         }),
         switchMap(() =>
-          this.mentorshipService.getMenteeOverview(this.overridePhase() ?? undefined).pipe(
+          this.menteeService.getMenteeOverview(this.overridePhase() ?? undefined).pipe(
             map((response) => {
               this.hasLoaded.set(true);
               this.phaseChange.emit(response.phase);

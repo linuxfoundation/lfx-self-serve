@@ -101,6 +101,8 @@ import {
   HealthMetricsEventsPastQuery,
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthQuery,
+  HealthMetricsEventsRevenue,
+  HealthMetricsEventsRevenueQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1264,6 +1266,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsRegistrationsGrowth>('/api/analytics/events-registrations-growth', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-registrations-growth failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Each period's revenue headline and every event in the four periods, for the Events tab's revenue section. */
+  public getEventsRevenue(query: HealthMetricsEventsRevenueQuery): Observable<HealthMetricsEventsRevenue> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a measured $0.
+    return this.http.get<HealthMetricsEventsRevenue>('/api/analytics/events-revenue', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-revenue failed', { query, error });
         return throwError(() => error);
       })
     );

@@ -6,7 +6,7 @@
   position="right"
   [modal]="true"
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
-  [pt]="drawerPt"
+  [pt]="drawerPt()"
   (onShow)="onDrawerShow()"
   data-testid="project-application-drawer">
   <ng-template #header>
@@ -20,11 +20,30 @@
           data-testid="project-application-drawer-title">
           {{ projectName() }}
         </h2>
-        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500" data-testid="project-application-drawer-meta">
           <lfx-tag [value]="stateMeta().label" [severity]="stateMeta().severity" data-testid="project-application-drawer-state" />
-          <span>Submitted {{ app.created_at | date: 'mediumDate' }}</span>
-          <span aria-hidden="true">·</span>
-          <span>Updated {{ app.updated_at | date: 'mediumDate' }}</span>
+          @if (isStaff()) {
+            <span data-testid="project-application-drawer-submitter"
+              >Submitted {{ app.created_at | date: 'mediumDate' }} by
+              <span class="text-gray-700">{{ app.submitter_name || app.submitter_username }}</span></span
+            >
+            @if (submitterEmailLink(); as email) {
+              <span aria-hidden="true">·</span>
+              @if (email.href) {
+                <a [href]="email.href" class="text-blue-600 hover:underline break-all" data-testid="project-application-drawer-submitter-email">{{
+                  email.text
+                }}</a>
+              } @else {
+                <span class="break-all" data-testid="project-application-drawer-submitter-email">{{ email.text }}</span>
+              }
+            }
+          } @else {
+            <span>Submitted {{ app.created_at | date: 'mediumDate' }}</span>
+          }
+          @if (showUpdated()) {
+            <span aria-hidden="true">·</span>
+            <span data-testid="project-application-drawer-updated">Updated {{ app.updated_at | date: 'mediumDate' }}</span>
+          }
         </div>
       </div>
     }
@@ -44,82 +63,55 @@
           (cancelled)="cancelEditing()"
           data-testid="project-application-drawer-form" />
       } @else {
-        <!-- Actions -->
-        <div class="flex flex-wrap items-center gap-2" data-testid="project-application-drawer-actions">
-          @if (isOpen()) {
-            @if (isStaff()) {
-              <lfx-button
-                label="Accept"
-                icon="fa-light fa-circle-check"
-                severity="primary"
-                size="small"
-                [disabled]="busy()"
-                [loading]="busyAction() === 'accept'"
-                (onClick)="onAccept()"
-                data-testid="project-application-drawer-accept" />
-              <lfx-button
-                label="Deny"
-                icon="fa-light fa-circle-xmark"
-                severity="danger"
-                [outlined]="true"
-                size="small"
-                [loading]="busyAction() === 'deny'"
-                [disabled]="busy()"
-                (onClick)="onDeny()"
-                data-testid="project-application-drawer-deny" />
-            }
-            <lfx-button
-              label="Revise"
-              icon="fa-light fa-pen"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              [disabled]="busy()"
-              (onClick)="startEditing()"
-              data-testid="project-application-drawer-revise" />
-            <lfx-button
-              label="Withdraw"
-              icon="fa-light fa-arrow-rotate-left"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              [loading]="busyAction() === 'withdraw'"
-              [disabled]="busy()"
-              (onClick)="onWithdraw()"
-              data-testid="project-application-drawer-withdraw" />
-          }
-          <lfx-button
-            label="Delete"
-            icon="fa-light fa-trash"
-            severity="danger"
-            [text]="true"
-            size="small"
-            [loading]="busyAction() === 'delete'"
-            [disabled]="busy()"
-            (onClick)="onDelete()"
-            data-testid="project-application-drawer-delete" />
-        </div>
-
-        <!-- Submitter -->
-        <section class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="project-application-drawer-submitter">
-          <h3 class="text-sm font-medium text-gray-900 m-0">Submitted by</h3>
-          <dl class="grid grid-cols-1 sm:grid-cols-[12rem_1fr] gap-x-4 gap-y-2 m-0 text-sm">
-            <dt class="text-gray-500">Name</dt>
-            <dd class="m-0 text-gray-900 break-words">{{ app.submitter_name || app.submitter_username }}</dd>
-            <dt class="text-gray-500">Email</dt>
-            <dd class="m-0 text-gray-900 break-all">{{ app.submitter_email }}</dd>
-          </dl>
-        </section>
+        @if (statusCallout(); as callout) {
+          <lfx-message [severity]="callout.severity" [icon]="callout.icon" data-testid="project-application-drawer-status">
+            <ng-template #content>
+              <p class="text-sm m-0">{{ callout.text }}</p>
+            </ng-template>
+          </lfx-message>
+        }
 
         <!-- Answers -->
-        @for (section of sections(); track section.title) {
-          <section class="flex flex-col gap-2" [attr.data-testid]="'project-application-drawer-section-' + $index">
-            <h3 class="text-sm font-medium text-gray-900 m-0">{{ section.title }}</h3>
+        @for (section of sections(); track section.title; let first = $first) {
+          <section
+            class="flex flex-col gap-3"
+            [class.border-t]="!first"
+            [class.border-gray-100]="!first"
+            [class.pt-5]="!first"
+            [attr.data-testid]="'project-application-drawer-section-' + $index">
+            <h3 class="text-sm font-semibold text-gray-900 m-0">{{ section.title }}</h3>
             <dl class="grid grid-cols-1 sm:grid-cols-[12rem_1fr] gap-x-4 gap-y-2 m-0 text-sm">
               @for (row of section.rows; track row.key) {
-                <dt class="text-gray-500">{{ row.label }}</dt>
-                <dd class="m-0 text-gray-900 whitespace-pre-line break-words" [attr.data-testid]="'project-application-drawer-answer-' + row.key">
-                  {{ row.value }}
+                <dt class="text-gray-500" [class.sr-only]="row.labelHidden" [class.sm:col-span-2]="row.long">{{ row.label }}</dt>
+                <dd
+                  class="m-0 text-gray-900 break-words"
+                  [class.sm:col-span-2]="row.long"
+                  [class.mb-1]="row.long"
+                  [attr.data-testid]="'project-application-drawer-answer-' + row.key">
+                  @if (row.links.length) {
+                    <span class="flex flex-col gap-1">
+                      @for (link of row.links; track $index) {
+                        @if (link.href) {
+                          <a
+                            [href]="link.href"
+                            [attr.target]="link.external ? '_blank' : null"
+                            [attr.rel]="link.external ? 'noopener noreferrer' : null"
+                            class="inline-flex items-center gap-1 w-fit max-w-full text-blue-600 hover:underline break-all"
+                            [attr.data-testid]="'project-application-drawer-link-' + row.key"
+                            >{{ link.text }}
+                            @if (link.external) {
+                              <i class="fa-light fa-arrow-up-right-from-square text-xs shrink-0" aria-hidden="true"></i>
+                              <span class="sr-only">(opens in a new tab)</span>
+                            }
+                          </a>
+                        } @else {
+                          <span class="break-all">{{ link.text }}</span>
+                        }
+                      }
+                    </span>
+                  } @else {
+                    <span class="whitespace-pre-line">{{ row.value }}</span>
+                  }
                 </dd>
               }
             </dl>
@@ -130,6 +122,78 @@
       }
     </div>
   }
+
+  <ng-template #footer>
+    @if (application()) {
+      <!-- Left-aligned so the primary action never sits under the bottom-right Intercom launcher. -->
+      <div class="flex flex-wrap items-center gap-2 w-full" data-testid="project-application-drawer-actions">
+        @if (isOpen()) {
+          @if (isStaff()) {
+            <lfx-button
+              label="Accept"
+              icon="fa-light fa-circle-check"
+              severity="primary"
+              size="small"
+              [disabled]="busy()"
+              [loading]="busyAction() === 'accept'"
+              (onClick)="onAccept()"
+              data-testid="project-application-drawer-accept" />
+            <lfx-button
+              label="Deny"
+              icon="fa-light fa-circle-xmark"
+              severity="danger"
+              [outlined]="true"
+              size="small"
+              [loading]="busyAction() === 'deny'"
+              [disabled]="busy()"
+              (onClick)="onDeny()"
+              data-testid="project-application-drawer-deny" />
+          } @else {
+            <lfx-button
+              label="Revise"
+              icon="fa-light fa-pen"
+              severity="primary"
+              size="small"
+              [disabled]="busy()"
+              (onClick)="startEditing()"
+              data-testid="project-application-drawer-revise" />
+          }
+          <lfx-menu
+            #moreMenu
+            [model]="moreActions()"
+            [popup]="true"
+            appendTo="body"
+            ariaLabel="More actions"
+            (onShow)="moreMenuOpen.set(true)"
+            (onHide)="moreMenuOpen.set(false)"
+            data-testid="project-application-drawer-more-menu" />
+          <lfx-button
+            icon="fa-light fa-ellipsis"
+            severity="secondary"
+            [text]="true"
+            size="small"
+            ariaLabel="More actions"
+            ariaHaspopup="menu"
+            [ariaExpanded]="moreMenuOpen()"
+            [loading]="busyAction() === 'withdraw' || busyAction() === 'delete'"
+            [disabled]="busy()"
+            (onClick)="moreMenu.toggle($event)"
+            data-testid="project-application-drawer-more" />
+        } @else {
+          <lfx-button
+            label="Delete"
+            icon="fa-light fa-trash"
+            severity="danger"
+            [text]="true"
+            size="small"
+            [loading]="busyAction() === 'delete'"
+            [disabled]="busy()"
+            (onClick)="onDelete()"
+            data-testid="project-application-drawer-delete" />
+        }
+      </div>
+    }
+  </ng-template>
 </p-drawer>
 
 <p-confirmDialog key="project-application-drawer" />

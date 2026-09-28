@@ -12,7 +12,7 @@ import { RouteLoadingComponent } from '@components/loading/route-loading.compone
 import { MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipMenteeTaskStatus, MentorshipMenteeTasksResponse, MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeTaskViews, countSubmittedMentorshipMenteeTasks, normalizeMentorshipMenteeTaskStatus } from '@lfx-one/shared/utils';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, finalize, of, switchMap } from 'rxjs';
 
 import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.component';
@@ -30,7 +30,7 @@ import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.compo
 })
 export class MenteeAcceptedTasksComponent {
   // ---- 1. DI ----------------------------------------------------------------
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly menteeService = inject(MentorshipMenteeService);
 
   // ---- 2. Template constants ------------------------------------------------
   protected readonly filterOptions = MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS;
@@ -66,7 +66,7 @@ export class MenteeAcceptedTasksComponent {
     this.error.set(null);
     this.retrying.set(true);
     // Drop a cached success so Retry always refetches, matching the applicant tab.
-    this.mentorshipService.clearMenteeCaches();
+    this.menteeService.clearMenteeCaches();
     this.reloadTrigger.update((n) => n + 1);
   }
 
@@ -76,7 +76,7 @@ export class MenteeAcceptedTasksComponent {
     return toSignal(
       toObservable(this.reloadTrigger).pipe(
         switchMap(() =>
-          this.mentorshipService.getMenteeTasks().pipe(
+          this.menteeService.getMenteeTasks().pipe(
             catchError((err: unknown) => {
               const msg =
                 err instanceof HttpErrorResponse

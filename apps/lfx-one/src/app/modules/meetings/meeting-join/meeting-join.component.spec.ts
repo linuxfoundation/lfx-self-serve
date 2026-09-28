@@ -783,4 +783,50 @@ describe('MeetingJoinComponent', () => {
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
     });
   });
+
+  describe('host controls callout', () => {
+    const HOST_KEY = '123456';
+
+    const createFixture = async () => {
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.detectChanges();
+      return fixture;
+    };
+
+    it('renders the callout with the panel when the payload carries a viewable host key', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ host_key: HOST_KEY, can_view_host_key: true }), project: buildProject() }));
+
+      const fixture = await createFixture();
+
+      const callout = fixture.nativeElement.querySelector('[data-testid="host-controls-callout"]');
+      expect(callout).not.toBeNull();
+      expect(callout.querySelector('[data-testid="meeting-host-key"]')).not.toBeNull();
+      // D8 instruction copy ships with the panel.
+      expect(callout.querySelector('[data-testid="host-key-instructions"]')?.textContent).toContain('Claim Host');
+    });
+
+    it('renders no callout when the payload has no viewable host key (default fixture)', async () => {
+      const fixture = await createFixture();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="host-controls-callout"]')).toBeNull();
+    });
+
+    it('masks the key until toggled, then reveals it with the copy button', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ host_key: HOST_KEY, can_view_host_key: true }), project: buildProject() }));
+      const fixture = await createFixture();
+
+      const toggle = fixture.nativeElement.querySelector('[data-testid="host-key-toggle"]') as HTMLElement;
+      expect(toggle.textContent).toContain('Host Key');
+      expect(toggle.textContent).not.toContain(HOST_KEY);
+      expect(fixture.nativeElement.querySelector('[data-testid="host-key-copy"]')).toBeNull();
+
+      toggle.click();
+      fixture.detectChanges();
+
+      expect(toggle.textContent).toContain(`Host Key: ${HOST_KEY}`);
+      expect(fixture.nativeElement.querySelector('[data-testid="host-key-copy"]')).not.toBeNull();
+    });
+  });
 });

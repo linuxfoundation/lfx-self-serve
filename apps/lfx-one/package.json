@@ -11,7 +11,7 @@
     "build:production": "yarn docs:build && yarn build:gw-css && ng build --configuration production",
     "build:staging": "yarn docs:build && yarn build:gw-css && ng build --configuration staging",
     "watch": "yarn docs:build && yarn build:gw-css && ng build --watch --configuration development",
-    "test": "node scripts/run-tests.mjs",
+    "test": "yarn docs:build && node scripts/run-tests.mjs",
     "test:server": "vitest run",
     "test:app": "ng test",
     "start:server": "pm2-runtime ecosystem.config.js",

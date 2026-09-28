@@ -12,7 +12,7 @@ import { RouteLoadingComponent } from '@components/loading/route-loading.compone
 import { MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationView, MentorshipMenteeOverviewApplicant } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeApplicationViews, normalizeMentorshipMenteeTaskStatus } from '@lfx-one/shared/utils';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.component';
@@ -30,7 +30,7 @@ import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.compo
 })
 export class MenteeApplicantTasksComponent {
   // ---- 1. DI ----------------------------------------------------------------
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly menteeService = inject(MentorshipMenteeService);
 
   // ---- 2. Template constants ------------------------------------------------
   protected readonly prerequisiteLabel = MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL;
@@ -56,7 +56,7 @@ export class MenteeApplicantTasksComponent {
     this.error.set(null);
     // A 200 with the wrong phase is cached as a success. Drop it so Retry
     // actually refetches instead of replaying the same unusable payload.
-    this.mentorshipService.clearMenteeCaches();
+    this.menteeService.clearMenteeCaches();
     this.reloadTrigger.update((n) => n + 1);
   }
 
@@ -67,7 +67,7 @@ export class MenteeApplicantTasksComponent {
       toObservable(this.reloadTrigger).pipe(
         tap(() => this.error.set(null)),
         switchMap(() =>
-          this.mentorshipService.getMenteeOverview().pipe(
+          this.menteeService.getMenteeOverview().pipe(
             // The shell mounted us for the applicant phase but the overview resolved to a
             // different phase — surface a terminal error+retry instead of spinning forever.
             // Keep the side effect in `tap`; `map` below stays a pure transform.

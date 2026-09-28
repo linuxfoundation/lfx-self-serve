@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { convertToParamMap, Router, UrlTree } from '@angular/router';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +19,7 @@ describe('menteeRegisterGuard', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
-        { provide: MentorshipService, useValue: { hasMenteeProfile } },
+        { provide: MentorshipMenteeService, useValue: { hasMenteeProfile } },
         { provide: Router, useValue: { createUrlTree } },
       ],
     });

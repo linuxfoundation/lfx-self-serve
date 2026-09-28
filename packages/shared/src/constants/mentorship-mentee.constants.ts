@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship.interface';
+import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship-mentee.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -163,7 +163,7 @@ import type {
   MentorshipMenteeTasksResponse,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeUpNextTaskStatus,
-} from '../interfaces/mentorship.interface';
+} from '../interfaces/mentorship-mentee.interface';
 
 // ---------------------------------------------------------------------------
 // Tab configs — one per phase
@@ -457,8 +457,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
       programName: 'Backstage: Plugin Accessibility Audit',
       projectName: 'CNCF',
       termName: 'Summer 2026',
-      lastTaskUpdatedOn: 'Feb 12, 2026',
-      decidedOn: 'Apr 20, 2026',
+      createdOn: 'Feb 12, 2026',
       outcome: 'not-selected',
     },
     {
@@ -466,8 +465,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
       programName: 'OpenAPI Tools: Type-Safe Client Generation',
       projectName: 'OpenAPI Initiative',
       termName: 'Spring 2026',
-      lastTaskUpdatedOn: 'Nov 8, 2025',
-      decidedOn: 'Jan 19, 2026',
+      createdOn: 'Nov 8, 2025',
       outcome: 'not-selected',
     },
   ],

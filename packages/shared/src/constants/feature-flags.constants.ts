@@ -168,14 +168,15 @@ export const FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS = 3_000;
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
  * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
  * checklist section, and the Formations queue (epic #1965). It also gates the project lens's
- * Formation-only sidebar and the `/project/overview` → `/project/formation` landing redirect for a
- * project in a Formation stage (#2754; `SidebarNavService` and `formationOverviewRedirectGuard`,
- * both on `isFormationStageGate`), and "Propose a project" (#3037): the My Formations CTA, the
- * `/formations/propose` intake page, the Submitted proposals tab, and the foundation queue's Project
- * proposals tab. Staged targeting (named users, then LF Staff, then
- * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
- * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
- * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.
+ * formation-stage sidebar (Formation, Meetings, Mailing Lists, Groups — #3059) and the
+ * `/project/overview` → `/project/formation` landing redirect for a project in a Formation stage
+ * (#2754; `SidebarNavService` and `formationOverviewRedirectGuard`, both on `isFormationStageGate`),
+ * and "Propose a project" (#3037): the My Formations CTA, the `/formations/propose` intake page, the
+ * Submitted proposals tab, and the foundation queue's Project proposals tab. Staged targeting (named
+ * users, then LF Staff, then all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users"
+ * in one step. Default false so an unflagged evaluation renders the pre-Formation UI. The checklist
+ * and queue now read the real `lfx-v2-formation-service` backend; this flag is the sole rollout gate
+ * for the UI.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already

@@ -179,7 +179,7 @@ export class ProjectContextService {
    * instead of redirecting to the checklist — the flag was off, pinned off, or LaunchDarkly was not
    * ready within `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` (#2754). `SidebarNavService` keeps that
    * project's full nav while this names the selected project, so a provider that only becomes ready
-   * after the guard gave up (or a flag flipped on live) cannot collapse the nav to Formation-only
+   * after the guard gave up (or a flag flipped on live) cannot collapse the nav to the formation-stage set
    * under a dashboard the guard already admitted. The record describes that one dashboard and never
    * outlives it: every browser run of the redirect guard clears it before deciding (only its
    * fail-open branch writes a slug), and `formationOverviewReleaseGuard` clears it when navigation

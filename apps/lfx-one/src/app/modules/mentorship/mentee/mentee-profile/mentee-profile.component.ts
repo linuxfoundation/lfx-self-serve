@@ -9,7 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
@@ -47,7 +47,7 @@ import { MenteeProfileEditDrawerService } from './components/mentee-profile-edit
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeProfileComponent {
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly menteeService = inject(MentorshipMenteeService);
   private readonly drawerService = inject(MenteeProfileEditDrawerService);
 
   protected readonly hasLoaded = signal(false);
@@ -75,7 +75,7 @@ export class MenteeProfileComponent {
           this.loadError.set(null);
         }),
         switchMap(() =>
-          this.mentorshipService.getMenteeProfile().pipe(
+          this.menteeService.getMenteeProfile().pipe(
             map((response) => {
               this.hasLoaded.set(true);
               if (!Array.isArray(response.history)) {

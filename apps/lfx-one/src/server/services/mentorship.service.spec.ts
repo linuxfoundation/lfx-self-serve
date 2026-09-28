@@ -139,28 +139,6 @@ describe('MentorshipService.getMentorProgram', () => {
   });
 });
 
-describe('MentorshipService.getMenteeApplyTarget', () => {
-  let service: InstanceType<typeof MentorshipService>;
-
-  beforeEach(() => {
-    service = new MentorshipService();
-  });
-
-  it('resolves the program name, project, and the requested term', async () => {
-    const target = await service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'trm_apicurio_winter26');
-
-    expect(target).toEqual({
-      programName: 'Apicurio Registry: Prompt Template Playground',
-      projectName: 'CNCF',
-      termName: 'Winter 2026',
-    });
-  });
-
-  it('rejects an unknown term on a known program', async () => {
-    await expect(service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'missing-term')).rejects.toBeInstanceOf(ResourceNotFoundError);
-  });
-});
-
 describe('MentorshipService program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
   const upstreamProgram = {

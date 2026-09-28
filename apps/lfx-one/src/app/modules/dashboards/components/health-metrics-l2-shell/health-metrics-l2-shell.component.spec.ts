@@ -20,7 +20,7 @@ import type { HealthMetricsL2Section, HealthMetricsL2SubNavItem } from '@lfx-one
 // one section's data is still blocked.
 const SECTIONS: HealthMetricsL2Section[] = [
   { key: 'alpha', label: 'Alpha', heading: 'Alpha heading', description: 'Alpha copy', footnote: '', footnoteCaution: false },
-  { key: 'beta', label: 'Beta', heading: 'Beta heading', description: 'Beta copy', footnote: 'Beta note', footnoteCaution: false },
+  { key: 'beta', label: 'Beta', heading: 'Beta heading', description: 'Beta copy', footnote: 'Beta note', footnoteCaution: false, headingBadge: 'Provisional' },
   { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: 'Gamma caution', footnoteCaution: true },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
@@ -277,6 +277,11 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="test-section-beta"]').textContent).toContain('Beta note');
     expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
     expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"] .fa-triangle-exclamation')).not.toBeNull();
+  });
+
+  it('badges only the heading that carries one', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.textContent?.trim()).toBe('Provisional');
+    expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-alpha"]')).toBeNull();
   });
 
   it('labels the sub-nav and starts with the first section active', () => {

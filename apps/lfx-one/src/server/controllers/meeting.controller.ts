@@ -21,7 +21,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -32,13 +32,7 @@ import {
 } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
-import {
-  addInvitedStatusToMeeting,
-  applyOrganizerAndHostKeyResult,
-  enrichMeetingsWithCreatedBy,
-  isWithinHostKeyWindow,
-  stripHostKey,
-} from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';

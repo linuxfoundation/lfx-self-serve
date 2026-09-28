@@ -14,6 +14,8 @@ export interface HealthMetricsL2Section {
   description: string;
   footnote: string;
   footnoteCaution: boolean;
+  /** A pill beside the heading, e.g. for figures still pending validation. */
+  headingBadge?: string;
 }
 
 /** A section with its DOM ids resolved once, so the template never calls a builder per render. */

@@ -10,7 +10,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_PROFILE_CREATED_STATE, MOCK_MENTORSHIP_MENTEE_PROFILE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplyTarget } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,7 +76,7 @@ describe('MenteeApplyComponent', () => {
         provideNoopAnimations(),
         provideRouter([]),
         { provide: ActivatedRoute, useValue: routeFor(applyParams) },
-        { provide: MentorshipService, useValue: { getMenteeApplyTarget, getMenteeProfile } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeApplyTarget, getMenteeProfile } },
         { provide: MessageService, useValue: { add: toast } },
       ],
     });

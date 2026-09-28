@@ -21,8 +21,8 @@ interface DialogAccess {
 
 const PARENT = { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project;
 
-describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
-  const setup = async () => {
+describe('ProjectApplicationAcceptDialogComponent (#3037, #1995)', () => {
+  const setup = async (projectName = 'Example Project', projectSlug?: string) => {
     TestBed.resetTestingModule();
     const close = vi.fn();
     const searchProjects = vi.fn<(query: string) => Observable<Project[]>>(() => of([PARENT, { uid: '', name: 'No uid', slug: 'none' } as Project]));
@@ -30,7 +30,7 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
       imports: [ProjectApplicationAcceptDialogComponent],
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { projectName: 'Example' } } },
+        { provide: DynamicDialogConfig, useValue: { data: { projectName, projectSlug } } },
         { provide: ProjectService, useValue: { searchProjects } },
       ],
     }).compileComponents();
@@ -69,7 +69,7 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
     form.controls.parent.setValue(PARENT);
     component.onSelected({ value: PARENT });
     component.onConfirm();
-    expect(close).toHaveBeenCalledWith(PARENT);
+    expect(close).toHaveBeenCalledWith({ parent: PARENT, slug: 'example-project' });
   });
 
   it('an unmatched entry blurring to null (forceSelection) clears the choice, so Confirm sends nothing', async () => {
@@ -86,7 +86,31 @@ describe('ProjectApplicationAcceptDialogComponent (#3037)', () => {
     const { component, form, close } = await setup();
     form.controls.parent.setValue(PARENT);
     component.onConfirm();
-    expect(close).toHaveBeenCalledWith(PARENT);
+    expect(close).toHaveBeenCalledWith({ parent: PARENT, slug: 'example-project' });
+  });
+
+  it('prefills the slug from the proposed project name', async () => {
+    const { form } = await setup('LFX One');
+    expect(form.controls.slug.value).toBe('lfx-one');
+  });
+
+  it('prefills the slug an earlier accept recorded, so a retry keeps the project that may already exist', async () => {
+    const { form } = await setup('LFX One', 'lfx-one-v2');
+    expect(form.controls.slug.value).toBe('lfx-one-v2');
+  });
+
+  it('blocks confirm on an invalid or empty slug, and closes with the edited slug once valid', async () => {
+    const { component, form, close } = await setup();
+    form.controls.parent.setValue(PARENT);
+    form.controls.slug.setValue('Not Valid');
+    component.onConfirm();
+    form.controls.slug.setValue('');
+    component.onConfirm();
+    expect(close).not.toHaveBeenCalled();
+
+    form.controls.slug.setValue('my_project-2');
+    component.onConfirm();
+    expect(close).toHaveBeenCalledWith({ parent: PARENT, slug: 'my_project-2' });
   });
 
   it('clearing the selection blocks confirm again, and cancel closes empty', async () => {
