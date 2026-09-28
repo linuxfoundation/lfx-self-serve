@@ -11,9 +11,11 @@ import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, INSIGHTS_PUBLIC_API_FLAG } from '@lf
 import { CreateInsightsTokenResponse, InsightsToken, InsightsTokenEligibility } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 
+import { SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
+
 export const DATA_LOAD_TIMEOUT = 30_000;
 
-export const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false };
+export const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [{ uid: 'org-1', name: SYNTHETIC_ORG_NAME }], checkFailed: false };
 export const NOT_KEY_CONTACT: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: false };
 export const CHECK_FAILED: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: true };
 
