@@ -3,14 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal, viewChild } from '@angular/core';
-import {
-  HEALTH_SCORE_BAR_FILL,
-  HEALTH_SCORE_CATEGORIES,
-  HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
-  ORG_HEALTH_POPUP_UNAVAILABLE_TEXT,
-} from '@lfx-one/shared/constants';
-import { getHealthScoreDescription, isPartialHealthScore } from '@lfx-one/shared/utils';
+import { HEALTH_SCORE_BAR_FILL, HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, ORG_HEALTH_POPUP_UNAVAILABLE_TEXT } from '@lfx-one/shared/constants';
+import { getHealthScoreDescription } from '@lfx-one/shared/utils';
 import { PopoverModule } from 'primeng/popover';
 import type { Popover } from 'primeng/popover';
 
@@ -18,44 +12,36 @@ import type { HealthScore, OrgLensHealthPopupRow } from '@lfx-one/shared/interfa
 
 /**
  * Shared Org Lens health popup — a PrimeNG popover bound to a health badge on the Projects
- * table and the project-detail hero. Content ports the Insights health-score pill 1:1 (headline,
- * rescaled bar, generated description, three `/40 /35 /25` rows); the header shell (title + outbound
- * `LFX Insights` link) is Org Lens. Hosts open it on badge hover/focus and schedule-hide on
- * leave/blur (see `scheduleHide`).
+ * table and the project-detail hero. Content ports the Insights health-score tooltip (dot headline,
+ * raw-score bar with a dotted unavailable remainder, generated description, three `/40 /35 /25` rows).
+ * Hosts open it on badge hover/focus and schedule-hide on leave/blur (see `scheduleHide`).
  */
 @Component({
   selector: 'lfx-org-health-popup',
   imports: [PopoverModule],
   templateUrl: './org-health-popup.component.html',
+  styleUrl: './org-health-popup.component.scss',
 })
 export class OrgHealthPopupComponent {
   public readonly score = input<number | null>(null);
   public readonly label = input<Exclude<HealthScore, 'unavailable'> | null>(null);
   public readonly maxScore = input<number | null>(null);
-  public readonly coveredCount = input<number | null>(null);
   public readonly maintainer = input<number | null>(null);
   public readonly security = input<number | null>(null);
   public readonly development = input<number | null>(null);
-  /** Project's LFX Insights page URL — computed once by the host (BFF `lfxInsightsUrl` / table `insightsUrl`). */
-  public readonly insightsUrl = input.required<string>();
 
   protected readonly unavailableText = ORG_HEALTH_POPUP_UNAVAILABLE_TEXT;
   protected readonly available = computed(() => this.label() != null && this.score() != null);
-  protected readonly partial = computed(() => this.available() && isPartialHealthScore(this.coveredCount()));
-  protected readonly headline = computed(() => {
+  protected readonly labelText = computed(() => {
     const band = this.label();
-    const points = this.score();
-    if (band == null || points == null) {
-      return '';
-    }
-    return `${HEALTH_SCORE_LABELS[band]}${this.partial() ? HEALTH_SCORE_PARTIAL_SUFFIX : ''} (${points}/${this.maxScore() ?? 100})`;
+    return band == null ? '' : HEALTH_SCORE_LABELS[band];
   });
-  protected readonly barFill = computed(() => {
-    const points = this.score();
-    if (points == null) {
-      return 0;
-    }
-    return (points / (this.maxScore() ?? 100)) * 100;
+  protected readonly scoreText = computed(() => `(${this.score() ?? 0}/${this.maxScore() ?? 100})`);
+  // Raw score on a 0-100 track; the points no covered category can earn render as a dotted remainder.
+  protected readonly barFillPercent = computed(() => Math.min(Math.max(this.score() ?? 0, 0), 100));
+  protected readonly barMissingPercent = computed(() => {
+    const max = this.maxScore();
+    return max != null && max < 100 ? 100 - max : 0;
   });
   protected readonly barFillColor = computed(() => {
     const band = this.label();
@@ -63,7 +49,7 @@ export class OrgHealthPopupComponent {
   });
   protected readonly description = computed(() => getHealthScoreDescription(this.label(), this.maintainer(), this.security(), this.development()));
   protected readonly rows = computed<OrgLensHealthPopupRow[]>(() =>
-    HEALTH_SCORE_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon, display: `${this[c.key]() ?? '-'}/${c.max}` }))
+    HEALTH_SCORE_CATEGORIES.map((c) => ({ key: c.key, name: c.name, icon: c.icon, score: String(this[c.key]() ?? '— '), max: c.max }))
   );
 
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
@@ -78,7 +64,7 @@ export class OrgHealthPopupComponent {
   // close it before the pointer arrives. Deferring the hide lets a `mouseenter` on the popover
   // itself cancel it first (same pattern as org-spend-bar's "others" popover).
   private hidePopoverTimeoutId: ReturnType<typeof setTimeout> | undefined;
-  // Keyboard activation moves focus into the popup so the Insights link is reachable; the badge
+  // Keyboard activation moves focus into the popup so screen readers read the breakdown; the badge
   // that opened it gets focus back on hide. Hover/focus opens never steal focus. Restoring focus
   // fires the badge's own `(focus)` → `show()`, which must not reopen what the user just closed.
   private focusOnShow = false;

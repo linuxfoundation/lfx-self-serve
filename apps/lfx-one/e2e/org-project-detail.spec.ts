@@ -536,11 +536,12 @@ test.describe('Org Project Detail — hero health popup', () => {
     await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('project-detail-health-badge').hover();
-    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy (52/65)');
     await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('30/40');
-    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('-/35');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('— /35');
     await expect(page.getByTestId('org-health-popup-row-development')).toContainText('22/25');
-    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/kubernetes/);
+    await expect(page.getByTestId('org-health-popup-link')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toBeVisible();
   });
 
   test('opens the hero health popup on keyboard focus with a matching accessible name', async ({ page }) => {
@@ -549,7 +550,7 @@ test.describe('Org Project Detail — hero health popup', () => {
     await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('project-detail-health-badge').focus();
-    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy (52/65)');
     await expect(page.getByTestId('project-detail-health-badge')).toHaveAttribute(
       'aria-label',
       'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
