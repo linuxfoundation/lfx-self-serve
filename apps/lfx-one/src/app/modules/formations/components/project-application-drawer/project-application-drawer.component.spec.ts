@@ -38,6 +38,10 @@ interface DrawerAccess {
   drawerPt: () => DrawerPassThroughOptions;
 }
 
+function footerClass(component: DrawerAccess): string | undefined {
+  return (component.drawerPt().footer as { class?: string } | undefined)?.class;
+}
+
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
   return {
     uid: '3f2b8c1e-7a4d-4e1b-9c2a-5d6e7f8a9b0c',
@@ -167,9 +171,9 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
 
   it('hides the footer while editing and shows it with a divider otherwise', async () => {
     const { component } = await setup('submitter');
-    expect((component.drawerPt()?.footer as { class?: string } | undefined)?.class).toBe('border-t border-gray-200');
+    expect(footerClass(component)).toBe('border-t border-gray-200');
     component.startEditing();
-    expect((component.drawerPt()?.footer as { class?: string } | undefined)?.class).toBe('hidden');
+    expect(footerClass(component)).toBe('hidden');
   });
 
   it('closes every state transition once the application is decided', async () => {

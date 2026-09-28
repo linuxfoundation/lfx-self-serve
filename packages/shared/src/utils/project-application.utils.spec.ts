@@ -161,12 +161,15 @@ describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
     expect(toProjectApplicationEmailLink('a@b@example.org').href).toBeNull();
   });
 
-  it('checks a long adversarial address in linear time', () => {
-    // Non-matching (trailing space), so a backtracking pattern would be forced through its worst case.
-    const adversarial = `!@!.${'!.'.repeat(50_000)} `;
-    const started = Date.now();
-    expect(toProjectApplicationEmailLink(adversarial).href).toBeNull();
-    expect(Date.now() - started).toBeLessThan(200);
+  it('checks long adversarial addresses in linear time on every rejection path', () => {
+    const body = `!@!.${'!.'.repeat(50_000)}`;
+    // The first is rejected by the forbidden-character test (trailing space); the second has no forbidden
+    // character, so it reaches the domain-shape checks and is rejected there (it ends in `.`).
+    for (const adversarial of [`${body} `, body]) {
+      const started = Date.now();
+      expect(toProjectApplicationEmailLink(adversarial).href).toBeNull();
+      expect(Date.now() - started).toBeLessThan(200);
+    }
   });
 });
 
