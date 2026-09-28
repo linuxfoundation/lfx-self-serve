@@ -5,8 +5,8 @@
  * Formation-stage project sidebar (#2754, #3059) — content-based. Lands on a project the way a user
  * does (the Project lens overview) and reads what they see in the sidebar: for a project still in a
  * Formation stage, the nav offers the Formation checklist plus Meetings, Mailing Lists and Groups,
- * and the checklist page is where they arrive; an active project keeps its usual links. See formation-sidebar-robust.spec.ts
- * for the data-testid contract.
+ * and the checklist page is where they arrive; an active project keeps its usual links. See
+ * formation-sidebar-robust.spec.ts for the data-testid contract.
  */
 
 import { expect, Page, test } from '@playwright/test';
