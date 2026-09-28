@@ -207,6 +207,9 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     await expect(page.getByTestId('formations-queue-page-tabs-proposals')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId(`project-applications-submitter-${PROPOSAL_UID}`)).toContainText('casey@example.org', { timeout: DATA_LOAD_TIMEOUT });
     await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click();
+    // The formation team sees who submitted, with a mailto link, on the header meta line.
+    await expect(page.getByTestId('project-application-drawer-submitter')).toContainText('Casey Example');
+    await expect(page.getByTestId('project-application-drawer-submitter-email')).toHaveAttribute('href', 'mailto:casey@example.org');
 
     await page.getByTestId('project-application-drawer-accept').click();
     await expect(page.getByTestId('project-application-accept-confirm').locator('button')).toBeDisabled();

@@ -6,7 +6,7 @@
   position="right"
   [modal]="true"
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
-  [pt]="drawerPt"
+  [pt]="drawerPt()"
   (onShow)="onDrawerShow()"
   data-testid="project-application-drawer">
   <ng-template #header>
@@ -124,7 +124,7 @@
   }
 
   <ng-template #footer>
-    @if (application() && !editing()) {
+    @if (application()) {
       <!-- Left-aligned so the primary action never sits under the bottom-right Intercom launcher. -->
       <div class="flex flex-wrap items-center gap-2 w-full" data-testid="project-application-drawer-actions">
         @if (isOpen()) {

@@ -52,7 +52,8 @@ import { ProjectApplicationFormComponent } from '../project-application-form/pro
  *
  * Every write sends the held revision as `If-Match`. Neither a 412 (another write won) nor a 404 (deleted
  * elsewhere) is replayed: a 412 asks the list to reload; a 404 asks it to drop the application.
- * Answers render as plain text only.
+ * Answers render as text; a URL or email answer becomes a link only when it passes `toProjectApplicationUrlLink` /
+ * `toProjectApplicationEmailLink` (http(s) with a host, or a plain single address).
  */
 @Component({
   selector: 'lfx-project-application-drawer',
@@ -117,8 +118,14 @@ export class ProjectApplicationDrawerComponent {
   /** "Updated" only adds information once it falls on a different day from the submission. */
   protected readonly showUpdated: Signal<boolean> = this.initShowUpdated();
   protected readonly moreActions: Signal<MenuItem[]> = this.initMoreActions();
-  /** p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. */
-  protected readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' } };
+  /**
+   * p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. The footer
+   * template stays statically declared, so while editing (the form has its own buttons) it is hidden via `pt`.
+   */
+  protected readonly drawerPt = computed(() => ({
+    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' },
+    footer: { class: this.editing() || !this.application() ? 'hidden' : 'border-t border-gray-200' },
+  }));
   /** The element that had focus when the drawer opened, handed focus back on every close path. */
   private opener: HTMLElement | null = null;
 
