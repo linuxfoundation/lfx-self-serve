@@ -75,7 +75,7 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
   });
 
   test.describe('Dialogs', () => {
-    test('create dialog exposes name, org, submit and cancel ids', async ({ page }) => {
+    test('create dialog exposes name, submit and cancel ids', async ({ page }) => {
       await openInsightsTokens(page, { tokens: [], eligibility: ELIGIBLE });
 
       await page.getByTestId('insights-tokens-empty-new-button').click();
@@ -83,7 +83,6 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
       await expect(dialog).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
       // lfx-input-text renders its dataTest as `data-test`, not `data-testid`.
       await expect(dialog.locator('[data-test="insights-token-create-name-input"]')).toHaveCount(1);
-      await expect(dialog.getByTestId('insights-token-create-org')).toHaveCount(1);
       await expect(dialog.getByTestId('insights-token-create-submit-button')).toHaveCount(1);
       await expect(dialog.getByTestId('insights-token-create-cancel-button')).toHaveCount(1);
       await expect(dialog.getByTestId('insights-token-create-error')).toHaveCount(0);
