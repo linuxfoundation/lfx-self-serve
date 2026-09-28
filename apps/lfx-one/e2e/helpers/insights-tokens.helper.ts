@@ -61,3 +61,23 @@ export async function openInsightsTokens(page: Page, { tokens, eligibility }: In
   await expect(page).not.toHaveURL(/auth0\.com/);
   await expect(page.getByTestId('insights-tokens-group')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
+
+/**
+ * Opens Developer Settings with the `insights-public-api` flag forced off, and returns the URLs of
+ * any insights-tokens requests the page made, so a spec can assert the group stays inert.
+ */
+export async function openDeveloperSettingsWithInsightsFlagOff(page: Page): Promise<string[]> {
+  const requests: string[] = [];
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
+    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+    JSON.stringify({ [INSIGHTS_PUBLIC_API_FLAG]: false }),
+  ] as const);
+  await page.route('**/api/profile/insights-tokens**', (route) => {
+    requests.push(route.request().url());
+    return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'unexpected' }) });
+  });
+  await page.goto('/profile/settings#developer-settings', { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('section-developer-settings')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  return requests;
+}

@@ -55,7 +55,10 @@ describe('InsightsTokensComponent', () => {
       revokeToken: vi.fn(() => of(undefined)),
     };
     setDialogPt = vi.fn();
-    dialogService = { open: vi.fn(), dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) } };
+    dialogService = {
+      open: vi.fn(() => ({ onClose: of(undefined) })),
+      dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) },
+    };
     confirmationService = { confirm: vi.fn() };
     messageService = { add: vi.fn() };
     userService = { impersonating: signal(false) };
@@ -138,6 +141,15 @@ describe('InsightsTokensComponent', () => {
     component['openCreateDialog']();
 
     expect(dialogService.open).toHaveBeenCalledTimes(1);
+    expect(component['items']()).toHaveLength(1);
+  });
+
+  it('ignores an open the dialog service declines, such as a double-click while one is registered', () => {
+    dialogService.open.mockReturnValueOnce(null);
+    create();
+
+    expect(() => component['openCreateDialog']()).not.toThrow();
+    expect(setDialogPt).not.toHaveBeenCalled();
     expect(component['items']()).toHaveLength(1);
   });
 

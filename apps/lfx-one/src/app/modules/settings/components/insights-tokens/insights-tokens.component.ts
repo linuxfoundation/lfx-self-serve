@@ -90,7 +90,9 @@ export class InsightsTokensComponent {
       return;
     }
 
-    const ref = this.dialogService.open(InsightsTokenCreateDialogComponent, {
+    // `open()` returns null when a dialog of the same component is still registered,
+    // which a quick double-click on "New token" can do.
+    const ref: DynamicDialogRef | null = this.dialogService.open(InsightsTokenCreateDialogComponent, {
       header: '',
       width: '520px',
       style: { maxWidth: '90vw' },
@@ -101,7 +103,10 @@ export class InsightsTokensComponent {
       dismissableMask: false,
       showHeader: false,
       contentStyle: { padding: '0' },
-    }) as DynamicDialogRef;
+    });
+    if (!ref) {
+      return;
+    }
     nameDynamicDialog(this.dialogService, ref, InsightsTokenCreateDialogComponent.headingId);
 
     ref.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
@@ -165,7 +170,7 @@ export class InsightsTokensComponent {
 
   /** The secret lives only in this dialog's data; it is never kept in component state. */
   private openRevealDialog(data: InsightsTokenRevealDialogData): void {
-    const ref = this.dialogService.open(InsightsTokenRevealDialogComponent, {
+    const ref: DynamicDialogRef | null = this.dialogService.open(InsightsTokenRevealDialogComponent, {
       header: '',
       width: '520px',
       style: { maxWidth: '90vw' },
@@ -177,7 +182,10 @@ export class InsightsTokensComponent {
       showHeader: false,
       contentStyle: { padding: '0' },
       data,
-    }) as DynamicDialogRef;
+    });
+    if (!ref) {
+      return;
+    }
     nameDynamicDialog(this.dialogService, ref, InsightsTokenRevealDialogComponent.headingId);
   }
 }

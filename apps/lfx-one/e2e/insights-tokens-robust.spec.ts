@@ -17,13 +17,32 @@
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { CHECK_FAILED, DATA_LOAD_TIMEOUT, ELIGIBLE, EXISTING_TOKENS, NOT_KEY_CONTACT, openInsightsTokens } from './helpers/insights-tokens.helper';
+import {
+  CHECK_FAILED,
+  DATA_LOAD_TIMEOUT,
+  ELIGIBLE,
+  EXISTING_TOKENS,
+  NOT_KEY_CONTACT,
+  openDeveloperSettingsWithInsightsFlagOff,
+  openInsightsTokens,
+} from './helpers/insights-tokens.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
 test.setTimeout(60_000);
 
 test.describe('LFX Insights API tokens — Robust Tests', () => {
+  test.describe('Feature flag', () => {
+    test('flag off: no insights-tokens group and no token requests', async ({ page }) => {
+      const requests = await openDeveloperSettingsWithInsightsFlagOff(page);
+
+      // The group loads after first render, so give a late request time to show up before asserting none did.
+      await page.waitForLoadState('networkidle');
+      await expect(page.getByTestId('insights-tokens-group')).toHaveCount(0);
+      expect(requests).toEqual([]);
+    });
+  });
+
   test.describe('Token list', () => {
     test('renders one row per token, each with name, value, meta and revoke ids', async ({ page }) => {
       await openInsightsTokens(page, { tokens: EXISTING_TOKENS, eligibility: ELIGIBLE });
