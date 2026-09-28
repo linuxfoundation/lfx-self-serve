@@ -1432,6 +1432,11 @@ export class UserService {
       failOnPartial: true,
     });
 
+    // Parent-vote keying per the upstream indexer contract (lfx-v2-voting-service
+    // docs/indexer-contract.md): `vote_uid` is the parent's v2 UID (what `/votes/{uid}` expects)
+    // and `poll_id` its v1 alias. `vote_id` is NOT a parent key — it is the response row's own
+    // v1 id (same value as the row's `uid`), so it can never substitute here.
+    //
     // "Any responded row wins" — the same rule getMyVotes applies (GH #2985): the widened
     // identity query can return both an awaiting and a responded row for the same vote (e.g. an
     // email-only invite row plus a username-keyed re-invite row), and such a vote is cast,
@@ -1439,17 +1444,15 @@ export class UserService {
     const respondedVoteIds = new Set(
       responses
         .filter((r) => r.vote_status === IndexedVoteResponseStatus.RESPONDED)
-        .map((r) => r.vote_uid ?? r.vote_id ?? r.poll_id)
+        .map((r) => r.vote_uid ?? r.poll_id)
         .filter((uid): uid is string => !!uid)
     );
 
-    // `vote_uid` is the v2 parent poll UID (what `/votes/{uid}` expects); `vote_id` and `poll_id`
-    // are v1 fallbacks per the upstream indexer contract. None of these is the individual-response id.
     const pendingVoteUids = Array.from(
       new Set(
         responses
           .filter((r) => r.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE && !r.voter_removed)
-          .map((r) => r.vote_uid ?? r.vote_id ?? r.poll_id)
+          .map((r) => r.vote_uid ?? r.poll_id)
           .filter((uid): uid is string => !!uid)
           .filter((uid) => !respondedVoteIds.has(uid))
       )

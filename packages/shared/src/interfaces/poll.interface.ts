@@ -299,9 +299,9 @@ export interface IndexedVoteResponse {
   uid?: string;
   /** Parent poll identifier (v2). Indexer tag key. */
   vote_uid?: string;
-  /** V1 fallback for the parent poll identifier */
+  /** The response row's OWN v1 identifier (same value as `uid`) — never a parent-vote key */
   vote_id?: string;
-  /** V1 alias for `vote_id` carried by older indexer versions */
+  /** V1 fallback for the parent poll identifier (`vote_uid`) */
   poll_id?: string;
   /** V2 project UID the response belongs to */
   project_uid?: string;

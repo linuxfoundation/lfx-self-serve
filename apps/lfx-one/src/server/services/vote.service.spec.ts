@@ -51,9 +51,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
   // The real GH-1558 comparator — the ordering specs must exercise the service's actual sort, not
   // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
   const { compareVotesByRecency } = await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
+  const { maskIdentifierForLogs } = await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils');
   return {
     computeIsFoundation,
     compareVotesByRecency,
+    maskIdentifierForLogs,
     sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
   };
 });
@@ -973,7 +975,9 @@ describe('VoteService', () => {
     });
 
     it('enriches the per-uid vote details with the same canonical project fields', async () => {
-      fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, vote_status: IndexedVoteResponseStatus.RESPONDED }]);
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: MY_VOTE_UID, vote_status: IndexedVoteResponseStatus.RESPONDED, user_email: 'spec-user@example.org' },
+      ]);
       proxyRequest.mockResolvedValue(detailVote);
       getProjectsByIds.mockResolvedValue(new Map([[PROJECT_UID, project]]));
       computeIsFoundation.mockReturnValue(true);
@@ -1023,7 +1027,11 @@ describe('VoteService', () => {
           project_uid: PROJECT_UID,
         },
       };
-      fetchAllQueryResources.mockResolvedValue([{ vote_uid: UID_A }, { vote_uid: UID_B }, { vote_uid: UID_C }]);
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: UID_A, username: 'spec-user' },
+        { vote_uid: UID_B, username: 'spec-user' },
+        { vote_uid: UID_C, username: 'spec-user' },
+      ]);
       proxyRequest.mockImplementation((_req: unknown, _service: string, path: string) => Promise.resolve(details[path.replace('/votes/', '')]));
       getProjectsByIds.mockResolvedValue(new Map());
 
@@ -1063,7 +1071,11 @@ describe('VoteService', () => {
     });
 
     it('narrows on vote_uid via filters, ANDed with the identity filters_or disjunction', async () => {
-      proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: VOTE_UID, vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE } }] });
+      proxyRequest.mockResolvedValue({
+        resources: [
+          { data: { uid: 'vr-1', vote_uid: VOTE_UID, vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE, user_email: 'spec-user@example.org' } },
+        ],
+      });
 
       const result = await service.getMyVoteResponse(req, VOTE_UID);
 
@@ -1076,13 +1088,15 @@ describe('VoteService', () => {
     });
 
     it('returns null when the only indexed row belongs to a different vote', async () => {
-      proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: 'v0000000-0000-0000-0000-00000000d999' } }] });
+      // Row carries the mocked identity so the helper's ownership re-check keeps it — the null
+      // must come from the vote_uid mismatch, not from the row being filtered out.
+      proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: 'v0000000-0000-0000-0000-00000000d999', username: 'spec-user' } }] });
 
       await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
     });
 
     it('falls back to vote_id when the indexer left uid empty, logging the drift', async () => {
-      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_id: 'v1-row-9', vote_uid: VOTE_UID } }] });
+      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_id: 'v1-row-9', vote_uid: VOTE_UID, username: 'spec-user' } }] });
 
       const result = await service.getMyVoteResponse(req, VOTE_UID);
 
