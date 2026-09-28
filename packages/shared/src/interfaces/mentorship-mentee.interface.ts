@@ -416,3 +416,131 @@ export type MentorshipMenteeOverviewResponse = MentorshipMenteeOverviewEmpty | M
 export interface MentorshipMenteeHasProfileResponse {
   hasProfile: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Upstream mentorship service shapes (`/mentorship/v1/...`) the mentee BFF reads
+// ---------------------------------------------------------------------------
+
+/** List envelope the mentorship service wraps collection responses in. */
+export interface MentorshipUpstreamListResponse<T> {
+  data: T[];
+  meta: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
+/** `applications.status` as the mentorship service stores it. */
+export type MentorshipUpstreamApplicationStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'graduated' | 'hold';
+
+/** `program_terms.status` as the mentorship service stores it. */
+export type MentorshipUpstreamProgramTermStatus = 'open' | 'closed' | 'deleted';
+
+/** `tasks.status` as the mentorship service stores it. */
+export type MentorshipUpstreamTaskStatus = 'incomplete' | 'in_progress' | 'submitted' | 'complete';
+
+/** Which side of the program an application or profile belongs to. */
+export type MentorshipUpstreamRole = 'mentor' | 'mentee';
+
+/** Program summary embedded on an application row. */
+export interface MentorshipUpstreamApplicationProgram {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url?: string;
+}
+
+/** Term summary embedded on an application row. Dates are ISO 8601 strings. */
+export interface MentorshipUpstreamApplicationTerm {
+  id: string;
+  name: string;
+  status: MentorshipUpstreamProgramTermStatus;
+  start_date?: string;
+  end_date?: string;
+  application_start_date?: string;
+  application_end_date?: string;
+}
+
+/** One row from `GET /mentorship/v1/me/applications`. */
+export interface MentorshipUpstreamApplication {
+  id: string;
+  program_term_id: string;
+  user_id: string;
+  role: MentorshipUpstreamRole;
+  status: MentorshipUpstreamApplicationStatus;
+  program_term_status?: MentorshipUpstreamProgramTermStatus;
+  start_date_time?: string;
+  end_date_time?: string;
+  attendance_type?: 'full_time' | 'part_time';
+  tasks_submitted: boolean;
+  admin_notified: boolean;
+  created_on: string;
+  updated_on: string;
+  program?: MentorshipUpstreamApplicationProgram;
+  term?: MentorshipUpstreamApplicationTerm;
+}
+
+/** Body of `GET /mentorship/v1/programs/{programID}/terms/{termID}`. */
+export interface MentorshipUpstreamProgramTerm {
+  id: string;
+  program_id: string;
+  name: string;
+  status: MentorshipUpstreamProgramTermStatus;
+  active_users: number;
+  start_date_time?: string;
+  end_date_time?: string;
+  application_start_date?: string;
+  application_end_date?: string;
+  created_on: string;
+  updated_on: string;
+}
+
+/** One task row from the mentorship service. `due_date` is an ISO date string. */
+export interface MentorshipUpstreamTask {
+  id: string;
+  application_id?: string;
+  program_term_id?: string;
+  assignee_id: string;
+  owner_id?: string;
+  name?: string;
+  description?: string;
+  category?: 'prerequisite' | 'non_prerequisite';
+  status: MentorshipUpstreamTaskStatus;
+  application_status?: MentorshipUpstreamApplicationStatus;
+  program_term_status?: MentorshipUpstreamProgramTermStatus;
+  custom: boolean;
+  submit_file?: string;
+  file?: string;
+  due_date?: string;
+  created_by?: string;
+  created_on: string;
+  updated_on: string;
+}
+
+/**
+ * Body of `GET /mentorship/v1/me/profiles/{profileType}`. The JSON columns (`address`,
+ * `demographics`, `socioeconomics`, `skill_set`, `profile_links`) are free-form on the
+ * service side, so they stay `unknown` until a BFF mapper narrows them.
+ */
+export interface MentorshipUpstreamUserProfile {
+  id: string;
+  user_id: string;
+  profile_type: MentorshipUpstreamRole;
+  slug?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  logo_url?: string;
+  introduction?: string;
+  terms_and_conditions: boolean;
+  number_of_projects: number;
+  address?: unknown;
+  demographics?: unknown;
+  socioeconomics?: unknown;
+  skill_set?: unknown;
+  profile_links?: unknown;
+  created_on: string;
+  updated_on: string;
+}
