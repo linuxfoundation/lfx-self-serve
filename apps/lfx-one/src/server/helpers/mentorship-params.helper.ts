@@ -7,3 +7,7 @@ export const parseTrimmedString = (val: unknown): string | undefined => {
   const trimmed = val.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 };
+
+/** Resolves a `:programId` route value the way the mentorship routes accept it: by `id` first, then by `slug`. */
+export const findByIdOrSlug = <T extends { id: string; slug: string }>(items: readonly T[], idOrSlug: string): T | undefined =>
+  items.find((item) => item.id === idOrSlug) ?? items.find((item) => item.slug === idOrSlug);

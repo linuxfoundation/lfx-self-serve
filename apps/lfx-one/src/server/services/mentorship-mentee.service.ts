@@ -23,6 +23,7 @@ import {
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { logger } from './logger.service';
 
@@ -118,6 +119,6 @@ export class MentorshipMenteeService {
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
-    return MOCK_MENTORSHIP_PROGRAMS.find((item) => item.id === programId) ?? MOCK_MENTORSHIP_PROGRAMS.find((item) => item.slug === programId);
+    return findByIdOrSlug(MOCK_MENTORSHIP_PROGRAMS, programId);
   }
 }

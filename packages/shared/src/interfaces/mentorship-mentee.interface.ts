@@ -225,11 +225,8 @@ export interface MentorshipMenteeProfileDetails {
   resumeUrl?: string;
 }
 
-/**
- * Stored `applications.status` values. Never send `rejected` (program-only) or `active`
- * (directory filter only — persisted value is `accepted`).
- */
-export type MentorshipMenteeApplicationHistoryStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'graduated' | 'hold';
+/** Status on an Application History row: the stored `applications.status` value. */
+export type MentorshipMenteeApplicationHistoryStatus = MentorshipUpstreamApplicationStatus;
 
 /**
  * One Application History row: an `applications` row with `role = mentee`, joined to
@@ -429,7 +426,10 @@ export interface MentorshipUpstreamListResponse<T> {
   };
 }
 
-/** `applications.status` as the mentorship service stores it. */
+/**
+ * `applications.status` as the mentorship service stores it. Never send `rejected` (program-only)
+ * or `active` (directory filter only — persisted value is `accepted`).
+ */
 export type MentorshipUpstreamApplicationStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'graduated' | 'hold';
 
 /** `program_terms.status` as the mentorship service stores it. */

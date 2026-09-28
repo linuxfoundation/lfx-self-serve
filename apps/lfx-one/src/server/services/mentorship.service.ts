@@ -40,6 +40,7 @@ import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMen
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -280,12 +281,12 @@ export class MentorshipService {
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
-    return mockPrograms.find((item) => item.id === programId) ?? mockPrograms.find((item) => item.slug === programId);
+    return findByIdOrSlug(mockPrograms, programId);
   }
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
   private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
-    return getMockMentorshipMentorPrograms().find((item) => item.id === programId) ?? getMockMentorshipMentorPrograms().find((item) => item.slug === programId);
+    return findByIdOrSlug(getMockMentorshipMentorPrograms(), programId);
   }
 }
 
