@@ -7,8 +7,10 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -16,6 +18,7 @@ import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -92,6 +95,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     ChartComponent,
     EmptyStateComponent,
     InputTextComponent,
+    OrgLensEmptyStateComponent,
     OrgLeaderboardDetailDrawerComponent,
     OrgProjectDetailTabBarComponent,
     PersonDetailDrawerComponent,
@@ -112,6 +116,8 @@ export class OrgProjectDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -173,6 +179,10 @@ export class OrgProjectDetailComponent {
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
+  // Spec 053 / #2961 — the page-level state replacing the whole page (`could-not-load`,
+  // `staff-check-failed`, `contractor-no-grant`, `no-organization`), or null when the page renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
   private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');

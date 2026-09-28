@@ -37,7 +37,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 
 import { OrgLensProjectDetailService } from './org-lens-project-detail.service';
 
-const ORG = '0014100000Te2QjAAJ';
+const ORG = '0014100000AcmeAAAA';
 const SLUG = 'k8s';
 
 const heroRow = {
@@ -282,7 +282,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
 
   const breakdownRow = {
     ACCOUNT_ID: ORG,
-    ORGANIZATION_NAME: 'Red Hat',
+    ORGANIZATION_NAME: 'Acme Motors',
     TECHNICAL_INFLUENCE_SCORE: 42,
     TECHNICAL_INFLUENCE_LEVEL: 'Leading',
     ECOSYSTEM_INFLUENCE_SCORE: 17,
@@ -296,7 +296,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   // NOT at one, which is what pins the drawer's total to its own column of points.
   const populatedBreakdownRow = {
     ACCOUNT_ID: ORG,
-    ORGANIZATION_NAME: 'Red Hat',
+    ORGANIZATION_NAME: 'Acme Motors',
     TECHNICAL_INFLUENCE_SCORE: 42.5,
     TECHNICAL_INFLUENCE_LEVEL: 'Leading',
     ECOSYSTEM_INFLUENCE_SCORE: 6.25,

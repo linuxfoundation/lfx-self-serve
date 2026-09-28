@@ -1,0 +1,21 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex gap-1 border-b border-gray-200" role="tablist" [attr.aria-label]="ariaLabel()" (keydown)="onKeydown($event)" [attr.data-testid]="idPrefix()">
+  @for (option of options(); track option.id) {
+    <button
+      #tabButton
+      type="button"
+      role="tab"
+      [id]="idPrefix() + '-tab-' + option.id"
+      class="inline-flex items-center gap-2 px-4 py-3 text-sm border-b-2 -mb-px font-medium transition-colors"
+      [class]="active() === option.id ? 'border-blue-500 text-slate-900' : 'border-transparent text-gray-500 hover:text-slate-700'"
+      [attr.aria-selected]="active() === option.id"
+      [attr.aria-controls]="idPrefix() + '-panel-' + option.id"
+      [attr.tabindex]="active() === option.id ? 0 : -1"
+      (click)="select(option.id)"
+      [attr.data-testid]="idPrefix() + '-' + option.id">
+      {{ option.label }}
+    </button>
+  }
+</div>

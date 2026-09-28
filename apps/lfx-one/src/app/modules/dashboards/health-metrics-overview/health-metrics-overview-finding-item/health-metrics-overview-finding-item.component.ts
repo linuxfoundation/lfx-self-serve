@@ -3,6 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '@lfx-one/shared/constants';
 
 import type {
@@ -19,7 +20,7 @@ const MAX_RENDERED_DOTS = 20;
 
 @Component({
   selector: 'lfx-health-metrics-overview-finding-item',
-  imports: [NgClass],
+  imports: [NgClass, RouterLink],
   templateUrl: './health-metrics-overview-finding-item.component.html',
   styleUrl: './health-metrics-overview-finding-item.component.scss',
 })

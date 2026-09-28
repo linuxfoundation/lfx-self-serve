@@ -1,24 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isBoardCategory, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { isBoardCategory, ORG_SEATS_CACHE_COMMITTEE_KEYS, ORG_SEATS_CACHE_SEAT_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   BoardSeat,
   CommitteeSeat,
   CommitteeServiceOrgSeat,
   CommitteeServiceOrgSeatPage,
+  CompactOrgSeatsEntry,
+  CompactSeatRow,
   KeyContactEmployee,
   OrgMembershipKeyContactPerson,
   OrgMembershipReassignSeatResponse,
   OrgMembershipSeatsResponse,
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
+  SeatCommittee,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
@@ -165,17 +169,39 @@ export class OrgLensBoardCommitteeService {
     return { accountId, foundationId, seat };
   }
 
-  /** Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory picker, cached per caller + org so the single full-roster drain is shared across consumers; only the full, non-truncated drain is cached here — the bounded picker and project-scoped `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as the full roster. */
+  /**
+   * Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory
+   * picker, cached per caller + org so the single full-roster drain is shared across consumers;
+   * only the full, non-truncated drain is cached here — the bounded picker and project-scoped
+   * `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as
+   * the full roster.
+   *
+   * The whole read-through is coalesced in-process (GH-1906): on a large org the drain takes longer
+   * than the 30-second entry it produces is allowed to live, so N concurrent tabs would otherwise
+   * each run it. Coalescing around `withPerUserCache` — not just its fetcher — means one burst does
+   * one cache read, one drain, one serialization and one write, instead of every joined caller
+   * re-serializing and re-writing the same ~1 MB value on the connection the session store shares.
+   * A consequence for monitoring: an oversize warning now counts a burst, not a caller.
+   *
+   * What is shared is the COMPACT envelope; each caller rebuilds its own seat objects from it.
+   */
   public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
     const username = getEffectiveUsername(req) ?? '';
-    return withPerUserCache(
-      VALKEY_CACHE.ORG_SEATS_NAMESPACE,
-      username,
-      orgUid,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.fetchOrgSeats(req, orgUid),
-      isOrgSeatArray
+    // Same effective principal (impersonation honoured) + org the cache key is built from, and
+    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+    // bucket per blank principal would hand the first caller's permission-filtered roster to every
+    // other caller that happened to arrive without a resolvable identity.
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, () =>
+      withPerUserCache<CompactOrgSeatsEntry>(
+        VALKEY_CACHE.ORG_SEATS_NAMESPACE,
+        username,
+        orgUid,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        async () => toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid)),
+        isCompactOrgSeatsEntry
+      )
     );
+    return fromCompactOrgSeats(entry);
   }
 
   /**
@@ -383,7 +409,90 @@ export class OrgLensBoardCommitteeService {
   }
 }
 
-/** Rejects a corrupt/legacy seat entry whose elements aren't non-null objects (degrades to a miss before seat fields are read). */
-function isOrgSeatArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+/**
+ * Projects a drained roster onto the stored cache shape (GH-1906).
+ *
+ * Two sources of repetition go away: the per-seat field names (stored once in each columnar table)
+ * and the committee context — committee, project and organization — that the seats of one
+ * committee usually share.
+ */
+function toCompactOrgSeats(seats: readonly CommitteeServiceOrgSeat[]): CompactOrgSeatsEntry {
+  const keys = seats.map(seatCommitteeKey);
+  const committees = dedupeByKey(
+    seats.map((seat, index) => ({ seat, key: keys[index] })),
+    (item) => item.key
+  );
+  const rows = seats.map<CompactSeatRow>((seat, index) => {
+    const committee = committees.indexOf.get(keys[index]);
+    if (committee === undefined) {
+      // Unreachable by construction — the dictionary was built from these exact keys. Failing loud
+      // beats a silent default, which would attach the seat to the wrong committee.
+      throw new Error('seat committee missing from its own compaction dictionary');
+    }
+    return {
+      c: committee,
+      uid: seat.uid,
+      first_name: seat.first_name,
+      last_name: seat.last_name,
+      email: seat.email,
+      job_title: seat.job_title,
+      role_name: seat.role_name,
+      voting_status: seat.voting_status,
+      appointed_by: seat.appointed_by,
+      is_org_editable: seat.is_org_editable,
+      reason: seat.reason,
+      avatar: seat.avatar,
+      username: seat.username,
+    };
+  });
+  return {
+    c: toColumnar(
+      committees.values.map((item) => item.seat),
+      ORG_SEATS_CACHE_COMMITTEE_KEYS
+    ),
+    s: toColumnar(rows, ORG_SEATS_CACHE_SEAT_KEYS),
+  };
+}
+
+/**
+ * Dictionary identity of a seat's committee context — EVERY field the dictionary stores, so two
+ * seats of one committee that disagree (see `CompactOrgSeatsEntry.c`) get separate entries instead
+ * of one being rewritten to the other's values.
+ *
+ * An absent field maps to `''` and a present one to its `JSON.stringify` form, so absent, `null`
+ * (`'null'`) and the empty string (`'""'`) stay three different keys. The `\u0001` separator is
+ * unambiguous because `JSON.stringify` escapes every control character inside a string.
+ */
+function seatCommitteeKey(seat: CommitteeServiceOrgSeat): string {
+  return ORG_SEATS_CACHE_COMMITTEE_KEYS.map((key) => (seat[key] === undefined ? '' : JSON.stringify(seat[key]))).join('\u0001');
+}
+
+/** Rebuilds the drained roster from {@link toCompactOrgSeats}: every seat regains its committee context. */
+function fromCompactOrgSeats(entry: CompactOrgSeatsEntry): CommitteeServiceOrgSeat[] {
+  const committees = fromColumnar<SeatCommittee>(entry.c);
+  return fromColumnar<CompactSeatRow>(entry.s).map(({ c, ...seat }) => ({ ...seat, ...committees[c] }));
+}
+
+/**
+ * Rejects anything that is not a well-formed compact seats entry — including every pre-compaction
+ * (`org-seats:v1`) value, a plain seat array — so it degrades to a miss rather than decoding.
+ *
+ * Both tables must carry exactly the writer's column lists with every row at full width
+ * ({@link hasExactColumns}); a duplicated `c` column or a short committee row would otherwise
+ * decode into a seat silently missing its committee identity. Each seat's committee index is then
+ * checked against the dictionary, since an out-of-range index is the other way to reach that
+ * result, and costs one integer comparison against a value the JSON parse already built.
+ */
+function isCompactOrgSeatsEntry(value: unknown): boolean {
+  const entry = value as Partial<CompactOrgSeatsEntry> | null;
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (!isColumnarTable(entry.c) || !isColumnarTable(entry.s)) return false;
+  if (!hasExactColumns(entry.c, ORG_SEATS_CACHE_COMMITTEE_KEYS) || !hasExactColumns(entry.s, ORG_SEATS_CACHE_SEAT_KEYS)) return false;
+
+  const committees = entry.c.r.length;
+  const column = ORG_SEATS_CACHE_SEAT_KEYS.indexOf('c');
+  return entry.s.r.every((row) => {
+    const index = row[column];
+    return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < committees;
+  });
 }

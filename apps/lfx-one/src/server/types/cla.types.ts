@@ -537,6 +537,11 @@ export interface EasyClaCompanyClaManagerList {
   list?: EasyClaCompanyClaManager[];
 }
 
+/** `GET /v4/company/external/{companySFID}` — only the field the designee writes address. */
+export interface EasyClaCompany {
+  companyID?: string;
+}
+
 export interface ManagerTarget {
   /** The CLA service's internal company id — never sent to the browser. */
   companyId: string;

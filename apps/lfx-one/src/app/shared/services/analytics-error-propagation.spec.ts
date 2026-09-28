@@ -67,6 +67,35 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // read as a foundation where nobody is in that group.
       call: () => service.getEngagementRepresentatives({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getEventsRegistrationForecast',
+      url: '/api/analytics/events-registration-forecast',
+      // Its empty list renders "no upcoming events to forecast", which a swallowed failure would fake.
+      call: () => service.getEventsRegistrationForecast({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEventsRegistrationForecastCurve',
+      url: '/api/analytics/events-registration-forecast-curve',
+      call: () => service.getEventsRegistrationForecastCurve({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
+      name: 'getEventsPast',
+      url: '/api/analytics/events-past',
+      // Its empty list renders "no past events in this period", which a swallowed failure would fake.
+      call: () => service.getEventsPast({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEventsAtAGlance',
+      url: '/api/analytics/events-at-a-glance',
+      // A swallowed failure would fake measured zeros, or once the empty state lands, "No events yet".
+      call: () => service.getEventsAtAGlance({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEventsRegistrationsGrowth',
+      url: '/api/analytics/events-registrations-growth',
+      // A swallowed failure would read as a foundation with no years of events.
+      call: () => service.getEventsRegistrationsGrowth({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

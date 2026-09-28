@@ -286,9 +286,10 @@ export async function mockFormationChecklistApis(
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.pendingActions ?? []) })
   );
 
-  // Project settings back the sidebar formation card's announcement date (GH-2702) via
-  // `ProjectContextService.activeProjectAnnouncementDate` — unmocked, the fake uid 404s against the
-  // real backend and the card falls into its error state instead of rendering the date.
+  // Project settings back the sidebar formation card's announcement date (GH-2702) when the
+  // caller may read them. GH-2794 skips this GET unless the project mock is a writer or a
+  // confirmed auditor — `buildBaseProject` is neither, so the default fixture never hits it.
+  // A writer fixture still would, and unmocked the fake uid 404s the card into its error state.
   await page.route('**/api/projects/*/permissions', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({

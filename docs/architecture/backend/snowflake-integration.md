@@ -313,6 +313,17 @@ public getStats(): LockStats {
 }
 ```
 
+### Related: per-caller request coalescing (`single-flight.ts`)
+
+`apps/lfx-one/src/server/utils/single-flight.ts` applies the same in-flight deduplication to the per-caller Org Lens caches (committee/board seats and the merged People directory, GH-1906), whose producers can outlive their own 30-second cache entry. It is a separate primitive rather than a `LockManager` instance for two reasons:
+
+- **Its keys carry a username.** Coalescing keys are `{namespace}:{username}:{orgUid}`, and `LockManager` logs its raw key as `query_hash` on every hit and miss.
+- **Its stale-lock sweep is sized for Snowflake.** `LockManager` expires entries on an interval derived from Snowflake query timeouts, not from these upstreams.
+
+Like `LockManager`, it is in-process and per replica, holds a promise only while it is pending, and drops the entry when the promise settles, so a rejection is never replayed.
+
+Separately from the choice of primitive, callers go through `coalescePerUserOrgFetch`, which fails closed per principal: it never coalesces an empty or non-filter-safe username or org uid — the same predicates `buildPerUserOrgKey` uses — so one caller's permission-filtered result can never be handed to another. Such callers fetch directly instead.
+
 ## 🛡️ Security Features
 
 ### SQL Injection Protection
@@ -889,6 +900,8 @@ This is a request fault, not a Snowflake outage, so it does not count toward the
 queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
 exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
 `expectInvalidIdentifier`). `SnowflakeService` then records a success, so that caller must alert on the error itself.
+A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
+which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
 
 Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeService` throws carries the generic
 `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the

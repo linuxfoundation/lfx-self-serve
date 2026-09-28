@@ -673,6 +673,23 @@ export const ORG_CLA_MANAGER_NAME_MIN = 2;
 export const ORG_CLA_MANAGER_NAME_MAX = 30;
 
 // ---------------------------------------------------------------------------
+// Initial CLA Manager designee (#2780)
+// ---------------------------------------------------------------------------
+
+export const ORG_CLA_DESIGNEE_REFUSALS = ['already-signed', 'no-lf-login', 'sanctioned', 'not-authorized', 'unknown'] as const;
+
+export const ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES = ['assigned', 'lf-login-required'] as const;
+
+/**
+ * The CLA service's `fullName` constraint on a CLA manager request: 2–60 characters of ASCII
+ * letters, digits, and underscores, separated by single spaces. Accents, hyphens, and apostrophes
+ * are refused upstream, so they are refused here with a sentence rather than as a generic failure.
+ */
+export const ORG_CLA_DESIGNEE_NAME_PATTERN = /^[a-zA-Z0-9_]+( [a-zA-Z0-9_]+)*$/;
+export const ORG_CLA_DESIGNEE_NAME_MIN = 2;
+export const ORG_CLA_DESIGNEE_NAME_MAX = 60;
+
+// ---------------------------------------------------------------------------
 // Contributor Acknowledgments (#1986)
 // ---------------------------------------------------------------------------
 
@@ -875,3 +892,9 @@ export const ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY = {
 
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACTIVITY_LOG_EM_DASH = '—';
+
+export const ORG_CLA_RECENT_ACTIVITY_HEADING = 'Recent activity';
+
+export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
+
+export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;

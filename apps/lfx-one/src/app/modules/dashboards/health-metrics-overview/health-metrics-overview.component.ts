@@ -8,10 +8,12 @@ import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
-  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+  HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS,
 } from '@lfx-one/shared/constants';
 import {
+  buildHealthMetricsOverviewEngagementRoute,
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewTiles,
   buildLensAwareInsightsUrl,
@@ -23,7 +25,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { Observable, of, startWith, switchMap, tap } from 'rxjs';
 
-import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewRailComponent } from './health-metrics-overview-rail/health-metrics-overview-rail.component';
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile/health-metrics-overview-tile.component';
@@ -55,7 +56,8 @@ export class HealthMetricsOverviewComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
+  // Empty until the findings feed is wired up — the list renders its "not available yet" state.
+  public readonly findings = input<HealthMetricsFinding[]>([]);
 
   // Period selection and the sticky-header offset live on the gate-provided chrome service so they
   // persist across tab switches — see HealthMetricsChromeService.
@@ -71,9 +73,8 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly foundationSummaryLoading = signal(true);
 
-  // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members/Code only); merged with
-  // the Engagement fixture row in initTiles since that table doesn't cover that area. Same
-  // all-periods-in-one-read shape as revenue above, so changing the period costs no request.
+  // Live rows for every tile (Engagement from ENGAGEMENT_GROUP_ATTENDANCE, the rest from HEALTH_OVERVIEW_KPIS).
+  // All periods arrive in one read, like revenue above, so changing the period costs no request.
   protected readonly kpiAreaStatesLoading = signal(true);
   protected readonly kpiByRange: Signal<HealthMetricsOverviewKpisByRange> = this.initKpiByRange();
   protected readonly kpiAreaStates = computed<HealthMetricsAreaState[]>(() => this.kpiByRange()[this.selectedRange()] ?? []);
@@ -81,7 +82,7 @@ export class HealthMetricsOverviewComponent {
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation only — re-fetches
-  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture).
+  // whenever the foundation changes (unlike findings, which have no live source yet).
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
@@ -180,11 +181,7 @@ export class HealthMetricsOverviewComponent {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
       const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
-      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(
-        this.kpiAreaStates(),
-        this.kpiAreaStatesLoading(),
-        HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE
-      );
+      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(this.kpiAreaStates(), this.kpiAreaStatesLoading());
       return buildHealthMetricsOverviewTiles(areaStates, insightsUrl);
     });
   }
@@ -208,35 +205,26 @@ export class HealthMetricsOverviewComponent {
   }
 
   /**
-   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members/Code — Engagement stays
-   * fixture-backed until LFXV2-3364 ships its `hm_area_state` row. For the five live areas, the
-   * fixture's numbers are fabricated placeholders, not real fallback data — showing them while the
-   * live fetch is still loading, or after it resolved empty/failed, would render fake figures as if
-   * they were the foundation's actual metrics. Those areas get a neutral "no data" row instead.
+   * One row per tile area: the live row when there is one, otherwise a neutral "no data" row — never
+   * a placeholder figure, which would read as the foundation's actual metrics.
    */
-  private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean, fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
+  private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean): HealthMetricsAreaState[] {
     const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));
-    return fixture.map((fixtureState) => {
-      const liveState = liveByArea.get(fixtureState.area);
-      if (liveState) {
-        return liveState;
-      }
-      return HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS.has(fixtureState.area)
-        ? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(fixtureState.area, loading)
-        : fixtureState;
-    });
+    return HEALTH_METRICS_OVERVIEW_AREAS.map(({ key }) => liveByArea.get(key) ?? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(key, loading));
   }
 
   private static buildNeutralKpiAreaState(area: HealthMetricsOverviewArea, loading: boolean): HealthMetricsAreaState {
     return {
       area,
-      statValue: '—',
+      statValue: HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
       statLabel: loading ? 'loading…' : 'no data this period',
       statSource: 'HEALTH_OVERVIEW_KPIS',
       classification: 'none',
       // Empty, not today's date — this area was never actually evaluated, so "as of today" would
       // claim fresh data for a tile that has none (formatHealthMetricsOverviewAsOfLabel hides it).
       evaluatedAt: '',
+      // Matches the live tile: a failed read must not surface a chip the live state never shows.
+      ...(HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS.has(area) && { showStatus: false }),
     };
   }
 
@@ -246,11 +234,16 @@ export class HealthMetricsOverviewComponent {
     foundationSfid: string | null
   ): HealthMetricsOverviewFindingViewModel {
     const isInsightsLink = finding.linkTarget === HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+    // Engagement findings link into the tab in-app and need no Salesforce id.
+    const linkRoute = buildHealthMetricsOverviewEngagementRoute(finding.linkTarget);
     // PCC's `/project/{id}/...` routes are keyed by the Salesforce ID, not the LFX v2 project uid —
     // resolve through `selectedFoundationSfid` (null while resolving degrades to a hidden link).
-    const linkHref = isInsightsLink
-      ? buildLensAwareInsightsUrl(foundation?.slug, true)
-      : buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundationSfid ?? '', finding.linkTarget);
+    let linkHref: string | undefined;
+    if (isInsightsLink) {
+      linkHref = buildLensAwareInsightsUrl(foundation?.slug, true);
+    } else if (!linkRoute) {
+      linkHref = buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundationSfid ?? '', finding.linkTarget);
+    }
 
     return {
       classification: finding.classification,
@@ -265,6 +258,7 @@ export class HealthMetricsOverviewComponent {
       sortRank: finding.sortRank,
       evaluatedAt: finding.evaluatedAt,
       linkHref,
+      linkRoute,
       linkIsExternal: isInsightsLink,
       visual: finding.visual,
     };

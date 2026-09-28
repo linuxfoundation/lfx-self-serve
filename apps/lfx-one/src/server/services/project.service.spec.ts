@@ -62,6 +62,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const healthMetricsOverviewConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/health-metrics-overview.constants')>(
     '../../../../../packages/shared/src/constants/health-metrics-overview.constants'
   );
+  const healthMetricsEngagementConstants = await vi.importActual<
+    typeof import('../../../../../packages/shared/src/constants/health-metrics-engagement.constants')
+  >('../../../../../packages/shared/src/constants/health-metrics-engagement.constants');
 
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
@@ -98,6 +101,10 @@ vi.mock('@lfx-one/shared/constants', async () => {
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
     HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
+    HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+    // Real values (3 / 0.5): the Engagement tile read binds both, and the tests assert the binds.
+    HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+    HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
     // Real function, not a stub: both getHealthOverview* queries generate their period-suffixed
     // column list from this, so a stub would emit SQL that diverges from production.
     buildHealthMetricsOverviewPeriods: healthMetricsOverviewConstants.buildHealthMetricsOverviewPeriods,
@@ -2137,6 +2144,22 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect(result['COMPLETED_YEAR']).toEqual({ dataAvailable: false, total: 0, streams: [] });
   });
 
+  it('keeps a null stream value as null rather than reporting it as $0', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 600_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: 600_000 }),
+      ],
+    });
+
+    const result = await service.getHealthOverviewRevenue('cncf');
+
+    expect(result['YTD']?.streams).toEqual([
+      { key: 'memberships', value: 600_000 },
+      { key: 'events', value: null },
+    ]);
+  });
+
   it('keeps a period available when the driver returns its high-precision totals as strings', async () => {
     // Snowflake can serialize a high-precision NUMBER as a string; rejecting it instead of coercing
     // would report a funded foundation as having no revenue data for the period.
@@ -2172,9 +2195,14 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
 describe('ProjectService — getHealthOverviewKpis', () => {
   let service: ProjectService;
+  const isEngagementQuery = (sql: unknown): boolean => String(sql).includes('ENGAGEMENT_GROUP_ATTENDANCE');
 
   beforeEach(() => {
     execute.mockReset();
+    warning.mockReset();
+    // The KPI read is issued first, so a mockResolvedValueOnce answers it; the engagement read falls
+    // through to this empty default and its area is left out.
+    execute.mockImplementation(async () => ({ rows: [] }));
     service = new ProjectService();
   });
 
@@ -2337,6 +2365,146 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     );
   });
 
+  it('adds the Engagement state from ENGAGEMENT_GROUP_ATTENDANCE, with no status chip', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql)
+        ? {
+            rows: [
+              {
+                MEASURED_GROUPS__YTD: 40,
+                ACTIVE_GROUPS__YTD: 31,
+                LOW_ATTENDANCE_GROUPS__YTD: 8,
+                MEASURED_GROUPS__COMPLETED_YEAR: 5,
+                ACTIVE_GROUPS__COMPLETED_YEAR: 0,
+                LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: 0,
+              },
+            ],
+          }
+        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']?.[0]).toEqual({
+      area: 'eng',
+      statValue: '8 of 31',
+      statLabel: 'groups below 50% attendance',
+      statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
+      classification: 'none',
+      evaluatedAt: '',
+      showStatus: false,
+    });
+    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no active groups this period' }));
+    expect(result['YTD']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '2.5K' })]));
+  });
+
+  it('reads a null Engagement count as no data rather than zero', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql)
+        ? {
+            rows: [
+              {
+                MEASURED_GROUPS__YTD: 12,
+                ACTIVE_GROUPS__YTD: null,
+                LOW_ATTENDANCE_GROUPS__YTD: null,
+                MEASURED_GROUPS__COMPLETED_YEAR: 12,
+                ACTIVE_GROUPS__COMPLETED_YEAR: 12,
+                LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: null,
+              },
+            ],
+          }
+        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
+    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
+  });
+
+  // COUNT_IF over zero rows is 0, not NULL — a foundation with no measured groups is unmeasured.
+  it('reads a period with no measured groups as no data, not "no active groups"', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql)
+        ? {
+            rows: [
+              {
+                MEASURED_GROUPS__YTD: 0,
+                ACTIVE_GROUPS__YTD: 0,
+                LOW_ATTENDANCE_GROUPS__YTD: 0,
+                MEASURED_GROUPS__COMPLETED_YEAR: 3,
+                ACTIVE_GROUPS__COMPLETED_YEAR: 0,
+                LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: 0,
+              },
+            ],
+          }
+        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
+    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no active groups this period' }));
+  });
+
+  it('counts only rated, non-dormant groups with an attendance rate per period, binding the thresholds and the foundation', async () => {
+    await service.getHealthOverviewKpis('cncf');
+
+    const [query, binds] = execute.mock.calls.find(([sql]) => isEngagementQuery(sql)) ?? [];
+    const ranges = buildHealthMetricsOverviewPeriods().map((period) => period.range);
+    expect(query).toContain(
+      'COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND meetings_count_ytd >= ? AND attendance_pct_ytd IS NOT NULL) AS ACTIVE_GROUPS__YTD'
+    );
+    expect(query).toContain('COUNT(meetings_count_ytd) AS MEASURED_GROUPS__YTD');
+    expect(query).toContain('attendance_pct_3rd_last_completed_year < ?');
+    expect(query).not.toContain('_4th_last_completed_year');
+    expect(binds).toEqual([...ranges.flatMap(() => [3, 3, 0.5]), 'cncf']);
+    expect((query as string).match(/\?/g)).toHaveLength((binds as unknown[]).length);
+  });
+
+  it('keeps the Engagement state when the foundation has no KPI row', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql) ? { rows: [{ MEASURED_GROUPS__YTD: 4, ACTIVE_GROUPS__YTD: 4, LOW_ATTENDANCE_GROUPS__YTD: 1 }] } : { rows: [] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', statValue: '1 of 4' })]);
+  });
+
+  it('leaves Engagement out and still returns the other areas when its read fails', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (isEngagementQuery(sql)) {
+        throw new Error('warehouse unavailable');
+      }
+      return { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] };
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.map((state) => state.area)).toEqual(['evt', 'trn', 'mem', 'non', 'code']);
+    expect(warning).toHaveBeenCalledWith(undefined, 'get_health_overview_engagement_counts', 'Engagement tile counts unavailable', {
+      foundation_slug: 'cncf',
+      err: expect.objectContaining({ message: 'warehouse unavailable' }),
+    });
+  });
+
+  it('keeps the Engagement state and logs the error when the KPI read fails', async () => {
+    const failure = new Error('kpi table missing');
+    execute.mockImplementation(async (sql: string) => {
+      if (isEngagementQuery(sql)) {
+        return { rows: [{ MEASURED_GROUPS__YTD: 4, ACTIVE_GROUPS__YTD: 4, LOW_ATTENDANCE_GROUPS__YTD: 1 }] };
+      }
+      throw failure;
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', statValue: '1 of 4' })]);
+    expect(warning).toHaveBeenCalledWith(undefined, 'get_health_overview_kpis', 'Health overview KPIs unavailable', { foundation_slug: 'cncf', err: failure });
+    expect(warning).not.toHaveBeenCalledWith(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', expect.anything());
+  });
+
   it('returns an empty array for every range when no row is returned for the foundation', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
@@ -2369,8 +2537,9 @@ describe('ProjectService — getHealthOverviewKpis', () => {
 
     await service.getHealthOverviewKpis('cncf');
 
-    const [query, binds] = execute.mock.calls[0];
-    expect(execute).toHaveBeenCalledTimes(1);
+    const kpiCalls = execute.mock.calls.filter(([sql]) => !isEngagementQuery(sql));
+    const [query, binds] = kpiCalls[0];
+    expect(kpiCalls).toHaveLength(1);
     expect(binds).toEqual(['cncf']);
     expect((query as string).match(/\?/g)).toHaveLength(1);
     for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
@@ -2401,7 +2570,7 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+    expect(result).toEqual({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
     expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
   });
 
@@ -2412,24 +2581,34 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 1, tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+    expect(result).toEqual({ dataAvailable: true, projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
   });
 
-  it('returns the zero-filled default when no row is returned for the foundation', async () => {
+  it('renders a null column as an em dash rather than a zero count', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [{ PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
+    });
+
+    const result = await service.getFoundationProfileSummary('cncf');
+
+    expect(result).toEqual({ dataAvailable: true, projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
+  });
+
+  it('returns the unavailable default when no row is returned for the foundation', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' });
+    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 
-  it('returns the zero-filled default instead of a 5xx when the table is not deployed yet', async () => {
+  it('returns the unavailable default instead of a 5xx when the table is not deployed yet', async () => {
     vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(true);
     execute.mockRejectedValueOnce(new Error('Object does not exist'));
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' });
+    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 });
 

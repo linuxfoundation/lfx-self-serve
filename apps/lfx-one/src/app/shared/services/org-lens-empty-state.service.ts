@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
-import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
-import { take } from 'rxjs';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
+import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
@@ -20,13 +21,19 @@ import { PersonaService } from './persona.service';
  *   2. lookup failed outright (roster never loaded)             → `could-not-load`
  *   3. lookup partial AND caller holds nothing loaded           → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
- *   5. caller holds nothing                                     → `no-organization`
- *   6. otherwise (a selection is pending)                       → `null`
+ *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
+ *   6. caller holds nothing                                     → `no-organization`
+ *   7. otherwise (a selection is pending)                       → `null`
+ *
+ * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
+ * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
+ * such as key-contact auditors that no list shows, and an organization it admits renders the page even
+ * when the roster lists nothing; with nothing selected it is "holds nothing".
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice
- * instead (DR-002). Rule 4 before 5 is the epic's never-fall-through rule (FR-011): a failed team check
- * must not read as the employee no-access copy.
+ * instead (DR-002). Rule 4 before 5–6 is the epic's never-fall-through rule (FR-011): a failed team check
+ * must not read as the contractor or employee copy.
  *
  * The addressed-but-unheld states (FR-007 / FR-008) are not decided here: `orgPathParamGuard` already
  * lands every unheld or unknown address on `/org/not-found`, which picks between them (research R6) —
@@ -50,8 +57,48 @@ export class OrgLensEmptyStateService {
    */
   private readonly retryGeneration = signal<number | null>(null);
 
-  /** Both one-shot bootstrap loads have answered; before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded());
+  /**
+   * #2961 — the organization a contractor has in front of them but does not hold: the only case where
+   * the page must ask the server whether it is readable. `null` for everyone else.
+   */
+  private readonly contractorProbeUid: Signal<string | null> = computed(() => {
+    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld()) {
+      return null;
+    }
+    return this.accountContext.selectedAccount().uid || null;
+  });
+
+  /** The read gate's answer for `contractorProbeUid`; `admitted` is `undefined` until it lands. */
+  private readonly contractorProbe: Signal<OrgLensContractorProbe | null> = toSignal(
+    toObservable(this.contractorProbeUid).pipe(
+      distinctUntilChanged(),
+      switchMap((uid) =>
+        uid
+          ? concat(of<OrgLensContractorProbe>({ uid, admitted: undefined }), this.roleGrants.readCheck(uid).pipe(map((admitted) => ({ uid, admitted }))))
+          : of(null)
+      )
+    ),
+    { initialValue: null }
+  );
+
+  /** The probe is owed an answer for the current organization and has not given it. */
+  private readonly contractorProbePending: Signal<boolean> = computed(() => {
+    const uid = this.contractorProbeUid();
+    const probe = this.contractorProbe();
+    return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
+  });
+
+  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
+  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+
+  /**
+   * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
+   * A caller with no switcher access never starts that list (an admitted contractor with no roster row
+   * or persona seed, #2961), so waiting on it would hold them on the skeleton forever. Used by the pages
+   * that wait for the default selection from that list (overview, projects, ROI and its project detail,
+   * meetings, groups, EasyCLA) and by `/org/not-found`; the other Org pages never waited for the list and gate on `settled`.
+   */
+  public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
 
   /** The selected organization is in the caller's resolved set (direct, inherited, or LF-team entitlement). */
   public readonly selectedHeld: Signal<boolean> = computed(() => {
@@ -85,6 +132,15 @@ export class OrgLensEmptyStateService {
     const blocker = this.classifyLookup(holdsAnything);
     if (blocker) {
       return blocker;
+    }
+    const contractor = this.contractorVerdict(holdsAnything);
+    if (contractor === 'refused') {
+      return 'contractor-no-grant';
+    }
+    // The read gate admitted the organization in front of them (an FGA-only reader such as a key-contact
+    // auditor may have no roster row or persona seed): its answer wins over the roster-based rule 6.
+    if (contractor === 'admitted') {
+      return null;
     }
     if (!holdsAnything) {
       return 'no-organization';
@@ -153,5 +209,26 @@ export class OrgLensEmptyStateService {
           this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid()));
         }
       });
+  }
+
+  /**
+   * #2961 — the server's verdict for an LF contractor: `refused` when the selected organization failed
+   * the read gate, or nothing is selected and they hold nothing; `admitted` when the gate let the selected
+   * organization through; `null` when there is no verdict (not a contractor, or an answer still owed —
+   * `settled` covers that). The probe answer counts only for the organization it was asked about.
+   */
+  private contractorVerdict(holdsAnything: boolean): OrgLensContractorVerdict | null {
+    if (!this.roleGrants.isContractor()) {
+      return null;
+    }
+    const uid = this.contractorProbeUid();
+    if (!uid) {
+      return holdsAnything ? null : 'refused';
+    }
+    const probe = this.contractorProbe();
+    if (probe?.uid !== uid || probe.admitted === undefined) {
+      return null;
+    }
+    return probe.admitted ? 'admitted' : 'refused';
   }
 }

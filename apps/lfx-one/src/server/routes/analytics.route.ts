@@ -246,6 +246,21 @@ router.get('/engagement-non-member-participation', requireDashboardAccess, (req,
 // Health Metrics Engagement "Representatives" section (#2802)
 router.get('/engagement-representatives', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementRepresentatives(req, res, next));
 
+// Health Metrics Events "Registration forecast" section (#2964)
+router.get('/events-registration-forecast', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationForecast(req, res, next));
+router.get('/events-registration-forecast-curve', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEventsRegistrationForecastCurve(req, res, next)
+);
+
+// Health Metrics Events "Past events" section (#2965)
+router.get('/events-past', requireDashboardAccess, (req, res, next) => analyticsController.getEventsPast(req, res, next));
+
+// Health Metrics Events "At a glance" section (#2966)
+router.get('/events-at-a-glance', requireDashboardAccess, (req, res, next) => analyticsController.getEventsAtAGlance(req, res, next));
+
+// Health Metrics Events "Registrations & growth" section (#2967)
+router.get('/events-registrations-growth', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationsGrowth(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

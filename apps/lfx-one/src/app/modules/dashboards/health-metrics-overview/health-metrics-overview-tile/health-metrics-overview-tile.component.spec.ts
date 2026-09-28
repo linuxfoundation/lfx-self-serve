@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile.component';
@@ -25,7 +26,7 @@ describe('HealthMetricsOverviewTileComponent', () => {
   }
 
   async function render(overrides: Partial<HealthMetricsOverviewTileViewModel> = {}): Promise<void> {
-    await TestBed.configureTestingModule({ imports: [HealthMetricsOverviewTileComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [HealthMetricsOverviewTileComponent], providers: [provideRouter([])] }).compileComponents();
     fixture = TestBed.createComponent(HealthMetricsOverviewTileComponent);
     fixture.componentRef.setInput('tile', tile(overrides));
     fixture.detectChanges();
@@ -45,6 +46,18 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(link).not.toBeNull();
     expect(link.getAttribute('href')).toBe('https://insights.lfx.dev/foundation-slug');
     expect(fixture.nativeElement.textContent).not.toContain('Needs action');
+  });
+
+  it('renders the Engagement link in place of the status chip when a route is set', async () => {
+    await render({
+      classification: 'none',
+      showStatus: false,
+      route: { commands: ['/foundation/health-metrics', 'engagement'], fragment: 'committees', queryParams: { groupType: null } },
+    });
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-engagement-link"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement#committees');
+    expect(fixture.nativeElement.textContent).not.toContain('Awaiting data');
   });
 
   it('renders no "as of" label for a never-evaluated (empty evaluatedAt) tile', async () => {

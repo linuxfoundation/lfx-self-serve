@@ -84,10 +84,8 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
-import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
@@ -99,6 +97,7 @@ import { OrgEasyclaActivityLogComponent } from './org-easycla-activity-log.compo
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
+import { OrgEasyclaRecentActivityComponent } from './org-easycla-recent-activity.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -111,6 +110,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
+    OrgEasyclaRecentActivityComponent,
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
@@ -147,8 +147,6 @@ export class OrgEasyclaDetailComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
-  private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
@@ -270,8 +268,11 @@ export class OrgEasyclaDetailComponent {
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
-   * the page. Another agreement's flip cannot show through. A confirmed value stays until the list
-   * row itself carries it, including across a project change that does not refetch the list.
+   * the page. Another agreement's flip cannot show through. A settled value is dropped when the
+   * list row carries it, and whenever this page loads the organization's CLA list (on arrival or
+   * an organization switch — not the retry that waits for a just-signed agreement), so another
+   * manager's change shows once that list is loaded again. A running write's value is never dropped, and a
+   * project change does not refetch the list, so the value survives that.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
 
@@ -284,9 +285,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
   /** The CLA Group this page is about. The authoritative half of the address (#2364). */
   private readonly claGroupId: Signal<string> = toSignal(
@@ -839,9 +838,9 @@ export class OrgEasyclaDetailComponent {
   /**
    * Turns Auto ECLA on or off for the agreement on screen (#1988).
    *
-   * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
-   * click without a round trip. On success the override stays (the state was written), the
-   * saving flag is cleared, and a success toast names the value written. On failure the override
+   * Optimistic: the remembered value is set to `next` before the PUT lands, so the toggle answers
+   * the click without a round trip. On success the remembered value stays (the state was written),
+   * the saving flag is cleared, and a success toast names the value written. On failure the remembered value
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
@@ -850,8 +849,8 @@ export class OrgEasyclaDetailComponent {
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
-   * shown only while this page is still that agreement. A remembered value stays until the list
-   * row carries it, including after a project change that does not refetch the list.
+   * shown only while this page is still that agreement. A remembered value is dropped once the list
+   * row carries it or the page loads the organization's CLA list again, never while its write is running.
    *
    * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
    */

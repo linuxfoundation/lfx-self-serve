@@ -11,4 +11,5 @@ export * from './max-code-points.validator';
 export * from './meeting.validators';
 export * from './newsletter.validators';
 export * from './plain-text-message.validator';
+export * from './project-application.validators';
 export * from './vote.validators';
