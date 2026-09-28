@@ -65,13 +65,16 @@ const LIVE_ROSTER = roster(
 );
 
 function skipWhenAuthMissing(page: Page): void {
+  let hostname: string;
   try {
-    const { hostname } = new URL(page.url());
-    if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
-      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
-    }
+    ({ hostname } = new URL(page.url()));
   } catch {
     // Malformed URL — let the test run and surface a useful failure.
+    return;
+  }
+  // Outside the try: `test.skip` throws to stop the test, and a catch would swallow it.
+  if (hostname === 'auth0.com' || hostname.endsWith('.auth0.com')) {
+    test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
 }
 
