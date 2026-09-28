@@ -67,6 +67,15 @@ describe('InsightsTokenCreateDialogComponent', () => {
     }
   );
 
+  it.each(['toString', '__proto__', 'constructor'])('falls back for inherited key %s instead of mapping it', (code) => {
+    service.createToken.mockReturnValue(throwError(() => upstreamError(code)));
+    component['form'].controls.name.setValue('ci-pipeline');
+
+    component['submit']();
+
+    expect(component['errorMessage']()).toBe(INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR);
+  });
+
   it('falls back to a generic message for unknown errors and clears it on typing', () => {
     service.createToken.mockReturnValue(throwError(() => upstreamError()));
     component['form'].controls.name.setValue('ci-pipeline');

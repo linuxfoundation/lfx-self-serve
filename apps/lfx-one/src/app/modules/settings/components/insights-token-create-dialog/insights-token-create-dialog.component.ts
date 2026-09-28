@@ -64,8 +64,12 @@ export class InsightsTokenCreateDialogComponent {
       .subscribe({
         next: (created: CreateInsightsTokenResponse) => this.dialogRef.close(created),
         error: (err: HttpErrorResponse) => {
-          const code = err?.error?.upstreamCode as InsightsTokenErrorCode | undefined;
-          this.errorMessage.set((code && INSIGHTS_TOKEN_ERROR_MESSAGES[code]) || INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR);
+          const code: unknown = err?.error?.upstreamCode;
+          this.errorMessage.set(
+            typeof code === 'string' && Object.hasOwn(INSIGHTS_TOKEN_ERROR_MESSAGES, code)
+              ? INSIGHTS_TOKEN_ERROR_MESSAGES[code as InsightsTokenErrorCode]
+              : INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR
+          );
         },
       });
   }

@@ -28,7 +28,10 @@
 
     <div class="flex flex-col w-full">
       <div class="flex items-center gap-3 p-3 rounded-t-lg bg-slate-900">
-        <code class="flex-1 min-w-0 font-mono text-xs text-slate-200 break-all select-all" data-testid="insights-token-reveal-secret">{{ secret }}</code>
+        <!-- data-dd-privacy="mask": this is a live bearer credential; keep it out of Session Replay. -->
+        <code class="flex-1 min-w-0 font-mono text-xs text-slate-200 break-all select-all" data-dd-privacy="mask" data-testid="insights-token-reveal-secret">{{
+          secret
+        }}</code>
         <button
           type="button"
           class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"

@@ -117,6 +117,8 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
       const dialog = page.getByTestId('insights-token-reveal-dialog');
       await expect(dialog).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
       await expect(dialog.getByTestId('insights-token-reveal-secret')).toHaveCount(1);
+      // Keeps the live credential out of Datadog Session Replay.
+      await expect(dialog.getByTestId('insights-token-reveal-secret')).toHaveAttribute('data-dd-privacy', 'mask');
       await expect(dialog.getByTestId('insights-token-reveal-copy-button')).toHaveCount(1);
       await expect(dialog.getByTestId('insights-token-reveal-warning')).toHaveCount(1);
       await expect(dialog.getByTestId('insights-token-reveal-close-button')).toHaveCount(1);
