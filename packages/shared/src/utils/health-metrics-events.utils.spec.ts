@@ -16,6 +16,7 @@ import {
   buildHealthMetricsEventsSpeakersNote,
   buildHealthMetricsEventsSpeakersView,
   buildHealthMetricsEventsSpeakersYears,
+  buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsOrganizationsCountLabel,
@@ -43,6 +44,8 @@ import type {
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersPeriod,
   HealthMetricsEventsSpeakersProposal,
+  HealthMetricsEventsSponsorship,
+  HealthMetricsEventsSponsorshipPeriod,
 } from '../interfaces/health-metrics-events.interface';
 
 function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): HealthMetricsEventsForecastEvent {
@@ -910,5 +913,99 @@ describe('formatHealthMetricsEventsOrganizationsCountLabel', () => {
 
   it('shows a dash while the count is unknown', () => {
     expect(formatHealthMetricsEventsOrganizationsCountLabel(null)).toBe('—');
+  });
+});
+
+describe('buildHealthMetricsEventsSponsorshipView', () => {
+  function sponsorshipPeriod(overrides: Partial<HealthMetricsEventsSponsorshipPeriod> = {}): HealthMetricsEventsSponsorshipPeriod {
+    return {
+      range: 'YTD',
+      revenueUsd: 750000,
+      goalUsd: 1000000,
+      tierPackages: 12,
+      addOns: 3,
+      changes: { revenue: 0.25 },
+      tiers: [
+        { name: 'Gold', packages: 5 },
+        { name: 'Silver', packages: 5 },
+        { name: 'Platinum', packages: 2 },
+      ],
+      ...overrides,
+    };
+  }
+
+  function sponsorship(...periods: HealthMetricsEventsSponsorshipPeriod[]): HealthMetricsEventsSponsorship {
+    return { periods: periods.length ? periods : [sponsorshipPeriod()] };
+  }
+
+  it('builds the headline, side stats, progress and tier bars scaled to the top tier', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'YTD');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(true);
+    expect(view.packagesLabel).toBe('15 packages sold');
+    expect(view.headline).toMatchObject({ label: 'Sponsorship revenue', value: '$750K', delta: '+25%', deltaDirection: 'up' });
+    expect(view.side.map((stat) => [stat.label, stat.value])).toEqual([
+      ['Goal', '$1M'],
+      ['Tier packages', '12'],
+      ['Add-ons', '3'],
+    ]);
+    expect(view.progress).toEqual({ pctLabel: '75%', widthPct: 75 });
+    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel, tier.widthPct])).toEqual([
+      ['Gold', '5', 100],
+      ['Silver', '5', 100],
+      ['Platinum', '2', 40],
+    ]);
+  });
+
+  it('shows no progress bar when the goal is not set or zero', () => {
+    for (const goalUsd of [null, 0]) {
+      const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ goalUsd })), 'YTD');
+
+      expect(view.progress).toBeNull();
+      expect(view.side[0].value).toBe('not set');
+    }
+  });
+
+  it('caps the bar at full while the label keeps the real percent', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ revenueUsd: 1250000 })), 'YTD');
+
+    expect(view.progress).toEqual({ pctLabel: '125%', widthPct: 100 });
+  });
+
+  it('carries no delta for a period that is not compared', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ range: 'COMPLETED_YEAR_3', changes: null })), 'COMPLETED_YEAR_3');
+
+    expect(view.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+
+  it('marks a compared period with no prior value as not available', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ changes: { revenue: null } })), 'YTD');
+
+    expect(view.headline).toMatchObject({ delta: 'not available', deltaDirection: 'neutral' });
+  });
+
+  it('uses the singular for one package', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 1, addOns: 0 })), 'YTD');
+
+    expect(view.packagesLabel).toBe('1 package sold');
+  });
+
+  it('reads as unmeasured for a period missing from the response', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'COMPLETED_YEAR');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(false);
+    expect(view.packagesLabel).toBe('');
+    expect(view.headline.value).toBe('not available');
+    expect(view.progress).toBeNull();
+    expect(view.tiers).toEqual([]);
+  });
+
+  it('reads as unmeasured for a foundation with no sponsorship', () => {
+    const view = buildHealthMetricsEventsSponsorshipView({ periods: [] }, 'YTD');
+
+    expect(view.foundationMeasured).toBe(false);
+    expect(view.measured).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ const {
   getRegistrationsGrowth,
   getRevenue,
   getSpeakers,
+  getSponsorship,
 } = vi.hoisted(() => ({
   getAtAGlance: vi.fn(),
   getOrganizations: vi.fn(),
@@ -22,6 +23,7 @@ const {
   getRegistrationsGrowth: vi.fn(),
   getRevenue: vi.fn(),
   getSpeakers: vi.fn(),
+  getSponsorship: vi.fn(),
 }));
 
 vi.mock('../services/health-metrics-events.service', () => ({
@@ -34,6 +36,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getRevenue = getRevenue;
     public getSpeakers = getSpeakers;
     public getOrganizations = getOrganizations;
+    public getSponsorship = getSponsorship;
   },
   // Mirrors the service: the Events views carry no columns for the oldest range.
   isSupportedEventsRange: (range: string) => range !== 'COMPLETED_YEAR_4',
@@ -60,6 +63,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED,
   HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
@@ -73,7 +77,8 @@ type Handler =
   | 'getEventsRegistrationsGrowth'
   | 'getEventsRevenue'
   | 'getEventsSpeakers'
-  | 'getEventsOrganizations';
+  | 'getEventsOrganizations'
+  | 'getEventsSponsorship';
 
 function call(handler: Handler, queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -392,6 +397,40 @@ describe('AnalyticsController.getEventsOrganizations', () => {
     getOrganizations.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsOrganizations', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsSponsorship', () => {
+  beforeEach(() => {
+    getSponsorship.mockReset();
+    getSponsorship.mockResolvedValue(HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED);
+  });
+
+  it('passes the foundation to the service and returns its response', async () => {
+    const { res, next, promise } = call('getEventsSponsorship', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getSponsorship).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED);
+  });
+
+  it.each([{}, { foundationSlug: 'Acme Corp' }])('rejects a missing or malformed foundation (%o)', async (query) => {
+    const { next, promise } = call('getEventsSponsorship', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getSponsorship).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getSponsorship.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsSponsorship', { foundationSlug: 'acme' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

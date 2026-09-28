@@ -3637,6 +3637,23 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/events-sponsorship` — each period's sponsorship revenue, goal, package counts and tiers. */
+  public async getEventsSponsorship(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_sponsorship');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_sponsorship');
+
+      const response = await this.healthMetricsEventsService.getSponsorship(req, { foundationSlug });
+
+      logger.success(req, 'get_events_sponsorship', startTime, { foundation_slug: foundationSlug, period_count: response.periods.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** `GET /api/analytics/events-organizations` — one page of the organizations active at the foundation's events in a period. */
   public async getEventsOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_events_organizations');

@@ -591,3 +591,56 @@ export interface HealthMetricsEventsOrganizationRowView {
   speakersLabel: string;
   eventsLabel: string;
 }
+
+/** Foundation scope for sponsorship; every period ships in one read, so the range stays client-side. */
+export interface HealthMetricsEventsSponsorshipQuery {
+  foundationSlug: string;
+}
+
+/** Packages sold at one tier in a period. */
+export interface HealthMetricsEventsSponsorshipTier {
+  name: string;
+  packages: number;
+}
+
+/** One period's sponsorship for the whole foundation. Every `null` is not available, never zero. */
+export interface HealthMetricsEventsSponsorshipPeriod {
+  range: HealthMetricsL2Range;
+  revenueUsd: number | null;
+  /** `null` when no goal is set; a goal of zero is no goal. */
+  goalUsd: number | null;
+  tierPackages: number | null;
+  addOns: number | null;
+  /** Year-over-year change in revenue as a fraction; `null` for a period the view does not compare. */
+  changes: { revenue: number | null } | null;
+  /** Tiers with a package sold in the period, most packages first. */
+  tiers: HealthMetricsEventsSponsorshipTier[];
+}
+
+/** `GET /api/analytics/events-sponsorship` — each period's sponsorship revenue, goal and packages by tier. */
+export interface HealthMetricsEventsSponsorship {
+  periods: HealthMetricsEventsSponsorshipPeriod[];
+}
+
+/** Progress to a goal that is set; the bar stops at full while the label keeps the real figure. */
+export interface HealthMetricsEventsSponsorshipProgressView {
+  /** e.g. `62%`. */
+  pctLabel: string;
+  /** 0–100. */
+  widthPct: number;
+}
+
+/** The section for one period, with every label ready to render. */
+export interface HealthMetricsEventsSponsorshipView {
+  /** `false` when the read carried no period at all. */
+  foundationMeasured: boolean;
+  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
+  measured: boolean;
+  /** e.g. `42 packages sold`; empty when unmeasured. */
+  packagesLabel: string;
+  headline: HealthMetricsEventsAtAGlanceStatView;
+  side: HealthMetricsEventsAtAGlanceStatView[];
+  /** `null` when no goal is set, so a missing goal never renders as a full bar. */
+  progress: HealthMetricsEventsSponsorshipProgressView | null;
+  tiers: HealthMetricsEventsSpeakersBarView[];
+}

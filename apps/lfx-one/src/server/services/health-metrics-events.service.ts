@@ -59,6 +59,9 @@ import type {
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSpeakersStatusGroup,
+  HealthMetricsEventsSponsorship,
+  HealthMetricsEventsSponsorshipPeriod,
+  HealthMetricsEventsSponsorshipQuery,
   HealthMetricsL2Range,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -72,6 +75,7 @@ const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENU
 const SPEAKERS_DRILLDOWN_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_ORG_DRILLDOWN';
 const SPEAKERS_LIST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST';
 const ORGANIZATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW';
+const SPONSORSHIP_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIP_SUMMARY';
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -212,6 +216,13 @@ interface OrganizationRow {
   SPEAKERS_COUNT: number | null;
   EVENTS_COUNT: number | null;
   SORT_RANK: number | null;
+}
+
+/** The foundation's all-tiers row or one tier's row; every figure is period-suffixed. */
+interface SponsorshipSummaryRow {
+  IS_ALL_TIERS: boolean | null;
+  NORMALIZED_TIER_NAME: string | null;
+  [periodColumn: string]: unknown;
 }
 
 /** The foundation's Events revenue from the overview view, which carries no split. */
@@ -581,6 +592,19 @@ export class HealthMetricsEventsService {
   }
 
   /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
+  /** Each period's sponsorship revenue, goal, package and add-on counts and tier breakdown, with the revenue change beside it. */
+  public async getSponsorship(req: Request, query: HealthMetricsEventsSponsorshipQuery): Promise<HealthMetricsEventsSponsorship> {
+    const [summary, changes] = await Promise.all([this.getSponsorshipSummary(req, query), this.getSponsorshipChanges(req, query)]);
+    const scope = summary.find((row) => row.IS_ALL_TIERS === true);
+    if (!scope) {
+      logger.debug(req, 'get_events_sponsorship', 'No sponsorship scope row for the foundation', { foundation_slug: query.foundationSlug });
+      return { periods: [] };
+    }
+
+    const tierRows = summary.filter((row) => row.IS_ALL_TIERS !== true && row.NORMALIZED_TIER_NAME);
+    return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapSponsorshipPeriod(scope, tierRows, changes, range)) };
+  }
+
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
       SELECT
@@ -629,6 +653,54 @@ export class HealthMetricsEventsService {
   }
 
   /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  private async getSponsorshipSummary(req: Request, query: HealthMetricsEventsSponsorshipQuery): Promise<SponsorshipSummaryRow[]> {
+    // Suffixes come from constants, never from the request, so interpolating them is safe.
+    const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
+      const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
+      return [`sponsorship_revenue_usd_${suffix}`, `sponsorship_revenue_goal_${suffix}`, `tier_package_count_${suffix}`, `add_on_count_${suffix}`];
+    }).join(',\n        ');
+
+    const sql = `
+      SELECT
+        is_all_tiers,
+        normalized_tier_name,
+        ${periodColumns}
+      FROM ${SPONSORSHIP_SUMMARY_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+    `;
+
+    const result = await executeSnowflakeViewRead<SponsorshipSummaryRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: SPONSORSHIP_SUMMARY_VIEW,
+      operation: 'get_events_sponsorship',
+      clientMessage: 'Sponsorship is unavailable right now.',
+    });
+    return result.rows;
+  }
+
+  /** The foundation's sponsorship revenue change per compared period, which repeats on every revenue row; `undefined` without one. */
+  private async getSponsorshipChanges(req: Request, query: HealthMetricsEventsSponsorshipQuery): Promise<Record<string, unknown> | undefined> {
+    // Suffixes come from constants, never from the request, so interpolating them is safe.
+    const changeColumns = HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES.map(
+      (range) => `foundation_sponsorship_revenue_change_pct_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`
+    ).join(',\n        ');
+
+    const sql = `
+      SELECT
+        ${changeColumns}
+      FROM ${REVENUE_VIEW}
+      WHERE foundation_slug = ?
+      LIMIT 1
+    `;
+
+    const result = await executeSnowflakeViewRead<Record<string, unknown>>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: REVENUE_VIEW,
+      operation: 'get_events_sponsorship',
+      clientMessage: 'Sponsorship is unavailable right now.',
+    });
+    return result.rows[0];
+  }
+
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
@@ -921,6 +993,31 @@ function mapSpeakersPeriod(row: SpeakersDrilldownRow, range: HealthMetricsL2Rang
     changes: HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES.includes(range)
       ? { speakers: toNullableNumber(row[periodColumn('speakers_count_change_pct', range)]) }
       : null,
+  };
+}
+
+/** Tiers with no package sold in the period drop out; the rest rank by packages, then name. */
+function mapSponsorshipPeriod(
+  scope: SponsorshipSummaryRow,
+  tierRows: SponsorshipSummaryRow[],
+  changes: Record<string, unknown> | undefined,
+  range: HealthMetricsL2Range
+): HealthMetricsEventsSponsorshipPeriod {
+  const tiers = tierRows
+    .map((row) => ({ name: row.NORMALIZED_TIER_NAME ?? '', packages: toNullableNumber(row[periodColumn('tier_package_count', range)]) ?? 0 }))
+    .filter((tier) => tier.packages > 0)
+    .sort((a, b) => b.packages - a.packages || a.name.localeCompare(b.name));
+
+  return {
+    range,
+    revenueUsd: toNullableNumber(scope[periodColumn('sponsorship_revenue_usd', range)]),
+    goalUsd: toRevenueGoal(scope[periodColumn('sponsorship_revenue_goal', range)]),
+    tierPackages: toNullableNumber(scope[periodColumn('tier_package_count', range)]),
+    addOns: toNullableNumber(scope[periodColumn('add_on_count', range)]),
+    changes: HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES.includes(range)
+      ? { revenue: toNullableNumber(changes?.[periodColumn('foundation_sponsorship_revenue_change_pct', range)]) }
+      : null,
+    tiers,
   };
 }
 
