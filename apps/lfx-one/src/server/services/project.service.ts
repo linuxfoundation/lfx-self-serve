@@ -1516,6 +1516,8 @@ export class ProjectService {
    * Get pending survey actions for a user.
    * Queries for non-responded surveys and transforms them into PendingActionItem format.
    * When `projectSlug` is omitted, returns surveys across all of the user's projects (Me-lens).
+   * @deprecated Orphaned: user pending actions read the `survey_response` index since #2987; this
+   *   Snowflake path only serves /api/projects/pending-action-surveys — removal tracked in #3057.
    * @param email - User's email from OIDC authentication
    * @param projectSlug - Optional project slug; omit for unscoped (all-projects) results
    * @returns Array of pending action items with survey links

@@ -1698,6 +1698,8 @@ export class UserService {
     // failOnPartial: a truncated page set can silently miss a pending survey. The caller catches
     // and degrades the whole source, so fail closed here.
     const rows = await fetchCurrentUserSurveyResponses(req, this.microserviceProxy, {
+      // `project.project_uid` is a documented indexed field (survey-service indexer contract) and
+      // verified live against dev — dotted filters resolve on this singleton object.
       ...(projectUid && { filters: [`project.project_uid:${projectUid}`] }),
       failOnPartial: true,
     });
