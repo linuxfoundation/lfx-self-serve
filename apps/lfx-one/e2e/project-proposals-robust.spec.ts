@@ -64,7 +64,10 @@ test.describe('Propose a project — structure (#3037)', () => {
     await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click();
     await expect(page.getByTestId('project-application-drawer-body')).toBeVisible();
     await expect(page.getByTestId('project-application-drawer-actions')).toBeVisible();
-    await expect(page.getByTestId('project-application-drawer-submitter')).toBeVisible();
+    await expect(page.getByTestId('project-application-drawer-status')).toBeVisible();
+    await expect(page.getByTestId('project-application-drawer-actions').getByRole('button', { name: 'More actions' })).toBeVisible();
+    // Submitter mode never shows the submitter back to themselves.
+    await expect(page.getByTestId('project-application-drawer-submitter')).toHaveCount(0);
     // Unknown answers still render, as plain text.
     await expect(page.getByTestId('project-application-drawer-answer-future_question')).toHaveText('kept');
   });

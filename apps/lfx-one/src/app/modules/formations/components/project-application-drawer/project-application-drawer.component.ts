@@ -6,14 +6,18 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, input, model, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { MenuComponent } from '@components/menu/menu.component';
+import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type {
   Project,
   ProjectApplication,
   ProjectApplicationAcceptDialogData,
+  ProjectApplicationAnswerLink,
   ProjectApplicationAnswers,
   ProjectApplicationAnswerSection,
   ProjectApplicationStateMeta,
+  ProjectApplicationStatusCallout,
   ProjectApplicationViewMode,
   ProjectApplicationWriteResult,
 } from '@lfx-one/shared/interfaces';
@@ -21,11 +25,13 @@ import {
   buildProjectApplicationAnswerSections,
   getProjectApplicationDisplayName,
   getProjectApplicationStateMeta,
+  getProjectApplicationStatusCallout,
   isProjectApplicationOpen,
+  toProjectApplicationEmailLink,
 } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -40,13 +46,17 @@ import { ProjectApplicationFormComponent } from '../project-application-form/pro
  * backend creates the new project under — and deny. Revise/withdraw/accept/deny are offered only while
  * the application is `submitted`; delete is always offered and always confirmed.
  *
+ * The footer leads with each persona's primary action (#3046): Accept and Deny for the formation team,
+ * Revise for the submitter. The remaining actions — delete always last and set apart — sit in a "More
+ * actions" menu, or, once the application is decided, delete stands alone.
+ *
  * Every write sends the held revision as `If-Match`. Neither a 412 (another write won) nor a 404 (deleted
  * elsewhere) is replayed: a 412 asks the list to reload; a 404 asks it to drop the application.
  * Answers render as plain text only.
  */
 @Component({
   selector: 'lfx-project-application-drawer',
-  imports: [ButtonComponent, ConfirmDialogModule, DatePipe, DrawerModule, ProjectApplicationFormComponent, TagComponent],
+  imports: [ButtonComponent, ConfirmDialogModule, DatePipe, DrawerModule, MenuComponent, MessageComponent, ProjectApplicationFormComponent, TagComponent],
   templateUrl: './project-application-drawer.component.html',
 })
 export class ProjectApplicationDrawerComponent {
@@ -96,6 +106,17 @@ export class ProjectApplicationDrawerComponent {
   });
   protected readonly isStaff = computed(() => this.mode() === 'staff');
   protected readonly busy = computed(() => this.busyAction() !== null);
+  protected readonly statusCallout: Signal<ProjectApplicationStatusCallout | null> = computed(() =>
+    getProjectApplicationStatusCallout(this.application()?.state, this.mode())
+  );
+  /** The submitter's email as a `mailto:` link target — shown to the formation team only. */
+  protected readonly submitterEmailLink: Signal<ProjectApplicationAnswerLink | null> = computed(() => {
+    const email = this.application()?.submitter_email;
+    return email ? toProjectApplicationEmailLink(email) : null;
+  });
+  /** "Updated" only adds information once it falls on a different day from the submission. */
+  protected readonly showUpdated: Signal<boolean> = this.initShowUpdated();
+  protected readonly moreActions: Signal<MenuItem[]> = this.initMoreActions();
   /** p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. */
   protected readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' } };
   /** The element that had focus when the drawer opened, handed focus back on every close path. */
@@ -209,6 +230,31 @@ export class ProjectApplicationDrawerComponent {
       if (parent?.uid) {
         this.acceptUnder(application, parent);
       }
+    });
+  }
+
+  // === Private Initializers ===
+  private initShowUpdated(): Signal<boolean> {
+    return computed(() => {
+      const application = this.application();
+      if (!application?.updated_at || !application.created_at) return false;
+      return new Date(application.updated_at).toDateString() !== new Date(application.created_at).toDateString();
+    });
+  }
+
+  /** Secondary actions for an open application; the persona's primary actions render as footer buttons instead. */
+  private initMoreActions(): Signal<MenuItem[]> {
+    return computed(() => {
+      const items: MenuItem[] = [];
+      if (this.isStaff()) {
+        items.push({ label: 'Revise', icon: 'fa-light fa-pen', command: () => this.startEditing() });
+      }
+      items.push(
+        { label: 'Withdraw', icon: 'fa-light fa-arrow-rotate-left', command: () => this.onWithdraw() },
+        { separator: true },
+        { label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onDelete() }
+      );
+      return items;
     });
   }
 

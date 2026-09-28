@@ -154,6 +154,8 @@ describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
     expect(toProjectApplicationEmailLink('legal@example.org').href).toBe('mailto:legal@example.org');
     expect(toProjectApplicationEmailLink('legal@example').href).toBeNull();
     expect(toProjectApplicationEmailLink('a@example.org&body=x').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a#b@example.org').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a/b@example.org').href).toBeNull();
   });
 });
 

@@ -3,9 +3,10 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { Project, ProjectApplication, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import type { Project, ProjectApplication, ProjectApplicationStatusCallout, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
-import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -23,6 +24,9 @@ interface DrawerAccess {
   onRevise: (answers: Record<string, unknown>) => void;
   startEditing: () => void;
   errorMessage: () => string | null;
+  moreActions: () => MenuItem[];
+  statusCallout: () => ProjectApplicationStatusCallout | null;
+  showUpdated: () => boolean;
 }
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -63,6 +67,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
         { provide: DialogService, useValue: dialog },
         { provide: MessageService, useValue: messages },
         ConfirmationService,
+        provideNoopAnimations(),
       ],
     }).compileComponents();
     // Auto-accept every confirm so the action under test runs.
@@ -109,6 +114,37 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     const { component } = await setup('submitter');
     expect(component.isOpen()).toBe(true);
     expect(component.isStaff()).toBe(false);
+  });
+
+  it("keeps the submitter's secondary actions in the More menu, delete last and set apart", async () => {
+    const { component } = await setup('submitter');
+    expect(component.moreActions().map((item) => item.label ?? '---')).toEqual(['Withdraw', '---', 'Delete']);
+  });
+
+  it("adds revise to the formation team's More menu, behind accept and deny", async () => {
+    const { component, service } = await setup('staff');
+    const items = component.moreActions();
+    expect(items.map((item) => item.label ?? '---')).toEqual(['Revise', 'Withdraw', '---', 'Delete']);
+    items[0].command?.({});
+    expect(component.editing()).toBe(true);
+    items[1].command?.({});
+    expect(service.withdraw).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains the state in the viewer's own terms", async () => {
+    const submitter = await setup('submitter');
+    expect(submitter.component.statusCallout()?.text).toContain('reviewing your proposal');
+    const staff = await setup('staff', buildApplication({ state: 'denied' }));
+    expect(staff.component.statusCallout()).toEqual(expect.objectContaining({ severity: 'warn', text: expect.stringContaining('not notified') }));
+    const unknown = await setup('staff', buildApplication({ state: 'archived' }));
+    expect(unknown.component.statusCallout()).toBeNull();
+  });
+
+  it('shows the updated date only when it falls on a different day from the submission', async () => {
+    const changedLater = await setup('submitter');
+    expect(changedLater.component.showUpdated()).toBe(true);
+    const sameDay = await setup('submitter', buildApplication({ created_at: '2026-09-01T09:00:00Z', updated_at: '2026-09-01T09:05:00Z' }));
+    expect(sameDay.component.showUpdated()).toBe(false);
   });
 
   it('closes every state transition once the application is decided', async () => {

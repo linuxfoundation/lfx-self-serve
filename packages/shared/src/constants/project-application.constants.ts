@@ -71,8 +71,11 @@ export const PROJECT_APPLICATION_EMAIL_LIST_KEYS: ReadonlySet<string> = new Set(
 /** Answer keys formation-service validates with the legal-contact email rule. */
 export const PROJECT_APPLICATION_EMAIL_KEYS: ReadonlySet<string> = new Set(['legal_contact_email']);
 
-/** A plain single email address the detail view may turn into a `mailto:` link (no mailto-header characters). */
-export const PROJECT_APPLICATION_MAILTO_EMAIL_REGEX = /^[^\s@<>"'(),;:?&=%]+@[^\s@<>"'(),;:?&=%]+\.[^\s@<>"'(),;:?&=%]+$/;
+/**
+ * A plain single email address the detail view may turn into a `mailto:` link: no mailto-header (`?&=%`) or
+ * URI-delimiter (`#/\\`) characters, so the link always targets exactly the address it displays.
+ */
+export const PROJECT_APPLICATION_MAILTO_EMAIL_REGEX = /^[^\s@<>"'(),;:?&=%#/\\]+@[^\s@<>"'(),;:?&=%#/\\]+\.[^\s@<>"'(),;:?&=%#/\\]+$/;
 
 /** Long-form prose answers the detail view renders full width under their label. */
 export const PROJECT_APPLICATION_LONG_TEXT_KEYS: ReadonlySet<string> = new Set(['mission_statement', 'description']);
