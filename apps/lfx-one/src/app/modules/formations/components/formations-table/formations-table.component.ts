@@ -226,8 +226,9 @@ export class FormationsTableComponent {
     const stageDisplay = getFormationQueueStageDisplay(row.sub_stage, row.sub_stage_raw);
     const announcementTiming = getFormationAnnouncementTiming(row.announcement_date, row.gates_cleared);
     // Next open gate first; a gates-cleared row names no item (the cell reads "Formation to set
-    // Active"); otherwise the first blocked item, which also covers a degraded item read (#3066).
-    const fallbackBlockedTitle = row.gates_cleared ? null : (row.blocked_item_titles[0] ?? null);
+    // Active"). The first blocked title stands in only when the BFF's item read degraded — a
+    // resolved read with no open gate is a dash, never a non-gating blocked item (#3066).
+    const fallbackBlockedTitle = row.gates_cleared || row.next_gate_resolved ? null : (row.blocked_item_titles[0] ?? null);
     return {
       ...row,
       stageLabel: stageDisplay.label,

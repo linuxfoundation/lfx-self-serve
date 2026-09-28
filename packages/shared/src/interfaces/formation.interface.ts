@@ -626,9 +626,15 @@ export interface FormationQueueRow {
    * The "Blocking" column (#3066): the first gating item not yet `done`/`skipped`, in checklist
    * order — BFF-derived from the `formation_item` index by `selectNextFormationGateItem`, since the
    * `formation` projection carries only status counts. `null` when no gate is open, or when the
-   * item read degraded (the row then falls back to {@link blocked_item_titles}).
+   * item read degraded — see {@link next_gate_resolved} for which.
    */
   next_gate_item: FormationNextGateItem | null;
+  /**
+   * Whether the BFF's item read succeeded, so a `null` {@link next_gate_item} really means "no open
+   * gate". `false` only when that read degraded, the one case the Blocking column falls back to
+   * {@link blocked_item_titles} — the same rule `MyFormationSummary.blocking_item_title` follows.
+   */
+  next_gate_resolved: boolean;
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];
 }
@@ -641,7 +647,7 @@ export interface FormationQueueRow {
  * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
  * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
  */
-export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle' | 'next_gate_item'> & {
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle' | 'next_gate_item' | 'next_gate_resolved'> & {
   sub_stage: string;
   /** The projection's `lifecycle` verbatim — untrusted, so a bare string here and a {@link FormationLifecycle} only after `normalizeQueueRow`. */
   lifecycle: string;

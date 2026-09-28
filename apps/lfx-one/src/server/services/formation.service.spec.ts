@@ -13,6 +13,7 @@ import type {
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
 import {
+  FORMATION_OPEN_GATE_CEL_FILTER,
   FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
   FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
@@ -2136,7 +2137,10 @@ describe('FormationService', () => {
         type: 'formation_item',
         tags: ['formation_uid:formation:a', 'formation_uid:formation:b'],
         tags_all: ['lifecycle:live'],
+        cel_filter: FORMATION_OPEN_GATE_CEL_FILTER,
+        page_size: 1000,
       });
+      expect(result.rows.every((row) => row.next_gate_resolved)).toBe(true);
     });
 
     it('reads gates only for the rows it serves, after search filtering', async () => {
@@ -2160,6 +2164,7 @@ describe('FormationService', () => {
 
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0].next_gate_item).toBeNull();
+      expect(result.rows[0].next_gate_resolved).toBe(false);
       expect(result.rows[0].blocked_item_titles).toEqual(['Legal review']);
     });
 

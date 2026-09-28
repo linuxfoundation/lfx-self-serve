@@ -30,6 +30,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     progress: { not_started: 1, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: [],
     next_gate_item: null,
+    next_gate_resolved: true,
     assignees: [],
     ...overrides,
   };
@@ -266,13 +267,18 @@ describe('FormationsTableComponent', () => {
       expect(marker?.textContent).toContain('Charter agreed');
     });
 
-    it('falls back to the first blocked title when no gate item is known and gates are not cleared', async () => {
-      await render([buildRow({ formation_uid: 'formation:fallback', blocked_item_titles: ['Membership tiers', 'Comms'] })]);
+    it('falls back to the first blocked title only when the item read degraded and gates are not cleared', async () => {
+      await render([
+        buildRow({ formation_uid: 'formation:fallback', next_gate_resolved: false, blocked_item_titles: ['Membership tiers', 'Comms'] }),
+        buildRow({ formation_uid: 'formation:resolved', blocked_item_titles: ['Membership tiers'] }),
+      ]);
 
       const blocking = cell('formations-table-blocking-formation:fallback');
       expect(blocking.textContent).toContain('Membership tiers');
       expect(blocking.textContent).not.toContain('Comms');
       expect(blocking.querySelector('[data-blocked="true"]')).not.toBeNull();
+      // A resolved read with no open gate never names a non-gating blocked item.
+      expect(text('formations-table-blocking-formation:resolved')).toBe('—');
     });
 
     it('reads "Formation to set Active" once gates are cleared, with the badge beside the progress count, and a dash otherwise', async () => {

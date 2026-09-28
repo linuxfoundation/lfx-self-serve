@@ -41,6 +41,7 @@ import {
   FORMATION_SYSTEM_ACTOR_USERNAME,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
+  FORMATION_OPEN_GATE_CEL_FILTER,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
@@ -1151,7 +1152,7 @@ export class FormationService {
       rows.map((row) => row.formation_uid)
     );
     if (nextGates) {
-      rows = rows.map((row) => ({ ...row, next_gate_item: nextGates.get(row.formation_uid) ?? null }));
+      rows = rows.map((row) => ({ ...row, next_gate_item: nextGates.get(row.formation_uid) ?? null, next_gate_resolved: true }));
     }
 
     return { tiles, rows };
@@ -1164,8 +1165,13 @@ export class FormationService {
    * `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of `formation_uid:` tags (OR'd), AND'd with
    * `lifecycle:live` — the item document carries both tags and the same access relation as its
    * formation document (`lfx-v2-formation-service` `indexer_publisher.go` `itemTags`), so a caller
-   * who can see a row can see its items. Every formation asked about gets an entry (`null` when no
-   * gate is open). Returns `null` — never throws — when any batch fails: a partial map would name
+   * who can see a row can see its items. The item document has no `gate`/`status` tag, so the
+   * open-gate predicate rides in `cel_filter` instead: the query service applies it in-process after
+   * OpenSearch and before the per-resource access check, so only open gates (≤4 of ~17 items per
+   * formation) are access-checked and returned. Short or emptied raw pages are handled server-side
+   * (`docs/query-service-contract.md` § CEL Filter), and `page_size` sits at the contract's 1000
+   * maximum so a whole-queue read walks a handful of raw pages, not dozens. Every formation asked
+   * about gets an entry (`null` when no gate is open). Returns `null` — never throws — when any batch fails: a partial map would name
    * a later gate as "next" for a formation whose earlier items were simply not returned.
    */
   private async fetchNextGateItems(req: Request, formationUids: string[]): Promise<Map<string, FormationNextGateItem | null> | null> {
@@ -1189,7 +1195,8 @@ export class FormationService {
                 type: 'formation_item',
                 tags,
                 tags_all: ['lifecycle:live'],
-                page_size: 100,
+                cel_filter: FORMATION_OPEN_GATE_CEL_FILTER,
+                page_size: 1000,
                 ...(pageToken && { page_token: pageToken }),
               }),
             { failOnPartial: true }
@@ -1204,8 +1211,8 @@ export class FormationService {
 
     const gatesByFormation = new Map<string, UpstreamFormationItemRow[]>();
     for (const item of rawItems) {
-      // Same client-side lifecycle backstop the other index reads apply; `gate` is filtered again
-      // inside `selectNextFormationGateItem`.
+      // Client-side backstops for the tags and the `cel_filter` — neither is trusted alone, same as
+      // the other index reads; `selectNextFormationGateItem` re-checks gate and status too.
       if (!item.gate || !isFormationLifecycleLive(normalizeFormationLifecycle(item.lifecycle))) continue;
       const bucket = gatesByFormation.get(item.formation_uid) ?? [];
       bucket.push(item);
@@ -1242,6 +1249,7 @@ export class FormationService {
       progress: row.progress ?? {},
       blocked_item_titles: row.blocked_item_titles ?? [],
       next_gate_item: null,
+      next_gate_resolved: false,
       assignees: row.assignees ?? [],
     };
   }
