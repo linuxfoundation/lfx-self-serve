@@ -9,7 +9,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
 import { AllEmployeesComponent } from './all-employees.component';
@@ -44,10 +44,11 @@ function response(rows: OrgAllEmployeeRow[], activeInOss: number): OrgAllEmploye
   return { accountId: ORG, rows, stats: { ...EMPTY_ORG_ALL_EMPLOYEE_STATS, activeInOss }, foundations: [] };
 }
 
-describe('AllEmployeesComponent — Snowflake first, live merge second', () => {
+describe('AllEmployeesComponent — Snowflake and live merge in parallel', () => {
   let snowflake$: Subject<OrgAllEmployeesResponse>;
   let live$: Subject<OrgAllEmployeesResponse>;
   let fixture: ComponentFixture<AllEmployeesComponent>;
+  let getDirectory: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const rowKeys = (): string[] =>
@@ -64,19 +65,25 @@ describe('AllEmployeesComponent — Snowflake first, live merge second', () => {
   beforeEach(async () => {
     snowflake$ = new Subject();
     live$ = new Subject();
+    getDirectory = vi.fn(() => live$);
 
     await TestBed.configureTestingModule({
       imports: [AllEmployeesComponent],
       providers: [
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: 'The Linux Foundation' }) } },
         { provide: AllEmployeesService, useValue: { getAllEmployees: vi.fn(() => snowflake$), getEmployeeDetail: vi.fn() } },
-        { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory: vi.fn(() => live$), invalidate: vi.fn() } },
+        { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AllEmployeesComponent);
     await settle();
+  });
+
+  it('requests the live merge without waiting for the Snowflake roster', () => {
+    expect(getDirectory).toHaveBeenCalledWith(ORG);
+    expect(live$.observed).toBe(true);
   });
 
   it('renders the Snowflake roster and stats while the live merge is still pending', async () => {
@@ -114,6 +121,32 @@ describe('AllEmployeesComponent — Snowflake first, live merge second', () => {
     expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
   });
 
+  it('ignores a Snowflake roster that arrives after the live merge has landed', async () => {
+    live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
+    live$.complete();
+    await settle();
+
+    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+    snowflake$.complete();
+    await settle();
+
+    expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-x', 'org-people-all-employees-row-p-1']);
+    expect(activeStat()).toContain('2');
+  });
+
+  it('still renders the Snowflake roster, with no error state, when the live merge fails first', async () => {
+    live$.error(new Error('504'));
+    await settle();
+    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+
+    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+    snowflake$.complete();
+    await settle();
+
+    expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+  });
+
   it('falls back to the live merge when the Snowflake roster fails', async () => {
     snowflake$.error(new Error('500'));
     await settle();
@@ -126,10 +159,16 @@ describe('AllEmployeesComponent — Snowflake first, live merge second', () => {
     expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
   });
 
-  it('shows the error state only when both sources fail', async () => {
-    snowflake$.error(new Error('500'));
+  it.each([
+    ['Snowflake first', ['snowflake', 'live'] as const],
+    ['live first', ['live', 'snowflake'] as const],
+  ])('shows the error state only when both sources fail (%s)', async (_label, order) => {
+    const sources = { snowflake: snowflake$, live: live$ };
+    sources[order[0]].error(new Error('first'));
     await settle();
-    live$.error(new Error('504'));
+    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+
+    sources[order[1]].error(new Error('second'));
     await settle();
 
     expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).not.toBeNull();

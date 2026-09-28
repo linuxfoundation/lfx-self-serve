@@ -8,11 +8,12 @@ import { FormsModule } from '@angular/forms';
 import {
   catchError,
   combineLatest,
-  concat,
   distinctUntilChanged,
   EMPTY,
+  filter,
   finalize,
   map,
+  merge,
   Observable,
   of,
   skip,
@@ -367,35 +368,42 @@ export class AllEmployeesComponent {
 
   /**
    * Two-phase roster load. The Snowflake roster answers in well under a second, while the live merge
-   * (access principals + committee-service seats) can take ~30 s cold on a large org, so rows and
-   * stats paint from Snowflake first and the live merge replaces them wholesale when it lands — one
-   * response at a time, never both, so rows are never duplicated. Live is requested only after the
-   * Snowflake phase settles so the server-side Snowflake cache it reads is already warm.
+   * (access principals + committee-service seats) can take far longer on a large org, so both are
+   * requested at once: rows and stats paint from Snowflake as soon as it answers, and the live merge
+   * replaces them wholesale when it lands — one response at a time, never both, so rows are never
+   * duplicated. A Snowflake answer arriving after live has landed is dropped, never shown over it.
    *
    * A live failure after Snowflake rendered keeps the Snowflake rows (no error state); a Snowflake
-   * failure falls through to live; only both failing shows the error state.
+   * failure waits for live; only both failing shows the error state.
    */
   private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
-    let snowflakeRendered = false;
+    const state = { snowflakeFailed: false, liveLanded: false, liveFailed: false };
+    const bothFailed = (): Observable<OrgAllEmployeesResponse> => {
+      this.fetchErrorState.set(true);
+      this.loadingState.set(false);
+      return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+    };
     const snowflake$ = this.dataService.getAllEmployees(orgUid).pipe(
       take(1),
-      tap(() => {
-        snowflakeRendered = true;
-        this.loadingState.set(false);
-      }),
-      catchError(() => EMPTY)
+      filter(() => !state.liveLanded),
+      tap(() => this.loadingState.set(false)),
+      catchError(() => {
+        state.snowflakeFailed = true;
+        return state.liveFailed ? bothFailed() : EMPTY;
+      })
     );
     const live$ = this.directory.getDirectory(orgUid).pipe(
       take(1),
-      tap(() => this.loadingState.set(false)),
-      catchError(() => {
-        if (snowflakeRendered) return EMPTY;
-        this.fetchErrorState.set(true);
+      tap(() => {
+        state.liveLanded = true;
         this.loadingState.set(false);
-        return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+      }),
+      catchError(() => {
+        state.liveFailed = true;
+        return state.snowflakeFailed ? bothFailed() : EMPTY;
       })
     );
-    return concat(snowflake$, live$);
+    return merge(snowflake$, live$);
   }
 
   private loadDetailIfNeeded(row: OrgAllEmployeeRow): void {
