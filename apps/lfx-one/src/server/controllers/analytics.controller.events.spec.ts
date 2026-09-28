@@ -4,17 +4,25 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getAtAGlance, getPastEvents, getRegistrationForecast, getRegistrationForecastCurve, getRegistrationsGrowth, getRevenue, getSpeakers } = vi.hoisted(
-  () => ({
-    getAtAGlance: vi.fn(),
-    getPastEvents: vi.fn(),
-    getRegistrationForecast: vi.fn(),
-    getRegistrationForecastCurve: vi.fn(),
-    getRegistrationsGrowth: vi.fn(),
-    getRevenue: vi.fn(),
-    getSpeakers: vi.fn(),
-  })
-);
+const {
+  getAtAGlance,
+  getOrganizations,
+  getPastEvents,
+  getRegistrationForecast,
+  getRegistrationForecastCurve,
+  getRegistrationsGrowth,
+  getRevenue,
+  getSpeakers,
+} = vi.hoisted(() => ({
+  getAtAGlance: vi.fn(),
+  getOrganizations: vi.fn(),
+  getPastEvents: vi.fn(),
+  getRegistrationForecast: vi.fn(),
+  getRegistrationForecastCurve: vi.fn(),
+  getRegistrationsGrowth: vi.fn(),
+  getRevenue: vi.fn(),
+  getSpeakers: vi.fn(),
+}));
 
 vi.mock('../services/health-metrics-events.service', () => ({
   HealthMetricsEventsService: class {
@@ -25,7 +33,10 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getRegistrationsGrowth = getRegistrationsGrowth;
     public getRevenue = getRevenue;
     public getSpeakers = getSpeakers;
+    public getOrganizations = getOrganizations;
   },
+  // Mirrors the service: the Events views carry no columns for the oldest range.
+  isSupportedEventsRange: (range: string) => range !== 'COMPLETED_YEAR_4',
 }));
 // The controller constructs five unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
@@ -43,6 +54,8 @@ import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED,
   HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED,
   HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED,
@@ -59,7 +72,8 @@ type Handler =
   | 'getEventsAtAGlance'
   | 'getEventsRegistrationsGrowth'
   | 'getEventsRevenue'
-  | 'getEventsSpeakers';
+  | 'getEventsSpeakers'
+  | 'getEventsOrganizations';
 
 function call(handler: Handler, queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -309,6 +323,75 @@ describe('AnalyticsController.getEventsSpeakers', () => {
     getSpeakers.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsSpeakers', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsOrganizations', () => {
+  beforeEach(() => {
+    getOrganizations.mockReset();
+    getOrganizations.mockResolvedValue(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
+  });
+
+  it('defaults the period, segment, search and page', async () => {
+    const { res, next, promise } = call('getEventsOrganizations', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getOrganizations).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      segment: 'all',
+      search: '',
+      offset: 0,
+      pageSize: 25,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
+  });
+
+  it('passes the parsed query, with the search trimmed and capped', async () => {
+    const search = `  ${'a'.repeat(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH + 20)}  `;
+    const { promise } = call('getEventsOrganizations', {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR_2',
+      segment: 'non-members',
+      search,
+      offset: '50',
+      pageSize: '25',
+    });
+    await promise;
+
+    expect(getOrganizations).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR_2',
+      segment: 'non-members',
+      search: 'a'.repeat(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH),
+      offset: 50,
+      pageSize: 25,
+    });
+  });
+
+  it.each([
+    [{}, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ foundationSlug: 'acme', range: 'LAST_WEEK' }, 'range'],
+    [{ foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ foundationSlug: 'acme', segment: 'partners' }, 'segment'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call('getEventsOrganizations', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getOrganizations).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getOrganizations.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsOrganizations', { foundationSlug: 'acme' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

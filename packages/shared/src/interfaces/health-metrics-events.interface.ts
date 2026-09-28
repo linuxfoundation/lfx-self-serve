@@ -530,3 +530,64 @@ export interface HealthMetricsEventsSpeakersView {
   individualLabel: string | null;
   proposals: HealthMetricsEventsSpeakersProposalRowView[];
 }
+
+/** The membership cut over the organizations table. */
+export type HealthMetricsEventsOrganizationsSegment = 'all' | 'members' | 'non-members';
+
+/** A segment pill whose id is the cut it applies. */
+export interface HealthMetricsEventsOrganizationsSegmentOption extends FilterPillOption {
+  id: HealthMetricsEventsOrganizationsSegment;
+}
+
+/** One page of the organizations active in a period, cut by membership and a name search. */
+export interface HealthMetricsEventsOrganizationsQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  segment: HealthMetricsEventsOrganizationsSegment;
+  /** Matched anywhere in the organization's name; empty matches every organization. */
+  search: string;
+  offset: number;
+  pageSize: number;
+}
+
+/** One organization's event record for the period. Every `null` is not available, never zero. */
+export interface HealthMetricsEventsOrganization {
+  accountId: string;
+  accountName: string;
+  logoUrl: string | null;
+  isMember: boolean;
+  registrations: number | null;
+  /** 0–1, registrations over the foundation's top organization for the period. */
+  registrationsShare: number | null;
+  sponsorshipUsd: number | null;
+  proposals: number | null;
+  speakers: number | null;
+  events: number | null;
+}
+
+/** `GET /api/analytics/events-organizations` — one page, ranked by registrations. */
+export interface HealthMetricsEventsOrganizations {
+  rows: HealthMetricsEventsOrganization[];
+  /** Organizations matching the segment and search. */
+  totalRecords: number;
+  /** Every organization active in the period; `null` when the read was not measured. */
+  scopeTotal: number | null;
+}
+
+/** An organizations row with every label ready to render. */
+export interface HealthMetricsEventsOrganizationRowView {
+  accountId: string;
+  accountName: string;
+  logoUrl: string;
+  memberLabel: string;
+  memberClass: string;
+  registrationsLabel: string;
+  /** 0–100. */
+  barWidthPct: number;
+  /** `—` when the period shows no sponsorship, which the view cannot tell from not tracked. */
+  sponsorshipLabel: string;
+  /** `—` when the period shows no proposals, for the same reason. */
+  proposalsLabel: string;
+  speakersLabel: string;
+  eventsLabel: string;
+}

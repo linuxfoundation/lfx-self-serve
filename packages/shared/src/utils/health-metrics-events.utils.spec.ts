@@ -7,6 +7,7 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import {
   buildHealthMetricsEventsAtAGlanceView,
+  buildHealthMetricsEventsOrganizationRowView,
   buildHealthMetricsEventsForecastNote,
   buildHealthMetricsEventsForecastRowViews,
   buildHealthMetricsEventsPastView,
@@ -17,6 +18,7 @@ import {
   buildHealthMetricsEventsSpeakersYears,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
+  formatHealthMetricsEventsOrganizationsCountLabel,
   formatHealthMetricsEventsPastClosedLabel,
   formatHealthMetricsEventsRevenue,
   pickHealthMetricsEventsForecastFormat,
@@ -31,6 +33,7 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlancePeriod,
   HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsOrganization,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsRegistrationsGrowthYear,
@@ -840,5 +843,72 @@ describe('buildHealthMetricsEventsSpeakersNote', () => {
   it('stays empty at exactly the threshold and notes a fall just past it', () => {
     expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3), 'YTD')).toBe('');
     expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3004), 'YTD')).toBe('down 30% YoY');
+  });
+});
+
+describe('buildHealthMetricsEventsOrganizationRowView', () => {
+  const organization = (overrides: Partial<HealthMetricsEventsOrganization> = {}): HealthMetricsEventsOrganization => ({
+    accountId: '0014100000AcmeAAAA',
+    accountName: 'Acme Motors',
+    logoUrl: 'https://acme-motors.example/logo.png',
+    isMember: true,
+    registrations: 1204,
+    registrationsShare: 0.5,
+    sponsorshipUsd: 150000,
+    proposals: 12,
+    speakers: 4,
+    events: 3,
+    ...overrides,
+  });
+
+  it('labels a member with its figures and a bar scaled to the top organization', () => {
+    expect(buildHealthMetricsEventsOrganizationRowView(organization())).toEqual({
+      accountId: '0014100000AcmeAAAA',
+      accountName: 'Acme Motors',
+      logoUrl: 'https://acme-motors.example/logo.png',
+      memberLabel: 'Member',
+      memberClass: 'bg-emerald-50 text-emerald-700',
+      registrationsLabel: '1,204',
+      barWidthPct: 50,
+      sponsorshipLabel: '$150K',
+      proposalsLabel: '12',
+      speakersLabel: '4',
+      eventsLabel: '3',
+    });
+  });
+
+  it('reads zero sponsorship and proposals as not tracked, but keeps a measured zero elsewhere', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ sponsorshipUsd: 0, proposals: 0, registrations: 0, speakers: 0 }));
+
+    expect(row.sponsorshipLabel).toBe('—');
+    expect(row.proposalsLabel).toBe('—');
+    expect(row.registrationsLabel).toBe('0');
+    expect(row.speakersLabel).toBe('0');
+  });
+
+  it('labels a non-member, drops a missing logo and keeps the bar inside its track', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false, logoUrl: null, registrationsShare: 1.2, sponsorshipUsd: null }));
+
+    expect(row.memberLabel).toBe('Non-member');
+    expect(row.memberClass).toBe('bg-gray-100 text-gray-600');
+    expect(row.logoUrl).toBe('');
+    expect(row.barWidthPct).toBe(100);
+    expect(row.sponsorshipLabel).toBe('—');
+  });
+
+  it('draws no bar when the share is not available', () => {
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ registrationsShare: null })).barWidthPct).toBe(0);
+  });
+});
+
+describe('formatHealthMetricsEventsOrganizationsCountLabel', () => {
+  it('counts organizations, singular for one', () => {
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(1204)).toBe('1,204 organizations');
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(1)).toBe('1 organization');
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(0)).toBe('0 organizations');
+  });
+
+  it('shows a dash while the count is unknown', () => {
+    expect(formatHealthMetricsEventsOrganizationsCountLabel(null)).toBe('—');
   });
 });

@@ -5,6 +5,8 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsOrganizations,
+  HealthMetricsEventsOrganizationsSegmentOption,
   HealthMetricsEventsPast,
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthMetricOption,
@@ -113,6 +115,9 @@ export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE = "An organizati
 /** Query params the Events sections read; `event` lets a finding link open one event's forecast. */
 export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {
   forecastEvent: 'event',
+  orgSegment: 'orgSegment',
+  orgSearch: 'orgSearch',
+  orgPage: 'orgPage',
 } as const;
 
 /** Pace chips, EVT-01. `No data` covers a missing forecast and a goal off by an order of magnitude. */
@@ -255,3 +260,32 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS: readonly HealthMetricsE
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';
+
+/** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero organizations. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED: HealthMetricsEventsOrganizations = { rows: [], totalRecords: 0, scopeTotal: null };
+
+/** The segment pills over the table; the first is the default. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS: readonly HealthMetricsEventsOrganizationsSegmentOption[] = [
+  { id: 'all', label: 'All' },
+  { id: 'members', label: 'Members' },
+  { id: 'non-members', label: 'Non-members' },
+];
+
+/** Rows per page; the server caps a request at `HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE`. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE = 25;
+
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE = 100;
+
+/** Search text past this length is cut before it is bound. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH = 100;
+
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS = 200;
+
+/** Membership pills. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP = {
+  member: { label: 'Member', badgeClass: 'bg-emerald-50 text-emerald-700' },
+  nonMember: { label: 'Non-member', badgeClass: 'bg-gray-100 text-gray-600' },
+} as const;
+
+/** Fill for the registrations mini bar. */
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-500';

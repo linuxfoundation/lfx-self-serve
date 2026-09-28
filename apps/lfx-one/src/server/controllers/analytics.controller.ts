@@ -4,16 +4,27 @@
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { HealthMetricsEngagementGroupTypeFilter } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEngagementGroupTypeFilter, HealthMetricsEventsOrganizationsSegment } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
-import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
+import {
+  assertHealthMetricsRange,
+  getStringQueryParam,
+  getValidatedClassification,
+  getValidatedPeriod,
+  parseEntityType,
+  parseOffsetPagination,
+} from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
-import { HealthMetricsEventsService } from '../services/health-metrics-events.service';
+import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -29,6 +40,9 @@ const EVENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Group-type cuts the Engagement group-attendance filter accepts. */
 const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => filter.key));
+
+/** Membership segments the Events organizations table accepts. */
+const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
 
 /** Maximum allowed length for foundationSlug query parameter */
 const NAME_MAX_LENGTH = 200;
@@ -3615,6 +3629,56 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         organization_count: response.organizations.length,
         proposal_count: response.proposals.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-organizations` — one page of the organizations active at the foundation's events in a period. */
+  public async getEventsOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_organizations');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_organizations');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_organizations');
+      if (!isSupportedEventsRange(range)) {
+        throw ServiceValidationError.forField('range', 'Organizations at events have no data for this range', { operation: 'get_events_organizations' });
+      }
+
+      const segment = getStringQueryParam(req, 'segment') || 'all';
+      if (!EVENTS_ORGANIZATIONS_SEGMENTS.has(segment)) {
+        throw ServiceValidationError.forField('segment', `Invalid segment value. Allowed: ${[...EVENTS_ORGANIZATIONS_SEGMENTS].join(', ')}`, {
+          operation: 'get_events_organizations',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsEventsService.getOrganizations(req, {
+        foundationSlug,
+        range,
+        segment: segment as HealthMetricsEventsOrganizationsSegment,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text is left out of the log; organization names are the only thing it can match.
+      logger.success(req, 'get_events_organizations', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        segment,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
       });
 
       res.json(response);

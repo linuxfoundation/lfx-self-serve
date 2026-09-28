@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
@@ -36,6 +37,8 @@ import type {
   HealthMetricsEventsForecastRowView,
   HealthMetricsEventsForecastStatus,
   HealthMetricsEventsForecastVerdict,
+  HealthMetricsEventsOrganization,
+  HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastRowView,
@@ -75,6 +78,33 @@ export function buildHealthMetricsEventsSubNavItems(
     count: counts[section.key] ?? null,
     note: notes[section.key] ?? '',
   }));
+}
+
+/** One organizations row. A zero sponsorship or proposal count reads as `—`: the view cannot tell it from not tracked. */
+export function buildHealthMetricsEventsOrganizationRowView(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationRowView {
+  const membership = organization.isMember ? HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.member : HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.nonMember;
+  const share = organization.registrationsShare ?? 0;
+
+  return {
+    accountId: organization.accountId,
+    accountName: organization.accountName,
+    logoUrl: organization.logoUrl ?? '',
+    memberLabel: membership.label,
+    memberClass: membership.badgeClass,
+    registrationsLabel: formatHealthMetricsEventsCount(organization.registrations),
+    barWidthPct: Math.min(Math.max(share * 100, 0), 100),
+    sponsorshipLabel: organization.sponsorshipUsd ? formatCurrency(organization.sponsorshipUsd) : '—',
+    proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : '—',
+    speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
+    eventsLabel: formatHealthMetricsEventsCount(organization.events),
+  };
+}
+
+/** The control line, e.g. `1,204 organizations`; `—` while the count is unknown. */
+export function formatHealthMetricsEventsOrganizationsCountLabel(total: number | null): string {
+  if (total === null) return '—';
+
+  return `${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'organization' : 'organizations'}`;
 }
 
 /** True when goal and forecast differ by an order of magnitude or more — a data-entry problem, not a pace. */

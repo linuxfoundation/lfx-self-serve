@@ -21,10 +21,13 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
+// validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular and cannot load outside a test bed.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
@@ -32,10 +35,12 @@ import {
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
+import type { HealthMetricsEventsOrganizationsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
@@ -944,5 +949,128 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
       unaffiliated: [],
       proposals: [],
     });
+  });
+});
+
+describe('HealthMetricsEventsService.getOrganizations', () => {
+  const baseQuery: HealthMetricsEventsOrganizationsQuery = { foundationSlug: 'acme', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 };
+
+  function organizationRow(overrides: Record<string, unknown> = {}) {
+    return {
+      SCOPE_TOTAL: 120,
+      TOTAL_RECORDS: 40,
+      IS_PAGE_ROW: true,
+      ACCOUNT_ID: '0014100000AcmeAAAA',
+      ACCOUNT_NAME: 'Acme Motors',
+      LOGO_URL: 'https://acme-motors.example/logo.png',
+      IS_MEMBER: true,
+      REGISTRATIONS_COUNT: 420,
+      REGISTRATIONS_SHARE: '0.5',
+      SPONSORSHIP_REVENUE: 150000,
+      PROPOSALS_COUNT: 12,
+      SPEAKERS_COUNT: 4,
+      EVENTS_COUNT: 3,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [organizationRow()] });
+  });
+
+  it('reads the period columns of the active all-projects rows for the foundation', async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, range: 'COMPLETED_YEAR_3' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW');
+    expect(sql).toContain('registrations_count_3rd_last_completed_year AS registrations_count');
+    expect(sql).toContain('registrations_share_of_scope_max_3rd_last_completed_year AS registrations_share');
+    expect(sql).toContain('sort_rank_3rd_last_completed_year AS sort_rank');
+    expect(sql).toContain('AND is_all_projects = TRUE');
+    expect(sql).toContain('events_count_3rd_last_completed_year > 0');
+    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC');
+    expect(sql).not.toContain('ILIKE');
+    expect(binds).toEqual(['acme']);
+  });
+
+  it('binds the search once, with its wildcards escaped', async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, search: '50%_off' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(sql).toContain("account_name ILIKE ? ESCAPE '!'");
+    expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
+    expect(binds).toEqual(['acme', '%50!%!_off%']);
+  });
+
+  it.each([
+    ['members', 'is_member = TRUE'],
+    ['non-members', 'COALESCE(is_member, FALSE) = FALSE'],
+  ] as const)('filters the %s segment', async (segment, predicate) => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, segment });
+
+    expect(execute.mock.calls[0][0]).toContain(`WHERE ${predicate}`);
+  });
+
+  it('clamps the page size and offset it interpolates', async () => {
+    await new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, pageSize: 5000, offset: Number.MAX_SAFE_INTEGER });
+
+    const maxOffset = MAX_SNOWFLAKE_PAGINATION_PAGE * HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE;
+    expect(execute.mock.calls[0][0]).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE} OFFSET ${maxOffset}`);
+  });
+
+  it('maps the page rows and reads the totals off the first row', async () => {
+    execute.mockResolvedValue({
+      rows: [organizationRow(), organizationRow({ ACCOUNT_ID: 'org-b', ACCOUNT_NAME: null, LOGO_URL: '', IS_MEMBER: null, SPONSORSHIP_REVENUE: null })],
+    });
+
+    await expect(new HealthMetricsEventsService().getOrganizations(req, baseQuery)).resolves.toEqual({
+      rows: [
+        {
+          accountId: '0014100000AcmeAAAA',
+          accountName: 'Acme Motors',
+          logoUrl: 'https://acme-motors.example/logo.png',
+          isMember: true,
+          registrations: 420,
+          registrationsShare: 0.5,
+          sponsorshipUsd: 150000,
+          proposals: 12,
+          speakers: 4,
+          events: 3,
+        },
+        {
+          accountId: 'org-b',
+          accountName: 'org-b',
+          logoUrl: null,
+          isMember: false,
+          registrations: 420,
+          registrationsShare: 0.5,
+          sponsorshipUsd: null,
+          proposals: 12,
+          speakers: 4,
+          events: 3,
+        },
+      ],
+      totalRecords: 40,
+      scopeTotal: 120,
+    });
+  });
+
+  it('keeps the totals when the page is past the end', async () => {
+    execute.mockResolvedValue({ rows: [organizationRow({ IS_PAGE_ROW: null, ACCOUNT_ID: null })] });
+
+    await expect(new HealthMetricsEventsService().getOrganizations(req, { ...baseQuery, offset: 500 })).resolves.toEqual({
+      rows: [],
+      totalRecords: 40,
+      scopeTotal: 120,
+    });
+  });
+
+  it('drops a page row without an account id', async () => {
+    execute.mockResolvedValue({ rows: [organizationRow({ ACCOUNT_ID: null })] });
+
+    const { rows } = await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
+
+    expect(rows).toEqual([]);
   });
 });

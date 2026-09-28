@@ -5,6 +5,8 @@ import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
@@ -18,9 +20,11 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
+import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -34,6 +38,9 @@ import type {
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastQuery,
+  HealthMetricsEventsOrganization,
+  HealthMetricsEventsOrganizations,
+  HealthMetricsEventsOrganizationsQuery,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastPeriod,
@@ -64,6 +71,7 @@ const REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE';
 const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE';
 const SPEAKERS_DRILLDOWN_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_ORG_DRILLDOWN';
 const SPEAKERS_LIST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST';
+const ORGANIZATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW';
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -84,6 +92,9 @@ const AT_A_GLANCE_COUNT_PREFIXES = ['registrations', 'attendees', 'organizations
 
 /** Speakers count prefixes, each suffixed per period. */
 const SPEAKERS_COUNT_PREFIXES = ['proposals_submitted', 'proposals_accepted', 'proposals_in_review', 'proposals_declined', 'speakers'] as const;
+
+/** Organization counts, each suffixed per period; any one above zero makes the organization active. */
+const ORGANIZATIONS_ACTIVITY_COLUMNS = ['registrations_count', 'sponsorship_revenue', 'proposals_count', 'speakers_count', 'events_count'] as const;
 
 /** Label for a curve row the view left without a registration type. */
 const UNTYPED_FORMAT_LABEL = 'All formats';
@@ -183,6 +194,23 @@ interface SpeakerProposalRow {
   SUBMISSION_STATUS_ORIGINAL: string | null;
   PROPOSAL_STATUS_GROUP: string | null;
   IS_UNAFFILIATED_PROPOSAL: boolean | null;
+}
+
+/** One page row joined onto the totals; the period columns are aliased unsuffixed in the read. */
+interface OrganizationRow {
+  SCOPE_TOTAL: number | null;
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  LOGO_URL: string | null;
+  IS_MEMBER: boolean | null;
+  REGISTRATIONS_COUNT: number | null;
+  REGISTRATIONS_SHARE: number | null;
+  SPONSORSHIP_REVENUE: number | null;
+  PROPOSALS_COUNT: number | null;
+  SPEAKERS_COUNT: number | null;
+  EVENTS_COUNT: number | null;
 }
 
 /** The foundation's Events revenue from the overview view, which carries no split. */
@@ -473,6 +501,84 @@ export class HealthMetricsEventsService {
   }
 
   /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
+  /**
+   * One page of the organizations active in the period, ranked by the view's `sort_rank_<period>`
+   * (registrations first) so the ranking survives pagination.
+   */
+  public async getOrganizations(req: Request, query: HealthMetricsEventsOrganizationsQuery): Promise<HealthMetricsEventsOrganizations> {
+    // The suffix and column names come from constants, never from the request, so interpolating them is safe.
+    const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
+    const active = ORGANIZATIONS_ACTIVITY_COLUMNS.map((column) => `${column}_${suffix} > 0`).join(' OR ');
+    const binds: string[] = [query.foundationSlug];
+
+    const predicates: string[] = [];
+    if (query.segment === 'members') predicates.push('is_member = TRUE');
+    if (query.segment === 'non-members') predicates.push('COALESCE(is_member, FALSE) = FALSE');
+    if (query.search) {
+      predicates.push("account_name ILIKE ? ESCAPE '!'");
+      binds.push(`%${escapeSqlLikePattern(query.search)}%`);
+    }
+    const matchClause = predicates.length ? `WHERE ${predicates.join(' AND ')}` : '';
+
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE, HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    // Totals are joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports them.
+    const sql = `
+      WITH scoped AS (
+        SELECT
+          account_id,
+          account_name,
+          logo_url,
+          is_member_${suffix} AS is_member,
+          registrations_count_${suffix} AS registrations_count,
+          registrations_share_of_scope_max_${suffix} AS registrations_share,
+          sponsorship_revenue_${suffix} AS sponsorship_revenue,
+          proposals_count_${suffix} AS proposals_count,
+          speakers_count_${suffix} AS speakers_count,
+          events_count_${suffix} AS events_count,
+          sort_rank_${suffix} AS sort_rank
+        FROM ${ORGANIZATIONS_VIEW}
+        WHERE foundation_slug = ?
+          AND is_all_projects = TRUE
+          AND (${active})
+      ),
+      matched AS (
+        SELECT * FROM scoped ${matchClause}
+      ),
+      totals AS (
+        SELECT (SELECT COUNT(*) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
+      ),
+      page AS (
+        SELECT *, TRUE AS is_page_row
+        FROM matched
+        -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
+        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<OrganizationRow>(this.snowflakeService, req, sql, binds, {
+      view: ORGANIZATIONS_VIEW,
+      operation: 'get_events_organizations',
+      clientMessage: 'Organizations at events are unavailable right now.',
+    });
+
+    const first = result.rows[0];
+    return {
+      rows: result.rows
+        .filter((row) => row.IS_PAGE_ROW === true)
+        .map(mapOrganization)
+        .filter((organization): organization is HealthMetricsEventsOrganization => organization !== null),
+      totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
+      scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
+    };
+  }
+
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
       SELECT
@@ -850,6 +956,23 @@ function mapSpeakerProposal(row: SpeakerProposalRow): HealthMetricsEventsSpeaker
     submissionDate: toIsoDate(row.SUBMISSION_DATE),
     status: row.SUBMISSION_STATUS_ORIGINAL ?? row.PROPOSAL_STATUS_GROUP ?? '',
     statusGroup: toSpeakersStatusGroup(row.PROPOSAL_STATUS_GROUP),
+  };
+}
+
+function mapOrganization(row: OrganizationRow): HealthMetricsEventsOrganization | null {
+  if (!row.ACCOUNT_ID) return null;
+
+  return {
+    accountId: row.ACCOUNT_ID,
+    accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID,
+    logoUrl: row.LOGO_URL || null,
+    isMember: row.IS_MEMBER === true,
+    registrations: toNullableNumber(row.REGISTRATIONS_COUNT),
+    registrationsShare: toNullableNumber(row.REGISTRATIONS_SHARE),
+    sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_REVENUE),
+    proposals: toNullableNumber(row.PROPOSALS_COUNT),
+    speakers: toNullableNumber(row.SPEAKERS_COUNT),
+    events: toNullableNumber(row.EVENTS_COUNT),
   };
 }
 

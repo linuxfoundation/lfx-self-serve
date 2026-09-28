@@ -104,6 +104,8 @@ import {
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueQuery,
   HealthMetricsEventsSpeakers,
+  HealthMetricsEventsOrganizations,
+  HealthMetricsEventsOrganizationsQuery,
   HealthMetricsEventsSpeakersQuery,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -1294,6 +1296,25 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsSpeakers>('/api/analytics/events-speakers', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-speakers failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getEventsOrganizations(query: HealthMetricsEventsOrganizationsQuery): Observable<HealthMetricsEventsOrganizations> {
+    const params: Record<string, string> = {
+      foundationSlug: query.foundationSlug,
+      range: query.range,
+      segment: query.segment,
+      offset: String(query.offset),
+      pageSize: String(query.pageSize),
+    };
+    if (query.search) params['search'] = query.search;
+
+    // Errors propagate so the section shows its error state, not an empty table. The search text is kept out of the log.
+    return this.http.get<HealthMetricsEventsOrganizations>('/api/analytics/events-organizations', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-organizations failed', { foundationSlug: query.foundationSlug, range: query.range, segment: query.segment, error });
         return throwError(() => error);
       })
     );
