@@ -6,6 +6,8 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
@@ -521,7 +523,8 @@ function toDaysLeft(value: unknown): number | null {
 /** A row without a year cannot be placed on the chart, so it is dropped rather than guessed. */
 function mapRegistrationsGrowthYear(row: RegistrationsGrowthRow): HealthMetricsEventsRegistrationsGrowthYear | null {
   const year = toNullableNumber(row.YEAR);
-  if (year === null || !Number.isInteger(year)) return null;
+  const maxYear = new Date().getUTCFullYear() + HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD;
+  if (year === null || !Number.isInteger(year) || year < HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR || year > maxYear) return null;
 
   return {
     year,

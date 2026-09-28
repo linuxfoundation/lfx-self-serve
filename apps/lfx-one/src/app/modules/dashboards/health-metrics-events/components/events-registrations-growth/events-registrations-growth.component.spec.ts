@@ -171,7 +171,7 @@ describe('EventsRegistrationsGrowthComponent', () => {
 
     expect(text('events-registrations-growth-partial-2026')).toBe('partial');
     expect(query('events-registrations-growth-partial-2022')).toBeNull();
-    expect(text('events-registrations-growth-footnote')).toContain('The current year is partial');
+    expect(text('events-registrations-growth-footnote')).toContain('A partial year is still open');
 
     (query('events-registrations-growth-forecast-link') as HTMLButtonElement).click();
 
@@ -184,13 +184,13 @@ describe('EventsRegistrationsGrowthComponent', () => {
     expect(query('events-registrations-growth-footnote')).toBeNull();
   });
 
-  it('explains the pandemic peak only when a pandemic year has events recorded', async () => {
+  it('explains the pandemic peak only when a pandemic year has virtual counts', async () => {
     await render();
     expect(query('events-registrations-growth-pandemic-note')).not.toBeNull();
 
     TestBed.resetTestingModule();
     lifecycle = [];
-    await render({ years: [year({ year: 2019 }), year({ year: 2022 })] });
+    await render({ years: [year({ year: 2019 }), year({ year: 2021 }), year({ year: 2022 })] });
     expect(query('events-registrations-growth-pandemic-note')).toBeNull();
   });
 

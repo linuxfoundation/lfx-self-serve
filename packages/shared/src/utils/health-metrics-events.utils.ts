@@ -264,7 +264,7 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
     rows,
     yearCount: rows.length,
     hasPartialYear: rows.some((row) => row.isPartialYear),
-    hasPandemicYears: rows.some((row) => row.recorded && HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS.includes(row.year)),
+    hasPandemicYears: rows.some((row) => HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS.includes(row.year) && (row.virtual ?? 0) > 0),
   };
 }
 

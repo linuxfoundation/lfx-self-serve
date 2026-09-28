@@ -258,7 +258,7 @@ export interface HealthMetricsEventsRegistrationsGrowthQuery {
 /** One year's registrations and attendees, split by format. Every `null` is unmeasured, never zero. */
 export interface HealthMetricsEventsRegistrationsGrowthYear {
   year: number;
-  /** The current year, still open, so it reads short against the complete years. */
+  /** A year still open (the current one, or a later one with early sign-ups), so it reads short against complete years. */
   isPartialYear: boolean;
   totalRegistrations: number | null;
   inPersonRegistrations: number | null;
@@ -302,6 +302,6 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   /** Years spanned, gap years included, so the count matches the table. */
   yearCount: number;
   hasPartialYear: boolean;
-  /** Whether a pandemic year has events recorded, which is when the callout explains the virtual peak. */
+  /** Whether a pandemic year has a measured virtual count for the metric, which the callout explains. */
   hasPandemicYears: boolean;
 }

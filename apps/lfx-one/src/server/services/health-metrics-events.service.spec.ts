@@ -26,6 +26,8 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_L2_RANGES,
 } from '@lfx-one/shared/constants';
@@ -511,6 +513,17 @@ describe('HealthMetricsEventsService.getRegistrationsGrowth', () => {
     expect(years[0]).toMatchObject({ totalAttendees: null, isPartialYear: false });
   });
 
+  it('drops a year outside the plausible window, so one stray row cannot stretch the gap fill', async () => {
+    const tooFar = new Date().getUTCFullYear() + HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD + 1;
+    execute.mockResolvedValue({
+      rows: [growthRow({ YEAR: 0 }), growthRow({ YEAR: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR - 1 }), growthRow(), growthRow({ YEAR: tooFar })],
+    });
+
+    const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });
+
+    expect(years).toHaveLength(1);
+  });
+
   it('returns no years when the foundation has none', async () => {
     execute.mockResolvedValue({ rows: [] });
 
@@ -519,7 +532,7 @@ describe('HealthMetricsEventsService.getRegistrationsGrowth', () => {
 
   it('warns and truncates when the read hits the cap', async () => {
     execute.mockResolvedValue({
-      rows: Array.from({ length: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP + 1 }, (_, i) => growthRow({ YEAR: 1900 + i })),
+      rows: Array.from({ length: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP + 1 }, () => growthRow()),
     });
 
     const { years } = await new HealthMetricsEventsService().getRegistrationsGrowth(req, { foundationSlug: 'acme' });

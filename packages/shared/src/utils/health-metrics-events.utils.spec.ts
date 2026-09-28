@@ -486,12 +486,22 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
     expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').hasPartialYear).toBe(false);
   });
 
-  it('flags pandemic years only when one has events recorded', () => {
+  it('flags pandemic years only when one has a measured virtual count for the metric', () => {
     const recorded = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2021 }), growthYear()] }, 'registrations');
+    const inPersonOnly = buildHealthMetricsEventsRegistrationsGrowthView(
+      { years: [growthYear({ year: 2021, virtualRegistrations: 0, virtualAttendees: 100 }), growthYear()] },
+      'registrations'
+    );
+    const unmeasured = buildHealthMetricsEventsRegistrationsGrowthView(
+      { years: [growthYear({ year: 2020, virtualAttendees: null }), growthYear()] },
+      'attendees'
+    );
     const spannedOnly = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2019 }), growthYear({ year: 2022 })] }, 'registrations');
     const after = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations');
 
     expect(recorded.hasPandemicYears).toBe(true);
+    expect(inPersonOnly.hasPandemicYears).toBe(false);
+    expect(unmeasured.hasPandemicYears).toBe(false);
     expect(spannedOnly.hasPandemicYears).toBe(false);
     expect(after.hasPandemicYears).toBe(false);
   });
