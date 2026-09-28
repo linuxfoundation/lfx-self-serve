@@ -377,10 +377,15 @@ export class AllEmployeesComponent {
    * A live failure after Snowflake rendered keeps the Snowflake rows (no error state); a Snowflake
    * failure waits for live; only both failing shows the error state.
    *
-   * Server render requests the Snowflake phase only: the live merge is the slow, per-caller read,
-   * and the browser starts it itself after hydration.
+   * On the server this fetches nothing and leaves the skeleton; the browser starts both requests
+   * after hydration. The guard is defensive: prod measurement shows server render is not held by
+   * these calls.
    */
   private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return EMPTY;
+    }
+
     const state = { snowflakeFailed: false, liveLanded: false, liveFailed: false };
     const bothFailed = (): Observable<OrgAllEmployeesResponse> => {
       this.fetchErrorState.set(true);
@@ -397,10 +402,6 @@ export class AllEmployeesComponent {
         return state.liveFailed ? bothFailed() : EMPTY;
       })
     );
-    if (!isPlatformBrowser(this.platformId)) {
-      return snowflake$;
-    }
-
     const live$ = this.directory.getDirectory(orgUid).pipe(
       take(1),
       tap(() => {

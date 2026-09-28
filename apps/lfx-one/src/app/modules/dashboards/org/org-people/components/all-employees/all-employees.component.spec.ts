@@ -50,6 +50,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let live$: Subject<OrgAllEmployeesResponse>;
   let fixture: ComponentFixture<AllEmployeesComponent>;
   let getDirectory: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
+  let getAllEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const rowKeys = (): string[] =>
@@ -69,7 +70,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       providers: [
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
-        { provide: AllEmployeesService, useValue: { getAllEmployees: vi.fn(() => snowflake$), getEmployeeDetail: vi.fn() } },
+        { provide: AllEmployeesService, useValue: { getAllEmployees, getEmployeeDetail: vi.fn() } },
         { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
       ],
@@ -83,6 +84,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     snowflake$ = new Subject();
     live$ = new Subject();
     getDirectory = vi.fn(() => live$);
+    getAllEmployees = vi.fn(() => snowflake$);
     // Failure paths log before falling back; keep the expected noise out of the test output.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -96,13 +98,13 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await mount('server');
     });
 
-    it('renders the Snowflake roster and never requests the live merge', async () => {
-      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
-      snowflake$.complete();
-      await settle();
-
+    // Defensive: prod measurement shows server render is not held by these calls, but the server
+    // render must not start either read — the browser starts both after hydration.
+    it('requests neither the Snowflake roster nor the live merge, and keeps the skeleton', () => {
+      expect(getAllEmployees).not.toHaveBeenCalled();
       expect(getDirectory).not.toHaveBeenCalled();
-      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
     });
   });
 
