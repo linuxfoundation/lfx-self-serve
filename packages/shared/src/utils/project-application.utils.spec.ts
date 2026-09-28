@@ -163,9 +163,9 @@ describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
 
   it('checks long adversarial addresses in linear time on every rejection path', () => {
     const body = `!@!.${'!.'.repeat(50_000)}`;
-    // The first is rejected by the forbidden-character test (trailing space); the second has no forbidden
-    // character, so it reaches the domain-shape checks and is rejected there (it ends in `.`).
-    for (const adversarial of [`${body} `, body]) {
+    // One input per rejection path: the forbidden-character test (trailing space), the `@` check (a second `@`),
+    // and the domain-shape check (no forbidden character, one `@`, but it ends in `.`).
+    for (const adversarial of [`${body} `, `${body}@`, body]) {
       const started = Date.now();
       expect(toProjectApplicationEmailLink(adversarial).href).toBeNull();
       expect(Date.now() - started).toBeLessThan(200);
