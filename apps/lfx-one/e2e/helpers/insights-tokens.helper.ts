@@ -81,5 +81,18 @@ export async function openDeveloperSettingsWithInsightsFlagOff(page: Page): Prom
   await page.goto('/profile/settings#developer-settings', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
   await expect(page.getByTestId('section-developer-settings')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  // The section is server-rendered, and the component holds the flag false until afterNextRender, so
+  // an absence assertion made now would pass against SSR markup even with the gate removed. Wait for
+  // the client to hydrate the flag-gated description (Angular patches `__ngContext__` onto the root
+  // node of each view it creates or hydrates), then two frames for the latch's follow-up render.
+  await page.waitForFunction(
+    () => {
+      const description = document.querySelector('[data-testid="developer-settings-description"]');
+      return !!description && '__ngContext__' in description;
+    },
+    undefined,
+    { timeout: DATA_LOAD_TIMEOUT }
+  );
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   return requests;
 }

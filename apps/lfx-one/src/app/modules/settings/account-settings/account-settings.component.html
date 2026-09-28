@@ -494,9 +494,13 @@
         <div>
           <h2 id="developer-settings-heading" class="text-base font-bold text-slate-900 mb-1" data-testid="developer-settings-heading">Developer Settings</h2>
           @if (insightsPublicApiEnabled()) {
-            <p class="text-sm text-slate-500 leading-normal">Your API tokens provide programmatic access to LFX services.</p>
+            <p class="text-sm text-slate-500 leading-normal" data-testid="developer-settings-description">
+              Your API tokens provide programmatic access to LFX services.
+            </p>
           } @else {
-            <p class="text-sm text-slate-500 leading-normal">Your API token provides programmatic access to LFX services.</p>
+            <p class="text-sm text-slate-500 leading-normal" data-testid="developer-settings-description">
+              Your API token provides programmatic access to LFX services.
+            </p>
           }
         </div>
 
