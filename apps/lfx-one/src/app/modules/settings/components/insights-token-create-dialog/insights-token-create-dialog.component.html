@@ -14,7 +14,7 @@
       inputId="insights-token-name"
       placeholder="e.g. Weekly health report"
       [required]="true"
-      [invalid]="!!errorMessage() || tooLong()"
+      [invalid]="!!errorMessage() || tooLong() || hasControlCharacters()"
       [describedBy]="nameDescribedBy()"
       autocomplete="off"
       dataTest="insights-token-create-name-input">
@@ -22,6 +22,11 @@
     @if (tooLong()) {
       <p id="insights-token-name-length" class="text-xs text-red-600" data-testid="insights-token-create-length-error">
         Use {{ maxLength }} characters or fewer.
+      </p>
+    }
+    @if (hasControlCharacters()) {
+      <p id="insights-token-name-control" class="text-xs text-red-600" data-testid="insights-token-create-control-error">
+        Remove tabs, line breaks, and other control characters.
       </p>
     }
     @if (errorMessage()) {

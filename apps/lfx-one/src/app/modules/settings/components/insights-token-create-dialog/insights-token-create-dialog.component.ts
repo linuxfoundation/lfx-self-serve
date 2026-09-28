@@ -7,11 +7,17 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR, INSIGHTS_TOKEN_ERROR_MESSAGES, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR,
+  INSIGHTS_TOKEN_ERROR_MESSAGES,
+  INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS,
+  INSIGHTS_TOKEN_NAME_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
 import { CreateInsightsTokenResponse, InsightsTokenErrorCode } from '@lfx-one/shared/interfaces';
 import { codePointLength } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { InsightsTokensService } from '@services/insights-tokens.service';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { finalize } from 'rxjs';
 
@@ -39,11 +45,14 @@ export class InsightsTokenCreateDialogComponent {
   protected readonly submitting = signal(false);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly tooLong = computed(() => codePointLength(this.trimmedName()) > INSIGHTS_TOKEN_NAME_MAX_LENGTH);
+  // Same rule the BFF enforces, so a pasted tab or line break is caught here instead of as a 400.
+  protected readonly hasControlCharacters = computed(() => INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS.test(this.trimmedName()));
   protected readonly nameDescribedBy = computed(() => {
     if (this.errorMessage()) return 'insights-token-name-error';
-    return this.tooLong() ? 'insights-token-name-length' : null;
+    if (this.tooLong()) return 'insights-token-name-length';
+    return this.hasControlCharacters() ? 'insights-token-name-control' : null;
   });
-  protected readonly canSubmit = computed(() => this.trimmedName().length > 0 && !this.tooLong() && !this.submitting());
+  protected readonly canSubmit = computed(() => this.trimmedName().length > 0 && !this.tooLong() && !this.hasControlCharacters() && !this.submitting());
 
   private readonly nameValue = toSignal(this.form.controls.name.valueChanges, { initialValue: this.form.controls.name.value });
   private readonly trimmedName = computed(() => this.nameValue().trim());
@@ -69,18 +78,20 @@ export class InsightsTokenCreateDialogComponent {
       )
       .subscribe({
         next: (created: CreateInsightsTokenResponse) => this.dialogRef.close(created),
-        error: (err: HttpErrorResponse) => {
-          const code: unknown = err?.error?.upstreamCode;
-          this.errorMessage.set(
-            typeof code === 'string' && Object.hasOwn(INSIGHTS_TOKEN_ERROR_MESSAGES, code)
-              ? INSIGHTS_TOKEN_ERROR_MESSAGES[code as InsightsTokenErrorCode]
-              : INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR
-          );
-        },
+        error: (err: HttpErrorResponse) => this.errorMessage.set(this.createErrorMessage(err)),
       });
   }
 
   protected cancel(): void {
     this.dialogRef.close();
+  }
+
+  /** Known PAT/eligibility codes map to fixed copy; the BFF's own name-validation reason is shown as written. */
+  private createErrorMessage(err: HttpErrorResponse): string {
+    const code: unknown = err?.error?.upstreamCode;
+    if (typeof code === 'string' && Object.hasOwn(INSIGHTS_TOKEN_ERROR_MESSAGES, code)) {
+      return INSIGHTS_TOKEN_ERROR_MESSAGES[code as InsightsTokenErrorCode];
+    }
+    return isBffValidationError(err) ? extractErrorMessage(err, INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR) : INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR;
   }
 }

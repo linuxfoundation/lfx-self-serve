@@ -88,6 +88,28 @@ describe('InsightsTokenCreateDialogComponent', () => {
     expect(component['errorMessage']()).toBe(INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR);
   });
 
+  it('blocks a name with a control character and explains why', () => {
+    component['form'].controls.name.setValue('weekly\treport');
+
+    expect(component['hasControlCharacters']()).toBe(true);
+    expect(component['canSubmit']()).toBe(false);
+    expect(component['nameDescribedBy']()).toBe('insights-token-name-control');
+  });
+
+  it("shows the BFF's name-validation reason instead of the generic message", () => {
+    const reason = 'Token name must be 1-100 characters with no control characters';
+    const validationError = new HttpErrorResponse({
+      status: 400,
+      error: { error: 'Validation failed for name', code: 'VALIDATION_ERROR', errors: [{ field: 'name', message: reason, code: 'FIELD_VALIDATION_ERROR' }] },
+    });
+    service.createToken.mockReturnValue(throwError(() => validationError));
+    component['form'].controls.name.setValue('ci-pipeline');
+
+    component['submit']();
+
+    expect(component['errorMessage']()).toBe(reason);
+  });
+
   it('falls back to a generic message for unknown errors and clears it on typing', () => {
     service.createToken.mockReturnValue(throwError(() => upstreamError()));
     component['form'].controls.name.setValue('ci-pipeline');
