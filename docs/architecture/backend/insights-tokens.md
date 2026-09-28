@@ -8,7 +8,7 @@ The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` Launc
 
 ## Endpoints
 
-All four routes live in `profile.route.ts` and are handled by `insights-tokens.controller.ts`. While impersonating, list and eligibility stay readable and resolve to the impersonated user (the list is metadata only and never carries a secret). Create and revoke are mounted with `blockDuringImpersonation`: a minted token is a live credential the impersonator would keep, and neither call carries the impersonator's identity upstream. `profile.route.spec.ts` pins that split. The UI loads both reads and disables the create and revoke buttons while impersonating. List, eligibility and create responses set `Cache-Control: no-store`. Revoke returns an empty `204`.
+All four routes live in `profile.route.ts` and are handled by `insights-tokens.controller.ts`. While impersonating, list and eligibility stay readable and resolve to the impersonated user (the list is metadata only and never carries a secret). Create and revoke are mounted with `blockDuringImpersonation`: a minted token is a live credential the impersonator would keep, and neither call carries the impersonator's identity upstream. `profile.route.spec.ts` pins that split. The UI loads eligibility first, lists tokens only for a Key Contact, and disables the create and revoke buttons while impersonating. List, eligibility and create responses set `Cache-Control: no-store`. Revoke returns an empty `204`.
 
 | Route                                          | Upstream call                                                       | Token     |
 | ---------------------------------------------- | ------------------------------------------------------------------- | --------- |

@@ -42,7 +42,7 @@
           <i class="fa-light fa-triangle-exclamation text-amber-600 mt-0.5 shrink-0" aria-hidden="true"></i>
           <div class="flex flex-col gap-1">
             <h4 class="text-sm font-semibold text-slate-900">We couldn't verify your Key Contact status</h4>
-            <p class="text-xs text-slate-600 leading-normal">Creating LFX Insights tokens is unavailable right now. Please try again in a few minutes.</p>
+            <p class="text-xs text-slate-600 leading-normal">LFX Insights API tokens are unavailable right now. Please try again in a few minutes.</p>
           </div>
         </div>
         <lfx-button
@@ -62,15 +62,13 @@
           <i class="fa-light fa-lock text-violet-600" aria-hidden="true"></i>
         </div>
         <div class="flex flex-col gap-1">
-          <h4 class="text-sm font-semibold text-slate-900">Only Key Contacts can create LFX Insights tokens</h4>
+          <h4 class="text-sm font-semibold text-slate-900">Only Key Contacts can use LFX Insights tokens</h4>
           <p class="text-xs text-slate-600 leading-normal">
-            Tokens are issued to your organization's Key Contacts. Ask one of your organization's Key Contacts to create a token for your integration.
+            Tokens are issued to and managed by your organization's Key Contacts. Ask one of them to create a token for your integration.
           </p>
         </div>
       </div>
-    }
-
-    @if (loadError()) {
+    } @else if (loadError()) {
       <div class="flex items-center justify-between gap-4 py-2" data-testid="insights-tokens-error">
         <p class="text-sm text-slate-600">We couldn't load your LFX Insights API tokens.</p>
         <lfx-button

@@ -89,6 +89,16 @@ describe('InsightsTokensComponent', () => {
     expect(component['canCreate']()).toBe(true);
   });
 
+  it('never lists tokens for a non-Key-Contact, matching the server gate', () => {
+    service.getEligibility.mockReturnValue(of({ canCreate: false, orgs: [], checkFailed: false }));
+    create();
+
+    expect(service.getTokens).not.toHaveBeenCalled();
+    expect(component['hasTokens']()).toBe(false);
+    expect(component['loadError']()).toBe(false);
+    expect(component['loading']()).toBe(false);
+  });
+
   it('distinguishes a failed eligibility check from a non-Key-Contact', () => {
     service.getEligibility.mockReturnValue(of({ canCreate: false, orgs: [], checkFailed: true }));
     create();

@@ -61,17 +61,21 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
       await expect(page.getByTestId('insights-tokens-error')).toHaveCount(0);
     });
 
-    test('keeps revoke available to a user who is no longer a Key Contact', async ({ page }) => {
+    test('hides the list and never requests it for a user who is not a Key Contact', async ({ page }) => {
+      const listRequests: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/profile/insights-tokens') {
+          listRequests.push(request.url());
+        }
+      });
       await openInsightsTokens(page, { tokens: EXISTING_TOKENS, eligibility: NOT_KEY_CONTACT });
 
-      const revokeButtons = page.getByTestId('insights-tokens-revoke-button');
-      await expect(revokeButtons).toHaveCount(EXISTING_TOKENS.length, { timeout: DATA_LOAD_TIMEOUT });
-      // lfx-button carries the testid on its host; the native <button> inside is what gets disabled.
-      for (const button of await revokeButtons.all()) {
-        await expect(button.locator('button')).toBeEnabled();
-      }
-      await expect(page.getByTestId('insights-tokens-lock-notice')).toBeAttached();
+      await expect(page.getByTestId('insights-tokens-lock-notice')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('insights-tokens-list')).toHaveCount(0);
+      await expect(page.getByTestId('insights-tokens-revoke-button')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-new-button')).toHaveCount(0);
+      await expect(page.getByTestId('insights-tokens-error')).toHaveCount(0);
+      expect(listRequests).toEqual([]);
     });
   });
 

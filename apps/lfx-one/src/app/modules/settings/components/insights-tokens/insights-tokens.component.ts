@@ -19,7 +19,7 @@ import { UserService } from '@services/user.service';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, finalize, forkJoin, map, of, take } from 'rxjs';
+import { catchError, finalize, map, of, switchMap, take } from 'rxjs';
 
 import { InsightsTokenCreateDialogComponent } from '../insights-token-create-dialog/insights-token-create-dialog.component';
 import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dialog/insights-token-reveal-dialog.component';
@@ -27,9 +27,10 @@ import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dia
 /**
  * LFX Insights API tokens group (IN-1233), rendered inside the Developer Settings API Token card
  * behind the `insights-public-api` flag. Relies on the parent's ConfirmationService, MessageService
- * and DialogService (and its `<p-toast>` / `<p-confirmDialog>`). Read-only while impersonating: the
- * list and eligibility still load for the impersonated user, but create and revoke are disabled
- * (the server blocks them too).
+ * and DialogService (and its `<p-toast>` / `<p-confirmDialog>`). Key Contacts only: the list loads
+ * once eligibility allows it, matching the server gate. Read-only while impersonating: the list and
+ * eligibility still load for the impersonated user, but create and revoke are disabled (the server
+ * blocks them too).
  */
 @Component({
   selector: 'lfx-insights-tokens',
@@ -66,23 +67,26 @@ export class InsightsTokensComponent {
     this.loading.set(true);
     this.loadError.set(false);
 
-    forkJoin({
-      tokens: this.insightsTokensService.getTokens().pipe(
-        catchError(() => {
-          this.loadError.set(true);
-          return of<InsightsToken[]>([]);
-        })
-      ),
-      eligibility: this.insightsTokensService.getEligibility(),
-    })
+    // Tokens are Key-Contact-only on the server too, so the list is fetched only once eligibility allows it.
+    this.insightsTokensService
+      .getEligibility()
       .pipe(
+        switchMap((eligibility) => {
+          this.eligibility.set(eligibility);
+          if (!eligibility.canCreate) {
+            return of<InsightsToken[]>([]);
+          }
+          return this.insightsTokensService.getTokens().pipe(
+            catchError(() => {
+              this.loadError.set(true);
+              return of<InsightsToken[]>([]);
+            })
+          );
+        }),
         finalize(() => this.loading.set(false)),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ tokens, eligibility }) => {
-        this.tokens.set(tokens);
-        this.eligibility.set(eligibility);
-      });
+      .subscribe((tokens) => this.tokens.set(tokens));
   }
 
   protected openCreateDialog(): void {
