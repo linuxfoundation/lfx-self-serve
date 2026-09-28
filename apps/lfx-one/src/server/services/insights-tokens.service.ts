@@ -96,8 +96,9 @@ export class InsightsTokensService {
   }
 
   /**
-   * Whether the caller may create tokens: they must be a Key Contact of at least one org. Any org
-   * entry that carries a company name is enough — the tier value itself is not checked. Fails closed:
+   * Whether the caller may create tokens: they must be a Key Contact of at least one org. Any entry
+   * with a non-empty `b2b_org_uid` is enough; `company_name` is optional upstream and the tier value
+   * itself is not checked. Fails closed:
    * an empty list or a missing username yields `canCreate: false`; any upstream error (including the
    * gateway denying the M2M caller before its FGA team tuples exist) yields `canCreate: false` with
    * `checkFailed: true`, so the UI can say "couldn't verify" instead of "not a Key Contact".
