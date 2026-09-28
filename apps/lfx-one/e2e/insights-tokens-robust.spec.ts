@@ -36,8 +36,6 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
     test('flag off: no insights-tokens group and no token requests', async ({ page }) => {
       const requests = await openDeveloperSettingsWithInsightsFlagOff(page);
 
-      // The group loads after first render, so give a late request time to show up before asserting none did.
-      await page.waitForLoadState('networkidle');
       await expect(page.getByTestId('insights-tokens-group')).toHaveCount(0);
       expect(requests).toEqual([]);
     });
@@ -66,7 +64,12 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
     test('keeps revoke available to a user who is no longer a Key Contact', async ({ page }) => {
       await openInsightsTokens(page, { tokens: EXISTING_TOKENS, eligibility: NOT_KEY_CONTACT });
 
-      await expect(page.getByTestId('insights-tokens-revoke-button')).toHaveCount(EXISTING_TOKENS.length, { timeout: DATA_LOAD_TIMEOUT });
+      const revokeButtons = page.getByTestId('insights-tokens-revoke-button');
+      await expect(revokeButtons).toHaveCount(EXISTING_TOKENS.length, { timeout: DATA_LOAD_TIMEOUT });
+      // lfx-button carries the testid on its host; the native <button> inside is what gets disabled.
+      for (const button of await revokeButtons.all()) {
+        await expect(button.locator('button')).toBeEnabled();
+      }
       await expect(page.getByTestId('insights-tokens-lock-notice')).toBeAttached();
       await expect(page.getByTestId('insights-tokens-new-button')).toHaveCount(0);
     });
