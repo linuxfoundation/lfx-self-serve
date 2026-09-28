@@ -1031,5 +1031,18 @@ describe('VoteService', () => {
 
       expect(votes.map((v) => v.uid)).toEqual([UID_A, UID_B, UID_C]);
     });
+
+    it('returns [] without any upstream call when the request carries neither username nor email', async () => {
+      getUsernameFromAuth.mockResolvedValue(null);
+      getEffectiveEmail.mockReturnValue(null);
+
+      const votes = await service.getMyVotes(req);
+
+      expect(votes).toEqual([]);
+      // The helper short-circuits before the paginator, so neither the vote_response query nor
+      // any per-vote detail fetch may fire.
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
   });
 });

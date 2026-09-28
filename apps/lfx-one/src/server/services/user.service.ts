@@ -20,7 +20,6 @@ import {
   ActiveWeeksStreakRow,
   ApiGatewayUserProfile,
   IndexedVote,
-  IndexedVoteResponse,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -65,6 +64,7 @@ import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchCurrentUserVoteResponses } from '../helpers/vote-response.helper';
 import { getEffectiveEmail, getUsernameFromAuth, isImpersonating, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -1408,16 +1408,16 @@ export class UserService {
    * `individual_vote` type was fabricated in the shared interface and the query returned zero
    * rows in practice.
    *
-   * Source rows come from `filter_grants=direct` on `vote_response` — the voting service writes
-   * a direct `owner = user:{username}` FGA tuple per invitee, so the query service pre-filters
-   * OpenSearch to exactly this user's rows. When `projectUid` is provided it is pushed
-   * server-side to drop out-of-scope rows before pagination; when omitted, the unscoped Me-lens
-   * call already gets exactly the user's vote_response rows across all their projects via
-   * `filter_grants=direct`. The remaining `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`
-   * checks stay client-side. Caveat: the FGA tuple is only emitted when the invitee has a
-   * non-empty `Username`, so users invited by email but without an Auth0 username won't appear
-   * here. We accept this trade-off — meetings already work the same way and FGA is the source
-   * of truth for invitations.
+   * Source rows come from `fetchCurrentUserVoteResponses` (GH #2985) — the same identity-resolved
+   * `filters_or` query (`user_email` / `username`) My Votes reads, so the two surfaces can never
+   * diverge. This replaced `filter_grants=direct`, which silently dropped email-only invitees:
+   * the voting service only emits the invitee FGA tuple when the invitee has a non-empty
+   * `Username`. The trade-off: the index no longer pre-filters to granted rows, so we paginate
+   * all of the user's vote_response rows (responded included) — per-user cardinality is small
+   * (dozens), the same trade-off `fetchAllUserRsvps` already makes in this aggregation. When
+   * `projectUid` is provided it is pushed server-side (`filters`) to drop out-of-scope rows
+   * before pagination. The remaining `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`
+   * checks stay client-side.
    *
    * Parent `vote` rows are fetched in a single batched query-service call (`type=vote` + `filters_or`
    * on each pending `vote_uid`) instead of per-vote REST. The indexed `vote` doc carries `name`,
@@ -1426,17 +1426,10 @@ export class UserService {
   private async fetchPendingVotes(req: Request, projectUid?: string): Promise<Vote[]> {
     // failOnPartial: completeness matters — a truncated response can silently miss a pending
     // invitation. The caller already catches and degrades, so fail closed here.
-    const responses = await fetchAllQueryResources<IndexedVoteResponse>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote_response',
-          filter_grants: 'direct',
-          ...(projectUid && { filters: [`project_uid:${projectUid}`] }),
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
-    );
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, {
+      ...(projectUid && { filters: [`project_uid:${projectUid}`] }),
+      failOnPartial: true,
+    });
 
     // `vote_uid` is the v2 parent poll UID (what `/votes/{uid}` expects); `vote_id` and `poll_id`
     // are v1 fallbacks per the upstream indexer contract. None of these is the individual-response id.

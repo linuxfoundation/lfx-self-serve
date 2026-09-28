@@ -288,8 +288,10 @@ export interface MyVoteResponse {
 
 /**
  * Vote response row from the query service indexer (`lfx.index.vote_response`).
- * Tagged by `vote_uid` (not `vote_response_uid`); use `filter_grants=direct` to
- * scope to the current user's rows. `vote_status` is `string` — the indexer's
+ * Tagged by `vote_uid` (not `vote_response_uid`); scope to the current user's rows with
+ * `filters_or` on `user_email` / `username` (see `fetchCurrentUserVoteResponses`) —
+ * `filter_grants=direct` misses invitees whose FGA tuple was never emitted (email-only
+ * invitations carry no `Username`). `vote_status` is `string` — the indexer's
  * vocabulary is broader than the UI enums.
  */
 export interface IndexedVoteResponse {
@@ -303,6 +305,10 @@ export interface IndexedVoteResponse {
   poll_id?: string;
   /** V2 project UID the response belongs to */
   project_uid?: string;
+  /** Invitee's email address at invitation time — identity-match key alongside `username` */
+  user_email?: string;
+  /** Invitee's LFID username — empty when the invitation was email-only */
+  username?: string;
   /** Upstream submission status (e.g. `'responded'`, `'awaiting_response'`, `'ended'`, `'awaiting_response_but_poll_ended'`) */
   vote_status?: string;
   /** Whether the voter has been removed from the poll's eligible list */

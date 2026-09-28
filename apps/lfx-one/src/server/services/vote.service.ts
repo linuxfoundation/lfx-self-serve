@@ -24,7 +24,7 @@ import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { fetchCurrentUserVoteResponses } from '../helpers/vote-response.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -518,37 +518,8 @@ export class VoteService {
    * Queries vote_response records by user_email and username using filters_or.
    */
   public async getMyVotes(req: Request): Promise<Vote[]> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
-
-    logger.debug(req, 'get_my_votes', 'Fetching votes for current user', {
-      username,
-      has_email: !!email,
-    });
-
-    if (!username && !email) {
-      return [];
-    }
-
-    // vote_response uses 'user_email' not 'email'.
-    const filtersOr: string[] = [];
-    if (email) filtersOr.push(`user_email:${email}`);
-    if (username) filtersOr.push(`username:${username}`);
-
-    const responses = await fetchAllQueryResources<{ vote_uid: string; vote_status?: IndexedVoteResponseStatus }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ vote_uid: string; vote_status?: IndexedVoteResponseStatus }>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          type: 'vote_response',
-          filters_or: filtersOr,
-          ...(pageToken && { page_token: pageToken }),
-        }
-      )
-    );
+    // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
 
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
@@ -556,7 +527,7 @@ export class VoteService {
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.filter((r) => r.vote_uid).map((r) => r.vote_uid))];
+    const voteUids = [...new Set(responses.map((r) => r.vote_uid).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return [];
@@ -598,35 +569,20 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
-
-    if (!username && !email) return null;
-
-    const filtersOr: string[] = [];
-    if (email) filtersOr.push(`user_email:${email}`);
-    if (username) filtersOr.push(`username:${username}`);
-
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
-    // `filters_or` then disjuncts the user-identity match. Both AND together.
-    const responses = await fetchAllQueryResources<MyVoteResponse>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MyVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'vote_response',
-        filters: [`vote_uid:${voteUid}`],
-        filters_or: filtersOr,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
+    // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] });
 
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
-    // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift.
+    // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift. The find
+    // guard is what makes the IndexedVoteResponse → MyVoteResponse narrowing (uid/vote_uid
+    // required) sound.
     const match = responses.find((r) => r?.vote_uid === voteUid && (!!r?.uid || !!r?.vote_id));
     if (match && !match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
-      return { ...match, uid: match.vote_id };
+      return { ...match, uid: match.vote_id } as MyVoteResponse;
     }
-    return match ?? null;
+    return (match as MyVoteResponse | undefined) ?? null;
   }
 
   // ============================================
