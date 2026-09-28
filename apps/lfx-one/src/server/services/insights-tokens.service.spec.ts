@@ -77,6 +77,35 @@ describe('InsightsTokensService', () => {
   });
 
   describe('createToken', () => {
+    const eligible = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false };
+
+    beforeEach(() => {
+      vi.spyOn(service, 'getEligibility').mockResolvedValue(eligible);
+    });
+
+    it('re-checks eligibility and refuses a non-Key-Contact with 403 not_key_contact, without calling the PAT service', async () => {
+      vi.mocked(service.getEligibility).mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: false });
+
+      const error = (await service.createToken(req, 'ci-pipeline').catch((e: unknown) => e)) as MicroserviceError;
+
+      expect(service.getEligibility).toHaveBeenCalledWith(req);
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(403);
+      expect(error.toResponse()).toMatchObject({ upstreamCode: 'not_key_contact' });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('refuses with 503 eligibility_unavailable when the Key Contact check could not complete', async () => {
+      vi.mocked(service.getEligibility).mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: true });
+
+      const error = (await service.createToken(req, 'ci-pipeline').catch((e: unknown) => e)) as MicroserviceError;
+
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(503);
+      expect(error.toResponse()).toMatchObject({ upstreamCode: 'eligibility_unavailable' });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
     it('posts name with the fixed audience using the user bearer and returns the secret once', async () => {
       proxyRequest.mockResolvedValueOnce({ secret: 'lfi_Ab3kZ9QmT2xLsecret', token: patToken });
 
@@ -149,6 +178,16 @@ describe('InsightsTokensService', () => {
     it('is eligible for a Key Contact whose org has no company name, and carries no name', async () => {
       proxyRequest.mockResolvedValueOnce([{ b2b_org_uid: 'org-9', tier: 'silver' }]);
       expect(await service.getEligibility(req)).toEqual({ canCreate: true, orgs: [{ uid: 'org-9' }], checkFailed: false });
+    });
+
+    it.each([
+      ['an object', {}],
+      ['null', null],
+      ['a string', 'ok'],
+    ])('fails closed as unavailable, not ineligible, when a 200 body is %s', async (_label, body) => {
+      proxyRequest.mockResolvedValueOnce(body);
+      expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: true });
+      expect(loggerWarning).toHaveBeenCalledWith(req, 'get_insights_token_eligibility', expect.any(String), { status: undefined, code: 'TypeError' });
     });
 
     it('encodes the username in the path', async () => {

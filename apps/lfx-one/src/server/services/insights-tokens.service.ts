@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { INSIGHTS_TOKEN_AUDIENCE, INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE, INSIGHTS_TOKEN_INELIGIBLE } from '@lfx-one/shared/constants';
+import {
+  INSIGHTS_TOKEN_AUDIENCE,
+  INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE,
+  INSIGHTS_TOKEN_ERROR_CODES,
+  INSIGHTS_TOKEN_INELIGIBLE,
+} from '@lfx-one/shared/constants';
 import type {
   CreateInsightsTokenResponse,
   InsightsToken,
@@ -69,8 +74,30 @@ export class InsightsTokensService {
     return tokens;
   }
 
-  /** Issues a token. The plaintext secret is returned exactly once by the PAT service. */
+  /**
+   * Issues a token. Re-runs the Key Contact check first (the UI gate is not trusted), so every caller
+   * gets the same enforcement: 503 `eligibility_unavailable` when it could not be verified, 403
+   * `not_key_contact` when the caller is not one. The plaintext secret is returned exactly once by the PAT service.
+   */
   public async createToken(req: Request, name: string): Promise<CreateInsightsTokenResponse> {
+    const eligibility = await this.getEligibility(req);
+    if (eligibility.checkFailed) {
+      throw new MicroserviceError('Key Contact eligibility could not be verified', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'create_insights_token',
+        service: 'insights_tokens_service',
+        path: '/tokens',
+        errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.ELIGIBILITY_UNAVAILABLE },
+      });
+    }
+    if (!eligibility.canCreate) {
+      throw new MicroserviceError('Only Key Contacts of a member organization can create Insights API tokens', 403, 'FORBIDDEN', {
+        operation: 'create_insights_token',
+        service: 'insights_tokens_service',
+        path: '/tokens',
+        errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.NOT_KEY_CONTACT },
+      });
+    }
+
     let response: PatServiceCreateResponse;
     try {
       response = await this.microserviceProxy.proxyRequest<PatServiceCreateResponse>(
@@ -128,11 +155,17 @@ export class InsightsTokensService {
         { bearerToken: m2mToken }
       );
 
+      // A 200 that is not a list means the check could not be completed, not that the caller has no orgs;
+      // throw so the catch below reports it as unavailable rather than "not a Key Contact".
+      if (!Array.isArray(tiers)) {
+        throw new TypeError('Member tier response is not a list');
+      }
+
       // Eligibility keys on the org uid: member-service omits `company_name` when the Account has none,
       // and a Key Contact of such an org is still eligible. The name is carried only when present.
       const seen = new Set<string>();
       const orgs: InsightsTokenEligibleOrg[] = [];
-      for (const tier of Array.isArray(tiers) ? tiers : []) {
+      for (const tier of tiers) {
         const uid = tier.b2b_org_uid?.trim();
         if (!uid || seen.has(uid)) continue;
         seen.add(uid);
@@ -141,7 +174,7 @@ export class InsightsTokensService {
       }
 
       logger.debug(req, 'get_insights_token_eligibility', 'Resolved member tiers', {
-        tier_count: Array.isArray(tiers) ? tiers.length : 0,
+        tier_count: tiers.length,
         org_count: orgs.length,
       });
       return { canCreate: orgs.length > 0, orgs, checkFailed: false };

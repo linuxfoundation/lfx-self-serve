@@ -25,15 +25,15 @@ The member-tiers endpoint returns one entry per org where the user is a Key Cont
 
 - Any entry with a non-empty `b2b_org_uid` makes the user eligible. The `tier` value is not inspected. `company_name` is optional upstream; when it is missing the org is returned without a `name`, and the UI does not show one.
 - An empty list, or a session with no username, returns `INSIGHTS_TOKEN_INELIGIBLE`, which has `checkFailed: false`.
-- An upstream or M2M error fails closed with `INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE`. That value has `canCreate: false` and `checkFailed: true`. The failure is logged at warning level with only its status and error code, because the tier URL, and so the error's path, carries the username.
+- An upstream or M2M error, or a successful response that is not a list, fails closed with `INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE`. That value has `canCreate: false` and `checkFailed: true`. The failure is logged at warning level with only its status and error code, because the tier URL, and so the error's path, carries the username.
 
 `checkFailed` lets the UI tell apart "you are not a Key Contact" (lock notice) from "we could not verify right now" (retryable notice). The Angular service maps a failed eligibility request to the same unavailable value.
 
 ## Create flow
 
-`POST` does not trust the UI gate. It re-runs the eligibility check server-side before calling the PAT service:
+`POST` does not trust the UI gate. The controller validates the name, and `InsightsTokensService.createToken` re-runs the eligibility check before calling the PAT service, so every caller of the service gets the same enforcement:
 
-1. It validates `name`: trimmed, 1–`INSIGHTS_TOKEN_NAME_MAX_LENGTH` characters, with no C0 control characters or DEL. A bad name returns `400`.
+1. The controller validates `name`: trimmed, 1–`INSIGHTS_TOKEN_NAME_MAX_LENGTH` characters counted as code points (the PAT service counts runes), with no C0 control characters or DEL. A bad name returns `400`.
 2. If `checkFailed` is set, it returns `503 SERVICE_UNAVAILABLE` with `upstreamCode: eligibility_unavailable`.
 3. If `!canCreate`, it returns `403` with `upstreamCode: not_key_contact`.
 4. Otherwise it calls PAT service create and returns `201 { token, secret }`.
