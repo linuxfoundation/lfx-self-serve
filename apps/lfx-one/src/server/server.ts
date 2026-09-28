@@ -38,6 +38,7 @@ import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
+import projectApplicationsRouter from './routes/project-applications.route';
 import gwProxyRouter from './routes/gw-proxy.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
@@ -79,6 +80,7 @@ import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
+import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
 import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
@@ -98,6 +100,9 @@ if (process.env['NODE_ENV'] !== 'production') {
 // single-line structured JSON. Must run before any middleware or Angular SSR
 // renders so Angular component console calls are captured.
 initializeServerConsoleOverride();
+
+// Express 4 ignores the promise an async handler returns; route its rejections to apiErrorHandler.
+installAsyncRouteErrorBridge();
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
@@ -411,6 +416,7 @@ app.use('/api/events', eventsRouter);
 // resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
 // routers above.
 app.use('/api', formationsRouter);
+app.use('/api/project-applications', projectApplicationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/impersonate', impersonationRouter);
@@ -816,6 +822,7 @@ const isMain = isMainModule(metaUrl);
 const isPM2 = process.env['PM2'] === 'true';
 
 if (isMain || isPM2) {
+  installUnhandledRejectionLogger();
   startServer();
   const handleSignal = (sig: string): void => {
     gracefulShutdown(sig).catch((err) => {

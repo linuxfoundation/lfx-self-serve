@@ -19,6 +19,8 @@ apps/lfx-one/
 │   ├── formation-sidebar-robust.spec.ts             # structural
 │   ├── my-formations.spec.ts                        # content-based — Me-lens My Formations page (#2753)
 │   ├── my-formations-robust.spec.ts                 # structural
+│   ├── project-proposals.spec.ts                    # content-based — Propose a project intake, Submitted proposals, LF queue (#3037)
+│   ├── project-proposals-robust.spec.ts             # structural
 │   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
 │   ├── fixtures/
 │   │   └── mock-data/

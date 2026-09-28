@@ -20,6 +20,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL,
   MENTORSHIP_MENTEE_RESUME_INTRO,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
 import { capCodePointEdit, codePointLength, htmlClipboardToText, normalizeToUrl } from '@lfx-one/shared/utils';
@@ -149,7 +150,7 @@ export class MenteeProfileEditDrawerComponent {
     // to newlines, then cap, *before* patching so the control, counter, and baselines
     // share one value. patchValue must emit so skills pickers and the resume section
     // (which snapshot `valueChanges`) pick up the seeded skills and filename.
-    const introduction = capCodePointEdit('', htmlClipboardToText(profile.aboutMe ?? ''), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+    const introduction = capCodePointEdit('', htmlClipboardToText(this.boundStoredAboutMe(profile.aboutMe ?? '')), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
     this.lastValidIntroduction = introduction;
     this.seededIntroduction = introduction;
     this.saveAttempted.set(false);
@@ -163,6 +164,24 @@ export class MenteeProfileEditDrawerComponent {
     this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
+  }
+
+  /**
+   * The stored `aboutMe` comes from the API, so it is cut to the raw cap before
+   * `htmlClipboardToText`, whose tag strip is quadratic on adversarial input
+   * (lfx-self-serve-ops#37). A cut can land inside a surrogate pair, a tag or an entity,
+   * which the converter would keep as a stray `�` or literal text, so a trailing partial one
+   * is dropped. The editor escapes a typed `<` and `&` as `&lt;` and `&amp;`, so a raw `<`
+   * after the last `>`, or a trailing `&` with no `;`, can only be something the cut split.
+   */
+  private boundStoredAboutMe(html: string): string {
+    if (html.length <= MENTORSHIP_RICH_TEXT_RAW_MAX) return html;
+    const lastUnit = html.charCodeAt(MENTORSHIP_RICH_TEXT_RAW_MAX - 1);
+    const splitsPair = lastUnit >= 0xd800 && lastUnit <= 0xdbff;
+    const sliced = html.slice(0, splitsPair ? MENTORSHIP_RICH_TEXT_RAW_MAX - 1 : MENTORSHIP_RICH_TEXT_RAW_MAX);
+    const lastOpen = sliced.lastIndexOf('<');
+    const tagSafe = lastOpen > sliced.lastIndexOf('>') ? sliced.slice(0, lastOpen) : sliced;
+    return tagSafe.replace(/&#?\w*$/, '');
   }
 
   private skillPickerError(control: 'skillsHave' | 'skillsWant', message: string): string | undefined {

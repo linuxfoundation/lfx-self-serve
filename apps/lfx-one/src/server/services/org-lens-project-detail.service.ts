@@ -3,6 +3,7 @@
 
 import {
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
   ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS,
   PD_HEALTH_TAG,
   PD_TIME_RANGE_MONTHS,
@@ -33,7 +34,7 @@ import type {
 import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { escapeSqlLikePattern } from '../helpers/validation.helper';
+import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { buildOrgCacheKey, valkeyService } from './valkey.service';
 import { SnowflakeService } from './snowflake.service';
@@ -367,10 +368,6 @@ export class OrgLensProjectDetailService {
   // shipped component maps points to a fixed 36-month label axis by position and slices per range.
   private static readonly sparklineMonths = 36;
 
-  // Upper bound on the requested page. Guards against a huge/precision-lost query value overflowing
-  // page*size into an unsafe integer OFFSET (which Snowflake rejects → 500); leaderboards never approach it.
-  private static readonly maxBoardPage = 100_000;
-
   // Static drawer definition metadata for the 14 cards (LFXV2-1885 DN9 Phase 1): definition copy,
   // total-column semantics, table headers, project-total aggregation, and the ecosystem cards'
   // static source label. Technical cards' data source is derived from the platforms model per project.
@@ -512,8 +509,8 @@ export class OrgLensProjectDetailService {
     if (provider === null) return { rows: [], total: 0 };
 
     const slug = projectSlug.trim().toLowerCase();
-    const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
-    const safePage = Math.max(Math.trunc(page) || 0, 0);
+    const safeSize = clampInteger(pageSize, 1, 100, 1);
+    const safePage = clampInteger(page, 0, MAX_SNOWFLAKE_PAGINATION_PAGE, 0);
     const offset = safePage * safeSize;
 
     const cacheKey = `project-detail-roster:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}`;
@@ -814,8 +811,8 @@ export class OrgLensProjectDetailService {
   ): Promise<OrgLensLeaderboardPage | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
-    const safePage = Math.min(Math.max(Math.trunc(page) || 0, 0), OrgLensProjectDetailService.maxBoardPage);
+    const safeSize = clampInteger(pageSize, 1, 100, 1);
+    const safePage = clampInteger(page, 0, MAX_SNOWFLAKE_PAGINATION_PAGE, 0);
     const offset = safePage * safeSize;
     const term = search.trim();
 

@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-# Organization Lens EasyCLA — role-bridge (who sees Sign, who can change the approval list)
+# Organization Lens EasyCLA — role-bridge (who sees Sign, who can change the approval list, who can invalidate)
 
 Internal support note. Not Help Center copy.
 
@@ -17,7 +17,9 @@ An organization admin who is not a CLA manager can still **read** the page.
 
 Anyone who can see the page. Sign is not hidden from a company-level ACS inventory. Loading or a failed permission check must not hide the toolbar button.
 
-Picker Continue and Start are navigation. They do not ask ACS.
+Picker Continue is navigation. It does not ask ACS.
+
+The overview of an unsigned agreement runs that same Sign check once, on render, only to decide what Start asks first. A viewer who already holds the grant reads the designee steps and goes straight on. Anyone else is asked Corporate Console's "Are you authorized to be a CLA Manager?". Yes makes the viewer the initial CLA Manager designee (`POST /api/orgs/:orgUid/lens/cla-groups/designee`, address from the session). No names someone else (`POST /api/orgs/:orgUid/lens/cla-groups/designee/nominations`). Both writes sit on the page see-gate, are blocked during impersonation, and leave the grant decision to the CLA service and ACS. A pending or failed check never disables or refuses Start.
 
 Attestation Continue (Review and Sign) asks ACS whether this viewer may `self_serve_request_corporate_signature:create` for that **project|organization** pair. Deny or hop failure → a toast, stay on attestation, no signing session.
 
@@ -30,6 +32,16 @@ EasyCLA v4 still 403s an unauthorized write. Attestation Continue deny must not 
 ACS `signature_approval_list:update:project|organization:{projectOrFoundationSfid}|{companySfid}`.
 
 The agreement's roster `canEdit` flag does **not** drive those buttons. It may still appear on the payload as a server-side defence-in-depth on the PUT. ACS can lag the signature ACL by about thirty minutes — that dual truth is accepted.
+
+## Who can invalidate an acknowledgment
+
+The per-row **Invalidate** control on the Contributor Acknowledgments tab asks ACS `ecla_invalidate:update:project|organization:{projectOrFoundationSfid}|{companySfid}` — the same project|organization pair grain (see Grain) as Sign and the approval list, but a **separate** permission from `signature_approval_list:update`. The confirmation dialog's optional "also remove the matching approval-list entries" step is gated on the approval-list permission, so a viewer can be allowed to invalidate without being allowed to remove entries, and vice versa.
+
+The check **fails closed**. Invalidate is hidden until the check resolves, and stays hidden while it is pending or on a denied/errored result — a loading or failed permission check never shows the control.
+
+The BFF invalidate route (`org_cla_invalidate_acknowledgment`) enforces, in order: `blockDuringImpersonation` (declared before the access gate because the write stamps the acting user as `invalidatedBy`), `requireOrgLensAccess`, and the agreement's roster `canEdit` — the caller must be named on that CCLA's own manager roster. The acknowledgment must also belong to this company's CLA Group. EasyCLA v4 owns the final write and 403s an unauthorized one; it 409s an invalidate of an acknowledgment that is not currently approved.
+
+As with the approval list, roster `canEdit` is server-side defence-in-depth, not the UI gate: ACS `ecla_invalidate:update` drives the button, and the ~30-minute ACS-vs-ACL lag is accepted.
 
 ## Grain
 

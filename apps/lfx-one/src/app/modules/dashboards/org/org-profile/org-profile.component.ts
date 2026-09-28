@@ -12,9 +12,11 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, filter, forkJoin, of, switchMap, tap } from 'rxjs';
 
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { DisplayValuePipe } from '@pipes/display-value.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgProfileService } from '@services/org-profile.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 
@@ -24,7 +26,17 @@ import { OrgProfileEditComponent } from './org-profile-edit.component';
 @Component({
   selector: 'lfx-org-profile',
   standalone: true,
-  imports: [DatePipe, SkeletonModule, ButtonModule, ToastModule, TooltipModule, OrgProfileEditComponent, DisplayValuePipe, InitialsPipe],
+  imports: [
+    DatePipe,
+    SkeletonModule,
+    ButtonModule,
+    ToastModule,
+    TooltipModule,
+    OrgProfileEditComponent,
+    OrgLensEmptyStateComponent,
+    DisplayValuePipe,
+    InitialsPipe,
+  ],
   providers: [MessageService],
   templateUrl: './org-profile.component.html',
 })
@@ -35,12 +47,18 @@ export class OrgProfileComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   /** US2 toggle — true when the user has clicked "Edit Profile". Reset on org change (US3) and after save/cancel. */
   protected readonly editMode = signal(false);
   protected readonly record = signal<OrgCanonicalRecord | null>(null);
   protected readonly addresses = signal<OrgAddressesResponse | null>(null);
   protected readonly state: Signal<'loading' | 'loaded' | 'error'>;
+
+  // Spec 053 — the page-level state replacing the profile (e.g. `contractor-no-grant`, `could-not-load`),
+  // or null when the page renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.orgRoleGrants.correlationId;
 
   private readonly retryTrigger = signal(0);
   private readonly loadState = signal<'loading' | 'loaded' | 'error'>('loading');

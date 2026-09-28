@@ -29,9 +29,9 @@ const REFUSAL_PATTERNS: readonly (readonly [OrgClaManagerRefusal, readonly strin
 
 export function classifyOrgClaManagerRefusal(status: number, body: unknown): OrgClaManagerRefusal {
   if (status === 409) return 'already-manager';
-  if (refusalCodeFrom(body) === 'company_sanctioned') return 'unknown';
+  if (orgClaRefusalCodeFrom(body) === 'company_sanctioned') return 'unknown';
 
-  const text = refusalTextFrom(body);
+  const text = orgClaRefusalTextFrom(body);
   if (text) {
     for (const [outcome, fragments] of REFUSAL_PATTERNS) {
       if (fragments.some((fragment) => text.includes(fragment))) return outcome;
@@ -44,12 +44,13 @@ export function classifyOrgClaManagerRefusal(status: number, body: unknown): Org
   return 'unknown';
 }
 
-function refusalCodeFrom(body: unknown): string {
+/** The machine-readable `code` on a CLA service refusal body (JSON object or JSON string), lower-cased. */
+export function orgClaRefusalCodeFrom(body: unknown): string {
   if (typeof body === 'string') {
     const raw = body.trim();
     if (!raw) return '';
     try {
-      return refusalCodeFrom(JSON.parse(raw));
+      return orgClaRefusalCodeFrom(JSON.parse(raw));
     } catch {
       return '';
     }
@@ -63,13 +64,14 @@ function refusalCodeFrom(body: unknown): string {
   return '';
 }
 
-function refusalTextFrom(body: unknown): string {
+/** The refusal sentence on a CLA service body, lower-cased for fragment matching. Never log it. */
+export function orgClaRefusalTextFrom(body: unknown): string {
   if (typeof body === 'string') {
     const raw = body.trim();
     if (!raw) return '';
 
     try {
-      return refusalTextFrom(JSON.parse(raw));
+      return orgClaRefusalTextFrom(JSON.parse(raw));
     } catch {
       return raw.toLowerCase();
     }

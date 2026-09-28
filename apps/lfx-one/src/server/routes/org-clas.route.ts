@@ -48,6 +48,17 @@ router.post('/:orgUid/lens/cla-groups/sign', requireOrgLensAccess, blockDuringIm
 // grant plus the impersonation block.
 router.post('/:orgUid/lens/cla-groups/permissions/checks', requireOrgLensAccess, (req, res, next) => orgClasController.checkPermission(req, res, next));
 
+// Initial CLA Manager designee (#2780), for an agreement the organization has not signed. Both
+// writes assign an ACS role and the nomination emails the named person, so an impersonated write
+// would grant a role and send mail in the target's name; the impersonation block runs ahead of
+// the grant check for the same reason as the manager writes below.
+router.post('/:orgUid/lens/cla-groups/designee', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
+  orgClasController.assignDesignee(req, res, next)
+);
+router.post('/:orgUid/lens/cla-groups/designee/nominations', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
+  orgClasController.nominateDesignee(req, res, next)
+);
+
 router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess, (req, res, next) => orgClasController.getPdfUrl(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:claGroupId/ccla-preview', requireOrgLensAccess, (req, res, next) => orgClasController.getCclaPreview(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLensAccess, (req, res, next) => orgClasController.getApprovalList(req, res, next));
@@ -58,6 +69,13 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLens
 router.get('/:orgUid/lens/cla-groups/:signatureId/acknowledgments', requireOrgLensAccess, (req, res, next) =>
   orgClasController.getContributorAcknowledgments(req, res, next)
 );
+
+// Activity log (#1987). Read is an org-lens grant only. Deliberately WIDER than the CLA-manager
+// posture the write tabs use: an org-lens caller who is not a CLA manager on this CCLA still
+// reads the log (auditors, program leads). The producer's own `IsUserAuthorizedForOrganization`
+// on this endpoint accepts an org-scoped caller for the same reason. The impersonated token is
+// forwarded upstream so a support engineer sees what the target sees.
+router.get('/:orgUid/lens/cla-groups/:signatureId/activity', requireOrgLensAccess, (req, res, next) => orgClasController.getActivityLog(req, res, next));
 
 // The first write on this router (#1985), so it is the first to need `blockDuringImpersonation`.
 // The reads above forward the impersonated identity to upstream deliberately; a write must not.

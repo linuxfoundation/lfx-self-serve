@@ -28,6 +28,14 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./admin/program-detail/program-detail.component').then((m) => m.ProgramDetailComponent),
   },
   {
+    // Landing page for the approve/reject links in the program-review email
+    // (`?decision=approve|reject`). The page only records a decision on Confirm, so a
+    // mail scanner prefetching the link cannot approve or reject anything.
+    path: 'program-review/:programId',
+    title: 'Review Program',
+    loadComponent: () => import('./program-review/program-review.component').then((m) => m.ProgramReviewComponent),
+  },
+  {
     // Register form. `pathMatch: 'full'` keeps this route from swallowing the shell's
     // children below — `path: 'mentor'` with the default `prefix` match would otherwise
     // capture `/mentorship/mentor/programs` and `/mentorship/mentor/profile` too.

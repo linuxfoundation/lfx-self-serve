@@ -10,8 +10,10 @@ import type { HealthMetricsEngagementGroupTypeFilter } from '@lfx-one/shared/int
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
+import { HealthMetricsEventsService } from '../services/health-metrics-events.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -21,6 +23,9 @@ import { getEffectiveEmail } from '../utils/auth-helper';
 
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
+
+/** Allowed pattern for an event id query parameter. */
+const EVENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Group-type cuts the Engagement group-attendance filter accepts. */
 const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => filter.key));
@@ -38,6 +43,7 @@ export class AnalyticsController {
   private readonly orgInvolvementService: OrgInvolvementService;
   private readonly projectService: ProjectService;
   private readonly healthMetricsEngagementService: HealthMetricsEngagementService;
+  private readonly healthMetricsEventsService: HealthMetricsEventsService;
 
   public constructor() {
     this.userService = new UserService();
@@ -45,6 +51,7 @@ export class AnalyticsController {
     this.orgInvolvementService = new OrgInvolvementService();
     this.projectService = new ProjectService();
     this.healthMetricsEngagementService = new HealthMetricsEngagementService();
+    this.healthMetricsEventsService = new HealthMetricsEventsService();
   }
 
   /**
@@ -3225,16 +3232,21 @@ export class AnalyticsController {
    * accounts — one denormalised row per account_id with cdev mapping
    * and highest active corporate membership tier.
    * Query params: accountIds (required) - Comma-separated Salesforce account IDs (max 50)
+   *
+   * Only accounts the caller holds read permission on are resolved (`filterReadableAccountIds`, one
+   * batched `b2b_org#auditor` check); the rest are dropped rather than failing the whole org-selector enrichment.
    */
   public async getOrgLensAccountContext(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_lens_account_context');
 
     try {
       const accountIds = this.parseAccountIdsParam(req, 'get_org_lens_account_context');
-      const response = await this.organizationService.getOrgLensAccountContext(accountIds);
+      const readableIds = await filterReadableAccountIds(req, accountIds, 'get_org_lens_account_context');
+      const response = readableIds.length > 0 ? await this.organizationService.getOrgLensAccountContext(readableIds) : [];
 
       logger.success(req, 'get_org_lens_account_context', startTime, {
         requested_count: accountIds.length,
+        readable_count: readableIds.length,
         resolved_count: response.length,
       });
 
@@ -3446,6 +3458,144 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/events-registration-forecast` — every upcoming event's forecast headline.
+   * The model is a snapshot of now, so no `range` param reaches the wire.
+   */
+  public async getEventsRegistrationForecast(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registration_forecast');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registration_forecast');
+
+      const response = await this.healthMetricsEventsService.getRegistrationForecast(req, { foundationSlug });
+
+      logger.success(req, 'get_events_registration_forecast', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-registration-forecast-curve` — one event's pacing curve per format.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsRegistrationForecastCurve(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registration_forecast_curve');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registration_forecast_curve');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_registration_forecast_curve',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_registration_forecast_curve',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getRegistrationForecastCurve(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_registration_forecast_curve', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        format_count: response.formats.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-past` — every closed event in the four periods, with each period's
+   * header totals. The client picks the period, so no `range` param reaches the wire.
+   */
+  public async getEventsPast(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_past');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_past');
+
+      const response = await this.healthMetricsEventsService.getPastEvents(req, { foundationSlug });
+
+      logger.success(req, 'get_events_past', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-at-a-glance` — the foundation's reach in each of the four periods.
+   * The client picks the period, so no `range` param reaches the wire.
+   */
+  public async getEventsAtAGlance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_at_a_glance');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_at_a_glance');
+
+      const response = await this.healthMetricsEventsService.getAtAGlance(req, { foundationSlug });
+
+      logger.success(req, 'get_events_at_a_glance', startTime, {
+        foundation_slug: foundationSlug,
+        has_events: response.hasEvents,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-registrations-growth` — every year the foundation held events; the section is not period-scoped. */
+  public async getEventsRegistrationsGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registrations_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registrations_growth');
+
+      const response = await this.healthMetricsEventsService.getRegistrationsGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_events_registrations_growth', startTime, {
+        foundation_slug: foundationSlug,
+        year_count: response.years.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** A required, well-formed `foundationSlug` query param for the Events handlers. */
+  private getValidatedFoundationSlug(req: Request, operation: string): string {
+    const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+    if (!foundationSlug) {
+      throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', { operation });
+    }
+    if (!SLUG_PATTERN.test(foundationSlug)) {
+      throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
+    }
+
+    return foundationSlug;
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */
@@ -3490,7 +3640,10 @@ export class AnalyticsController {
     return slugs;
   }
 
-  /** Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format. */
+  /**
+   * Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format.
+   * Every route that uses it sits behind `requireOrgAnalyticsAccess`, which already admits only the canonical 18-char id.
+   */
   private parseAccountIdParam(req: Request, operation: string): string {
     const accountId = getStringQueryParam(req, 'accountId');
     if (!accountId) {
@@ -3506,6 +3659,7 @@ export class AnalyticsController {
    * Parse and validate the `accountIds` query parameter (comma-separated
    * Salesforce account IDs). De-duplicates, enforces a 50-id ceiling, and
    * checks each id matches the Salesforce 15/18-char alphanumeric format.
+   * `filterReadableAccountIds` then keeps only canonical 18-char ids the caller holds `b2b_org#auditor` on.
    */
   private parseAccountIdsParam(req: Request, operation: string): string[] {
     const raw = getStringQueryParam(req, 'accountIds');

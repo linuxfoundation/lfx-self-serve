@@ -188,12 +188,12 @@ export class FormationService {
       // indexer projection uses for the queue's own announcement_date, so the checklist and
       // /foundation/formations agree by construction. Since #2719 this is what the sidebar
       // formation card renders on both checklist hosts: on `/project/formation` the card no longer
-      // *renders* the date its own `/permissions` call returns (that call still fires — the
-      // dashboard sidebar's card reads the same eagerly-subscribed
-      // `ProjectContextService.activeProjectAnnouncementDate`, so this is a correctness change
-      // there, not a removed request), and on the foundation drill-down this is the only
-      // per-project date source there is, because ProjectContextService describes the parent
-      // foundation there. A settings-read failure degrades to null rather than failing the whole
+      // *renders* the date `ProjectContextService.activeProjectAnnouncementDate` returns. That
+      // client read is gated (GH-2794) — settings are requested only for a formation-stage
+      // project when the caller is a writer, or an auditor — so it is not a substitute for this
+      // server read. On the foundation drill-down this is the only per-project date source there
+      // is, because ProjectContextService describes the parent foundation there. A settings-read
+      // failure degrades to null rather than failing the whole
       // checklist (precedent: CommitteeService's inherited-permissions walk). The .catch() below
       // covers genuine failures AND one routine 403: upstream gates this settings GET on the bare
       // project `auditor` relation, while the checklist read the caller just cleared accepts

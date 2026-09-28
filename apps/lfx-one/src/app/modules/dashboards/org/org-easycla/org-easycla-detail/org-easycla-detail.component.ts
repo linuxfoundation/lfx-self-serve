@@ -8,11 +8,15 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
   OrgClaCoverageChip,
+  OrgClaDesigneeNextStep,
+  OrgClaDesigneeRefusal,
   OrgClaDetailTab,
   OrgClaDetailTabView,
   OrgClaGroup,
   OrgClaGroupList,
   OrgClaGroupPickerResult,
+  OrgClaIdentifyManagerResult,
+  OrgClaManagerAnswer,
   OrgClaSignAttestations,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
@@ -20,7 +24,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_DESIGNEE_REFUSAL_COPY,
+  ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
@@ -84,20 +91,36 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
-import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import {
+  orgClaIdentifyManagerDialogConfig,
+  OrgEasyclaIdentifyManagerDialogComponent,
+} from '../org-easycla-identify-manager-dialog/org-easycla-identify-manager-dialog.component';
+import {
+  orgClaManagerQuestionDialogConfig,
+  OrgEasyclaManagerQuestionDialogComponent,
+} from '../org-easycla-manager-question-dialog/org-easycla-manager-question-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
+import { OrgEasyclaActivityLogComponent } from './org-easycla-activity-log.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
+import { OrgEasyclaRecentActivityComponent } from './org-easycla-recent-activity.component';
+
+/** The refusal sentence for a designee write, read from the BFF's upstream code; anything else is unknown. */
+function designeeRefusalCopy(error: unknown): string {
+  const code = error instanceof HttpErrorResponse ? (error.error as { upstreamCode?: unknown } | null)?.upstreamCode : undefined;
+  return typeof code === 'string' && Object.hasOwn(ORG_CLA_DESIGNEE_REFUSAL_COPY, code)
+    ? ORG_CLA_DESIGNEE_REFUSAL_COPY[code as OrgClaDesigneeRefusal]
+    : ORG_CLA_DESIGNEE_REFUSAL_COPY.unknown;
+}
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -106,9 +129,11 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
+    OrgEasyclaRecentActivityComponent,
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
@@ -145,8 +170,6 @@ export class OrgEasyclaDetailComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
-  private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
@@ -160,7 +183,7 @@ export class OrgEasyclaDetailComponent {
   // injection context `toObservable` would otherwise take implicitly.
   private readonly injector = inject(Injector);
 
-  private autoEclaDetached = false;
+  private detached = false;
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -248,6 +271,12 @@ export class OrgEasyclaDetailComponent {
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
 
   /**
+   * The designee write holding the Start lock. A context change releases the lock and clears this,
+   * so a late response from the old group must not touch a lock a newer flow may now hold.
+   */
+  private pendingDesigneeWrite: object | null = null;
+
+  /**
    * Set by the approval tab after it writes; `null` until then, so the row's own count is used.
    *
    * Keyed on the signature rather than held as a bare number: Angular reuses this component when
@@ -255,6 +284,9 @@ export class OrgEasyclaDetailComponent {
    * next agreement's badge.
    */
   private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
+
+  /** Set by the acknowledgments tab each time it loads, so the badge follows what the tab shows. */
+  private readonly panelAcknowledgmentCount = signal<{ signatureId: string; count: number } | null>(null);
 
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
@@ -265,8 +297,11 @@ export class OrgEasyclaDetailComponent {
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
-   * the page. Another agreement's flip cannot show through. A confirmed value stays until the list
-   * row itself carries it, including across a project change that does not refetch the list.
+   * the page. Another agreement's flip cannot show through. A settled value is dropped when the
+   * list row carries it, and whenever this page loads the organization's CLA list (on arrival or
+   * an organization switch — not the retry that waits for a just-signed agreement), so another
+   * manager's change shows once that list is loaded again. A running write's value is never dropped, and a
+   * project change does not refetch the list, so the value survives that.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
 
@@ -279,9 +314,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
   /** The CLA Group this page is about. The authoritative half of the address (#2364). */
   private readonly claGroupId: Signal<string> = toSignal(
@@ -535,6 +568,22 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
+  protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
+
+  /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
+  private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
+
+  /** Pairs the viewer said Yes for in this session, so the question is not asked twice. */
+  private readonly assignedPairs = signal<readonly string[]>([]);
+
+  protected readonly designeeNotice = signal<string | null>(null);
+
+  /** `orgUid::projectSfid`, the pair ACS scopes the Sign grant and the designee role to; null off an unsigned agreement. */
+  private readonly designeePair = computed(() => this.initDesigneePair());
+
+  /** The viewer may already sign this pair, as designee or signatory, so Start skips the question; anything short of allowed asks it. */
+  protected readonly alreadyDesignee = computed(() => this.initAlreadyDesignee());
+
   /**
    * The preview mode restores from history / cookie change, so the selected organization can arrive
    * out of step with the choice the preview was made for. The constructor subscribes to this same
@@ -586,13 +635,25 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly approvalBadge = computed(() => this.initApprovalBadge());
 
+  /**
+   * Every acknowledgment on the displayed agreement, whatever its state, for the tab badge.
+   *
+   * Not the list row's `approvedContributorsCount`: that leaves out invalidated acknowledgments,
+   * so the badge would disagree with the rows the tab lists. The acknowledgments read counts every
+   * row, and a one-row page is enough for its `totalCount`. Browser-only, and only for a signed
+   * agreement — an unsigned one holds no acknowledgments.
+   */
+  private readonly fetchedAcknowledgmentCount = this.initFetchedAcknowledgmentCount();
+
+  protected readonly acknowledgmentsBadge = computed(() => this.initAcknowledgmentsBadge());
+
   protected readonly tabs = computed(() => this.initTabs());
 
   protected readonly lockedTab = computed(() => this.initLockedTab());
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
-      this.autoEclaDetached = true;
+      this.detached = true;
     });
 
     // Either arm of the context, because neither destroys this component: an organization switch
@@ -601,6 +662,11 @@ export class OrgEasyclaDetailComponent {
     // would open a session for the agreement the viewer left rather than the one on screen.
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
+      this.designeeNotice.set(null);
+      if (this.pendingDesigneeWrite) {
+        this.pendingDesigneeWrite = null;
+        this.signingOpen.set(false);
+      }
     });
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
@@ -660,6 +726,19 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe((allowed) => this.autoEclaAllowed.set(allowed));
 
+    toObservable(this.designeePair)
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => this.signCheck.set(null)),
+        switchMap((pair) => {
+          if (!pair) return of(null);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'sign', projectSfid).pipe(map((allowed) => ({ pair, allowed })));
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((check) => this.signCheck.set(check));
+
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
     // `cannotPreview`, because the group address is the one a named signing overview will claim and
@@ -670,6 +749,20 @@ export class OrgEasyclaDetailComponent {
 
   protected selectTab(tab: OrgClaDetailTab): void {
     this.activeTab.set(tab);
+  }
+
+  /**
+   * Switch to a tab and move focus to its trigger — the click-driven counterpart to the
+   * arrow-key path in onTabKeydown. The Not Authorized "Add the user to the Approval list"
+   * control lives on a panel this call destroys, so without moving focus a keyboard or
+   * screen-reader user is stranded on a removed node. The trigger buttons are always in the
+   * tablist, so focusing one synchronously after selectTab is safe.
+   */
+  protected focusTab(tab: OrgClaDetailTab): void {
+    this.selectTab(tab);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`org-easycla-detail-tab-trigger-${tab}`)?.focus();
+    }
   }
 
   protected onManagerCountChanged(count: number): void {
@@ -690,10 +783,7 @@ export class OrgEasyclaDetailComponent {
     if (next === null) return;
 
     event.preventDefault();
-    this.selectTab(ids[next]);
-    if (isPlatformBrowser(this.platformId)) {
-      document.getElementById(`org-easycla-detail-tab-trigger-${ids[next]}`)?.focus();
-    }
+    this.focusTab(ids[next]);
   }
 
   protected openCoverage(): void {
@@ -714,7 +804,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.confirmThenHandOff(context.orgUid, context.chosen);
+    this.continueAsManager(context.orgUid, context.chosen, 'attest');
   }
 
   /**
@@ -728,7 +818,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.openSendByEmailIfContextHeld(context.orgUid, context.chosen);
+    this.continueAsManager(context.orgUid, context.chosen, 'mail');
   }
 
   protected onDownload(): void {
@@ -797,15 +887,23 @@ export class OrgEasyclaDetailComponent {
   }
 
   protected onApprovalCountChanged(count: number): void {
-    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+    this.approvalCountOverride.set({ signatureId: this.claGroup()?.id ?? '', count });
+  }
+
+  protected onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void {
+    this.approvalCountOverride.set(event);
+  }
+
+  protected onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void {
+    this.panelAcknowledgmentCount.set(event);
   }
 
   /**
    * Turns Auto ECLA on or off for the agreement on screen (#1988).
    *
-   * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
-   * click without a round trip. On success the override stays (the state was written), the
-   * saving flag is cleared, and a success toast names the value written. On failure the override
+   * Optimistic: the remembered value is set to `next` before the PUT lands, so the toggle answers
+   * the click without a round trip. On success the remembered value stays (the state was written),
+   * the saving flag is cleared, and a success toast names the value written. On failure the remembered value
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
@@ -814,8 +912,8 @@ export class OrgEasyclaDetailComponent {
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
-   * shown only while this page is still that agreement. A remembered value stays until the list
-   * row carries it, including after a project change that does not refetch the list.
+   * shown only while this page is still that agreement. A remembered value is dropped once the list
+   * row carries it or the page loads the organization's CLA list again, never while its write is running.
    *
    * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
    */
@@ -865,7 +963,7 @@ export class OrgEasyclaDetailComponent {
 
   /** True while the page is still the organization and agreement this write was started for. */
   private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
-    return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
+    return !this.detached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
   }
 
   /**
@@ -885,6 +983,108 @@ export class OrgEasyclaDetailComponent {
     if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return null;
 
     return { orgUid, chosen };
+  }
+
+  /** The Start lock stays held until whichever step ends the flow. */
+  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    if (this.alreadyDesignee()) {
+      this.openChosenStep(orgUid, chosen, next);
+      return;
+    }
+
+    const questionRef = this.dialogService.open(OrgEasyclaManagerQuestionDialogComponent, orgClaManagerQuestionDialogConfig()) as DynamicDialogRef;
+    this.uncommittedSigningDialog = questionRef;
+
+    this.whenSigningDialogEnds(questionRef, (answer: OrgClaManagerAnswer) => {
+      // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
+      // the answer names no organization or agreement.
+      this.afterDialogTornDown(questionRef, () => {
+        if (!this.signingContextHeld(orgUid, chosen)) return;
+        if (answer === 'yes') this.assignDesignee(orgUid, chosen, next);
+        else this.openIdentifyManager(orgUid, chosen);
+      });
+    });
+  }
+
+  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    if (next === 'attest') this.confirmThenHandOff(orgUid, chosen);
+    else this.openSendByEmailIfContextHeld(orgUid, chosen);
+  }
+
+  /** Whether the page is still on this organization and signing pair; releases Start when it is not. */
+  private signingContextHeld(orgUid: string, chosen: OrgClaGroupPickerResult): boolean {
+    const currentChoice = this.signingChoice();
+    if (
+      this.accountContext.selectedAccount()?.uid === orgUid &&
+      currentChoice?.claGroupId === chosen.claGroupId &&
+      currentChoice.projectSfid === chosen.projectSfid
+    ) {
+      return true;
+    }
+    this.signingOpen.set(false);
+    this.leavePreviewIfContextLost();
+    return false;
+  }
+
+  /** Yes: make the viewer the designee, then continue; a refusal leaves them on the overview with the reason. */
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    const write = this.holdDesigneeWrite();
+    this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
+      next: () => {
+        this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.openChosenStep(orgUid, chosen, next);
+      },
+      error: (error: unknown) => {
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
+      },
+    });
+  }
+
+  private openIdentifyManager(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const identifyRef = this.dialogService.open(OrgEasyclaIdentifyManagerDialogComponent, orgClaIdentifyManagerDialogConfig()) as DynamicDialogRef;
+    this.uncommittedSigningDialog = identifyRef;
+
+    this.whenSigningDialogEnds(identifyRef, (result: OrgClaIdentifyManagerResult) => {
+      if (!this.signingContextHeld(orgUid, chosen)) return;
+      this.nominateDesignee(orgUid, chosen, result);
+    });
+  }
+
+  /** No: name someone else. Either success is a notice on the overview; the viewer is granted nothing, so the flow ends here. */
+  private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgClaIdentifyManagerResult): void {
+    const write = this.holdDesigneeWrite();
+    this.claService.nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email }).subscribe({
+      next: (response) => {
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.designeeNotice.set(
+          response.outcome === 'lf-login-required'
+            ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequired(response.email)
+            : ORG_CLA_IDENTIFY_MANAGER_COPY.assigned(response.email)
+        );
+      },
+      error: (error: unknown) => {
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Request not sent', detail: designeeRefusalCopy(error) });
+      },
+    });
+  }
+
+  private holdDesigneeWrite(): object {
+    const write = {};
+    this.pendingDesigneeWrite = write;
+    return write;
+  }
+
+  /** Whether this write still owns the Start lock, i.e. no context change released it meanwhile. */
+  private releaseDesigneeWrite(write: object): boolean {
+    if (this.pendingDesigneeWrite !== write) return false;
+    this.pendingDesigneeWrite = null;
+    return true;
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -1168,7 +1368,7 @@ export class OrgEasyclaDetailComponent {
 
   private initApprovalBadge(): string {
     const override = this.approvalCountOverride();
-    if (override && override.signatureId === this.signatureId()) return String(override.count);
+    if (override && override.signatureId === this.claGroup()?.id) return String(override.count);
 
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
@@ -1227,6 +1427,19 @@ export class OrgEasyclaDetailComponent {
     return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
   }
 
+  private initDesigneePair(): string | null {
+    const orgUid = this.selectedOrgUid();
+    const projectSfid = this.signingChoice()?.projectSfid;
+    return this.notStarted() && orgUid && projectSfid ? `${orgUid}::${projectSfid}` : null;
+  }
+
+  private initAlreadyDesignee(): boolean {
+    const pair = this.designeePair();
+    if (!pair) return false;
+    const check = this.signCheck();
+    return this.assignedPairs().includes(pair) || (check?.pair === pair && check.allowed);
+  }
+
   /**
    * Why the open tab holds nothing, when signing is what would fill it. Null on every other tab
    * and on a signed agreement, where the panel is simply unbuilt.
@@ -1241,9 +1454,48 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_LOCKED_TAB_COPY[this.activeTab()] ?? null;
   }
 
+  private initFetchedAcknowledgmentCount(): Signal<{ signatureId: string; count: number } | null> {
+    const target = computed(() => this.initAcknowledgmentCountTarget());
+    return toSignal(
+      toObservable(target).pipe(
+        distinctUntilChanged((a, b) => a?.orgUid === b?.orgUid && a?.signatureId === b?.signatureId),
+        // Drop a panel override left over from the previous agreement so it cannot shadow this read.
+        tap(() => this.panelAcknowledgmentCount.set(null)),
+        switchMap((next) => {
+          if (!next || !isPlatformBrowser(this.platformId)) return of(null);
+          return this.claService.getContributorAcknowledgments(next.orgUid, next.signatureId, { pageSize: 1 }).pipe(
+            map((list) => ({ signatureId: next.signatureId, count: list.totalCount })),
+            // A failed count leaves the badge empty; the tab itself reports the failure when opened.
+            catchError((error: unknown) => {
+              console.warn('Failed to load the contributor acknowledgment count:', (error as HttpErrorResponse)?.status, (error as HttpErrorResponse)?.message);
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initAcknowledgmentCountTarget(): { orgUid: string; signatureId: string } | null {
+    const group = this.claGroup();
+    const orgUid = this.accountContext.selectedAccount()?.uid ?? '';
+    return group?.signed && orgUid ? { orgUid, signatureId: group.id } : null;
+  }
+
+  private initAcknowledgmentsBadge(): string {
+    const group = this.claGroup();
+    if (!group?.signed) return '';
+    const panel = this.panelAcknowledgmentCount();
+    if (panel?.signatureId === group.id) return String(panel.count);
+    const fetched = this.fetchedAcknowledgmentCount();
+    return fetched?.signatureId === group.id ? String(fetched.count) : '';
+  }
+
   private tabBadge(tab: OrgClaDetailTab): string {
     if (tab === 'managers') return this.managersBadge();
     if (tab === 'approval') return this.approvalBadge();
+    if (tab === 'acknowledgments') return this.acknowledgmentsBadge();
     return '';
   }
 

@@ -31,13 +31,12 @@ test.describe('Org Lens EasyCLA acknowledgments — content', () => {
 
   test.beforeEach(() => skipWithoutCredentials());
 
-  test('shows the signing name, the LF Login, the version, and Acknowledged', async ({ page }) => {
+  test('shows the name, the LF Login, and Authorized', async ({ page }) => {
     await gotoAcknowledgments(page, { initial: POPULATED });
 
     await expect(page.getByTestId('org-easycla-acknowledgment-name')).toHaveText('Ada Lovelace', { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-acknowledgment-identity')).toHaveText('ada');
-    await expect(page.getByTestId('org-easycla-acknowledgment-version')).toHaveText('v2.1');
-    await expect(page.getByTestId('org-easycla-acknowledgment-state-acknowledged')).toBeVisible();
+    await expect(page.getByTestId('org-easycla-acknowledgment-state-acknowledged')).toHaveText('Authorized');
   });
 
   test('sends the search term and shows the no-match copy when nothing matches', async ({ page }) => {

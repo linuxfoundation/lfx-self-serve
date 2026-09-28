@@ -6,6 +6,8 @@ import {
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS,
+  MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
   MENTORSHIP_PROGRAM_STATUSES,
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
@@ -38,8 +40,12 @@ import {
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
+  MentorshipProgramReview,
+  MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
+  MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramDecisionRequest,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -47,6 +53,7 @@ import { Request } from 'express';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
 
 const DEFAULT_PROGRAM_LIMIT = 50;
 const MAX_LIMIT = 50;
@@ -79,6 +86,8 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
 }
 
 export class MentorshipService {
+  private readonly microserviceProxy = new MicroserviceProxyService();
+
   public async getPrograms(
     req: Request,
     options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
@@ -335,6 +344,40 @@ export class MentorshipService {
     return target;
   }
 
+  /**
+   * The program an approve/reject email link points at. Proxied to the mentorship service
+   * with the caller's own token, so its `viewer` check decides who can see the program.
+   */
+  public async getProgramReview(req: Request, programId: string): Promise<MentorshipProgramReview> {
+    logger.debug(req, 'mentorship_get_program_review', 'Fetching program for review', { programId });
+    const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
+      req,
+      'LFX_V2_SERVICE',
+      `/mentorship/v1/programs/${encodeURIComponent(programId)}`,
+      'GET'
+    );
+    return toProgramReview(program);
+  }
+
+  /**
+   * Publishes or rejects a pending program. Upstream allows this only for members of the
+   * mentorship approver team (403 otherwise) and only from `pending` (409 otherwise); both
+   * statuses pass through to the page unchanged.
+   */
+  public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramReview> {
+    const body: MentorshipUpstreamProgramDecisionRequest = { status: MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS[decision] };
+    logger.debug(req, 'mentorship_submit_program_decision', 'Submitting program review decision', { programId, status: body.status });
+    const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
+      req,
+      'LFX_V2_SERVICE',
+      `/mentorship/v1/programs/${encodeURIComponent(programId)}/decision`,
+      'POST',
+      undefined,
+      body
+    );
+    return toProgramReview(program);
+  }
+
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
     return mockPrograms.find((item) => item.id === programId) ?? mockPrograms.find((item) => item.slug === programId);
@@ -348,4 +391,13 @@ export class MentorshipService {
 
 export function isMentorshipProgramStatus(value: unknown): value is MentorshipProgramStatus {
   return typeof value === 'string' && (MENTORSHIP_PROGRAM_STATUSES as readonly string[]).includes(value);
+}
+
+export function isMentorshipProgramReviewDecision(value: unknown): value is MentorshipProgramReviewDecision {
+  return typeof value === 'string' && (MENTORSHIP_PROGRAM_REVIEW_DECISIONS as readonly string[]).includes(value);
+}
+
+/** Only what the review page shows; the full upstream program is not forwarded. */
+function toProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
+  return { id: program.id, name: program.name, status: program.status };
 }

@@ -43,6 +43,7 @@ import {
   getSurveyDisplayStatus,
   isValidUrl,
   mapActivityEventsToFeedItems,
+  selectNextUpcomingMeeting,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -290,10 +291,7 @@ export class CommitteeOverviewComponent {
   public hasNativePendingActions: Signal<boolean> = computed(() => this.pendingActionItems().some((item) => item.type !== 'BriefAction'));
   public categoryLabel: Signal<string> = computed(() => (this.committee().category || 'Group').toLowerCase());
 
-  public nextMeeting: Signal<Meeting | null> = computed(() => {
-    const upcoming = [...this.meetings()].sort((a, b) => a.start_time.localeCompare(b.start_time));
-    return upcoming[0] ?? null;
-  });
+  public nextMeeting: Signal<Meeting | null> = computed(() => selectNextUpcomingMeeting(this.meetings()));
 
   public lastMeeting: Signal<PastMeeting | null> = computed(() => {
     // v1_past_meeting includes meetings as soon as they START, so filter to truly ended

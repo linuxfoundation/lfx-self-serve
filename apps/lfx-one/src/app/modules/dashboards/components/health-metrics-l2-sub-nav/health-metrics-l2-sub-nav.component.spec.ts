@@ -2,37 +2,46 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EngagementSubNavComponent } from './engagement-sub-nav.component';
+import { HealthMetricsL2SubNavComponent } from './health-metrics-l2-sub-nav.component';
 
-import type { HealthMetricsEngagementSubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
-const ITEMS: HealthMetricsEngagementSubNavItem[] = [
+const NOTE = 'Board & voting-member attendance is reported per member in Members';
+const ITEMS: HealthMetricsL2SubNavItem[] = [
   { key: 'participation', label: 'Meeting participation', count: null, note: '' },
   { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant' },
   { key: 'orgs', label: 'Organization participation', count: 40, note: '' },
 ];
 
-describe('EngagementSubNavComponent', () => {
-  let fixture: ComponentFixture<EngagementSubNavComponent>;
+describe('HealthMetricsL2SubNavComponent', () => {
+  let fixture: ComponentFixture<HealthMetricsL2SubNavComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [EngagementSubNavComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [HealthMetricsL2SubNavComponent] }).compileComponents();
 
-    fixture = TestBed.createComponent(EngagementSubNavComponent);
+    fixture = TestBed.createComponent(HealthMetricsL2SubNavComponent);
     fixture.componentRef.setInput('items', ITEMS);
     fixture.componentRef.setInput('activeKey', 'committees');
     fixture.componentRef.setInput('topPx', 96);
+    fixture.componentRef.setInput('ariaLabel', 'Engagement sections');
+    fixture.componentRef.setInput('testIdPrefix', 'engagement');
+    fixture.componentRef.setInput('crossReferenceNote', NOTE);
     fixture.detectChanges();
   });
 
-  it('renders one button per item plus the Members cross-reference note', () => {
+  it('renders one button per item plus the cross-reference note', () => {
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-sub-nav-"]:not([data-testid$="cross-reference-note"])')).toHaveLength(3);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]').textContent.trim()).toBe(
-      HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE
-    );
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]').textContent.trim()).toBe(NOTE);
+    expect(fixture.nativeElement.querySelector('nav').getAttribute('aria-label')).toBe('Engagement sections');
+  });
+
+  it('omits the cross-reference note when the tab has none', () => {
+    fixture.componentRef.setInput('crossReferenceNote', '');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]')).toBeNull();
   });
 
   it('shows a count and note only where the item carries them', () => {

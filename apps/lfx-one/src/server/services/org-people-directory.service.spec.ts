@@ -10,19 +10,26 @@ import type {
   OrgAllEmployeesResponse,
   KeyContactEmployee,
 } from '@lfx-one/shared/interfaces';
+import type * as CompactCacheUtils from '@lfx-one/shared/utils/compact-cache.utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
-// OrgPeopleDirectoryService's constructor, so they must be mocked at module level. `withPerUserCache`
-// is stubbed to a pass-through so tests exercise the merge rather than the cache, capturing the
-// `accept` guard so the fail-closed validator stays covered.
-const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, capturedCacheGuard } = vi.hoisted(() => ({
+// OrgPeopleDirectoryService's constructor, so they must be mocked at module level.
+const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, getEffectiveUsername, cache } = vi.hoisted(() => ({
   getAllEmployeesInternal: vi.fn(),
   fetchAllOrgSeats: vi.fn(),
   getKeyContactEmployees: vi.fn(),
   getAccessPrincipals: vi.fn(),
-  capturedCacheGuard: { accept: null as ((value: unknown) => boolean) | null },
+  getEffectiveUsername: vi.fn(() => 'tester' as string | null),
+  cache: {
+    serveHits: false,
+    entry: null as string | null,
+    accept: null as ((value: unknown) => boolean) | null,
+    readThroughs: 0,
+    /** JSON of the rows handed to the encoder — the uncached response exactly as the wire would carry it. */
+    encodedRows: null as string | null,
+  },
 }));
 
 vi.mock('./org-lens-people.service', () => ({
@@ -45,24 +52,41 @@ vi.mock('./org-lens-access.service', () => ({
     public getAccessPrincipals = getAccessPrincipals;
   },
 }));
+// A miniature Valkey: JSON in, JSON out, with the service's own `accept` guard deciding whether a
+// stored entry is a hit. That is what makes a "cache hit" here the real thing — encoded,
+// serialized, guarded and decoded — instead of the fetcher's own object handed straight back.
+//
+// Writes are always captured (the guard tests read the stored entry), but SERVING a hit is opt-in
+// per test: the merge tests below are about the merge and several of them call `run()` more than
+// once expecting a fresh computation each time.
 vi.mock('./valkey.service', () => ({
-  withPerUserCache: (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
-    capturedCacheGuard.accept = accept ?? null;
-    return fetcher();
+  withPerUserCache: async (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+    cache.readThroughs += 1;
+    cache.accept = accept ?? null;
+    if (cache.serveHits && cache.entry !== null) {
+      const stored = JSON.parse(cache.entry);
+      if (!accept || accept(stored)) return stored;
+    }
+    const fresh = await fetcher();
+    cache.entry = JSON.stringify(fresh);
+    return fresh;
   },
 }));
 vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'tester' }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 
 // The `@lfx-one/shared/*` barrels pull Angular into this node-environment suite, so the handful of
 // runtime values the service imports are stubbed here (same approach as ai.service.spec.ts /
 // committee-engagement.service.spec.ts). `isBoardCategory` and `splitDisplayName` mirror the real
 // implementations, since the merge's board-vs-committee split and name fill depend on their behaviour.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/constants', () => ({
-  VALKEY_CACHE: { ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-directory', ORG_LENS_PERUSER_TTL_SECONDS: 60 },
+// The stored column list is re-exported from its REAL module, so the guard and round-trip tests run
+// against the writer's actual contract rather than a copy that could silently drift from it.
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
+  VALKEY_CACHE: { ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: {
     accountId: '',
     rows: [],
@@ -71,15 +95,33 @@ vi.mock('@lfx-one/shared/constants', () => ({
   },
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
-vi.mock('@lfx-one/shared/utils', () => ({
-  splitDisplayName: (name: string | null): [string | null, string | null] => {
-    const trimmed = (name ?? '').trim();
-    if (!trimmed || trimmed.includes('@')) return [null, null];
-    const parts = trimmed.split(/\s+/);
-    return parts.length === 1 ? [parts[0], null] : [parts[0], parts.slice(1).join(' ')];
-  },
-}));
+// The compact-cache helpers and the filter-safety predicates are re-exported from their REAL
+// modules: the round-trip tests below are only meaningful against the actual encoder, and the
+// coalescing's fail-closed rule against the actual allowlists.
+vi.mock('@lfx-one/shared/utils', async () => {
+  const compact = await vi.importActual<typeof CompactCacheUtils>('@lfx-one/shared/utils/compact-cache.utils');
+  return {
+    ...compact,
+    ...(await vi.importActual<object>('@lfx-one/shared/utils/org-selector.utils')),
+    // The real encoder, observed: what goes IN is the independent truth the round-trip test compares
+    // the decoded response against. Comparing a hit with a miss alone cannot catch an unfaithful
+    // codec, because the miss path returns the decoded envelope too.
+    toColumnar: (rows: readonly Record<string, unknown>[], keys: readonly string[]) => {
+      cache.encodedRows = JSON.stringify(rows);
+      return compact.toColumnar(rows, keys);
+    },
+    splitDisplayName: (name: string | null): [string | null, string | null] => {
+      const trimmed = (name ?? '').trim();
+      if (!trimmed || trimmed.includes('@')) return [null, null];
+      const parts = trimmed.split(/\s+/);
+      return parts.length === 1 ? [parts[0], null] : [parts[0], parts.slice(1).join(' ')];
+    },
+  };
+});
 
+import { toColumnar } from '@lfx-one/shared/utils';
+
+import { resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directory.service';
 
 const ACCOUNT = '0014100000Te2ovAAB';
@@ -154,7 +196,13 @@ async function run(): Promise<OrgAllEmployeesResponse> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  capturedCacheGuard.accept = null;
+  resetSingleFlightForTests();
+  cache.serveHits = false;
+  cache.entry = null;
+  cache.accept = null;
+  cache.readThroughs = 0;
+  cache.encodedRows = null;
+  getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
@@ -717,29 +765,112 @@ describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach th
   });
 });
 
-describe('OrgPeopleDirectoryService.getLive — cache guard stays fail-closed (#2179)', () => {
-  it('accepts a stripped roster after a Valkey JSON round-trip', async () => {
+describe('OrgPeopleDirectoryService.getLive — compact cache round trip (GH-1906)', () => {
+  // The invariant the compaction rests on: a warm cache must send exactly what the cold one would
+  // have. Both are compared against the rows the encoder was handed, NOT against each other — the
+  // miss path returns the decoded envelope too, so hit-vs-miss would only prove self-consistency.
+  // Compared as JSON because that is the contract: a pre-compaction row carries
+  // `accessBadge: undefined`, which the wire drops, so `toStrictEqual` would flag a difference no
+  // client can observe. Key order is uniform because every row passes through `toWireRow`.
+  it('serves exactly the uncached wire rows on a miss and on a hit, including which fields were absent', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'rvega@lfx-partner.example', username: 'rvega', name: 'Rowan Vega' })]);
+    cache.serveHits = true;
 
-    const response = await run();
-    const accept = capturedCacheGuard.accept;
+    const miss = await run();
+    const wire = cache.encodedRows;
+    const hit = await run();
 
-    expect(accept).toBeTypeOf('function');
-    // Valkey stores JSON: undefined fields (e.g. an unset accessBadge) are dropped on the round-trip.
-    expect(accept!(JSON.parse(JSON.stringify(response)))).toBe(true);
+    expect(miss.rows.length).toBeGreaterThan(1);
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+    expect(wire).not.toBeNull();
+    expect(JSON.stringify(miss.rows)).toBe(wire);
+    expect(JSON.stringify(hit.rows)).toBe(wire);
+    // One row carries a badge and the rest never had the key at all — both must survive.
+    expect(hit.rows.some((row) => row.accessBadge === 'admin')).toBe(true);
+    expect(hit.rows.some((row) => !('accessBadge' in row))).toBe(true);
   });
 
-  it('rejects a roster still carrying merge-only fields', async () => {
+  // A pre-compaction (`org-people-dir:v2`) entry is a wire response with a `rows` array. It must
+  // miss and be recomputed, never decoded — the namespace bump is the first line of defence, this
+  // guard is the second.
+  it('rejects a legacy wire-shaped entry as a miss', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
 
-    const response = await run();
-    const accept = capturedCacheGuard.accept;
-    const roundTripped = JSON.parse(JSON.stringify(response)) as OrgAllEmployeesResponse;
+    const legacy = await run();
+    const accept = cache.accept;
 
     expect(accept).toBeTypeOf('function');
-    expect(roundTripped.rows.length).toBeGreaterThan(0);
-    expect(accept!({ ...roundTripped, rows: [{ ...roundTripped.rows[0], emails: ['x@y.example'] }] })).toBe(false);
-    expect(accept!({ ...roundTripped, rows: [{ ...roundTripped.rows[0], mergedFrom: ['email:x@y.example'] }] })).toBe(false);
+    expect(accept!(JSON.parse(JSON.stringify(legacy)))).toBe(false);
+    expect(accept!(JSON.parse(cache.entry!))).toBe(true);
+  });
+
+  // The merge-only fields are asserted absent by the stored column list itself, so a writer that
+  // regressed and stored them has to be rejected rather than replayed to the client.
+  it('rejects a stored entry whose column list carries a merge-only field', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+    await run();
+    const stored = JSON.parse(cache.entry!);
+
+    expect(cache.accept!({ ...stored, r: { ...stored.r, k: [...stored.r.k, 'emails'] } })).toBe(false);
+  });
+
+  // A row whose required field is corrupt would crash the client on `name.localeCompare`; the
+  // pre-compaction guard caught that and the positional one has to keep catching it, including the
+  // encoder's "this field was absent" marker standing in for a required string.
+  it('rejects a stored row with a corrupt or absent required field', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
+    await run();
+    const stored = JSON.parse(cache.entry!);
+    const nameColumn = stored.r.k.indexOf('name');
+
+    const corrupt = JSON.parse(cache.entry!);
+    corrupt.r.r[0][nameColumn] = 42;
+    expect(cache.accept!(corrupt)).toBe(false);
+
+    // The real encoder's own absence marker, not a hard-coded copy of its private encoding.
+    const absent = JSON.parse(cache.entry!);
+    absent.r.r[0][nameColumn] = toColumnar([{ name: undefined }], ['name']).r[0][0];
+    expect(cache.accept!(absent)).toBe(false);
+  });
+});
+
+describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
+  // The merge fans out to four upstreams and outlives the 30s entry it produces, so two tabs
+  // opening at once must not run it twice.
+  it('computes once for concurrent callers with the same principal', async () => {
+    let release!: (rows: OrgAllEmployeesInternalResponse) => void;
+    getAllEmployeesInternal.mockReturnValue(
+      new Promise<OrgAllEmployeesInternalResponse>((resolve) => {
+        release = resolve;
+      })
+    );
+
+    const both = Promise.all([run(), run()]);
+    release(baseResponse([storedRow()]));
+    const [first, second] = await both;
+
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+    // One burst is one read-through: a single cache read and a single serialized write, not one per
+    // joined caller on the connection the session store shares.
+    expect(cache.readThroughs).toBe(1);
+    expect(first).toEqual(second);
+    // Each caller rebuilds its own response from the shared stored envelope.
+    expect(first).not.toBe(second);
+  });
+
+  // The fail-closed rule: `withPerUserCache` refuses to build a key for an unresolvable principal,
+  // and the coalescing must refuse on the same terms — a shared bucket keyed on a blank username
+  // would hand one caller's permission-filtered roster to another.
+  it('does not coalesce callers with no resolvable username', async () => {
+    getEffectiveUsername.mockReturnValue(null);
+    getAllEmployeesInternal.mockResolvedValueOnce(baseResponse([storedRow()])).mockResolvedValueOnce(baseResponse([storedRow({ name: 'Second Caller Only' })]));
+
+    const [first, second] = await Promise.all([run(), run()]);
+
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(2);
+    expect(first.rows[0].name).toBe('Devon Clarke');
+    expect(second.rows[0].name).toBe('Second Caller Only');
   });
 });

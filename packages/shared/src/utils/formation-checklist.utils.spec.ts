@@ -28,6 +28,7 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
   return {
     uid: partial.uid ?? `item-${uidCounter}`,
     formation_uid: partial.formation_uid ?? 'formation-1',
+    project_uid: partial.project_uid ?? 'project-1',
     template_item_key: partial.template_item_key ?? 'key',
     section_key: partial.section_key ?? 'section',
     section_title: partial.section_title ?? 'Section',
@@ -48,6 +49,7 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
     available_actions: partial.available_actions ?? [],
     created_at: partial.created_at ?? '',
     updated_at: partial.updated_at ?? '',
+    version: partial.version ?? 1,
   };
 }
 

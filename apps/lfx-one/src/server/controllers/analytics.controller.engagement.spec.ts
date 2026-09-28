@@ -26,7 +26,8 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
     },
   };
 });
-// The controller constructs four unrelated domain services; none of them are exercised here.
+// The controller constructs five unrelated domain services; none of them are exercised here.
+vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
@@ -43,11 +44,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
@@ -71,7 +72,7 @@ function rejectedField(next: NextFunction): string | undefined {
 describe('AnalyticsController.getEngagementGroupAttendance', () => {
   beforeEach(() => {
     getGroupAttendance.mockReset();
-    getGroupAttendance.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    getGroupAttendance.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
 
   it('defaults the optional params and passes a fully-resolved query to the service', async () => {
@@ -87,7 +88,7 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       page: 1,
       size: 25,
     });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
 
   it('forwards every supplied param, coercing page and size to numbers', async () => {
@@ -166,7 +167,7 @@ function callParticipation(queryParams: Record<string, string>): { res: Response
 describe('AnalyticsController.getEngagementMeetingParticipation', () => {
   beforeEach(() => {
     getMeetingParticipation.mockReset();
-    getMeetingParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    getMeetingParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
   it('defaults the range and answers with the service response', async () => {
@@ -174,7 +175,7 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
     await promise;
 
     expect(getMeetingParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD' });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
   it('forwards a supported range', async () => {
@@ -235,7 +236,7 @@ function callOrgs(queryParams: Record<string, string>): { res: Response; next: N
 describe('AnalyticsController.getEngagementOrgParticipation', () => {
   beforeEach(() => {
     getOrgParticipation.mockReset();
-    getOrgParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+    getOrgParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
   });
 
   // Every period ships in one read, so a range on the wire would be a param the service ignores.
@@ -245,7 +246,7 @@ describe('AnalyticsController.getEngagementOrgParticipation', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getOrgParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
@@ -287,7 +288,7 @@ function callNonMembers(queryParams: Record<string, string>): { res: Response; n
 describe('AnalyticsController.getEngagementNonMemberParticipation', () => {
   beforeEach(() => {
     getNonMemberParticipation.mockReset();
-    getNonMemberParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+    getNonMemberParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
   });
 
   // The view carries no project key, so a project on the wire would be a param the service ignores.
@@ -297,7 +298,7 @@ describe('AnalyticsController.getEngagementNonMemberParticipation', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getNonMemberParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
@@ -339,7 +340,7 @@ function callReps(queryParams: Record<string, string>): { res: Response; next: N
 describe('AnalyticsController.getEngagementRepresentatives', () => {
   beforeEach(() => {
     getRepresentatives.mockReset();
-    getRepresentatives.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT);
+    getRepresentatives.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
   });
 
   // Scope is expressed by the caption columns rather than a project key, so a project on the wire
@@ -350,7 +351,7 @@ describe('AnalyticsController.getEngagementRepresentatives', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getRepresentatives).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {

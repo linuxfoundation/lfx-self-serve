@@ -109,3 +109,12 @@ export interface LockEntry {
   timestamp: number;
   waiters: number;
 }
+
+/** Identifies one guarded view read for its error path: what was queried, and how it is reported. */
+export interface SnowflakeViewReadContext {
+  /** Fully-qualified view, logged when the object is missing. */
+  view: string;
+  operation: string;
+  /** Generic sentence that replaces the SDK's message, which names the view. */
+  clientMessage: string;
+}

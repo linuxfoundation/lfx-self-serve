@@ -9,8 +9,10 @@ import type {
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
+  MENTORSHIP_UPSTREAM_PROGRAM_STATUSES,
 } from '../constants/mentorship.constants';
 import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
 
@@ -979,4 +981,76 @@ export type MentorshipMenteeOverviewResponse = MentorshipMenteeOverviewEmpty | M
 /** Response body from `GET /api/mentorship/mentee/has-profile`. */
 export interface MentorshipMenteeHasProfileResponse {
   hasProfile: boolean;
+}
+
+// -- Program review (approver approve/reject email link) ---------------------
+
+/**
+ * Program status as the mentorship service stores it. Distinct from the admin-list
+ * `MentorshipProgramStatus`, which is a BFF display grouping.
+ */
+export type MentorshipUpstreamProgramStatus = (typeof MENTORSHIP_UPSTREAM_PROGRAM_STATUSES)[number];
+
+/** The two statuses a program review can move a `pending` program to. */
+export type MentorshipProgramDecisionStatus = Extract<MentorshipUpstreamProgramStatus, 'published' | 'rejected'>;
+
+/** The `?decision=` value on an approve/reject email link. */
+export type MentorshipProgramReviewDecision = (typeof MENTORSHIP_PROGRAM_REVIEW_DECISIONS)[number];
+
+/** The upstream program fields the program-review BFF reads. */
+export interface MentorshipUpstreamProgram {
+  id: string;
+  name: string;
+  status: MentorshipUpstreamProgramStatus;
+}
+
+/** Upstream body for `POST /mentorship/v1/programs/{id}/decision`. */
+export interface MentorshipUpstreamProgramDecisionRequest {
+  status: MentorshipProgramDecisionStatus;
+}
+
+/**
+ * Response body from `GET /api/mentorship/program-review/:programId` and
+ * `POST /api/mentorship/program-review/:programId/decision`: the subset of
+ * `MentorshipUpstreamProgram` the page receives. Status values and their lifecycle are documented
+ * on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
+ */
+export type MentorshipProgramReview = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
+
+/** Request body for `POST /api/mentorship/program-review/:programId/decision`. */
+export interface MentorshipProgramDecisionRequest {
+  decision: MentorshipProgramReviewDecision;
+}
+
+/**
+ * What the program-review page shows. `already-decided` covers a program that is no
+ * longer `pending`, whether the page found it that way or the POST got a 409.
+ */
+export type MentorshipProgramReviewState =
+  | 'loading'
+  | 'confirm'
+  | 'submitting'
+  | 'success'
+  | 'already-decided'
+  | 'forbidden'
+  | 'not-found'
+  | 'invalid-link'
+  | 'error';
+
+/** The program-review page's current state and the program it is showing, when known. */
+export interface MentorshipProgramReviewView {
+  state: MentorshipProgramReviewState;
+  program: MentorshipProgramReview | null;
+}
+
+/** The program id and decision read from a program-review link. */
+export interface MentorshipProgramReviewLink {
+  programId: string;
+  decision: MentorshipProgramReviewDecision | null;
+}
+
+/** What the program-review confirm card renders: the loaded program and the decision to confirm. */
+export interface MentorshipProgramReviewConfirmation {
+  program: MentorshipProgramReview;
+  decision: MentorshipProgramReviewDecision;
 }

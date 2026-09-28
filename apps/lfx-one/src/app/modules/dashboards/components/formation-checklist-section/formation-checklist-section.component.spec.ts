@@ -110,6 +110,8 @@ function buildSharedProviders(fetchResult: Observable<FormationChecklistResponse
         activeProjectAnnouncementDate: signal<string | null>(null),
         activeProjectAnnouncementDateLoading: signal(false),
         activeProjectAnnouncementDateHasError: signal(false),
+        // Shape only. This section always passes a formation input, so the card never reads it.
+        activeProjectAnnouncementDateReadable: signal(false),
       },
     },
   ];

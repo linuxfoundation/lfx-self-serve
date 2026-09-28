@@ -31,6 +31,15 @@ export function normaliseForMatch(value: string): string {
 }
 
 /**
+ * Removes combining marks after canonical decomposition, so accented and unaccented letters compare
+ * equal (`München` -> `Munchen`). Case is untouched; callers that want case-insensitive matching
+ * lowercase the result themselves.
+ */
+export function stripDiacritics(value: string): string {
+  return value.normalize('NFD').replace(/\p{M}+/gu, '');
+}
+
+/**
  * Wraps a text string into multiple lines, breaking on word boundaries.
  * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
  * @param text - The label text to wrap
