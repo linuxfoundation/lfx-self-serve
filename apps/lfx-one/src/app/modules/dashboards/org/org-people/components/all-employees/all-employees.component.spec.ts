@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { EMPTY_ORG_ALL_EMPLOYEE_STATS } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared/interfaces';
@@ -9,12 +9,13 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { AllEmployeesService } from '../../services/all-employees.service';
 import { AllEmployeesComponent } from './all-employees.component';
 
-const ORG = '0014100000Te2ovAAB';
+const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
 
 function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> = {}): OrgAllEmployeeRow {
   return {
@@ -62,15 +63,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     await fixture.whenStable();
   }
 
-  beforeEach(async () => {
-    snowflake$ = new Subject();
-    live$ = new Subject();
-    getDirectory = vi.fn(() => live$);
-
+  async function mount(platformId: 'browser' | 'server'): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [AllEmployeesComponent],
       providers: [
-        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: 'The Linux Foundation' }) } },
+        { provide: PLATFORM_ID, useValue: platformId },
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: AllEmployeesService, useValue: { getAllEmployees: vi.fn(() => snowflake$), getEmployeeDetail: vi.fn() } },
         { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
@@ -79,98 +77,131 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     fixture = TestBed.createComponent(AllEmployeesComponent);
     await settle();
+  }
+
+  beforeEach(() => {
+    snowflake$ = new Subject();
+    live$ = new Subject();
+    getDirectory = vi.fn(() => live$);
+    // Failure paths log before falling back; keep the expected noise out of the test output.
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
-  it('requests the live merge without waiting for the Snowflake roster', () => {
-    expect(getDirectory).toHaveBeenCalledWith(ORG);
-    expect(live$.observed).toBe(true);
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('renders the Snowflake roster and stats while the live merge is still pending', async () => {
-    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
-    snowflake$.complete();
-    await settle();
+  describe('on the server', () => {
+    beforeEach(async () => {
+      await mount('server');
+    });
 
-    expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
-    expect(activeStat()).toContain('1');
-    expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).toBeNull();
+    it('renders the Snowflake roster and never requests the live merge', async () => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
+
+      expect(getDirectory).not.toHaveBeenCalled();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+    });
   });
 
-  it('replaces the Snowflake rows with the live merge when it lands, without duplicating anyone', async () => {
-    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
-    snowflake$.complete();
-    await settle();
+  describe('in the browser', () => {
+    beforeEach(async () => {
+      await mount('browser');
+    });
 
-    live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
-    live$.complete();
-    await settle();
+    it('requests the live merge without waiting for the Snowflake roster', () => {
+      expect(getDirectory).toHaveBeenCalledWith(ORG);
+      expect(live$.observed).toBe(true);
+    });
 
-    expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-x', 'org-people-all-employees-row-p-1']);
-    expect(activeStat()).toContain('2');
-  });
+    it('renders the Snowflake roster and stats while the live merge is still pending', async () => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
 
-  it('keeps the Snowflake rows, with no error state, when the live merge fails', async () => {
-    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
-    snowflake$.complete();
-    await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(activeStat()).toContain('1');
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).toBeNull();
+    });
 
-    live$.error(new Error('504'));
-    await settle();
+    it('replaces the Snowflake rows with the live merge when it lands, without duplicating anyone', async () => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
 
-    expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
-    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
-  });
+      live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
+      live$.complete();
+      await settle();
 
-  it('ignores a Snowflake roster that arrives after the live merge has landed', async () => {
-    live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
-    live$.complete();
-    await settle();
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-x', 'org-people-all-employees-row-p-1']);
+      expect(activeStat()).toContain('2');
+    });
 
-    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
-    snowflake$.complete();
-    await settle();
+    it('keeps the Snowflake rows, with no error state, when the live merge fails', async () => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
 
-    expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-x', 'org-people-all-employees-row-p-1']);
-    expect(activeStat()).toContain('2');
-  });
+      live$.error(new Error('504'));
+      await settle();
 
-  it('still renders the Snowflake roster, with no error state, when the live merge fails first', async () => {
-    live$.error(new Error('504'));
-    await settle();
-    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
 
-    snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
-    snowflake$.complete();
-    await settle();
+    it('ignores a Snowflake roster that arrives after the live merge has landed', async () => {
+      live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
+      live$.complete();
+      await settle();
 
-    expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
-    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
-  });
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
 
-  it('falls back to the live merge when the Snowflake roster fails', async () => {
-    snowflake$.error(new Error('500'));
-    await settle();
-    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-live-x', 'org-people-all-employees-row-p-1']);
+      expect(activeStat()).toContain('2');
+    });
 
-    live$.next(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1));
-    live$.complete();
-    await settle();
+    it('still renders the Snowflake roster, with no error state, when the live merge fails first', async () => {
+      live$.error(new Error('504'));
+      await settle();
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
 
-    expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
-  });
+      snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
+      snowflake$.complete();
+      await settle();
 
-  it.each([
-    ['Snowflake first', ['snowflake', 'live'] as const],
-    ['live first', ['live', 'snowflake'] as const],
-  ])('shows the error state only when both sources fail (%s)', async (_label, order) => {
-    const sources = { snowflake: snowflake$, live: live$ };
-    sources[order[0]].error(new Error('first'));
-    await settle();
-    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
 
-    sources[order[1]].error(new Error('second'));
-    await settle();
+    it('falls back to the live merge when the Snowflake roster fails', async () => {
+      snowflake$.error(new Error('500'));
+      await settle();
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
 
-    expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).not.toBeNull();
+      live$.next(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1));
+      live$.complete();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
+    });
+
+    it.each([
+      ['Snowflake first', ['snowflake', 'live'] as const],
+      ['live first', ['live', 'snowflake'] as const],
+    ])('shows the error state only when both sources fail (%s)', async (_label, order) => {
+      const sources = { snowflake: snowflake$, live: live$ };
+      sources[order[0]].error(new Error('first'));
+      await settle();
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+
+      sources[order[1]].error(new Error('second'));
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).not.toBeNull();
+    });
   });
 });

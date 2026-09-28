@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import {
@@ -65,6 +65,7 @@ export class AllEmployeesComponent {
   private readonly directory = inject(OrgPeopleDirectoryStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly initialLimit = ORG_ALL_EMPLOYEES_INITIAL_LIMIT;
 
@@ -375,6 +376,9 @@ export class AllEmployeesComponent {
    *
    * A live failure after Snowflake rendered keeps the Snowflake rows (no error state); a Snowflake
    * failure waits for live; only both failing shows the error state.
+   *
+   * Server render requests the Snowflake phase only: the live merge is the slow, per-caller read,
+   * and the browser starts it itself after hydration.
    */
   private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
     const state = { snowflakeFailed: false, liveLanded: false, liveFailed: false };
@@ -387,18 +391,24 @@ export class AllEmployeesComponent {
       take(1),
       filter(() => !state.liveLanded),
       tap(() => this.loadingState.set(false)),
-      catchError(() => {
+      catchError((error: unknown) => {
+        console.error('Failed to load org people roster (Snowflake):', error);
         state.snowflakeFailed = true;
         return state.liveFailed ? bothFailed() : EMPTY;
       })
     );
+    if (!isPlatformBrowser(this.platformId)) {
+      return snowflake$;
+    }
+
     const live$ = this.directory.getDirectory(orgUid).pipe(
       take(1),
       tap(() => {
         state.liveLanded = true;
         this.loadingState.set(false);
       }),
-      catchError(() => {
+      catchError((error: unknown) => {
+        console.error('Failed to load org people directory (live):', error);
         state.liveFailed = true;
         return state.snowflakeFailed ? bothFailed() : EMPTY;
       })
