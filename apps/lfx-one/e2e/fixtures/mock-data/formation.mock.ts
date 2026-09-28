@@ -90,11 +90,11 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     is_activating: false,
     announcement_date: mockFormations['cascade-data-alliance'].announcement_date,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: draft_project_record=done,
-    // contribution_agreement_executed=in_progress.
+    // contribution_agreement_executed=in_progress, domain_and_dns_transfer=blocked (non-gating).
     progress: { not_started: 0, in_progress: 1, blocked: 1, done: 1, skipped: 0 },
-    // A non-gating item is blocked while the next gate is merely in progress — the Blocking cell
+    // That non-gating item is blocked while the next gate is merely in progress — the Blocking cell
     // must name the gate, not the blocked item (#3066 precedence).
-    blocked_item_titles: ['Membership tiers'],
+    blocked_item_titles: ['Domain and DNS transfer'],
     next_gate_item: { item_key: 'contribution_agreement_executed', title: 'Contribution agreement executed', status: 'in_progress' },
     assignees: [],
   },

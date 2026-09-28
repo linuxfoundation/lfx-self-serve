@@ -378,6 +378,16 @@ export const FORMATION_ANNOUNCEMENT_TIMING_CLASS = {
   needed: 'text-amber-600',
 } as const satisfies Record<FormationAnnouncementTiming, string>;
 
+/**
+ * The Blocking cell's text colour on both formation tables (#3066/#3070) — danger for an item that
+ * is itself `blocked`, amber for a pending one. One map so the queue table and My Formations can't
+ * drift. Assembled outside the app's Tailwind `content` globs, so it is spread into the safelist.
+ */
+export const FORMATION_BLOCKING_CLASS = {
+  blocked: 'text-red-600',
+  pending: 'text-amber-600',
+} as const satisfies Record<'blocked' | 'pending', string>;
+
 /** The Announcement cell's second line for a `needed` timing (see {@link FormationAnnouncementTiming}). */
 export const FORMATION_ANNOUNCEMENT_NEEDED_LABEL = 'Needed to activate';
 

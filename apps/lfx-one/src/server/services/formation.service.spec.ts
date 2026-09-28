@@ -2189,19 +2189,25 @@ describe('FormationService', () => {
       expect(result.rows.every((row) => row.next_gate_item === null)).toBe(true);
     });
 
-    it('degrades instead of throwing when an item document is malformed past the fetch', async () => {
+    it('confines a malformed gate document to its own formation, never promoting a later gate to next', async () => {
       mockGateReads({
-        formations: [formationIndexRow({ blocked_item_titles: ['Legal review'] })],
+        formations: [
+          formationIndexRow({ formation_uid: 'formation:good', project_uid: 'good' }),
+          formationIndexRow({ formation_uid: 'formation:bad', project_uid: 'bad', blocked_item_titles: ['Legal review'] }),
+        ],
         gates: [
-          gateItem({ object_id: 'bad-1', item_key: 'unknown_a', title: undefined as unknown as string }),
-          gateItem({ object_id: 'bad-2', item_key: 'unknown_b', title: undefined as unknown as string }),
+          gateItem({ object_id: 'good-1', formation_uid: 'formation:good', item_key: 'charter_agreed', title: 'Charter agreed' }),
+          // An earlier gate is malformed; the later valid one must not be named as next.
+          gateItem({ object_id: 'bad-1', formation_uid: 'formation:bad', item_key: 'formation_review_packet', title: undefined as unknown as string }),
+          gateItem({ object_id: 'bad-2', formation_uid: 'formation:bad', item_key: 'contribution_agreement', title: 'Contribution agreement' }),
         ],
       });
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows).toHaveLength(1);
-      expect(result.rows[0].next_gate_item).toBeNull();
+      const byUid = new Map(result.rows.map((row) => [row.formation_uid, row]));
+      expect(byUid.get('formation:good')?.next_gate_item?.title).toBe('Charter agreed');
+      expect(byUid.get('formation:bad')?.next_gate_item).toBeNull();
     });
 
     it('reads gates only for the rows it serves, after search filtering', async () => {

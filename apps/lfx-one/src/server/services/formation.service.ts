@@ -1170,19 +1170,23 @@ export class FormationService {
 
   /**
    * The next outstanding gate item per formation (#3066) — the first gating item not yet `done`, in
-   * checklist order with open (non-skipped) gates preferred, via {@link selectNextFormationGateItem}. The `formation` projection carries
-   * only per-status counts, so this reads the `formation_item` index: one request per
-   * `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of `formation_uid:` tags (OR'd), AND'd with
-   * `lifecycle:live` — the item document carries both tags and the same access relation as its
-   * formation document (`lfx-v2-formation-service` `indexer_publisher.go` `itemTags`), so a caller
-   * who can see a row can see its items. The item document has no `gate`/`status` tag, so the
-   * open-gate predicate rides in `cel_filter` instead: the query service applies it in-process after
-   * OpenSearch and before the per-resource access check, so only open gates (≤4 of ~17 items per
-   * formation) are access-checked and returned. Short or emptied raw pages are handled server-side
-   * (`docs/query-service-contract.md` § CEL Filter), and `page_size` sits at the contract's 1000
-   * maximum so a whole-queue read walks a handful of raw pages, not dozens. Every formation asked
-   * about gets an entry (`null` when no gate is open). Returns `null` — never throws — when any batch fails: a partial map would name
-   * a later gate as "next" for a formation whose earlier items were simply not returned.
+   * checklist order with open (non-skipped) gates preferred, via {@link selectNextFormationGateItem}.
+   * The `formation` projection carries only per-status counts, so this reads the `formation_item`
+   * index: one request per `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of `formation_uid:` tags
+   * (OR'd), AND'd with `lifecycle:live` — the item document carries both tags and the same access
+   * relation as its formation document (`lfx-v2-formation-service` `indexer_publisher.go`
+   * `itemTags`), so a caller who can see a row can see its items. The item document has no
+   * `gate`/`status` tag, so the outstanding-gate predicate rides in `cel_filter` instead: the query
+   * service applies it in-process after OpenSearch and before the per-resource access check, so only
+   * outstanding gates (at most the template's 4 gates of 17 items per formation) are access-checked
+   * and returned. Short or emptied raw pages are handled server-side (`docs/query-service-contract.md`
+   * § CEL Filter), and `page_size` sits at the contract's maximum so a whole-queue read walks a
+   * handful of raw pages, not dozens. Every formation asked about gets an entry (`null` when no gate
+   * is outstanding). A malformed document costs only its own formation, which gets `null` (so the row
+   * falls back to `blocked_item_titles`) rather than a later gate promoted to "next"; one with no
+   * usable `formation_uid` can't be attributed and is dropped. Returns `null` — never throws — when
+   * any batch fails or selection hits a document the backstops missed: a partial map would name a
+   * later gate as "next" for a formation whose earlier items were simply not returned.
    */
   private async fetchNextGateItems(req: Request, formationUids: string[]): Promise<Map<string, FormationNextGateItem | null> | null> {
     // One guard around the fetch *and* the selection: the documents are untrusted, and both callers
@@ -1220,26 +1224,37 @@ export class FormationService {
       const rawItems = batches.flat();
 
       const gatesByFormation = new Map<string, UpstreamFormationItemRow[]>();
-      let unknownKeys = 0;
+      const unknownKeys = new Set<string>();
+      let malformed = 0;
+      // Formations with at least one malformed gate document: selecting from the rest could promote a
+      // later gate to "next", so these resolve to `null` instead.
+      const poisoned = new Set<string>();
       for (const item of rawItems) {
         // Client-side backstops for the tags and the `cel_filter` — neither is trusted alone, same
         // as the other index reads; `selectNextFormationGateItem` re-checks gate and status too.
         if (!item.gate || !isFormationLifecycleLive(normalizeFormationLifecycle(item.lifecycle))) continue;
-        if (!isFormationTemplateItemKey(item.item_key)) unknownKeys++;
+        // A malformed document costs its own formation only, never every other row's next gate.
+        if (typeof item.formation_uid !== 'string' || typeof item.item_key !== 'string' || typeof item.title !== 'string' || typeof item.status !== 'string') {
+          malformed++;
+          if (typeof item.formation_uid === 'string') poisoned.add(item.formation_uid);
+          continue;
+        }
+        if (!isFormationTemplateItemKey(item.item_key)) unknownKeys.add(item.item_key);
         const bucket = gatesByFormation.get(item.formation_uid) ?? [];
         bucket.push(item);
         gatesByFormation.set(item.formation_uid, bucket);
       }
       for (const uid of uniqueUids) {
-        result.set(uid, selectNextFormationGateItem(gatesByFormation.get(uid) ?? []));
+        result.set(uid, poisoned.has(uid) ? null : selectNextFormationGateItem(gatesByFormation.get(uid) ?? []));
       }
       logger.debug(req, 'fetch_next_gate_items', 'Resolved next outstanding gate per formation', {
         formations: uniqueUids.length,
         items: rawItems.length,
-        with_open_gate: [...result.values()].filter(Boolean).length,
+        with_outstanding_gate: [...result.values()].filter(Boolean).length,
         // Non-zero means FORMATION_TEMPLATE has drifted from the upstream seed: those gates sort
         // after every known key, so "checklist order" quietly becomes title order for them.
-        unknown_item_keys: unknownKeys,
+        unknown_item_keys: unknownKeys.size,
+        malformed_items: malformed,
       });
       return result;
     } catch (error) {
