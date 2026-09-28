@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { InsightsToken, InsightsTokenEligibility } from '@lfx-one/shared/interfaces';
 import { InsightsTokensService } from '@services/insights-tokens.service';
 import { UserService } from '@services/user.service';
@@ -32,7 +32,7 @@ describe('InsightsTokensComponent', () => {
   let userService: { impersonating: WritableSignal<boolean> };
   let component: InsightsTokensComponent;
 
-  const create = (): void => {
+  const create = (): ComponentFixture<InsightsTokensComponent> => {
     TestBed.configureTestingModule({
       imports: [InsightsTokensComponent],
       providers: [
@@ -44,8 +44,10 @@ describe('InsightsTokensComponent', () => {
       ],
     });
     TestBed.overrideComponent(InsightsTokensComponent, { set: { template: '', imports: [] } });
-    component = TestBed.createComponent(InsightsTokensComponent).componentInstance;
+    const fixture = TestBed.createComponent(InsightsTokensComponent);
+    component = fixture.componentInstance;
     component['load']();
+    return fixture;
   };
 
   beforeEach(() => {
@@ -145,6 +147,23 @@ describe('InsightsTokensComponent', () => {
 
     destroyed.next();
     expect(dialogService.open).toHaveBeenLastCalledWith(InsightsTokenRevealDialogComponent, expect.anything());
+  });
+
+  it('still reveals the secret when the group is torn down mid-create, such as a runtime flag change', () => {
+    const closed = new Subject<unknown>();
+    const destroyed = new Subject<void>();
+    dialogService.open.mockReturnValueOnce({ onClose: closed, onDestroy: destroyed });
+    const fixture = create();
+
+    component['openCreateDialog']();
+    fixture.destroy();
+    closed.next({ token: TOKEN, secret: 'lfi_secret' });
+    destroyed.next();
+
+    expect(dialogService.open).toHaveBeenLastCalledWith(
+      InsightsTokenRevealDialogComponent,
+      expect.objectContaining({ data: { name: TOKEN.name, secret: 'lfi_secret' } })
+    );
   });
 
   it('does nothing when the create dialog is cancelled', () => {

@@ -111,14 +111,14 @@ export class InsightsTokensComponent {
 
     // onClose emits before the leave animation ends, and that end drops the body's p-overflow-hidden.
     // Opening the reveal from onClose would lose its scroll lock, so wait for onDestroy (see profile-clas #2066).
-    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
+    // Scoped to the dialog, not this component: a runtime flag change can remove this gated group while the
+    // parent-owned dialog is still minting, and cancelling here would lose the one-time secret. take(1) ends both.
+    ref.onClose.pipe(take(1)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
       if (!created) {
         return;
       }
       this.tokens.update((tokens) => [created.token, ...tokens]);
-      ref.onDestroy
-        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => this.openRevealDialog({ name: created.token.name, secret: created.secret }));
+      ref.onDestroy.pipe(take(1)).subscribe(() => this.openRevealDialog({ name: created.token.name, secret: created.secret }));
     });
   }
 
