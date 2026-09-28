@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Datadog RUM custom action emitted when a user clicks the "Still need Open Profile?" return
- * link in the sidebar (LFXV2-3336), so click-throughs are queryable per-user.
+ * RUM action for the "Need help with your Profile?" link in the Profile & Account page head
+ * (#2986; originally LFXV2-3336's sidebar banner) — value unchanged across both so the timeseries continues.
  */
 export const OPEN_PROFILE_BANNER_LINK_CLICKED = 'open_profile_banner_link_click';
