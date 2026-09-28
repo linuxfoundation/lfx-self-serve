@@ -223,14 +223,12 @@ export interface FormationTableRow extends FormationQueueRow {
   progressSegments: FormationProgressSegment[];
   /** `formatFormationProgressSummary(progress)` — the bar's `aria-label` and tooltip, e.g. "17 items · 3 done · 1 in progress · 2 blocked · 11 not started". */
   progressSummary: string;
-  /**
-   * The one item the Blocking cell names (#3066): `next_gate_item.title`, else — only when the BFF's
-   * item read degraded (`!next_gate_resolved`) and gates aren't cleared — `blocked_item_titles[0]`.
-   * `null` renders "Formation to set Active" for a gates-cleared row, or a dash.
-   */
+  /** `resolveFormationBlockingItem(row)?.title` (#3066) — `null` renders "Formation to set Active" for a gates-cleared row, or a dash. */
   blockingTitle: string | null;
-  /** Whether {@link blockingTitle}'s item is itself in `blocked` status — styles the cell as danger rather than pending. */
+  /** Whether {@link blockingTitle}'s item is itself in `blocked` status. */
   blockingIsBlocked: boolean;
+  /** The Blocking cell's text colour — danger for a blocked item, amber for a pending one. */
+  blockingClass: string;
 }
 
 /**

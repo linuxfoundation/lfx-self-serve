@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  FormationBlockingItem,
   FormationItem,
   FormationItemStatus,
   FormationNextGateItem,
@@ -106,18 +107,46 @@ const FORMATION_TEMPLATE_ITEM_ORDER: ReadonlyMap<string, number> = new Map(
 );
 
 /**
- * The formation list tables' "Blocking" column (#3066): the first gating item that is not yet
- * `done` or `skipped` (a skipped gate is resolved — GH-2329's escape hatch), in checklist order.
- * Unlike {@link deriveFormationBlockingItemTitle}, an open `not_started`/`in_progress` gate counts:
- * it is what stands between the formation and Active. Keys the template doesn't know sort after
- * every known key, then by title, so a new upstream item still surfaces deterministically.
+ * The formation list tables' "Blocking" column (#3066): the first gating item that is still open
+ * (`not_started`/`in_progress`/`blocked`), in checklist order — a skipped gate is passed over while
+ * any open gate remains. Unlike {@link deriveFormationBlockingItemTitle}, an open
+ * `not_started`/`in_progress` gate counts: it is what stands between the formation and Active.
+ *
+ * When only skipped gates remain, the first skipped one is named rather than nothing: the formation
+ * service counts every gate that is not `done` as outstanding (`progress.go` `gateSummaryFromItems`),
+ * so a skipped gate still holds `gates_cleared` false and is the real reason the row can't activate.
+ * Keys the template doesn't know sort after every known key, then by title.
  */
 export function selectNextFormationGateItem(items: Pick<UpstreamFormationItemRow, 'item_key' | 'title' | 'status' | 'gate'>[]): FormationNextGateItem | null {
-  const openGates = items.filter((item) => item.gate && item.status !== 'done' && item.status !== 'skipped');
-  if (openGates.length === 0) return null;
+  const outstandingGates = items.filter((item) => item.gate && item.status !== 'done');
+  const openGates = outstandingGates.filter((item) => item.status !== 'skipped');
+  const candidates = openGates.length > 0 ? openGates : outstandingGates;
+  if (candidates.length === 0) return null;
   const orderOf = (key: string): number => FORMATION_TEMPLATE_ITEM_ORDER.get(key) ?? Number.MAX_SAFE_INTEGER;
-  const [next] = [...openGates].sort((a, b) => orderOf(a.item_key) - orderOf(b.item_key) || a.title.localeCompare(b.title));
+  const [next] = [...candidates].sort((a, b) => orderOf(a.item_key) - orderOf(b.item_key) || a.title.localeCompare(b.title));
   return { item_key: next.item_key, title: next.title, status: next.status };
+}
+
+/** Whether `FORMATION_TEMPLATE` knows `key` — lets a caller count keys that would sort last, i.e. template drift (#3066). */
+export function isFormationTemplateItemKey(key: string): boolean {
+  return FORMATION_TEMPLATE_ITEM_ORDER.has(key);
+}
+
+/**
+ * The one item a formation row's "Blocking" cell names (#3066) — the single rule both the queue
+ * table and My Formations apply. The next outstanding gate wins; a gates-cleared row names nothing
+ * (the cell reads "Formation to set Active"); otherwise the first `blocked` title stands in. That
+ * fallback covers a degraded item read and the two index documents disagreeing (no outstanding
+ * gate in the item index while the projection still says gates aren't cleared), so the cell never
+ * goes blank while the Blocked tile still counts a blocker.
+ */
+export function resolveFormationBlockingItem(
+  row: Pick<FormationQueueRow, 'next_gate_item' | 'gates_cleared' | 'blocked_item_titles'>
+): FormationBlockingItem | null {
+  if (row.next_gate_item) return { title: row.next_gate_item.title, blocked: row.next_gate_item.status === 'blocked' };
+  if (row.gates_cleared) return null;
+  const firstBlocked = row.blocked_item_titles[0];
+  return firstBlocked ? { title: firstBlocked, blocked: true } : null;
 }
 
 /**

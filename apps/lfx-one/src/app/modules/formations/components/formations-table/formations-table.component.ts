@@ -37,6 +37,7 @@ import {
   formatFormationProgressSummary,
   getFormationAnnouncementTiming,
   getFormationQueueStageDisplay,
+  resolveFormationBlockingItem,
   sumFormationProgress,
 } from '@lfx-one/shared/utils';
 import type { TablePageEvent } from 'primeng/table';
@@ -225,10 +226,7 @@ export class FormationsTableComponent {
   private toDisplayRow(row: FormationQueueRow): FormationTableRow {
     const stageDisplay = getFormationQueueStageDisplay(row.sub_stage, row.sub_stage_raw);
     const announcementTiming = getFormationAnnouncementTiming(row.announcement_date, row.gates_cleared);
-    // Next open gate first; a gates-cleared row names no item (the cell reads "Formation to set
-    // Active"). The first blocked title stands in only when the BFF's item read degraded — a
-    // resolved read with no open gate is a dash, never a non-gating blocked item (#3066).
-    const fallbackBlockedTitle = row.gates_cleared || row.next_gate_resolved ? null : (row.blocked_item_titles[0] ?? null);
+    const blocking = resolveFormationBlockingItem(row);
     return {
       ...row,
       stageLabel: stageDisplay.label,
@@ -246,8 +244,9 @@ export class FormationsTableComponent {
       totalCount: sumFormationProgress(row.progress),
       progressSegments: buildFormationProgressSegments(row.progress),
       progressSummary: formatFormationProgressSummary(row.progress),
-      blockingTitle: row.next_gate_item?.title ?? fallbackBlockedTitle,
-      blockingIsBlocked: row.next_gate_item ? row.next_gate_item.status === 'blocked' : fallbackBlockedTitle !== null,
+      blockingTitle: blocking?.title ?? null,
+      blockingIsBlocked: blocking?.blocked === true,
+      blockingClass: blocking?.blocked ? 'text-red-600' : 'text-amber-600',
     };
   }
 

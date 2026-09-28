@@ -623,18 +623,13 @@ export interface FormationQueueRow {
   progress: Partial<Record<FormationItemStatus, number>>;
   blocked_item_titles: string[];
   /**
-   * The "Blocking" column (#3066): the first gating item not yet `done`/`skipped`, in checklist
-   * order — BFF-derived from the `formation_item` index by `selectNextFormationGateItem`, since the
-   * `formation` projection carries only status counts. `null` when no gate is open, or when the
-   * item read degraded — see {@link next_gate_resolved} for which.
+   * The "Blocking" column (#3066): the first open gating item in checklist order, or the first
+   * skipped one when only skipped gates remain (see `selectNextFormationGateItem`) — BFF-derived
+   * from the `formation_item` index, since the `formation` projection carries only status counts.
+   * `null` when no gate is outstanding, or when the item read degraded; either way the cell is
+   * resolved by `resolveFormationBlockingItem`, which falls back to {@link blocked_item_titles}.
    */
   next_gate_item: FormationNextGateItem | null;
-  /**
-   * Whether the BFF's item read succeeded, so a `null` {@link next_gate_item} really means "no open
-   * gate". `false` only when that read degraded, the one case the Blocking column falls back to
-   * {@link blocked_item_titles} — the same rule `MyFormationSummary.blocking_item_title` follows.
-   */
-  next_gate_resolved: boolean;
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];
 }
@@ -647,7 +642,7 @@ export interface FormationQueueRow {
  * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
  * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
  */
-export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle' | 'next_gate_item' | 'next_gate_resolved'> & {
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle' | 'next_gate_item'> & {
   sub_stage: string;
   /** The projection's `lifecycle` verbatim — untrusted, so a bare string here and a {@link FormationLifecycle} only after `normalizeQueueRow`. */
   lifecycle: string;
@@ -791,6 +786,13 @@ export interface FormationNextGateItem {
   status: FormationItemStatus;
 }
 
+/** What a formation row's "Blocking" cell names (#3066) — see `resolveFormationBlockingItem`. */
+export interface FormationBlockingItem {
+  title: string;
+  /** The item is itself in `blocked` status — the cell renders it as danger rather than pending. */
+  blocked: boolean;
+}
+
 /**
  * One checklist item assigned to the caller, across every project they can read (GH-1956). Built
  * from a `type=formation_item` query against the item index `lfx-v2-formation-service` v0.1.2
@@ -882,7 +884,7 @@ export interface MyFormationSummary {
    */
   gating_done: number;
   gating_total: number;
-  /** The formation's next open gate item's title (#3066, {@link FormationQueueRow.next_gate_item}); falls back to the first `blocked` item's title only when the item read degraded. */
+  /** `resolveFormationBlockingItem(...)?.title` (#3066) — the next outstanding gate, else the first `blocked` title while gates aren't cleared. */
   blocking_item_title: string | null;
   /** Whether {@link blocking_item_title}'s item is itself `blocked` — always `true` for the degraded `blocked_item_titles` fallback. Styles the cell as danger, matching the queue table. */
   blocking_item_blocked: boolean;

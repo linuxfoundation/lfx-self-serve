@@ -33,6 +33,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   createUnavailableFormationPeopleResponse,
+  FORMATION_OPEN_GATE_CEL_FILTER,
   FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
   FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
@@ -41,8 +42,8 @@ import {
   FORMATION_SYSTEM_ACTOR_USERNAME,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
-  FORMATION_OPEN_GATE_CEL_FILTER,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
@@ -52,9 +53,11 @@ import {
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
+  isFormationTemplateItemKey,
   maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
+  resolveFormationBlockingItem,
   selectNextFormationGateItem,
   summarizeMyFormationItems,
 } from '@lfx-one/shared/utils';
@@ -866,10 +869,13 @@ export class FormationService {
         if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
           continue;
         }
-        // The next open gate (#3066); the first `blocked` title only when that read degraded — the
-        // same rule the queue table applies off `next_gate_resolved`.
-        const nextGate = nextGates?.get(aggregateRow.formation_uid) ?? null;
-        const fallbackBlockedTitle = nextGates ? null : (aggregateRow.blocked_item_titles[0] ?? null);
+        // The same Blocking rule the queue table applies (#3066) — one shared helper, so the two
+        // surfaces can't drift on fallback precedence.
+        const blocking = resolveFormationBlockingItem({
+          next_gate_item: nextGates?.get(aggregateRow.formation_uid) ?? null,
+          gates_cleared: aggregateRow.gates_cleared,
+          blocked_item_titles: aggregateRow.blocked_item_titles,
+        });
         const itemsTotal = Object.values(aggregateRow.progress).reduce((sum: number, count) => sum + (count ?? 0), 0);
         formations.push({
           formation_uid: aggregateRow.formation_uid,
@@ -890,8 +896,8 @@ export class FormationService {
           // upstream adds one. The card guards this line on gating_total > 0.
           gating_done: 0,
           gating_total: 0,
-          blocking_item_title: nextGate?.title ?? fallbackBlockedTitle,
-          blocking_item_blocked: nextGate ? nextGate.status === 'blocked' : fallbackBlockedTitle !== null,
+          blocking_item_title: blocking?.title ?? null,
+          blocking_item_blocked: blocking?.blocked === true,
           gates_cleared: aggregateRow.gates_cleared,
         });
       }
@@ -1150,13 +1156,13 @@ export class FormationService {
 
     // #3066 — the Blocking column's next open gate, read for the rows actually served (post
     // filter/search), never for the tiles. A degraded read leaves every `next_gate_item` null and
-    // the table falls back to `blocked_item_titles`; the queue itself never fails on it.
+    // `resolveFormationBlockingItem` falls back to `blocked_item_titles`; the queue never fails on it.
     const nextGates = await this.fetchNextGateItems(
       req,
       rows.map((row) => row.formation_uid)
     );
     if (nextGates) {
-      rows = rows.map((row) => ({ ...row, next_gate_item: nextGates.get(row.formation_uid) ?? null, next_gate_resolved: true }));
+      rows = rows.map((row) => ({ ...row, next_gate_item: nextGates.get(row.formation_uid) ?? null }));
     }
 
     return { tiles, rows };
@@ -1179,17 +1185,21 @@ export class FormationService {
    * a later gate as "next" for a formation whose earlier items were simply not returned.
    */
   private async fetchNextGateItems(req: Request, formationUids: string[]): Promise<Map<string, FormationNextGateItem | null> | null> {
-    const uniqueUids = [...new Set(formationUids)];
-    const result = new Map<string, FormationNextGateItem | null>();
-    if (uniqueUids.length === 0) return result;
-
-    const tagBatches: string[][] = [];
-    for (let i = 0; i < uniqueUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
-      tagBatches.push(uniqueUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((uid) => `formation_uid:${uid}`));
-    }
-
-    let rawItems: UpstreamFormationItemRow[];
+    // One guard around the fetch *and* the selection: the documents are untrusted, and both callers
+    // rely on this never throwing — the Me lens even leaves the promise un-awaited on some early
+    // paths, so a rejection here would surface as an unhandled rejection.
     try {
+      const uniqueUids = [...new Set(formationUids)];
+      const result = new Map<string, FormationNextGateItem | null>();
+      if (uniqueUids.length === 0) return result;
+
+      const tagBatches: string[][] = [];
+      for (let i = 0; i < uniqueUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+        tagBatches.push(uniqueUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((uid) => `formation_uid:${uid}`));
+      }
+
+      // All-or-nothing across batches (Promise.all, not allSettled): a partial map would name a
+      // later gate as "next" for a formation whose earlier items were simply not returned.
       const batches = await Promise.all(
         tagBatches.map((tags) =>
           fetchAllQueryResources<UpstreamFormationItemRow>(
@@ -1200,37 +1210,42 @@ export class FormationService {
                 tags,
                 tags_all: ['lifecycle:live'],
                 cel_filter: FORMATION_OPEN_GATE_CEL_FILTER,
-                page_size: 1000,
+                page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
                 ...(pageToken && { page_token: pageToken }),
               }),
             { failOnPartial: true }
           )
         )
       );
-      rawItems = batches.flat();
+      const rawItems = batches.flat();
+
+      const gatesByFormation = new Map<string, UpstreamFormationItemRow[]>();
+      let unknownKeys = 0;
+      for (const item of rawItems) {
+        // Client-side backstops for the tags and the `cel_filter` — neither is trusted alone, same
+        // as the other index reads; `selectNextFormationGateItem` re-checks gate and status too.
+        if (!item.gate || !isFormationLifecycleLive(normalizeFormationLifecycle(item.lifecycle))) continue;
+        if (!isFormationTemplateItemKey(item.item_key)) unknownKeys++;
+        const bucket = gatesByFormation.get(item.formation_uid) ?? [];
+        bucket.push(item);
+        gatesByFormation.set(item.formation_uid, bucket);
+      }
+      for (const uid of uniqueUids) {
+        result.set(uid, selectNextFormationGateItem(gatesByFormation.get(uid) ?? []));
+      }
+      logger.debug(req, 'fetch_next_gate_items', 'Resolved next outstanding gate per formation', {
+        formations: uniqueUids.length,
+        items: rawItems.length,
+        with_open_gate: [...result.values()].filter(Boolean).length,
+        // Non-zero means FORMATION_TEMPLATE has drifted from the upstream seed: those gates sort
+        // after every known key, so "checklist order" quietly becomes title order for them.
+        unknown_item_keys: unknownKeys,
+      });
+      return result;
     } catch (error) {
-      logger.warning(req, 'fetch_next_gate_items', 'Formation item query failed; Blocking column falls back to blocked items', { err: error });
+      logger.warning(req, 'fetch_next_gate_items', 'Next-gate read failed; Blocking column falls back to blocked items', { err: error });
       return null;
     }
-
-    const gatesByFormation = new Map<string, UpstreamFormationItemRow[]>();
-    for (const item of rawItems) {
-      // Client-side backstops for the tags and the `cel_filter` — neither is trusted alone, same as
-      // the other index reads; `selectNextFormationGateItem` re-checks gate and status too.
-      if (!item.gate || !isFormationLifecycleLive(normalizeFormationLifecycle(item.lifecycle))) continue;
-      const bucket = gatesByFormation.get(item.formation_uid) ?? [];
-      bucket.push(item);
-      gatesByFormation.set(item.formation_uid, bucket);
-    }
-    for (const uid of uniqueUids) {
-      result.set(uid, selectNextFormationGateItem(gatesByFormation.get(uid) ?? []));
-    }
-    logger.debug(req, 'fetch_next_gate_items', 'Resolved next open gate per formation', {
-      formations: uniqueUids.length,
-      items: rawItems.length,
-      with_open_gate: [...result.values()].filter(Boolean).length,
-    });
-    return result;
   }
 
   /**
@@ -1253,7 +1268,6 @@ export class FormationService {
       progress: row.progress ?? {},
       blocked_item_titles: row.blocked_item_titles ?? [],
       next_gate_item: null,
-      next_gate_resolved: false,
       assignees: row.assignees ?? [],
     };
   }

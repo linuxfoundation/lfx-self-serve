@@ -100,14 +100,16 @@ export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
  * carrying the old key. `formation-checklist-section.component.ts` buckets such items here instead
  * of silently dropping them.
  */
-/**
- * `cel_filter` for the formation list tables' next-gate read (#3066): gating items not yet
- * resolved. Applied by the query service in-process, before its access check — the `formation_item`
- * document carries no `gate`/`status` tag to filter on instead.
- */
-export const FORMATION_OPEN_GATE_CEL_FILTER = 'data.gate == true && data.status != "done" && data.status != "skipped"';
-
 export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as const;
+
+/**
+ * `cel_filter` for the formation list tables' next-gate read (#3066): gating items not yet `done`
+ * — skipped gates included, since the formation service still counts them as outstanding and
+ * `selectNextFormationGateItem` names one when nothing else is open. Applied by the query service
+ * in-process, before its access check — the `formation_item` document carries no `gate`/`status`
+ * tag to filter on instead.
+ */
+export const FORMATION_OPEN_GATE_CEL_FILTER = 'data.gate == true && data.status != "done"';
 
 /**
  * `FormationItemDrawerComponent`'s sentinel for "closed" or "not yet loaded" — a factory, not a

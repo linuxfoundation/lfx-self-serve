@@ -17,6 +17,8 @@ import {
   getFormationAnnouncementTiming,
   getFormationCalendarDayOffset,
   groupFormationItemsBySection,
+  isFormationTemplateItemKey,
+  resolveFormationBlockingItem,
   selectNextFormationGateItem,
   sumFormationProgress,
 } from './formation-checklist.utils';
@@ -424,13 +426,22 @@ describe('selectNextFormationGateItem (#3066)', () => {
     expect(next).toEqual({ item_key: 'charter_agreed', title: 'Charter agreed', status: 'in_progress' });
   });
 
-  it('treats done and skipped gates as resolved', () => {
+  it('passes over done and skipped gates while an open gate remains', () => {
     const next = selectNextFormationGateItem([
       gate('formation_review_packet', 'Formation review and packet', 'done'),
       gate('charter_agreed', 'Charter agreed', 'skipped'),
       gate('contribution_agreement', 'Contribution agreement (DocuSign)', 'blocked'),
     ]);
     expect(next).toEqual({ item_key: 'contribution_agreement', title: 'Contribution agreement (DocuSign)', status: 'blocked' });
+  });
+
+  it('names the first skipped gate when only skipped gates remain — upstream still counts it as outstanding', () => {
+    const next = selectNextFormationGateItem([
+      gate('contribution_agreement', 'Contribution agreement (DocuSign)', 'skipped'),
+      gate('formation_review_packet', 'Formation review and packet', 'done'),
+      gate('charter_agreed', 'Charter agreed', 'skipped'),
+    ]);
+    expect(next).toEqual({ item_key: 'charter_agreed', title: 'Charter agreed', status: 'skipped' });
   });
 
   it('ignores non-gating items even when they come first in the checklist', () => {
@@ -451,5 +462,44 @@ describe('selectNextFormationGateItem (#3066)', () => {
   it('returns null when no gate is open', () => {
     expect(selectNextFormationGateItem([])).toBeNull();
     expect(selectNextFormationGateItem([gate('charter_agreed', 'Charter agreed', 'done'), gate('comms', 'Comms', 'not_started', false)])).toBeNull();
+  });
+});
+
+describe('resolveFormationBlockingItem (#3066)', () => {
+  const row = (overrides: Partial<Parameters<typeof resolveFormationBlockingItem>[0]> = {}) => ({
+    next_gate_item: null,
+    gates_cleared: false,
+    blocked_item_titles: [],
+    ...overrides,
+  });
+
+  it('names the next gate, blocked only when that gate is itself blocked', () => {
+    expect(
+      resolveFormationBlockingItem(
+        row({ next_gate_item: { item_key: 'charter_agreed', title: 'Charter agreed', status: 'in_progress' }, blocked_item_titles: ['Comms'] })
+      )
+    ).toEqual({
+      title: 'Charter agreed',
+      blocked: false,
+    });
+    expect(resolveFormationBlockingItem(row({ next_gate_item: { item_key: 'charter_agreed', title: 'Charter agreed', status: 'blocked' } }))?.blocked).toBe(
+      true
+    );
+  });
+
+  it('names nothing once gates are cleared, even with blocked non-gating items', () => {
+    expect(resolveFormationBlockingItem(row({ gates_cleared: true, blocked_item_titles: ['Comms'] }))).toBeNull();
+  });
+
+  it('falls back to the first blocked title when no gate is outstanding and gates are not cleared', () => {
+    expect(resolveFormationBlockingItem(row({ blocked_item_titles: ['Legal review', 'Comms'] }))).toEqual({ title: 'Legal review', blocked: true });
+    expect(resolveFormationBlockingItem(row())).toBeNull();
+  });
+});
+
+describe('isFormationTemplateItemKey (#3066)', () => {
+  it('recognizes template keys only', () => {
+    expect(isFormationTemplateItemKey('charter_agreed')).toBe(true);
+    expect(isFormationTemplateItemKey('contribution_agreement_executed')).toBe(false);
   });
 });
