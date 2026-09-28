@@ -162,9 +162,10 @@ describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
   });
 
   it('checks a long adversarial address in linear time', () => {
-    const adversarial = `!@!.${'!.'.repeat(50_000)}`;
+    // Non-matching (trailing space), so a backtracking pattern would be forced through its worst case.
+    const adversarial = `!@!.${'!.'.repeat(50_000)} `;
     const started = Date.now();
-    toProjectApplicationEmailLink(adversarial);
+    expect(toProjectApplicationEmailLink(adversarial).href).toBeNull();
     expect(Date.now() - started).toBeLessThan(200);
   });
 });

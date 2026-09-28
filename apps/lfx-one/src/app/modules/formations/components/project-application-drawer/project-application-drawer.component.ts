@@ -35,6 +35,7 @@ import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
+import type { DrawerPassThroughOptions } from 'primeng/types/drawer';
 import { combineLatest, distinctUntilChanged, filter, finalize, map, Observable, pairwise, take } from 'rxjs';
 
 import { ProjectApplicationAcceptDialogComponent } from '../project-application-accept-dialog/project-application-accept-dialog.component';
@@ -103,12 +104,9 @@ export class ProjectApplicationDrawerComponent {
     buildProjectApplicationAnswerSections(this.application()?.application)
   );
   protected readonly projectName: Signal<string> = computed(() => getProjectApplicationDisplayName(this.application()));
-  protected readonly isOpen = computed(() => {
-    const application = this.application();
-    return application ? isProjectApplicationOpen(application) : false;
-  });
-  protected readonly isStaff = computed(() => this.mode() === 'staff');
-  protected readonly busy = computed(() => this.busyAction() !== null);
+  protected readonly isOpen: Signal<boolean> = this.initIsOpen();
+  protected readonly isStaff: Signal<boolean> = computed(() => this.mode() === 'staff');
+  protected readonly busy: Signal<boolean> = computed(() => this.busyAction() !== null);
   protected readonly statusCallout: Signal<ProjectApplicationStatusCallout | null> = computed(() =>
     getProjectApplicationStatusCallout(this.application()?.state, this.mode())
   );
@@ -121,7 +119,7 @@ export class ProjectApplicationDrawerComponent {
    * p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. The footer
    * template stays statically declared, so while editing (the form has its own buttons) it is hidden via `pt`.
    */
-  protected readonly drawerPt: Signal<Record<string, Record<string, string>>> = this.initDrawerPt();
+  protected readonly drawerPt: Signal<DrawerPassThroughOptions> = this.initDrawerPt();
   /** The element that had focus when the drawer opened, handed focus back on every close path. */
   private opener: HTMLElement | null = null;
 
@@ -237,6 +235,13 @@ export class ProjectApplicationDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initIsOpen(): Signal<boolean> {
+    return computed(() => {
+      const application = this.application();
+      return application ? isProjectApplicationOpen(application) : false;
+    });
+  }
+
   private initSubmitterEmailLink(): Signal<ProjectApplicationAnswerLink | null> {
     return computed(() => {
       const email = this.application()?.submitter_email;
@@ -244,7 +249,7 @@ export class ProjectApplicationDrawerComponent {
     });
   }
 
-  private initDrawerPt(): Signal<Record<string, Record<string, string>>> {
+  private initDrawerPt(): Signal<DrawerPassThroughOptions> {
     return computed(() => ({
       root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' },
       footer: { class: this.editing() || !this.application() ? 'hidden' : 'border-t border-gray-200' },

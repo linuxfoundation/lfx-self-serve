@@ -72,9 +72,9 @@ export const PROJECT_APPLICATION_EMAIL_LIST_KEYS: ReadonlySet<string> = new Set(
 export const PROJECT_APPLICATION_EMAIL_KEYS: ReadonlySet<string> = new Set(['legal_contact_email']);
 
 /**
- * Characters that keep an email answer from becoming a `mailto:` link: whitespace, mailto-header (`?&=%`) and
- * URI-delimiter (`#/\`) characters, so a link always targets exactly the address it displays. A single-character
- * class, so testing it runs in linear time on any input.
+ * Characters that keep an email answer from becoming a `mailto:` link: whitespace, address-syntax specials
+ * (`<>"'(),;:`), mailto-header (`?&=%`) and URI-delimiter (`#/\`) characters, so a link always targets exactly
+ * the address it displays. A single-character class, so testing it runs in linear time on any input.
  */
 export const PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX = /[\s<>"'(),;:?&=%#/\\]/;
 

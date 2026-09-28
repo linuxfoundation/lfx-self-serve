@@ -4,10 +4,17 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import type { Project, ProjectApplication, ProjectApplicationStatusCallout, ProjectApplicationViewMode } from '@lfx-one/shared/interfaces';
+import type {
+  Project,
+  ProjectApplication,
+  ProjectApplicationAnswerLink,
+  ProjectApplicationStatusCallout,
+  ProjectApplicationViewMode,
+} from '@lfx-one/shared/interfaces';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { Confirmation, ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import type { DrawerPassThroughOptions } from 'primeng/types/drawer';
 import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,8 +34,8 @@ interface DrawerAccess {
   moreActions: () => MenuItem[];
   statusCallout: () => ProjectApplicationStatusCallout | null;
   showUpdated: () => boolean;
-  submitterEmailLink: () => { text: string; href: string | null } | null;
-  drawerPt: () => Record<string, Record<string, string>>;
+  submitterEmailLink: () => ProjectApplicationAnswerLink | null;
+  drawerPt: () => DrawerPassThroughOptions;
 }
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -160,9 +167,9 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
 
   it('hides the footer while editing and shows it with a divider otherwise', async () => {
     const { component } = await setup('submitter');
-    expect(component.drawerPt()['footer']['class']).toBe('border-t border-gray-200');
+    expect((component.drawerPt()?.footer as { class?: string } | undefined)?.class).toBe('border-t border-gray-200');
     component.startEditing();
-    expect(component.drawerPt()['footer']['class']).toBe('hidden');
+    expect((component.drawerPt()?.footer as { class?: string } | undefined)?.class).toBe('hidden');
   });
 
   it('closes every state transition once the application is decided', async () => {
