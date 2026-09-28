@@ -77,14 +77,11 @@
 
       <div class="flex flex-col gap-3" data-testid="events-speakers-by-year">
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Proposals per year</h4>
-        <div class="h-40" role="img" aria-label="Proposals per year chart. The following table lists the same values." data-testid="events-speakers-chart">
+        <div class="h-40" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="events-speakers-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
         </div>
         <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
         <table class="sr-only" data-testid="events-speakers-chart-table">
-          <caption>
-            Proposals per year
-          </caption>
           <thead>
             <tr>
               <th scope="col">Year</th>

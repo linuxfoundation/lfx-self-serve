@@ -175,6 +175,7 @@ describe('EventsSpeakersComponent', () => {
   it('filters the proposals by tab and re-settles', async () => {
     await render();
     lifecycle = [];
+    const chartData = fixture.componentInstance['chartData']();
 
     fixture.componentInstance['onTabChange']('in-review');
     await settle();
@@ -183,12 +184,15 @@ describe('EventsSpeakersComponent', () => {
     expect(text('events-speakers-count')).toBe('100 proposals');
     expect(lifecycle).toEqual(['settled']);
     expect(getEventsSpeakers).toHaveBeenCalledTimes(1);
+    // The chart is keyed on the response alone, so a tab change must not rebuild it.
+    expect(fixture.componentInstance['chartData']()).toBe(chartData);
   });
 
   it('re-projects a period change without re-reading, and re-notes it', async () => {
     await render();
     lifecycle = [];
     notes = [];
+    const chartData = fixture.componentInstance['chartData']();
 
     await pickRange('COMPLETED_YEAR');
 
@@ -198,6 +202,7 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-individual')).toBeNull();
     expect(lifecycle).toEqual(['settled']);
     expect(notes).toEqual(['']);
+    expect(fixture.componentInstance['chartData']()).toBe(chartData);
   });
 
   it('says a period is unmeasured rather than showing zeros', async () => {
@@ -250,6 +255,9 @@ describe('EventsSpeakersComponent', () => {
     expect(rows[2][1]).toBe('2,000');
     expect(rows[3][0]).toMatch(/^\d{4} \(partial year\)$/);
     expect(rows[3][1]).toBe('1,200');
+    expect(query('events-speakers-chart')?.getAttribute('aria-label')).toMatch(
+      /^Bar chart of proposals per year, \d{4} to \d{4}\. The same figures follow in a table\.$/
+    );
   });
 
   it('holds the skeleton without settling until a foundation resolves', async () => {

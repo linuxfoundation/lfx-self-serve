@@ -490,6 +490,7 @@ export interface HealthMetricsEventsSpeakersBarView {
   valueLabel: string;
   /** 0–100. */
   widthPct: number;
+  /** The bar's fill, e.g. `bg-blue-500`; safelisted in `tailwind.config.js`. */
   barClass: string;
 }
 

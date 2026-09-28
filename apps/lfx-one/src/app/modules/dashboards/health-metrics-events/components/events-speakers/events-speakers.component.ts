@@ -71,6 +71,12 @@ export class EventsSpeakersComponent {
   // Keyed on the response alone, so a period or tab change does not rebuild the chart.
   protected readonly years: Signal<HealthMetricsEventsSpeakersYearView[]> = computed(() => buildHealthMetricsEventsSpeakersYears(this.response()));
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.years()));
+  /** Names what the canvas depicts; the per-year values live in the adjacent table. */
+  protected readonly chartSummaryLabel: Signal<string> = computed(() => {
+    const years = this.years();
+    if (years.length === 0) return 'Proposals per year';
+    return `Bar chart of proposals per year, ${years[0].year} to ${years[years.length - 1].year}. The same figures follow in a table.`;
+  });
   protected readonly chartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
