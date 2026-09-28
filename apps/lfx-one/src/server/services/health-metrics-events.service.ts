@@ -171,12 +171,12 @@ interface SpeakersDrilldownRow {
   [periodColumn: string]: unknown;
 }
 
-/** One proposal; `PERIOD` is computed in the read. The speaker's name is personal data, so it is never logged. */
+/** One proposal; `PERIOD` is computed in the read. The job title is personal data, so it is never logged. */
 interface SpeakerProposalRow {
   PROPOSAL_KEY: string | null;
   PERIOD: HealthMetricsL2Range | null;
   ACCOUNT_NAME: string | null;
-  SPEAKER_NAME: string | null;
+  JOB_TITLE: string | null;
   EVENT_NAME: string | null;
   SESSION_TITLE: string | null;
   SUBMISSION_DATE: Date | string | null;
@@ -570,7 +570,7 @@ export class HealthMetricsEventsService {
         proposal_key,
         CASE ${periodCase} END AS period,
         account_name,
-        speaker_name,
+        job_title,
         event_name,
         session_title,
         submission_date,
@@ -842,7 +842,7 @@ function mapSpeakerProposal(row: SpeakerProposalRow): HealthMetricsEventsSpeaker
   return {
     proposalKey: row.PROPOSAL_KEY,
     range: row.PERIOD,
-    speakerName: row.SPEAKER_NAME ?? '',
+    jobTitle: row.JOB_TITLE?.trim() || null,
     organizationName: row.ACCOUNT_NAME,
     unaffiliated: row.IS_UNAFFILIATED_PROPOSAL === true,
     eventName: row.EVENT_NAME ?? '',

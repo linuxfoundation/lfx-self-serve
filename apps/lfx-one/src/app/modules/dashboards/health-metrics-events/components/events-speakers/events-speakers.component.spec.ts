@@ -34,7 +34,7 @@ function proposal(overrides: Partial<HealthMetricsEventsSpeakersProposal> = {}):
   return {
     proposalKey: 'p-1',
     range: 'YTD',
-    speakerName: 'Sample Speaker',
+    jobTitle: 'Platform Engineer',
     organizationName: 'Acme Motors',
     unaffiliated: false,
     eventName: 'Sample Summit',
@@ -58,7 +58,7 @@ function speakers(overrides: Partial<HealthMetricsEventsSpeakers> = {}): HealthM
       proposal(),
       proposal({
         proposalKey: 'p-2',
-        speakerName: 'Other Speaker',
+        jobTitle: null,
         organizationName: null,
         unaffiliated: true,
         status: 'Waitlisted',
@@ -166,6 +166,8 @@ describe('EventsSpeakersComponent', () => {
 
     expect(rowKeys()).toEqual(['p-1', 'p-2']);
     expect(text('events-speakers-organization-label-p-2')).toBe('Individual');
+    expect(text('events-speakers-job-title-p-1')).toBe('Platform Engineer');
+    expect(query('events-speakers-job-title-p-2')).toBeNull();
     expect(query('events-speakers-status-badge-p-1')?.className).toContain('bg-emerald-50');
     expect(text('events-speakers-status-badge-p-2')).toBe('Waitlisted');
   });

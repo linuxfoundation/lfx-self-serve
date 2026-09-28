@@ -674,7 +674,7 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     return {
       proposalKey: 'p-1',
       range: 'YTD',
-      speakerName: 'Speaker One',
+      jobTitle: 'Staff Engineer',
       organizationName: 'Acme Motors',
       unaffiliated: false,
       eventName: 'Summit',

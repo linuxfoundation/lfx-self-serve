@@ -445,11 +445,12 @@ export interface HealthMetricsEventsSpeakersOrganization {
   periods: HealthMetricsEventsSpeakersOrganizationPeriod[];
 }
 
-/** One recent proposal. The speaker's name is personal data, so it is rendered and never logged. */
+/** One recent proposal. The speaker is shown by job title, never by name; the title is personal data, so it is never logged. */
 export interface HealthMetricsEventsSpeakersProposal {
   proposalKey: string;
   range: HealthMetricsL2Range;
-  speakerName: string;
+  /** `null` when the proposal lists none. */
+  jobTitle: string | null;
   /** `null` when the proposal carries no organization. */
   organizationName: string | null;
   /** The speaker proposed as an individual, not for an organization. */

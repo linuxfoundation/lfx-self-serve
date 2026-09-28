@@ -826,7 +826,7 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
       PROPOSAL_KEY: 'p-1',
       PERIOD: 'YTD',
       ACCOUNT_NAME: 'Acme Motors',
-      SPEAKER_NAME: 'Speaker One',
+      JOB_TITLE: 'Staff Engineer',
       EVENT_NAME: 'Acme Summit',
       SESSION_TITLE: 'A talk',
       SUBMISSION_DATE: new Date('2026-03-10T00:00:00.000Z'),
@@ -869,7 +869,9 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
     expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);
     expect(listSql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key');
-    expect(listSql).not.toContain('job_title');
+    // The speaker is shown by job title; the name never leaves the warehouse.
+    expect(listSql).toContain('job_title');
+    expect(listSql).not.toContain('speaker_name');
   });
 
   it('maps the scope row per period, with the speakers change only where compared', async () => {
@@ -913,7 +915,7 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
       {
         proposalKey: 'p-1',
         range: 'YTD',
-        speakerName: 'Speaker One',
+        jobTitle: 'Staff Engineer',
         organizationName: 'Acme Motors',
         unaffiliated: false,
         eventName: 'Acme Summit',
@@ -923,6 +925,14 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
         statusGroup: 'in-review',
       },
     ]);
+  });
+
+  it('reads a blank job title as none', async () => {
+    mockReads([drilldownRow()], [proposalRow({ JOB_TITLE: '  ' }), proposalRow({ PROPOSAL_KEY: 'p-2', JOB_TITLE: null })]);
+
+    const { proposals } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+
+    expect(proposals.map((proposal) => proposal.jobTitle)).toEqual([null, null]);
   });
 
   it('returns no periods when the foundation has no scope row', async () => {
