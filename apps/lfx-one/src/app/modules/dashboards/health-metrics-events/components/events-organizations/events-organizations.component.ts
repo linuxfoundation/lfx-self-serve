@@ -89,7 +89,7 @@ export class EventsOrganizationsComponent {
     computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
   });
 
-  protected readonly query: Signal<HealthMetricsEventsOrganizationsQuery> = computed(() => this.initQuery());
+  protected readonly query: Signal<HealthMetricsEventsOrganizationsQuery> = this.initQuery();
   protected readonly response: Signal<HealthMetricsEventsOrganizations> = this.initResponse();
 
   protected readonly rowViews: Signal<HealthMetricsEventsOrganizationRowView[]> = computed(() =>
@@ -123,21 +123,15 @@ export class EventsOrganizationsComponent {
     this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
   }
 
-  private range(): HealthMetricsL2Range {
-    const range = this.chrome.selectedRange();
-    // The Events pills only offer the view's four periods; anything else falls back to the default.
-    return HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === range) ?? 'YTD';
-  }
-
-  private initQuery(): HealthMetricsEventsOrganizationsQuery {
-    return {
+  private initQuery(): Signal<HealthMetricsEventsOrganizationsQuery> {
+    return computed(() => ({
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
       range: this.range(),
       segment: this.segment(),
       search: this.search(),
       offset: (this.page() - 1) * this.size(),
       pageSize: this.size(),
-    };
+    }));
   }
 
   private initResponse(): Signal<HealthMetricsEventsOrganizations> {
@@ -181,6 +175,12 @@ export class EventsOrganizationsComponent {
       ),
       { initialValue: HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED }
     );
+  }
+
+  private range(): HealthMetricsL2Range {
+    const range = this.chrome.selectedRange();
+    // The Events pills only offer the view's four periods; anything else falls back to the default.
+    return HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === range) ?? 'YTD';
   }
 
   private syncUrl(): void {
