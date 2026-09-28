@@ -7,7 +7,7 @@ import { Request } from 'express';
 
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, getRawEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { fetchAllQueryResources } from './query-service.helper';
 
 export interface FetchCurrentUserVoteResponsesOptions {
@@ -33,11 +33,16 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * a known `vote_response_uid` rather than resolving identity (see the known-gap note there).
  *
  * Identity resolution: `getUsernameFromAuth` + `stripAuthPrefix` + `getEffectiveEmail`, matched
- * via `filters_or` on `user_email` / `username` (whichever are present — raw email, no
- * lowercasing beyond what `getEffectiveEmail` already applies). Returns `[]` when the request
- * carries neither identity. Every fetched row is re-checked against the resolved identity before
- * being returned (defense in depth — `filters_or` match semantics are upstream's contract);
- * drops are logged via `dropped_count`.
+ * via `filters_or` on `user_email` / `username` (whichever are present). The email is queried
+ * twice when its raw casing differs from the lowercased effective value: the index stores the
+ * invitee email exactly as entered (no upstream normalization) and the query service matches
+ * `filters_or` with case-sensitive exact `term` clauses, so a mixed-case stored email only
+ * matches its raw casing (GH #2985; canonical index-time normalization tracked in #3063). Returns `[]`
+ * when the request carries neither identity. Every fetched row is re-checked against the
+ * resolved identity before being returned (defense in depth — `filters_or` match semantics are
+ * upstream's contract); the re-check compares BOTH identity fields case-insensitively so an
+ * upstream drift toward analyzed/case-insensitive matching can never make it narrower than
+ * intended on either field. Drops are logged via `dropped_count`.
  *
  * Deliberately NOT `filter_grants=direct`: the voting service only emits the invitee FGA
  * tuple when the invitee has a non-empty `Username` (upstream contract:
@@ -46,6 +51,17 @@ export interface FetchCurrentUserVoteResponsesOptions {
  * legitimate pending votes. The query service accepts identity `filters_or` without
  * `filter_grants` (the parameter is optional — `docs/architecture/backend/pagination.md`).
  */
+/**
+ * The single parent-vote keying rule for a `vote_response` row (GH #2985): `vote_uid` is the
+ * parent's v2 UID (what `/votes/{uid}` expects) and `poll_id` its v1 alias. `vote_id` is NOT a
+ * parent key — it is the response row's own v1 id. Shared by every surface that keys rows by
+ * parent vote (My Votes, Pending Actions, the single-vote drawer read) so they can never
+ * diverge on how a legacy poll_id-only row is keyed.
+ */
+export function getParentVoteId(r: IndexedVoteResponse): string | undefined {
+  return r.vote_uid ?? r.poll_id;
+}
+
 export async function fetchCurrentUserVoteResponses(
   req: Request,
   proxy: MicroserviceProxyService,
@@ -54,6 +70,7 @@ export async function fetchCurrentUserVoteResponses(
   const rawUsername = await getUsernameFromAuth(req);
   const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
   const email = getEffectiveEmail(req);
+  const rawEmail = getRawEffectiveEmail(req);
 
   if (!username && !email) {
     return [];
@@ -65,9 +82,12 @@ export async function fetchCurrentUserVoteResponses(
     has_filters: !!options.filters?.length,
   });
 
-  // vote_response uses 'user_email' not 'email'.
+  // vote_response uses 'user_email' not 'email'. Two email clauses when the raw casing differs:
+  // the query service's `term` clauses are case-sensitive and the index stores the invitee email
+  // as entered, so the lowercased value alone can miss a mixed-case stored row (GH #2985).
   const filtersOr: string[] = [];
   if (email) filtersOr.push(`user_email:${email}`);
+  if (rawEmail && rawEmail !== email) filtersOr.push(`user_email:${rawEmail}`);
   if (username) filtersOr.push(`username:${username}`);
 
   const rows = await fetchAllQueryResources<IndexedVoteResponse>(
@@ -86,8 +106,12 @@ export async function fetchCurrentUserVoteResponses(
 
   // Defense in depth: re-check each row against the resolved identity rather than trusting the
   // index's `filters_or` match semantics alone (exact-term vs analyzed matching is upstream's
-  // contract). A row that fails this check is not the caller's by definition.
-  const ownedRows = rows.filter((r) => (!!email && r.user_email?.toLowerCase() === email) || (!!username && r.username === username));
+  // contract). Both identity fields compare case-insensitively (username casing from the IdP is
+  // not guaranteed to match the index's). A row that fails this check is not the caller's by
+  // definition.
+  const ownedRows = rows.filter(
+    (r) => (!!email && r.user_email?.toLowerCase() === email) || (!!username && r.username?.toLowerCase() === username.toLowerCase())
+  );
   if (ownedRows.length < rows.length) {
     logger.debug(req, 'fetch_current_user_vote_responses', 'Dropped rows failing the identity re-check', {
       dropped_count: rows.length - ownedRows.length,

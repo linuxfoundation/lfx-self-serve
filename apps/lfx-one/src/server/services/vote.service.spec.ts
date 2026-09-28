@@ -28,6 +28,7 @@ const {
   getProjectsByIds,
   fetchAllQueryResources,
   getEffectiveEmail,
+  getRawEffectiveEmail,
   getUsernameFromAuth,
   stripAuthPrefix,
   computeIsFoundation,
@@ -42,6 +43,7 @@ const {
   getProjectsByIds: vi.fn(),
   fetchAllQueryResources: vi.fn(),
   getEffectiveEmail: vi.fn(),
+  getRawEffectiveEmail: vi.fn(),
   getUsernameFromAuth: vi.fn(),
   stripAuthPrefix: vi.fn((username: string) => username),
   computeIsFoundation: vi.fn(() => false),
@@ -89,6 +91,7 @@ vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint }));
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources }));
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail,
+  getRawEffectiveEmail,
   getUsernameFromAuth,
   stripAuthPrefix,
 }));
@@ -1108,6 +1111,36 @@ describe('VoteService', () => {
       proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: 'v0000000-0000-0000-0000-00000000d999', username: 'spec-user' } }] });
 
       await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+    });
+
+    it('falls back to a poll_id-scoped query for legacy rows carrying no vote_uid (GH #2985)', async () => {
+      // The vote_uid-scoped query finds nothing; the poll_id-scoped retry returns the legacy
+      // row — the same parent-key fallback getMyVotes applies, one list/drawer level down.
+      proxyRequest.mockResolvedValueOnce({ resources: [] }).mockResolvedValueOnce({
+        resources: [
+          { data: { uid: 'vr-legacy-1', poll_id: VOTE_UID, vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE, user_email: 'spec-user@example.org' } },
+        ],
+      });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        1,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`vote_uid:${VOTE_UID}`] })
+      );
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        2,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`poll_id:${VOTE_UID}`] })
+      );
+      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID });
     });
 
     it('falls back to vote_id when the indexer left uid empty, logging the drift', async () => {

@@ -24,7 +24,7 @@ import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { fetchCurrentUserVoteResponses } from '../helpers/vote-response.helper';
+import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -524,20 +524,17 @@ export class VoteService {
     // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
     const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
 
-    // Parent-vote keying mirrors fetchPendingVotes (GH #2985): `vote_uid` with its v1 alias
-    // `poll_id` as fallback — `vote_id` is the response row's own v1 id, never a parent key
-    // (upstream indexer contract). Without the fallback a poll_id-only legacy row would appear
-    // in Pending Actions but vanish here.
-    const parentVoteId = (r: IndexedVoteResponse): string | undefined => r.vote_uid ?? r.poll_id;
-
+    // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
+    // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
+    // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
-      const id = parentVoteId(r);
+      const id = getParentVoteId(r);
       if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.map(parentVoteId).filter((uid): uid is string => !!uid))];
+    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return [];
@@ -581,13 +578,23 @@ export class VoteService {
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
-    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] });
+    let responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] });
+
+    // Legacy poll_id-only rows carry no `vote_uid` (GH #2985): fall back to a poll_id-scoped
+    // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
+    // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
+    // The query service supports a single `filters_or` group (spent on identity), so the two
+    // scoped queries run sequentially; only legacy rows pay for the second call.
+    if (responses.length === 0) {
+      responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] });
+    }
 
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
     // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift. The find
-    // guard guarantees only `uid`/`vote_uid`; the cast still narrows the indexer's broader
-    // `vote_status` string unchecked (pre-existing).
-    const match = responses.find((r) => r?.vote_uid === voteUid && (!!r?.uid || !!r?.vote_id));
+    // guard applies the shared parent-key rule (`vote_uid ?? poll_id` — the same key the list
+    // surfaced this vote under); the cast still narrows the indexer's broader `vote_status`
+    // string unchecked (pre-existing).
+    const match = responses.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
     if (match && !match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
       return { ...match, uid: match.vote_id } as MyVoteResponse;

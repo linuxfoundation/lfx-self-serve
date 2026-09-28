@@ -16,8 +16,9 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveEmail, getUsernameFromAuth } = vi.hoisted(() => ({
+const { getEffectiveEmail, getRawEffectiveEmail, getUsernameFromAuth } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn(),
+  getRawEffectiveEmail: vi.fn(),
   getUsernameFromAuth: vi.fn(),
 }));
 
@@ -30,7 +31,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', async () => {
   // Keep the real stripAuthPrefix — the auth0|-prefix stripping is part of the pinned contract.
   const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
-  return { ...actual, getEffectiveEmail, getUsernameFromAuth };
+  return { ...actual, getEffectiveEmail, getRawEffectiveEmail, getUsernameFromAuth };
 });
 
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
@@ -50,6 +51,7 @@ describe('fetchCurrentUserVoteResponses', () => {
     vi.clearAllMocks();
     getUsernameFromAuth.mockResolvedValue('spec-user');
     getEffectiveEmail.mockReturnValue('spec-user@example.org');
+    getRawEffectiveEmail.mockReturnValue(null);
     proxyRequest.mockResolvedValue(page([{ uid: 'vr-1', vote_uid: 'v-1', user_email: 'spec-user@example.org' }]));
   });
 
@@ -149,9 +151,49 @@ describe('fetchCurrentUserVoteResponses', () => {
     );
   });
 
+  it('sends the raw email casing as a second user_email clause when it differs from the lowercased one', async () => {
+    // The query service matches filters_or with case-sensitive exact `term` clauses and the
+    // index stores the invitee email as entered, so the lowercased value alone can miss a
+    // mixed-case stored row (GH #2985) — the raw casing goes out as its own clause.
+    getEffectiveEmail.mockReturnValue('spec.user@example.org');
+    getRawEffectiveEmail.mockReturnValue('Spec.User@Example.org');
+
+    await fetchCurrentUserVoteResponses(req, proxy);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'vote_response',
+      filters_or: ['user_email:spec.user@example.org', 'user_email:Spec.User@Example.org', 'username:spec-user'],
+    });
+  });
+
+  it('keeps a mixed-case stored row fetched via the raw-casing clause through the identity re-check', async () => {
+    getEffectiveEmail.mockReturnValue('spec.user@example.org');
+    getRawEffectiveEmail.mockReturnValue('Spec.User@Example.org');
+    proxyRequest.mockResolvedValue(page([{ uid: 'vr-1', user_email: 'Spec.User@Example.org' }]));
+
+    const rows = await fetchCurrentUserVoteResponses(req, proxy);
+
+    expect(rows).toEqual([{ uid: 'vr-1', user_email: 'Spec.User@Example.org' }]);
+  });
+
+  it('omits the duplicate email clause when the raw casing already matches the lowercased one', async () => {
+    getRawEffectiveEmail.mockReturnValue('spec-user@example.org');
+
+    await fetchCurrentUserVoteResponses(req, proxy);
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      expect.objectContaining({ filters_or: ['user_email:spec-user@example.org', 'username:spec-user'] })
+    );
+  });
+
   it('drops rows that fail the server-side identity re-check', async () => {
     // Defense in depth: the index's filters_or match semantics are upstream's contract, so every
-    // row is re-checked against the resolved identity (email comparison is case-insensitive).
+    // row is re-checked against the resolved identity (both identity comparisons are
+    // case-insensitive).
     proxyRequest.mockResolvedValue(
       page([
         { uid: 'vr-1', user_email: 'SPEC-USER@example.org' },
@@ -167,6 +209,16 @@ describe('fetchCurrentUserVoteResponses', () => {
       { uid: 'vr-1', user_email: 'SPEC-USER@example.org' },
       { uid: 'vr-2', username: 'spec-user' },
     ]);
+  });
+
+  it('keeps a row whose stored username casing differs from the resolved one', async () => {
+    // The re-check compares usernames case-insensitively — a case-insensitive upstream match
+    // (analyzed-mapping drift) must not be narrowed back to exact-match here.
+    proxyRequest.mockResolvedValue(page([{ uid: 'vr-1', username: 'Spec-User' }]));
+
+    const rows = await fetchCurrentUserVoteResponses(req, proxy);
+
+    expect(rows).toEqual([{ uid: 'vr-1', username: 'Spec-User' }]);
   });
 
   it('fails closed on a later-page failure when failOnPartial is set', async () => {

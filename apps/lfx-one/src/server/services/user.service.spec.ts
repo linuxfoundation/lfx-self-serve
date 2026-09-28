@@ -55,6 +55,7 @@ vi.mock('./formation.service', () => ({
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth,
   getEffectiveEmail: vi.fn(),
+  getRawEffectiveEmail: vi.fn(),
   stripAuthPrefix: (value: string) => value,
   isImpersonating,
 }));
