@@ -107,7 +107,15 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = ['kpi', 'forecast', 'past', 'reg', 'rev', 'spk'] as const satisfies readonly HealthMetricsEventsSectionKey[];
+export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [
+  'kpi',
+  'forecast',
+  'past',
+  'reg',
+  'rev',
+  'spk',
+  'orgs',
+] as const satisfies readonly HealthMetricsEventsSectionKey[];
 
 /** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
 export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE = "An organization's event record also appears in Members";

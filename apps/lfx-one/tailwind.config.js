@@ -25,6 +25,8 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
@@ -175,6 +177,9 @@ export default {
     ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => [...g.badgeClass.split(' '), g.barClass]),
     HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
     ...HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS.split(' '),
+    // Events organizations membership pills and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).flatMap((m) => m.badgeClass.split(' ')),
+    HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

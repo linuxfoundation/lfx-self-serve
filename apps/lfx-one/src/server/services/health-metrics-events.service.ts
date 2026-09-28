@@ -211,6 +211,7 @@ interface OrganizationRow {
   PROPOSALS_COUNT: number | null;
   SPEAKERS_COUNT: number | null;
   EVENTS_COUNT: number | null;
+  SORT_RANK: number | null;
 }
 
 /** The foundation's Events revenue from the overview view, which carries no split. */
@@ -500,7 +501,6 @@ export class HealthMetricsEventsService {
     };
   }
 
-  /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   /**
    * One page of the organizations active in the period, ranked by the view's `sort_rank_<period>`
    * (registrations first) so the ranking survives pagination.
@@ -579,6 +579,7 @@ export class HealthMetricsEventsService {
     };
   }
 
+  /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
       SELECT

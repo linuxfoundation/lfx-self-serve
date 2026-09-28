@@ -47,5 +47,8 @@
     <ng-template lfxHealthMetricsL2Section="spk">
       <lfx-events-speakers (noteChange)="speakersNote.set($event)" (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk')" />
     </ng-template>
+    <ng-template lfxHealthMetricsL2Section="orgs">
+      <lfx-events-organizations (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
+    </ng-template>
   </lfx-health-metrics-l2-shell>
 }
