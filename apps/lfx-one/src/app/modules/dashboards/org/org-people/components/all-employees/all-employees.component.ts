@@ -5,7 +5,23 @@ import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, skip, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  concat,
+  distinctUntilChanged,
+  EMPTY,
+  finalize,
+  map,
+  Observable,
+  of,
+  skip,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+} from 'rxjs';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -116,14 +132,7 @@ export class AllEmployeesComponent {
           this.loadingState.set(false);
           return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
         }
-        return this.directory.getDirectory(orgUid).pipe(
-          tap(() => this.loadingState.set(false)),
-          catchError(() => {
-            this.fetchErrorState.set(true);
-            this.loadingState.set(false);
-            return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
-          })
-        );
+        return this.loadRoster(orgUid);
       })
     ),
     { initialValue: EMPTY_ORG_ALL_EMPLOYEES_RESPONSE }
@@ -354,6 +363,39 @@ export class AllEmployeesComponent {
       courses: iconFor('courses'),
       access: iconFor('access'),
     };
+  }
+
+  /**
+   * Two-phase roster load. The Snowflake roster answers in well under a second, while the live merge
+   * (access principals + committee-service seats) can take ~30 s cold on a large org, so rows and
+   * stats paint from Snowflake first and the live merge replaces them wholesale when it lands — one
+   * response at a time, never both, so rows are never duplicated. Live is requested only after the
+   * Snowflake phase settles so the server-side Snowflake cache it reads is already warm.
+   *
+   * A live failure after Snowflake rendered keeps the Snowflake rows (no error state); a Snowflake
+   * failure falls through to live; only both failing shows the error state.
+   */
+  private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
+    let snowflakeRendered = false;
+    const snowflake$ = this.dataService.getAllEmployees(orgUid).pipe(
+      take(1),
+      tap(() => {
+        snowflakeRendered = true;
+        this.loadingState.set(false);
+      }),
+      catchError(() => EMPTY)
+    );
+    const live$ = this.directory.getDirectory(orgUid).pipe(
+      take(1),
+      tap(() => this.loadingState.set(false)),
+      catchError(() => {
+        if (snowflakeRendered) return EMPTY;
+        this.fetchErrorState.set(true);
+        this.loadingState.set(false);
+        return of(EMPTY_ORG_ALL_EMPLOYEES_RESPONSE);
+      })
+    );
+    return concat(snowflake$, live$);
   }
 
   private loadDetailIfNeeded(row: OrgAllEmployeeRow): void {
