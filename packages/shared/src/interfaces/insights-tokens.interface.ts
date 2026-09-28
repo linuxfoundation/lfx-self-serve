@@ -57,10 +57,11 @@ export interface CreateInsightsTokenResponse {
 
 export interface InsightsTokenEligibleOrg {
   uid: string;
-  name: string;
+  /** Omitted when member-service has no company name for the org; the UI does not show a name then. */
+  name?: string;
 }
 
-/** Whether the caller may create Insights tokens: they must be a Key Contact of at least one named org. */
+/** Whether the caller may create Insights tokens: they must be a Key Contact of at least one org. */
 export interface InsightsTokenEligibility {
   canCreate: boolean;
   orgs: InsightsTokenEligibleOrg[];

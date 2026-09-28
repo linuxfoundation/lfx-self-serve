@@ -86,6 +86,33 @@ describe('InsightsTokensService', () => {
       expect(created.secret).toBe('lfi_Ab3kZ9QmT2xLsecret');
       expect(created.token.lookupId).toBe('Ab3kZ9QmT2xL');
     });
+
+    it('drops the refusal prose, which repeats the token name, but keeps the upstream code for the UI', async () => {
+      proxyRequest.mockRejectedValueOnce(
+        MicroserviceError.fromMicroserviceResponse(
+          409,
+          'Conflict',
+          { error: 'token_name_taken', message: 'a token named "ci-pipeline" already exists' },
+          'LFX_V2_SERVICE',
+          '/tokens',
+          'post__tokens'
+        )
+      );
+
+      const error = (await service.createToken(req, 'ci-pipeline').catch((e: unknown) => e)) as MicroserviceError;
+
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(409);
+      expect(error.code).toBe('CONFLICT');
+      expect(error.toResponse()['upstreamCode']).toBe('token_name_taken');
+      expect(JSON.stringify({ message: error.message, ...error.getLogContext(), ...error.toResponse() })).not.toContain('ci-pipeline');
+    });
+
+    it('rethrows non-upstream errors unchanged', async () => {
+      const boom = new Error('socket hang up');
+      proxyRequest.mockRejectedValueOnce(boom);
+      await expect(service.createToken(req, 'ci-pipeline')).rejects.toBe(boom);
+    });
   });
 
   describe('revokeToken', () => {
@@ -97,21 +124,31 @@ describe('InsightsTokensService', () => {
   });
 
   describe('getEligibility', () => {
-    it('is eligible when any org has a company name, without inspecting the tier, and scopes M2M to the call', async () => {
+    it('is eligible per org uid, without inspecting the tier, and scopes M2M to the call', async () => {
       proxyRequest.mockResolvedValueOnce([
         { b2b_org_uid: 'org-1', company_name: 'Acme Corporation', tier: 'silver' },
         { b2b_org_uid: 'org-1', company_name: 'Acme Corporation', tier: 'gold' },
         { b2b_org_uid: 'org-2', company_name: '  ', tier: 'platinum' },
         { b2b_org_uid: 'org-3' },
+        { b2b_org_uid: ' ', company_name: 'No Uid Inc' },
       ]);
 
       const result = await service.getEligibility(req);
 
-      expect(result).toEqual({ canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false });
+      expect(result).toEqual({
+        canCreate: true,
+        orgs: [{ uid: 'org-1', name: 'Acme Corporation' }, { uid: 'org-2' }, { uid: 'org-3' }],
+        checkFailed: false,
+      });
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/b2b_orgs/member-tiers/jdoe', 'GET', { v: '1' }, undefined, undefined, {
         bearerToken: 'm2m-token',
       });
       expect(req.bearerToken).toBe('user-token');
+    });
+
+    it('is eligible for a Key Contact whose org has no company name, and carries no name', async () => {
+      proxyRequest.mockResolvedValueOnce([{ b2b_org_uid: 'org-9', tier: 'silver' }]);
+      expect(await service.getEligibility(req)).toEqual({ canCreate: true, orgs: [{ uid: 'org-9' }], checkFailed: false });
     });
 
     it('encodes the username in the path', async () => {
