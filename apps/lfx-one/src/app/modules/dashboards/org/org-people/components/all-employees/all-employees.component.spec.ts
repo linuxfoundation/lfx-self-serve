@@ -8,7 +8,7 @@ import type { OrgAllEmployeeRow, OrgAllEmployeesResponse } from '@lfx-one/shared
 import { AccountContextService } from '@services/account-context.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { Subject } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
@@ -49,7 +49,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
   let snowflake$: Subject<OrgAllEmployeesResponse>;
   let live$: Subject<OrgAllEmployeesResponse>;
   let fixture: ComponentFixture<AllEmployeesComponent>;
-  let getDirectory: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
+  let getDirectory: Mock<(orgUid: string) => Observable<OrgAllEmployeesResponse>>;
   let getAllEmployees: Mock<(orgUid: string) => Subject<OrgAllEmployeesResponse>>;
 
   const el = (): HTMLElement => fixture.nativeElement;
@@ -181,6 +181,31 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
     });
 
+    it('holds a live-only merge that lands first, and shows it once the Snowflake roster comes back empty', async () => {
+      live$.next(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1));
+      live$.complete();
+      await settle();
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+
+      snowflake$.next(response([], 0));
+      snowflake$.complete();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
+    });
+
+    it('holds a live-only merge that lands first, and shows it once the Snowflake roster fails', async () => {
+      live$.next(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1));
+      live$.complete();
+      await settle();
+
+      snowflake$.error(new Error('500'));
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
+
     it('ignores a Snowflake roster that arrives after the live merge has landed', async () => {
       live$.next(response([row('p-1', 'Ada Lovelace'), row('live-x', 'Grace Hopper', { sources: ['access'] })], 2));
       live$.complete();
@@ -232,6 +257,26 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).not.toBeNull();
+    });
+  });
+
+  // The directory service replays a cached response synchronously on subscribe, so a live-only
+  // merge cached by an earlier visit reaches the component before Snowflake can answer.
+  describe('in the browser, with a live-only merge already cached', () => {
+    beforeEach(async () => {
+      getDirectory.mockImplementation(() => of(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1)));
+      await mount('browser');
+    });
+
+    it('keeps the skeleton until Snowflake answers, then keeps the Snowflake rows', async () => {
+      expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+
+      snowflake$.next(response([row('p-1', 'Ada Lovelace'), row('p-2', 'Alan Turing')], 2));
+      snowflake$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
     });
   });
 });
