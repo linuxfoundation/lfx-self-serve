@@ -25,7 +25,7 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipController } = await import('./mentorship.controller');
 const { MentorshipService } = await import('../services/mentorship.service');
-const { ServiceValidationError } = await import('../errors');
+const { MicroserviceError, ServiceValidationError } = await import('../errors');
 
 describe('MentorshipController program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
@@ -83,13 +83,28 @@ describe('MentorshipController program review', () => {
     expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
   });
 
-  it('passes an upstream failure to the error handler', async () => {
-    const conflict = new Error('cannot transition program from published to published');
-    vi.spyOn(MentorshipService.prototype, 'submitProgramDecision').mockRejectedValue(conflict);
+  // The page maps 403 to forbidden and 409 to already decided, so the upstream status must reach the error handler unchanged.
+  const upstreamError = (status: number, path: string) => MicroserviceError.fromMicroserviceResponse(status, 'Upstream', {}, 'LFX_V2_SERVICE', path);
+
+  it.each([403, 404, 409])('passes an upstream %i on load to the error handler with its status', async (status) => {
+    const error = upstreamError(status, `/mentorship/v1/programs/${programId}`);
+    vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockRejectedValue(error);
+
+    await controller.getProgramReview(buildReq({ programId }), res, next);
+
+    expect(next).toHaveBeenCalledWith(error);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: status }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 409])('passes an upstream %i on the decision to the error handler with its status', async (status) => {
+    const error = upstreamError(status, `/mentorship/v1/programs/${programId}/decision`);
+    vi.spyOn(MentorshipService.prototype, 'submitProgramDecision').mockRejectedValue(error);
 
     await controller.submitProgramDecision(buildReq({ programId }, { decision: 'approve' }), res, next);
 
-    expect(next).toHaveBeenCalledWith(conflict);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: status }));
     expect(res.json).not.toHaveBeenCalled();
   });
 });

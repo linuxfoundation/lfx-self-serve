@@ -26,7 +26,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
-import { catchError, combineLatest, distinctUntilChanged, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, Observable, of, startWith, Subscription, switchMap, tap } from 'rxjs';
 
 /**
  * Landing page for the approve/reject links in the program-review email:
@@ -52,6 +52,8 @@ export class ProgramReviewComponent {
 
   /** Outcome of Confirm. Cleared when the link changes, so the loaded view shows again. */
   private readonly submission = signal<MentorshipProgramReviewView | null>(null);
+  /** The in-flight Confirm POST, cancelled when the link changes so its result cannot land on another link. */
+  private submitRequest: Subscription | null = null;
 
   protected readonly link: Signal<MentorshipProgramReviewLink> = this.initLink();
   private readonly loaded: Signal<MentorshipProgramReviewView> = this.initLoaded();
@@ -74,7 +76,7 @@ export class ProgramReviewComponent {
 
     const { program, decision } = confirmation;
     this.submission.set({ state: 'submitting', program });
-    this.mentorshipService
+    this.submitRequest = this.mentorshipService
       .submitProgramDecision(program.id, decision)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -101,7 +103,11 @@ export class ProgramReviewComponent {
   private initLoaded(): Signal<MentorshipProgramReviewView> {
     return toSignal(
       toObservable(this.link).pipe(
-        tap(() => this.submission.set(null)),
+        tap(() => {
+          this.submitRequest?.unsubscribe();
+          this.submitRequest = null;
+          this.submission.set(null);
+        }),
         switchMap((link) => this.loadView(link))
       ),
       { initialValue: { state: 'loading', program: null } }

@@ -1011,13 +1011,10 @@ export interface MentorshipUpstreamProgramDecisionRequest {
 
 /**
  * Response body from `GET /api/mentorship/program-review/:programId` and
- * `POST /api/mentorship/program-review/:programId/decision`.
+ * `POST /api/mentorship/program-review/:programId/decision`. Picked from the upstream program so
+ * the page only ever receives fields the BFF has chosen to pass on.
  */
-export interface MentorshipProgramReview {
-  id: string;
-  name: string;
-  status: MentorshipUpstreamProgramStatus;
-}
+export type MentorshipProgramReview = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
 
 /** Request body for `POST /api/mentorship/program-review/:programId/decision`. */
 export interface MentorshipProgramDecisionRequest {

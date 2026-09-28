@@ -366,7 +366,7 @@ export class MentorshipService {
    */
   public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramReview> {
     const body: MentorshipUpstreamProgramDecisionRequest = { status: MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS[decision] };
-    logger.debug(req, 'mentorship_submit_program_decision', 'Pending program review decision', { programId, status: body.status });
+    logger.debug(req, 'mentorship_submit_program_decision', 'Submitting program review decision', { programId, status: body.status });
     const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
       req,
       'LFX_V2_SERVICE',

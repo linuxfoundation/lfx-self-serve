@@ -354,15 +354,18 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
 
 // -- Program review (approver approve/reject email link) ---------------------
 
-/** Program statuses as the mentorship service stores them (`status` on `/mentorship/v1/programs`). */
-export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'archived', 'hidden'] as const;
+/**
+ * Program statuses as the mentorship service stores them (`status` on `/mentorship/v1/programs`).
+ * A program is created `pending`; approving moves it to `published` and rejecting to `rejected`.
+ * A published program can later be `hidden`.
+ */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'hidden'] as const;
 
 /** Program-review page copy for a program's current upstream status. */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
   pending: 'Awaiting review',
   published: 'Approved',
   rejected: 'Rejected',
-  archived: 'Archived',
   hidden: 'Hidden',
 };
 

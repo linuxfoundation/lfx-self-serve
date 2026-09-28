@@ -4,10 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter } from '@angular/router';
 import { MentorshipProgramReview, MentorshipUpstreamProgramStatus } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProgramReviewComponent } from './program-review.component';
@@ -21,9 +21,16 @@ describe('ProgramReviewComponent', () => {
   let submitProgramDecision: ReturnType<typeof vi.fn>;
 
   const build = (
-    options: { id?: string; decision?: string | null; load?: Observable<MentorshipProgramReview>; submit?: Observable<MentorshipProgramReview> } = {}
+    options: {
+      id?: string;
+      decision?: string | null;
+      load?: Observable<MentorshipProgramReview>;
+      submit?: Observable<MentorshipProgramReview>;
+      paramMap?: Observable<ParamMap>;
+    } = {}
   ): void => {
     const { id = programId, decision = 'approve', load = of(review()), submit = of(review('published')) } = options;
+    const { paramMap = of(convertToParamMap({ programId: id })) } = options;
     getProgramReview = vi.fn(() => load);
     submitProgramDecision = vi.fn(() => submit);
 
@@ -37,7 +44,7 @@ describe('ProgramReviewComponent', () => {
         {
           provide: ActivatedRoute,
           useValue: {
-            paramMap: of(convertToParamMap({ programId: id })),
+            paramMap,
             queryParamMap: of(convertToParamMap(decision === null ? {} : { decision })),
           },
         },
@@ -123,11 +130,31 @@ describe('ProgramReviewComponent', () => {
   });
 
   it.each([
+    [400, 'mentorship-program-review-invalid-link'],
     [403, 'mentorship-program-review-forbidden'],
     [404, 'mentorship-program-review-not-found'],
+    [409, 'mentorship-program-review-already-decided'],
     [500, 'mentorship-program-review-error'],
   ])('maps a %i on load to its own state', (status, testId) => {
     build({ load: httpError(status) });
+
+    expect(byTestId(testId)).not.toBeNull();
+  });
+
+  it('explains a 409 on load without a program to name', () => {
+    build({ load: httpError(409) });
+
+    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('It is no longer awaiting a decision.');
+  });
+
+  it.each([
+    [400, 'mentorship-program-review-invalid-link'],
+    [403, 'mentorship-program-review-forbidden'],
+    [404, 'mentorship-program-review-not-found'],
+  ])('maps a %i on Confirm to its own state', (status, testId) => {
+    build({ submit: httpError(status) });
+
+    clickConfirm();
 
     expect(byTestId(testId)).not.toBeNull();
   });
@@ -140,13 +167,38 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('Another reviewer decided this program');
   });
 
-  it('returns to the confirm card when Try again follows a failed Confirm', () => {
+  it('returns to the confirm card when Try again follows a failed Confirm, and Confirm submits again', () => {
     build({ submit: httpError(502) });
 
     clickConfirm();
     byTestId('mentorship-program-review-error')?.querySelector<HTMLButtonElement>('button')?.click();
     fixture.detectChanges();
 
+    expect(byTestId('mentorship-program-review-confirm')).not.toBeNull();
+
+    submitProgramDecision.mockReturnValueOnce(of(review('published')));
+    clickConfirm();
+
+    expect(submitProgramDecision).toHaveBeenCalledTimes(2);
+    expect(byTestId('mentorship-program-review-success')?.textContent).toContain('Program approved');
+  });
+
+  it('drops an in-flight Confirm when the link changes to another program', () => {
+    const otherId = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+    const params = new BehaviorSubject(convertToParamMap({ programId }));
+    const pending = new Subject<MentorshipProgramReview>();
+    build({ paramMap: params, submit: pending });
+
+    clickConfirm();
+    params.next(convertToParamMap({ programId: otherId }));
+    fixture.detectChanges();
+
+    expect(pending.observed).toBe(false);
+    pending.next(review('published'));
+    fixture.detectChanges();
+
+    expect(getProgramReview).toHaveBeenLastCalledWith(otherId);
+    expect(byTestId('mentorship-program-review-success')).toBeNull();
     expect(byTestId('mentorship-program-review-confirm')).not.toBeNull();
   });
 });
