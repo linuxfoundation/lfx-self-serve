@@ -50,10 +50,8 @@ export class UserController {
         return;
       }
 
-      // projectUid and projectSlug must be supplied together (project/foundation lens) or
-      // omitted together (Me lens). Meetings, votes, and surveys all scope on projectUid
-      // (surveys via the nested project.project_uid filter) — a half-supplied call would
-      // silently produce inconsistent aggregation. Reject early so the contract stays explicit.
+      // projectUid and projectSlug must be supplied together (lens-scoped) or omitted together
+      // (Me lens) — every source scopes on projectUid, so a half-supplied call would aggregate inconsistently.
       if (!!projectUid !== !!projectSlug) {
         next(
           ServiceValidationError.forField(

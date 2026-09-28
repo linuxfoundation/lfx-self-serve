@@ -1691,9 +1691,8 @@ export class UserService {
   }
 
   /**
-   * Pending surveys for the current user from the `survey_response` index — the same identity
-   * read My Surveys uses, so the two surfaces can't diverge. Unanswered comes from the helper;
-   * "still actionable" (OPEN display status) is decided here with the shared survey utils.
+   * Pending surveys from the `survey_response` index — the same identity read My Surveys uses.
+   * Unanswered comes from the helper; "still actionable" (OPEN status) is decided here.
    */
   private async fetchPendingSurveyResponses(req: Request, projectUid?: string): Promise<SurveyResponseRecord[]> {
     // failOnPartial: a truncated page set can silently miss a pending survey. The caller catches
@@ -1713,9 +1712,8 @@ export class UserService {
       return getSurveyDisplayStatus({ survey_status: row.survey_status, survey_cutoff_date: row.survey_cutoff_date }) === SurveyStatus.OPEN;
     });
 
-    // One action per survey: the index holds a row per survey × committee invitation, and
-    // identical "Submit Survey" rows would crowd the capped card (#2987). Keep the earliest cutoff
-    // (parseable per the filter above); a still-unanswered co-invitation re-surfaces on next load.
+    // One action per survey: the index holds a row per survey × committee invitation; identical
+    // rows would crowd the capped card (#2987). Keep the earliest cutoff (parseable per the filter).
     const earliestBySurvey = new Map<string, SurveyResponseRecord>();
     for (const row of openRows) {
       const kept = earliestBySurvey.get(row.survey_uid);
@@ -1732,9 +1730,8 @@ export class UserService {
    */
   private transformSurveysToActions(req: Request, rows: SurveyResponseRecord[]): PendingActionItem[] {
     const items: PendingActionItem[] = [];
-    // Soonest cutoff first — the old Snowflake source ordered SURVEY_CUTOFF_DATE ASC, and the
-    // frontend renders server order sliced to the card's display limit. Cutoffs are guaranteed
-    // parseable by the fetch filter above.
+    // Soonest cutoff first — the old Snowflake source ordered SURVEY_CUTOFF_DATE ASC and the
+    // frontend renders server order sliced to the display limit; cutoffs are parseable per the fetch filter.
     const sorted = [...rows].sort((a, b) => new Date(a.survey_cutoff_date as string).getTime() - new Date(b.survey_cutoff_date as string).getTime());
     for (const row of sorted) {
       const buttonLink = row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;

@@ -119,7 +119,7 @@ describe('fetchCurrentUserSurveyResponses', () => {
     );
   });
 
-  it('keeps only unanswered rows — response_datetime populated or whitespace counts as answered', async () => {
+  it('keeps only unanswered rows — populated response_datetime counts as answered; empty or whitespace counts as unanswered', async () => {
     getUsernameFromAuth.mockResolvedValue('someuser');
     getEffectiveEmail.mockReturnValue('invitee@example.com');
     const proxy = mockProxy();
