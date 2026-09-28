@@ -1011,8 +1011,9 @@ export interface MentorshipUpstreamProgramDecisionRequest {
 
 /**
  * Response body from `GET /api/mentorship/program-review/:programId` and
- * `POST /api/mentorship/program-review/:programId/decision`. Picked from the upstream program so
- * the page only ever receives fields the BFF has chosen to pass on.
+ * `POST /api/mentorship/program-review/:programId/decision`: the subset of
+ * `MentorshipUpstreamProgram` the page receives. Status values and their lifecycle are documented
+ * on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
  */
 export type MentorshipProgramReview = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
 

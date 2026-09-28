@@ -27,10 +27,17 @@ describe('ProgramReviewComponent', () => {
       load?: Observable<MentorshipProgramReview>;
       submit?: Observable<MentorshipProgramReview>;
       paramMap?: Observable<ParamMap>;
+      queryParamMap?: Observable<ParamMap>;
     } = {}
   ): void => {
-    const { id = programId, decision = 'approve', load = of(review()), submit = of(review('published')) } = options;
-    const { paramMap = of(convertToParamMap({ programId: id })) } = options;
+    const {
+      id = programId,
+      decision = 'approve',
+      load = of(review()),
+      submit = of(review('published')),
+      paramMap = of(convertToParamMap({ programId: id })),
+      queryParamMap = of(convertToParamMap(decision === null ? {} : { decision })),
+    } = options;
     getProgramReview = vi.fn(() => load);
     submitProgramDecision = vi.fn(() => submit);
 
@@ -45,7 +52,7 @@ describe('ProgramReviewComponent', () => {
           provide: ActivatedRoute,
           useValue: {
             paramMap,
-            queryParamMap: of(convertToParamMap(decision === null ? {} : { decision })),
+            queryParamMap,
           },
         },
       ],
@@ -183,7 +190,7 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId('mentorship-program-review-success')?.textContent).toContain('Program approved');
   });
 
-  it('drops an in-flight Confirm when the link changes to another program', () => {
+  it('loads a new link only after an in-flight Confirm settles, without showing its result', () => {
     const otherId = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
     const params = new BehaviorSubject(convertToParamMap({ programId }));
     const pending = new Subject<MentorshipProgramReview>();
@@ -193,12 +200,34 @@ describe('ProgramReviewComponent', () => {
     params.next(convertToParamMap({ programId: otherId }));
     fixture.detectChanges();
 
-    expect(pending.observed).toBe(false);
+    // The POST keeps running (its write may already be upstream) and the new link waits for it.
+    expect(pending.observed).toBe(true);
+    expect(getProgramReview).toHaveBeenCalledTimes(1);
+    expect(byTestId('mentorship-program-review-loading')).not.toBeNull();
+
     pending.next(review('published'));
+    pending.complete();
     fixture.detectChanges();
 
     expect(getProgramReview).toHaveBeenLastCalledWith(otherId);
     expect(byTestId('mentorship-program-review-success')).toBeNull();
     expect(byTestId('mentorship-program-review-confirm')).not.toBeNull();
+  });
+
+  it('shows the recorded status when the decision changes while Confirm is in flight', () => {
+    const query = new BehaviorSubject(convertToParamMap({ decision: 'approve' }));
+    const pending = new Subject<MentorshipProgramReview>();
+    build({ queryParamMap: query, submit: pending });
+    getProgramReview.mockReturnValue(of(review('published')));
+
+    clickConfirm();
+    query.next(convertToParamMap({ decision: 'reject' }));
+    pending.next(review('published'));
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(getProgramReview).toHaveBeenCalledTimes(2);
+    expect(byTestId('mentorship-program-review-success')).toBeNull();
+    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: Approved');
   });
 });

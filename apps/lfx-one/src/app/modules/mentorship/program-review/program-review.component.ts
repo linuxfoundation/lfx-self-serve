@@ -26,7 +26,22 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
-import { catchError, combineLatest, distinctUntilChanged, map, Observable, of, startWith, Subscription, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  concat,
+  defer,
+  distinctUntilChanged,
+  EMPTY,
+  ignoreElements,
+  map,
+  Observable,
+  of,
+  shareReplay,
+  startWith,
+  switchMap,
+  tap,
+} from 'rxjs';
 
 /**
  * Landing page for the approve/reject links in the program-review email:
@@ -52,8 +67,11 @@ export class ProgramReviewComponent {
 
   /** Outcome of Confirm. Cleared when the link changes, so the loaded view shows again. */
   private readonly submission = signal<MentorshipProgramReviewView | null>(null);
-  /** The in-flight Confirm POST, cancelled when the link changes so its result cannot land on another link. */
-  private submitRequest: Subscription | null = null;
+  /**
+   * The in-flight Confirm POST. A link change does not cancel it, because the write may already have
+   * reached upstream: the new link loads once it settles, so that view shows the program's real status.
+   */
+  private submitRequest: Observable<MentorshipProgramReview> | null = null;
 
   protected readonly link: Signal<MentorshipProgramReviewLink> = this.initLink();
   private readonly loaded: Signal<MentorshipProgramReviewView> = this.initLoaded();
@@ -75,14 +93,16 @@ export class ProgramReviewComponent {
     if (!confirmation || this.submitting()) return;
 
     const { program, decision } = confirmation;
-    this.submission.set({ state: 'submitting', program });
-    this.submitRequest = this.mentorshipService
+    const link = this.link();
+    const request = this.mentorshipService
       .submitProgramDecision(program.id, decision)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (updated) => this.submission.set({ state: 'success', program: updated }),
-        error: (error: unknown) => this.submission.set({ state: this.stateForError(error), program }),
-      });
+      .pipe(takeUntilDestroyed(this.destroyRef), shareReplay({ bufferSize: 1, refCount: false }));
+    this.submitRequest = request;
+    this.submission.set({ state: 'submitting', program });
+    request.subscribe({
+      next: (updated) => this.settleSubmit(request, link, { state: 'success', program: updated }),
+      error: (error: unknown) => this.settleSubmit(request, link, { state: this.stateForError(error), program }),
+    });
   }
 
   /** After a failed Confirm, go back to the confirm card rather than reloading the page. */
@@ -103,12 +123,13 @@ export class ProgramReviewComponent {
   private initLoaded(): Signal<MentorshipProgramReviewView> {
     return toSignal(
       toObservable(this.link).pipe(
-        tap(() => {
-          this.submitRequest?.unsubscribe();
-          this.submitRequest = null;
-          this.submission.set(null);
-        }),
-        switchMap((link) => this.loadView(link))
+        tap(() => this.submission.set(null)),
+        switchMap((link) =>
+          concat(
+            this.submitSettled(),
+            defer(() => this.loadView(link))
+          ).pipe(startWith<MentorshipProgramReviewView>({ state: 'loading', program: null }))
+        )
       ),
       { initialValue: { state: 'loading', program: null } }
     );
@@ -149,9 +170,28 @@ export class ProgramReviewComponent {
     }
     return this.mentorshipService.getProgramReview(programId).pipe(
       map((program): MentorshipProgramReviewView => ({ state: program.status === 'pending' ? 'confirm' : 'already-decided', program })),
-      catchError((error: unknown) => of<MentorshipProgramReviewView>({ state: this.stateForError(error), program: null })),
-      startWith<MentorshipProgramReviewView>({ state: 'loading', program: null })
+      catchError((error: unknown) => of<MentorshipProgramReviewView>({ state: this.stateForError(error), program: null }))
     );
+  }
+
+  /** Completes once an in-flight Confirm settles, whatever its outcome, or at once when there is none. */
+  private submitSettled(): Observable<never> {
+    return this.submitRequest
+      ? this.submitRequest.pipe(
+          ignoreElements(),
+          catchError(() => EMPTY)
+        )
+      : EMPTY;
+  }
+
+  /** Shows a Confirm outcome only on the link it was made from; after a link change the reload shows it instead. */
+  private settleSubmit(request: Observable<MentorshipProgramReview>, link: MentorshipProgramReviewLink, view: MentorshipProgramReviewView): void {
+    if (this.submitRequest === request) {
+      this.submitRequest = null;
+    }
+    if (this.link() === link) {
+      this.submission.set(view);
+    }
   }
 
   private stateForError(error: unknown): MentorshipProgramReviewState {
