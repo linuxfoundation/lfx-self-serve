@@ -110,7 +110,7 @@ describe('InsightsTokensComponent', () => {
     );
   });
 
-  it('keeps Escape from dismissing either dialog, so a one-time secret cannot be lost', () => {
+  it('keeps Escape, the backdrop and a header close icon from dismissing either dialog, so a one-time secret cannot be lost', () => {
     dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }) });
     create();
 
@@ -118,7 +118,8 @@ describe('InsightsTokensComponent', () => {
 
     expect(dialogService.open).toHaveBeenCalledTimes(2);
     for (const [, config] of dialogService.open.mock.calls) {
-      expect(config).toEqual(expect.objectContaining({ closeOnEscape: false, style: { maxWidth: '90vw' } }));
+      // showHeader: false also removes PrimeNG's header close icon; only the dialog's own buttons close it.
+      expect(config).toEqual(expect.objectContaining({ closeOnEscape: false, dismissableMask: false, showHeader: false, style: { maxWidth: '90vw' } }));
     }
   });
 
