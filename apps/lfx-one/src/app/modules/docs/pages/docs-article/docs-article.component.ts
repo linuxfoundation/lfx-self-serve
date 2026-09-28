@@ -153,10 +153,6 @@ export class DocsArticleComponent {
     // would otherwise get a redundant second `navigateByUrl` call here.
     if (!this.isInsideArticleBody(anchor)) return;
 
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-      return;
-    }
-
     const href = anchor.getAttribute('href');
     if (!href) return;
 
@@ -167,6 +163,17 @@ export class DocsArticleComponent {
     // marked untouched) is resolved against the article here — natively it
     // would resolve against `<base href="/">` and leave the docs page.
     const resolvedHref = href.startsWith('#') && current ? `${current.url}${href}` : href;
+
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      // Modifier/middle clicks bypass SPA navigation and use the DOM href
+      // natively (open-in-new-tab). A bare `#frag` would resolve against
+      // `<base href="/">` and land on the app root — hand the browser the
+      // article-absolute URL so the native path lands on the article too.
+      if (resolvedHref !== href) {
+        anchor.setAttribute('href', resolvedHref);
+      }
+      return;
+    }
 
     // Use the shared `isDocsPath` predicate so the SPA-navigation contract
     // here, the auth middleware's public-route regex, and the active-state

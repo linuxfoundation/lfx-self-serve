@@ -126,6 +126,19 @@ export function createMarked(ctx) {
 }
 
 /**
+ * Maps an article slug to its public `/docs/...` URL. The root article
+ * (empty slug) is `/docs` itself. Single source for the URL shape — used by
+ * the link rewriter here and by the manifest builder for stored
+ * `article.url` values (which the runtime component resolves surviving bare
+ * `#frag` anchors against).
+ *
+ * @param {string} slug
+ */
+export function docsArticleUrl(slug) {
+  return slug === '' ? '/docs' : `/docs/${slug}`;
+}
+
+/**
  * Rewrites a markdown `[label](href)` to its final `<a href="...">`.
  *
  * Rules (research R11):
@@ -153,10 +166,8 @@ export function createMarked(ctx) {
 export function rewriteHref(href, ctx) {
   if (!href) return '';
   if (href.startsWith('#')) {
-    // Same-page anchor — resolve against the article's own URL (same slug →
-    // URL formula as the relative-link path below).
-    const selfUrl = ctx.article.slug === '' ? '/docs' : `/docs/${ctx.article.slug}`;
-    return `${selfUrl}${href}`;
+    // Same-page anchor — resolve against the article's own URL.
+    return `${docsArticleUrl(ctx.article.slug)}${href}`;
   }
   if (/^[a-z][a-z0-9+\-.]*:/i.test(href)) {
     // Schema-qualified — http(s), mailto, tel, etc. Leave alone.
@@ -184,7 +195,7 @@ export function rewriteHref(href, ctx) {
     return href;
   }
 
-  const url = slug === '' ? '/docs' : `/docs/${slug}`;
+  const url = docsArticleUrl(slug);
   return fragment ? `${url}#${fragment}` : url;
 }
 
@@ -227,11 +238,7 @@ function isAbsoluteUrl(url) {
 
 /** @param {string} value */
 function escapeAttr(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
