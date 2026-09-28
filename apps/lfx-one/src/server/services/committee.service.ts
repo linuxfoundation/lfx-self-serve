@@ -2114,7 +2114,7 @@ export class CommitteeService {
     // resolves projectUid came back empty) — same posture as every other branch here: absence of
     // proof is not proof of authorization.
     const isProjectWriter = projectUid
-      ? await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: projectUid, access: 'writer' })
+      ? await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: projectUid, access: 'writer_guard' })
       : false;
     if (!isProjectWriter) {
       throw new AuthorizationError('Only project writers can configure the Slack webhook', {
