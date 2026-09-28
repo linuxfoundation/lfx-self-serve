@@ -156,6 +156,16 @@ describe('toProjectApplicationUrlLink / toProjectApplicationEmailLink', () => {
     expect(toProjectApplicationEmailLink('a@example.org&body=x').href).toBeNull();
     expect(toProjectApplicationEmailLink('a#b@example.org').href).toBeNull();
     expect(toProjectApplicationEmailLink('a/b@example.org').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@.org').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@example.').href).toBeNull();
+    expect(toProjectApplicationEmailLink('a@b@example.org').href).toBeNull();
+  });
+
+  it('checks a long adversarial address in linear time', () => {
+    const adversarial = `!@!.${'!.'.repeat(50_000)}`;
+    const started = Date.now();
+    toProjectApplicationEmailLink(adversarial);
+    expect(Date.now() - started).toBeLessThan(200);
   });
 });
 

@@ -8,7 +8,7 @@ import {
   PROJECT_APPLICATION_EMAIL_LIST_KEYS,
   PROJECT_APPLICATION_FIELD_LABELS,
   PROJECT_APPLICATION_LONG_TEXT_KEYS,
-  PROJECT_APPLICATION_MAILTO_EMAIL_REGEX,
+  PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX,
   PROJECT_APPLICATION_SECTIONS,
   PROJECT_APPLICATION_STATE_META,
   PROJECT_APPLICATION_STATUS_CALLOUTS,
@@ -181,7 +181,21 @@ export function toProjectApplicationUrlLink(text: string): ProjectApplicationAns
  * stored-value rules, so a legacy entry carrying `?`, `&` or other mailto-header characters stays text.
  */
 export function toProjectApplicationEmailLink(text: string): ProjectApplicationAnswerLink {
-  return { text, href: PROJECT_APPLICATION_MAILTO_EMAIL_REGEX.test(text) ? `mailto:${text}` : null, external: false };
+  return { text, href: isPlainEmailAddress(text) ? `mailto:${text}` : null, external: false };
+}
+
+/** One `@` between a non-empty local part and a dotted domain, with no forbidden characters — checked without backtracking. */
+function isPlainEmailAddress(text: string): boolean {
+  if (PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX.test(text)) {
+    return false;
+  }
+  const at = text.indexOf('@');
+  if (at <= 0 || at !== text.lastIndexOf('@')) {
+    return false;
+  }
+  const domain = text.slice(at + 1);
+  const dot = domain.lastIndexOf('.');
+  return dot > 0 && dot < domain.length - 1;
 }
 
 /** The state explainer for the detail drawer, worded for the persona viewing it; `null` for an unseen state. */

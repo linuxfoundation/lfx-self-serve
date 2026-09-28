@@ -164,6 +164,8 @@
             [popup]="true"
             appendTo="body"
             ariaLabel="More actions"
+            (onShow)="moreMenuOpen.set(true)"
+            (onHide)="moreMenuOpen.set(false)"
             data-testid="project-application-drawer-more-menu" />
           <lfx-button
             icon="fa-light fa-ellipsis"
@@ -172,6 +174,7 @@
             size="small"
             ariaLabel="More actions"
             ariaHaspopup="menu"
+            [ariaExpanded]="moreMenuOpen()"
             [loading]="busyAction() === 'withdraw' || busyAction() === 'delete'"
             [disabled]="busy()"
             (onClick)="moreMenu.toggle($event)"

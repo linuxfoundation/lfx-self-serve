@@ -120,7 +120,10 @@ test.describe('Propose a project — submitter (#3037)', () => {
 
     // An open proposal keeps withdraw and delete in the footer's More menu; Revise is the submitter's primary action.
     await expect(page.getByTestId('project-application-drawer-delete')).toHaveCount(0);
-    await page.getByTestId('project-application-drawer-more').click();
+    const more = page.getByTestId('project-application-drawer-actions').getByRole('button', { name: 'More actions' });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
     await page.getByRole('menuitem', { name: 'Withdraw' }).click();
     await confirmDialog(page, 'Withdraw');
     await expect(page.getByTestId('project-application-drawer-state')).toContainText('Withdrawn', { timeout: DATA_LOAD_TIMEOUT });

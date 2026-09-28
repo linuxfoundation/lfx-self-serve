@@ -72,10 +72,11 @@ export const PROJECT_APPLICATION_EMAIL_LIST_KEYS: ReadonlySet<string> = new Set(
 export const PROJECT_APPLICATION_EMAIL_KEYS: ReadonlySet<string> = new Set(['legal_contact_email']);
 
 /**
- * A plain single email address the detail view may turn into a `mailto:` link: no mailto-header (`?&=%`) or
- * URI-delimiter (`#/\\`) characters, so the link always targets exactly the address it displays.
+ * Characters that keep an email answer from becoming a `mailto:` link: whitespace, mailto-header (`?&=%`) and
+ * URI-delimiter (`#/\\`) characters, so a link always targets exactly the address it displays. A single-character
+ * class, so testing it runs in linear time on any input.
  */
-export const PROJECT_APPLICATION_MAILTO_EMAIL_REGEX = /^[^\s@<>"'(),;:?&=%#/\\]+@[^\s@<>"'(),;:?&=%#/\\]+\.[^\s@<>"'(),;:?&=%#/\\]+$/;
+export const PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX = /[\s<>"'(),;:?&=%#/\\]/;
 
 /** Long-form prose answers the detail view renders full width under their label. */
 export const PROJECT_APPLICATION_LONG_TEXT_KEYS: ReadonlySet<string> = new Set(['mission_statement', 'description']);

@@ -94,6 +94,8 @@ export class ProjectApplicationDrawerComponent {
   protected readonly editing = signal(false);
   protected readonly busyAction = signal<string | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
+  /** Mirrors the More actions popup so its trigger can expose `aria-expanded`. */
+  protected readonly moreMenuOpen = signal(false);
 
   // === Computed Signals ===
   protected readonly stateMeta: Signal<ProjectApplicationStateMeta> = computed(() => getProjectApplicationStateMeta(this.application()?.state));
