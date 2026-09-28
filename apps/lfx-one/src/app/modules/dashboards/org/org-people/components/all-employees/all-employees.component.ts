@@ -378,15 +378,15 @@ export class AllEmployeesComponent {
    * failure waits for live; only both failing shows the error state.
    *
    * On the server this fetches nothing and leaves the skeleton; the browser starts both requests
-   * after hydration. The guard is defensive: prod measurement shows server render is not held by
-   * these calls.
+   * after hydration. These reads have not been observed holding SSR in prod, but the cause is not
+   * established, so this is guarded like org-groups (#2063).
    */
   private loadRoster(orgUid: string): Observable<OrgAllEmployeesResponse> {
     if (!isPlatformBrowser(this.platformId)) {
       return EMPTY;
     }
 
-    const state = { snowflakeFailed: false, liveLanded: false, liveFailed: false };
+    const state = { snowflakeFailed: false, snowflakeRows: 0, liveLanded: false, liveFailed: false };
     const bothFailed = (): Observable<OrgAllEmployeesResponse> => {
       this.fetchErrorState.set(true);
       this.loadingState.set(false);
@@ -395,7 +395,10 @@ export class AllEmployeesComponent {
     const snowflake$ = this.dataService.getAllEmployees(orgUid).pipe(
       take(1),
       filter(() => !state.liveLanded),
-      tap(() => this.loadingState.set(false)),
+      tap((res) => {
+        state.snowflakeRows = res.rows.length;
+        this.loadingState.set(false);
+      }),
       catchError((error: unknown) => {
         console.error('Failed to load org people roster (Snowflake):', error);
         state.snowflakeFailed = true;
@@ -404,6 +407,16 @@ export class AllEmployeesComponent {
     );
     const live$ = this.directory.getDirectory(orgUid).pipe(
       take(1),
+      map((res) => {
+        // When the server's own stored-roster read fails, the live merge answers with live sources
+        // only. Replacing a rendered stored roster with that partial list would drop most people, so
+        // it is treated as a live failure. Follow-up: the server should flag the response as degraded
+        // and not cache it, instead of the client inferring it from row provenance.
+        if (state.snowflakeRows > 0 && !res.rows.some((row) => row.sources.includes('snowflake'))) {
+          throw new Error('Live directory is missing the stored roster');
+        }
+        return res;
+      }),
       tap(() => {
         state.liveLanded = true;
         this.loadingState.set(false);

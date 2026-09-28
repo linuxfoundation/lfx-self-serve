@@ -98,8 +98,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await mount('server');
     });
 
-    // Defensive: prod measurement shows server render is not held by these calls, but the server
-    // render must not start either read — the browser starts both after hydration.
+    // Not observed holding SSR in prod, but the cause is not established, so the server render starts
+    // neither read; the browser starts both after hydration.
     it('requests neither the Snowflake roster nor the live merge, and keeps the skeleton', () => {
       expect(getAllEmployees).not.toHaveBeenCalled();
       expect(getDirectory).not.toHaveBeenCalled();
@@ -128,7 +128,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).toBeNull();
     });
 
-    it('replaces the Snowflake rows with the live merge when it lands, without duplicating anyone', async () => {
+    it('replaces the Snowflake rows with a live merge that carries the stored roster, without duplicating anyone', async () => {
       snowflake$.next(response([row('p-1', 'Ada Lovelace')], 1));
       snowflake$.complete();
       await settle();
@@ -151,6 +151,34 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
       expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
+
+    // The server's live merge answers with live sources only when its own stored-roster read failed;
+    // that partial list must not replace a full stored roster already on screen.
+    it('keeps the Snowflake rows when the live merge arrives without any stored-roster rows', async () => {
+      snowflake$.next(response([row('p-1', 'Ada Lovelace'), row('p-2', 'Alan Turing')], 2));
+      snowflake$.complete();
+      await settle();
+
+      live$.next(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1));
+      live$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2']);
+      expect(activeStat()).toContain('2');
+      expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
+
+    it('shows a live-only merge as-is when the Snowflake roster was empty', async () => {
+      snowflake$.next(response([], 0));
+      snowflake$.complete();
+      await settle();
+
+      live$.next(response([row('live-x', 'Grace Hopper', { sources: ['access'] })], 1));
+      live$.complete();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-live-x']);
     });
 
     it('ignores a Snowflake roster that arrives after the live merge has landed', async () => {
