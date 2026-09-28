@@ -47,11 +47,17 @@ import { DocsNotFoundComponent } from '../docs-not-found/docs-not-found.componen
  * search results via `DocsSearchComponent.activate()`) already navigate
  * via Angular's router, so intercepting them at the host level would
  * cause a redundant double `navigateByUrl` to the same URL. In-page
- * anchors (`#section`) are routed through the router as same-URL fragment
- * navigations so the docs scroll offset applies — a bare `#frag` would
- * otherwise resolve against `<base href="/">` and leave the docs page.
+ * anchors ship as the article's absolute `/docs/...#section` URL (rewritten
+ * at build time in `marked-config.mjs`; surviving bare `#frag` hrefs from
+ * raw-HTML markdown are resolved against the article in the handler) and
+ * route through the router as same-URL fragment navigations so the docs
+ * scroll offset applies. Re-clicks on the already-active fragment scroll
+ * directly via `ViewportScroller.scrollToAnchor`, because the router drops
+ * same-URL navigations (`onSameUrlNavigation` defaults to `'ignore'`).
  * External links fall through to the browser default. Modifier-key clicks
- * (cmd/ctrl/shift/alt) also fall through so "open in new tab" still works.
+ * (cmd/ctrl/shift/alt) also fall through — the article-absolute hrefs make
+ * native "open in new tab" land on the right section instead of resolving
+ * `#frag` against `<base href="/">` (the app root).
  */
 @Component({
   selector: 'lfx-docs-article',
@@ -154,25 +160,20 @@ export class DocsArticleComponent {
     const href = anchor.getAttribute('href');
     if (!href) return;
 
-    // Same-page anchors (`#section`): route through the Angular router so the
-    // docs-scoped ViewportScroller offset applies and the URL stays on the
-    // current article. A bare `#frag` would otherwise resolve against
-    // `<base href="/">` and navigate off the docs page entirely.
-    if (href.startsWith('#')) {
-      if (anchor.target && anchor.target !== '_self') {
-        return;
-      }
-      event.preventDefault();
-      void this.router.navigate([], { relativeTo: this.route, fragment: href.slice(1) });
-      return;
-    }
+    const current = this.article();
+    // Same-page anchors: authored `#fragment` links reach the DOM already
+    // rewritten to the article's absolute `/docs/...#fragment` URL (build-time
+    // rewrite in marked-config.mjs). A surviving bare `#frag` (raw HTML passes
+    // marked untouched) is resolved against the article here — natively it
+    // would resolve against `<base href="/">` and leave the docs page.
+    const resolvedHref = href.startsWith('#') && current ? `${current.url}${href}` : href;
 
     // Use the shared `isDocsPath` predicate so the SPA-navigation contract
     // here, the auth middleware's public-route regex, and the active-state
     // checks in lens-switcher / docs-sidebar-nav all agree on what counts
     // as a docs URL. A bare `[Docs home](/docs)` from authored markdown is
     // intercepted; non-docs prefixes like `/docs-admin` or `/docsx` are not.
-    if (!isDocsPath(href)) {
+    if (!isDocsPath(resolvedHref)) {
       return;
     }
     if (anchor.target && anchor.target !== '_self') {
@@ -180,7 +181,22 @@ export class DocsArticleComponent {
     }
 
     event.preventDefault();
-    void this.router.navigateByUrl(href);
+
+    const hashIndex = resolvedHref.indexOf('#');
+    if (hashIndex !== -1 && current && resolvedHref.slice(0, hashIndex) === current.url) {
+      const targetFragment = resolvedHref.slice(hashIndex + 1);
+      // Re-clicking the link for the fragment already in the URL is a
+      // same-URL navigation, which the router drops (onSameUrlNavigation
+      // defaults to 'ignore') — scroll directly instead. scrollToAnchor
+      // honors the docs offset set in the constructor, so the landing
+      // matches a router-driven fragment scroll.
+      if (targetFragment === this.route.snapshot.fragment) {
+        this.viewportScroller.scrollToAnchor(targetFragment);
+        return;
+      }
+    }
+
+    void this.router.navigateByUrl(resolvedHref);
   }
 
   /**

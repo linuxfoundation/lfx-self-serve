@@ -76,12 +76,13 @@ test.describe('Docs portal — markdown rendering (US5)', () => {
   });
 
   test('fragment URL scrolls the target heading into view', async ({ page }) => {
-    // Mid-article h2 with ample content below — a near-the-end heading (e.g.
-    // `#public-meeting-access`) runs out of scroll room and would pass an
-    // occlusion-only check even with the offset reverted. The tight landing
-    // assertion fails if the 128px offset/scroll-margin is removed.
-    await page.goto('/docs/meetings#key-concepts', { waitUntil: 'domcontentloaded' });
-    const target = page.locator('h2#key-concepts');
+    // Early-article h2 with ample content below — a near-the-end heading (e.g.
+    // `#key-concepts`) runs out of scroll room (the viewport can't scroll it up
+    // to the offset) and would pass an occlusion-only check even with the
+    // offset reverted. The tight landing assertion fails if the 128px
+    // offset/scroll-margin is removed.
+    await page.goto('/docs/meetings#what-you-can-do', { waitUntil: 'domcontentloaded' });
+    const target = page.locator('h2#what-you-can-do');
     await expect(target).toBeInViewport({ timeout: DATA_LOAD_TIMEOUT });
 
     // toBeInViewport misses occlusion (intersection ≠ uncovered): with the offset
@@ -128,16 +129,17 @@ test.describe('Docs portal — markdown rendering (US5)', () => {
   });
 
   test('same-page #anchor links scroll in place without leaving the article', async ({ page }) => {
-    // Authored markdown uses bare `#fragment` links for "see X below" cross-references.
-    // Without interception the browser resolves them against `<base href="/">` and
-    // navigates off the docs page entirely (to an auth-guarded route for anonymous
-    // readers); the click interceptor must turn them into same-URL fragment
-    // navigations so the docs scroll offset applies.
+    // Authored markdown writes same-page cross-references as bare `#fragment`
+    // links; the docs build (marked-config.mjs) rewrites them to the article's
+    // absolute `/docs/...#fragment` URL so activations that bypass the click
+    // interceptor (cmd/ctrl-click, middle-click) still resolve against the
+    // article instead of `<base href="/">`. A plain click is intercepted and
+    // becomes a same-URL fragment navigation so the docs scroll offset applies.
     await page.goto('/docs/crowdfunding/manage-initiatives', { waitUntil: 'domcontentloaded' });
     const body = page.getByTestId('docs-article-body');
     await expect(body).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await body.locator('a[href="#fund-types"]').first().click();
+    await body.locator('a[href="/docs/crowdfunding/manage-initiatives#fund-types"]').first().click();
     await expect(page).toHaveURL(/\/docs\/crowdfunding\/manage-initiatives#fund-types$/);
 
     const target = page.locator('h2#fund-types');
@@ -151,6 +153,62 @@ test.describe('Docs portal — markdown rendering (US5)', () => {
         { timeout: DATA_LOAD_TIMEOUT }
       )
       .toBe(true);
+  });
+
+  test('re-clicking the active fragment scrolls back to the section', async ({ page }) => {
+    // Same-URL navigations are dropped by the router (onSameUrlNavigation
+    // defaults to 'ignore'), so a re-click on the already-active fragment must
+    // scroll directly — otherwise a deep-linked reader who scrolls away finds
+    // the in-page link dead. `#fund-types` sits near the article end (tight
+    // scroll room), so assert the top-region landing predicate shared with the
+    // same-page test rather than an exact offset.
+    await page.goto('/docs/crowdfunding/manage-initiatives#fund-types', { waitUntil: 'domcontentloaded' });
+    const body = page.getByTestId('docs-article-body');
+    await expect(body).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const target = page.locator('h2#fund-types');
+    await expect(target).toBeInViewport({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Scroll away; the heading ends up well below the fold, where it would
+    // stay forever if the re-click were swallowed by the router.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const topBefore = await target.evaluate((el) => el.getBoundingClientRect().top);
+    expect(topBefore).toBeGreaterThan(500);
+
+    await body.locator('a[href="/docs/crowdfunding/manage-initiatives#fund-types"]').first().click();
+    await expect(page).toHaveURL(/\/docs\/crowdfunding\/manage-initiatives#fund-types$/);
+
+    await expect
+      .poll(
+        async () => {
+          const targetTop = await target.evaluate((el) => el.getBoundingClientRect().top);
+          const topbarBottom = await page.getByTestId('docs-article-topbar').evaluate((el) => el.getBoundingClientRect().bottom);
+          const viewportHeight = page.viewportSize()?.height ?? 720;
+          return targetTop >= topbarBottom && targetTop <= viewportHeight;
+        },
+        { timeout: DATA_LOAD_TIMEOUT }
+      )
+      .toBe(true);
+  });
+
+  test('modified click on a same-page link opens the article URL in a new tab', async ({ page, context }) => {
+    // Modifier clicks deliberately bypass the click interceptor, so the raw
+    // href must already be the article-absolute `/docs/...#fragment` URL — a
+    // bare `#fragment` would resolve against `<base href="/">` and open the
+    // app root (auth-guarded for anonymous readers) instead of the section.
+    await page.goto('/docs/crowdfunding/manage-initiatives', { waitUntil: 'domcontentloaded' });
+    const body = page.getByTestId('docs-article-body');
+    await expect(body).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const newTabModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+    const popupPromise = context.waitForEvent('page');
+    await body
+      .locator('a[href="/docs/crowdfunding/manage-initiatives#fund-types"]')
+      .first()
+      .click({ modifiers: [newTabModifier] });
+    const popup = await popupPromise;
+    await popup.waitForLoadState('domcontentloaded');
+    await expect(popup).toHaveURL(/\/docs\/crowdfunding\/manage-initiatives#fund-types$/);
+    await popup.close();
   });
 
   test('external links open in a new tab with safe rel attributes', async ({ page }) => {

@@ -45,8 +45,8 @@ const ALLOWED_TAGS = [
   'em',
   'strong',
   'img',
-    'br',
-    'span',
+  'br',
+  'span',
 ];
 
 /**

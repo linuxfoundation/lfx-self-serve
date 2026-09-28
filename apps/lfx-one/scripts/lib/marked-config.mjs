@@ -23,7 +23,10 @@ import sanitizeHtml from 'sanitize-html';
  *       * relative paths → `/docs/...` URL via `sourcePathToSlug`
  *       * absolute URLs left as-is and tagged `target=_blank rel=noopener`
  *       * `mailto:` and `tel:` left as-is
- *       * same-page anchors left as-is
+ *       * same-page anchors (`#fragment`) → the article's own absolute
+ *         `/docs/...#fragment` URL, so modifier/middle clicks that bypass the
+ *         SPA click interceptor resolve against the article instead of
+ *         `<base href="/">`
  *   - heading capture for the article TOC (and search-index "headings" field)
  *   - heading anchor ids derived from heading text
  *
@@ -126,7 +129,11 @@ export function createMarked(ctx) {
  * Rewrites a markdown `[label](href)` to its final `<a href="...">`.
  *
  * Rules (research R11):
- *   - Same-page anchors (`#fragment`)             → unchanged.
+ *   - Same-page anchors (`#fragment`)             → rewritten to the
+ *     article's own absolute `/docs/...#fragment` URL. A bare `#fragment`
+ *     resolves against `<base href="/">` on any activation the SPA click
+ *     interceptor doesn't handle (cmd/ctrl-click, middle-click), landing on
+ *     the app root instead of the article section.
  *   - Absolute URLs (`https://...`, `http://...`) → unchanged.
  *   - `mailto:` / `tel:`                          → unchanged.
  *   - Relative paths to other source files        → resolved against the
@@ -145,7 +152,12 @@ export function createMarked(ctx) {
  */
 export function rewriteHref(href, ctx) {
   if (!href) return '';
-  if (href.startsWith('#')) return href;
+  if (href.startsWith('#')) {
+    // Same-page anchor — resolve against the article's own URL (same slug →
+    // URL formula as the relative-link path below).
+    const selfUrl = ctx.article.slug === '' ? '/docs' : `/docs/${ctx.article.slug}`;
+    return `${selfUrl}${href}`;
+  }
   if (/^[a-z][a-z0-9+\-.]*:/i.test(href)) {
     // Schema-qualified — http(s), mailto, tel, etc. Leave alone.
     return href;

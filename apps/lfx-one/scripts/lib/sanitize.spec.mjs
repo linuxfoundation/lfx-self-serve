@@ -40,9 +40,7 @@ describe('sanitizeDocsHtml', () => {
   });
 
   it('preserves slug-shaped heading ids (the fragment deep-link contract)', () => {
-    expect(sanitizeDocsHtml('<h2 id="public-meeting-access">Public meeting access</h2>')).toBe(
-      '<h2 id="public-meeting-access">Public meeting access</h2>'
-    );
+    expect(sanitizeDocsHtml('<h2 id="public-meeting-access">Public meeting access</h2>')).toBe('<h2 id="public-meeting-access">Public meeting access</h2>');
   });
 
   it('drops heading ids outside the slugify() shape (DOM-clobbering guard)', () => {
@@ -51,9 +49,7 @@ describe('sanitizeDocsHtml', () => {
   });
 
   it('adds target=_blank rel="noopener noreferrer" to external links only', () => {
-    expect(sanitizeDocsHtml('<a href="https://example.com">x</a>')).toBe(
-      '<a href="https://example.com" target="_blank" rel="noopener noreferrer">x</a>'
-    );
+    expect(sanitizeDocsHtml('<a href="https://example.com">x</a>')).toBe('<a href="https://example.com" target="_blank" rel="noopener noreferrer">x</a>');
     expect(sanitizeDocsHtml('<a href="/docs/meetings">x</a>')).toBe('<a href="/docs/meetings">x</a>');
     expect(sanitizeDocsHtml('<a href="#frag">x</a>')).toBe('<a href="#frag">x</a>');
   });
