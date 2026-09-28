@@ -31,12 +31,20 @@ import { ProjectService } from './project.service';
 import { invalidateOrgGroupsCache, invalidatePerUserCache, withPerUserCache } from './valkey.service';
 
 /**
- * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
- * doesn't pull the full cross-foundation roster (up to the 200-page × 500 = 100k safety cap) just to
- * feed a client-filtered typeahead. Key contacts are always included in full; committee members beyond
- * this bound are omitted from the suggestions (manual entry still works).
+ * committee-service org-seat page size. committee-service 0.4.52 (lfx-v2-committee-service#216) accepts
+ * up to 5000 (above that it returns 400). Each request is a full server-side org read whatever the page
+ * size, so a larger page is strictly cheaper upstream: it turns ~6 requests into 1 for the largest org.
  */
-const PICKER_MAX_SEAT_PAGES = 4;
+const ORG_SEAT_PAGE_SIZE = 5000;
+
+/**
+ * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
+ * doesn't pull the full cross-foundation roster (up to the 200-page × 5000 = 1M safety cap) just to
+ * feed a client-filtered typeahead. One page of up to 5000 rows for one full server-side read (it was
+ * 4 × 500 = 2000 rows for four full reads). Key contacts are always included in full; committee members
+ * beyond this bound are omitted from the suggestions (manual entry still works).
+ */
+const PICKER_MAX_SEAT_PAGES = 1;
 
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
@@ -294,7 +302,7 @@ export class OrgLensBoardCommitteeService {
 
     // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and CSV
     // export need the org's FULL (foundation-scoped) roster, so they drain every page by following the opaque
-    // cursor up to `maxPages` (default 200 × 500 = 100k safety stop against a pathological cursor loop). The
+    // cursor up to `maxPages` (default 200 × 5000 = 1M safety stop against a pathological cursor loop). The
     // picker passes a much smaller bound and tolerates truncation (see below).
     const seats: CommitteeServiceOrgSeat[] = [];
     let pageToken: string | undefined;
@@ -302,7 +310,7 @@ export class OrgLensBoardCommitteeService {
     do {
       // ApiClientService serializes array params as repeated keys (project_uids=a&project_uids=b), which
       // the committee-service read contract accepts (filters organization_id + project_uid ∈ {family}).
-      const params: Record<string, string | string[]> = { v: '1', page_size: '500' };
+      const params: Record<string, string | string[]> = { v: '1', page_size: String(ORG_SEAT_PAGE_SIZE) };
       if (projectUids?.length) {
         params['project_uids'] = projectUids;
       }

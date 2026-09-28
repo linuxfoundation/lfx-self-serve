@@ -6,9 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors org-lens-groups.service.spec.ts: the collaborators are constructed in
 // `OrgLensBoardCommitteeService`'s constructor, so they must be mocked at module level.
-const { proxyRequest, getEffectiveUsername } = vi.hoisted(() => ({
+const { proxyRequest, getEffectiveUsername, getKeyContactEmployees } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'tester' as string | null),
+  getKeyContactEmployees: vi.fn(async () => [] as unknown[]),
 }));
 
 vi.mock('./microservice-proxy.service', () => ({
@@ -16,7 +17,11 @@ vi.mock('./microservice-proxy.service', () => ({
     public proxyRequest = proxyRequest;
   },
 }));
-vi.mock('./org-lens-key-contacts.service', () => ({ OrgLensKeyContactsService: class {} }));
+vi.mock('./org-lens-key-contacts.service', () => ({
+  OrgLensKeyContactsService: class {
+    public getEmployees = getKeyContactEmployees;
+  },
+}));
 vi.mock('./org-lens-memberships.service', () => ({ OrgLensMembershipsService: class {} }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 vi.mock('./logger.service', () => ({
@@ -282,6 +287,39 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — cache round trip (GH
     corrupt(stored);
 
     expect(cache.accept!(stored)).toBe(false);
+  });
+});
+
+describe('OrgLensBoardCommitteeService org seat paging (GH-3050)', () => {
+  const cursorPage = (seats: CommitteeServiceOrgSeat[], token: string | null): CommitteeServiceOrgSeatPage => ({ seats, page_token: token });
+
+  it('drains in 5000-row pages, following page_token until committee-service stops returning one', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(cursorPage([seat()], 'next-1'))
+      .mockResolvedValueOnce(cursorPage([seat({ uid: 'seat-2' })], 'next-2'))
+      .mockResolvedValueOnce(cursorPage([seat({ uid: 'seat-3' })], null));
+    const service = new OrgLensBoardCommitteeService();
+
+    const seats = await service.fetchAllOrgSeatsUncached(req, ORG);
+
+    expect(seats.map((s) => s.uid)).toEqual(['seat-1', 'seat-2', 'seat-3']);
+    const params = proxyRequest.mock.calls.map((call) => call[4]);
+    expect(params).toEqual([
+      { v: '1', page_size: '5000' },
+      { v: '1', page_size: '5000', page_token: 'next-1' },
+      { v: '1', page_size: '5000', page_token: 'next-2' },
+    ]);
+  });
+
+  it('reads one 5000-row page for the Reassign picker and returns it even though the cursor still advances', async () => {
+    proxyRequest.mockResolvedValue(cursorPage([seat()], 'more'));
+    const service = new OrgLensBoardCommitteeService();
+
+    const employees = await service.getOrgEmployees(req, ORG);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ v: '1', page_size: '5000' });
+    expect(employees.map((e) => e.email)).toEqual(['dclarke@lfx-partner.example']);
   });
 });
 
