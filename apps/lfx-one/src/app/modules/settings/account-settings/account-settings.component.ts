@@ -69,8 +69,13 @@ export class AccountSettingsComponent {
 
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
+  // Latched in afterNextRender (a no-op on the server): the non-production localStorage override in
+  // FeatureFlagService reads synchronously, so without it a pre-seeded `true` would render the group on
+  // the first client pass and mismatch the SSR DOM (same fix as health-metrics-gate.component.ts).
+  private readonly hydrated = signal(false);
+  private readonly rawInsightsPublicApiEnabled = this.featureFlagService.getBooleanFlag(INSIGHTS_PUBLIC_API_FLAG, false);
   /** IN-1233 — gates the LFX Insights API tokens group and its Developer Settings copy. */
-  public readonly insightsPublicApiEnabled = this.featureFlagService.getBooleanFlag(INSIGHTS_PUBLIC_API_FLAG, false);
+  public readonly insightsPublicApiEnabled = computed(() => this.hydrated() && this.rawInsightsPublicApiEnabled());
 
   // ── Refresh mechanisms ──
   private emailRefresh = new BehaviorSubject<void>(undefined);
@@ -218,6 +223,7 @@ export class AccountSettingsComponent {
   });
 
   public constructor() {
+    afterNextRender(() => this.hydrated.set(true));
     this.passwordForm
       .get('newPassword')
       ?.valueChanges.pipe(takeUntilDestroyed())
