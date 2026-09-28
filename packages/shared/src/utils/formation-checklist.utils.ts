@@ -134,17 +134,18 @@ export function isFormationTemplateItemKey(key: string): boolean {
 
 /**
  * The one item a formation row's "Blocking" cell names (#3066) — the single rule both the queue
- * table and My Formations apply. The next outstanding gate wins; a gates-cleared row names nothing
- * (the cell reads "Formation to set Active"); otherwise the first `blocked` title stands in. That
- * fallback covers a degraded item read and the two index documents disagreeing (no outstanding
- * gate in the item index while the projection still says gates aren't cleared), so the cell never
- * goes blank while the Blocked tile still counts a blocker.
+ * table and My Formations apply. A gates-cleared row names nothing (the cell reads "Formation to
+ * set Active"): `gates_cleared` is the formation service's own readiness summary, and it publishes
+ * that projection before the item batch, so a stale open item document must not outrank it. Next,
+ * the outstanding gate; otherwise the first `blocked` title stands in. That fallback covers a
+ * degraded item read and the item index lagging the projection, so the cell never goes blank while
+ * the Blocked tile still counts a blocker.
  */
 export function resolveFormationBlockingItem(
   row: Pick<FormationQueueRow, 'next_gate_item' | 'gates_cleared' | 'blocked_item_titles'>
 ): FormationBlockingItem | null {
-  if (row.next_gate_item) return { title: row.next_gate_item.title, blocked: row.next_gate_item.status === 'blocked' };
   if (row.gates_cleared) return null;
+  if (row.next_gate_item) return { title: row.next_gate_item.title, blocked: row.next_gate_item.status === 'blocked' };
   const firstBlocked = row.blocked_item_titles[0];
   return firstBlocked ? { title: firstBlocked, blocked: true } : null;
 }

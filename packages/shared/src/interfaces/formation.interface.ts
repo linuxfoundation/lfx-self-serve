@@ -778,7 +778,8 @@ export interface UpstreamFormationItemRow {
 
 /**
  * The one checklist item a formation row names in its "Blocking" column (#3066) — the first
- * gating item not yet `done`/`skipped`, picked by `selectNextFormationGateItem`.
+ * gating item not yet `done`, open (non-skipped) gates preferred, picked by
+ * `selectNextFormationGateItem`. `status` is therefore `skipped` when only skipped gates remain.
  */
 export interface FormationNextGateItem {
   item_key: string;

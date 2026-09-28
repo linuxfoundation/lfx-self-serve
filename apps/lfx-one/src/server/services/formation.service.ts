@@ -1169,8 +1169,8 @@ export class FormationService {
   }
 
   /**
-   * The next open gate item per formation (#3066) — the first gating item not yet `done`/`skipped`,
-   * in checklist order, via {@link selectNextFormationGateItem}. The `formation` projection carries
+   * The next outstanding gate item per formation (#3066) — the first gating item not yet `done`, in
+   * checklist order with open (non-skipped) gates preferred, via {@link selectNextFormationGateItem}. The `formation` projection carries
    * only per-status counts, so this reads the `formation_item` index: one request per
    * `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of `formation_uid:` tags (OR'd), AND'd with
    * `lifecycle:live` — the item document carries both tags and the same access relation as its

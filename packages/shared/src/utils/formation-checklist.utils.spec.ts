@@ -487,8 +487,11 @@ describe('resolveFormationBlockingItem (#3066)', () => {
     );
   });
 
-  it('names nothing once gates are cleared, even with blocked non-gating items', () => {
+  it('names nothing once gates are cleared, even with blocked non-gating items or a stale open gate document', () => {
     expect(resolveFormationBlockingItem(row({ gates_cleared: true, blocked_item_titles: ['Comms'] }))).toBeNull();
+    expect(
+      resolveFormationBlockingItem(row({ gates_cleared: true, next_gate_item: { item_key: 'charter_agreed', title: 'Charter agreed', status: 'in_progress' } }))
+    ).toBeNull();
   });
 
   it('falls back to the first blocked title when no gate is outstanding and gates are not cleared', () => {
