@@ -9,7 +9,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeOverviewResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,7 +31,7 @@ describe('MenteeOverviewComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeOverviewComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeOverview } },
         { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
       ],
     });
@@ -64,7 +64,7 @@ describe('MenteeOverviewComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeOverviewComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeOverview } },
         { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
       ],
     });
@@ -146,7 +146,7 @@ describe('MenteeOverviewComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeOverviewComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeOverview } },
         { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
       ],
     });
@@ -218,7 +218,7 @@ describe('MenteeOverviewComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeOverviewComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeOverview } },
         { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
       ],
     });
@@ -242,7 +242,7 @@ describe('MenteeOverviewComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeOverviewComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeOverview } },
         { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
       ],
     });

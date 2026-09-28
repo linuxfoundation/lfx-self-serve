@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship.interface';
+import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship-mentee.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -163,7 +163,7 @@ import type {
   MentorshipMenteeTasksResponse,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeUpNextTaskStatus,
-} from '../interfaces/mentorship.interface';
+} from '../interfaces/mentorship-mentee.interface';
 
 // ---------------------------------------------------------------------------
 // Tab configs — one per phase
