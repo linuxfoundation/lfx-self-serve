@@ -10,11 +10,12 @@ import {
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  SURVEY_LINK_ALLOWLIST,
   TSHIRT_SIZES,
   VISIBILITY_PREFERENCE_APP_NAME,
   VISIBILITY_PREFERENCE_NAME,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, NatsSubjects, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
@@ -34,6 +35,7 @@ import {
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
+  SurveyResponseRecord,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
   UserMetadata,
@@ -50,6 +52,7 @@ import {
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
+  getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
   normalizeIndexedMeetingAiSummary,
@@ -65,6 +68,8 @@ import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchCurrentUserSurveyResponses } from '../helpers/survey-response.helper';
+import { validateAndSanitizeUrl } from '../helpers/url-validation';
 import { getEffectiveEmail, getUsernameFromAuth, isImpersonating, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -1291,7 +1296,7 @@ export class UserService {
   /**
    * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
-   *   - Non-responded surveys (Snowflake)
+   *   - Non-responded surveys (query-service `survey_response` index — the same source My Surveys reads)
    *   - Upcoming meetings within the next two weeks (Review Agenda action)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
@@ -1324,10 +1329,10 @@ export class UserService {
     // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveys, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
-      this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
+    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
+      this.fetchPendingSurveyResponses(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
-        return [];
+        return [] as SurveyResponseRecord[];
       }),
 
       this.getUserMeetings(req, projectUid, undefined, { basic: true }).catch((error) => {
@@ -1368,6 +1373,7 @@ export class UserService {
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
+    const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
@@ -1398,7 +1404,7 @@ export class UserService {
     // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
     // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
     // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
-    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
   /**
@@ -1667,7 +1673,7 @@ export class UserService {
         month: 'short',
         day: 'numeric',
       });
-      // fetchPendingVotes returns raw indexer-shaped docs typed as Vote — at runtime they carry vote_uid, not uid. Fall back so voteUid is always populated.
+      // SAFETY: fetchPendingVotes returns raw indexer-shaped docs typed as Vote — at runtime they carry vote_uid, not uid. Fall back so voteUid is always populated.
       const voteUid = vote.uid ?? (vote as unknown as IndexedVote).vote_uid;
       return {
         type: 'Vote',
@@ -1682,6 +1688,61 @@ export class UserService {
         date: `Closes ${formattedEnd}`,
       };
     });
+  }
+
+  /**
+   * Pending surveys for the current user from the `survey_response` index — the same identity
+   * read My Surveys uses, so the two surfaces can't diverge. Unanswered comes from the helper;
+   * "still actionable" (OPEN display status) is decided here with the shared survey utils.
+   */
+  private async fetchPendingSurveyResponses(req: Request, projectUid?: string): Promise<SurveyResponseRecord[]> {
+    // failOnPartial: a truncated page set can silently miss a pending survey. The caller catches
+    // and degrades the whole source, so fail closed here.
+    const rows = await fetchCurrentUserSurveyResponses(req, this.microserviceProxy, {
+      ...(projectUid && { filters: [`project.project_uid:${projectUid}`] }),
+      failOnPartial: true,
+    });
+
+    return rows.filter((row) => {
+      // Rows predating survey-field denormalization carry no title/cutoff — they can't be proven
+      // open or rendered meaningfully, so they're excluded (the issue's "no noise" requirement).
+      if (!row.survey_title) return false;
+      return getSurveyDisplayStatus({ survey_status: row.survey_status, survey_cutoff_date: row.survey_cutoff_date }) === SurveyStatus.OPEN;
+    });
+  }
+
+  /**
+   * Maps pending survey rows to Survey pending-action items — the same shape the Snowflake source
+   * produced: "Submit Survey" opens the allowlist-validated link in a new tab.
+   */
+  private transformSurveysToActions(req: Request, rows: SurveyResponseRecord[]): PendingActionItem[] {
+    const items: PendingActionItem[] = [];
+    for (const row of rows) {
+      const buttonLink = row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
+      // A pending action without a valid link can't be acted on — skip rather than render a dead
+      // button. The row still shows in My Surveys, so the survey is not hidden altogether.
+      if (!buttonLink) {
+        logger.debug(req, 'transform_surveys_to_actions', 'Skipping survey row with missing or disallowed link', { survey_uid: row.survey_uid });
+        continue;
+      }
+
+      // The OPEN filter already proved survey_cutoff_date parses and is in the future.
+      const cutoffDate = new Date(row.survey_cutoff_date as string);
+      const formattedDate = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const displayDate = cutoffDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+      items.push({
+        type: 'Survey',
+        badge: row.project?.name ?? '',
+        text: `${row.survey_title} is due ${formattedDate}`,
+        icon: 'fa-regular fa-clipboard-list',
+        severity: PENDING_ACTION_SEVERITY.Survey,
+        buttonText: 'Submit Survey',
+        buttonLink,
+        date: `Due ${displayDate}`,
+      });
+    }
+    return items;
   }
 
   /**

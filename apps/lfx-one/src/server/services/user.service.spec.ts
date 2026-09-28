@@ -19,13 +19,13 @@ import {
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork, isImpersonating } = vi.hoisted(() => ({
+const { proxyRequest, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork, isImpersonating, getEffectiveEmail } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  getPendingActionSurveys: vi.fn(),
   getMyPendingInvitations: vi.fn(),
   getUsernameFromAuth: vi.fn(),
   getMyFormationWork: vi.fn(),
   isImpersonating: vi.fn(() => false),
+  getEffectiveEmail: vi.fn(),
 }));
 
 // Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
@@ -33,11 +33,7 @@ const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsern
 vi.mock('./nats.service', () => ({ NatsService: vi.fn() }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: vi.fn(() => ({})) } }));
 vi.mock('./meeting.service', () => ({ MeetingService: vi.fn() }));
-vi.mock('./project.service', () => ({
-  ProjectService: class {
-    public getPendingActionSurveys = getPendingActionSurveys;
-  },
-}));
+vi.mock('./project.service', () => ({ ProjectService: vi.fn() }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -54,7 +50,7 @@ vi.mock('./formation.service', () => ({
 }));
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth,
-  getEffectiveEmail: vi.fn(),
+  getEffectiveEmail,
   stripAuthPrefix: (value: string) => value,
   isImpersonating,
 }));
@@ -414,12 +410,10 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    getPendingActionSurveys.mockReset();
     getMyPendingInvitations.mockReset();
     getUsernameFromAuth.mockReset();
     getMyFormationWork.mockReset();
 
-    getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
     getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
@@ -520,13 +514,11 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    getPendingActionSurveys.mockReset();
     getMyPendingInvitations.mockReset();
     getUsernameFromAuth.mockReset();
     getMyFormationWork.mockReset();
 
     proxyRequest.mockImplementation(() => queryPage([]));
-    getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
     getMyFormationWork.mockResolvedValue({ formations: [], items: [formationRow], state: 'complete' });
@@ -573,6 +565,116 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
     await service.getPendingActions(req, undefined, email, undefined);
 
     expect(getMyFormationWork).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
+  const req = {} as unknown as Request;
+  const email = 'invitee@example.com';
+
+  // Open = survey_status 'sent' with a future cutoff (getSurveyDisplayStatus); unanswered = empty
+  // response_datetime (helper filter). The link host is on SURVEY_LINK_ALLOWLIST.
+  const openSurveyRow = {
+    uid: 'resp-open',
+    survey_uid: 'survey-1',
+    survey_title: 'Board Satisfaction Survey',
+    survey_status: 'sent',
+    survey_cutoff_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    survey_link: 'https://www.research.net/r/ABC123',
+    response_datetime: '',
+    project: { name: 'Acme Project' },
+  };
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getMyPendingInvitations.mockReset();
+    getUsernameFromAuth.mockReset();
+    getEffectiveEmail.mockReset();
+    getMyFormationWork.mockReset();
+
+    proxyRequest.mockImplementation(() => queryPage([]));
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getEffectiveEmail.mockReturnValue(email);
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
+
+    service = new UserService();
+  });
+
+  it('emits a Submit Survey action for an unanswered open survey, identity-matched by email+username', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0]).toEqual(
+      expect.objectContaining({
+        buttonText: 'Submit Survey',
+        buttonLink: 'https://www.research.net/r/ABC123',
+        badge: 'Acme Project',
+        text: expect.stringContaining('Board Satisfaction Survey is due'),
+        date: expect.stringMatching(/^Due /),
+      })
+    );
+
+    const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ filters_or: ['email:invitee@example.com', 'username:testuser'] }));
+    expect(surveyCall?.[4]).not.toHaveProperty('filters');
+  });
+
+  it('excludes answered surveys (response_datetime populated)', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([{ ...openSurveyRow, response_datetime: '2026-09-01T12:00:00Z' }]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+  });
+
+  it('excludes expired surveys (sent past cutoff) and rows without renderable survey fields', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response'
+        ? queryPage([
+            { ...openSurveyRow, uid: 'expired', survey_cutoff_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+            { ...openSurveyRow, uid: 'legacy', survey_title: null },
+          ])
+        : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+  });
+
+  it('degrades to no survey rows when the survey_response read fails, without failing the aggregation', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'survey_response') {
+        return Promise.reject(new Error('query service down'));
+      }
+      if (params?.type === 'v1_meeting') {
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+  });
+
+  it('pushes project scoping server-side via project.project_uid when a project lens is active', async () => {
+    await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
+
+    const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ filters: ['project.project_uid:proj-uid-1'] }));
   });
 });
 
