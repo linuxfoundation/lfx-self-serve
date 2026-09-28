@@ -34,7 +34,7 @@ export const INSIGHTS_TOKEN_INELIGIBLE: InsightsTokenEligibility = { canCreate: 
 export const INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: true };
 
 /** LFX Insights public API documentation, linked from the token group and reveal dialog. */
-export const INSIGHTS_PUBLIC_API_DOCS_URL = 'https://docs.linuxfoundation.org/lfx/insights';
+export const INSIGHTS_PUBLIC_API_DOCS_URL = 'https://insights.linuxfoundation.org/docs/introduction/what-is-insights/';
 
 /** How long the reveal dialog shows "Copied" before reverting to "Copy". */
 export const INSIGHTS_TOKEN_COPIED_RESET_MS = 2000;
