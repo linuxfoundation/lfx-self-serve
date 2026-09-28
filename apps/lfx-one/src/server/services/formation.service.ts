@@ -866,6 +866,10 @@ export class FormationService {
         if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
           continue;
         }
+        // The next open gate (#3066); the first `blocked` title only when that read degraded — the
+        // same rule the queue table applies off `next_gate_resolved`.
+        const nextGate = nextGates?.get(aggregateRow.formation_uid) ?? null;
+        const fallbackBlockedTitle = nextGates ? null : (aggregateRow.blocked_item_titles[0] ?? null);
         const itemsTotal = Object.values(aggregateRow.progress).reduce((sum: number, count) => sum + (count ?? 0), 0);
         formations.push({
           formation_uid: aggregateRow.formation_uid,
@@ -886,8 +890,8 @@ export class FormationService {
           // upstream adds one. The card guards this line on gating_total > 0.
           gating_done: 0,
           gating_total: 0,
-          // The next open gate (#3066); the first `blocked` title only when that read degraded.
-          blocking_item_title: nextGates ? (nextGates.get(aggregateRow.formation_uid)?.title ?? null) : (aggregateRow.blocked_item_titles[0] ?? null),
+          blocking_item_title: nextGate?.title ?? fallbackBlockedTitle,
+          blocking_item_blocked: nextGate ? nextGate.status === 'blocked' : fallbackBlockedTitle !== null,
           gates_cleared: aggregateRow.gates_cleared,
         });
       }

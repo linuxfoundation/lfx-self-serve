@@ -884,6 +884,8 @@ export interface MyFormationSummary {
   gating_total: number;
   /** The formation's next open gate item's title (#3066, {@link FormationQueueRow.next_gate_item}); falls back to the first `blocked` item's title only when the item read degraded. */
   blocking_item_title: string | null;
+  /** Whether {@link blocking_item_title}'s item is itself `blocked` — always `true` for the degraded `blocked_item_titles` fallback. Styles the cell as danger, matching the queue table. */
+  blocking_item_blocked: boolean;
   /** The projection's own {@link FormationQueueRow.gates_cleared} — lets the Blocking column read "Formation to set Active" once every gate is done. */
   gates_cleared: boolean;
 }

@@ -2177,7 +2177,7 @@ describe('FormationService', () => {
 
       const result = await service.getMyFormationWork(buildReq(), 'alice');
 
-      expect(result.formations[0]).toMatchObject({ blocking_item_title: 'Charter agreed', gates_cleared: false });
+      expect(result.formations[0]).toMatchObject({ blocking_item_title: 'Charter agreed', blocking_item_blocked: false, gates_cleared: false });
       // The caller's assigned-item read is unchanged — the gate read never feeds items[].
       expect(result.items.map((item) => item.item_uid)).toEqual(['mine-1']);
     });
@@ -2192,7 +2192,7 @@ describe('FormationService', () => {
       const result = await service.getMyFormationWork(buildReq(), 'alice');
 
       expect(result.state).toBe('complete');
-      expect(result.formations[0].blocking_item_title).toBe('Legal review');
+      expect(result.formations[0]).toMatchObject({ blocking_item_title: 'Legal review', blocking_item_blocked: true });
     });
   });
 
@@ -2576,6 +2576,7 @@ describe('FormationService', () => {
         // No gate item in the item index for this formation (#3066) — the next-gate read succeeded
         // and found nothing open, so the `blocked` title is not used as a fallback.
         blocking_item_title: null,
+        blocking_item_blocked: false,
         gates_cleared: false,
       });
     });
