@@ -9,7 +9,7 @@ import { InsightsTokensService } from '@services/insights-tokens.service';
 import { UserService } from '@services/user.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InsightsTokenCreateDialogComponent } from '../insights-token-create-dialog/insights-token-create-dialog.component';
@@ -56,7 +56,7 @@ describe('InsightsTokensComponent', () => {
     };
     setDialogPt = vi.fn();
     dialogService = {
-      open: vi.fn(() => ({ onClose: of(undefined) })),
+      open: vi.fn(() => ({ onClose: of(undefined), onDestroy: of(undefined) })),
       dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) },
     };
     confirmationService = { confirm: vi.fn() };
@@ -97,7 +97,7 @@ describe('InsightsTokensComponent', () => {
 
   it('prepends the created token and opens the one-time reveal dialog', () => {
     const created = { token: { ...TOKEN, uid: 't-2', name: 'new' }, secret: 'lfi_secret' };
-    dialogService.open.mockReturnValueOnce({ onClose: of(created) });
+    dialogService.open.mockReturnValueOnce({ onClose: of(created), onDestroy: of(undefined) });
     create();
 
     component['openCreateDialog']();
@@ -111,7 +111,7 @@ describe('InsightsTokensComponent', () => {
   });
 
   it('keeps Escape, the backdrop and a header close icon from dismissing either dialog, so a one-time secret cannot be lost', () => {
-    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }) });
+    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }), onDestroy: of(undefined) });
     create();
 
     component['openCreateDialog']();
@@ -124,7 +124,7 @@ describe('InsightsTokensComponent', () => {
   });
 
   it('names both headless dialogs by their headings for screen readers', () => {
-    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }) });
+    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }), onDestroy: of(undefined) });
     create();
 
     component['openCreateDialog']();
@@ -135,8 +135,20 @@ describe('InsightsTokensComponent', () => {
     ]);
   });
 
+  it('waits for the create dialog to be torn down before opening the reveal, so its scroll lock survives', () => {
+    const destroyed = new Subject<void>();
+    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }), onDestroy: destroyed });
+    create();
+
+    component['openCreateDialog']();
+    expect(dialogService.open).toHaveBeenCalledTimes(1);
+
+    destroyed.next();
+    expect(dialogService.open).toHaveBeenLastCalledWith(InsightsTokenRevealDialogComponent, expect.anything());
+  });
+
   it('does nothing when the create dialog is cancelled', () => {
-    dialogService.open.mockReturnValueOnce({ onClose: of(undefined) });
+    dialogService.open.mockReturnValueOnce({ onClose: of(undefined), onDestroy: of(undefined) });
     create();
 
     component['openCreateDialog']();

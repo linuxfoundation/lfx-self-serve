@@ -19,7 +19,7 @@ import { UserService } from '@services/user.service';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, finalize, forkJoin, map, of } from 'rxjs';
+import { catchError, finalize, forkJoin, map, of, take } from 'rxjs';
 
 import { InsightsTokenCreateDialogComponent } from '../insights-token-create-dialog/insights-token-create-dialog.component';
 import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dialog/insights-token-reveal-dialog.component';
@@ -109,12 +109,16 @@ export class InsightsTokensComponent {
     }
     nameDynamicDialog(this.dialogService, ref, InsightsTokenCreateDialogComponent.headingId);
 
-    ref.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
+    // onClose emits before the leave animation ends, and that end drops the body's p-overflow-hidden.
+    // Opening the reveal from onClose would lose its scroll lock, so wait for onDestroy (see profile-clas #2066).
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
       if (!created) {
         return;
       }
       this.tokens.update((tokens) => [created.token, ...tokens]);
-      this.openRevealDialog({ name: created.token.name, secret: created.secret });
+      ref.onDestroy
+        .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.openRevealDialog({ name: created.token.name, secret: created.secret }));
     });
   }
 
