@@ -26,6 +26,7 @@ function revenueEvent(overrides: Partial<HealthMetricsEventsRevenueEvent> = {}):
     registrationGoal: 200000,
     sponsorshipGoal: null,
     hasUnconverted: false,
+    goalWithheld: false,
     ranges: ['YTD'],
     ...overrides,
   };
@@ -167,6 +168,15 @@ describe('EventsRevenueComponent', () => {
     expect(text('events-revenue-sponsorship-goal-rev-2')).toBe('/ $50K');
     expect(text('events-revenue-side-split-value')).toBe('not available');
     expect(text('events-revenue-unconverted-note')).toContain('not yet converted to USD');
+  });
+
+  it('says a goal is withheld for its currency without marking the revenue', async () => {
+    await render(revenue({ events: [revenueEvent({ registrationGoal: null, goalWithheld: true })] }));
+
+    expect(text('events-revenue-registration-goal-rev-1')).toBe('/ goal not in USD');
+    expect(text('events-revenue-sponsorship-goal-rev-1')).toBe('/ goal not in USD');
+    expect(query('events-revenue-unconverted-rev-1')).toBeNull();
+    expect(query('events-revenue-unconverted-note')).toBeNull();
   });
 
   it('shows the empty table note for a measured period with no events', async () => {

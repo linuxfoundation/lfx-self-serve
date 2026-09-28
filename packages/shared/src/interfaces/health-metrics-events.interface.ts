@@ -341,11 +341,13 @@ export interface HealthMetricsEventsRevenueEvent {
   eventStartDate: string | null;
   registrationUsd: number | null;
   sponsorshipUsd: number | null;
-  /** `null` when no goal is set. */
+  /** `null` when no goal is set, or when `goalWithheld`. */
   registrationGoal: number | null;
   sponsorshipGoal: number | null;
-  /** Some of the event's registration revenue or goal stayed in local currency. */
+  /** Some of the event's registration revenue stayed in local currency. */
   hasUnconverted: boolean;
+  /** The goals are set in a currency with no USD rate, so neither can sit against a USD figure. */
+  goalWithheld: boolean;
   /** The periods the event falls in. */
   ranges: HealthMetricsL2Range[];
 }
@@ -362,7 +364,7 @@ export interface HealthMetricsEventsRevenueRowView {
   event: HealthMetricsEventsRevenueEvent;
   dateLabel: string;
   registrationLabel: string;
-  /** Empty when no goal is set. */
+  /** Empty when no goal is set; says so when the goal is withheld for its currency. */
   registrationGoalLabel: string;
   sponsorshipLabel: string;
   sponsorshipGoalLabel: string;

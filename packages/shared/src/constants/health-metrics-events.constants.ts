@@ -213,5 +213,8 @@ export const HEALTH_METRICS_EVENTS_REVENUE_PENDING_NOTE = 'All figures pending v
 export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE =
   'Events are billed in local currency. Registration revenue marked * includes amounts not yet converted to USD, so those figures and the totals built on them are incomplete.';
 
+/** Stands in for a goal set in a currency with no USD rate, so it never reads as no goal. */
+export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';
+
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';

@@ -626,10 +626,11 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     eventStartDate: toIsoDate(row.EVENT_START_DATE),
     registrationUsd: toNullableNumber(row.REGISTRATION_REVENUE_USD),
     sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_REVENUE_USD),
-    // Both goals share one goal currency, so an unconverted one withholds both and marks the event.
+    // Both goals share one goal currency, so an unconverted one withholds both.
     registrationGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.REGISTRATION_REVENUE_GOAL),
     sponsorshipGoal: hasUnconvertedGoal ? null : toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL),
-    hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true || hasUnconvertedGoal,
+    hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true,
+    goalWithheld: hasUnconvertedGoal,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
   };
 }

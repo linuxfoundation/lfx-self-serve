@@ -13,6 +13,7 @@ import {
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
+  HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
 } from '../constants/health-metrics-events.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -374,14 +375,19 @@ function formatRevenueSplit(registrationShare: number | null): string {
   return `${registrationPct} / ${100 - registrationPct}`;
 }
 
+function formatRevenueGoal(event: HealthMetricsEventsRevenueEvent, goal: number | null): string {
+  if (event.goalWithheld) return HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD;
+  return goal === null ? '' : formatCurrency(goal);
+}
+
 function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetricsEventsRevenueRowView {
   return {
     event,
     dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
     registrationLabel: formatHealthMetricsEventsRevenue(event.registrationUsd),
-    registrationGoalLabel: event.registrationGoal === null ? '' : formatCurrency(event.registrationGoal),
+    registrationGoalLabel: formatRevenueGoal(event, event.registrationGoal),
     sponsorshipLabel: formatHealthMetricsEventsRevenue(event.sponsorshipUsd),
-    sponsorshipGoalLabel: event.sponsorshipGoal === null ? '' : formatCurrency(event.sponsorshipGoal),
+    sponsorshipGoalLabel: formatRevenueGoal(event, event.sponsorshipGoal),
   };
 }
 

@@ -450,6 +450,7 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       registrationGoal: 145000,
       sponsorshipGoal: null,
       hasUnconverted: false,
+      goalWithheld: false,
       ranges: ['YTD'],
       ...overrides,
     };
@@ -512,6 +513,14 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasUnconverted).toBe(false);
     expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
     expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
+  });
+
+  it('labels a withheld goal instead of leaving it blank, without marking the revenue', () => {
+    const event = revenueEvent({ registrationGoal: null, goalWithheld: true });
+    const view = buildHealthMetricsEventsRevenueView(revenue({ events: [event] }), 'YTD');
+
+    expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: 'goal not in USD' });
+    expect(view.hasUnconverted).toBe(false);
   });
 
   it('marks a period missing from the read as unmeasured', () => {
