@@ -661,7 +661,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ totalUsd: 0, changes: null });
   });
 
-  it('withholds both goals left in local currency apart from the revenue, dropping one outside every period or with no id', async () => {
+  it('withholds each goal set in local currency apart from the revenue, dropping one outside every period or with no id', async () => {
     execute.mockResolvedValue({
       rows: [
         revenueRow({ HAS_UNCONVERTED_REVENUE_GOAL: true, SPONSORSHIP_REVENUE_GOAL: 60000 }),
@@ -691,6 +691,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     const revenue = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     expect(revenue.events).toEqual([]);
+    expect(revenue.eventsMeasured).toBe(true);
     expect(revenue.periods.find((period) => period.range === 'YTD')?.totalUsd).toBe(258000);
   });
 
@@ -706,6 +707,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(sql).toContain("LOWER(revenue_domain) = 'events'");
     expect(binds).toEqual(['acme']);
     expect(revenue.events).toEqual([]);
+    expect(revenue.eventsMeasured).toBe(false);
     expect(revenue.periods.find((period) => period.range === 'YTD')).toEqual({
       range: 'YTD',
       totalUsd: 1200,

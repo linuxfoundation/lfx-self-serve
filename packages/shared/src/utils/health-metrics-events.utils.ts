@@ -280,6 +280,7 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
       { key: 'split', label: 'Split', value: formatRevenueSplit(period?.registrationShare ?? null), delta: null, deltaDirection: 'neutral', warn: false },
     ],
     rows,
+    eventsMeasured: revenue.eventsMeasured,
     hasUnconverted: period?.hasUnconverted === true || rows.some((row) => row.event.hasUnconverted),
   };
 }

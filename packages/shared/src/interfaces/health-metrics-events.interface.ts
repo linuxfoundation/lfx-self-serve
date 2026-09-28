@@ -358,6 +358,8 @@ export interface HealthMetricsEventsRevenue {
   periods: HealthMetricsEventsRevenuePeriod[];
   /** Most recent first. */
   events: HealthMetricsEventsRevenueEvent[];
+  /** `false` when only the foundation totals were read, so there is no per-event list to show. */
+  eventsMeasured: boolean;
 }
 
 /** A revenue-by-event row with its labels resolved once per period. */
@@ -378,6 +380,8 @@ export interface HealthMetricsEventsRevenueView {
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   rows: HealthMetricsEventsRevenueRowView[];
+  /** `false` when the foundation has totals but no per-event figures, so an empty list is not read as no events. */
+  eventsMeasured: boolean;
   /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
   hasUnconverted: boolean;
 }

@@ -393,7 +393,7 @@ export class HealthMetricsEventsService {
     const row = result.rows[0];
     if (!row) {
       logger.debug(req, 'get_events_revenue', 'No event revenue rows for the foundation', { foundation_slug: query.foundationSlug });
-      return { periods: await this.getOverviewRevenuePeriods(req, query), events: [] };
+      return { periods: await this.getOverviewRevenuePeriods(req, query), events: [], eventsMeasured: false };
     }
 
     if (result.rows.length > HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP) {
@@ -408,7 +408,7 @@ export class HealthMetricsEventsService {
       .map(mapRevenueEvent)
       .filter((event): event is HealthMetricsEventsRevenueEvent => event !== null && event.ranges.length > 0);
 
-    return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events };
+    return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events, eventsMeasured: true };
   }
 
   /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */

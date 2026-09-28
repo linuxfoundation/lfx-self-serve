@@ -66,6 +66,7 @@ function revenue(overrides: Partial<HealthMetricsEventsRevenue> = {}): HealthMet
         ranges: ['COMPLETED_YEAR'],
       }),
     ],
+    eventsMeasured: true,
     ...overrides,
   };
 }
@@ -188,6 +189,14 @@ describe('EventsRevenueComponent', () => {
     expect(text('events-revenue-headline-value')).toBe('$0');
     expect(query('events-revenue-empty')).not.toBeNull();
     expect(query('events-revenue-table')).toBeNull();
+  });
+
+  it('says per-event figures are missing, not that no event ran, when only the totals were read', async () => {
+    await render(revenue({ events: [], eventsMeasured: false }));
+
+    expect(text('events-revenue-headline-value')).toBe('$258K');
+    expect(query('events-revenue-events-unmeasured')).not.toBeNull();
+    expect(query('events-revenue-empty')).toBeNull();
   });
 
   it('shows the unavailable state for a period the response does not carry', async () => {

@@ -461,6 +461,7 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     return {
       periods: [revenuePeriod(), revenuePeriod({ range: 'COMPLETED_YEAR_3', changes: null })],
       events: [revenueEvent(), revenueEvent({ eventId: 'rev-2', ranges: ['COMPLETED_YEAR'] })],
+      eventsMeasured: true,
       ...overrides,
     };
   }
@@ -522,6 +523,11 @@ describe('buildHealthMetricsEventsRevenueView', () => {
 
     expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: '' });
     expect(view.hasUnconverted).toBe(false);
+  });
+
+  it('carries whether the read had per-event figures at all', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').eventsMeasured).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [], eventsMeasured: false }), 'YTD')).toMatchObject({ eventsMeasured: false, rows: [] });
   });
 
   it('marks a period missing from the read as unmeasured', () => {

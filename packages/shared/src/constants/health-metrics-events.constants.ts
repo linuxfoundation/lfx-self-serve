@@ -201,7 +201,7 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE =
 export const HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP = 500;
 
 /** Read-failed / no-foundation value: no periods and no events, which the section must not caption as measured. */
-export const HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED: HealthMetricsEventsRevenue = { periods: [], events: [] };
+export const HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED: HealthMetricsEventsRevenue = { periods: [], events: [], eventsMeasured: false };
 
 /** The periods the revenue view compares with the year before; the oldest carries no change columns. */
 export const HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2'];

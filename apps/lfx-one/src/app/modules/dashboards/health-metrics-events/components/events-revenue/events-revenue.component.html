@@ -66,7 +66,9 @@
         <span class="text-[12px] text-gray-400" data-testid="events-revenue-by-event-note">against goal where one is set</span>
       </div>
 
-      @if (view().rows.length === 0) {
+      @if (!view().eventsMeasured) {
+        <p class="text-sm text-gray-500" data-testid="events-revenue-events-unmeasured">Per-event revenue is not available for this foundation yet.</p>
+      } @else if (view().rows.length === 0) {
         <p class="text-sm text-gray-500" data-testid="events-revenue-empty">No event in the selected period.</p>
       } @else {
         <lfx-table [value]="view().rows" data-testid="events-revenue-table">

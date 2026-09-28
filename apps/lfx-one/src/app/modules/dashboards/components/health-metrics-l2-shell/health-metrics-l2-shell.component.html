@@ -35,6 +35,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <h2 class="text-base font-semibold text-gray-900">{{ section.heading }}</h2>
             @if (section.headingBadge) {
+              <!-- Pixel size follows the design; the 14px root makes the rem scale undershoot it. -->
               <span
                 class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700"
                 [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
