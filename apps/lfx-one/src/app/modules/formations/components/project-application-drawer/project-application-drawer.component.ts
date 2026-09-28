@@ -113,10 +113,7 @@ export class ProjectApplicationDrawerComponent {
     getProjectApplicationStatusCallout(this.application()?.state, this.mode())
   );
   /** The submitter's email as a `mailto:` link target — shown to the formation team only. */
-  protected readonly submitterEmailLink: Signal<ProjectApplicationAnswerLink | null> = computed(() => {
-    const email = this.application()?.submitter_email;
-    return email ? toProjectApplicationEmailLink(email) : null;
-  });
+  protected readonly submitterEmailLink: Signal<ProjectApplicationAnswerLink | null> = this.initSubmitterEmailLink();
   /** "Updated" only adds information once it falls on a different day from the submission. */
   protected readonly showUpdated: Signal<boolean> = this.initShowUpdated();
   protected readonly moreActions: Signal<MenuItem[]> = this.initMoreActions();
@@ -124,10 +121,7 @@ export class ProjectApplicationDrawerComponent {
    * p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. The footer
    * template stays statically declared, so while editing (the form has its own buttons) it is hidden via `pt`.
    */
-  protected readonly drawerPt = computed(() => ({
-    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' },
-    footer: { class: this.editing() || !this.application() ? 'hidden' : 'border-t border-gray-200' },
-  }));
+  protected readonly drawerPt: Signal<Record<string, Record<string, string>>> = this.initDrawerPt();
   /** The element that had focus when the drawer opened, handed focus back on every close path. */
   private opener: HTMLElement | null = null;
 
@@ -243,6 +237,20 @@ export class ProjectApplicationDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initSubmitterEmailLink(): Signal<ProjectApplicationAnswerLink | null> {
+    return computed(() => {
+      const email = this.application()?.submitter_email;
+      return email ? toProjectApplicationEmailLink(email) : null;
+    });
+  }
+
+  private initDrawerPt(): Signal<Record<string, Record<string, string>>> {
+    return computed(() => ({
+      root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' },
+      footer: { class: this.editing() || !this.application() ? 'hidden' : 'border-t border-gray-200' },
+    }));
+  }
+
   private initShowUpdated(): Signal<boolean> {
     return computed(() => {
       const application = this.application();

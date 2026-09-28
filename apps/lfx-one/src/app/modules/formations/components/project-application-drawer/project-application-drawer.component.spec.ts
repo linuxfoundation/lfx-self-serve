@@ -27,6 +27,8 @@ interface DrawerAccess {
   moreActions: () => MenuItem[];
   statusCallout: () => ProjectApplicationStatusCallout | null;
   showUpdated: () => boolean;
+  submitterEmailLink: () => { text: string; href: string | null } | null;
+  drawerPt: () => Record<string, Record<string, string>>;
 }
 
 function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
@@ -145,6 +147,22 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(changedLater.component.showUpdated()).toBe(true);
     const sameDay = await setup('submitter', buildApplication({ created_at: '2026-09-01T09:00:00Z', updated_at: '2026-09-01T09:05:00Z' }));
     expect(sameDay.component.showUpdated()).toBe(false);
+  });
+
+  it('links the submitter email only when it is a plain address, and shows nothing without one', async () => {
+    const plain = await setup('staff');
+    expect(plain.component.submitterEmailLink()).toEqual(expect.objectContaining({ href: 'mailto:jane@example.org' }));
+    const unsafe = await setup('staff', buildApplication({ submitter_email: 'jane#x@example.org' }));
+    expect(unsafe.component.submitterEmailLink()).toEqual(expect.objectContaining({ text: 'jane#x@example.org', href: null }));
+    const missing = await setup('staff', buildApplication({ submitter_email: '' }));
+    expect(missing.component.submitterEmailLink()).toBeNull();
+  });
+
+  it('hides the footer while editing and shows it with a divider otherwise', async () => {
+    const { component } = await setup('submitter');
+    expect(component.drawerPt()['footer']['class']).toBe('border-t border-gray-200');
+    component.startEditing();
+    expect(component.drawerPt()['footer']['class']).toBe('hidden');
   });
 
   it('closes every state transition once the application is decided', async () => {
