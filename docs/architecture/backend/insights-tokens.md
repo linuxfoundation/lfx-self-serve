@@ -25,7 +25,7 @@ The member-tiers endpoint returns one entry per org where the user is a Key Cont
 
 - Any entry with a non-empty `b2b_org_uid` makes the user eligible. The `tier` value is not inspected. `company_name` is optional upstream; when it is missing the org is returned without a `name`, and the UI does not show one.
 - An empty list, or a session with no username, returns `INSIGHTS_TOKEN_INELIGIBLE`, which has `checkFailed: false`.
-- An upstream or M2M error, or a successful response that is not a list, fails closed with `INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE`. That value has `canCreate: false` and `checkFailed: true`. The failure is logged at warning level with only its status and error code, because the tier URL, and so the error's path, carries the username.
+- An upstream or M2M error, a successful response that is not a list, or a non-empty list with no usable `b2b_org_uid` fails closed with `INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE`. That value has `canCreate: false` and `checkFailed: true`. The failure is logged at warning level with only its status and error code, because the tier URL, and so the error's path, carries the username.
 
 `checkFailed` lets the UI tell apart "you are not a Key Contact" (lock notice) from "we could not verify right now" (retryable notice). The Angular service maps a failed eligibility request to the same unavailable value.
 
