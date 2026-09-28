@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { INSIGHTS_TOKEN_ERROR_CODES, INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { isUuid } from '@lfx-one/shared/utils';
+import { INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
+import { codePointLength, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { InsightsTokensService } from '../services/insights-tokens.service';
 import { logger } from '../services/logger.service';
@@ -51,15 +50,16 @@ export class InsightsTokensController {
   }
 
   /**
-   * POST /api/profile/insights-tokens — re-checks Key Contact eligibility server-side (the UI gate
-   * is not trusted) before asking the PAT service to issue the token.
+   * POST /api/profile/insights-tokens — validates the name; the service re-checks Key Contact
+   * eligibility before asking the PAT service to issue the token.
    */
   public async createToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'create_insights_token');
     const rawName: unknown = req.body?.name;
     const name = typeof rawName === 'string' ? rawName.trim() : '';
 
-    if (!name || name.length > INSIGHTS_TOKEN_NAME_MAX_LENGTH || INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS.test(name)) {
+    // Code points, not UTF-16 units: the PAT service caps the name with `utf8.RuneCountInString`.
+    if (!name || codePointLength(name) > INSIGHTS_TOKEN_NAME_MAX_LENGTH || INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS.test(name)) {
       return next(
         ServiceValidationError.forField('name', `Token name must be 1-${INSIGHTS_TOKEN_NAME_MAX_LENGTH} characters with no control characters`, {
           operation: 'create_insights_token',
@@ -70,28 +70,6 @@ export class InsightsTokensController {
     }
 
     try {
-      const eligibility = await this.insightsTokensService.getEligibility(req);
-      if (eligibility.checkFailed) {
-        return next(
-          new MicroserviceError('Key Contact eligibility could not be verified', 503, 'SERVICE_UNAVAILABLE', {
-            operation: 'create_insights_token',
-            service: 'insights_tokens_controller',
-            path: req.path,
-            errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.ELIGIBILITY_UNAVAILABLE },
-          })
-        );
-      }
-      if (!eligibility.canCreate) {
-        return next(
-          new MicroserviceError('Only Key Contacts of a member organization can create Insights API tokens', 403, 'FORBIDDEN', {
-            operation: 'create_insights_token',
-            service: 'insights_tokens_controller',
-            path: req.path,
-            errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.NOT_KEY_CONTACT },
-          })
-        );
-      }
-
       const created = await this.insightsTokensService.createToken(req, name);
       logger.success(req, 'create_insights_token', startTime, { token_uid: created.token.uid });
       res.set({

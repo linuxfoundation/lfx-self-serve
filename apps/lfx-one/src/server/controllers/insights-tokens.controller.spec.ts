@@ -23,14 +23,13 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 // The `@lfx-one/shared/*` aliases aren't wired into this app's vitest config, and the `utils` barrel
-// pulls Angular-dependent modules; deep-import the real UUID check so a regression still fails here.
+// pulls Angular-dependent modules; deep-import the real UUID and length checks so a regression still fails here.
 vi.mock('@lfx-one/shared/constants', () => import('../../../../../packages/shared/src/constants/insights-tokens.constants'));
 vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/string.utils');
-  return { isUuid: actual.isUuid };
+  return { codePointLength: actual.codePointLength, isUuid: actual.isUuid };
 });
 
-import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { InsightsTokensController } from './insights-tokens.controller';
 
@@ -97,36 +96,27 @@ describe('InsightsTokensController', () => {
       await controller.createToken(mockReq({ body: { name } }), mockRes(), next);
 
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-      expect(getEligibility).not.toHaveBeenCalled();
       expect(createToken).not.toHaveBeenCalled();
     });
 
-    it('rejects ineligible callers with 403 not_key_contact', async () => {
-      getEligibility.mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: false });
+    it('counts the name in code points, like the PAT service, so 100 emoji are accepted', async () => {
+      createToken.mockResolvedValueOnce({ token, secret: 'lfi_Ab3kZ9QmT2xLsecret' });
+      const name = '🔑'.repeat(100);
 
-      await controller.createToken(mockReq({ body: { name: 'ci-pipeline' } }), mockRes(), next);
+      await controller.createToken(mockReq({ body: { name } }), mockRes(), next);
 
-      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
-      expect(error).toBeInstanceOf(MicroserviceError);
-      expect(error.statusCode).toBe(403);
-      expect(error.toResponse()).toMatchObject({ upstreamCode: 'not_key_contact' });
-      expect(createToken).not.toHaveBeenCalled();
+      expect(createToken).toHaveBeenCalledWith(expect.anything(), name);
+      expect(next).not.toHaveBeenCalled();
     });
 
-    it('rejects with 503 eligibility_unavailable when the Key Contact check could not complete', async () => {
-      getEligibility.mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: true });
+    it('rejects 101 emoji as too long', async () => {
+      await controller.createToken(mockReq({ body: { name: '🔑'.repeat(101) } }), mockRes(), next);
 
-      await controller.createToken(mockReq({ body: { name: 'ci-pipeline' } }), mockRes(), next);
-
-      const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
-      expect(error).toBeInstanceOf(MicroserviceError);
-      expect(error.statusCode).toBe(503);
-      expect(error.toResponse()).toMatchObject({ upstreamCode: 'eligibility_unavailable' });
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
       expect(createToken).not.toHaveBeenCalled();
     });
 
     it('creates with the trimmed name and returns 201 without caching', async () => {
-      getEligibility.mockResolvedValueOnce({ canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false });
       createToken.mockResolvedValueOnce({ token, secret: 'lfi_Ab3kZ9QmT2xLsecret' });
       const res = mockRes();
 
@@ -138,8 +128,7 @@ describe('InsightsTokensController', () => {
       expect(res.json).toHaveBeenCalledWith({ token, secret: 'lfi_Ab3kZ9QmT2xLsecret' });
     });
 
-    it('passes upstream 409s through to next', async () => {
-      getEligibility.mockResolvedValueOnce({ canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false });
+    it('passes service refusals (403, 503, upstream 409s) through to next', async () => {
       const conflict = new Error('token_name_taken');
       createToken.mockRejectedValueOnce(conflict);
 
