@@ -721,15 +721,12 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(revenue.periods.find((period) => period.range === 'COMPLETED_YEAR')?.totalUsd).toBeNull();
   });
 
-  it('reads a foundation with no row in either view as measured zeros', async () => {
+  it('reads a foundation with no row in either view as unmeasured, never as zero revenue', async () => {
     execute.mockResolvedValue({ rows: [] });
 
-    const { periods } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+    const revenue = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
-    expect(periods).toHaveLength(HEALTH_METRICS_L2_RANGES.length);
-    expect(periods.every((period) => period.totalUsd === 0 && period.registrationUsd === 0 && period.sponsorshipUsd === 0 && period.changes === null)).toBe(
-      true
-    );
+    expect(revenue).toEqual({ periods: [], events: [], eventsMeasured: false });
   });
 
   it('warns and truncates when the read hits the cap', async () => {
@@ -739,5 +736,17 @@ describe('HealthMetricsEventsService.getRevenue', () => {
 
     expect(events).toHaveLength(HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP);
     expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
+  });
+
+  it('does not warn when only events outside every period fall past the cap', async () => {
+    const rows = Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) =>
+      revenueRow({ EVENT_ID: `rev-${i}`, IN_PERIOD_YTD: i < HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP })
+    );
+    execute.mockResolvedValue({ rows });
+
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(events).toHaveLength(HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP);
+    expect(warning).not.toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.anything());
   });
 });

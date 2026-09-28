@@ -155,6 +155,8 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-sponsorship-goal-rev-1')).toBeNull();
     expect(query('events-revenue-unconverted-rev-1')).toBeNull();
     expect(query('events-revenue-unconverted-note')).toBeNull();
+    expect(query('events-revenue-headline-unconverted')).toBeNull();
+    expect(query('events-revenue-side-registration-unconverted')).toBeNull();
   });
 
   it('re-projects a period change off the loaded response, marking unconverted revenue', async () => {
@@ -169,7 +171,10 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-registration-goal-rev-2')).toBeNull();
     expect(text('events-revenue-sponsorship-goal-rev-2')).toBe('/ $50K');
     expect(text('events-revenue-side-split-value')).toBe('not available');
-    expect(text('events-revenue-unconverted-note')).toContain('not yet converted to USD');
+    expect(text('events-revenue-unconverted-note')).toContain('leaves out amounts not yet converted to USD');
+    expect(text('events-revenue-headline-unconverted')).toBe('*');
+    expect(text('events-revenue-side-registration-unconverted')).toBe('*');
+    expect(query('events-revenue-side-sponsorship-unconverted')).toBeNull();
   });
 
   it('says a goal is withheld for its currency without marking the revenue', async () => {

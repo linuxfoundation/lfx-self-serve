@@ -9,6 +9,7 @@ import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_EVENTS_REVENUE_PENDING_NOTE,
   HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE,
+  HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SR,
   HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsRevenueView } from '@lfx-one/shared/utils';
@@ -43,6 +44,7 @@ export class EventsRevenueComponent {
 
   protected readonly pendingNote = HEALTH_METRICS_EVENTS_REVENUE_PENDING_NOTE;
   protected readonly unconvertedNote = HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE;
+  protected readonly unconvertedSr = HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SR;
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);

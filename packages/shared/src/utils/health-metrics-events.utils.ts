@@ -282,6 +282,7 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
     rows,
     eventsMeasured: revenue.eventsMeasured,
     hasUnconverted: period?.hasUnconverted === true || rows.some((row) => row.event.hasUnconverted),
+    headlineUnconverted: period?.hasUnconverted === true,
   };
 }
 

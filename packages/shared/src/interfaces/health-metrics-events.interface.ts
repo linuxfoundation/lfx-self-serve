@@ -384,4 +384,6 @@ export interface HealthMetricsEventsRevenueView {
   eventsMeasured: boolean;
   /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
   hasUnconverted: boolean;
+  /** Whether the period's totals leave out unconverted revenue, so the headline and registration stat are marked. */
+  headlineUnconverted: boolean;
 }

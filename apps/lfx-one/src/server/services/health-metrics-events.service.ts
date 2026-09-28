@@ -396,7 +396,9 @@ export class HealthMetricsEventsService {
       return { periods: await this.getOverviewRevenuePeriods(req, query), events: [], eventsMeasured: false };
     }
 
-    if (result.rows.length > HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP) {
+    // In-period events sort first, so the list lost one only when the first row past the cap is in a period.
+    const dropped = result.rows[HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP];
+    if (dropped && (mapRevenueEvent(dropped)?.ranges.length ?? 0) > 0) {
       logger.warning(req, 'get_events_revenue', 'Event revenue rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
@@ -459,7 +461,7 @@ export class HealthMetricsEventsService {
     return { years };
   }
 
-  /** The headline totals alone, for a foundation the revenue view has no row for; with no split, nothing else is measured. */
+  /** The headline totals alone, for a foundation the revenue view has no row for; no overview row either is unmeasured. */
   private async getOverviewRevenuePeriods(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenuePeriod[]> {
     const columns = HEALTH_METRICS_L2_RANGES.map((range) => `revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(',\n        ');
     const sql = `
@@ -478,12 +480,14 @@ export class HealthMetricsEventsService {
     });
 
     const row = result.rows[0];
+    // Matches the Overview tab, which reads a missing row as no data rather than zero revenue.
+    if (!row) return [];
+
     return HEALTH_METRICS_L2_RANGES.map((range) => ({
       range,
-      // No overview row either is a foundation with no event revenue: a measured zero.
-      totalUsd: row ? toNullableNumber(row[periodColumn('REVENUE_USD', range)]) : 0,
-      registrationUsd: row ? null : 0,
-      sponsorshipUsd: row ? null : 0,
+      totalUsd: toNullableNumber(row[periodColumn('REVENUE_USD', range)]),
+      registrationUsd: null,
+      sponsorshipUsd: null,
       registrationShare: null,
       sponsorshipShare: null,
       hasUnconverted: false,

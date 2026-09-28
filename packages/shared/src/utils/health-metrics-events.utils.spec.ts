@@ -517,6 +517,11 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
   });
 
+  it('marks the headline only when the period totals leave out unconverted revenue, not for one listed event', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ hasUnconverted: true })] }), 'YTD').headlineUnconverted).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').headlineUnconverted).toBe(false);
+  });
+
   it('labels a withheld goal instead of leaving it blank, without marking the revenue or an unset goal', () => {
     const event = revenueEvent({ registrationGoal: null, registrationGoalWithheld: true });
     const view = buildHealthMetricsEventsRevenueView(revenue({ events: [event] }), 'YTD');

@@ -206,12 +206,15 @@ export const HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED: HealthMetricsEventsRevenu
 /** The periods the revenue view compares with the year before; the oldest carries no change columns. */
 export const HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2'];
 
-/** Right-aligned note in the section header while the revenue figures are provisional. */
+/** Right-aligned note above the revenue figures while they are provisional. */
 export const HEALTH_METRICS_EVENTS_REVENUE_PENDING_NOTE = 'All figures pending validation';
 
 /** Footer note for revenue that stayed in local currency; the marker flags each affected cell. */
 export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE =
-  'Events are billed in local currency. Registration revenue marked * includes amounts not yet converted to USD, so those figures and the totals built on them are incomplete.';
+  'Events are billed in local currency. Registration revenue marked * leaves out amounts not yet converted to USD, so those figures and the totals built on them are incomplete.';
+
+/** Screen-reader text for the * marker on a figure that leaves out unconverted revenue. */
+export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SR = '(leaves out local-currency amounts not yet converted to USD)';
 
 /** Stands in for a goal set in a currency with no USD rate, so it never reads as no goal. */
 export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';
