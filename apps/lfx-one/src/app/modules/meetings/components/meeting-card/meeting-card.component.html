@@ -277,6 +277,7 @@
                 data-testid="join-meeting-button">
               </lfx-button>
             }
+            <lfx-host-key-popover class="shrink-0" [meeting]="meeting()" [occurrence]="occurrence()" [pastMeeting]="pastMeeting()" />
           </div>
         }
         @if (pastMeeting() && meeting().organizer) {
