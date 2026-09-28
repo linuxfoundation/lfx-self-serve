@@ -287,7 +287,9 @@ export class BoardMembersComponent {
     );
 
     const results = await Promise.allSettled(ops);
-    this.directory.invalidate(orgUid);
+    if (results.some((r) => r.status === 'fulfilled')) {
+      this.directory.invalidate(orgUid);
+    }
     this.retry();
 
     const total = intent.selected.length;
