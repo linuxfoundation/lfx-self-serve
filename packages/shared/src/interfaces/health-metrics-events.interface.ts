@@ -611,6 +611,8 @@ export interface HealthMetricsEventsSponsorshipPeriod {
   goalUsd: number | null;
   tierPackages: number | null;
   addOns: number | null;
+  /** Revenue over the goal as a fraction, as the view models it; `null` without a goal or for a period it does not model. */
+  progressToGoal: number | null;
   /** Year-over-year change in revenue as a fraction; `null` for a period the view does not compare. */
   changes: { revenue: number | null } | null;
   /** Tiers with a package sold in the period, most packages first. */
@@ -640,7 +642,9 @@ export interface HealthMetricsEventsSponsorshipView {
   packagesLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
-  /** `null` when no goal is set, so a missing goal never renders as a full bar. */
+  /** `false` when no goal is set, so the section says so instead of drawing a bar. */
+  goalSet: boolean;
+  /** `null` without a goal or a modelled progress, so a missing goal never renders as a full bar. */
   progress: HealthMetricsEventsSponsorshipProgressView | null;
   tiers: HealthMetricsEventsSpeakersBarView[];
 }

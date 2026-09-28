@@ -924,6 +924,7 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
       goalUsd: 1000000,
       tierPackages: 12,
       addOns: 3,
+      progressToGoal: 0.75,
       changes: { revenue: 0.25 },
       tiers: [
         { name: 'Gold', packages: 5 },
@@ -950,6 +951,7 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
       ['Tier packages', '12'],
       ['Add-ons', '3'],
     ]);
+    expect(view.goalSet).toBe(true);
     expect(view.progress).toEqual({ pctLabel: '75%', widthPct: 75 });
     expect(view.tiers.map((tier) => [tier.label, tier.valueLabel, tier.widthPct])).toEqual([
       ['Gold', '5', 100],
@@ -962,15 +964,26 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     for (const goalUsd of [null, 0]) {
       const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ goalUsd })), 'YTD');
 
+      expect(view.goalSet).toBe(false);
       expect(view.progress).toBeNull();
       expect(view.side[0].value).toBe('not set');
     }
   });
 
   it('caps the bar at full while the label keeps the real percent', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ revenueUsd: 1250000 })), 'YTD');
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ revenueUsd: 1250000, progressToGoal: 1.25 })), 'YTD');
 
     expect(view.progress).toEqual({ pctLabel: '125%', widthPct: 100 });
+  });
+
+  it('draws no bar for a goal the view models no progress for, without calling the goal unset', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(
+      sponsorship(sponsorshipPeriod({ range: 'COMPLETED_YEAR_2', progressToGoal: null })),
+      'COMPLETED_YEAR_2'
+    );
+
+    expect(view.goalSet).toBe(true);
+    expect(view.progress).toBeNull();
   });
 
   it('carries no delta for a period that is not compared', () => {

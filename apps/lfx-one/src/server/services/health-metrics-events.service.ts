@@ -18,6 +18,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -591,7 +592,6 @@ export class HealthMetricsEventsService {
     };
   }
 
-  /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   /** Each period's sponsorship revenue, goal, package and add-on counts and tier breakdown, with the revenue change beside it. */
   public async getSponsorship(req: Request, query: HealthMetricsEventsSponsorshipQuery): Promise<HealthMetricsEventsSponsorship> {
     const [summary, changes] = await Promise.all([this.getSponsorshipSummary(req, query), this.getSponsorshipChanges(req, query)]);
@@ -605,6 +605,7 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapSponsorshipPeriod(scope, tierRows, changes, range)) };
   }
 
+  /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
       SELECT
@@ -652,12 +653,19 @@ export class HealthMetricsEventsService {
     return { years };
   }
 
-  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  /** The foundation's all-tiers row and one row per tier, with every period's figures on each. */
   private async getSponsorshipSummary(req: Request, query: HealthMetricsEventsSponsorshipQuery): Promise<SponsorshipSummaryRow[]> {
     // Suffixes come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
       const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range];
-      return [`sponsorship_revenue_usd_${suffix}`, `sponsorship_revenue_goal_${suffix}`, `tier_package_count_${suffix}`, `add_on_count_${suffix}`];
+      const columns = [
+        `sponsorship_revenue_usd_${suffix}`,
+        `sponsorship_revenue_goal_${suffix}`,
+        `tier_package_count_${suffix}`,
+        `add_on_count_${suffix}`,
+        `sort_rank_${suffix}`,
+      ];
+      return HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES.includes(range) ? [...columns, `progress_to_goal_pct_${suffix}`] : columns;
     }).join(',\n        ');
 
     const sql = `
@@ -701,6 +709,7 @@ export class HealthMetricsEventsService {
     return result.rows[0];
   }
 
+  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
@@ -1003,17 +1012,28 @@ function mapSponsorshipPeriod(
   changes: Record<string, unknown> | undefined,
   range: HealthMetricsL2Range
 ): HealthMetricsEventsSponsorshipPeriod {
+  // The view ranks the tiers; the name breaks ties so the order is stable.
   const tiers = tierRows
-    .map((row) => ({ name: row.NORMALIZED_TIER_NAME ?? '', packages: toNullableNumber(row[periodColumn('tier_package_count', range)]) ?? 0 }))
+    .map((row) => ({
+      name: row.NORMALIZED_TIER_NAME ?? '',
+      packages: toNullableNumber(row[periodColumn('tier_package_count', range)]) ?? 0,
+      rank: toNullableNumber(row[periodColumn('sort_rank', range)]) ?? Number.MAX_SAFE_INTEGER,
+    }))
     .filter((tier) => tier.packages > 0)
-    .sort((a, b) => b.packages - a.packages || a.name.localeCompare(b.name));
+    .sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
+    .map(({ name, packages }) => ({ name, packages }));
+  const goalUsd = toRevenueGoal(scope[periodColumn('sponsorship_revenue_goal', range)]);
 
   return {
     range,
     revenueUsd: toNullableNumber(scope[periodColumn('sponsorship_revenue_usd', range)]),
-    goalUsd: toRevenueGoal(scope[periodColumn('sponsorship_revenue_goal', range)]),
+    goalUsd,
     tierPackages: toNullableNumber(scope[periodColumn('tier_package_count', range)]),
     addOns: toNullableNumber(scope[periodColumn('add_on_count', range)]),
+    progressToGoal:
+      goalUsd !== null && HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES.includes(range)
+        ? toNullableNumber(scope[periodColumn('progress_to_goal_pct', range)])
+        : null,
     changes: HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES.includes(range)
       ? { revenue: toNullableNumber(changes?.[periodColumn('foundation_sponsorship_revenue_change_pct', range)]) }
       : null,

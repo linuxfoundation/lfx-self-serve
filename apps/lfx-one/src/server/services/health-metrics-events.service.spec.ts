@@ -1086,6 +1086,7 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
       SPONSORSHIP_REVENUE_GOAL_YTD: 1000000,
       TIER_PACKAGE_COUNT_YTD: 12,
       ADD_ON_COUNT_YTD: 3,
+      PROGRESS_TO_GOAL_PCT_YTD: 0.75,
       SPONSORSHIP_REVENUE_USD_LAST_COMPLETED_YEAR: 600000,
       SPONSORSHIP_REVENUE_GOAL_LAST_COMPLETED_YEAR: 0,
       TIER_PACKAGE_COUNT_LAST_COMPLETED_YEAR: 9,
@@ -1095,8 +1096,14 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
     };
   }
 
-  function tierRow(name: string, ytd: number | null, lastYear: number | null = 0) {
-    return { IS_ALL_TIERS: false, NORMALIZED_TIER_NAME: name, TIER_PACKAGE_COUNT_YTD: ytd, TIER_PACKAGE_COUNT_LAST_COMPLETED_YEAR: lastYear };
+  function tierRow(name: string, ytd: number | null, ytdRank: number | null, lastYear: number | null = 0) {
+    return {
+      IS_ALL_TIERS: false,
+      NORMALIZED_TIER_NAME: name,
+      TIER_PACKAGE_COUNT_YTD: ytd,
+      SORT_RANK_YTD: ytdRank,
+      TIER_PACKAGE_COUNT_LAST_COMPLETED_YEAR: lastYear,
+    };
   }
 
   function mockReads(summary: Record<string, unknown>[], changes: Record<string, unknown>[]) {
@@ -1106,7 +1113,7 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockReads(
-      [summaryRow(), tierRow('Silver', 5), tierRow('Platinum', 2, 9), tierRow('Gold', 5), tierRow('Bronze', 0), tierRow('Startup', null)],
+      [summaryRow(), tierRow('Gold', 5, 2), tierRow('Platinum', 2, 3, 9), tierRow('Silver', 5, 1), tierRow('Bronze', 0, 4), tierRow('Startup', null, 5)],
       [{ FOUNDATION_SPONSORSHIP_REVENUE_CHANGE_PCT_YTD: '0.25', FOUNDATION_SPONSORSHIP_REVENUE_CHANGE_PCT_LAST_COMPLETED_YEAR: null }]
     );
   });
@@ -1123,13 +1130,17 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(summarySql).toContain(`sponsorship_revenue_goal_${suffix}`);
       expect(summarySql).toContain(`add_on_count_${suffix}`);
+      expect(summarySql).toContain(`sort_rank_${suffix}`);
     }
+    expect(summarySql).toContain('progress_to_goal_pct_ytd');
+    expect(summarySql).toContain('progress_to_goal_pct_last_completed_year');
+    expect(summarySql).not.toContain('progress_to_goal_pct_prev_completed_year');
     expect(changeSql).toContain('foundation_sponsorship_revenue_change_pct_prev_completed_year');
     expect(changeSql).not.toContain('change_pct_3rd_last_completed_year');
     expect(changeSql).toContain('LIMIT 1');
   });
 
-  it('maps each period, treating a zero or missing goal as not set', async () => {
+  it("maps each period in the view's tier order, treating a zero or missing goal as not set", async () => {
     const { periods } = await new HealthMetricsEventsService().getSponsorship(req, { foundationSlug: 'acme' });
 
     const byRange = (range: string) => periods.find((period) => period.range === range);
@@ -1140,14 +1151,21 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
       goalUsd: 1000000,
       tierPackages: 12,
       addOns: 3,
+      progressToGoal: 0.75,
       changes: { revenue: 0.25 },
       tiers: [
-        { name: 'Gold', packages: 5 },
         { name: 'Silver', packages: 5 },
+        { name: 'Gold', packages: 5 },
         { name: 'Platinum', packages: 2 },
       ],
     });
-    expect(byRange('COMPLETED_YEAR')).toMatchObject({ goalUsd: null, addOns: 0, changes: { revenue: null }, tiers: [{ name: 'Platinum', packages: 9 }] });
+    expect(byRange('COMPLETED_YEAR')).toMatchObject({
+      goalUsd: null,
+      progressToGoal: null,
+      addOns: 0,
+      changes: { revenue: null },
+      tiers: [{ name: 'Platinum', packages: 9 }],
+    });
     expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ revenueUsd: null, goalUsd: null, changes: { revenue: null }, tiers: [] });
     expect(byRange('COMPLETED_YEAR_3')?.changes).toBeNull();
   });
@@ -1161,7 +1179,7 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
   });
 
   it('returns no periods without a scope row', async () => {
-    mockReads([tierRow('Gold', 5)], []);
+    mockReads([tierRow('Gold', 5, 1)], []);
 
     await expect(new HealthMetricsEventsService().getSponsorship(req, { foundationSlug: 'acme' })).resolves.toEqual({ periods: [] });
   });

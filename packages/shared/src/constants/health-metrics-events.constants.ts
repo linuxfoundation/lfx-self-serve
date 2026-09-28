@@ -302,6 +302,9 @@ export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-500';
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED: HealthMetricsEventsSponsorship = { periods: [] };
 
+/** Periods the sponsorship view models progress to goal for; the older years carry none. */
+export const HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
+
 /** Stands in for a goal that is not set, so it never reads as a goal of zero. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET = 'not set';
 

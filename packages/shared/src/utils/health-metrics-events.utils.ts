@@ -513,7 +513,8 @@ export function buildHealthMetricsEventsSponsorshipView(
       stat('tier-packages', 'Tier packages', formatAtAGlanceCount(tierPackages)),
       stat('add-ons', 'Add-ons', formatAtAGlanceCount(addOns)),
     ],
-    progress: resolveSponsorshipProgress(period?.revenueUsd ?? null, period?.goalUsd ?? null),
+    goalSet: !!period?.goalUsd,
+    progress: period?.goalUsd ? resolveSponsorshipProgress(period.progressToGoal) : null,
     tiers: buildSpeakersBars(
       (period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages, barClass: HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS }))
     ),
@@ -672,11 +673,11 @@ function buildSpeakersBars(items: HealthMetricsEventsSpeakersBarInput[]): Health
   }));
 }
 
-/** `null` without a goal above zero or a measured revenue; the width stops at full while the label keeps the real percent. */
-function resolveSponsorshipProgress(revenue: number | null, goal: number | null): HealthMetricsEventsSponsorshipProgressView | null {
-  if (revenue === null || goal === null || goal <= 0) return null;
+/** `null` without a modelled progress; the width stops at full while the label keeps the real percent. */
+function resolveSponsorshipProgress(progress: number | null): HealthMetricsEventsSponsorshipProgressView | null {
+  if (progress === null) return null;
 
-  const pct = Math.round((revenue / goal) * 100);
+  const pct = Math.round(progress * 100);
   return { pctLabel: `${pct}%`, widthPct: Math.min(Math.max(pct, 0), 100) };
 }
 
