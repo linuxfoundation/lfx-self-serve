@@ -15,6 +15,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
@@ -51,12 +52,14 @@ import type {
   HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersBarInput,
   HealthMetricsEventsSpeakersBarView,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersProposalRowView,
   HealthMetricsEventsSpeakersStatusGroup,
   HealthMetricsEventsSpeakersTab,
   HealthMetricsEventsSpeakersView,
+  HealthMetricsEventsSpeakersYearView,
   HealthMetricsEventsSubNavItem,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
@@ -377,7 +380,17 @@ export function buildHealthMetricsEventsSpeakersView(
   const organizations = speakers.organizations
     .flatMap((organization) => {
       const entry = organization.periods.find((candidate) => candidate.range === range);
-      return entry ? [{ key: organization.accountId, label: organization.accountName, rank: entry.rank, value: entry.submitted }] : [];
+      return entry
+        ? [
+            {
+              key: organization.accountId,
+              label: organization.accountName,
+              rank: entry.rank,
+              value: entry.submitted,
+              barClass: HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+            },
+          ]
+        : [];
     })
     .sort((a, b) => a.rank - b.rank)
     .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS);
@@ -395,14 +408,14 @@ export function buildHealthMetricsEventsSpeakersView(
     ],
     statusBars: buildSpeakersBars(
       (Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS) as HealthMetricsEventsSpeakersStatusGroup[])
-        .map((group) => ({ key: group, label: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].label, value: statusCounts[group] }))
+        .map((group) => ({
+          key: group,
+          label: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].label,
+          value: statusCounts[group],
+          barClass: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].barClass,
+        }))
         .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
     ),
-    years: HEALTH_METRICS_L2_RANGES.map((yearRange) => ({
-      year: getYearForRange(yearRange),
-      submitted: speakers.periods.find((candidate) => candidate.range === yearRange)?.submitted ?? null,
-      isPartialYear: yearRange === 'YTD',
-    })),
     organizations: buildSpeakersBars(organizations),
     individualLabel: individual ? `${formatProposalCount(individual)} submitted` : null,
     proposals: speakers.proposals
@@ -411,6 +424,17 @@ export function buildHealthMetricsEventsSpeakersView(
       .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS)
       .map(buildSpeakersProposalRowView),
   };
+}
+
+/** Proposals per year, oldest first; independent of the period and tab, so the chart survives both. */
+export function buildHealthMetricsEventsSpeakersYears(speakers: HealthMetricsEventsSpeakers): HealthMetricsEventsSpeakersYearView[] {
+  return HEALTH_METRICS_L2_RANGES.map((yearRange) => {
+    const year = getYearForRange(yearRange);
+    const submitted = speakers.periods.find((candidate) => candidate.range === yearRange)?.submitted ?? null;
+    const isPartialYear = yearRange === 'YTD';
+
+    return { year, submitted, isPartialYear, yearLabel: isPartialYear ? `${year} (partial year)` : `${year}`, submittedLabel: formatAtAGlanceCount(submitted) };
+  });
 }
 
 /** The sub-nav note, set only when speakers fell steeply against the year before. */
@@ -561,7 +585,7 @@ function formatWholePercent(fraction: number | null): string {
 }
 
 /** Bars scaled against the longest; an unmeasured value draws no bar and reads as not available. */
-function buildSpeakersBars(items: { key: string; label: string; value: number | null }[]): HealthMetricsEventsSpeakersBarView[] {
+function buildSpeakersBars(items: HealthMetricsEventsSpeakersBarInput[]): HealthMetricsEventsSpeakersBarView[] {
   const max = Math.max(0, ...items.map((item) => item.value ?? 0));
 
   return items.map((item) => ({
@@ -569,6 +593,7 @@ function buildSpeakersBars(items: { key: string; label: string; value: number | 
     label: item.label,
     valueLabel: formatAtAGlanceCount(item.value),
     widthPct: max > 0 && item.value !== null ? (item.value / max) * 100 : 0,
+    barClass: item.barClass,
   }));
 }
 

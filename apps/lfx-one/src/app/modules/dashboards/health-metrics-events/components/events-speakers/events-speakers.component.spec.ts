@@ -221,6 +221,35 @@ describe('EventsSpeakersComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
+  it('re-reads on a foundation switch, clearing the note until the new read settles', async () => {
+    await render();
+    getEventsSpeakers.mockReturnValue(
+      of(speakers({ periods: [period({ changes: { speakers: -0.5 } })], proposals: [proposal({ proposalKey: 'p-b', organizationName: 'Beta Coastal' })] }))
+    );
+
+    selectedFoundation.set({ slug: 'beta' });
+    await settle();
+
+    expect(getEventsSpeakers).toHaveBeenCalledTimes(2);
+    expect(getEventsSpeakers).toHaveBeenLastCalledWith({ foundationSlug: 'beta' });
+    expect(lifecycle).toEqual(['reading', 'settled', 'reading', 'settled']);
+    expect(notes).toEqual(['', 'down 35% YoY', '', 'down 50% YoY']);
+    expect(rowKeys()).toEqual(['p-b']);
+  });
+
+  it('gives the chart a text equivalent listing every year', async () => {
+    await render();
+
+    const rows = Array.from(query('events-speakers-chart-table')?.querySelectorAll('tbody tr') ?? []).map((row) =>
+      Array.from(row.children).map((cell) => cell.textContent?.trim())
+    );
+    expect(rows).toHaveLength(4);
+    expect(rows[0][1]).toBe('not available');
+    expect(rows[2][1]).toBe('2,000');
+    expect(rows[3][0]).toMatch(/^\d{4} \(partial year\)$/);
+    expect(rows[3][1]).toBe('1,200');
+  });
+
   it('holds the skeleton without settling until a foundation resolves', async () => {
     selectedFoundation.set(null);
     await render();

@@ -9,7 +9,13 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import { HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsSpeakersNote, buildHealthMetricsEventsSpeakersView, formatHealthMetricsEventsCount, hexToRgba } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEventsSpeakersNote,
+  buildHealthMetricsEventsSpeakersView,
+  buildHealthMetricsEventsSpeakersYears,
+  formatHealthMetricsEventsCount,
+  hexToRgba,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
@@ -62,7 +68,9 @@ export class EventsSpeakersComponent {
     buildHealthMetricsEventsSpeakersView(this.response(), this.chrome.selectedRange(), this.tab())
   );
 
-  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view().years));
+  // Keyed on the response alone, so a period or tab change does not rebuild the chart.
+  protected readonly years: Signal<HealthMetricsEventsSpeakersYearView[]> = computed(() => buildHealthMetricsEventsSpeakersYears(this.response()));
+  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.years()));
   protected readonly chartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,

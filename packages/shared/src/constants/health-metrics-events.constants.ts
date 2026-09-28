@@ -233,12 +233,15 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 5;
 /** Recent proposals listed per period and tab. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS = 10;
 
-/** Status groups as the view names them, with each group's badge. */
+/** Status groups as the view names them, with each group's badge and status-bar fill. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS = {
-  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700' },
-  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700' },
-  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600' },
+  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700', barClass: 'bg-emerald-500' },
+  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700', barClass: 'bg-amber-500' },
+  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600', barClass: 'bg-gray-400' },
 } as const;
+
+/** Fill for the top-organizations bars. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS = 'bg-blue-500';
 
 /** Badge for a proposal whose status the view left ungrouped. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS = 'bg-gray-100 text-gray-600';

@@ -562,6 +562,8 @@ export class HealthMetricsEventsService {
       .map((group) => `'${HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].viewValue}'`)
       .join(', ');
     const cap = HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS;
+    // Day first, then key, as the client sorts; a raw timestamp would break same-day ties by time of day.
+    const recency = 'TO_DATE(submission_date) DESC NULLS LAST, proposal_key';
 
     const sql = `
       SELECT
@@ -579,10 +581,12 @@ export class HealthMetricsEventsService {
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (${inAnyPeriod})
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY period ORDER BY submission_date DESC NULLS LAST, proposal_key) <= ${cap}
+        -- A key-less row is dropped by the mapper, so it must not take a slot under the cap.
+        AND proposal_key IS NOT NULL
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY period ORDER BY ${recency}) <= ${cap}
         OR (
           proposal_status_group IN (${tabGroups})
-          AND ROW_NUMBER() OVER (PARTITION BY period, proposal_status_group ORDER BY submission_date DESC NULLS LAST, proposal_key) <= ${cap}
+          AND ROW_NUMBER() OVER (PARTITION BY period, proposal_status_group ORDER BY ${recency}) <= ${cap}
         )
     `;
 

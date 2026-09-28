@@ -868,6 +868,7 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(listSql).toContain("WHEN is_ytd THEN 'YTD'");
     expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
     expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);
+    expect(listSql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key');
     expect(listSql).not.toContain('job_title');
   });
 
@@ -902,6 +903,11 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     mockReads([drilldownRow()], [proposalRow(), proposalRow({ PROPOSAL_KEY: null }), proposalRow({ PROPOSAL_KEY: 'p-2', PERIOD: null })]);
 
     const { proposals } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+    const [listSql] = execute.mock.calls.find(([sql]) => sql.includes('PROPOSALS_LIST')) ?? [];
+
+    // Filtered before the cap, so a key-less row cannot crowd a real one out of the list.
+    expect(listSql.indexOf('AND proposal_key IS NOT NULL')).toBeGreaterThan(-1);
+    expect(listSql.indexOf('AND proposal_key IS NOT NULL')).toBeLessThan(listSql.indexOf('QUALIFY'));
 
     expect(proposals).toEqual([
       {

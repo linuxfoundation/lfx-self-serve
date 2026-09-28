@@ -426,7 +426,7 @@ export interface HealthMetricsEventsSpeakersPeriod {
   changes: HealthMetricsEventsSpeakersChanges | null;
 }
 
-/** Proposals one proposer submitted in a period. */
+/** Proposals submitted in a period by one organization, or by all individual speakers together. */
 export interface HealthMetricsEventsSpeakersPeriodCount {
   range: HealthMetricsL2Range;
   submitted: number | null;
@@ -473,6 +473,15 @@ export interface HealthMetricsEventsSpeakers {
   proposals: HealthMetricsEventsSpeakersProposal[];
 }
 
+/** One bar before scaling; `null` is not available, never zero. */
+export interface HealthMetricsEventsSpeakersBarInput {
+  key: string;
+  label: string;
+  value: number | null;
+  /** The bar's fill, e.g. `bg-blue-500`. */
+  barClass: string;
+}
+
 /** One ranked bar, scaled against the longest in its list. */
 export interface HealthMetricsEventsSpeakersBarView {
   key: string;
@@ -480,6 +489,7 @@ export interface HealthMetricsEventsSpeakersBarView {
   valueLabel: string;
   /** 0–100. */
   widthPct: number;
+  barClass: string;
 }
 
 /** One column of the proposals-per-year chart. */
@@ -488,6 +498,10 @@ export interface HealthMetricsEventsSpeakersYearView {
   submitted: number | null;
   /** The year is still open, so it will read short against the complete years. */
   isPartialYear: boolean;
+  /** For the chart's text equivalent, e.g. `2026 (partial year)`. */
+  yearLabel: string;
+  /** e.g. `6,283`, or `not available`. */
+  submittedLabel: string;
 }
 
 /** A recent-proposals row with its labels resolved. */
@@ -509,7 +523,6 @@ export interface HealthMetricsEventsSpeakersView {
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   statusBars: HealthMetricsEventsSpeakersBarView[];
-  years: HealthMetricsEventsSpeakersYearView[];
   organizations: HealthMetricsEventsSpeakersBarView[];
   /** Individual speakers' proposals, e.g. `1,351 proposals submitted`; `null` when there are none. */
   individualLabel: string | null;

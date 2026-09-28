@@ -14,6 +14,7 @@ import {
   buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSpeakersNote,
   buildHealthMetricsEventsSpeakersView,
+  buildHealthMetricsEventsSpeakersYears,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsPastClosedLabel,
@@ -732,18 +733,34 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
 
     expect(view.statusBars.map((bar) => bar.key)).toEqual(['in-review', 'declined', 'accepted']);
-    expect(view.statusBars[0]).toMatchObject({ label: 'In review', valueLabel: '3,447', widthPct: 100 });
+    expect(view.statusBars[0]).toMatchObject({ label: 'In review', valueLabel: '3,447', widthPct: 100, barClass: 'bg-amber-500' });
     expect(view.statusBars[2].widthPct).toBeCloseTo((348 / 3447) * 100);
   });
 
   it('charts the four years oldest first, marking the open one partial', () => {
-    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
-
-    expect(view.years).toEqual([
-      { year: getYearForRange('COMPLETED_YEAR_3'), submitted: 4000, isPartialYear: false },
-      { year: getYearForRange('COMPLETED_YEAR_2'), submitted: null, isPartialYear: false },
-      { year: getYearForRange('COMPLETED_YEAR'), submitted: null, isPartialYear: false },
-      { year: getYearForRange('YTD'), submitted: 6283, isPartialYear: true },
+    expect(buildHealthMetricsEventsSpeakersYears(speakers())).toEqual([
+      {
+        year: getYearForRange('COMPLETED_YEAR_3'),
+        submitted: 4000,
+        isPartialYear: false,
+        yearLabel: `${getYearForRange('COMPLETED_YEAR_3')}`,
+        submittedLabel: '4,000',
+      },
+      {
+        year: getYearForRange('COMPLETED_YEAR_2'),
+        submitted: null,
+        isPartialYear: false,
+        yearLabel: `${getYearForRange('COMPLETED_YEAR_2')}`,
+        submittedLabel: 'not available',
+      },
+      {
+        year: getYearForRange('COMPLETED_YEAR'),
+        submitted: null,
+        isPartialYear: false,
+        yearLabel: `${getYearForRange('COMPLETED_YEAR')}`,
+        submittedLabel: 'not available',
+      },
+      { year: getYearForRange('YTD'), submitted: 6283, isPartialYear: true, yearLabel: `${getYearForRange('YTD')} (partial year)`, submittedLabel: '6,283' },
     ]);
   });
 
@@ -751,8 +768,8 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
 
     expect(view.organizations).toEqual([
-      { key: 'org-a', label: 'Acme Motors', valueLabel: '400', widthPct: 100 },
-      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200', widthPct: 50 },
+      { key: 'org-a', label: 'Acme Motors', valueLabel: '400', widthPct: 100, barClass: 'bg-blue-500' },
+      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200', widthPct: 50, barClass: 'bg-blue-500' },
     ]);
     expect(view.individualLabel).toBe('1,351 proposals submitted');
     expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
@@ -818,5 +835,10 @@ describe('buildHealthMetricsEventsSpeakersNote', () => {
     expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.14), 'YTD')).toBe('');
     expect(buildHealthMetricsEventsSpeakersNote(withChange(null), 'YTD')).toBe('');
     expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'COMPLETED_YEAR')).toBe('');
+  });
+
+  it('stays empty at exactly the threshold and notes a fall just past it', () => {
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3), 'YTD')).toBe('');
+    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3004), 'YTD')).toBe('down 30% YoY');
   });
 });
