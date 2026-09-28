@@ -41,7 +41,15 @@ const invalidatePerUserCache = vi.hoisted(() =>
 vi.mock('./valkey.service', () => ({
   invalidateOrgGroupsCache: vi.fn(),
   invalidatePerUserCache,
-  withPerUserCache: async (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+  withPerUserCache: async (
+    _ns: string,
+    _user: string,
+    _org: string,
+    _ttl: number,
+    fetcher: () => Promise<unknown>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: unknown) => boolean
+  ) => {
     cache.readThroughs += 1;
     cache.accept = accept ?? null;
     if (cache.entry !== null) {
@@ -49,7 +57,7 @@ vi.mock('./valkey.service', () => ({
       if (!accept || accept(stored)) return stored;
     }
     const fresh = await fetcher();
-    cache.entry = JSON.stringify(fresh);
+    if (!storable || storable(fresh)) cache.entry = JSON.stringify(fresh);
     return fresh;
   },
 }));
@@ -79,12 +87,13 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 
 import type { Request } from 'express';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgPeopleBoardMembersService } from './org-people-board-members.service';
 import { OrgPeopleCommitteeMembersService } from './org-people-committee-members.service';
 
-const ORG = '0014100000Te2ovAAB';
+const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
 const req = {} as unknown as Request;
 
 /** A promise the test settles by hand, so a second caller can arrive while the first drain is still pending. */
@@ -361,5 +370,34 @@ describe('seat reassign — caller cache invalidation', () => {
 
     await expect(reassign()).rejects.toThrow('committee-service 403');
     expect(invalidatePerUserCache).not.toHaveBeenCalled();
+  });
+
+  // The post-reassign read must not join a drain that started before the reassign (e.g. the All
+  // Employees live merge draining seats in the background), and that drain must not write the old
+  // roster back over the fresh one when it finally lands.
+  it.each(paths)('%s: a drain in flight before the reassign neither answers the next read nor overwrites it', async (_label, reassign) => {
+    const before = seat({ first_name: 'Devon', email: 'dclarke@lfx-partner.example' });
+    const after = seat({ first_name: 'Ana', email: 'asilva@lfx-partner.example' });
+    const staleDrain = deferred<CommitteeServiceOrgSeatPage>();
+    let drains = 0;
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, method: string) => {
+      if (method === 'PUT') return after;
+      drains += 1;
+      return drains === 1 ? staleDrain.promise : page([after]);
+    });
+    const service = new OrgLensBoardCommitteeService();
+
+    const stale = service.fetchAllOrgSeats(req, ORG);
+    await vi.waitFor(() => expect(drains).toBe(1));
+    await reassign();
+
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
+
+    staleDrain.resolve(page([before]));
+    // The caller that started the old drain still gets the answer it asked for...
+    expect((await stale)[0].email).toBe('dclarke@lfx-partner.example');
+    // ...but it was not stored: the next read is a cache hit on the post-reassign roster.
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
+    expect(drains).toBe(2);
   });
 });

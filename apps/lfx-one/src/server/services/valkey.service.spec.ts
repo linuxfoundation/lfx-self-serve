@@ -53,6 +53,7 @@ vi.mock('./logger.service', () => ({
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, buildOrgCacheKey, buildPerUserOrgKey, ValkeyService } from './valkey.service';
 
 import { logger } from './logger.service';
@@ -287,7 +288,7 @@ describe('buildMeetingInviteLockCacheKey (LFXV2 #2241)', () => {
 });
 
 describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1906)', () => {
-  const ACCOUNT_ID = '0014100000Te2ovAAB';
+  const ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
   const ORG_UID = 'a092M00001abcdEQAQ';
   const oversized = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES) };
   // `projects:v7` deliberately has no entry in `MAX_VALUE_BYTES_BY_SUBRESOURCE`, so the tests below

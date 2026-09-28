@@ -757,16 +757,17 @@ export function invalidatePerUserCache(namespace: string, username: string, orgU
   return valkeyService.del(buildPerUserOrgKey(namespace, username, orgUid));
 }
 
-/** Read-through helper for a per-user org namespace; a null key (unsafe username) fetches directly. */
+/** Read-through helper for a per-user org namespace; a null key (unsafe username) fetches directly. `storable` is forwarded to `withCache` (e.g. a single-flight `isCurrent` fence). */
 export function withPerUserCache<T>(
   namespace: string,
   username: string,
   orgUid: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
-  accept?: (value: unknown) => boolean
+  accept?: (value: unknown) => boolean,
+  storable?: (value: T) => boolean
 ): Promise<T> {
-  return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept);
+  return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept, storable);
 }
 
 /** Read-through helper for a per-user, org-independent namespace; a null key (unsafe username) fetches directly. */
