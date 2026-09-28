@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Clipboard } from '@angular/cdk/clipboard';
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { INSIGHTS_TOKEN_COPIED_RESET_MS } from '@lfx-one/shared/constants';
 import { MessageService } from 'primeng/api';
@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InsightsTokenRevealDialogComponent } from './insights-token-reveal-dialog.component';
 
 describe('InsightsTokenRevealDialogComponent', () => {
-  let clipboard: { copy: ReturnType<typeof vi.fn> };
+  let writeText: ReturnType<typeof vi.fn>;
   let messageService: { add: ReturnType<typeof vi.fn> };
   let dialogRef: { close: ReturnType<typeof vi.fn> };
   let component: InsightsTokenRevealDialogComponent;
@@ -20,7 +20,7 @@ describe('InsightsTokenRevealDialogComponent', () => {
     TestBed.configureTestingModule({
       imports: [InsightsTokenRevealDialogComponent],
       providers: [
-        { provide: Clipboard, useValue: clipboard },
+        { provide: PLATFORM_ID, useValue: 'browser' },
         { provide: MessageService, useValue: messageService },
         { provide: DynamicDialogRef, useValue: dialogRef },
         { provide: DynamicDialogConfig, useValue: { data } },
@@ -31,44 +31,64 @@ describe('InsightsTokenRevealDialogComponent', () => {
   };
 
   beforeEach(() => {
-    clipboard = { copy: vi.fn(() => true) };
+    writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
     messageService = { add: vi.fn() };
     dialogRef = { close: vi.fn() };
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     TestBed.resetTestingModule();
   });
 
-  it('copies the secret and resets the copied state after the timeout', () => {
+  it('copies the secret and resets the copied state after the timeout', async () => {
     vi.useFakeTimers();
     create({ name: 'ci-pipeline', secret: 'lfi_secret' });
 
-    component['copy']();
+    await component['copy']();
 
-    expect(clipboard.copy).toHaveBeenCalledWith('lfi_secret');
+    expect(writeText).toHaveBeenCalledWith('lfi_secret');
     expect(component['copied']()).toBe(true);
     vi.advanceTimersByTime(INSIGHTS_TOKEN_COPIED_RESET_MS);
     expect(component['copied']()).toBe(false);
   });
 
-  it('toasts an error when the clipboard copy fails', () => {
-    clipboard.copy.mockReturnValue(false);
+  it('never builds a DOM node holding the secret, which Session Replay could record', async () => {
     create({ name: 'ci-pipeline', secret: 'lfi_secret' });
 
-    component['copy']();
+    await component['copy']();
+
+    expect(document.body.innerHTML).not.toContain('lfi_secret');
+  });
+
+  it('toasts an error when the clipboard copy fails', async () => {
+    writeText.mockRejectedValue(new Error('denied'));
+    create({ name: 'ci-pipeline', secret: 'lfi_secret' });
+
+    await component['copy']();
 
     expect(component['copied']()).toBe(false);
     expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
   });
 
-  it('does not attempt to copy when no secret was passed', () => {
+  it('toasts an error when the Clipboard API is unavailable', async () => {
+    vi.stubGlobal('navigator', {});
+    create({ name: 'ci-pipeline', secret: 'lfi_secret' });
+
+    await component['copy']();
+
+    expect(component['copied']()).toBe(false);
+    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  it('does not attempt to copy when no secret was passed', async () => {
     create({ name: 'ci-pipeline' });
 
-    component['copy']();
+    await component['copy']();
 
-    expect(clipboard.copy).not.toHaveBeenCalled();
+    expect(writeText).not.toHaveBeenCalled();
     expect(messageService.add).toHaveBeenCalled();
   });
 
