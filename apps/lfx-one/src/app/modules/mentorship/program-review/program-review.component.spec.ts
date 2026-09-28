@@ -88,8 +88,11 @@ describe('ProgramReviewComponent', () => {
     const pending = new Subject<MentorshipProgramReview>();
     build({ submit: pending });
 
-    clickConfirm();
-    clickConfirm();
+    // Call the handler directly: the loading button is disabled, so a second click would never reach the guard.
+    const component = fixture.componentInstance as unknown as { onConfirm(): void };
+    component.onConfirm();
+    component.onConfirm();
+    fixture.detectChanges();
 
     expect(submitProgramDecision).toHaveBeenCalledTimes(1);
     expect(byTestId('mentorship-program-review-confirm-button')?.getAttribute('data-loading')).toBe('true');

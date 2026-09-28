@@ -76,6 +76,19 @@ test.describe('Program review — confirm flow', () => {
       timeout: PROGRAM_REVIEW_LOAD_TIMEOUT,
     });
   });
+
+  test('offers Try again after a failed Confirm and returns to the confirm card', async ({ page }) => {
+    await stubProgramDecision(page, 502);
+
+    await openProgramReview(page);
+    await page.getByTestId('mentorship-program-review-confirm-button').getByRole('button').click({ timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
+
+    const error = page.getByTestId('mentorship-program-review-error');
+    await expect(error).toContainText('The decision was not recorded', { timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
+    await error.getByRole('button', { name: 'Try again' }).click();
+
+    await expect(page.getByTestId('mentorship-program-review-confirm')).toBeVisible({ timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
+  });
 });
 
 test.describe('Program review — outcome states', () => {
