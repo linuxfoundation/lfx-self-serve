@@ -184,6 +184,7 @@ describe('InsightsTokensService', () => {
       ['an object', {}],
       ['null', null],
       ['a string', 'ok'],
+      ['a list of entries with no org uid', [{}, { b2b_org_uid: ' ', company_name: 'No Uid Inc' }]],
     ])('fails closed as unavailable, not ineligible, when a 200 body is %s', async (_label, body) => {
       proxyRequest.mockResolvedValueOnce(body);
       expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: true });

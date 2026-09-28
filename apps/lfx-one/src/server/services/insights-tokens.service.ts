@@ -126,7 +126,8 @@ export class InsightsTokensService {
    * Whether the caller may create tokens: they must be a Key Contact of at least one org. Any entry
    * with a non-empty `b2b_org_uid` is enough; `company_name` is optional upstream and the tier value
    * itself is not checked. Fails closed:
-   * an empty list or a missing username yields `canCreate: false`; any upstream error (including the
+   * an empty list or a missing username yields `canCreate: false`; any upstream error, a response that
+   * is not a list, or a non-empty list with no usable org uid (including the
    * gateway denying the M2M caller before its FGA team tuples exist) yields `canCreate: false` with
    * `checkFailed: true`, so the UI can say "couldn't verify" instead of "not a Key Contact".
    *
@@ -171,6 +172,11 @@ export class InsightsTokensService {
         seen.add(uid);
         const name = tier.company_name?.trim();
         orgs.push(name ? { uid, name } : { uid });
+      }
+      // Upstream requires `b2b_org_uid` on every entry, so a non-empty list with none usable is a broken
+      // response, not a confirmed "not a Key Contact". Only an empty list means ineligible.
+      if (tiers.length > 0 && orgs.length === 0) {
+        throw new TypeError('Member tier response has no usable org uid');
       }
 
       logger.debug(req, 'get_insights_token_eligibility', 'Resolved member tiers', {
