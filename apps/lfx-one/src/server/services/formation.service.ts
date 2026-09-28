@@ -9,6 +9,7 @@ import type {
   FormationItemStatus,
   FormationItemWriteState,
   FormationLifecycle,
+  FormationNextGateItem,
   FormationPeopleResponse,
   FormationPerson,
   FormationPersonMetadata,
@@ -53,6 +54,7 @@ import {
   maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
+  selectNextFormationGateItem,
   summarizeMyFormationItems,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -722,6 +724,15 @@ export class FormationService {
         .map((row) => this.normalizeQueueRow(row, null));
     }
 
+    // #3066 — the Blocking column's next open gate per aggregate row, kicked off here so it overlaps
+    // the can_write fan-out below. Never rejects (degrades to `null`).
+    const nextGatesPromise = includeFormations
+      ? this.fetchNextGateItems(
+          req,
+          formationRows.map((row) => row.formation_uid)
+        )
+      : Promise.resolve(null);
+
     // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live, caller-assigned) items.
     const openItems = mineItems.filter((row) => isAssignedItemOpen(row.status));
 
@@ -808,6 +819,7 @@ export class FormationService {
     const formations: MyFormationSummary[] = [];
     let anyFormationDropped = false;
     if (includeFormations) {
+      const nextGates = await nextGatesPromise;
       const itemsByFormation = new Map<string, UpstreamFormationItemRow[]>();
       for (const row of mineItems) {
         const bucket = itemsByFormation.get(row.formation_uid) ?? [];
@@ -873,7 +885,9 @@ export class FormationService {
           // upstream adds one. The card guards this line on gating_total > 0.
           gating_done: 0,
           gating_total: 0,
-          blocking_item_title: aggregateRow.blocked_item_titles[0] ?? null,
+          // The next open gate (#3066); the first `blocked` title only when that read degraded.
+          blocking_item_title: nextGates ? (nextGates.get(aggregateRow.formation_uid)?.title ?? null) : (aggregateRow.blocked_item_titles[0] ?? null),
+          gates_cleared: aggregateRow.gates_cleared,
         });
       }
 
@@ -1129,7 +1143,83 @@ export class FormationService {
     // (no foundation_uid at all — the root-auditor API view) stays the global set.
     const tiles = this.buildQueueTilesFromRows(inFormationRows);
 
+    // #3066 — the Blocking column's next open gate, read for the rows actually served (post
+    // filter/search), never for the tiles. A degraded read leaves every `next_gate_item` null and
+    // the table falls back to `blocked_item_titles`; the queue itself never fails on it.
+    const nextGates = await this.fetchNextGateItems(
+      req,
+      rows.map((row) => row.formation_uid)
+    );
+    if (nextGates) {
+      rows = rows.map((row) => ({ ...row, next_gate_item: nextGates.get(row.formation_uid) ?? null }));
+    }
+
     return { tiles, rows };
+  }
+
+  /**
+   * The next open gate item per formation (#3066) — the first gating item not yet `done`/`skipped`,
+   * in checklist order, via {@link selectNextFormationGateItem}. The `formation` projection carries
+   * only per-status counts, so this reads the `formation_item` index: one request per
+   * `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of `formation_uid:` tags (OR'd), AND'd with
+   * `lifecycle:live` — the item document carries both tags and the same access relation as its
+   * formation document (`lfx-v2-formation-service` `indexer_publisher.go` `itemTags`), so a caller
+   * who can see a row can see its items. Every formation asked about gets an entry (`null` when no
+   * gate is open). Returns `null` — never throws — when any batch fails: a partial map would name
+   * a later gate as "next" for a formation whose earlier items were simply not returned.
+   */
+  private async fetchNextGateItems(req: Request, formationUids: string[]): Promise<Map<string, FormationNextGateItem | null> | null> {
+    const uniqueUids = [...new Set(formationUids)];
+    const result = new Map<string, FormationNextGateItem | null>();
+    if (uniqueUids.length === 0) return result;
+
+    const tagBatches: string[][] = [];
+    for (let i = 0; i < uniqueUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      tagBatches.push(uniqueUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((uid) => `formation_uid:${uid}`));
+    }
+
+    let rawItems: UpstreamFormationItemRow[];
+    try {
+      const batches = await Promise.all(
+        tagBatches.map((tags) =>
+          fetchAllQueryResources<UpstreamFormationItemRow>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationItemRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'formation_item',
+                tags,
+                tags_all: ['lifecycle:live'],
+                page_size: 100,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          )
+        )
+      );
+      rawItems = batches.flat();
+    } catch (error) {
+      logger.warning(req, 'fetch_next_gate_items', 'Formation item query failed; Blocking column falls back to blocked items', { err: error });
+      return null;
+    }
+
+    const gatesByFormation = new Map<string, UpstreamFormationItemRow[]>();
+    for (const item of rawItems) {
+      // Same client-side lifecycle backstop the other index reads apply; `gate` is filtered again
+      // inside `selectNextFormationGateItem`.
+      if (!item.gate || !isFormationLifecycleLive(normalizeFormationLifecycle(item.lifecycle))) continue;
+      const bucket = gatesByFormation.get(item.formation_uid) ?? [];
+      bucket.push(item);
+      gatesByFormation.set(item.formation_uid, bucket);
+    }
+    for (const uid of uniqueUids) {
+      result.set(uid, selectNextFormationGateItem(gatesByFormation.get(uid) ?? []));
+    }
+    logger.debug(req, 'fetch_next_gate_items', 'Resolved next open gate per formation', {
+      formations: uniqueUids.length,
+      items: rawItems.length,
+      with_open_gate: [...result.values()].filter(Boolean).length,
+    });
+    return result;
   }
 
   /**
@@ -1151,6 +1241,7 @@ export class FormationService {
       announcement_date: row.announcement_date ?? null,
       progress: row.progress ?? {},
       blocked_item_titles: row.blocked_item_titles ?? [],
+      next_gate_item: null,
       assignees: row.assignees ?? [],
     };
   }

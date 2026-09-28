@@ -145,6 +145,8 @@
                         <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
                         {{ row.blocking_item_title }}
                       </span>
+                    } @else if (row.gates_cleared) {
+                      <span class="text-amber-600">Formation to set Active</span>
                     } @else {
                       —
                     }

@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationItem, FormationItemStatus, FormationQueueRow, FormationTemplateSection } from '../interfaces/formation.interface';
+import type {
+  FormationItem,
+  FormationItemStatus,
+  FormationNextGateItem,
+  FormationQueueRow,
+  FormationTemplateSection,
+  UpstreamFormationItemRow,
+} from '../interfaces/formation.interface';
 import type {
   FormationAnnouncementTiming,
   FormationProgressSegment,
@@ -14,6 +21,7 @@ import {
   FORMATION_ORPHAN_SECTION,
   FORMATION_PROGRESS_SEGMENT_RANK,
 } from '../constants/formation.constants';
+import { FORMATION_TEMPLATE } from '../constants/formation-template.constants';
 import { parseIsoDateAsUtcMidnight } from './date-time.utils';
 
 /** Every status in `FORMATION_PROGRESS_SEGMENT_RANK` order — derived once from the exhaustiveness-checked map so the two can't drift. */
@@ -85,6 +93,31 @@ export function formatFormationSubItemsDoneLabel(summary: Pick<FormationReadines
 export function deriveFormationBlockingItemTitle(items: FormationItem[]): string | null {
   const blockedGatingItems = items.filter((item) => item.is_gating && item.status === 'blocked');
   return blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+}
+
+/**
+ * Checklist position of every template item key — section order, then item order within the
+ * section. Built once from `FORMATION_TEMPLATE`, whose order matches the formation service's seed
+ * (`cmd/formation-cli/templates/project_formation_v2.json`): the `formation_item` index carries no
+ * `position`/`section_key`, so this is the only ordering a list read has.
+ */
+const FORMATION_TEMPLATE_ITEM_ORDER: ReadonlyMap<string, number> = new Map(
+  FORMATION_TEMPLATE.sections.flatMap((section) => section.items.map((item) => item.key)).map((key, index) => [key, index])
+);
+
+/**
+ * The formation list tables' "Blocking" column (#3066): the first gating item that is not yet
+ * `done` or `skipped` (a skipped gate is resolved — GH-2329's escape hatch), in checklist order.
+ * Unlike {@link deriveFormationBlockingItemTitle}, an open `not_started`/`in_progress` gate counts:
+ * it is what stands between the formation and Active. Keys the template doesn't know sort after
+ * every known key, then by title, so a new upstream item still surfaces deterministically.
+ */
+export function selectNextFormationGateItem(items: Pick<UpstreamFormationItemRow, 'item_key' | 'title' | 'status' | 'gate'>[]): FormationNextGateItem | null {
+  const openGates = items.filter((item) => item.gate && item.status !== 'done' && item.status !== 'skipped');
+  if (openGates.length === 0) return null;
+  const orderOf = (key: string): number => FORMATION_TEMPLATE_ITEM_ORDER.get(key) ?? Number.MAX_SAFE_INTEGER;
+  const [next] = [...openGates].sort((a, b) => orderOf(a.item_key) - orderOf(b.item_key) || a.title.localeCompare(b.title));
+  return { item_key: next.item_key, title: next.title, status: next.status };
 }
 
 /**

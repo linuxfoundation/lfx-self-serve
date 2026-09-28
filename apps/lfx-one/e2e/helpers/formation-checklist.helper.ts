@@ -369,6 +369,7 @@ export function buildMyFormationSummary(overrides: Partial<MyFormationSummary> =
     gating_done: 0,
     gating_total: 0,
     blocking_item_title: 'Contribution agreement executed',
+    gates_cleared: false,
     ...overrides,
   };
 }

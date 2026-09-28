@@ -17,6 +17,7 @@ import {
   getFormationAnnouncementTiming,
   getFormationCalendarDayOffset,
   groupFormationItemsBySection,
+  selectNextFormationGateItem,
   sumFormationProgress,
 } from './formation-checklist.utils';
 
@@ -408,5 +409,47 @@ describe('formatFormationProgressSummary', () => {
   it('names an empty checklist rather than reading "0 items"', () => {
     expect(formatFormationProgressSummary({})).toBe('No checklist items');
     expect(sumFormationProgress({})).toBe(0);
+  });
+});
+
+describe('selectNextFormationGateItem (#3066)', () => {
+  const gate = (item_key: string, title: string, status: FormationItemStatus, isGate = true) => ({ item_key, title, status, gate: isGate });
+
+  it('returns the first open gate in template order, not input order', () => {
+    const next = selectNextFormationGateItem([
+      gate('contribution_agreement', 'Contribution agreement (DocuSign)', 'not_started'),
+      gate('charter_agreed', 'Charter agreed', 'in_progress'),
+      gate('formation_review_packet', 'Formation review and packet', 'done'),
+    ]);
+    expect(next).toEqual({ item_key: 'charter_agreed', title: 'Charter agreed', status: 'in_progress' });
+  });
+
+  it('treats done and skipped gates as resolved', () => {
+    const next = selectNextFormationGateItem([
+      gate('formation_review_packet', 'Formation review and packet', 'done'),
+      gate('charter_agreed', 'Charter agreed', 'skipped'),
+      gate('contribution_agreement', 'Contribution agreement (DocuSign)', 'blocked'),
+    ]);
+    expect(next).toEqual({ item_key: 'contribution_agreement', title: 'Contribution agreement (DocuSign)', status: 'blocked' });
+  });
+
+  it('ignores non-gating items even when they come first in the checklist', () => {
+    const next = selectNextFormationGateItem([
+      gate('preliminary_trademark_search', 'Preliminary trademark search', 'not_started', false),
+      gate('indepth_trademark_search_series_llc', 'In-depth trademark search', 'not_started'),
+    ]);
+    expect(next?.item_key).toBe('indepth_trademark_search_series_llc');
+  });
+
+  it('sorts keys the template does not know after known ones, then by title', () => {
+    expect(selectNextFormationGateItem([gate('zeta_new', 'Zeta', 'not_started'), gate('alpha_new', 'Alpha', 'not_started')])?.item_key).toBe('alpha_new');
+    expect(selectNextFormationGateItem([gate('alpha_new', 'Alpha', 'not_started'), gate('charter_agreed', 'Charter agreed', 'not_started')])?.item_key).toBe(
+      'charter_agreed'
+    );
+  });
+
+  it('returns null when no gate is open', () => {
+    expect(selectNextFormationGateItem([])).toBeNull();
+    expect(selectNextFormationGateItem([gate('charter_agreed', 'Charter agreed', 'done'), gate('comms', 'Comms', 'not_started', false)])).toBeNull();
   });
 });

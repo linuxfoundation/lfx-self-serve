@@ -225,7 +225,9 @@ export class FormationsTableComponent {
   private toDisplayRow(row: FormationQueueRow): FormationTableRow {
     const stageDisplay = getFormationQueueStageDisplay(row.sub_stage, row.sub_stage_raw);
     const announcementTiming = getFormationAnnouncementTiming(row.announcement_date, row.gates_cleared);
-    const blockedCount = row.blocked_item_titles.length;
+    // Next open gate first; a gates-cleared row names no item (the cell reads "Formation to set
+    // Active"); otherwise the first blocked item, which also covers a degraded item read (#3066).
+    const fallbackBlockedTitle = row.gates_cleared ? null : (row.blocked_item_titles[0] ?? null);
     return {
       ...row,
       stageLabel: stageDisplay.label,
@@ -243,10 +245,8 @@ export class FormationsTableComponent {
       totalCount: sumFormationProgress(row.progress),
       progressSegments: buildFormationProgressSegments(row.progress),
       progressSummary: formatFormationProgressSummary(row.progress),
-      blockedCount,
-      blockedLabel: blockedCount > 0 ? `${blockedCount} blocked` : '',
-      blockedTitlesLabel: row.blocked_item_titles.join(' · '),
-      firstBlockedTitle: row.blocked_item_titles[0] ?? null,
+      blockingTitle: row.next_gate_item?.title ?? fallbackBlockedTitle,
+      blockingIsBlocked: row.next_gate_item ? row.next_gate_item.status === 'blocked' : fallbackBlockedTitle !== null,
     };
   }
 

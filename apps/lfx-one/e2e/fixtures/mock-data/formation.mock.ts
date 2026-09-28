@@ -93,6 +93,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     // contribution_agreement_executed=in_progress.
     progress: { not_started: 0, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: ['Contribution agreement executed'],
+    next_gate_item: { item_key: 'contribution_agreement_executed', title: 'Contribution agreement executed', status: 'in_progress' },
     assignees: [],
   },
   {
@@ -110,6 +111,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 0, in_progress: 6, blocked: 0, done: 0, skipped: 0 },
     blocked_item_titles: ['Intake review'],
+    next_gate_item: { item_key: 'intake_review', title: 'Intake review', status: 'blocked' },
     assignees: [],
   },
   {
@@ -127,6 +129,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     announcement_date: MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE,
     progress: { not_started: 0, in_progress: 0, blocked: 0, done: 4, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
 ];
@@ -157,6 +160,7 @@ export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 2, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
   {
@@ -176,6 +180,7 @@ export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 4, in_progress: 0, blocked: 0, done: 2, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
   {
@@ -193,6 +198,7 @@ export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 0, in_progress: 0, blocked: 0, done: 6, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
   {
@@ -210,6 +216,7 @@ export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 3, in_progress: 0, blocked: 0, done: 3, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
   {
@@ -230,6 +237,7 @@ export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 5, in_progress: 1, blocked: 0, done: 0, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
   {
@@ -251,6 +259,7 @@ export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
     announcement_date: null,
     progress: { not_started: 6, in_progress: 0, blocked: 0, done: 0, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
   },
 ];

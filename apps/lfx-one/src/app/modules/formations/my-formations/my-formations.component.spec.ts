@@ -31,6 +31,7 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
   gating_done: 0,
   gating_total: 1,
   blocking_item_title: null,
+  gates_cleared: false,
   ...overrides,
 });
 
@@ -117,6 +118,12 @@ describe('MyFormationsComponent (#2753)', () => {
 
     expect(byTestId(fixture, 'my-formations-announcement-formation-1')?.textContent).toContain('Not set');
     expect(byTestId(fixture, 'my-formations-blocking-formation-1')?.textContent?.trim()).toBe('—');
+  });
+
+  it('reads "Formation to set Active" when every gate is cleared and no item blocks (#3066)', async () => {
+    const { fixture } = await render(complete([formation({ gates_cleared: true })]));
+
+    expect(byTestId(fixture, 'my-formations-blocking-formation-1')?.textContent?.trim()).toBe('Formation to set Active');
   });
 
   it('renders the raw upstream stage verbatim when sub_stage has no queue-taxonomy equivalent', async () => {

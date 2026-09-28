@@ -135,7 +135,7 @@ export interface Formation {
   is_activating: boolean;
   gating_items_open: number;
   gating_items_total: number;
-  /** First not-done gating item's title, precomputed for the queue's "Blocking" column. */
+  /** Titles of the gating items whose status is `blocked`, joined — see `deriveFormationBlockingItemTitle`. The list tables' "Blocking" column reads {@link FormationQueueRow.next_gate_item} instead. */
   blocking_item_title: string | null;
   subtitle: string | null;
   /** Absent on the checklist read (`GET /formations/{project_uid}` doesn't return either timestamp) — raised upstream on #1957/GH-2267. */
@@ -622,6 +622,13 @@ export interface FormationQueueRow {
    */
   progress: Partial<Record<FormationItemStatus, number>>;
   blocked_item_titles: string[];
+  /**
+   * The "Blocking" column (#3066): the first gating item not yet `done`/`skipped`, in checklist
+   * order — BFF-derived from the `formation_item` index by `selectNextFormationGateItem`, since the
+   * `formation` projection carries only status counts. `null` when no gate is open, or when the
+   * item read degraded (the row then falls back to {@link blocked_item_titles}).
+   */
+  next_gate_item: FormationNextGateItem | null;
   /** Bare usernames, as published by the indexer (`internal/domain/port/ports.go`'s `Assignees []string`) — not `FormationUser` objects. */
   assignees: string[];
 }
@@ -634,7 +641,7 @@ export interface FormationQueueRow {
  * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
  * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
  */
-export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle'> & {
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle' | 'next_gate_item'> & {
   sub_stage: string;
   /** The projection's `lifecycle` verbatim — untrusted, so a bare string here and a {@link FormationLifecycle} only after `normalizeQueueRow`. */
   lifecycle: string;
@@ -769,6 +776,16 @@ export interface UpstreamFormationItemRow {
 }
 
 /**
+ * The one checklist item a formation row names in its "Blocking" column (#3066) — the first
+ * gating item not yet `done`/`skipped`, picked by `selectNextFormationGateItem`.
+ */
+export interface FormationNextGateItem {
+  item_key: string;
+  title: string;
+  status: FormationItemStatus;
+}
+
+/**
  * One checklist item assigned to the caller, across every project they can read (GH-1956). Built
  * from a `type=formation_item` query against the item index `lfx-v2-formation-service` v0.1.2
  * shipped (#2334) — see {@link UpstreamFormationItemRow} for the raw document this maps 1:1 onto,
@@ -859,7 +876,10 @@ export interface MyFormationSummary {
    */
   gating_done: number;
   gating_total: number;
+  /** The formation's next open gate item's title (#3066, {@link FormationQueueRow.next_gate_item}); falls back to the first `blocked` item's title only when the item read degraded. */
   blocking_item_title: string | null;
+  /** The projection's own {@link FormationQueueRow.gates_cleared} — lets the Blocking column read "Formation to set Active" once every gate is done. */
+  gates_cleared: boolean;
 }
 
 /**
