@@ -524,13 +524,20 @@ export class VoteService {
     // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
     const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
 
+    // Parent-vote keying mirrors fetchPendingVotes (GH #2985): `vote_uid` with its v1 alias
+    // `poll_id` as fallback — `vote_id` is the response row's own v1 id, never a parent key
+    // (upstream indexer contract). Without the fallback a poll_id-only legacy row would appear
+    // in Pending Actions but vanish here.
+    const parentVoteId = (r: IndexedVoteResponse): string | undefined => r.vote_uid ?? r.poll_id;
+
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
-      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(r.vote_uid);
+      const id = parentVoteId(r);
+      if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.map((r) => r.vote_uid).filter((uid): uid is string => !!uid))];
+    const voteUids = [...new Set(responses.map(parentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return [];

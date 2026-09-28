@@ -14,7 +14,7 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IndexedVoteResponseStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import type { IndexedVote, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
@@ -1038,6 +1038,21 @@ describe('VoteService', () => {
       const votes = await service.getMyVotes(req);
 
       expect(votes.map((v) => v.uid)).toEqual([UID_A, UID_B, UID_C]);
+    });
+
+    it('keys legacy poll_id-only rows by the v1 parent alias, matching Pending Actions (GH #2985)', async () => {
+      // vote_uid absent on a legacy row: poll_id (parent v1 alias) must key both the detail list
+      // and the responded set, or My Votes and Pending Actions diverge on the same row.
+      fetchAllQueryResources.mockResolvedValue([
+        { poll_id: 'poll-v1-9', vote_status: IndexedVoteResponseStatus.RESPONDED, user_email: 'spec-user@example.org' },
+      ]);
+      proxyRequest.mockResolvedValue(detailVote);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const votes = await service.getMyVotes(req);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/poll-v1-9', 'GET');
+      expect(votes[0]).toMatchObject({ response_status: VoteResponseStatus.RESPONDED });
     });
 
     it('returns [] without any upstream call when the request carries neither username nor email', async () => {
