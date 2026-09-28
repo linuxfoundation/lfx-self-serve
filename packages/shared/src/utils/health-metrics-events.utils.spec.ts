@@ -11,6 +11,7 @@ import {
   buildHealthMetricsEventsForecastRowViews,
   buildHealthMetricsEventsPastView,
   buildHealthMetricsEventsRegistrationsGrowthView,
+  buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSubNavItems,
   filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsPastClosedLabel,
@@ -30,6 +31,9 @@ import type {
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsRegistrationsGrowthYear,
+  HealthMetricsEventsRevenue,
+  HealthMetricsEventsRevenueEvent,
+  HealthMetricsEventsRevenuePeriod,
 } from '../interfaces/health-metrics-events.interface';
 
 function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): HealthMetricsEventsForecastEvent {
@@ -418,6 +422,125 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
 
   it('marks a period missing from the read as unmeasured', () => {
     expect(buildHealthMetricsEventsAtAGlanceView(glance(), 'COMPLETED_YEAR_4').measured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsRevenueView', () => {
+  function revenuePeriod(overrides: Partial<HealthMetricsEventsRevenuePeriod> = {}): HealthMetricsEventsRevenuePeriod {
+    return {
+      range: 'YTD',
+      totalUsd: 258000,
+      registrationUsd: 180000,
+      sponsorshipUsd: 78000,
+      registrationShare: 0.6977,
+      sponsorshipShare: 0.3023,
+      hasUnconverted: false,
+      changes: { total: 0.06, registration: 0.05, sponsorship: -0.09 },
+      ...overrides,
+    };
+  }
+
+  function revenueEvent(overrides: Partial<HealthMetricsEventsRevenueEvent> = {}): HealthMetricsEventsRevenueEvent {
+    return {
+      eventId: 'rev-1',
+      eventName: 'Summit',
+      eventStartDate: '2026-03-10',
+      registrationUsd: 96000,
+      sponsorshipUsd: 40000,
+      registrationGoal: 145000,
+      sponsorshipGoal: null,
+      hasUnconverted: false,
+      registrationGoalWithheld: false,
+      sponsorshipGoalWithheld: false,
+      ranges: ['YTD'],
+      ...overrides,
+    };
+  }
+
+  function revenue(overrides: Partial<HealthMetricsEventsRevenue> = {}): HealthMetricsEventsRevenue {
+    return {
+      periods: [revenuePeriod(), revenuePeriod({ range: 'COMPLETED_YEAR_3', changes: null })],
+      events: [revenueEvent(), revenueEvent({ eventId: 'rev-2', ranges: ['COMPLETED_YEAR'] })],
+      eventsMeasured: true,
+      ...overrides,
+    };
+  }
+
+  it('builds the headline, the two money lines and a split that sums to 100', () => {
+    const view = buildHealthMetricsEventsRevenueView(revenue(), 'YTD');
+
+    expect(view.measured).toBe(true);
+    expect(view.headline).toMatchObject({ label: 'Total event revenue', value: '$258K', delta: '+6%', deltaDirection: 'up' });
+    expect(view.side).toEqual([
+      expect.objectContaining({ key: 'registration', value: '$180K', delta: '+5%' }),
+      expect.objectContaining({ key: 'sponsorship', value: '$78K', delta: '−9%', deltaDirection: 'down' }),
+      expect.objectContaining({ key: 'split', value: '70 / 30', delta: null }),
+    ]);
+  });
+
+  it('lists only the events in the period, with each goal only where one is set', () => {
+    const { rows } = buildHealthMetricsEventsRevenueView(revenue(), 'YTD');
+
+    expect(rows.map((row) => row.event.eventId)).toEqual(['rev-1']);
+    expect(rows[0]).toMatchObject({
+      dateLabel: 'Mar 10, 2026',
+      registrationLabel: '$96K',
+      registrationGoalLabel: '$145K',
+      sponsorshipLabel: '$40K',
+      sponsorshipGoalLabel: '',
+    });
+  });
+
+  it('draws no delta for the period the view does not compare', () => {
+    const view = buildHealthMetricsEventsRevenueView(revenue(), 'COMPLETED_YEAR_3');
+
+    expect([view.headline, ...view.side].every((stat) => stat.delta === null)).toBe(true);
+  });
+
+  it('reads unmeasured figures and shares as not available, and keeps a refund signed', () => {
+    const period = revenuePeriod({
+      totalUsd: -1200,
+      registrationUsd: null,
+      registrationShare: null,
+      changes: { total: null, registration: null, sponsorship: null },
+    });
+    const view = buildHealthMetricsEventsRevenueView(revenue({ periods: [period] }), 'YTD');
+
+    expect(view.headline).toMatchObject({ value: '-$1.2K', delta: 'not available' });
+    expect(view.side[0].value).toBe('not available');
+    expect(view.side[2].value).toBe('not available');
+  });
+
+  it('shows the unconverted note when the headline or a listed event is short', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasUnconverted).toBe(false);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').hasUnconverted).toBe(true);
+  });
+
+  it('marks the headline only when the period totals leave out unconverted revenue, not for one listed event', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ hasUnconverted: true })] }), 'YTD').headlineUnconverted).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [revenueEvent({ hasUnconverted: true })] }), 'YTD').headlineUnconverted).toBe(false);
+  });
+
+  it('labels a withheld goal instead of leaving it blank, without marking the revenue or an unset goal', () => {
+    const event = revenueEvent({ registrationGoal: null, registrationGoalWithheld: true });
+    const view = buildHealthMetricsEventsRevenueView(revenue({ events: [event] }), 'YTD');
+
+    expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: '' });
+    expect(view.hasUnconverted).toBe(false);
+  });
+
+  it('carries whether the read had per-event figures at all', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').eventsMeasured).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events: [], eventsMeasured: false }), 'YTD')).toMatchObject({ eventsMeasured: false, rows: [] });
+  });
+
+  it('marks a period missing from the read as unmeasured', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'COMPLETED_YEAR_4')).toMatchObject({ foundationMeasured: true, measured: false });
+  });
+
+  it('marks the whole foundation unmeasured when the read carried no period at all', () => {
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [] }), 'YTD')).toMatchObject({ foundationMeasured: false, measured: false });
   });
 });
 

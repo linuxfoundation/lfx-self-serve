@@ -5,7 +5,7 @@ import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { MENTORSHIP_MENTEE_PROFILE_CREATED_STATE } from '@lfx-one/shared/constants';
 import { mentorshipMenteeApplyQueryParams } from '@lfx-one/shared/utils';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { firstValueFrom, map } from 'rxjs';
 
 /**
@@ -25,8 +25,8 @@ export const menteeApplyGuard: CanActivateFn = async (route: ActivatedRouteSnaps
     return true;
   }
 
-  const mentorshipService = inject(MentorshipService);
-  const hasProfile = await firstValueFrom(mentorshipService.hasMenteeProfile().pipe(map((response) => response.hasProfile)));
+  const menteeService = inject(MentorshipMenteeService);
+  const hasProfile = await firstValueFrom(menteeService.hasMenteeProfile().pipe(map((response) => response.hasProfile)));
   if (hasProfile) {
     return true;
   }

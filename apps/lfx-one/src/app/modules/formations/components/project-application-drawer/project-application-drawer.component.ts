@@ -6,14 +6,18 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, input, model, output, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { MenuComponent } from '@components/menu/menu.component';
+import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type {
-  Project,
+  ProjectApplicationAcceptChoice,
   ProjectApplication,
   ProjectApplicationAcceptDialogData,
+  ProjectApplicationAnswerLink,
   ProjectApplicationAnswers,
   ProjectApplicationAnswerSection,
   ProjectApplicationStateMeta,
+  ProjectApplicationStatusCallout,
   ProjectApplicationViewMode,
   ProjectApplicationWriteResult,
 } from '@lfx-one/shared/interfaces';
@@ -21,14 +25,17 @@ import {
   buildProjectApplicationAnswerSections,
   getProjectApplicationDisplayName,
   getProjectApplicationStateMeta,
+  getProjectApplicationStatusCallout,
   isProjectApplicationOpen,
+  toProjectApplicationEmailLink,
 } from '@lfx-one/shared/utils';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService } from 'primeng/dynamicdialog';
+import type { DrawerPassThroughOptions } from 'primeng/types/drawer';
 import { combineLatest, distinctUntilChanged, filter, finalize, map, Observable, pairwise, take } from 'rxjs';
 
 import { ProjectApplicationAcceptDialogComponent } from '../project-application-accept-dialog/project-application-accept-dialog.component';
@@ -40,13 +47,18 @@ import { ProjectApplicationFormComponent } from '../project-application-form/pro
  * backend creates the new project under — and deny. Revise/withdraw/accept/deny are offered only while
  * the application is `submitted`; delete is always offered and always confirmed.
  *
+ * The footer leads with each persona's primary action (#3046): Accept and Deny for the formation team,
+ * Revise for the submitter. The remaining actions — delete always last and set apart — sit in a "More
+ * actions" menu, or, once the application is decided, delete stands alone.
+ *
  * Every write sends the held revision as `If-Match`. Neither a 412 (another write won) nor a 404 (deleted
  * elsewhere) is replayed: a 412 asks the list to reload; a 404 asks it to drop the application.
- * Answers render as plain text only.
+ * Answers render as text; a URL or email answer becomes a link only when it passes `toProjectApplicationUrlLink` /
+ * `toProjectApplicationEmailLink` (http(s) with a host, or a plain single address).
  */
 @Component({
   selector: 'lfx-project-application-drawer',
-  imports: [ButtonComponent, ConfirmDialogModule, DatePipe, DrawerModule, ProjectApplicationFormComponent, TagComponent],
+  imports: [ButtonComponent, ConfirmDialogModule, DatePipe, DrawerModule, MenuComponent, MessageComponent, ProjectApplicationFormComponent, TagComponent],
   templateUrl: './project-application-drawer.component.html',
 })
 export class ProjectApplicationDrawerComponent {
@@ -83,6 +95,8 @@ export class ProjectApplicationDrawerComponent {
   protected readonly editing = signal(false);
   protected readonly busyAction = signal<string | null>(null);
   protected readonly errorMessage = signal<string | null>(null);
+  /** Mirrors the More actions popup so its trigger can expose `aria-expanded`. */
+  protected readonly moreMenuOpen = signal(false);
 
   // === Computed Signals ===
   protected readonly stateMeta: Signal<ProjectApplicationStateMeta> = computed(() => getProjectApplicationStateMeta(this.application()?.state));
@@ -90,14 +104,22 @@ export class ProjectApplicationDrawerComponent {
     buildProjectApplicationAnswerSections(this.application()?.application)
   );
   protected readonly projectName: Signal<string> = computed(() => getProjectApplicationDisplayName(this.application()));
-  protected readonly isOpen = computed(() => {
-    const application = this.application();
-    return application ? isProjectApplicationOpen(application) : false;
-  });
-  protected readonly isStaff = computed(() => this.mode() === 'staff');
-  protected readonly busy = computed(() => this.busyAction() !== null);
-  /** p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. */
-  protected readonly drawerPt = { root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' } };
+  protected readonly isOpen: Signal<boolean> = this.initIsOpen();
+  protected readonly isStaff: Signal<boolean> = computed(() => this.mode() === 'staff');
+  protected readonly busy: Signal<boolean> = computed(() => this.busyAction() !== null);
+  protected readonly statusCallout: Signal<ProjectApplicationStatusCallout | null> = computed(() =>
+    getProjectApplicationStatusCallout(this.application()?.state, this.mode())
+  );
+  /** The submitter's email as a `mailto:` link target — shown to the formation team only. */
+  protected readonly submitterEmailLink: Signal<ProjectApplicationAnswerLink | null> = this.initSubmitterEmailLink();
+  /** "Updated" only adds information once it falls on a different day from the submission. */
+  protected readonly showUpdated: Signal<boolean> = this.initShowUpdated();
+  protected readonly moreActions: Signal<MenuItem[]> = this.initMoreActions();
+  /**
+   * p-drawer renders an unnamed complementary landmark; a modal drawer must announce as a named dialog. The footer
+   * template stays statically declared, so while editing (the form has its own buttons) it is hidden via `pt`.
+   */
+  protected readonly drawerPt: Signal<DrawerPassThroughOptions> = this.initDrawerPt();
   /** The element that had focus when the drawer opened, handed focus back on every close path. */
   private opener: HTMLElement | null = null;
 
@@ -193,11 +215,15 @@ export class ProjectApplicationDrawerComponent {
     });
   }
 
-  /** Opens the parent-project picker; accepting runs only once the team has chosen a parent. */
+  /** Opens the accept dialog; accepting runs only once the team has chosen a parent and a slug. */
   protected onAccept(): void {
     const application = this.application();
     if (!application) return;
-    const data: ProjectApplicationAcceptDialogData = { projectName: this.projectName() };
+    const recordedSlug = application.application.project_slug;
+    const data: ProjectApplicationAcceptDialogData = {
+      projectName: this.projectName(),
+      ...(typeof recordedSlug === 'string' && recordedSlug && { projectSlug: recordedSlug }),
+    };
     const ref = this.dialogService.open(ProjectApplicationAcceptDialogComponent, {
       header: 'Accept proposal',
       width: '520px',
@@ -205,10 +231,56 @@ export class ProjectApplicationDrawerComponent {
       closable: true,
       data,
     });
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((parent: Project | undefined) => {
-      if (parent?.uid) {
-        this.acceptUnder(application, parent);
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((choice: ProjectApplicationAcceptChoice | undefined) => {
+      if (choice?.parent?.uid && choice.slug) {
+        this.acceptUnder(application, choice);
       }
+    });
+  }
+
+  // === Private Initializers ===
+  private initIsOpen(): Signal<boolean> {
+    return computed(() => {
+      const application = this.application();
+      return application ? isProjectApplicationOpen(application) : false;
+    });
+  }
+
+  private initSubmitterEmailLink(): Signal<ProjectApplicationAnswerLink | null> {
+    return computed(() => {
+      const email = this.application()?.submitter_email;
+      return email ? toProjectApplicationEmailLink(email) : null;
+    });
+  }
+
+  private initDrawerPt(): Signal<DrawerPassThroughOptions> {
+    return computed(() => ({
+      root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'project-application-drawer-title' },
+      footer: { class: this.editing() || !this.application() ? 'hidden' : 'border-t border-gray-200' },
+    }));
+  }
+
+  private initShowUpdated(): Signal<boolean> {
+    return computed(() => {
+      const application = this.application();
+      if (!application?.updated_at || !application.created_at) return false;
+      return new Date(application.updated_at).toDateString() !== new Date(application.created_at).toDateString();
+    });
+  }
+
+  /** Secondary actions for an open application; the persona's primary actions render as footer buttons instead. */
+  private initMoreActions(): Signal<MenuItem[]> {
+    return computed(() => {
+      const items: MenuItem[] = [];
+      if (this.isStaff()) {
+        items.push({ label: 'Revise', icon: 'fa-light fa-pen', command: () => this.startEditing() });
+      }
+      items.push(
+        { label: 'Withdraw', icon: 'fa-light fa-arrow-rotate-left', command: () => this.onWithdraw() },
+        { separator: true },
+        { label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onDelete() }
+      );
+      return items;
     });
   }
 
@@ -222,19 +294,21 @@ export class ProjectApplicationDrawerComponent {
     }
   }
 
-  private acceptUnder(application: ProjectApplication, parent: Project): void {
+  private acceptUnder(application: ProjectApplication, { parent, slug }: ProjectApplicationAcceptChoice): void {
+    const projectName = this.projectName();
     this.busyAction.set('accept');
     this.projectApplicationService
-      .accept(application, parent.uid)
+      .accept(application, parent.uid, slug)
       .pipe(finalize(() => this.busyAction.set(null)))
       .subscribe({
         next: (result) => {
-          this.messageService.add({ severity: 'success', summary: `Proposal accepted under ${parent.name}` });
+          this.messageService.add({ severity: 'success', summary: 'Proposal accepted', detail: `Created ${projectName} (${slug}) under ${parent.name}` });
           this.changed.emit(result.application);
         },
-        // Accept is two upstream writes (record the parent, then accept). Any failure may have landed
-        // after the first, so the held revision can no longer be trusted: never retry — a 404 drops the
-        // application, anything else reloads.
+        // Accept is several upstream writes (record the choices, create the project, record it, accept). Any
+        // failure may have landed after an earlier step, so the held revision can no longer be trusted: never
+        // retry — a 404 drops the application, anything else reloads. A retry after reload skips the create
+        // when the project was already recorded.
         error: (error: unknown) => this.handleAcceptError(error, application.uid),
       });
   }

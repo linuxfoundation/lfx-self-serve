@@ -13,6 +13,7 @@ import {
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
+  HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
 } from '../constants/health-metrics-events.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -38,6 +39,10 @@ import type {
   HealthMetricsEventsRegistrationsGrowthMetric,
   HealthMetricsEventsRegistrationsGrowthRowView,
   HealthMetricsEventsRegistrationsGrowthView,
+  HealthMetricsEventsRevenue,
+  HealthMetricsEventsRevenueEvent,
+  HealthMetricsEventsRevenueRowView,
+  HealthMetricsEventsRevenueView,
   HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSubNavItem,
@@ -246,6 +251,42 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
   };
 }
 
+/** One period's revenue section; the table lists only the events in that period, matching the headline. */
+export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEventsRevenue, range: HealthMetricsRange): HealthMetricsEventsRevenueView {
+  const period = revenue.periods.find((candidate) => candidate.range === range) ?? null;
+  const changes = period?.changes ?? null;
+  const delta = (value: number | null | undefined): HealthMetricsEventsAtAGlanceDelta =>
+    changes ? formatAtAGlanceDelta(value ?? null, 'pct') : { delta: null, deltaDirection: 'neutral' };
+  const stat = (
+    key: string,
+    label: string,
+    value: number | null | undefined,
+    change: HealthMetricsEventsAtAGlanceDelta
+  ): HealthMetricsEventsAtAGlanceStatView => ({
+    key,
+    label,
+    value: formatHealthMetricsEventsRevenue(value ?? null),
+    ...change,
+    warn: false,
+  });
+  const rows = revenue.events.filter((event) => event.ranges.some((candidate) => candidate === range)).map(buildRevenueRowView);
+
+  return {
+    foundationMeasured: revenue.periods.length > 0,
+    measured: period !== null,
+    headline: stat('total', 'Total event revenue', period?.totalUsd, delta(changes?.total)),
+    side: [
+      stat('registration', 'Registration', period?.registrationUsd, delta(changes?.registration)),
+      stat('sponsorship', 'Sponsorship', period?.sponsorshipUsd, delta(changes?.sponsorship)),
+      { key: 'split', label: 'Split', value: formatRevenueSplit(period?.registrationShare ?? null), delta: null, deltaDirection: 'neutral', warn: false },
+    ],
+    rows,
+    eventsMeasured: revenue.eventsMeasured,
+    hasUnconverted: period?.hasUnconverted === true || rows.some((row) => row.event.hasUnconverted),
+    headlineUnconverted: period?.hasUnconverted === true,
+  };
+}
+
 /** Every year from the first to the last with events, oldest first; a gap year is left unrecorded, never zeroed. */
 export function buildHealthMetricsEventsRegistrationsGrowthView(
   growth: HealthMetricsEventsRegistrationsGrowth,
@@ -327,6 +368,30 @@ function formatAtAGlanceDelta(fraction: number | null, unit: 'pct' | 'pp'): Heal
   if (rounded === 0) return { delta: magnitude, deltaDirection: 'neutral' };
 
   return { delta: `${rounded > 0 ? '+' : '−'}${magnitude}`, deltaDirection: rounded > 0 ? 'up' : 'down' };
+}
+
+/** Registration over sponsorship as whole percents that sum to 100, e.g. `70 / 30`. */
+function formatRevenueSplit(registrationShare: number | null): string {
+  if (registrationShare === null) return HEALTH_METRICS_EVENTS_NOT_AVAILABLE;
+
+  const registrationPct = Math.round(registrationShare * 100);
+  return `${registrationPct} / ${100 - registrationPct}`;
+}
+
+function formatRevenueGoal(goal: number | null, withheld: boolean): string {
+  if (withheld) return HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD;
+  return goal === null ? '' : formatCurrency(goal);
+}
+
+function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetricsEventsRevenueRowView {
+  return {
+    event,
+    dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
+    registrationLabel: formatHealthMetricsEventsRevenue(event.registrationUsd),
+    registrationGoalLabel: formatRevenueGoal(event.registrationGoal, event.registrationGoalWithheld),
+    sponsorshipLabel: formatHealthMetricsEventsRevenue(event.sponsorshipUsd),
+    sponsorshipGoalLabel: formatRevenueGoal(event.sponsorshipGoal, event.sponsorshipGoalWithheld),
+  };
 }
 
 function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {

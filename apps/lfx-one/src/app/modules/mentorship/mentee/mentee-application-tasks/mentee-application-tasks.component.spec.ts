@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT, MOCK_MENTORSHIP_MENTEE_TASKS } from '@lfx-one/shared/constants';
 import { MentorshipMenteePhase } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,7 +27,7 @@ describe('MenteeApplicationTasksComponent (phase orchestrator)', () => {
       imports: [MenteeApplicationTasksComponent],
       providers: [
         {
-          provide: MentorshipService,
+          provide: MentorshipMenteeService,
           useValue: {
             getMenteeOverview: vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT)),
             getMenteeTasks: vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_TASKS)),

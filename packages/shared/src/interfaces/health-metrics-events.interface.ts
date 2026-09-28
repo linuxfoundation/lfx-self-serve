@@ -217,7 +217,7 @@ export interface HealthMetricsEventsAtAGlance {
   periods: HealthMetricsEventsAtAGlancePeriod[];
   /** Events from today to the end of the current year; the view does not split it by period. */
   upcomingEvents: number | null;
-  /** `false` only when the foundation has never held an event and has none still to come, in any year. */
+  /** `false` only when the foundation has never held an event, has none still to come and has no event revenue recorded. */
   hasEvents: boolean;
 }
 
@@ -304,4 +304,88 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   hasPartialYear: boolean;
   /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
   pandemicNote: string | null;
+}
+
+/** Foundation scope for event revenue; every period ships in one read, so the range stays client-side. */
+export interface HealthMetricsEventsRevenueQuery {
+  foundationSlug: string;
+}
+
+/** Year-over-year revenue changes as fractions. Every `null` is not available, never zero. */
+export interface HealthMetricsEventsRevenueChanges {
+  total: number | null;
+  registration: number | null;
+  sponsorship: number | null;
+}
+
+/** One period's headline, in USD as the view totals it. Revenue is signed, since refunds count against it. */
+export interface HealthMetricsEventsRevenuePeriod {
+  range: HealthMetricsL2Range;
+  totalUsd: number | null;
+  registrationUsd: number | null;
+  sponsorshipUsd: number | null;
+  /** 0–1; `null` when the total is zero or part of it could not be converted to USD. */
+  registrationShare: number | null;
+  sponsorshipShare: number | null;
+  /** Some registration revenue in the period stayed in local currency, so the USD figures run short. */
+  hasUnconverted: boolean;
+  /** `null` for a period the view does not compare with the year before. */
+  changes: HealthMetricsEventsRevenueChanges | null;
+}
+
+/** One event's revenue against its goals, in USD. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsEventsRevenueEvent {
+  eventId: string;
+  eventName: string;
+  /** `YYYY-MM-DD`. */
+  eventStartDate: string | null;
+  registrationUsd: number | null;
+  sponsorshipUsd: number | null;
+  /** `null` when no goal is set, or when the goal is withheld. */
+  registrationGoal: number | null;
+  sponsorshipGoal: number | null;
+  /** Some of the event's registration revenue stayed in local currency. */
+  hasUnconverted: boolean;
+  /** A set goal in a currency with no USD rate, so it cannot sit against a USD figure. */
+  registrationGoalWithheld: boolean;
+  sponsorshipGoalWithheld: boolean;
+  /** The periods the event falls in. */
+  ranges: HealthMetricsL2Range[];
+}
+
+/** `GET /api/analytics/events-revenue` — each period's headline and every event in the four periods. */
+export interface HealthMetricsEventsRevenue {
+  periods: HealthMetricsEventsRevenuePeriod[];
+  /** Most recent first. */
+  events: HealthMetricsEventsRevenueEvent[];
+  /** `false` when only the foundation totals were read, so there is no per-event list to show. */
+  eventsMeasured: boolean;
+}
+
+/** A revenue-by-event row with its labels resolved once per period. */
+export interface HealthMetricsEventsRevenueRowView {
+  event: HealthMetricsEventsRevenueEvent;
+  dateLabel: string;
+  registrationLabel: string;
+  /** Empty when no goal is set; says so when the goal is withheld for its currency. */
+  registrationGoalLabel: string;
+  sponsorshipLabel: string;
+  sponsorshipGoalLabel: string;
+}
+
+/** The section for one period, with every label ready to render. */
+export interface HealthMetricsEventsRevenueView {
+  /** `false` when the read carried no period at all, so the section says so rather than pointing at another period. */
+  foundationMeasured: boolean;
+  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
+  measured: boolean;
+  headline: HealthMetricsEventsAtAGlanceStatView;
+  side: HealthMetricsEventsAtAGlanceStatView[];
+  rows: HealthMetricsEventsRevenueRowView[];
+  /** `false` when the foundation has totals but no per-event figures, so an empty list is not read as no events. */
+  eventsMeasured: boolean;
+  /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
+  hasUnconverted: boolean;
+  /** Whether the period's totals leave out unconverted revenue, so the headline and registration stat are marked. */
+  headlineUnconverted: boolean;
 }

@@ -4,7 +4,7 @@
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router } from '@angular/router';
 import { mentorshipMenteeApplyIds } from '@lfx-one/shared/utils';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { map } from 'rxjs';
 import { firstValueFrom } from 'rxjs';
 
@@ -20,10 +20,10 @@ import { firstValueFrom } from 'rxjs';
  * `{ hasProfile: false }`, so no guard-level `catchError` is needed.
  */
 export const menteeRegisterGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {
-  const mentorshipService = inject(MentorshipService);
+  const menteeService = inject(MentorshipMenteeService);
   const router = inject(Router);
 
-  const hasProfile = await firstValueFrom(mentorshipService.hasMenteeProfile().pipe(map((response) => response.hasProfile)));
+  const hasProfile = await firstValueFrom(menteeService.hasMenteeProfile().pipe(map((response) => response.hasProfile)));
 
   if (hasProfile) {
     const applyIds = mentorshipMenteeApplyIds(route.queryParamMap);

@@ -2,8 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="project-application-accept-dialog">
-  <p class="text-sm text-gray-600 m-0">
-    Accepting creates <span class="font-medium text-gray-900">{{ data.projectName }}</span> as a new project. Choose the parent project it belongs under.
+  <p class="text-sm text-gray-600 m-0" data-testid="project-application-accept-message">
+    Accepting will also create a project. Choose the parent project <span class="font-medium text-gray-900">{{ data.projectName }}</span> belongs under and its
+    slug.
   </p>
   <div class="flex flex-col gap-1.5">
     <label for="project-application-accept-parent" class="text-sm text-gray-700">Parent project <span class="text-red-600" aria-hidden="true">*</span></label>
@@ -32,6 +33,28 @@
       </ng-template>
     </lfx-autocomplete>
   </div>
+  <div class="flex flex-col gap-1.5">
+    <label for="project-application-accept-slug" class="text-sm text-gray-700">Project slug <span class="text-red-600" aria-hidden="true">*</span></label>
+    <lfx-input-text
+      [form]="form"
+      control="slug"
+      inputId="project-application-accept-slug"
+      [required]="true"
+      [invalid]="slugError()"
+      describedBy="project-application-accept-slug-help"
+      placeholder="e.g. my-project"
+      styleClass="w-full"
+      dataTest="project-application-accept-slug" />
+    @if (slugError()) {
+      <p id="project-application-accept-slug-help" class="text-xs text-red-600 m-0" data-testid="project-application-accept-slug-error">
+        Use lowercase letters, numbers, "-" or "_", starting with a letter and ending with a letter or number.
+      </p>
+    } @else {
+      <p id="project-application-accept-slug-help" class="text-xs text-gray-500 m-0">
+        Lowercase letters, numbers, "-" or "_". Starts with a letter. Must be unique across projects.
+      </p>
+    }
+  </div>
   <div class="flex items-center justify-end gap-2">
     <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" (onClick)="onCancel()" data-testid="project-application-accept-cancel" />
     <lfx-button
@@ -39,7 +62,7 @@
       icon="fa-light fa-circle-check"
       severity="primary"
       size="small"
-      [disabled]="!selectedParent()"
+      [disabled]="!selectedParent() || !slugValid()"
       (onClick)="onConfirm()"
       data-testid="project-application-accept-confirm" />
   </div>

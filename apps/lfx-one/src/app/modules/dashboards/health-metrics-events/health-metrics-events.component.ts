@@ -23,13 +23,14 @@ import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events
 import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
+import { EventsRevenueComponent } from './components/events-revenue/events-revenue.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Events (Level 2) — nine anchored sections in the shared Level 2 shell; a section without a body
- * renders as an "Awaiting data" placeholder. A foundation that has never held an event gets one
- * "No events yet" state in place of the shell. Rendered inside HealthMetricsGateComponent's outlet.
+ * renders as an "Awaiting data" placeholder. A foundation with no event held, none upcoming and no
+ * event revenue gets one "No events yet" state in place of the shell. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
   selector: 'lfx-health-metrics-events',
@@ -39,6 +40,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
     EventsPastEventsComponent,
     EventsRegistrationForecastComponent,
     EventsRegistrationsGrowthComponent,
+    EventsRevenueComponent,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
   ],

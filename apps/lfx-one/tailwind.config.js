@@ -13,6 +13,7 @@ import {
   BAND_SIGNAL_FILL_LIGHT,
   BEHAVIORAL_CLASS_CONFIG,
   DELTA_DIRECTION_TEXT_CLASS,
+  DOCS_ANCHOR_SCROLL_OFFSET_PX,
   FORMATION_ANNOUNCEMENT_TIMING_CLASS,
   FORMATION_CHECKLIST_GRID_CLASSES,
   FORMATION_ITEM_SEGMENT_COLORS,
@@ -263,6 +264,9 @@ export default {
               fontWeight: '700',
               color: lfxColors.gray[900],
               letterSpacing: '-0.01em',
+              // Clears the sticky docs topbar on #fragment jumps (topbar measurement lives on the
+              // DOCS_ANCHOR_SCROLL_OFFSET_PX JSDoc); parity with DocsArticleComponent's ViewportScroller offset.
+              scrollMarginTop: `${DOCS_ANCHOR_SCROLL_OFFSET_PX}px`,
             },
             h1: { fontSize: '2.25rem', lineHeight: '1.15', marginTop: '0', marginBottom: '1rem' },
             // Article sections (markdown `##`) render at h4 scale with a 32px top gap — the

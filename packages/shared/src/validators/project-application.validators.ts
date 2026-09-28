@@ -3,7 +3,7 @@
 
 import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 
-import { PROJECT_APPLICATION_FORMATION_LIST_MAX } from '../constants/project-application.constants';
+import { PROJECT_APPLICATION_FORMATION_LIST_MAX, PROJECT_SLUG_REGEX } from '../constants/project-application.constants';
 import { EMAIL_REGEX } from '../constants/regex.constants';
 import { parseEmailList } from '../utils/email.utils';
 import { isHttpUrl, isLegalContactEmail } from '../utils/project-application.utils';
@@ -44,5 +44,16 @@ export function projectApplicationEmailListValidator(): ValidatorFn {
       return { emailListMax: { max: PROJECT_APPLICATION_FORMATION_LIST_MAX } };
     }
     return null;
+  };
+}
+
+/** Project slug for the project created at accept (#1995), per project-service's rule. Blank passes — pair with `Validators.required`. */
+export function projectSlugValidator(): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = typeof control.value === 'string' ? control.value : '';
+    if (!value) {
+      return null;
+    }
+    return PROJECT_SLUG_REGEX.test(value) ? null : { projectSlug: true };
   };
 }

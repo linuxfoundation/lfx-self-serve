@@ -74,7 +74,7 @@ export class SidebarNavService {
   /**
    * Dark-launch gate for the formation routes (GH-1958, #2753); hides the project checklist, foundation
    * queue and Me-lens My Formations nav items when off. With it on, a Formation-stage project's sidebar
-   * is the checklist item alone (#2754).
+   * is the checklist plus Meetings, Mailing Lists and Groups (#2754, #3059).
    */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
@@ -97,8 +97,8 @@ export class SidebarNavService {
   /**
    * True while `formationOverviewRedirectGuard` has let the selected project's `/project/overview`
    * stand — flag off, or LaunchDarkly not ready within its budget (#2754). The nav then keeps its full
-   * shape in step with the dashboard the guard admitted, rather than collapsing to Formation-only
-   * under it once the provider catches up. Cleared when navigation leaves the overview
+   * shape in step with the dashboard the guard admitted, rather than collapsing to the formation-stage
+   * set under it once the provider catches up. Cleared when navigation leaves the overview
    * (`formationOverviewReleaseGuard`) and before every run of the redirect guard, so it never
    * applies on a page where the formation experience hides the nav.
    */
@@ -118,12 +118,13 @@ export class SidebarNavService {
       case 'foundation':
         return this.foundationLensItems();
       case 'project': {
-        // A project in a Formation stage (GH-1958, #2754) gets a Formation-only sidebar: nothing else
-        // in the lens is meaningful while it forms, so the checklist is the single entry — for every
-        // persona, hybrid marketing-grant users included: the Marketing section they regained in this
-        // lens under LFXV2-2235 (see the end of this case) is knowingly withheld while the project is
-        // forming, a product decision on #2754. Dark-launched behind the formation flag plus
-        // `isFormationStageGate` on the active project: the same conjunction
+        // A project in a Formation stage (GH-1958, #2754) gets a reduced sidebar: the checklist, plus
+        // the Meetings, Mailing Lists and Groups a forming project already collaborates through
+        // (#3059). The dashboard, documents, governance, communications and Mktg OS entries stay
+        // hidden while it forms — for every persona, hybrid marketing-grant users included: the
+        // Marketing section they regained in this lens under LFXV2-2235 (see the end of this case) is
+        // knowingly withheld while the project is forming, a product decision on #2754. Dark-launched
+        // behind the formation flag plus `isFormationStageGate` on the active project: the same conjunction
         // `formationOverviewRedirectGuard` uses to send `/project/overview` to the checklist, so the
         // nav and the landing route never disagree. With the flag on, the nav's shape depends on the
         // stage, so while that fetch is still in flight nothing is rendered rather than the full nav
@@ -136,7 +137,7 @@ export class SidebarNavService {
             return [];
           }
           if (isFormationStageGate(this.projectContextService.activeProjectStage())) {
-            return [this.formationNavItem];
+            return this.formationStageNavItems;
           }
         }
         // Governance (Votes / Surveys / Permissions) is always surfaced under Project lens —
@@ -630,6 +631,25 @@ export class SidebarNavService {
     };
   });
 
+  // --- Project — Meetings / Mailing Lists / Groups (shared by the full nav and the formation-stage nav, #3059) ---
+  private readonly projectMeetingsNavItem: SidebarMenuItem = {
+    label: 'Meetings',
+    icon: 'fa-light fa-calendar',
+    routerLink: '/project/meetings',
+  };
+
+  private readonly projectMailingListsNavItem: SidebarMenuItem = {
+    label: MAILING_LIST_LABEL.plural,
+    icon: 'fa-light fa-envelope',
+    routerLink: '/project/mailing-lists',
+  };
+
+  private readonly projectGroupsNavItem: SidebarMenuItem = {
+    label: COMMITTEE_LABEL.plural,
+    icon: 'fa-light fa-users-rectangle',
+    routerLink: '/project/groups',
+  };
+
   // --- Project Lens Items (base) ---
   private readonly projectLensItems: SidebarMenuItem[] = [
     {
@@ -637,21 +657,9 @@ export class SidebarNavService {
       icon: 'fa-light fa-grid-2',
       routerLink: '/project/overview',
     },
-    {
-      label: 'Meetings',
-      icon: 'fa-light fa-calendar',
-      routerLink: '/project/meetings',
-    },
-    {
-      label: MAILING_LIST_LABEL.plural,
-      icon: 'fa-light fa-envelope',
-      routerLink: '/project/mailing-lists',
-    },
-    {
-      label: COMMITTEE_LABEL.plural,
-      icon: 'fa-light fa-users-rectangle',
-      routerLink: '/project/groups',
-    },
+    this.projectMeetingsNavItem,
+    this.projectMailingListsNavItem,
+    this.projectGroupsNavItem,
     {
       label: DOCUMENT_LABEL.plural,
       icon: 'fa-light fa-folder-open',
@@ -659,13 +667,22 @@ export class SidebarNavService {
     },
   ];
 
-  // --- Project — Formation checklist (GH-1958; dark-launched, the only item for a Formation-stage project — #2754) ---
+  // --- Project — Formation checklist (GH-1958; dark-launched, heads a Formation-stage project's sidebar — #2754) ---
   private readonly formationNavItem: SidebarMenuItem = {
     label: 'Formation',
     icon: 'fa-light fa-list-check',
     routerLink: FORMATION_CHECKLIST_PATH,
     testId: 'sidebar-project-formation',
   };
+
+  // The whole Project lens sidebar for a Formation-stage project (#2754, widened by #3059): the checklist
+  // first, as the lens's landing page, then the three collaboration surfaces a forming project already uses.
+  private readonly formationStageNavItems: SidebarMenuItem[] = [
+    this.formationNavItem,
+    this.projectMeetingsNavItem,
+    this.projectMailingListsNavItem,
+    this.projectGroupsNavItem,
+  ];
 
   // --- Me — My Formations page (#2753; dark-launched, appended to My Engagement) ---
   private readonly myFormationsNavItem: SidebarMenuItem = {

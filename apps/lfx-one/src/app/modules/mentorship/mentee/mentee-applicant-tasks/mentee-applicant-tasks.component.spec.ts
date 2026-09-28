@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED, MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT } from '@lfx-one/shared/constants';
 import { MentorshipMenteeOverviewApplicant } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +24,7 @@ describe('MenteeApplicantTasksComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeApplicantTasksComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview, clearMenteeCaches } },
+        { provide: MentorshipMenteeService, useValue: { getMenteeOverview, clearMenteeCaches } },
         { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
       ],
     });

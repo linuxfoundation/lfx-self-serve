@@ -27,7 +27,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplyTarget, MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
 import { mentorshipMenteeApplyIds } from '@lfx-one/shared/utils';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, combineLatest, forkJoin, map, of, switchMap } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
@@ -64,7 +64,7 @@ export class MenteeApplyComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly location = inject(Location);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly menteeService = inject(MentorshipMenteeService);
   private readonly profileDrawer = inject(MenteeProfileEditDrawerService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly demographicsDrawer = viewChild(MenteeDemographicsEditDrawerComponent);
@@ -156,8 +156,8 @@ export class MenteeApplyComponent {
           this.missingParams.set(false);
           this.loadError.set(null);
           return forkJoin({
-            target: this.mentorshipService.getMenteeApplyTarget(ids.programId, ids.programTermId),
-            profile: this.mentorshipService.getMenteeProfile(),
+            target: this.menteeService.getMenteeApplyTarget(ids.programId, ids.programTermId),
+            profile: this.menteeService.getMenteeProfile(),
           }).pipe(
             map((result) => {
               this.hasLoaded.set(true);
