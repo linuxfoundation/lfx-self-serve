@@ -15,7 +15,7 @@ import type {
 
 /**
  * Rail/sidebar matching the design's `railHTML(d)`: Foundation Revenue (total + segmented bar +
- * per-stream legend), Foundation (size/projects/tiers/board/next renewals), and a fixed Data
+ * per-stream legend), Foundation (projects/tiers/board/next renewals), and a fixed Data
  * sources tag list. Rendered alongside the tile strip + findings list on wide viewports.
  */
 @Component({

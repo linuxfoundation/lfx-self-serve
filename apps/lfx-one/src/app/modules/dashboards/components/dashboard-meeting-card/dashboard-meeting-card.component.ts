@@ -11,6 +11,8 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getUpcomingMeetingStartTime,
+  resolveUpcomingMeetingDurationMinutes,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
@@ -135,7 +137,14 @@ export class DashboardMeetingCardComponent {
     return computed(() => {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
-      return occurrence?.start_time || meeting.start_time;
+      if (this.pastMeeting()) {
+        return occurrence?.start_time || meeting.start_time;
+      }
+      // Recurring series keep their origin in start_time. Upcoming cards prefer the resolved
+      // occurrence, then next_occurrence_start_time, and only then the series origin — the same
+      // rule as meeting-card (LFXV2-2054). Groups Overview passes no occurrence, so without this
+      // the Next Meeting badge showed the series origin (GH-2907).
+      return getUpcomingMeetingStartTime(meeting, occurrence) || meeting.start_time;
     });
   }
 
@@ -189,7 +198,21 @@ export class DashboardMeetingCardComponent {
         return false;
       }
 
-      return canJoinMeeting(meeting, this.occurrence());
+      const explicit = this.occurrence();
+      if (explicit) {
+        return canJoinMeeting(meeting, explicit);
+      }
+      // Groups Overview passes no occurrence. Join must follow the same upcoming start the
+      // badge shows, or a past series origin hides Join during the real occurrence (GH-2907).
+      const start = getUpcomingMeetingStartTime(meeting);
+      if (!start) {
+        return canJoinMeeting(meeting);
+      }
+      return canJoinMeeting(meeting, {
+        occurrence_id: '',
+        start_time: start,
+        duration: resolveUpcomingMeetingDurationMinutes(meeting),
+      });
     });
   }
 
@@ -251,15 +274,15 @@ export class DashboardMeetingCardComponent {
 
   private initRecordingShareUrl(): Signal<string | null> {
     return toSignal(
-      combineLatest([toObservable(this.meeting), toObservable(this.recordingUrl), toObservable(this.occurrence)]).pipe(
-        switchMap(([meeting, recordingUrlOverride, occurrence]) => {
+      combineLatest([toObservable(this.meeting), toObservable(this.recordingUrl), toObservable(this.occurrence), toObservable(this.pastMeeting)]).pipe(
+        switchMap(([meeting, recordingUrlOverride, occurrence, pastMeeting]) => {
           if (recordingUrlOverride) {
             return of(recordingUrlOverride);
           }
           if (!meeting?.id || !meeting.recording_enabled) {
             return of(null);
           }
-          const startTime = occurrence?.start_time || meeting.start_time;
+          const startTime = pastMeeting ? occurrence?.start_time || meeting.start_time : getUpcomingMeetingStartTime(meeting, occurrence) || meeting.start_time;
           if (new Date(startTime).getTime() > Date.now()) {
             return of(null);
           }
@@ -296,8 +319,12 @@ export class DashboardMeetingCardComponent {
 
   private initMeetingDuration(): Signal<number> {
     return computed(() => {
+      const meeting = this.meeting();
       const occurrence = this.occurrence();
-      return occurrence?.duration ?? this.meeting().duration ?? 0;
+      if (this.pastMeeting()) {
+        return occurrence?.duration ?? meeting.duration ?? 0;
+      }
+      return resolveUpcomingMeetingDurationMinutes(meeting, occurrence);
     });
   }
 

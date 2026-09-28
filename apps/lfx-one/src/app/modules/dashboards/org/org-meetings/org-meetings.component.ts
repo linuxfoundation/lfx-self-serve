@@ -7,9 +7,7 @@ import type { OrgMeetingsSupportedTimeRange, OrgMeetingsTimeRange } from '@lfx-o
 import { isSupportedOrgMeetingsTimeRange } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
-import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -43,9 +41,7 @@ import { OrgMeetingsTimeRangeComponent } from './components/org-meetings-time-ra
 })
 export class OrgMeetingsComponent {
   private readonly accountContext = inject(AccountContextService);
-  private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Simple WritableSignals
@@ -71,9 +67,7 @@ export class OrgMeetingsComponent {
   // too, a direct writer/auditor whose persona response has no organizations could see a one-tick
   // flash of the no-company empty state before `/api/nav/org-items` populates `selectedAccount`.
   // Mirrors org-projects.component.ts's `orgContextLoaded` gate.
-  protected readonly loaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
   // Either identifier counts as "selected": a fresh persona seed can have `uid` but an empty
   // `accountId` pending Snowflake enrichment, while a cookie-restored stub (account-context.service.ts)

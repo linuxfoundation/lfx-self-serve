@@ -11,6 +11,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL,
   MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -157,6 +158,42 @@ describe('MenteeProfileEditDrawerComponent', () => {
 
     expect(comp['form'].controls.introduction.value).toBe(atCap);
     expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+  });
+
+  it('seeds a stored aboutMe over the raw cap without running the quadratic strip on all of it (lfx-self-serve-ops#37)', () => {
+    // `aboutMe` comes back from the API, so it can exceed what the register form allows. Converting
+    // this nested-bracket payload in full would take seconds and trip the test timeout; the raw-cap
+    // slice bounds it.
+    const hostile = `${'<'.repeat(100_000)}${'>'.repeat(100_000)}`;
+    expect(hostile.length).toBeGreaterThan(MENTORSHIP_RICH_TEXT_RAW_MAX);
+
+    drawer.open({ ...PROFILE, aboutMe: hostile });
+    fixture.detectChanges();
+
+    expect(comp['aboutMeLength']()).toBeLessThanOrEqual(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+  });
+
+  it.each([
+    ['<strong>c</strong>', 'tag'],
+    ['&amp;', 'entity'],
+  ])('drops a %s the raw-cap cut splits instead of seeding it as literal text (%s)', (token) => {
+    // Markup-heavy but within the 3000 plain-text cap: the cut lands two characters into `token`.
+    const head = `<p>${'<strong>a</strong>'.repeat(900)}`;
+    const filler = 'b'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX - head.length - 2);
+    drawer.open({ ...PROFILE, aboutMe: `${head}${filler}${token}</p>` });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe(`${'a'.repeat(900)}${filler}`);
+  });
+
+  it('drops an emoji the raw-cap cut splits instead of seeding a lone surrogate', () => {
+    // The emoji's two UTF-16 units straddle the cut, so a plain slice would keep only the high surrogate.
+    const head = `<p>${'<strong>a</strong>'.repeat(900)}`;
+    const filler = 'b'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX - head.length - 1);
+    drawer.open({ ...PROFILE, aboutMe: `${head}${filler}😀tail</p>` });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe(`${'a'.repeat(900)}${filler}`);
   });
 
   it('emits valueChanges when seeding so skills pickers and resume receive the profile', () => {

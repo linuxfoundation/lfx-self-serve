@@ -13,6 +13,8 @@ import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type {
+  OrgClaActivityLogEntry,
+  OrgClaActivityLogPage,
   OrgClaApprovalList,
   OrgClaContributorAcknowledgment,
   OrgClaContributorAcknowledgmentList,
@@ -23,14 +25,15 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './org-roi.helper';
 
 /** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
 export const EASYCLA_URL = ORG_EASYCLA_PATH;
 export const PAGE_LOAD_TIMEOUT = 30_000;
 
-export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-export const MOCK_ACCOUNT_NAME = 'Acme Motors';
+export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
+export const MOCK_ACCOUNT_NAME = SYNTHETIC_ORG_NAME;
 
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
@@ -45,6 +48,7 @@ export const MANAGER_DELETE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers/*'
 
 /** Contributor acknowledgments for one agreement. Query string carries search and nextKey. */
 export const ACKNOWLEDGMENTS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/acknowledgments**';
+export const ACTIVITY_LOG_ROUTE = '**/api/orgs/*/lens/cla-groups/*/activity**';
 
 /**
  * The detail page's presigned-URL route.
@@ -116,7 +120,7 @@ export async function stubAccountContext(page: Page): Promise<void> {
   });
 
   await fulfillJson(page, '**/api/nav/org-items*', {
-    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true }],
+    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true }],
     next_page_token: null,
     upstream_failed: false,
     total: 1,
@@ -155,7 +159,9 @@ export async function stubAccountContext(page: Page): Promise<void> {
 /**
  * ACS pair-check hop for attestation Continue and approval-list mutations. Existing org-easycla e2e
  * stubs this allowed; a denied stub refuses Review and Sign and hides Add/Edit/Remove. Sign CLA
- * itself stays offered. Picker Continue and Start do not POST this hop.
+ * itself stays offered. Picker Continue and Start do not POST this hop. A denied stub also puts
+ * the CLA manager question (#2780) in front of Start on an unsigned overview; allowed skips it
+ * and shows the designee copy.
  */
 export async function stubPermissionChecks(page: Page, allowed = true): Promise<void> {
   await page.route(PERMISSIONS_CHECKS_ROUTE, (route) => {
@@ -202,6 +208,10 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * @param stubList - Installs the CLA Group list response this case needs.
  * @param signatureId - Narrows the group to one agreement; omit unless the case is about that choice.
  * @param permissionAllowed - ACS pair-check stub. Defaults true so mutation cases stay writable unless the case is about a deny.
+ *
+ * A signed Overview reads the activity log for its Recent activity block, so an empty page is
+ * stubbed first. `stubList` runs after it and can install its own `stubActivityLog`, which wins
+ * because Playwright tries the most recently registered route first.
  */
 export async function gotoEasyclaDetail(
   page: Page,
@@ -213,6 +223,7 @@ export async function gotoEasyclaDetail(
   await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
+  await stubActivityLog(page);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -518,6 +529,7 @@ export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgmen
     cclaVersion: 'v2.1',
     signedOn: '2026-03-11T09:20:00Z',
     approved: true,
+    removedFromApprovalList: false,
     ...overrides,
   };
 }
@@ -568,4 +580,59 @@ export async function gotoAcknowledgments(
 export async function openAcknowledgmentsTab(page: Page): Promise<void> {
   await page.getByTestId('org-easycla-detail-tab-acknowledgments').click();
   await expect(page.getByTestId('org-easycla-acknowledgments')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+export function activityLogEntry(overrides: Partial<OrgClaActivityLogEntry> = {}): OrgClaActivityLogEntry {
+  return {
+    id: 'event-1',
+    when: '2026-03-11T09:20:00Z',
+    actor: 'Ada Porter',
+    summary: 'Ada Porter signed a corporate CLA',
+    ...overrides,
+  };
+}
+
+export function activityLogPage(overrides: Partial<OrgClaActivityLogPage> = {}): OrgClaActivityLogPage {
+  const list = overrides.list ?? [activityLogEntry()];
+  return {
+    signatureId: 'signature-uuid-1',
+    list,
+    resultCount: list.length,
+    nextKey: null,
+    ...overrides,
+  };
+}
+
+export async function stubActivityLog(page: Page, options: { initial?: OrgClaActivityLogPage; next?: OrgClaActivityLogPage } = {}): Promise<void> {
+  const initial = options.initial ?? activityLogPage({ list: [], resultCount: 0 });
+
+  await page.route(ACTIVITY_LOG_ROUTE, (route) => {
+    if (route.request().method() !== 'GET') return route.abort();
+    const url = new URL(route.request().url());
+    const nextKey = url.searchParams.get('nextKey')?.trim() ?? '';
+    const body = nextKey && options.next ? options.next : initial;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
+export async function gotoActivityLog(page: Page, options: { initial?: OrgClaActivityLogPage; next?: OrgClaActivityLogPage } = {}): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubActivityLog(p, options);
+  });
+  await openActivityLogTab(page);
+}
+
+/** Lands on the signed Overview with the Recent activity block's first page stubbed. */
+export async function gotoRecentActivity(page: Page, initial?: OrgClaActivityLogPage): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubActivityLog(p, { initial });
+  });
+  await expect(page.getByTestId('org-easycla-detail-overview')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+export async function openActivityLogTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-activity').click();
+  await expect(page.getByTestId('org-easycla-activity-log')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }

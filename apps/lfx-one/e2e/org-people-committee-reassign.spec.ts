@@ -5,13 +5,15 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
+
 const PEOPLE_COMMITTEE_URL = '/org/people?tab=committee';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TOAST_TIMEOUT = 10_000;
 
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Acme Motors';
+const MOCK_ACCOUNT_NAME = SYNTHETIC_ORG_NAME;
 
 const MORGAN_EMAIL = 'morgan.diaz@acme-motors.example';
 const REPLACEMENT_EMAIL = 'cara.dev@acme-motors.example';
@@ -100,6 +102,20 @@ async function stubAccountContext(page: Page, opts: { writers: string[] } = { wr
       }),
     })
   );
+  // The sidebar org selector loads its own org-items page on startup; a live list without this org clears
+  // the seeded selection (and the writer grant with it), so stub it as org-profile.spec.ts does.
+  await page.route('**/api/nav/org-items*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ uid: MOCK_UID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null }],
+        next_page_token: null,
+        upstream_failed: false,
+      }),
+    })
+  );
+
   await page.route('**/api/orgs/me/role-grants', (route) =>
     route.fulfill({
       status: 200,

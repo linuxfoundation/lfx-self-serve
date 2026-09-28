@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
+  ColumnarTable,
   CommitteeServiceOrgSeat,
+  CompactOrgPeopleDirectoryEntry,
   KeyContactEmployee,
   OrgAccessBadgeState,
   OrgAccessUser,
@@ -16,11 +18,12 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { splitDisplayName } from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
@@ -38,30 +41,58 @@ function isStringArray(value: unknown): boolean {
 }
 
 /**
- * Every row must match the wire shape: the cached value is replayed straight to the client, so a
- * corrupt element would otherwise crash on `sources` spreading or `name.localeCompare`.
- *
- * The merge-only fields are asserted absent: an entry carrying `emails` or `mergedFrom` — written
- * before the strip or by a regressed writer — degrades to a miss and is recomputed, never replayed.
+ * A stored column holds a real string when it is a string that is not the compact encoder's
+ * absence marker. This is what stops "the field was absent" from passing as "the field is a
+ * string" — the check the pre-compaction guard got for free when `JSON.stringify` dropped an
+ * undefined-valued key.
  */
-function isAllEmployeeRow(value: unknown): boolean {
-  const r = value as Partial<OrgAllEmployeeRow> & { emails?: unknown; mergedFrom?: unknown };
+function isStoredString(value: unknown): boolean {
+  return typeof value === 'string' && !isColumnarAbsent(value);
+}
+
+/**
+ * One stored cell of a cached directory row, checked for exactly the fields the pre-compaction wire
+ * guard asserted: the cached value is replayed straight to the client, so a corrupt element would
+ * otherwise crash on `sources` spreading or `name.localeCompare`.
+ *
+ * Switched on the row's own key union, so a misspelled case fails to compile instead of silently
+ * leaving that column unchecked.
+ */
+function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boolean {
+  switch (key) {
+    case 'personKey':
+    case 'name':
+      return isStoredString(value);
+    case 'email':
+    case 'lfUsername':
+      return value === null || isStoredString(value);
+    case 'sources':
+    case 'engagedFoundationIds':
+      return isStringArray(value);
+    case 'seatsCount':
+    case 'boardSeatsCount':
+    case 'committeeSeatsCount':
+    case 'commitsCount':
+    case 'eventsCount':
+    case 'coursesCount':
+      return typeof value === 'number';
+    default:
+      return true;
+  }
+}
+
+/**
+ * Validates the stored rows positionally, without rebuilding the row objects the decoder is about
+ * to build anyway.
+ *
+ * The exact, ordered column list is itself part of the contract: it is what asserts the merge-only
+ * fields (`emails`, `mergedFrom`) are absent — the pre-compaction guard had to test for each of
+ * them by name — and it rejects an entry written against a different column set outright.
+ */
+function isDirectoryRowTable(table: ColumnarTable): boolean {
   return (
-    isObject(value) &&
-    typeof r.personKey === 'string' &&
-    typeof r.name === 'string' &&
-    (r.email === null || typeof r.email === 'string') &&
-    (r.lfUsername === null || typeof r.lfUsername === 'string') &&
-    r.emails === undefined &&
-    r.mergedFrom === undefined &&
-    isStringArray(r.sources) &&
-    isStringArray(r.engagedFoundationIds) &&
-    typeof r.seatsCount === 'number' &&
-    typeof r.boardSeatsCount === 'number' &&
-    typeof r.committeeSeatsCount === 'number' &&
-    typeof r.commitsCount === 'number' &&
-    typeof r.eventsCount === 'number' &&
-    typeof r.coursesCount === 'number'
+    hasExactColumns(table, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS) &&
+    table.r.every((row) => ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS.every((key, index) => isValidDirectoryCell(key, row[index])))
   );
 }
 
@@ -127,18 +158,37 @@ function isAllEmployeeStats(value: unknown): boolean {
   );
 }
 
-/** Rejects a corrupt/legacy merged-roster entry (degrades to a miss) by validating every row, foundation, and stat field against the wire contract. */
-function isAllEmployeesResponse(value: unknown): boolean {
-  const v = value as Partial<OrgAllEmployeesResponse>;
+/**
+ * Rejects a corrupt or pre-compaction merged-roster entry (degrades to a miss) — a `v2` value, with
+ * its `rows` array of wire objects, has no columnar `r` and fails here rather than decoding into
+ * rows of undefined.
+ */
+function isCompactDirectoryEntry(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  const entry = value as Partial<CompactOrgPeopleDirectoryEntry>;
   return (
-    isObject(value) &&
-    typeof v.accountId === 'string' &&
-    Array.isArray(v.rows) &&
-    v.rows.every(isAllEmployeeRow) &&
-    Array.isArray(v.foundations) &&
-    v.foundations.every(isFoundationOption) &&
-    isAllEmployeeStats(v.stats)
+    typeof entry.accountId === 'string' &&
+    isColumnarTable(entry.r) &&
+    isDirectoryRowTable(entry.r) &&
+    Array.isArray(entry.foundations) &&
+    entry.foundations.every(isFoundationOption) &&
+    isAllEmployeeStats(entry.stats)
   );
+}
+
+/** Projects the merged response onto the stored cache shape (GH-1906): `rows` columnar, `stats`/`foundations` verbatim (both are small, fixed-size structures). */
+function toCompactDirectory(response: OrgAllEmployeesResponse): CompactOrgPeopleDirectoryEntry {
+  return {
+    accountId: response.accountId,
+    r: toColumnar(response.rows, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS),
+    stats: response.stats,
+    foundations: response.foundations,
+  };
+}
+
+/** Rebuilds the exact `OrgAllEmployeesResponse` stored by {@link toCompactDirectory}. */
+function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmployeesResponse {
+  return { accountId: entry.accountId, rows: fromColumnar<OrgAllEmployeeRow>(entry.r), stats: entry.stats, foundations: entry.foundations };
 }
 
 /**
@@ -164,17 +214,43 @@ export class OrgPeopleDirectoryService {
     this.accessService = new OrgLensAccessService();
   }
 
-  /** Merged stored + live roster, served through the per-caller shared cache: the merge folds in request-scoped permission-filtered reads (committee seats, FGA-filtered key contacts, the caller's access view), so keying by caller + org stops one caller's roster from being replayed to another within the TTL. */
+  /**
+   * Merged stored + live roster, served through the per-caller shared cache: the merge folds in
+   * request-scoped permission-filtered reads (committee seats, FGA-filtered key contacts, the
+   * caller's access view), so keying by caller + org stops one caller's roster from being replayed
+   * to another within the TTL.
+   *
+   * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
+   * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
+   * concurrent tabs would otherwise each run all four. Coalescing around `withPerUserCache` — not
+   * just its fetcher — means one burst does one cache read, one merge, one serialization and one
+   * write, rather than every joined caller re-serializing and re-writing a multi-MB value on the
+   * connection the session store shares. For monitoring: an oversize warning now counts a burst,
+   * not a caller, so fewer warnings alone does not mean the value started to fit.
+   *
+   * Joined callers share the COMPACT envelope. Each gets freshly built row objects, but `stats`,
+   * `foundations` and each row's array fields (`sources`, `engagedFoundationIds`) are shared by
+   * reference between them, since they come from one parsed entry. That is safe only because the
+   * response is read-only downstream — it is serialized to the client or searched by
+   * `OrgLensPeopleService`, never mutated. A consumer that needs to mutate it must copy first.
+   */
   public async getLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    return withPerUserCache(
-      VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
-      username,
-      accountId,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.computeLive(req, accountId),
-      isAllEmployeesResponse
+    // Same effective principal (impersonation honoured) + org the cache key is built from, and
+    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+    // bucket per blank principal would hand the first caller's permission-filtered roster to every
+    // other caller that arrived without a resolvable identity.
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, accountId, () =>
+      withPerUserCache<CompactOrgPeopleDirectoryEntry>(
+        VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
+        username,
+        accountId,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        async () => toCompactDirectory(await this.computeLive(req, accountId)),
+        isCompactDirectoryEntry
+      )
     );
+    return fromCompactDirectory(entry);
   }
 
   private async computeLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {

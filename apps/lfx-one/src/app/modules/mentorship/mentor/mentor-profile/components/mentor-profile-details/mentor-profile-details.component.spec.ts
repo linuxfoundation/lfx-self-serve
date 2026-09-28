@@ -4,6 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { MENTORSHIP_RICH_TEXT_RAW_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorProfileDetails } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -81,6 +82,19 @@ describe('MentorProfileDetailsComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-text"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-empty"]')).not.toBeNull();
+  });
+
+  it('treats a stored aboutMe over the raw cap as non-empty without running the quadratic strip (lfx-self-serve-ops#37)', () => {
+    // `aboutMe` comes back from the API, so it can exceed what the register form allows. Stripping
+    // this nested-bracket payload directly would take seconds and trip the test timeout; the raw-cap
+    // check skips it.
+    const hostile = `${'<'.repeat(100_000)}${'>'.repeat(100_000)}`;
+    expect(hostile.length).toBeGreaterThan(MENTORSHIP_RICH_TEXT_RAW_MAX);
+
+    setup({ ...baseProfile, aboutMe: hostile });
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-empty"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-text"]')).not.toBeNull();
   });
 
   it('renders one chip per skill, in the order they arrive', () => {

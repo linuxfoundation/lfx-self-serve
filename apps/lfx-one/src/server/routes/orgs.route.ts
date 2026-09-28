@@ -96,6 +96,10 @@ function buildOrgsRouter(): Router {
   // param `:accountId`; the prefix match still binds it as `orgUid`, and both carry the same SFID.
   router.use('/:orgUid/lens', (req, res, next) => requireOrgLensAccess(req, res, next));
 
+  // #2961 — the gate above is the whole check; this only reports that it passed (204), so the page can
+  // ask "may this caller read this organization?" with the server's own answer.
+  router.get('/:orgUid/lens/read-check', (req, res) => orgLensAccessController.readCheck(req, res));
+
   // Spec 002: all org-lens routes key off the org account id (18-char SFID). The param is still named
   // `:orgUid` for backward compatibility; the value space is the SFID (validated by assertOrgUid).
   router.get('/:orgUid/lens/foundations-and-projects', (req, res, next) => orgLensFoundationsController.getFoundationsAndProjects(req, res, next));

@@ -81,6 +81,17 @@ export interface ProjectSettings {
   updated_at: string;
 }
 
+/**
+ * Whether the caller may read `GET /projects/:uid/settings` for one project.
+ * `canRead` is true for a writer or a confirmed auditor. False is a denial or a failed
+ * check, not an empty settings document. The uid tags the answer so a previous project's
+ * grant cannot authorize the next project's settings read (GH-2794).
+ */
+export interface ProjectSettingsAccess {
+  uid: string;
+  canRead: boolean;
+}
+
 export interface ProjectStaffRowConfig {
   key: keyof Pick<ProjectSettings, 'executive_director' | 'program_manager' | 'opportunity_owner'>;
   label: string;

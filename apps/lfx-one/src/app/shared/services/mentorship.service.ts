@@ -24,7 +24,10 @@ import {
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
+  MentorshipProgramDecisionRequest,
   MentorshipProgramDetail,
+  MentorshipProgramReview,
+  MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
@@ -178,6 +181,22 @@ export class MentorshipService {
     return this.http
       .get<MentorshipMenteeApplyTarget>('/api/mentorship/mentee/apply-target', { params })
       .pipe(catchError(this.rethrowError('getMenteeApplyTarget')));
+  }
+
+  /** The program an approve/reject email link points at. Rethrows so the page can branch on the status code. */
+  public getProgramReview(programId: string): Observable<MentorshipProgramReview> {
+    return this.http
+      .get<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}`)
+      .pipe(catchError(this.rethrowError('getProgramReview')));
+  }
+
+  /**
+   * Records an approver's decision. Not caught here: 403 (not an approver) and 409 (already
+   * decided) are expected outcomes the review page renders, not failures to log.
+   */
+  public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramReview> {
+    const body: MentorshipProgramDecisionRequest = { decision };
+    return this.http.post<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {

@@ -81,6 +81,13 @@ export const LF_STAFF_TEAM_ID = 'lf-staff';
  */
 export const LF_TEAM_IDS = ['lf-staff'] as const;
 
+/**
+ * #2961 — OpenFGA team id for LF contractors. Read by the role-grants lookup only to tell a contractor
+ * with no organization grant why Org Lens is empty (`RoleGrantsResponse.isContractor`). Never added to
+ * `LF_TEAM_IDS`: contractors get no switcher search and no org-wide read (member-service#111).
+ */
+export const LF_CONTRACTOR_TEAM_ID = 'lf-contractor';
+
 export const PERSONA_OPTIONS: PersonaOption[] = [
   // {
   //   value: 'contributor',

@@ -47,7 +47,9 @@ import { filter, map, switchMap } from 'rxjs';
  * so any partial fallback would render the parent's slug beside the child's checklist (#2719).
  * With the input left `null` (the project dashboard sidebar) it keeps the original behavior:
  * project fields and uid off `ProjectContextService.activeProject`, and the announcement date off
- * its shared `activeProjectAnnouncementDate`/`Loading`/`HasError` signals (GH-1955).
+ * its shared `activeProjectAnnouncementDate`/`Loading`/`HasError`/`Readable` signals (GH-1955).
+ * `Readable` is false for a caller who is neither writer nor auditor — the date block is omitted
+ * rather than rendered as "Not set" or as a load error (GH-2794).
  *
  * The `auditor` gate needs its own fetch either way: it requires a flag neither source carries, so
  * `initIsAuditorState` makes a dedicated `getProject(uid, false, { auditor: true })` call.
@@ -90,6 +92,8 @@ export class FormationCardComponent {
    */
   protected readonly loading = computed(() => !this.formation() && this.projectContextService.activeProjectAnnouncementDateLoading());
   protected readonly hasError = computed(() => !this.formation() && this.projectContextService.activeProjectAnnouncementDateHasError());
+  /** Input mode always has a date (possibly "Not set") on the checklist response. Context mode only when the caller may read settings. */
+  protected readonly showAnnouncementDate = computed(() => !!this.formation() || this.projectContextService.activeProjectAnnouncementDateReadable());
   private readonly projectUid = computed(() => this.view()?.uid ?? null);
 
   private readonly isAuditorState: Signal<{ uid: string; isAuditor: boolean } | null> = this.initIsAuditorState();

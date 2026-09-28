@@ -288,3 +288,42 @@ describe('MentorshipService — mentee overview/tasks caching', () => {
     expect(recovered).toBe(tasks);
   });
 });
+
+describe('MentorshipService — program review', () => {
+  const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('reads the review from the program-review endpoint', () => {
+    let name = '';
+    service.getProgramReview(programId).subscribe((review) => (name = review.name));
+
+    http.expectOne(`/api/mentorship/program-review/${programId}`).flush({ id: programId, name: 'Test Program', status: 'pending' });
+
+    expect(name).toBe('Test Program');
+  });
+
+  it('posts the decision and surfaces a 409 to the caller', () => {
+    let status = 0;
+    service.submitProgramDecision(programId, 'reject').subscribe({ error: (err) => (status = err.status) });
+
+    const req = http.expectOne(`/api/mentorship/program-review/${programId}/decision`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ decision: 'reject' });
+    req.flush({ error: 'cannot transition program from rejected to rejected' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+  });
+});

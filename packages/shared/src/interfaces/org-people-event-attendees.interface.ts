@@ -18,7 +18,7 @@ export interface OrgEventAttendeeDetailRow {
   personKey: string;
   eventId: string;
   eventName: string;
-  /** Freeform venue/location string from upstream (e.g. `Alte Kongresshalle, Munich`). NULL on ~7% of Red Hat rows; client falls back through `eventCity`/`eventCountry` to `foundationName`. */
+  /** Freeform venue/location string from upstream (e.g. `Alte Kongresshalle, Munich`). NULL on ~7% of rows for a large covered organization; client falls back through `eventCity`/`eventCountry` to `foundationName`. */
   eventLocation: string | null;
   eventCity: string | null;
   eventCountry: string | null;

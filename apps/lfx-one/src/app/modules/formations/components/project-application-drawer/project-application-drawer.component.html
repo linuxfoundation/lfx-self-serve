@@ -1,0 +1,135 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
+  data-testid="project-application-drawer">
+  <ng-template #header>
+    @if (application(); as app) {
+      <div class="flex flex-col gap-1.5 min-w-0">
+        <h2
+          #titleRef
+          id="project-application-drawer-title"
+          tabindex="-1"
+          class="text-lg font-semibold text-gray-900 break-words m-0 focus:outline-none"
+          data-testid="project-application-drawer-title">
+          {{ projectName() }}
+        </h2>
+        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <lfx-tag [value]="stateMeta().label" [severity]="stateMeta().severity" data-testid="project-application-drawer-state" />
+          <span>Submitted {{ app.created_at | date: 'mediumDate' }}</span>
+          <span aria-hidden="true">·</span>
+          <span>Updated {{ app.updated_at | date: 'mediumDate' }}</span>
+        </div>
+      </div>
+    }
+  </ng-template>
+
+  @if (application(); as app) {
+    <div class="flex flex-col gap-6 pb-6" data-testid="project-application-drawer-body">
+      @if (editing()) {
+        <lfx-project-application-form
+          layout="drawer"
+          [initialAnswers]="app.application"
+          [submitting]="busyAction() === 'revise'"
+          submitLabel="Save changes"
+          submitIcon="fa-light fa-floppy-disk"
+          [errorMessage]="errorMessage()"
+          (submitted)="onRevise($event)"
+          (cancelled)="cancelEditing()"
+          data-testid="project-application-drawer-form" />
+      } @else {
+        <!-- Actions -->
+        <div class="flex flex-wrap items-center gap-2" data-testid="project-application-drawer-actions">
+          @if (isOpen()) {
+            @if (isStaff()) {
+              <lfx-button
+                label="Accept"
+                icon="fa-light fa-circle-check"
+                severity="primary"
+                size="small"
+                [disabled]="busy()"
+                [loading]="busyAction() === 'accept'"
+                (onClick)="onAccept()"
+                data-testid="project-application-drawer-accept" />
+              <lfx-button
+                label="Deny"
+                icon="fa-light fa-circle-xmark"
+                severity="danger"
+                [outlined]="true"
+                size="small"
+                [loading]="busyAction() === 'deny'"
+                [disabled]="busy()"
+                (onClick)="onDeny()"
+                data-testid="project-application-drawer-deny" />
+            }
+            <lfx-button
+              label="Revise"
+              icon="fa-light fa-pen"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [disabled]="busy()"
+              (onClick)="startEditing()"
+              data-testid="project-application-drawer-revise" />
+            <lfx-button
+              label="Withdraw"
+              icon="fa-light fa-arrow-rotate-left"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [loading]="busyAction() === 'withdraw'"
+              [disabled]="busy()"
+              (onClick)="onWithdraw()"
+              data-testid="project-application-drawer-withdraw" />
+          }
+          <lfx-button
+            label="Delete"
+            icon="fa-light fa-trash"
+            severity="danger"
+            [text]="true"
+            size="small"
+            [loading]="busyAction() === 'delete'"
+            [disabled]="busy()"
+            (onClick)="onDelete()"
+            data-testid="project-application-drawer-delete" />
+        </div>
+
+        <!-- Submitter -->
+        <section class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" data-testid="project-application-drawer-submitter">
+          <h3 class="text-sm font-medium text-gray-900 m-0">Submitted by</h3>
+          <dl class="grid grid-cols-1 sm:grid-cols-[12rem_1fr] gap-x-4 gap-y-2 m-0 text-sm">
+            <dt class="text-gray-500">Name</dt>
+            <dd class="m-0 text-gray-900 break-words">{{ app.submitter_name || app.submitter_username }}</dd>
+            <dt class="text-gray-500">Email</dt>
+            <dd class="m-0 text-gray-900 break-all">{{ app.submitter_email }}</dd>
+          </dl>
+        </section>
+
+        <!-- Answers -->
+        @for (section of sections(); track section.title) {
+          <section class="flex flex-col gap-2" [attr.data-testid]="'project-application-drawer-section-' + $index">
+            <h3 class="text-sm font-medium text-gray-900 m-0">{{ section.title }}</h3>
+            <dl class="grid grid-cols-1 sm:grid-cols-[12rem_1fr] gap-x-4 gap-y-2 m-0 text-sm">
+              @for (row of section.rows; track row.key) {
+                <dt class="text-gray-500">{{ row.label }}</dt>
+                <dd class="m-0 text-gray-900 whitespace-pre-line break-words" [attr.data-testid]="'project-application-drawer-answer-' + row.key">
+                  {{ row.value }}
+                </dd>
+              }
+            </dl>
+          </section>
+        } @empty {
+          <p class="text-sm text-gray-500 m-0" data-testid="project-application-drawer-no-answers">No answers were provided.</p>
+        }
+      }
+    </div>
+  }
+</p-drawer>
+
+<p-confirmDialog key="project-application-drawer" />

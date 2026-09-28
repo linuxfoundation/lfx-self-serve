@@ -9,9 +9,12 @@ import type {
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgram,
+  MentorshipProgramDecisionStatus,
+  MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
+  MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 
 /**
@@ -348,3 +351,44 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     updatedOn: '2026-07-30T00:00:00.000Z',
   },
 ];
+
+// -- Program review (approver approve/reject email link) ---------------------
+
+/**
+ * Program statuses as the mentorship service stores them (`status` on `/mentorship/v1/programs`).
+ * A program is created `pending`; approving moves it to `published` and rejecting to `rejected`.
+ * A published program can later be `hidden`.
+ */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'hidden'] as const;
+
+/** Program-review page copy for a program's current upstream status. */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
+  pending: 'Awaiting review',
+  published: 'Approved',
+  rejected: 'Rejected',
+  hidden: 'Hidden',
+};
+
+/**
+ * Accepted `?decision=` values on the approve/reject email link:
+ * `/mentorship/program-review/<program id>?decision=approve|reject`.
+ */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISIONS = ['approve', 'reject'] as const;
+
+/** The upstream status each review decision moves a `pending` program to. */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS: Record<MentorshipProgramReviewDecision, MentorshipProgramDecisionStatus> = {
+  approve: 'published',
+  reject: 'rejected',
+};
+
+/** Verb shown on the program-review confirm card and its button. */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISION_LABELS: Record<MentorshipProgramReviewDecision, string> = {
+  approve: 'Approve',
+  reject: 'Reject',
+};
+
+/** Past-tense verb shown once a review decision has been recorded. */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISION_DONE_LABELS: Record<MentorshipProgramReviewDecision, string> = {
+  approve: 'approved',
+  reject: 'rejected',
+};

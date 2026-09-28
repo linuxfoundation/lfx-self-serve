@@ -50,7 +50,6 @@ test.describe('Org Lens EasyCLA acknowledgments — structure', () => {
     await expect(panel.getByTestId('org-easycla-acknowledgments-table')).toHaveCount(1, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(panel.getByTestId('org-easycla-acknowledgment-name')).toHaveCount(1);
     await expect(panel.getByTestId('org-easycla-acknowledgment-identity')).toHaveCount(1);
-    await expect(panel.getByTestId('org-easycla-acknowledgment-version')).toHaveCount(1);
     await expect(panel.getByTestId('org-easycla-acknowledgment-signed-on')).toHaveCount(1);
     await expect(panel.getByTestId('org-easycla-acknowledgment-state-acknowledged')).toHaveCount(1);
     await expect(panel.getByTestId('org-easycla-acknowledgments-load-more')).toHaveCount(1);

@@ -784,10 +784,10 @@ export class MeetingService {
    * (docs/reviews/backend-checklist.md) — this orchestrates two domain resources plus an access
    * check and a security-critical decision, not just HTTP request/response handling.
    *
-   * The upstream query-service has no default per-user grant filtering on v1_meeting_registrant,
-   * so `getMeetingRegistrants` with `failOnPartial: true` would otherwise return any meeting's
-   * full registrant PII to any authenticated caller who supplies its uid. Requires the caller to
-   * either have writer access on `committeeUid`, or be a member of it when it's invite_only
+   * The query-service applies FGA filtering so that any meeting viewer can read registrant records
+   * on the tolerant listing — which is by design for community-facing meetings. The committee import
+   * flow imposes stricter business-logic constraints beyond viewer access: the caller must have
+   * writer access on `committeeUid`, or be a member of it when it's invite_only
    * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
    * authorized to send invites for that committee upstream, via their own bearer token, so
    * letting them populate the invite textarea via import grants no new privilege). Also requires
@@ -832,12 +832,12 @@ export class MeetingService {
    * meeting — the composer's Guests section, which needs the saved list to be whole before it
    * reconciles the organizer's edits against it.
    *
-   * Completeness is the thing that needs authorizing, not the listing. The upstream query-service
-   * applies no per-user grant filtering to v1_meeting_registrant, so a strict, unpaginated roster
-   * is every registrant's PII for any meeting whose uid the caller can name — authentication alone
-   * does not earn it. `organizer` is the right relation to require rather than mere registrant
-   * membership: it is the same access the composer's edit mode is gated on client-side, so the
-   * check refuses exactly the callers who could not have opened the section in the first place.
+   * Completeness is the thing that needs authorizing, not the listing. The query-service applies
+   * FGA filtering so that any meeting viewer can read registrant records on the tolerant listing
+   * — by design. A strict, unpaginated roster for the composer's reconciliation needs a higher
+   * bar: the organizer relation, which is the same access the composer's edit mode is gated on
+   * client-side. This refuses exactly the callers who could not have opened the section in the
+   * first place, and ensures completeness guarantees aren't silently degraded by partial failure.
    *
    * The committee "import registrants" flow has its own, wider rules — see
    * `getAuthorizedRegistrantsForImport`.
@@ -880,9 +880,9 @@ export class MeetingService {
    * which is the committee's membership showing through a meeting the caller may merely be able to
    * list. The listing's own callers never need it — only the organizer surfaces that filter guests
    * by group do — so it is gated on the same organizer relation as
-   * {@link getAuthorizedCompleteRegistrants}, and for the same reason that one gives: the upstream
-   * query-service applies no per-user grant filtering to `v1_meeting_registrant`, so nothing below
-   * this would withhold it.
+   * {@link getAuthorizedCompleteRegistrants}: group attribution reveals committee membership, which
+   * is a superset of what query-service's viewer check covers. Requiring organizer ensures this
+   * richer data reaches only callers already authorized to manage the meeting's guest list.
    *
    * The probe is `v1_meeting` + `checkSingleAccessStrict` on the reasoning spelled out in
    * {@link getAuthorizedCompleteRegistrants} — the organizer tuples hang off the v1 type, and the

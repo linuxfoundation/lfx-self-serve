@@ -27,6 +27,11 @@ let baseUrl: string;
 
 beforeAll(async () => {
   const app = express();
+  // Auth middleware sets this in the app; here a header stands in for an impersonation session.
+  app.use((req, _res, next) => {
+    req.impersonationActive = req.headers['x-test-impersonating'] === 'true';
+    next();
+  });
   app.use('/api/mentorship', mentorshipRouter);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
@@ -94,6 +99,43 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
   it('requires auth before apply-target parameter validation runs', async () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target`);
     // Auth check fires before missing-parameter validation — unauthenticated requests get 401, not 400.
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('mentorship router — program review', () => {
+  const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+
+  it('routes GET /api/mentorship/program-review/:programId (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/program-review/${programId}`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('routes POST /api/mentorship/program-review/:programId/decision (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/program-review/${programId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision: 'approve' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses the decision while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/program-review/${programId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: JSON.stringify({ decision: 'approve' }),
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
+  it('still allows reading the program while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/program-review/${programId}`, { headers: { 'x-test-impersonating': 'true' } });
+
     expect(res.status).toBe(401);
   });
 });

@@ -419,14 +419,15 @@ export class MeetingController {
         return;
       }
 
-      // `fail_on_partial` asks for a *complete* roster, and the upstream query-service applies no
-      // per-user grant filtering to v1_meeting_registrant — so both strict paths are authorized
-      // in MeetingService per the three-file pattern (docs/reviews/backend-checklist.md), never
-      // taken on the caller's word. Scoped to a committee it is the committee "import registrants"
-      // flow, with that flow's own rules and size cap; unscoped it is the composer's Guests
-      // section, which has to be an organizer of the meeting it is editing. Only the tolerant
-      // listing — the one that may come back short — goes straight through on the caller's own
-      // bearer token.
+      // `fail_on_partial` asks for a *complete* roster, which requires stricter business-logic
+      // authorization than the tolerant listing — both strict paths are authorized in MeetingService
+      // per the three-file pattern (docs/reviews/backend-checklist.md), never taken on the caller's
+      // word. The query-service FGA filtering applies to all paths, but complete-roster workflows
+      // enforce additional constraints: scoped to a committee it is the "import registrants" flow
+      // with its own rules and size cap; unscoped it is the composer's Guests section, which
+      // requires the organizer relation. Only the tolerant listing — the one that may come back
+      // short — goes straight through on the caller's own bearer token, relying on query-service
+      // FGA filtering as its authorization boundary.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
@@ -442,9 +443,11 @@ export class MeetingController {
       // Authorized first, and only on the tolerant branch: group attribution says which committee a
       // registrant sits on, which the branches above have already established the caller may see
       // — both authorize before they read. The tolerant listing has not, and never can: it goes
-      // through on the caller's own bearer token against a query-service that applies no grant
-      // filtering to `v1_meeting_registrant`, so without this an authenticated non-organizer
-      // replaying this URL with `include_committee=true` is handed the group attribution too. The
+      // through on the caller's own bearer token; query-service FGA filtering is the authorization
+      // boundary for that listing. Group attribution adds committee-membership data that goes beyond
+      // what the viewer relation protects, so without this an authenticated non-organizer replaying
+      // this URL with `include_committee=true` would receive committee attribution they aren't
+      // entitled to. The
       // check sits inside the try on the same reasoning as the fetch below — this listing's
       // contract is that it may come back short, not that it errors — so a denial, and an
       // organizer check that could not be resolved, both leave the rows unenriched.

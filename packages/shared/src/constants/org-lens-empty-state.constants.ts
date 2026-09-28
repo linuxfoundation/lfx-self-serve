@@ -67,6 +67,16 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     primary: { label: 'Retry', action: 'retry' },
     secondary: { label: 'Still failing? Send this reference to support', action: 'contact-support' },
   },
+  // #2961 — an LF contractor with no grant for what is in front of them. The copy depends only on the
+  // caller, never on the organization in the link (it withholds its name, existence and administrators).
+  'contractor-no-grant': {
+    headline: 'Contractor accounts need an organization grant',
+    reason:
+      "Organization Lens shows a company's open source footprint — contributions, projects, people, and membership activity. LF contractor accounts no longer see every organization automatically. Access to a specific organization is granted by that organization's Organization Lens administrators.",
+    icon: 'fa-light fa-lock',
+    primary: { label: 'Contact support', action: 'contact-support' },
+    secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
+  },
   'section-empty': {
     headline: 'No {noun} in this period',
     reason: '{orgName} has no {noun} recorded for {period}. Try a wider date range.',

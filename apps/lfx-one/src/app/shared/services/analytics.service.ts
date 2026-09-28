@@ -91,6 +91,16 @@ import {
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceQuery,
+  HealthMetricsEventsForecast,
+  HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsForecastCurveQuery,
+  HealthMetricsEventsForecastQuery,
+  HealthMetricsEventsPast,
+  HealthMetricsEventsPastQuery,
+  HealthMetricsEventsRegistrationsGrowth,
+  HealthMetricsEventsRegistrationsGrowthQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1194,6 +1204,71 @@ export class AnalyticsService {
     );
   }
 
+  /** Every upcoming event's registration forecast headline for the Events tab. */
+  public getEventsRegistrationForecast(query: HealthMetricsEventsForecastQuery): Observable<HealthMetricsEventsForecast> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty list renders "no upcoming events", which a swallowed failure would fake.
+    return this.http.get<HealthMetricsEventsForecast>('/api/analytics/events-registration-forecast', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registration-forecast failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** One event's registration pacing curve, one series per format. */
+  public getEventsRegistrationForecastCurve(query: HealthMetricsEventsForecastCurveQuery): Observable<HealthMetricsEventsForecastCurve> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug, eventId: query.eventId };
+
+    // Errors propagate so the chart says it failed instead of drawing an empty curve.
+    return this.http.get<HealthMetricsEventsForecastCurve>('/api/analytics/events-registration-forecast-curve', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registration-forecast-curve failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Every closed event in the four periods, with each period's header totals, for the Events tab. */
+  public getEventsPast(query: HealthMetricsEventsPastQuery): Observable<HealthMetricsEventsPast> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty list renders "no past events", which a swallowed failure would fake.
+    return this.http.get<HealthMetricsEventsPast>('/api/analytics/events-past', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-past failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** The foundation's reach in each of the four periods, for the Events tab's at-a-glance strip. */
+  public getEventsAtAGlance(query: HealthMetricsEventsAtAGlanceQuery): Observable<HealthMetricsEventsAtAGlance> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: a swallowed failure would read as "No events yet" and blank the whole tab.
+    return this.http.get<HealthMetricsEventsAtAGlance>('/api/analytics/events-at-a-glance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-at-a-glance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Every year the foundation held events, for the Events tab's registrations & growth section. */
+  public getEventsRegistrationsGrowth(query: HealthMetricsEventsRegistrationsGrowthQuery): Observable<HealthMetricsEventsRegistrationsGrowth> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a history with no years.
+    return this.http.get<HealthMetricsEventsRegistrationsGrowth>('/api/analytics/events-registrations-growth', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-registrations-growth failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
   /**
    * Get the health-metrics-overview "Foundation" rail summary
    * @param foundationSlug - Foundation slug for Snowflake filter
@@ -1436,10 +1511,9 @@ export class AnalyticsService {
   }
 
   /**
-   * Fetches the live Events/Training/Members/Non-Members/Code area-state rows from `HEALTH_OVERVIEW_KPIS`,
-   * for every selectable period in one call. Engagement isn't part of that table's contract, so callers
-   * merge each period's rows with a fixture row for that area. Degrades to an empty map on failure — the
-   * caller then renders a neutral no-data placeholder for the live areas, never their fixture numbers.
+   * Fetches the live area-state rows for every tile, for every selectable period in one call. Engagement
+   * is read from `ENGAGEMENT_GROUP_ATTENDANCE`, the other five from `HEALTH_OVERVIEW_KPIS`. Degrades to an
+   * empty map on failure — the caller then renders a neutral no-data placeholder, never fixture numbers.
    */
   public getHealthOverviewKpis(foundationSlug: string): Observable<HealthMetricsOverviewKpisByRange> {
     const params = { foundationSlug };

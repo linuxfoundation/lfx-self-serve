@@ -20,7 +20,7 @@ You are writing or modifying SQL that runs against Snowflake through Self Serve'
 1. **Re-read** `docs/architecture/backend/snowflake-integration.md` (the reference linked below). It documents the singleton pool, query deduplication, warehouse selection, and result-set handling.
 2. **Bind discipline** — every `?` placeholder in the SQL must have a corresponding value in the binds array, in the correct order. Bind mismatch is **always Critical** (the reviewer will flag it). Walk left-to-right through the SQL and count `?`; the binds array length must equal that count.
 3. **Do not bypass the singleton pool.** `snowflake.service.ts` is a protected file. New consumers go through it; new query methods extend it under code-owner review.
-4. **Parameterize, never interpolate.** No string concatenation of user input into SQL.
+4. **Parameterize, never interpolate.** No string concatenation of user input into SQL. `LIMIT`/`OFFSET` are the one exception (Snowflake cannot bind them): interpolate only values bounded by `parseOffsetPagination` (controller) or `clampInteger` (service), capped at `MAX_SNOWFLAKE_PAGINATION_PAGE`.
 5. **For project- or persona-scoped queries**, filter by the right Snowflake column up front; do not over-fetch and filter in JS.
 6. **Log via the `logger` service** (not `serverLogger`). Use `logger.debug` for query tracing, `logger.warning` for empty results when a result was expected.
 7. **For known-false-positive patterns** (e.g., empty result sets that are valid), check `docs/reviews/knowledge-base/data-and-snowflake.md`.

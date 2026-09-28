@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
@@ -11,19 +11,23 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
   ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY,
   ORG_CLA_ACKNOWLEDGMENTS_HEADING,
+  ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE,
+  ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY,
   ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS,
   ORG_CLA_INVALIDATE_ACTION_COPY,
-  ORG_CLA_INVALIDATE_DIALOG_COPY,
   ORG_CLA_INVALIDATE_RECEIPT_COPY,
 } from '@lfx-one/shared/constants';
 import type {
   OrgClaAcknowledgmentRow,
+  OrgClaApprovalEntry,
+  OrgClaApprovalEntryInput,
   OrgClaContributorAcknowledgment,
   OrgClaContributorAcknowledgmentList,
   OrgClaGroup,
+  OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -47,10 +51,12 @@ import {
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla-invalidate-acknowledgment-dialog.component';
 
@@ -58,12 +64,13 @@ import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla
  * The Contributor Acknowledgments tab of the CLA Group detail page (#1986, #2806).
  *
  * Lists the employee acknowledgments (ECLA signatures) the producer holds under this CCLA. Per
- * the M3 prototype the identity is split into two columns: Name (DocuSign name) and the
- * LF Login / GitHub or GitLab ID, so a row with any identifier is visible even without an
- * LF Login. Both columns fall through to an em-dash rather than dropping the row.
+ * the M3 prototype the identity is split into two columns: Name and the LF Login / GitHub or
+ * GitLab ID, so a row with any identifier is visible even without an LF Login. Both columns fall
+ * through to an em-dash rather than dropping the row.
  *
- * Two visible states only: Acknowledged and Invalidated. The prototype's third amber state is
- * deliberately out of scope and has no scaffolding.
+ * Three states, as the prototype shows them: Authorized, Not Authorized (the acknowledgment's
+ * approval-list criteria were removed), and Invalidated (a CLA manager or admin revoked it). A Not
+ * Authorized row keeps its Invalidate control, which the prototype offers to remove it for good.
  *
  * Search is server-side: the input feeds a debounced observable whose term is forwarded to the
  * BFF as `search`. A new term resets pagination (the producer's `nextKey` is scoped to a term)
@@ -76,7 +83,7 @@ import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla
  */
 @Component({
   selector: 'lfx-org-easycla-contributor-acknowledgments',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, ReactiveFormsModule, SkeletonModule, TagComponent],
+  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, PersonAvatarComponent, ReactiveFormsModule, SkeletonModule, TagComponent],
   templateUrl: './org-easycla-contributor-acknowledgments.component.html',
   // Scoped to this panel so the dialog it opens is torn down with the tab rather than outliving it.
   providers: [DialogService],
@@ -93,10 +100,26 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   public readonly claGroup = input.required<OrgClaGroup>();
 
+  /**
+   * The agreement's acknowledgment total, each time an unsearched list loads.
+   *
+   * The detail page's tab badge counts from its own read on page load; this keeps it matching the
+   * table once the tab has loaded. A searched load is not emitted: its total is the matches.
+   */
+  public readonly countChanged = output<{ signatureId: string; count: number }>();
+
+  /** The Not Authorized row's "Add the user to the Approval list" link. The page switches tabs. */
+  public readonly approvalListRequested = output<void>();
+
+  /** The approval list's new entry count, after an invalidate also removed the contributor's entries. */
+  public readonly approvalListChanged = output<{ signatureId: string; count: number }>();
+
   protected readonly heading = ORG_CLA_ACKNOWLEDGMENTS_HEADING;
+  protected readonly subtitle = ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE;
   protected readonly emptyCopy = ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY;
   protected readonly columnHeaders = ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS;
   protected readonly stateLabels = ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS;
+  protected readonly notAuthorizedCopy = ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY;
   protected readonly emDash = ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
   protected readonly actionCopy = ORG_CLA_INVALIDATE_ACTION_COPY;
   protected readonly loadingRows = [1, 2, 3, 4] as const;
@@ -173,6 +196,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           tap((list) => {
             this.page.set(list);
             this.errorMessage.set(null);
+            if (!search.trim()) this.countChanged.emit({ signatureId, count: list.totalCount });
           }),
           catchError((error: unknown) => {
             const message =
@@ -204,12 +228,19 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     return list.list.map((ack) => this.toRow(ack, pending));
   });
 
-  /** Server-decided from the CCLA's manager roster. Never inferred client-side. */
-  protected readonly canEdit = computed(() => this.loadedList()?.canEdit === true);
+  // ACS decides both affordances, per the self permission check the gateway also enforces (#1980).
+  // Each starts null (checking) and fails closed, so the control stays hidden until ACS says yes.
+  // Invalidate is gated on `ecla-invalidate`; the dialog's also-remove option on
+  // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
+  private readonly invalidateGrant = signal<boolean | null>(null);
+  private readonly removeFromListGrant = signal<boolean | null>(null);
+  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true);
+  // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
+  // `approval-list-update` grant the tab itself needs, so a read-only reader isn't offered a
+  // dead-end link into a list they can't edit. Fails closed while the grant is still checking.
+  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true);
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
-  protected readonly totalCount = computed(() => this.loadedList()?.totalCount ?? 0);
-  protected readonly resultCount = computed(() => this.loadedList()?.list.length ?? 0);
   protected readonly showEmptyState = computed(
     () => !this.loading() && !this.errorMessage() && (this.searchTerm() ?? '').trim().length === 0 && (this.loadedList()?.list.length ?? 0) === 0
   );
@@ -231,6 +262,34 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       .subscribe(() => {
         this.invalidateDialog?.close();
         this.invalidateDialog = null;
+      });
+
+    toObservable(
+      computed(() => {
+        const orgUid = this.orgUid();
+        const projectSfid = orgClaPairProjectSfid(this.claGroup());
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+      })
+    )
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => {
+          this.invalidateGrant.set(null);
+          this.removeFromListGrant.set(null);
+        }),
+        switchMap((pair) => {
+          if (!pair) return of<[boolean, boolean]>([false, false]);
+          const [orgUid, projectSfid] = pair.split('::');
+          return combineLatest([
+            this.claService.checkPermission(orgUid, 'ecla-invalidate', projectSfid),
+            this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
+          ]);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(([canInvalidate, canRemove]) => {
+        this.invalidateGrant.set(canInvalidate);
+        this.removeFromListGrant.set(canRemove);
       });
 
     // The dialog attaches to `document.body`, so it would outlive this panel if the CLA manager
@@ -293,37 +352,95 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * the dialog: a dismissed dialog cannot leave a write half-done.
    */
   protected onInvalidate(row: OrgClaAcknowledgmentRow): void {
-    if (!this.canEdit() || row.invalidated || !row.invalidatable || row.invalidatePending) return;
+    if (!this.canInvalidate() || row.invalidated || !row.invalidatable || row.invalidatePending) return;
 
     // Close any dialog already open, so a fast click on a second row leaves one modal rather than
     // two competing for keyboard focus.
     this.invalidateDialog?.close();
+    const orgUid = this.orgUid();
+    const claSignatureId = this.signatureId();
+    const matchingEntries = signal<OrgClaApprovalEntry[] | null | undefined>(undefined);
+    const canRemoveEntries = signal(this.removeFromListGrant() === true);
     const dialogRef = this.dialogService.open(OrgEasyclaInvalidateAcknowledgmentDialogComponent, {
-      header: ORG_CLA_INVALIDATE_DIALOG_COPY.header,
+      showHeader: false,
       modal: true,
       dismissableMask: true,
       closable: true,
       width: 'min(32rem, 100%)',
-      data: { contributor: this.contributorLabel(row) },
+      data: { contributor: this.contributorLabel(row), matchingEntries: matchingEntries.asReadonly(), canRemoveEntries: canRemoveEntries.asReadonly() },
     });
 
     // `open` is typed nullable because it declines under SSR, where there is no document to attach
     // to. The control that calls this is browser-side, so there is nothing to subscribe to then.
     if (!dialogRef) return;
+    nameDynamicDialog(this.dialogService, dialogRef, OrgEasyclaInvalidateAcknowledgmentDialogComponent.headingId);
     this.invalidateDialog = dialogRef;
-    const orgUid = this.orgUid();
-    const claSignatureId = this.signatureId();
+    this.claService
+      .getApprovalList(orgUid, claSignatureId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (list) => {
+          matchingEntries.set(this.entriesAddedFor(row.ack, list.entries));
+        },
+        error: (error: unknown) => {
+          console.warn(
+            'Failed to load the approval list for the invalidate dialog:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.message
+          );
+          matchingEntries.set(null);
+        },
+      });
     // take(1): the dialog can emit close more than once while it is still closing, and a second
     // emission would send the write again. The HTTP call itself does not use take(1), so closing
     // the tab does not cancel a write that has already started.
-    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((request: OrgClaInvalidateAcknowledgmentRequest | null | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: OrgClaInvalidateAcknowledgmentDialogResult | null | undefined) => {
       if (this.invalidateDialog === dialogRef) this.invalidateDialog = null;
-      if (!request || this.destroyed) return;
+      if (!result || this.destroyed) return;
+      const { removeApprovalEntries, ...request } = result;
       // The pair captured when the dialog opened. A confirm that races an agreement change
       // must not write the previous row against the agreement now on screen.
       if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
-      this.sendInvalidate(row, request, orgUid, claSignatureId);
+      this.sendInvalidate(row, request, orgUid, claSignatureId, removeApprovalEntries ?? []);
     });
+  }
+
+  /** Entries added for this contributor alone. Domain and org entries cover others too, so they never match. */
+  private entriesAddedFor(ack: OrgClaContributorAcknowledgment, entries: OrgClaApprovalEntry[]): OrgClaApprovalEntry[] {
+    const same = (entry: OrgClaApprovalEntry, identity: string | undefined): boolean =>
+      !!identity && entry.value.trim().toLowerCase() === identity.trim().toLowerCase();
+    return entries.filter(
+      (entry) =>
+        (entry.kind === 'email' && same(entry, ack.email)) ||
+        (entry.kind === 'github-username' && same(entry, ack.githubUsername)) ||
+        (entry.kind === 'gitlab-username' && same(entry, ack.gitlabUsername))
+    );
+  }
+
+  private removeApprovalEntries(orgUid: string, claSignatureId: string, entries: OrgClaApprovalEntryInput[], onSettle?: () => void): void {
+    this.claService
+      .updateApprovalList(orgUid, claSignatureId, { add: [], remove: entries })
+      // The refresh has to wait for the removal to settle, so hand the caller a settle hook that
+      // runs whether the removal succeeds or fails — a failed removal still needs the row refetched.
+      .pipe(finalize(() => onSettle?.()))
+      .subscribe({
+        next: (list) => {
+          if (!this.destroyed && claSignatureId === this.signatureId())
+            this.approvalListChanged.emit({ signatureId: claSignatureId, count: list.entries.length });
+        },
+        error: (error: unknown) => {
+          console.warn(
+            'Failed to remove approval-list entries after an invalidate:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.message
+          );
+          this.messageService.add({
+            severity: 'warn',
+            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedSummary,
+            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedDetail,
+          });
+        },
+      });
   }
 
   /**
@@ -334,44 +451,72 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * stamps. An optimistic removal would show the contributor as gone, which is a different and
    * wrong claim: the acknowledgment stays on the record, invalidated.
    */
-  private sendInvalidate(row: OrgClaAcknowledgmentRow, request: OrgClaInvalidateAcknowledgmentRequest, orgUid: string, claSignatureId: string): void {
+  private sendInvalidate(
+    row: OrgClaAcknowledgmentRow,
+    request: OrgClaInvalidateAcknowledgmentRequest,
+    orgUid: string,
+    claSignatureId: string,
+    removeApprovalEntries: OrgClaApprovalEntryInput[] = []
+  ): void {
     const signatureId = row.ack.signatureId;
     this.trackPending(signatureId, true);
-    this.claService
-      .invalidateAcknowledgment(orgUid, claSignatureId, signatureId, request)
-      .pipe(
-        finalize(() => {
-          if (!this.destroyed) this.trackPending(signatureId, false);
-        })
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
-            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
+    // The row stays pending until the whole operation settles — the invalidate and, when the
+    // manager also clears the approval list, that removal too — so the Invalidate control cannot
+    // fire a second write during the removal wait.
+    const settlePending = (): void => {
+      if (!this.destroyed) this.trackPending(signatureId, false);
+    };
+    this.claService.invalidateAcknowledgment(orgUid, claSignatureId, signatureId, request).subscribe({
+      next: () => {
+        this.messageService.add({
+          severity: 'success',
+          summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
+          detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
+        });
+        // When the manager also clears the approval list, that removal changes this row's state
+        // upstream, so the refresh must wait for it to settle — otherwise the GET can win the race
+        // and repaint the pre-removal state. The row stays pending until then. With no removal,
+        // settle and refresh right away.
+        if (removeApprovalEntries.length > 0) {
+          this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries, () => {
+            settlePending();
+            this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
           });
-          if (this.destroyed) return;
-          if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
-          if (this.pagesLoaded > 1) {
-            const generation = this.fetchGeneration() + 1;
-            this.fetchGeneration.set(generation);
-            this.loadingMore.set(true);
-            const search = (this.searchTerm() ?? '').trim();
-            this.markInvalidatedInPlace(signatureId);
-            this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
-            return;
-          }
-          this.reloadTrigger.update((value) => value + 1);
-        },
-        error: (error: unknown) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
-            detail: this.invalidateFailureDetail(error),
-          });
-        },
-      });
+          return;
+        }
+        settlePending();
+        this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
+      },
+      error: (error: unknown) => {
+        settlePending();
+        this.messageService.add({
+          severity: 'error',
+          summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
+          detail: this.invalidateFailureDetail(error),
+        });
+      },
+    });
+  }
+
+  /**
+   * Refreshes the loaded rows after a successful invalidate. A loaded span of more than one page is
+   * marked Invalidated in place first, so the state does not flicker while the span refetches; a
+   * single page just retriggers its resource. Guards the pair, so a confirm that outran a CCLA
+   * change refreshes nothing it no longer owns.
+   */
+  private refreshAfterInvalidate(signatureId: string, orgUid: string, claSignatureId: string): void {
+    if (this.destroyed) return;
+    if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
+    if (this.pagesLoaded > 1) {
+      const generation = this.fetchGeneration() + 1;
+      this.fetchGeneration.set(generation);
+      this.loadingMore.set(true);
+      const search = (this.searchTerm() ?? '').trim();
+      this.markInvalidatedInPlace(signatureId);
+      this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
+      return;
+    }
+    this.reloadTrigger.update((value) => value + 1);
   }
 
   private markInvalidatedInPlace(signatureId: string): void {
@@ -379,7 +524,21 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     if (!list) return;
     this.page.set({
       ...list,
-      list: list.list.map((ack) => (ack.signatureId === signatureId ? { ...ack, approved: false } : ack)),
+      list: list.list.map((ack) =>
+        ack.signatureId === signatureId
+          ? {
+              ...ack,
+              approved: false,
+              removedFromApprovalList: false,
+              removedCriteria: undefined,
+              // Drop any approval-list-removal stamps a Not Authorized row carried, so they are not
+              // shown as this invalidation's date/reason. The producer's refresh supplies the real ones.
+              invalidatedAt: undefined,
+              invalidatedBy: undefined,
+              invalidationReason: undefined,
+            }
+          : ack
+      ),
     });
   }
 
@@ -449,10 +608,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * Who the confirmation, the toast, and the button name.
    *
    * Identity first, because that is the column the manager matched the row on. A row that has
-   * only a DocuSign or profile name would otherwise be "—" in all three places.
+   * only a name would otherwise be "—" in all three places.
    */
   private contributorLabel(row: OrgClaAcknowledgmentRow): string {
-    return this.labelFor(row.identity.display, row.name);
+    return this.labelFor(row.identity.lfLogin ?? row.identity.display, row.name);
   }
 
   private labelFor(identity: string, name: string): string {
@@ -471,33 +630,38 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   }
 
   private toRow(ack: OrgClaContributorAcknowledgment, pending: ReadonlySet<string>): OrgClaAcknowledgmentRow {
-    const invalidated = this.isInvalidated(ack);
+    const notAuthorized = ack.removedFromApprovalList === true;
+    const invalidated = !notAuthorized && this.isInvalidated(ack);
     const signatureId = ack.signatureId?.trim() ?? '';
     const identity = this.resolveIdentity(ack);
     const name = ack.name?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
     return {
       ack,
       name,
+      avatarIdentity: ack.email ?? ack.lfLogin ?? ack.githubUsername ?? ack.gitlabUsername ?? null,
       identity,
-      cclaVersion: ack.cclaVersion?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
+      notAuthorized,
+      notAuthorizedTooltip: notAuthorized ? ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY.tooltip(ack.removedCriteria) : '',
       invalidated,
+      invalidatedOnLabel: invalidated ? this.toInvalidatedOnLabel(ack) : '',
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
       invalidatable: signatureId.length > 0,
       invalidatePending: signatureId.length > 0 && pending.has(signatureId),
-      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(this.labelFor(identity.display, name)),
+      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(this.labelFor(identity.lfLogin ?? identity.display, name)),
     };
   }
 
   /**
-   * Chooses the ID display for the LF Login / GitHub or GitLab ID column, in order:
-   * LF Login → GitHub username → GitLab username → email → em-dash. GitHub / GitLab logins are
-   * display only and never used as stable identifiers.
+   * Chooses the ID display for the LF Login / GitHub or GitLab ID column: `LF Login/GitHub` when
+   * both are present, else LF Login → GitHub username → GitLab username → email → em-dash.
+   * GitHub / GitLab logins are display only and never used as stable identifiers.
    */
   private resolveIdentity(ack: OrgClaContributorAcknowledgment): OrgClaAcknowledgmentRow['identity'] {
-    if (ack.lfLogin) return { display: ack.lfLogin, href: null, ariaLabel: `LF Login ${ack.lfLogin}` };
+    if (ack.lfLogin && !ack.githubUsername) return { lfLogin: null, display: ack.lfLogin, href: null, ariaLabel: `LF Login ${ack.lfLogin}` };
     if (ack.githubUsername) {
       return {
+        lfLogin: ack.lfLogin ?? null,
         display: `@${ack.githubUsername}`,
         href: `https://github.com/${encodeURIComponent(ack.githubUsername)}`,
         ariaLabel: `GitHub username @${ack.githubUsername}, opens on github.com`,
@@ -505,13 +669,14 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     }
     if (ack.gitlabUsername) {
       return {
+        lfLogin: null,
         display: `@${ack.gitlabUsername}`,
         href: `https://gitlab.com/${encodeURIComponent(ack.gitlabUsername)}`,
         ariaLabel: `GitLab username @${ack.gitlabUsername}, opens on gitlab.com`,
       };
     }
-    if (ack.email) return { display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
-    return { display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
+    if (ack.email) return { lfLogin: null, display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
+    return { lfLogin: null, display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
   }
 
   /**
@@ -525,9 +690,15 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   private formatInvalidatedTooltip(ack: OrgClaContributorAcknowledgment): string {
     const parts: string[] = [];
-    if (ack.invalidatedAt) parts.push(`Invalidated ${formatClaSignedOnInstant(ack.invalidatedAt)}`);
-    if (ack.invalidatedBy) parts.push(`by ${ack.invalidatedBy}`);
+    if (ack.invalidatedBy) parts.push(`Invalidated by ${ack.invalidatedBy}`);
     if (ack.invalidationReason) parts.push(`Reason: ${ack.invalidationReason}`);
     return parts.join(' · ');
+  }
+
+  /** The invalidation date, or '' when absent or unparseable, so the template never renders "on —". */
+  private toInvalidatedOnLabel(ack: OrgClaContributorAcknowledgment): string {
+    if (!ack.invalidatedAt) return '';
+    const label = formatClaSignedOnInstant(ack.invalidatedAt);
+    return label === '—' ? '' : label;
   }
 }

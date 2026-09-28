@@ -5,7 +5,10 @@ import '@angular/compiler';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
+const { getUsernameFromAuth, getEffectiveEmail } = vi.hoisted(() => ({
+  getUsernameFromAuth: vi.fn<() => Promise<string | null>>(),
+  getEffectiveEmail: vi.fn<() => string | null>(),
+}));
 const {
   listClaGroups,
   getPdfUrl,
@@ -21,7 +24,12 @@ const {
   removeManager,
   getContributorAcknowledgments,
   invalidateAcknowledgment,
+  getActivityLog,
+  assignDesignee,
+  nominateDesignee,
 } = vi.hoisted(() => ({
+  assignDesignee: vi.fn(),
+  nominateDesignee: vi.fn(),
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getCclaPreview: vi.fn(),
@@ -36,9 +44,10 @@ const {
   removeManager: vi.fn(),
   getContributorAcknowledgments: vi.fn(),
   invalidateAcknowledgment: vi.fn(),
+  getActivityLog: vi.fn(),
 }));
 
-vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
+vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth, getEffectiveEmail }));
 vi.mock('../services/org-cla.service', () => ({
   OrgClaService: class {
     public listClaGroups = listClaGroups;
@@ -54,6 +63,9 @@ vi.mock('../services/org-cla.service', () => ({
     public removeManager = removeManager;
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
+    public getActivityLog = getActivityLog;
+    public assignDesignee = assignDesignee;
+    public nominateDesignee = nominateDesignee;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -79,6 +91,7 @@ function buildRes() {
 beforeEach(() => {
   vi.clearAllMocks();
   getUsernameFromAuth.mockResolvedValue('alice');
+  getEffectiveEmail.mockReturnValue('contributor@example.org');
 });
 
 describe('OrgClasController.listClaGroups', () => {
@@ -1386,6 +1399,16 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('answers 409 with a plain sentence when the acknowledgment is not approved', async () => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-approved' });
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ message: "This acknowledgment is no longer approved, so it can't be invalidated yet." });
+  });
+
   it('answers 400 with its own copy for an unsigned agreement', async () => {
     invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-signed' });
     const res = buildRes();
@@ -1423,5 +1446,220 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
 
     expect(JSON.stringify(metadata)).not.toContain('left the company in March');
     expect(metadata).toContainEqual(expect.objectContaining({ reason: 'other' }));
+  });
+});
+
+/**
+ * Activity Log read (#1987). The route guard is asserted in the router spec; this layer's job is
+ * to translate query parameters correctly, clamp the page size before it reaches the producer,
+ * answer 404 for a signature this organization does not hold, and NOT forward
+ * `returnAllEvents` even if the client tried to send it. That flag only raises the page
+ * limit on the same partition.
+ */
+function activityReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
+  return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
+}
+
+function activityPage(overrides: Record<string, unknown> = {}) {
+  return { signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null, ...overrides };
+}
+
+describe('OrgClasController.getActivityLog', () => {
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank signature id before reaching the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getActivityLog(activityReq({}, { signatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('forwards a non-empty nextKey to the service, and drops an empty one', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    await new OrgClasController().getActivityLog(activityReq({ nextKey: 'cursor-xyz' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ nextKey: 'cursor-xyz' }));
+
+    await new OrgClasController().getActivityLog(activityReq({ nextKey: '   ' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ nextKey: undefined }));
+  });
+
+  it('clamps pageSize to the producer-safe range', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    // Above the ceiling — a request the producer would reject with 400 becomes a silent 100.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: '5000' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 100 }));
+
+    // Zero would runaway-loop upstream — clamped to 1.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: '0' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 1 }));
+
+    // A non-numeric hint is treated as "give me the default", not a 400.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: 'many' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
+  });
+
+  // `returnAllEvents` only raises the page limit on the same partition. Even if a client
+  // sent it, the controller must not hand it to the service — the service does not read it
+  // either, so this is one of two layers pinning that the flag stops at the BFF.
+  it('never forwards a returnAllEvents flag to the service, even if the caller tried', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    await new OrgClasController().getActivityLog(activityReq({ returnAllEvents: 'true' }), buildRes(), vi.fn());
+
+    const lastCallOptions = getActivityLog.mock.calls.at(-1)?.[3] as Record<string, unknown>;
+    expect(lastCallOptions).not.toHaveProperty('returnAllEvents');
+    expect(JSON.stringify(lastCallOptions ?? {})).not.toContain('returnAllEvents');
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    getActivityLog.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    // A 404 is heuristically cacheable, so the header is set ahead of the branch or a stored copy
+    // outlives the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // The body carries actor names and timestamps, so a shared cache must not hold it.
+  it('marks the response no-store', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+    const res = buildRes();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+});
+
+describe('OrgClasController — CLA manager designee (#2780)', () => {
+  const ORG_UID = '0014100000Te2ovAAB';
+  const PROJECT_SFID = 'a09410000182dD3AAI';
+
+  describe('assignDesignee', () => {
+    it('assigns the session address, never one from the body', async () => {
+      assignDesignee.mockResolvedValue({ assigned: true });
+      const res = buildRes();
+
+      await new OrgClasController().assignDesignee(
+        { params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID, userEmail: 'someone-else@example.org', email: 'someone-else@example.org' } } as any,
+        res,
+        vi.fn()
+      );
+
+      expect(assignDesignee).toHaveBeenCalledWith(expect.anything(), ORG_UID, PROJECT_SFID, 'contributor@example.org');
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(res.json).toHaveBeenCalledWith({ assigned: true });
+    });
+
+    it.each([undefined, '', '../../admin', 42])('rejects the project id %s before calling the service', async (projectSfid) => {
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid } } as any, buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(assignDesignee).not.toHaveBeenCalled();
+    });
+
+    it('refuses a session with no address rather than assigning nobody', async () => {
+      getEffectiveEmail.mockReturnValue(null);
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID } } as any, buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(assignDesignee).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unauthenticated caller', async () => {
+      getUsernameFromAuth.mockResolvedValue(null);
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID } } as any, buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(assignDesignee).not.toHaveBeenCalled();
+    });
+
+    it('hands a service refusal to the error handler', async () => {
+      const refusal = new Error('refused');
+      assignDesignee.mockRejectedValue(refusal);
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID } } as any, buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(refusal);
+    });
+  });
+
+  describe('nominateDesignee', () => {
+    it('forwards the trimmed name and address and keeps the address out of the log', async () => {
+      nominateDesignee.mockResolvedValue({ outcome: 'lf-login-required', email: 'contributor@example.org' });
+      const res = buildRes();
+
+      await new OrgClasController().nominateDesignee(
+        { params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID, fullName: ' Pat Contributor ', email: ' contributor@example.org ' } } as any,
+        res,
+        vi.fn()
+      );
+
+      expect(nominateDesignee).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+        projectSfid: PROJECT_SFID,
+        fullName: 'Pat Contributor',
+        email: 'contributor@example.org',
+      });
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(res.json).toHaveBeenCalledWith({ outcome: 'lf-login-required', email: 'contributor@example.org' });
+      expect(loggerMock.success).toHaveBeenCalledWith(expect.anything(), 'nominate_org_cla_designee', expect.anything(), {
+        org_uid: ORG_UID,
+        project_sfid: PROJECT_SFID,
+        outcome: 'lf-login-required',
+      });
+    });
+
+    it('names each invalid field before calling the service', async () => {
+      const next = vi.fn();
+
+      await new OrgClasController().nominateDesignee(
+        { params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID, fullName: 'Zoë Contributor', email: 'not-an-email' } } as any,
+        buildRes(),
+        next
+      );
+
+      const error = next.mock.calls[0][0] as InstanceType<typeof ServiceValidationError>;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(JSON.stringify(error.toResponse())).toContain('fullName');
+      expect(JSON.stringify(error.toResponse())).toContain('email');
+      expect(nominateDesignee).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing project id before calling the service', async () => {
+      const next = vi.fn();
+
+      await new OrgClasController().nominateDesignee(
+        { params: { orgUid: ORG_UID }, body: { fullName: 'Pat Contributor', email: 'contributor@example.org' } } as any,
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(nominateDesignee).not.toHaveBeenCalled();
+    });
   });
 });

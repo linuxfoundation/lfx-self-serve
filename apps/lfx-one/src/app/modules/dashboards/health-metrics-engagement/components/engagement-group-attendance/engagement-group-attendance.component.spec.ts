@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,6 +65,7 @@ describe('EngagementGroupAttendanceComponent', () => {
         // The drawer this table opens is a PrimeNG p-drawer, whose panel animation needs a provider.
         provideNoopAnimations(),
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementGroupAttendance } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         // The component reads its initial filter and page off the URL, and writes them back.
@@ -212,6 +214,15 @@ describe('EngagementGroupAttendanceComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
+  });
+
+  it('captions an unmeasured scope with an em dash beside the empty-scope state, not "0 groups"', async () => {
+    await render(response({ rows: [], totalRecords: 0, counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain(
+      'No groups recorded for this foundation'
+    );
   });
 
   // A failed read must not render the copy that asserts the foundation has no matching groups.

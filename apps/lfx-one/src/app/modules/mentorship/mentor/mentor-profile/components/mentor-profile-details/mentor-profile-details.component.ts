@@ -15,7 +15,7 @@ import {
   MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorProfileDetails } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl, stripHtml } from '@lfx-one/shared/utils';
+import { mentorshipDescriptionLength, normalizeToUrl } from '@lfx-one/shared/utils';
 
 /**
  * Read-only display of the mentor's own profile fields — About Me, Skills, Resume —
@@ -52,9 +52,11 @@ export class MentorProfileDetailsComponent {
    *     the editor stores `<p></p>` for an empty answer, which is truthy under `.trim()`.
    *   - Rendering has to go through `[innerHTML]` (Angular sanitises on the way in),
    *     otherwise the template interpolates the tags literally.
+   * The length goes through `mentorshipDescriptionLength` so a stored value over the raw cap
+   * skips the quadratic strip (lfx-self-serve-ops#37).
    */
   protected readonly aboutMeHtml = computed(() => this.profile().aboutMe ?? '');
-  protected readonly aboutMeIsEmpty = computed(() => stripHtml(this.aboutMeHtml()).length === 0);
+  protected readonly aboutMeIsEmpty = computed(() => mentorshipDescriptionLength(this.aboutMeHtml()) === 0);
   protected readonly skills = computed(() => this.profile().skills);
   protected readonly resumeFileName = computed(() => this.profile().resumeFileName?.trim() ?? '');
   /**
