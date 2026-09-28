@@ -42,8 +42,10 @@
               [title]="firstMlEmail"
               >{{ firstMlEmail }}</a
             >
+            <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
+          } @else {
+            <span class="shrink-0">{{ firstMl.subscriber_count }} subscribers</span>
           }
-          <span class="shrink-0" [class.ml-1]="firstMlEmail">&middot; {{ firstMl.subscriber_count }} subscribers</span>
         </div>
       </div>
       @if (extraCount > 0) {
@@ -93,8 +95,10 @@
                       [title]="mlEmail"
                       >{{ mlEmail }}</a
                     >
+                    <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
+                  } @else {
+                    <span class="shrink-0">{{ ml.subscriber_count }} subscribers</span>
                   }
-                  <span class="shrink-0" [class.ml-1]="mlEmail">&middot; {{ ml.subscriber_count }} subscribers</span>
                 </div>
               </div>
             </div>
