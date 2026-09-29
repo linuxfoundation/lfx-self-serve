@@ -186,6 +186,8 @@ export * from './my-document.interface';
 
 // API Gateway user profile interfaces
 export * from './api-gateway-user-profile.interface';
+// v1 user-service email sync (upsert) payload interfaces
+export * from './user-service-email-sync.interface';
 // Impersonation interfaces
 export * from './impersonation.interface';
 

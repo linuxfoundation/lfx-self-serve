@@ -41,6 +41,7 @@ import {
   UserMetadataUpdateResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
+  UserServiceEmailSyncRequest,
   UserServicePreference,
   UserServicePreferenceList,
   Vote,
@@ -1150,6 +1151,39 @@ export class UserService {
     }
 
     return { isPublic: nextIsPublic, sections, preferenceId };
+  }
+
+  /**
+   * Upserts a v2-OTP-verified email into v1 as Active+IsVerified so meeting-invite resolution finds it (lfx-self-serve-ops#183).
+   * Never throws — a failed v1 write must not fail verification; failures WARN and return false (409 = merge flow owns it).
+   */
+  public async syncVerifiedEmailToUserService(req: Request, email: string): Promise<boolean> {
+    if (!req.apiGatewayToken) {
+      logger.warning(req, 'sync_verified_email', 'Skipping v1 verified-email sync: no API Gateway token on the request', { email });
+      return false;
+    }
+
+    const body: UserServiceEmailSyncRequest = { Emails: [{ EmailAddress: email, IsVerified: true, Active: true }] };
+
+    try {
+      const baseUrl = getUserServiceBaseUrl('sync_verified_email', 'user_service');
+      // The PATCH echoes the user's email rows — redact the response body from logs (email PII).
+      await gatewayFetch<unknown>(req, `${baseUrl}/me/emails`, {
+        operation: 'sync_verified_email',
+        service: 'user_service',
+        errorMessage: 'Verified email sync failed',
+        errorCode: 'EMAIL_SYNC_UPSERT_FAILED',
+        method: 'PATCH',
+        body,
+        redactResponseBody: true,
+      });
+    } catch (error) {
+      logger.warning(req, 'sync_verified_email', 'v1 verified-email sync failed; verification result unaffected', { email, err: error });
+      return false;
+    }
+
+    logger.debug(req, 'sync_verified_email', 'v1 verified-email sync succeeded', { email });
+    return true;
   }
 
   /**

@@ -73,6 +73,7 @@ vi.mock('../helpers/api-gateway.helper', () => ({ getUserServiceBaseUrl: vi.fn((
 
 import { MicroserviceError } from '../errors';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { logger } from './logger.service';
 import { UserService } from './user.service';
 
 describe('UserService.validateUserMetadata', () => {
@@ -398,6 +399,64 @@ describe('UserService profile visibility', () => {
       const meCall = gw.mock.calls.find((c) => c[2].method === 'PATCH' && c[1].endsWith('/me'));
       expect(meCall?.[2].body).toEqual({ IsPublic: true, AccountID: 'acct-1' });
     });
+  });
+});
+
+// lfx-self-serve-ops#183: the v1 upsert must never break email verification — every failure mode
+// (missing gateway token, upstream 4xx/5xx, transport throw) resolves false + WARN, never throws.
+describe('UserService.syncVerifiedEmailToUserService', () => {
+  const req = { apiGatewayToken: 'gw-token' } as unknown as Request;
+  const gw = gatewayFetch as unknown as ReturnType<typeof vi.fn>;
+  const warn = logger.warning as unknown as ReturnType<typeof vi.fn>;
+
+  let service: UserService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new UserService();
+  });
+
+  it('PATCHes the address as Active+IsVerified with a redacted response and returns true on success', async () => {
+    gw.mockResolvedValue(null);
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(true);
+    expect(gw).toHaveBeenCalledWith(req, 'https://gw.test/user-service/v1/me/emails', {
+      operation: 'sync_verified_email',
+      service: 'user_service',
+      errorMessage: 'Verified email sync failed',
+      errorCode: 'EMAIL_SYNC_UPSERT_FAILED',
+      method: 'PATCH',
+      body: { Emails: [{ EmailAddress: 'secondary@example.com', IsVerified: true, Active: true }] },
+      redactResponseBody: true,
+    });
+  });
+
+  it('skips with a warning and returns false when the request carries no API Gateway token', async () => {
+    const result = await service.syncVerifiedEmailToUserService({} as unknown as Request, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(gw).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it.each([409, 500])('returns false with a warning when the upstream upsert fails (%i)', async (statusCode) => {
+    gw.mockRejectedValue(new MicroserviceError('boom', statusCode, 'EMAIL_SYNC_UPSERT_FAILED', { operation: 'sync_verified_email', service: 'user_service' }));
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('returns false with a warning when the fetch layer throws', async () => {
+    gw.mockRejectedValue(new Error('socket hangup'));
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(warn).toHaveBeenCalled();
   });
 });
 
