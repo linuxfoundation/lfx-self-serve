@@ -8,9 +8,21 @@ import {
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '../constants/health-metrics-members.constants';
-import { buildHealthMetricsMembersSubNavItems, buildHealthMetricsMembersTiersView } from './health-metrics-members.utils';
+import {
+  buildHealthMetricsMembersBridgeView,
+  buildHealthMetricsMembersMovementCountNote,
+  buildHealthMetricsMembersMovementDrawerTitle,
+  buildHealthMetricsMembersMovementRows,
+  buildHealthMetricsMembersSubNavItems,
+  buildHealthMetricsMembersTiersView,
+} from './health-metrics-members.utils';
 
-import type { HealthMetricsMembersTiers } from '../interfaces/health-metrics-members.interface';
+import type {
+  HealthMetricsMembersBridge,
+  HealthMetricsMembersBridgeStep,
+  HealthMetricsMembersBridgeStepType,
+  HealthMetricsMembersTiers,
+} from '../interfaces/health-metrics-members.interface';
 
 describe('buildHealthMetricsMembersSubNavItems', () => {
   it('lists every section in render order, with its label', () => {
@@ -148,5 +160,161 @@ describe('buildHealthMetricsMembersTiersView', () => {
     const view = buildHealthMetricsMembersTiersView({ rows, foundationRevenue: [] }, 'COMPLETED_YEAR', 'members');
 
     expect(view.tiers.at(-1)?.color).toBe(HEALTH_METRICS_MEMBERS_TIERS_COLORS[0]);
+  });
+});
+
+describe('buildHealthMetricsMembersBridgeView', () => {
+  const SIGN: Record<HealthMetricsMembersBridgeStepType, number> = { start_of_year: 1, new: 1, upgrade: 1, downgrade: -1, churned: -1, today: 1 };
+  const ORDER: HealthMetricsMembersBridgeStepType[] = ['start_of_year', 'new', 'upgrade', 'downgrade', 'churned', 'today'];
+
+  /** One year's six steps from its counts and dues, signed the way the model signs them. */
+  const year = (
+    value: number,
+    counts: number[],
+    dues: (number | null)[] = [800_000, 120_000, 89_000, 89_000, 40_000, 880_000]
+  ): HealthMetricsMembersBridgeStep[] =>
+    ORDER.map((movementType, index) => ({
+      year: value,
+      movementType,
+      sortOrder: index + 1,
+      isPartialYear: value === 2026,
+      memberCount: counts[index],
+      signedMemberCount: counts[index] * SIGN[movementType],
+      revenueImpactUsd: dues[index] === null ? null : (dues[index] as number) * SIGN[movementType],
+    }));
+
+  // 41 + 7 + 1 − 3 − 2 = 44: reconciles. 2025's upgrade is counted but not in the end total.
+  const BRIDGE: HealthMetricsMembersBridge = { steps: [...year(2026, [41, 7, 1, 3, 2, 44]), ...year(2025, [40, 3, 2, 1, 1, 41])] };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-29T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('labels the running year in the design order, ending on today', () => {
+    const view = buildHealthMetricsMembersBridgeView(BRIDGE, 'YTD');
+
+    expect(view.heading).toBe('How the base changed this year');
+    expect(view.bars.map((bar) => bar.label)).toEqual(['Start of year', 'New', 'Upgrades', 'Downgrades', 'Churned', 'Today']);
+    expect(view.bars.map((bar) => bar.countLabel)).toEqual(['41', '+7', '+1', '−3', '−2', '44']);
+    expect(view.bars.map((bar) => bar.duesLabel)).toEqual(['$800K', '+$120K', '+$89K', '−$89K', '−$40K', '$880K']);
+    expect(view.bars.map((bar) => bar.tone)).toEqual(['neutral', 'gain', 'gain', 'loss', 'loss', 'neutral']);
+  });
+
+  it('shows no note for a year that reconciles, and the recorded figures with a note for one that does not', () => {
+    expect(buildHealthMetricsMembersBridgeView(BRIDGE, 'YTD').reconcileNote).toBeNull();
+
+    const completed = buildHealthMetricsMembersBridgeView(BRIDGE, 'COMPLETED_YEAR');
+    expect(completed.heading).toBe('How the base changed in 2025');
+    expect(completed.bars.at(-1)?.label).toBe('End of 2025');
+    expect(completed.bars.at(-1)?.countLabel).toBe('41');
+    expect(completed.reconcileNote).toBe(
+      "These figures don't reconcile: 40 at the start of the year plus the movements comes to 43, but 41 are recorded at the end of 2025. The bars show the recorded figures."
+    );
+  });
+
+  it('floats each movement from the running total and stands the totals on zero', () => {
+    const [start, added, upgraded, downgraded, churned, end] = buildHealthMetricsMembersBridgeView(BRIDGE, 'YTD').bars;
+    const scale = 49 * 1.12;
+
+    expect(start.bottomPct).toBe(0);
+    expect(start.heightPct).toBeCloseTo((41 / scale) * 100);
+    expect(added.bottomPct).toBeCloseTo((41 / scale) * 100);
+    expect(upgraded.bottomPct).toBeCloseTo((48 / scale) * 100);
+    expect(downgraded.bottomPct).toBeCloseTo((46 / scale) * 100);
+    expect(downgraded.heightPct).toBeCloseTo((3 / scale) * 100);
+    expect(churned.bottomPct).toBeCloseTo((44 / scale) * 100);
+    expect(end.bottomPct).toBe(0);
+    expect(end.heightPct).toBeCloseTo((44 / scale) * 100);
+  });
+
+  it('opens a list from the movements with members and sends churn to its section', () => {
+    const bars = buildHealthMetricsMembersBridgeView(BRIDGE, 'YTD').bars;
+
+    expect(bars.map((bar) => bar.listType)).toEqual([null, 'new', 'upgrade', 'downgrade', null, null]);
+    expect(bars.map((bar) => bar.opensChurn)).toEqual([false, false, false, false, true, false]);
+    expect(bars[1].ariaLabel).toBe('New: +7 members, +$120K in dues, opens the list');
+    expect(bars[4].ariaLabel).toBe('Churned: −2 members, −$40K in dues, goes to churn');
+  });
+
+  it('leaves an empty movement inert and drops an unmeasured dues label', () => {
+    const view = buildHealthMetricsMembersBridgeView({ steps: year(2026, [10, 0, 0, 0, 0, 10], [null, 0, null, null, null, null]) }, 'YTD');
+
+    expect(view.bars.every((bar) => bar.listType === null && !bar.opensChurn)).toBe(true);
+    expect(view.bars.map((bar) => bar.countLabel)).toEqual(['10', '0', '0', '0', '0', '10']);
+    expect(view.bars.map((bar) => bar.duesLabel)).toEqual(['', '$0', '', '', '', '']);
+    expect(view.reconcileNote).toBeNull();
+  });
+
+  it('does not check a year missing a total', () => {
+    const steps = year(2026, [41, 7, 1, 3, 2, 44]).map((step) => (step.movementType === 'today' ? { ...step, memberCount: null } : step));
+    const view = buildHealthMetricsMembersBridgeView({ steps }, 'YTD');
+
+    expect(view.reconcileNote).toBeNull();
+    expect(view.bars.at(-1)?.countLabel).toBe('—');
+  });
+
+  it('reports a period with no bridge while other years have one', () => {
+    const view = buildHealthMetricsMembersBridgeView(BRIDGE, 'COMPLETED_YEAR_3');
+
+    expect(view.measured).toBe(true);
+    expect(view.yearMeasured).toBe(false);
+    expect(view.bars).toEqual([]);
+  });
+
+  it('titles a drawer for the running year and for a past one', () => {
+    expect(buildHealthMetricsMembersMovementDrawerTitle('new', 2026)).toBe('Joined this year');
+    expect(buildHealthMetricsMembersMovementDrawerTitle('downgrade', 2025)).toBe('Moved down a tier in 2025');
+  });
+});
+
+describe('buildHealthMetricsMembersMovementRows', () => {
+  const movement = {
+    accountId: '0014100000AcmeAAAA',
+    accountName: 'Acme Motors',
+    membershipTier: 'Gold',
+    duesImpactUsd: 100_000,
+    movementDate: '2026-04-02',
+    lastEngagedDate: null,
+  };
+
+  it('puts the tier and movement date under the name and signs the dues by direction', () => {
+    expect(buildHealthMetricsMembersMovementRows([movement], 'new')[0]).toEqual({
+      accountId: '0014100000AcmeAAAA',
+      accountName: 'Acme Motors',
+      detail: 'Gold · joined Apr 2, 2026',
+      duesLabel: '$100K',
+      loss: false,
+    });
+    expect(buildHealthMetricsMembersMovementRows([movement], 'upgrade')[0].duesLabel).toBe('+$100K');
+
+    const [down] = buildHealthMetricsMembersMovementRows([{ ...movement, duesImpactUsd: -89_000 }], 'downgrade');
+    expect(down.duesLabel).toBe('−$89K');
+    expect(down.detail).toBe('Gold · moved down Apr 2, 2026');
+    expect(down.loss).toBe(true);
+  });
+
+  it('keeps a row with no tier, date or dues', () => {
+    const [row] = buildHealthMetricsMembersMovementRows([{ ...movement, membershipTier: null, movementDate: null, duesImpactUsd: null }], 'new');
+
+    expect(row.detail).toBe('No tier recorded');
+    expect(row.duesLabel).toBe('');
+  });
+});
+
+describe('buildHealthMetricsMembersMovementCountNote', () => {
+  it('says nothing when the list matches its bar', () => {
+    expect(buildHealthMetricsMembersMovementCountNote(7, 7)).toBeNull();
+    expect(buildHealthMetricsMembersMovementCountNote(7, null)).toBeNull();
+  });
+
+  it('names both counts when they differ', () => {
+    expect(buildHealthMetricsMembersMovementCountNote(6, 7)).toBe(
+      '6 organizations listed, while the bar counts 7. The list and the bar are counted separately, so they can differ slightly.'
+    );
   });
 });

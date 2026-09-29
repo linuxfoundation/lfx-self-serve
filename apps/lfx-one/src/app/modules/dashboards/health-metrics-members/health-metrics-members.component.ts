@@ -13,6 +13,7 @@ import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 
 import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
@@ -23,7 +24,7 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
  */
 @Component({
   selector: 'lfx-health-metrics-members',
-  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, MembersTiersComponent],
+  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, MembersBridgeComponent, MembersTiersComponent],
   templateUrl: './health-metrics-members.component.html',
 })
 export class HealthMetricsMembersComponent {

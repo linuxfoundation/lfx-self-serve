@@ -3,14 +3,26 @@
 
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
+  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
+  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
+import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
+  HealthMetricsMembersBridge,
+  HealthMetricsMembersBridgeBarView,
+  HealthMetricsMembersBridgeStep,
+  HealthMetricsMembersBridgeTone,
+  HealthMetricsMembersBridgeView,
+  HealthMetricsMembersMovement,
+  HealthMetricsMembersMovementListType,
+  HealthMetricsMembersMovementRowView,
   HealthMetricsMembersSubNavItem,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersMode,
@@ -110,6 +122,137 @@ export function buildHealthMetricsMembersTiersView(
     years: yearViews,
     tiers: tierViews,
   };
+}
+
+/**
+ * The selected period's membership bridge. Bars keep the model's figures as they are; when start plus
+ * the signed movements misses the end total, the view carries a note instead of adjusting a bar.
+ */
+export function buildHealthMetricsMembersBridgeView(bridge: HealthMetricsMembersBridge, range: HealthMetricsRange): HealthMetricsMembersBridgeView {
+  const year = getYearForRange(range);
+  const isCurrentYear = year === getYearForRange('YTD');
+  const steps = bridge.steps.filter((step) => step.year === year).sort((a, b) => a.sortOrder - b.sortOrder);
+  const endLabel = isCurrentYear || steps.some((step) => step.isPartialYear) ? 'Today' : `End of ${year}`;
+
+  return {
+    measured: bridge.steps.length > 0,
+    yearMeasured: steps.length > 0,
+    year,
+    heading: range === 'YTD' ? 'How the base changed this year' : `How the base changed in ${year}`,
+    bars: buildBridgeBars(steps, endLabel),
+    reconcileNote: buildReconcileNote(steps, endLabel),
+  };
+}
+
+/** A movement drawer's title: the design's "this year" wording for the running year, the year otherwise. */
+export function buildHealthMetricsMembersMovementDrawerTitle(listType: HealthMetricsMembersMovementListType, year: number): string {
+  const copy = HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY[listType];
+  return year === getYearForRange('YTD') ? copy.title : `${copy.pastTitle} ${year}`;
+}
+
+/** Drawer rows: tier and movement date under the name, and the dues change signed by direction. */
+export function buildHealthMetricsMembersMovementRows(
+  rows: HealthMetricsMembersMovement[],
+  listType: HealthMetricsMembersMovementListType
+): HealthMetricsMembersMovementRowView[] {
+  const { verb } = HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY[listType];
+  const loss = listType === 'downgrade';
+
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    detail: [row.membershipTier ?? 'No tier recorded', row.movementDate ? `${verb} ${formatIsoDateLabel(row.movementDate)}` : null]
+      .filter((part): part is string => part !== null)
+      .join(' · '),
+    duesLabel: formatSignedUsd(row.duesImpactUsd, listType === 'new' ? 'neutral' : toneFor(listType)),
+    loss,
+  }));
+}
+
+/** Set when the list and its bar disagree; the list still shows every organization it has. */
+export function buildHealthMetricsMembersMovementCountNote(totalRecords: number, barCount: number | null): string | null {
+  if (barCount === null || barCount === totalRecords) return null;
+
+  return `${pluralize(totalRecords, 'organization')} listed, while the bar counts ${barCount.toLocaleString('en-US')}. The list and the bar are counted separately, so they can differ slightly.`;
+}
+
+function buildBridgeBars(steps: HealthMetricsMembersBridgeStep[], endLabel: string): HealthMetricsMembersBridgeBarView[] {
+  // Each movement floats from the running total, as a waterfall; the two totals stand on zero.
+  let running = 0;
+  const spans = steps.map((step) => {
+    if (step.movementType === 'start_of_year' || step.movementType === 'today') {
+      const total = Math.max(0, step.memberCount ?? 0);
+      if (step.movementType === 'start_of_year') running = total;
+      return { step, low: 0, high: total };
+    }
+
+    const from = running;
+    running = Math.max(0, running + (step.signedMemberCount ?? 0));
+    return { step, low: Math.min(from, running), high: Math.max(from, running) };
+  });
+
+  // Headroom above the tallest bar leaves space for its labels.
+  const scale = Math.max(1, ...spans.map((span) => span.high)) * 1.12;
+
+  return spans.map(({ step, low, high }) => {
+    const tone = toneFor(step.movementType);
+    const label = step.movementType === 'today' ? endLabel : HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS[step.movementType];
+    const countLabel = formatSignedCount(step.memberCount, tone);
+    const duesLabel = formatSignedUsd(step.revenueImpactUsd, tone);
+    const hasMembers = (step.memberCount ?? 0) > 0;
+    const listType = hasMembers ? (HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES.find((type) => type === step.movementType) ?? null) : null;
+    const opensChurn = hasMembers && step.movementType === 'churned';
+    const action = listType ? ', opens the list' : '';
+
+    return {
+      movementType: step.movementType,
+      label,
+      countLabel,
+      duesLabel,
+      tone,
+      bottomPct: (low / scale) * 100,
+      heightPct: ((high - low) / scale) * 100,
+      listType,
+      opensChurn,
+      memberCount: step.memberCount,
+      ariaLabel: `${label}: ${countLabel} members${duesLabel ? `, ${duesLabel} in dues` : ''}${opensChurn ? ', goes to churn' : action}`,
+    };
+  });
+}
+
+/** Checked, never assumed: a year missing either total or a movement's signed count cannot be checked. */
+function buildReconcileNote(steps: HealthMetricsMembersBridgeStep[], endLabel: string): string | null {
+  const start = steps.find((step) => step.movementType === 'start_of_year')?.memberCount ?? null;
+  const end = steps.find((step) => step.movementType === 'today')?.memberCount ?? null;
+  const movements = steps.filter((step) => step.movementType !== 'start_of_year' && step.movementType !== 'today');
+  if (start === null || end === null || movements.some((step) => step.signedMemberCount === null)) return null;
+
+  const expected = movements.reduce((sum, step) => sum + (step.signedMemberCount ?? 0), start);
+  if (expected === end) return null;
+
+  const endPhrase = endLabel === 'Today' ? 'today' : `at the ${endLabel.toLowerCase()}`;
+  return `These figures don't reconcile: ${formatCount(start)} at the start of the year plus the movements comes to ${formatCount(expected)}, but ${formatCount(end)} are recorded ${endPhrase}. The bars show the recorded figures.`;
+}
+
+function toneFor(movementType: HealthMetricsMembersBridgeStep['movementType']): HealthMetricsMembersBridgeTone {
+  if (movementType === 'new' || movementType === 'upgrade') return 'gain';
+  if (movementType === 'downgrade' || movementType === 'churned') return 'loss';
+  return 'neutral';
+}
+
+/** Counts arrive unsigned, so a movement's sign comes from its direction. */
+function formatSignedCount(value: number | null, tone: HealthMetricsMembersBridgeTone): string {
+  if (value === null) return '—';
+  if (value === 0 || tone === 'neutral') return formatCount(value);
+  return `${tone === 'gain' ? '+' : '−'}${formatCount(value)}`;
+}
+
+/** Empty for an unmeasured figure, so the bar shows only its count. */
+function formatSignedUsd(value: number | null, tone: HealthMetricsMembersBridgeTone): string {
+  if (value === null) return '';
+  const amount = formatCurrency(Math.abs(value));
+  if (value === 0 || tone === 'neutral') return amount;
+  return `${tone === 'gain' ? '+' : '−'}${amount}`;
 }
 
 function summarizeYear(rows: HealthMetricsMembersTierYear[]): HealthMetricsMembersTiersYearSummary {

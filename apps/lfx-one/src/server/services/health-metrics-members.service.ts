@@ -79,6 +79,7 @@ interface MovementRow {
   DUES_IMPACT_USD: number | null;
   MOVEMENT_DATE: Date | string | null;
   LAST_ENGAGED_DATE: Date | string | null;
+  SORT_RANK: number | null;
 }
 
 /** True when the Members views carry columns for the range; for a controller to check before binding. */

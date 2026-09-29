@@ -7,6 +7,9 @@ import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-m
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
 
+/** A read a deep link waits on: a section, or `bridge`, the second read inside `#tiers`. */
+export type HealthMetricsMembersDataSectionKey = HealthMetricsMembersSectionKey | 'bridge';
+
 /** Members' sub-nav badge, keyed to its own sections. */
 export interface HealthMetricsMembersSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsMembersSectionKey;
@@ -164,4 +167,56 @@ export interface HealthMetricsMembersMovements {
   rows: HealthMetricsMembersMovement[];
   /** Every organization behind the bar, so the drawer can check it against the bar's count. */
   totalRecords: number;
+}
+
+/** A bar's colour: the start and end totals are neutral, gains green, losses red. */
+export type HealthMetricsMembersBridgeTone = 'neutral' | 'gain' | 'loss';
+
+/** One bar of the selected year's bridge, positioned as a share of the chart's height. */
+export interface HealthMetricsMembersBridgeBarView {
+  movementType: HealthMetricsMembersBridgeStepType;
+  label: string;
+  countLabel: string;
+  /** Empty when the model has no dues figure for the step. */
+  duesLabel: string;
+  tone: HealthMetricsMembersBridgeTone;
+  bottomPct: number;
+  heightPct: number;
+  /** The list the bar opens; `null` for the totals, churn, and an empty movement. */
+  listType: HealthMetricsMembersMovementListType | null;
+  /** True for a churn bar with members to show, which goes to `#churn`. */
+  opensChurn: boolean;
+  memberCount: number | null;
+  ariaLabel: string;
+}
+
+/** `#tiers` bridge, re-projected per period from the every-year response. */
+export interface HealthMetricsMembersBridgeView {
+  /** Any year has a bridge. */
+  measured: boolean;
+  /** The selected period's year has a bridge. */
+  yearMeasured: boolean;
+  year: number;
+  heading: string;
+  bars: HealthMetricsMembersBridgeBarView[];
+  /** Set when start + the signed movements does not equal the end total the model reports. */
+  reconcileNote: string | null;
+}
+
+/** Fixed copy for one movement list's drawer. */
+export interface HealthMetricsMembersMovementDrawerCopy {
+  title: string;
+  pastTitle: string;
+  subtitle: string;
+  note: string;
+  verb: string;
+}
+
+/** One organization in a movement drawer. */
+export interface HealthMetricsMembersMovementRowView {
+  accountId: string;
+  accountName: string;
+  detail: string;
+  duesLabel: string;
+  loss: boolean;
 }

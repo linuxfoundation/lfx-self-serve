@@ -11,6 +11,7 @@ import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
@@ -19,6 +20,14 @@ import { HealthMetricsMembersComponent } from './health-metrics-members.componen
 class TiersStubComponent {
   public readonly settled = output<void>();
   public readonly reading = output<void>();
+}
+
+/** Stands in for the membership bridge, which reads separately under the same anchor. */
+@Component({ selector: 'lfx-members-bridge', template: '<div data-testid="members-bridge-stub"></div>' })
+class BridgeStubComponent {
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+  public readonly sectionPicked = output<string>();
 }
 
 // Covers only what Members wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
@@ -36,7 +45,10 @@ describe('HealthMetricsMembersComponent', () => {
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
     })
-      .overrideComponent(HealthMetricsMembersComponent, { remove: { imports: [MembersTiersComponent] }, add: { imports: [TiersStubComponent] } })
+      .overrideComponent(HealthMetricsMembersComponent, {
+        remove: { imports: [MembersBridgeComponent, MembersTiersComponent] },
+        add: { imports: [BridgeStubComponent, TiersStubComponent] },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsMembersComponent);
@@ -64,6 +76,7 @@ describe('HealthMetricsMembersComponent', () => {
       expect(element.textContent).toContain(HEALTH_METRICS_MEMBERS_SECTIONS[index].heading);
       if (key === 'tiers') {
         expect(element.querySelector('[data-testid="members-tiers-stub"]')).not.toBeNull();
+        expect(element.querySelector('[data-testid="members-bridge-stub"]')).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
       } else {
         expect(element.textContent).toContain('Awaiting data');
@@ -95,16 +108,43 @@ describe('HealthMetricsMembersComponent', () => {
     );
   });
 
-  it('scrolls to the section a deep link names once the tiers settle', async () => {
-    await setup('renewals');
-    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
-    // The shell re-lands a held deep link once every data section has settled.
-    scrollIntoView.mockClear();
-    (fixture.debugElement.query(By.directive(TiersStubComponent)).componentInstance as TiersStubComponent).settled.emit();
+  function stub<T>(type: new (...args: never[]) => T): T {
+    return fixture.debugElement.query(By.directive(type)).componentInstance as T;
+  }
+
+  async function flush(): Promise<void> {
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  it('holds a deep link until both reads under the tiers settle', async () => {
+    await setup('renewals');
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    // Each settle re-lands the held link; it is released only once every data section has settled.
+    stub(TiersStubComponent).settled.emit();
+    await flush();
+    scrollIntoView.mockClear();
+    stub(TiersStubComponent).settled.emit();
+    await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stub(BridgeStubComponent).settled.emit();
+    await flush();
+    scrollIntoView.mockClear();
+    stub(TiersStubComponent).settled.emit();
+    await flush();
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-renewals');
+  });
+
+  it('scrolls to churn when the bridge picks it', async () => {
+    await setup();
+
+    stub(BridgeStubComponent).sectionPicked.emit('churn');
+    await flush();
+
+    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-churn');
   });
 });

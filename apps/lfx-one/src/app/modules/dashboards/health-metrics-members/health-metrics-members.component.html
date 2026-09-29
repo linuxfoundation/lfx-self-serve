@@ -17,6 +17,12 @@
   testIdPrefix="members"
   [crossReference]="crossReference">
   <ng-template lfxHealthMetricsL2Section="tiers">
-    <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers')" />
+    <div class="flex flex-col gap-6">
+      <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers')" />
+      <lfx-members-bridge
+        (reading)="shell.sectionReading('bridge')"
+        (settled)="shell.sectionSettled('bridge')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </div>
   </ng-template>
 </lfx-health-metrics-l2-shell>
