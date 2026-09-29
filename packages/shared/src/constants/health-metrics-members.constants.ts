@@ -5,6 +5,8 @@ import { lfxColors } from './colors.constants';
 
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsMembersBridge,
+  HealthMetricsMembersMovements,
   HealthMetricsMembersSectionKey,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersModeOption,
@@ -121,3 +123,21 @@ export const HEALTH_METRICS_MEMBERS_TIERS_COLORS: readonly string[] = [
   lfxColors.emerald[300],
   lfxColors.amber[500],
 ];
+
+/** Read-failed / no-foundation value: no steps, so the bridge renders no bars. */
+export const HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED: HealthMetricsMembersBridge = { steps: [] };
+
+/** Upper bound on bridge rows read: six per year, so a century of years. */
+export const HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP = 600;
+
+/** The movements a bar opens as a named list, and the allowlist the movements read validates against. */
+export const HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES = ['new', 'upgrade', 'downgrade'] as const;
+
+/** Read-failed value for a movement list. */
+export const HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED: HealthMetricsMembersMovements = { rows: [], totalRecords: 0 };
+
+/** Rows per page of a movement list; the longest list today runs to several hundred. */
+export const HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE = 25;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE = 100;

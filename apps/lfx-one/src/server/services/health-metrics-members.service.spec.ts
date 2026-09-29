@@ -16,8 +16,16 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
+// `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
-import { HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
+} from '@lfx-one/shared/constants';
 
 import { HealthMetricsMembersService, isSupportedMembersRange } from './health-metrics-members.service';
 
@@ -163,5 +171,164 @@ describe('HealthMetricsMembersService.getTiers', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
+  });
+});
+
+function bridgeRow(overrides: Record<string, unknown> = {}) {
+  return {
+    YEAR: 2025,
+    MOVEMENT_TYPE: 'new',
+    SORT_ORDER: 2,
+    IS_PARTIAL_YEAR: false,
+    MEMBER_COUNT: 7,
+    SIGNED_MEMBER_COUNT: 7,
+    REVENUE_IMPACT_USD: 140000,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsMembersService.getBridge', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [bridgeRow()] });
+  });
+
+  it('reads every year of the waterfall in bar order, bound only to the foundation', async () => {
+    await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = readOf('MEMBERSHIP_WATERFALL');
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFALL');
+    expect(sql).toContain('ORDER BY year DESC, sort_order ASC NULLS LAST, movement_type ASC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP + 1}`);
+  });
+
+  it("maps steps with the model's own sign and keeps unmeasured counts null", async () => {
+    execute.mockResolvedValue({
+      rows: [
+        bridgeRow({ MOVEMENT_TYPE: 'churned', SORT_ORDER: 5, SIGNED_MEMBER_COUNT: -2, MEMBER_COUNT: 2, REVENUE_IMPACT_USD: -50000 }),
+        bridgeRow({ MOVEMENT_TYPE: 'today', SORT_ORDER: 6, MEMBER_COUNT: null, SIGNED_MEMBER_COUNT: null, REVENUE_IMPACT_USD: null, IS_PARTIAL_YEAR: null }),
+      ],
+    });
+
+    const response = await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
+
+    expect(response.steps).toEqual([
+      { year: 2025, movementType: 'churned', sortOrder: 5, isPartialYear: false, memberCount: 2, signedMemberCount: -2, revenueImpactUsd: -50000 },
+      { year: 2025, movementType: 'today', sortOrder: 6, isPartialYear: false, memberCount: null, signedMemberCount: null, revenueImpactUsd: null },
+    ]);
+  });
+
+  it('drops a row with no year or a movement type the bridge does not draw', async () => {
+    execute.mockResolvedValue({ rows: [bridgeRow({ YEAR: null }), bridgeRow({ MOVEMENT_TYPE: 'reactivated' }), bridgeRow()] });
+
+    const response = await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
+
+    expect(response.steps).toHaveLength(1);
+  });
+
+  it('warns and drops the year the cap cuts through', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP - 1 }, () => bridgeRow({ YEAR: 2026 }));
+    execute.mockResolvedValue({ rows: [...newest, bridgeRow(), bridgeRow()] });
+
+    const response = await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
+
+    expect(response.steps).toHaveLength(HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP - 1);
+    expect(response.steps.every((step) => step.year === 2026)).toBe(true);
+    expect(warning).toHaveBeenCalledWith(req, 'get_members_bridge', 'Membership bridge rows hit the read cap', expect.objectContaining({ row_cap: 600 }));
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
+  });
+});
+
+function movementRow(overrides: Record<string, unknown> = {}) {
+  return {
+    TOTAL_RECORDS: 3,
+    IS_PAGE_ROW: true,
+    ACCOUNT_ID: '0014100000AcmeAAAA',
+    ACCOUNT_NAME: 'Acme Motors',
+    MEMBERSHIP_TIER: 'Gold',
+    DUES_IMPACT_USD: 89000,
+    MOVEMENT_DATE: new Date('2025-03-14T00:00:00Z'),
+    LAST_ENGAGED_DATE: null,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsMembersService.getMovements', () => {
+  const query = { foundationSlug: 'acme', year: 2025, movementType: 'upgrade' as const, offset: 25, pageSize: 25 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [movementRow()] });
+  });
+
+  it('binds foundation, year and movement in placeholder order and pages in sort-rank order', async () => {
+    await new HealthMetricsMembersService().getMovements(req, query);
+
+    const [sql, binds] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
+    expect(binds).toEqual(['acme', 2025, 'upgrade']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST');
+    expect(sql).toContain('LIMIT 25 OFFSET 25');
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('clamps an oversized page and offset before interpolating them', async () => {
+    await new HealthMetricsMembersService().getMovements(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
+    const size = HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE;
+    expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
+  });
+
+  it('maps rows with ISO dates and falls back to the account id for a missing name', async () => {
+    execute.mockResolvedValue({
+      rows: [movementRow(), movementRow({ ACCOUNT_ID: '0014100000BetaAAAA', ACCOUNT_NAME: null, MEMBERSHIP_TIER: '', MOVEMENT_DATE: '2025-06-01' })],
+    });
+
+    const response = await new HealthMetricsMembersService().getMovements(req, query);
+
+    expect(response).toEqual({
+      totalRecords: 3,
+      rows: [
+        {
+          accountId: '0014100000AcmeAAAA',
+          accountName: 'Acme Motors',
+          membershipTier: 'Gold',
+          duesImpactUsd: 89000,
+          movementDate: '2025-03-14',
+          lastEngagedDate: null,
+        },
+        {
+          accountId: '0014100000BetaAAAA',
+          accountName: '0014100000BetaAAAA',
+          membershipTier: null,
+          duesImpactUsd: 89000,
+          movementDate: '2025-06-01',
+          lastEngagedDate: null,
+        },
+      ],
+    });
+  });
+
+  it('keeps the total when the page is past the end', async () => {
+    execute.mockResolvedValue({ rows: [{ TOTAL_RECORDS: 3, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+
+    const response = await new HealthMetricsMembersService().getMovements(req, query);
+
+    expect(response).toEqual({ rows: [], totalRecords: 3 });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getMovements(req, query)).rejects.toBe(failure);
   });
 });

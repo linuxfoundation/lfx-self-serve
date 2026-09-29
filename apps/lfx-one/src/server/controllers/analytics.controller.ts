@@ -8,9 +8,16 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { HealthMetricsEngagementGroupTypeFilter, HealthMetricsEventsOrganizationsSegment } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEngagementGroupTypeFilter,
+  HealthMetricsEventsOrganizationsSegment,
+  HealthMetricsMembersMovementListType,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -44,6 +51,12 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
+
+/** Bridge bars whose organizations the Members movements list serves. */
+const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
+
+/** A four-digit calendar year, the only shape the movements list's `year` accepts. */
+const YEAR_PATTERN = /^\d{4}$/;
 
 /** Maximum allowed length for foundationSlug query parameter */
 const NAME_MAX_LENGTH = 200;
@@ -3684,6 +3697,70 @@ export class AnalyticsController {
       const response = await this.healthMetricsMembersService.getTiers(req, { foundationSlug });
 
       logger.success(req, 'get_members_tiers', startTime, { foundation_slug: foundationSlug, row_count: response.rows.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-bridge` — every year's start total, movements and closing total. */
+  public async getMembersBridge(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_bridge');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_bridge');
+
+      const response = await this.healthMetricsMembersService.getBridge(req, { foundationSlug });
+
+      logger.success(req, 'get_members_bridge', startTime, { foundation_slug: foundationSlug, step_count: response.steps.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-movements` — one page of the organizations behind a bridge bar. */
+  public async getMembersMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_movements');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_movements');
+
+      const rawYear = getStringQueryParam(req, 'year') ?? '';
+      if (!YEAR_PATTERN.test(rawYear)) {
+        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_movements' });
+      }
+
+      const movementType = getStringQueryParam(req, 'movementType') ?? '';
+      if (!MEMBERS_MOVEMENT_LIST_TYPES.has(movementType)) {
+        throw ServiceValidationError.forField('movementType', `Invalid movementType value. Allowed: ${[...MEMBERS_MOVEMENT_LIST_TYPES].join(', ')}`, {
+          operation: 'get_members_movements',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+      });
+
+      const year = Number(rawYear);
+      const response = await this.healthMetricsMembersService.getMovements(req, {
+        foundationSlug,
+        year,
+        movementType: movementType as HealthMetricsMembersMovementListType,
+        offset,
+        pageSize,
+      });
+
+      logger.success(req, 'get_members_movements', startTime, {
+        foundation_slug: foundationSlug,
+        year,
+        movement_type: movementType,
+        row_count: response.rows.length,
+        total_records: response.totalRecords,
+      });
 
       res.json(response);
     } catch (error) {

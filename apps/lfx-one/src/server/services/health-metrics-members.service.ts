@@ -1,16 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX, HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
+} from '@lfx-one/shared/constants';
 
+import { toIsoDate } from '../helpers/date-format.helper';
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
+import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
 import type {
   HealthMetricsL2Range,
+  HealthMetricsMembersBridge,
+  HealthMetricsMembersBridgeQuery,
+  HealthMetricsMembersBridgeStep,
+  HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersFoundationRevenue,
+  HealthMetricsMembersMovement,
+  HealthMetricsMembersMovements,
+  HealthMetricsMembersMovementsQuery,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
   HealthMetricsMembersTierYear,
@@ -19,6 +36,17 @@ import type { Request } from 'express';
 
 const MEMBERSHIP_TIER_YEAR_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_TIER_YEAR';
 const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE';
+const MEMBERSHIP_WATERFALL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFALL';
+const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL';
+
+const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>([
+  'start_of_year',
+  'new',
+  'upgrade',
+  'downgrade',
+  'churned',
+  'today',
+]);
 
 interface TierYearRow {
   YEAR: number;
@@ -31,6 +59,27 @@ interface TierYearRow {
 }
 
 type FoundationRevenueRow = Record<string, number | null>;
+
+interface BridgeRow {
+  YEAR: number | null;
+  MOVEMENT_TYPE: string | null;
+  SORT_ORDER: number | null;
+  IS_PARTIAL_YEAR: boolean | null;
+  MEMBER_COUNT: number | null;
+  SIGNED_MEMBER_COUNT: number | null;
+  REVENUE_IMPACT_USD: number | null;
+}
+
+interface MovementRow {
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
+  DUES_IMPACT_USD: number | null;
+  MOVEMENT_DATE: Date | string | null;
+  LAST_ENGAGED_DATE: Date | string | null;
+}
 
 /** True when the Members views carry columns for the range; for a controller to check before binding. */
 export function isSupportedMembersRange(range: string): range is HealthMetricsL2Range {
@@ -52,6 +101,101 @@ export class HealthMetricsMembersService {
   public async getTiers(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTiers> {
     const [rows, foundationRevenue] = await Promise.all([this.getTierYears(req, query), this.getFoundationRevenue(req, query)]);
     return { rows, foundationRevenue };
+  }
+
+  /**
+   * Every year's bridge off `MEMBERSHIP_WATERFALL`: the start total, the four movements and the closing
+   * total. All years come back at once, so a period change re-projects without a re-read.
+   */
+  public async getBridge(req: Request, query: HealthMetricsMembersBridgeQuery): Promise<HealthMetricsMembersBridge> {
+    const sql = `
+      SELECT
+        year,
+        movement_type,
+        sort_order,
+        is_partial_year,
+        member_count,
+        signed_member_count,
+        revenue_impact_usd
+      FROM ${MEMBERSHIP_WATERFALL_VIEW}
+      WHERE foundation_slug = ?
+        AND year IS NOT NULL
+        AND movement_type IS NOT NULL
+      ORDER BY year DESC, sort_order ASC NULLS LAST, movement_type ASC
+      LIMIT ${HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<BridgeRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: MEMBERSHIP_WATERFALL_VIEW,
+      operation: 'get_members_bridge',
+      clientMessage: 'The membership bridge is unavailable right now.',
+    });
+
+    let rows = result.rows;
+    if (rows.length > HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP) {
+      logger.warning(req, 'get_members_bridge', 'Membership bridge rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+      });
+      rows = capWholeYears(rows, HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP);
+    }
+
+    return { steps: rows.map(mapBridgeStep).filter((step): step is HealthMetricsMembersBridgeStep => step !== null) };
+  }
+
+  /**
+   * One page of the organizations behind a bridge bar, in the view's own `sort_rank` order. The total
+   * is a separate aggregate joined onto the page, so a page past the end still reports it.
+   */
+  public async getMovements(req: Request, query: HealthMetricsMembersMovementsQuery): Promise<HealthMetricsMembersMovements> {
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const sql = `
+      WITH scoped AS (
+        SELECT *
+        FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
+        WHERE foundation_slug = ?
+          AND year = ?
+          AND movement_type = ?
+      ),
+      totals AS (
+        SELECT COUNT(*) AS total_records
+        FROM scoped
+      ),
+      page AS (
+        SELECT
+          account_id,
+          account_name,
+          membership_tier,
+          dues_impact_usd,
+          movement_date,
+          last_engaged_date,
+          sort_rank,
+          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
+          TRUE AS is_page_row
+        FROM scoped
+        -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
+        ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC NULLS LAST
+    `;
+
+    const result = await executeSnowflakeViewRead<MovementRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.year, query.movementType], {
+      view: MEMBERSHIP_MOVEMENT_DETAIL_VIEW,
+      operation: 'get_members_movements',
+      clientMessage: 'This list of members is unavailable right now.',
+    });
+
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapMovement),
+      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
+    };
   }
 
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
@@ -84,12 +228,7 @@ export class HealthMetricsMembersService {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
       });
-      // Newest years first, so the cap drops the oldest; a year the extra row shows was split goes too,
-      // unless it is the only one.
-      const cutYear = rows[HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 1].YEAR;
-      const yearWasSplit = rows[HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP].YEAR === cutYear;
-      rows = rows.slice(0, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
-      if (yearWasSplit && rows.some((row) => row.YEAR !== cutYear)) rows = rows.filter((row) => row.YEAR !== cutYear);
+      rows = capWholeYears(rows, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
     }
 
     return rows.map(mapTierYear).filter((row): row is HealthMetricsMembersTierYear => row !== null);
@@ -143,6 +282,47 @@ function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {
     revenueUsd: toNullableNumber(row.TIER_REVENUE_USD),
     isPartialYear: row.IS_PARTIAL_YEAR === true,
   };
+}
+
+/**
+ * Rows arrive newest year first, so the cap drops the oldest; a year the extra row shows was split goes
+ * too, unless it is the only one. `rows` holds one more row than `cap`.
+ */
+function capWholeYears<T extends { YEAR: number | null }>(rows: T[], cap: number): T[] {
+  const cutYear = rows[cap - 1].YEAR;
+  const yearWasSplit = rows[cap].YEAR === cutYear;
+  const capped = rows.slice(0, cap);
+  return yearWasSplit && capped.some((row) => row.YEAR !== cutYear) ? capped.filter((row) => row.YEAR !== cutYear) : capped;
+}
+
+function mapBridgeStep(row: BridgeRow): HealthMetricsMembersBridgeStep | null {
+  const year = toNullableNumber(row.YEAR);
+  if (year === null || !row.MOVEMENT_TYPE || !BRIDGE_STEP_TYPES.has(row.MOVEMENT_TYPE)) return null;
+
+  return {
+    year,
+    movementType: row.MOVEMENT_TYPE as HealthMetricsMembersBridgeStepType,
+    sortOrder: toNullableNumber(row.SORT_ORDER) ?? Number.MAX_SAFE_INTEGER,
+    isPartialYear: row.IS_PARTIAL_YEAR === true,
+    memberCount: toNullableNumber(row.MEMBER_COUNT),
+    signedMemberCount: toNullableNumber(row.SIGNED_MEMBER_COUNT),
+    revenueImpactUsd: toNullableNumber(row.REVENUE_IMPACT_USD),
+  };
+}
+
+function mapMovement(row: MovementRow): HealthMetricsMembersMovement[] {
+  if (!row.ACCOUNT_ID) return [];
+
+  return [
+    {
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID,
+      membershipTier: row.MEMBERSHIP_TIER || null,
+      duesImpactUsd: toNullableNumber(row.DUES_IMPACT_USD),
+      movementDate: toIsoDate(row.MOVEMENT_DATE),
+      lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
+    },
+  ];
 }
 
 function toNullableNumber(value: unknown): number | null {

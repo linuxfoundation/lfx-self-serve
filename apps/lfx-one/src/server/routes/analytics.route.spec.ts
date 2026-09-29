@@ -148,6 +148,9 @@ describe.each([
   ['/events-sponsorship', 'foundationSlug'],
   ['/events-geography', 'foundationSlug'],
   ['/members-tiers', 'foundationSlug'],
+  ['/members-bridge', 'foundationSlug'],
+  // The year and movement ride ahead of the slug so the handler past the gate has a valid query.
+  ['/members-movements', 'year=2025&movementType=new&foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });
