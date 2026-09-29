@@ -1005,7 +1005,7 @@ function mapSpeakersPeriod(row: SpeakersDrilldownRow, range: HealthMetricsL2Rang
   };
 }
 
-/** Tiers with no package sold in the period drop out; the rest rank by packages, then name. */
+/** Tiers with no package sold in the period drop out; the rest follow the view's rank (most packages, then name). */
 function mapSponsorshipPeriod(
   scope: SponsorshipSummaryRow,
   tierRows: SponsorshipSummaryRow[],

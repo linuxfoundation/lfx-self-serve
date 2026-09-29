@@ -615,7 +615,7 @@ export interface HealthMetricsEventsSponsorshipPeriod {
   progressToGoal: number | null;
   /** Year-over-year change in revenue as a fraction; `null` for a period the view does not compare. */
   changes: { revenue: number | null } | null;
-  /** Tiers with a package sold in the period, most packages first. */
+  /** Tiers with a package sold in the period, in the view's rank order (most packages, then name). */
   tiers: HealthMetricsEventsSponsorshipTier[];
 }
 
