@@ -4,7 +4,6 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   LF_CONTRACTOR_TEAM_ID,
-  LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
@@ -12,6 +11,7 @@ import {
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
   ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
   ORG_ROLE_GRANTS_HARD_CAP,
+  ORG_WIDE_READ_TEAM_IDS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -435,15 +435,16 @@ export class OrgRoleGrantsService {
   }
 
   /**
-   * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
-   * (`lf-staff`), the population that carries `auditor` on every `b2b_org` (member-service
-   * `docs/fga-contract.md`). One batched `checkAccessStrict` over that list plus `LF_CONTRACTOR_TEAM_ID` (#2961), which rides the
-   * same batch only to set `isContractor`: it explains an empty Org Lens and grants nothing.
+   * Asks the platform authorizer whether the caller belongs to any team in `ORG_WIDE_READ_TEAM_IDS`:
+   * the teams that read every `b2b_org`, through a plain `auditor` grant (`LF_TEAM_IDS`, `lf-staff`) or
+   * the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`, #3077). One batched `checkAccessStrict` over
+   * that list plus `LF_CONTRACTOR_TEAM_ID` (#2961), which rides the same batch only to set
+   * `isContractor`: it explains an empty Org Lens and grants nothing.
    *
    * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
    * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
-   * `b2b_org:<uid>#auditor` directly. It resolves to the same membership as
-   * `PersonaDetectionService.checkLFStaff` today, but stays a separate list with separate
+   * `b2b_org:<uid>#auditor` directly. It is a separate list from
+   * `PersonaDetectionService.checkLFStaff` (`LF_STAFF_TEAM_ID`), with separate
    * consumers: that one gates non-Org-Lens surfaces, so widening either must not widen the other.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
@@ -462,9 +463,9 @@ export class OrgRoleGrantsService {
       // #2961: the contractor team rides the same batch; it only explains an empty Org Lens and grants nothing.
       const membership = await this.accessCheck.checkAccessStrict(
         req,
-        [...LF_TEAM_IDS, LF_CONTRACTOR_TEAM_ID].map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
+        [...ORG_WIDE_READ_TEAM_IDS, LF_CONTRACTOR_TEAM_ID].map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
       );
-      const isStaff = LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
+      const isStaff = ORG_WIDE_READ_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
       return { isStaff, isContractor: !isStaff && membership.get(`${LF_CONTRACTOR_TEAM_ID}#member`) === true, staffCheck: 'ok' };
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {

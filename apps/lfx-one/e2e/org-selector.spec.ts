@@ -82,8 +82,8 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
 }
 
 // Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
-// wire is `LF_TEAM_IDS` membership — `lf-staff` only since the rollback of lfx-self-serve#2157; the
-// field name is kept for wire compatibility.
+// wire is `ORG_WIDE_READ_TEAM_IDS` membership (`lf-staff`, `global_org_admin`; never `lf-contractor`
+// since the rollback of lfx-self-serve#2157); the field name is kept for wire compatibility.
 async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
