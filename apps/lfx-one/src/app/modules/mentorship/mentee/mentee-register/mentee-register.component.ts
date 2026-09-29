@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -143,19 +143,8 @@ export class MenteeRegisterComponent {
   private readonly submitFailure = signal<{ failure: MentorshipMenteeRegisterSubmitFailure; formKey: string } | null>(null);
   private readonly formKey = computed(() => JSON.stringify(this.currentForm()));
 
-  protected readonly visibleFailure = computed(() => {
-    const stored = this.submitFailure();
-    if (!stored) return null;
-    const sticky = stored.failure.kind === 'profile-exists' || stored.failure.kind === 'read-only';
-    return sticky || stored.formKey === this.formKey() ? stored.failure : null;
-  });
-
-  private readonly serverFieldErrors = computed<MentorshipMenteeRegisterFieldErrors>(() => this.visibleFailure()?.fieldErrors ?? {});
-
-  protected readonly errors = computed(() => ({
-    ...this.serverFieldErrors(),
-    ...(this.showErrors() ? getMentorshipMenteeRegisterErrors(this.currentForm()) : {}),
-  }));
+  protected readonly visibleFailure = this.initVisibleFailure();
+  protected readonly errors = this.initErrors();
 
   protected onSubmit(): void {
     if (this.submitting()) return;
@@ -185,6 +174,22 @@ export class MenteeRegisterComponent {
   /** The profile-exists banner's button: the profile is already there, so this goes where a save would have. */
   protected onContinue(): void {
     void this.navigateAfterRegister(false);
+  }
+
+  private initVisibleFailure(): Signal<MentorshipMenteeRegisterSubmitFailure | null> {
+    return computed(() => {
+      const stored = this.submitFailure();
+      if (!stored) return null;
+      const sticky = stored.failure.kind === 'profile-exists' || stored.failure.kind === 'read-only';
+      return sticky || stored.formKey === this.formKey() ? stored.failure : null;
+    });
+  }
+
+  private initErrors(): Signal<MentorshipMenteeRegisterFieldErrors> {
+    return computed(() => ({
+      ...(this.visibleFailure()?.fieldErrors ?? {}),
+      ...(this.showErrors() ? getMentorshipMenteeRegisterErrors(this.currentForm()) : {}),
+    }));
   }
 
   private onRegistered(): void {

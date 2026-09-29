@@ -45,6 +45,10 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ResumeSectionComponent {
+  // The coming-soon service is resolved lazily, only when a host opts in and a button is pressed,
+  // so hosts (and their TestBeds) that don't opt in never need MessageService in scope.
+  private readonly injector = inject(Injector);
+
   public readonly form = input.required<FormGroup>();
   public readonly intro = input.required<string>();
   /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
@@ -62,10 +66,6 @@ export class ResumeSectionComponent {
    * hidden input is disabled. Null (default) keeps the normal file picker.
    */
   public readonly comingSoonSummary = input<string | null>(null);
-
-  // MessageService is not root-provided, so the coming-soon service is resolved lazily, only when
-  // a host opts in and a button is pressed; hosts that don't opt in never instantiate it.
-  private readonly injector = inject(Injector);
 
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
 
