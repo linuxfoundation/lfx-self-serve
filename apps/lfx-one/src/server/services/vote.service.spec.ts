@@ -94,6 +94,11 @@ vi.mock('../utils/auth-helper', () => ({
   getRawEffectiveEmail,
   getUsernameFromAuth,
   stripAuthPrefix,
+  // Composed from the mocks above, as in vote-response.helper.spec.ts, so per-test identity control is unchanged.
+  resolveUserIdentity: async (req: Request) => {
+    const raw: string | null = await getUsernameFromAuth(req);
+    return { email: getEffectiveEmail(req), username: raw ? stripAuthPrefix(raw) : raw };
+  },
 }));
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
