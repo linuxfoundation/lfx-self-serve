@@ -96,6 +96,7 @@ export class HealthMetricsMembersService {
   /** The foundation's total revenue per period, off the Memberships row whose tier revenue reconciles with it. */
   private async getFoundationRevenue(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersFoundationRevenue[]> {
     // The suffixes come from constants, never from the request, so interpolating them is safe.
+    // The view holds one row per foundation and revenue domain, so `LIMIT 1` needs no ORDER BY.
     const columns = HEALTH_METRICS_L2_RANGES.map((range) => `foundation_total_revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(',\n        ');
     const sql = `
       SELECT
