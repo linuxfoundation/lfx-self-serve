@@ -92,10 +92,11 @@ export class MentorshipMenteeService {
   }
 
   /**
-   * Withdraws one of the signed-in user's applications. Upstream sends no body and moves only a
-   * pending application to `withdrawn`; its 403 (not the applicant), 404 and 409 (no longer
-   * pending) propagate so the page can say why and re-read. The updated row carries no program or
-   * term, so it is dropped and the page re-reads its applications instead.
+   * Withdraws one of the signed-in user's applications. The request has no body; upstream moves
+   * only a pending application to `withdrawn` and returns the updated application. Its 403 (not
+   * the applicant), 404 and 409 (no longer pending) propagate so the page can say why and re-read.
+   * The returned application carries no program or term, so it is dropped and the page re-reads
+   * its applications instead.
    */
   public async withdrawMenteeApplication(req: Request, applicationId: string): Promise<void> {
     logger.debug(req, 'mentorship_withdraw_mentee_application', 'Withdrawing mentee application', { applicationId });
