@@ -21,7 +21,7 @@ describe('OrgHealthPopupComponent', () => {
     Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
   };
 
-  // The popover only attaches its content while open, but Angular always builds the projected markup — read it from the #content ref.
+  // The popover only attaches its content while open, but Angular always builds the projected markup — read it from the #popupContent ref.
   const renderPopup = (inputs: Record<string, unknown>): HTMLElement => {
     setInputs(inputs);
     fixture.detectChanges();

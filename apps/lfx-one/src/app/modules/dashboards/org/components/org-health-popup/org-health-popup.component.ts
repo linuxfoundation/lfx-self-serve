@@ -52,7 +52,7 @@ export class OrgHealthPopupComponent {
 
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly popover = viewChild<Popover>('popover');
-  private readonly content = viewChild<ElementRef<HTMLElement>>('content');
+  private readonly content = viewChild<ElementRef<HTMLElement>>('popupContent');
 
   /** Open state for the badge's `aria-expanded`; driven by the popover's own show/hide events. */
   public readonly isOpen = signal(false);
