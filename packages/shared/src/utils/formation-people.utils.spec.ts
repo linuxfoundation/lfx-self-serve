@@ -189,6 +189,11 @@ describe('buildFormationPeopleRowGroups', () => {
     expect(shape([person({ key: 'a', organization: '示例公司' })])).toEqual([{ key: 'org-示例公司', label: '示例公司', rows: ['a'] }]);
   });
 
+  it('keeps combining marks in the key, so names differing only by a mark stay apart', () => {
+    // Devanagari: the trailing vowel sign (U+0940) is a combining mark — slugging it away would merge these two.
+    expect(shape([person({ key: 'a', organization: 'कंपनी' }), person({ key: 'b', organization: 'कंपन' })])).toHaveLength(2);
+  });
+
   it('sends a blank or punctuation-only organization to Other', () => {
     expect(shape([person({ key: 'a', organization: '   ' }), person({ key: 'b', organization: '—' })])).toEqual([
       { key: 'other', label: 'Other', rows: ['a', 'b'] },

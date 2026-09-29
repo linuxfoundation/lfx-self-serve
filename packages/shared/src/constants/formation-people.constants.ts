@@ -13,11 +13,8 @@ export const LF_STAFF_EMAIL_DOMAIN = 'linuxfoundation.org';
 
 export const FORMATION_PEOPLE_HEADING = 'People on this formation';
 
-/** Group headings on the people card — keys double as {@link FormationPerson.group} values. */
-export const FORMATION_PEOPLE_GROUP_LABELS = {
-  staff: 'LF Staff',
-  invited: 'Invited',
-} as const;
+/** The people card's first heading — `staff` rows; invitees are grouped under their organization or {@link FORMATION_PEOPLE_OTHER_GROUP_LABEL}. */
+export const FORMATION_PEOPLE_STAFF_GROUP_LABEL = 'LF Staff';
 
 /**
  * Trailing people-card group for invitees with no known organization — email-only (pending)

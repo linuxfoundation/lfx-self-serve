@@ -1,12 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FORMATION_INVITE_ROLE_OPTIONS, FORMATION_PEOPLE_GROUP_LABELS, FORMATION_PERSON_STATUS_LABELS } from '../constants/formation-people.constants';
+import type { FORMATION_INVITE_ROLE_OPTIONS, FORMATION_PERSON_STATUS_LABELS } from '../constants/formation-people.constants';
 
 /** Mirrors `AddUserToProjectRequest['role']` — `manage` = settings `writers`, `view` = settings `auditors`. */
 export type FormationPersonRole = 'view' | 'manage';
 
-export type FormationPeopleGroup = keyof typeof FORMATION_PEOPLE_GROUP_LABELS;
+/**
+ * How a settings entry is classified — `staff` by the LF email domain, else `invited`. Drives the
+ * card's grouping (staff heading vs. per-organization) and whether a row carries a status chip.
+ */
+export type FormationPeopleGroup = 'staff' | 'invited';
 
 export type FormationPersonStatus = keyof typeof FORMATION_PERSON_STATUS_LABELS;
 

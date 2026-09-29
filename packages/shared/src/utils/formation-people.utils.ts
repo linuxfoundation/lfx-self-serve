@@ -3,8 +3,8 @@
 
 import {
   FORMATION_ASSIGNEE_PENDING_NOTE,
-  FORMATION_PEOPLE_GROUP_LABELS,
   FORMATION_PEOPLE_OTHER_GROUP_LABEL,
+  FORMATION_PEOPLE_STAFF_GROUP_LABEL,
   LF_STAFF_EMAIL_DOMAIN,
 } from '../constants/formation-people.constants';
 import type {
@@ -145,7 +145,7 @@ export function buildFormationPeopleRowGroups(
   people: readonly FormationPerson[],
   assignees: ReadonlyArray<string | null | undefined>
 ): FormationPeopleRowGroup[] {
-  const staff: FormationPeopleRowGroup = { key: 'staff', label: FORMATION_PEOPLE_GROUP_LABELS.staff, rows: [] };
+  const staff: FormationPeopleRowGroup = { key: 'staff', label: FORMATION_PEOPLE_STAFF_GROUP_LABEL, rows: [] };
   const other: FormationPeopleRowGroup = { key: 'other', label: FORMATION_PEOPLE_OTHER_GROUP_LABEL, rows: [] };
   const organizations = new Map<string, FormationPeopleRowGroup>();
 
@@ -160,7 +160,7 @@ export function buildFormationPeopleRowGroups(
     const organization = person.organization?.trim() ?? '';
     const slug = organization
       .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
       .replace(/^-+|-+$/g, '');
     if (!slug) {
       other.rows.push(row);
