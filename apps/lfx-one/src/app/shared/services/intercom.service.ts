@@ -61,11 +61,14 @@ export class IntercomService {
 
   // Re-scan the DOM so the widget (re)binds custom launchers that entered the page after boot —
   // e.g. the profile help link, which is router-mounted on client-side navigation into /profile/*.
-  // Fire-and-forget: pre-load, the stub queues the call and replays it once the script boots.
+  // `reattach_activator` is the (re)bind command — `update` alone only refreshes user/page data —
+  // and the pair mirrors the official snippet order already used in initializeIntercomFunction().
+  // Fire-and-forget: pre-load, the stub queues the calls and replays them once the script boots.
   public update(): void {
     if (typeof window === 'undefined' || !window.Intercom || !this.isBootRequested) {
       return;
     }
+    window.Intercom('reattach_activator');
     window.Intercom('update', window.intercomSettings!);
   }
 
