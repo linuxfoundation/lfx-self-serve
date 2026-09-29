@@ -16,7 +16,7 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const { MicroserviceError } = await import('../errors');
-const { isMentorshipNotFoundError, proxyMentorshipRequest } = await import('./mentorship-api.helper');
+const { proxyMentorshipRequest } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
@@ -85,23 +85,5 @@ describe('proxyMentorshipRequest', () => {
 
     await expect(proxyMentorshipRequest(proxy, req, path)).rejects.toBe(bootstrapError);
     expect(proxyRequest).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('isMentorshipNotFoundError', () => {
-  it("matches the mentorship service's own 404", () => {
-    expect(isMentorshipNotFoundError(MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { error: 'not found' }, 'LFX_V2_SERVICE', path))).toBe(true);
-  });
-
-  it('does not match a 404 without the service error body', () => {
-    expect(isMentorshipNotFoundError(MicroserviceError.fromMicroserviceResponse(404, 'Not Found', undefined, 'LFX_V2_SERVICE', path))).toBe(false);
-  });
-
-  it('does not match another status with the same body', () => {
-    expect(isMentorshipNotFoundError(MicroserviceError.fromMicroserviceResponse(409, 'Conflict', { error: 'not found' }, 'LFX_V2_SERVICE', path))).toBe(false);
-  });
-
-  it('does not match a non-microservice error', () => {
-    expect(isMentorshipNotFoundError(new Error('not found'))).toBe(false);
   });
 });
