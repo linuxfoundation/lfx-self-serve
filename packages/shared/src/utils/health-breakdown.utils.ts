@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_SCORE_CATEGORIES } from '../constants/org-lens-projects.constants';
 import type { HealthScoreCategoryKey } from '../interfaces';
 
 const CATEGORY_LABEL: Record<HealthScoreCategoryKey, string> = {
@@ -36,9 +35,13 @@ const buildRedistributionClause = (availableKeys: HealthScoreCategoryKey[]): str
   return ` ${names} ${verb} unavailable, so weights were redistributed.`;
 };
 
-// A partial max is 100 minus the missing category's max (60 maintainer, 65 security, 75 development).
-export const getMissingHealthCategoryName = (maxScore: number | null): string | undefined =>
-  maxScore == null ? undefined : HEALTH_SCORE_CATEGORIES.find((c) => c.max === 100 - maxScore)?.name;
+// Mirrors Insights: the first category without a score, in maintainer, security, development order.
+export const getMissingHealthCategoryName = (maintainerScore: number | null, securityScore: number | null, developmentScore: number | null): string | null => {
+  if (maintainerScore === null) return CATEGORY_NAME.maintainer;
+  if (securityScore === null) return CATEGORY_NAME.security;
+  if (developmentScore === null) return CATEGORY_NAME.development;
+  return null;
+};
 
 /**
  * Health Score v2 summary description, ported verbatim from LFX Insights

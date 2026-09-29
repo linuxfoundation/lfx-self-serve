@@ -74,6 +74,8 @@ describe('OrgHealthPopupComponent', () => {
         expect(byTestId(popup, 'org-health-popup-headline')?.querySelector('.font-semibold')?.textContent).toBe(headline.split(' ')[0]);
         expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe(remainder);
         expect(byTestId(popup, `org-health-popup-row-${missingRow}`)?.textContent).toContain(missingRowText);
+        // The footnote names the same category whose row shows the dash.
+        expect(byTestId(popup, `org-health-popup-row-${missingRow}`)?.textContent).toContain(category);
         expect(byTestId(popup, 'org-health-popup-partial-divider')).not.toBeNull();
         expect(byTestId(popup, 'org-health-popup-partial-note')?.textContent?.trim()).toBe(
           `*The Health score is partial because the ${category} category is missing data for this project.`
@@ -92,13 +94,38 @@ describe('OrgHealthPopupComponent', () => {
       expect(byTestId(popup, 'org-health-popup-row-development')?.textContent).toContain('22/25');
     });
 
-    it('marks a partial score with an asterisk but omits the footnote when the max maps to no single category', () => {
+    it('names the missing category in the footnote even when the max maps to no single category', () => {
       const popup = renderPopup({ label: 'fair', score: 50, maxScore: 70, maintainer: 30, security: null, development: 20 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Fair* (50/70)');
       expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe('30%');
+      expect(byTestId(popup, 'org-health-popup-partial-divider')).not.toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-note')?.textContent?.trim()).toBe(
+        '*The Health score is partial because the Security & Supply Chain category is missing data for this project.'
+      );
+    });
+
+    it.each([
+      { maxScore: 60, headline: 'Healthy* (50/60)', remainder: '40%' },
+      { maxScore: 65, headline: 'Healthy* (50/65)', remainder: '35%' },
+      { maxScore: 75, headline: 'Healthy* (50/75)', remainder: '25%' },
+    ])('marks a max of $maxScore with an asterisk but omits the footnote when every category has a score', ({ maxScore, headline, remainder }) => {
+      const popup = renderPopup({ label: 'healthy', score: 50, maxScore, maintainer: 20, security: 15, development: 15 });
+
+      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe(headline);
+      expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe(remainder);
       expect(byTestId(popup, 'org-health-popup-partial-divider')).toBeNull();
       expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
+    });
+
+    it('has no asterisk, divider or footnote for a max of 100 even when a category score is missing', () => {
+      const popup = renderPopup({ label: 'excellent', score: 88, maxScore: 100, maintainer: 35, security: null, development: 23 });
+
+      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Excellent (88/100)');
+      expect(byTestId(popup, 'org-health-popup-bar-missing')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-divider')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
+      expect(popup.textContent).not.toContain('*');
     });
 
     it('has no dotted remainder, asterisk, divider or footnote for a score out of 100', () => {
@@ -203,17 +230,34 @@ describe('OrgHealthPopupComponent', () => {
     });
 
     it.each([
-      { maxScore: 60, partial: true, category: 'Maintainer Health' },
-      { maxScore: 65, partial: true, category: 'Security & Supply Chain' },
-      { maxScore: 75, partial: true, category: 'Development Activity' },
-      { maxScore: 70, partial: true, category: undefined },
-      { maxScore: 100, partial: false, category: undefined },
-      { maxScore: 120, partial: false, category: undefined },
-      { maxScore: null, partial: false, category: undefined },
-    ])('treats a max of $maxScore as partial=$partial and names the missing category $category', ({ maxScore, partial, category }) => {
+      { maxScore: 60, partial: true },
+      { maxScore: 65, partial: true },
+      { maxScore: 75, partial: true },
+      { maxScore: 70, partial: true },
+      { maxScore: 100, partial: false },
+      { maxScore: 120, partial: false },
+      { maxScore: null, partial: false },
+    ])('treats a max of $maxScore as partial=$partial', ({ maxScore, partial }) => {
       setInputs({ label: 'healthy', score: 50, maxScore });
 
       expect(component['isPartial']()).toBe(partial);
+    });
+
+    // No max is set: the category depends on the scores alone, first null in popup order.
+    it.each([
+      { name: 'maintainer is null', scores: { maintainer: null, security: 12, development: 9 }, category: 'Maintainer Health' },
+      { name: 'security is null', scores: { maintainer: 30, security: null, development: 22 }, category: 'Security & Supply Chain' },
+      { name: 'development is null', scores: { maintainer: 20, security: 18, development: null }, category: 'Development Activity' },
+      { name: 'maintainer and security are null', scores: { maintainer: null, security: null, development: 9 }, category: 'Maintainer Health' },
+      { name: 'maintainer and development are null', scores: { maintainer: null, security: 12, development: null }, category: 'Maintainer Health' },
+      { name: 'security and development are null', scores: { maintainer: 30, security: null, development: null }, category: 'Security & Supply Chain' },
+      { name: 'all three are null', scores: { maintainer: null, security: null, development: null }, category: 'Maintainer Health' },
+      { name: 'maintainer is undefined', scores: { maintainer: undefined, security: 12, development: 9 }, category: 'Maintainer Health' },
+      { name: 'none is null', scores: { maintainer: 30, security: 12, development: 22 }, category: null },
+      { name: 'every score is a real zero', scores: { maintainer: 0, security: 0, development: 0 }, category: null },
+    ])('derives the missing category from the scores when $name -> $category', ({ scores, category }) => {
+      setInputs(scores);
+
       expect(component['missingCategoryName']()).toBe(category);
     });
 

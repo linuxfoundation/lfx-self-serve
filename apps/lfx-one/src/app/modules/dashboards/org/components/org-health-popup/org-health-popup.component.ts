@@ -39,7 +39,9 @@ export class OrgHealthPopupComponent {
     }
     return `${HEALTH_SCORE_LABELS[band]}${this.isPartial() ? '*' : ''}`;
   });
-  protected readonly missingCategoryName = computed(() => getMissingHealthCategoryName(this.maxScore()));
+  protected readonly missingCategoryName = computed(() =>
+    getMissingHealthCategoryName(this.maintainer() ?? null, this.security() ?? null, this.development() ?? null)
+  );
   protected readonly scoreText = computed(() => `(${this.score() ?? 0}/${this.maxScore() ?? 100})`);
   // Raw score on a 0-100 track; the points no covered category can earn render as a dotted remainder.
   protected readonly barFillPercent = computed(() => Math.min(Math.max(this.score() ?? 0, 0), 100));
