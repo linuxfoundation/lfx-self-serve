@@ -115,9 +115,14 @@ export function formatHealthMetricsEventsOrganizationsCountLabel(total: number |
   return `${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'organization' : 'organizations'}`;
 }
 
+/** A registration goal of zero or less is no goal set; every registration-goal check reads it through here. */
+export function hasHealthMetricsEventsGoal(goal: number | null): goal is number {
+  return goal !== null && goal > 0;
+}
+
 /** True when goal and forecast differ by an order of magnitude or more — a data-entry problem, not a pace. */
 export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEventsForecastEvent): boolean {
-  if (event.goal === null || event.goal <= 0 || event.forecastAvg === null) return false;
+  if (!hasHealthMetricsEventsGoal(event.goal) || event.forecastAvg === null) return false;
 
   const ratio = event.forecastAvg / event.goal;
   return ratio >= HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO || ratio <= 1 / HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO;
@@ -130,7 +135,7 @@ export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEve
 export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastStatus {
   // No forecast outranks no goal: there is nothing to show either way, and the contract says No data.
   if (event.forecastAvg === null) return 'no-data';
-  if (event.goal === null || event.goal <= 0) return 'no-goal';
+  if (!hasHealthMetricsEventsGoal(event.goal)) return 'no-goal';
   if (isHealthMetricsEventsForecastGoalSuspect(event)) return 'no-data';
   if (event.forecastHigh !== null && event.forecastHigh < event.goal) return 'action';
   if (event.forecastAvg < event.goal) return 'at-risk';
@@ -143,7 +148,7 @@ export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEv
   const base = { forecast: event.forecastAvg, goal: event.goal, gap: 0, ratio: null, daysLeft: event.daysLeft };
 
   if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'none' };
-  if (event.goal === null || event.goal <= 0) return { ...base, kind: 'no-goal', tone: 'none' };
+  if (!hasHealthMetricsEventsGoal(event.goal)) return { ...base, kind: 'no-goal', tone: 'none' };
 
   // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
   const ratio = event.forecastAvg / event.goal;
@@ -194,7 +199,7 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
       statusClass: HEALTH_METRICS_EVENTS_FORECAST_STATUSES[status].badgeClass,
       dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
       registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
-      goalLabel: formatHealthMetricsEventsCount(event.goal),
+      goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
       progressPct: pct === null ? null : Math.min(pct, 100),
       progressClass: resolveProgressClass(pct),
     };
@@ -225,7 +230,7 @@ export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEven
 
 /** A closed event's outcome. A miss the model banded as needing attention finished within reach. */
 export function resolveHealthMetricsEventsPastStatus(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastStatus {
-  if (event.goal === null) return 'no-goal';
+  if (!hasHealthMetricsEventsGoal(event.goal)) return 'no-goal';
   // An unflagged outcome falls back to final registrations against the goal; with neither, it is unmeasured.
   let met = event.goalMet;
   if (met === null) {
@@ -628,7 +633,7 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     statusClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].badgeClass,
     dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
     registrationsLabel: formatHealthMetricsEventsCount(event.registrations),
-    goalLabel: formatHealthMetricsEventsCount(event.goal),
+    goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
     revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
     progressPct: resolvePastProgressPct(event),
     progressClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].progressClass,
@@ -637,14 +642,14 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
 
 /** Final registrations against goal, capped at 100; null when either is unmeasured, since null is not zero. */
 function resolvePastProgressPct(event: HealthMetricsEventsPastEvent): number | null {
-  if (event.goal === null || event.goal <= 0 || event.registrations === null) return null;
+  if (!hasHealthMetricsEventsGoal(event.goal) || event.registrations === null) return null;
 
   return Math.min(100, Math.round((event.registrations / event.goal) * 100));
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */
 function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number | null {
-  if (event.goal === null || event.goal <= 0 || event.registrationsNow === null) return null;
+  if (!hasHealthMetricsEventsGoal(event.goal) || event.registrationsNow === null) return null;
 
   return event.registrationsNow / event.goal;
 }

@@ -198,6 +198,10 @@ export interface SurveyResponseRecord {
   survey_uid: string;
   response_datetime?: string;
   survey_link?: string;
+  /** Invitee email — carried by the index; the identity match key for pending-action reads (GH-2987). */
+  email?: string;
+  /** Invitee LF username — can be absent, so identity reads OR-match it with `email`. */
+  username?: string;
   survey_title: string;
   survey_status: string;
   survey_send_date?: string;

@@ -10,11 +10,12 @@ import {
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  SURVEY_LINK_ALLOWLIST,
   TSHIRT_SIZES,
   VISIBILITY_PREFERENCE_APP_NAME,
   VISIBILITY_PREFERENCE_NAME,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, NatsSubjects, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
@@ -33,6 +34,7 @@ import {
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
+  SurveyResponseRecord,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
   UserMetadata,
@@ -49,6 +51,7 @@ import {
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
+  getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
   normalizeIndexedMeetingAiSummary,
@@ -64,6 +67,8 @@ import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchCurrentUserSurveyResponses } from '../helpers/survey-response.helper';
+import { validateAndSanitizeUrl } from '../helpers/url-validation';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { getEffectiveEmail, getUsernameFromAuth, isImpersonating, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
@@ -420,8 +425,9 @@ export class UserService {
    * (project-lens / foundation-lens dashboards).
    * @param req - Express request object
    * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
-   * @param email - User email
-   * @param projectSlug - Optional project slug; omit for unscoped survey aggregation
+   * @param email - User email, or null when the auth context carries only a username (GH-2987) —
+   *   strictly email-keyed sources (pending invitations) are skipped in that case
+   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items)
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
    * @returns Array of pending action items
@@ -429,7 +435,7 @@ export class UserService {
   public async getPendingActions(
     req: Request,
     projectUid: string | undefined,
-    email: string,
+    email: string | null,
     projectSlug: string | undefined,
     limit?: number
   ): Promise<PendingActionItem[]> {
@@ -1291,7 +1297,7 @@ export class UserService {
   /**
    * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
-   *   - Non-responded surveys (Snowflake)
+   *   - Non-responded surveys (query-service `survey_response` index — the same source My Surveys reads)
    *   - Upcoming meetings within the next two weeks (Review Agenda action)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
@@ -1303,7 +1309,7 @@ export class UserService {
    */
   private async getUserPendingActions(
     req: Request,
-    email: string,
+    email: string | null,
     projectSlug: string | undefined,
     projectUid: string | undefined
   ): Promise<PendingActionItem[]> {
@@ -1318,16 +1324,17 @@ export class UserService {
 
     // Pending committee invitations only belong on the unscoped Me-lens path — they're personal
     // to the user (by email) and not tied to a project lens. On a project/foundation lens, skip
-    // the lookup entirely.
+    // the lookup entirely. They're also the one strictly email-keyed source — skip when the auth
+    // context carries no email (username-only identity, GH-2987).
     const isMeLens = !projectUid && !projectSlug;
 
     // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveys, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
-      this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
+    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
+      this.fetchPendingSurveyResponses(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
-        return [];
+        return [] as SurveyResponseRecord[];
       }),
 
       this.getUserMeetings(req, projectUid, undefined, { basic: true }).catch((error) => {
@@ -1340,7 +1347,7 @@ export class UserService {
         return [] as Vote[];
       }),
 
-      isMeLens
+      isMeLens && email
         ? this.committeeService.getMyPendingInvitations(req, email).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending invitations', { err: error });
             return [] as PendingInvitation[];
@@ -1368,6 +1375,7 @@ export class UserService {
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
+    const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
@@ -1398,7 +1406,7 @@ export class UserService {
     // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
     // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
     // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
-    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
   /**
@@ -1506,7 +1514,7 @@ export class UserService {
    * query service may silently ignore it — filtering meeting-side in code is both reliable
    * and cheap at the typical per-user RSVP cardinality (dozens to low hundreds, paginated).
    */
-  private async fetchAllUserRsvps(req: Request, email: string, username: string | null): Promise<MeetingRsvp[]> {
+  private async fetchAllUserRsvps(req: Request, email: string | null, username: string | null): Promise<MeetingRsvp[]> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
@@ -1540,7 +1548,7 @@ export class UserService {
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
-    email: string,
+    email: string | null,
     username: string | null
   ): Promise<{ uids: Set<string>; meetingIds: Set<string> }> {
     const orClauses: string[] = [];
@@ -1691,6 +1699,99 @@ export class UserService {
         date: `Closes ${formattedEnd}`,
       };
     });
+  }
+
+  /**
+   * Pending surveys from the `survey_response` index — the same identity read My Surveys uses.
+   * Unanswered comes from the helper; "still actionable" (OPEN status) is decided here.
+   */
+  private async fetchPendingSurveyResponses(req: Request, projectUid?: string): Promise<SurveyResponseRecord[]> {
+    // failOnPartial: a truncated page set can silently miss a pending survey. The caller catches
+    // and degrades the whole source, so fail closed here.
+    const rows = await fetchCurrentUserSurveyResponses(req, this.microserviceProxy, {
+      // Project scoping rides the indexer-emitted `project_uid` tag (survey-service indexer
+      // contract: "Find responses for a project") — a flat keyword term query, the same
+      // tags=project_uid: pattern committee.service and create-picker.service already use.
+      ...(projectUid && { tags: [`project_uid:${projectUid}`] }),
+      failOnPartial: true,
+    });
+
+    const openRows = rows.filter((row) => {
+      // Legacy rows can lack the denormalized title/cutoff (getMySurveys guards the same fields) —
+      // they can't be proven open or rendered meaningfully, so they're excluded ("no noise" bar, #2987).
+      if (!row.survey_title) return false;
+      // A literal 'open' status classifies OPEN without consulting the cutoff — require a parseable
+      // cutoff explicitly; transformSurveysToActions renders it as the due date.
+      if (!row.survey_cutoff_date || Number.isNaN(new Date(row.survey_cutoff_date).getTime())) return false;
+      return getSurveyDisplayStatus({ survey_status: row.survey_status, survey_cutoff_date: row.survey_cutoff_date }) === SurveyStatus.OPEN;
+    });
+
+    // One action per survey: the index holds a row per survey × committee invitation; identical
+    // rows would crowd the capped card (#2987). Links are per-invitation, so prefer a row with a
+    // usable (allowlisted) link; among equally usable rows, keep the earliest cutoff (parseable
+    // per the filter). Without the link preference, an earliest/kept row missing its link would
+    // discard a survey another invitation row could still action (index order is not stable).
+    const preferredBySurvey = new Map<string, SurveyResponseRecord>();
+    for (const row of openRows) {
+      const kept = preferredBySurvey.get(row.survey_uid);
+      if (!kept) {
+        preferredBySurvey.set(row.survey_uid, row);
+        continue;
+      }
+      const rowHasLink = this.surveyActionLink(row) !== null;
+      const keptHasLink = this.surveyActionLink(kept) !== null;
+      const rowCutoff = new Date(row.survey_cutoff_date as string).getTime();
+      const keptCutoff = new Date(kept.survey_cutoff_date as string).getTime();
+      if ((rowHasLink && !keptHasLink) || (rowHasLink === keptHasLink && rowCutoff < keptCutoff)) {
+        preferredBySurvey.set(row.survey_uid, row);
+      }
+    }
+    return [...preferredBySurvey.values()];
+  }
+
+  /**
+   * Validates a survey row's link against the allowlist — the single check shared by dedup
+   * (prefer rows with a usable link) and transform (skip rows without one), so the two can't drift.
+   */
+  private surveyActionLink(row: SurveyResponseRecord): string | null {
+    return row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
+  }
+
+  /**
+   * Maps pending survey rows to Survey pending-action items — the same shape the Snowflake source
+   * produced: "Submit Survey" opens the allowlist-validated link in a new tab.
+   */
+  private transformSurveysToActions(req: Request, rows: SurveyResponseRecord[]): PendingActionItem[] {
+    const items: PendingActionItem[] = [];
+    // Soonest cutoff first — the old Snowflake source ordered SURVEY_CUTOFF_DATE ASC and the
+    // frontend renders server order sliced to the display limit; cutoffs are parseable per the fetch filter.
+    const sorted = [...rows].sort((a, b) => new Date(a.survey_cutoff_date as string).getTime() - new Date(b.survey_cutoff_date as string).getTime());
+    for (const row of sorted) {
+      const buttonLink = this.surveyActionLink(row);
+      // A pending action without a valid link can't be acted on — skip rather than render a dead
+      // button. The row still shows in My Surveys, so the survey is not hidden altogether.
+      if (!buttonLink) {
+        logger.debug(req, 'transform_surveys_to_actions', 'Skipping survey row with missing or disallowed link', { survey_uid: row.survey_uid });
+        continue;
+      }
+
+      // The fetch filter already excluded rows without a parseable cutoff.
+      const cutoffDate = new Date(row.survey_cutoff_date as string);
+      const formattedDate = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const displayDate = cutoffDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+      items.push({
+        type: 'Survey',
+        badge: row.project?.name ?? '',
+        text: `${row.survey_title} is due ${formattedDate}`,
+        icon: 'fa-regular fa-clipboard-list',
+        severity: PENDING_ACTION_SEVERITY.Survey,
+        buttonText: 'Submit Survey',
+        buttonLink,
+        date: `Due ${displayDate}`,
+      });
+    }
+    return items;
   }
 
   /**

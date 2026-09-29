@@ -19,13 +19,13 @@ import {
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork, isImpersonating } = vi.hoisted(() => ({
+const { proxyRequest, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork, isImpersonating, getEffectiveEmail } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  getPendingActionSurveys: vi.fn(),
   getMyPendingInvitations: vi.fn(),
   getUsernameFromAuth: vi.fn(),
   getMyFormationWork: vi.fn(),
   isImpersonating: vi.fn(() => false),
+  getEffectiveEmail: vi.fn(),
 }));
 
 // Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
@@ -33,11 +33,7 @@ const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsern
 vi.mock('./nats.service', () => ({ NatsService: vi.fn() }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: vi.fn(() => ({})) } }));
 vi.mock('./meeting.service', () => ({ MeetingService: vi.fn() }));
-vi.mock('./project.service', () => ({
-  ProjectService: class {
-    public getPendingActionSurveys = getPendingActionSurveys;
-  },
-}));
+vi.mock('./project.service', () => ({ ProjectService: vi.fn() }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
@@ -54,10 +50,13 @@ vi.mock('./formation.service', () => ({
 }));
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth,
-  getEffectiveEmail: vi.fn(),
+  getEffectiveEmail,
   getRawEffectiveEmail: vi.fn(),
   stripAuthPrefix: (value: string) => value,
   isImpersonating,
+  // Composed from the mocks above (stripAuthPrefix is the identity here) so per-test identity
+  // control is unchanged for the real survey/vote response helpers running under this suite.
+  resolveUserIdentity: async (req: Request) => ({ email: getEffectiveEmail(req), username: await getUsernameFromAuth(req) }),
 }));
 vi.mock('./logger.service', () => ({
   logger: {
@@ -415,12 +414,10 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    getPendingActionSurveys.mockReset();
     getMyPendingInvitations.mockReset();
     getUsernameFromAuth.mockReset();
     getMyFormationWork.mockReset();
 
-    getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
     getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
@@ -521,13 +518,11 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    getPendingActionSurveys.mockReset();
     getMyPendingInvitations.mockReset();
     getUsernameFromAuth.mockReset();
     getMyFormationWork.mockReset();
 
     proxyRequest.mockImplementation(() => queryPage([]));
-    getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
     getMyFormationWork.mockResolvedValue({ formations: [], items: [formationRow], state: 'complete' });
@@ -577,6 +572,246 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
   });
 });
 
+describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
+  const req = {} as unknown as Request;
+  const email = 'invitee@example.com';
+
+  // Open = survey_status 'sent' with a future cutoff (getSurveyDisplayStatus); unanswered = empty
+  // response_datetime (helper filter). The link host is on SURVEY_LINK_ALLOWLIST.
+  const openSurveyRow = {
+    uid: 'resp-open',
+    survey_uid: 'survey-1',
+    survey_title: 'Board Satisfaction Survey',
+    survey_status: 'sent',
+    survey_cutoff_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    survey_link: 'https://www.research.net/r/ABC123',
+    response_datetime: '',
+    project: { name: 'Acme Project' },
+  };
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getMyPendingInvitations.mockReset();
+    getUsernameFromAuth.mockReset();
+    getEffectiveEmail.mockReset();
+    getMyFormationWork.mockReset();
+
+    proxyRequest.mockImplementation(() => queryPage([]));
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getEffectiveEmail.mockReturnValue(email);
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
+
+    service = new UserService();
+  });
+
+  it('emits a Submit Survey action for an unanswered open survey, identity-matched by email+username', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0]).toEqual(
+      expect.objectContaining({
+        buttonText: 'Submit Survey',
+        buttonLink: 'https://www.research.net/r/ABC123',
+        badge: 'Acme Project',
+        text: expect.stringContaining('Board Satisfaction Survey is due'),
+        date: expect.stringMatching(/^Due /),
+      })
+    );
+
+    const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ filters_or: ['email:invitee@example.com', 'username:testuser'] }));
+    expect(surveyCall?.[4]).not.toHaveProperty('filters');
+  });
+
+  it('matches surveys by username when the auth context carries no email, skipping the email-keyed invitation source', async () => {
+    getEffectiveEmail.mockReturnValue(null);
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, null, undefined);
+
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+    expect(surveyActions).toHaveLength(1);
+    const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ filters_or: ['username:testuser'] }));
+    // Pending invitations are strictly email-keyed — skipped when the auth context has no email (GH-2987).
+    expect(getMyPendingInvitations).not.toHaveBeenCalled();
+  });
+
+  it('excludes answered surveys (response_datetime populated)', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([{ ...openSurveyRow, response_datetime: '2026-09-01T12:00:00Z' }]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+  });
+
+  it('excludes expired surveys (sent past cutoff) and rows without renderable survey fields', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response'
+        ? queryPage([
+            { ...openSurveyRow, uid: 'expired', survey_cutoff_date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+            { ...openSurveyRow, uid: 'legacy', survey_title: null },
+            // Literal 'open' status classifies OPEN without consulting the cutoff — the parseable-cutoff
+            // guard in fetchPendingSurveyResponses must still exclude this row.
+            { ...openSurveyRow, uid: 'open-no-cutoff', survey_status: 'open', survey_cutoff_date: undefined },
+          ])
+        : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+  });
+
+  it('skips rows whose survey link is missing or off the SURVEY_LINK_ALLOWLIST, keeping valid rows', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response'
+        ? queryPage([
+            openSurveyRow,
+            { ...openSurveyRow, uid: 'off-allowlist', survey_link: 'https://surveys.example.com/r/1' },
+            { ...openSurveyRow, uid: 'no-link', survey_link: undefined },
+          ])
+        : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0].buttonLink).toBe('https://www.research.net/r/ABC123');
+  });
+
+  it('emits one action per survey (earliest cutoff) across duplicate per-committee invitation rows', async () => {
+    const laterCutoff = {
+      ...openSurveyRow,
+      uid: 'resp-open-toc',
+      survey_cutoff_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      project: { name: 'Other Project' },
+    };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([laterCutoff, openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0].badge).toBe('Acme Project');
+  });
+
+  // Links are per-invitation: the earliest-cutoff row can be the one missing a link (or off the
+  // allowlist), and index order is not stable — dedup must not discard a survey another row can
+  // action. Both orders pin the link-preference guard: covering only the first would still pass
+  // with the `rowHasLink === keptHasLink` tie-break dropped, reviving the vanishing-survey bug.
+  it.each([
+    ['unlinked earlier-cutoff row seen first', false],
+    ['linked later-cutoff row seen first', true],
+  ])('prefers an invitation row with a usable link when the earliest-cutoff row lacks one (%s)', async (_label, reversed) => {
+    const earlierNoLink = {
+      ...openSurveyRow,
+      uid: 'resp-earlier-no-link',
+      survey_link: undefined,
+      survey_cutoff_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const laterWithLink = {
+      ...openSurveyRow,
+      uid: 'resp-later-with-link',
+      survey_cutoff_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const rows = reversed ? [laterWithLink, earlierNoLink] : [earlierNoLink, laterWithLink];
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage(rows) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0].buttonLink).toBe('https://www.research.net/r/ABC123');
+  });
+
+  it('orders survey actions by soonest cutoff first, regardless of index order', async () => {
+    const laterSurvey = {
+      ...openSurveyRow,
+      uid: 'resp-later',
+      survey_uid: 'survey-later',
+      survey_title: 'Later Survey',
+      survey_cutoff_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([laterSurvey, openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey').map((action) => action.text)).toEqual([
+      expect.stringContaining('Board Satisfaction Survey'),
+      expect.stringContaining('Later Survey'),
+    ]);
+  });
+
+  it('degrades to no survey rows when the survey_response read fails, without failing the aggregation', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'survey_response') {
+        return Promise.reject(new Error('query service down'));
+      }
+      if (params?.type === 'v1_meeting') {
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+  });
+
+  it('fails closed on a mid-pagination survey_response failure, hiding partial rows but not other sources', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    let surveyCalls = 0;
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'survey_response') {
+        surveyCalls += 1;
+        // Page 1 succeeds with a continuation token; page 2 fails. failOnPartial must turn this
+        // into a degrade (zero Survey actions) rather than silently keeping the truncated page.
+        return surveyCalls === 1 ? Promise.resolve({ ...queryPage([openSurveyRow]), page_token: 'token-2' }) : Promise.reject(new Error('page 2 boom'));
+      }
+      if (params?.type === 'v1_meeting') {
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(surveyCalls).toBe(2);
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+  });
+
+  it('pushes project scoping server-side via the project_uid tag when a project lens is active', async () => {
+    await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
+
+    const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ tags: ['project_uid:proj-uid-1'] }));
+    expect(surveyCall?.[4]).not.toHaveProperty('filters');
+  });
+});
+
 function queriedTypes(): string[] {
   return proxyRequest.mock.calls.map((call) => (call[4] as { type?: string } | undefined)?.type).filter((type): type is string => !!type);
 }
@@ -618,12 +853,12 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    getPendingActionSurveys.mockReset();
     getMyPendingInvitations.mockReset();
     getUsernameFromAuth.mockReset();
+    // mockReset leaves getEffectiveEmail unset — this block's specs assume username-only identity.
+    getEffectiveEmail.mockReset();
     getMyFormationWork.mockReset();
 
-    getPendingActionSurveys.mockResolvedValue([]);
     getMyPendingInvitations.mockResolvedValue([]);
     getUsernameFromAuth.mockResolvedValue('testuser');
     getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
