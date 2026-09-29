@@ -10,10 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // constructor, so they must be mocked at module level; `enrichFoundationNames` and
 // `getCommitteesByIds` are mocked directly so tests can control each enrichment source
 // independently without exercising the real query-service calls underneath.
-const { fetchAllOrgSeatsUncached, enrichFoundationNames, getCommitteesByIds } = vi.hoisted(() => ({
+const { fetchAllOrgSeatsUncached, enrichFoundationNames, getCommitteesByIds, cacheWrites } = vi.hoisted(() => ({
   fetchAllOrgSeatsUncached: vi.fn(),
   enrichFoundationNames: vi.fn(),
   getCommitteesByIds: vi.fn(),
+  cacheWrites: [] as unknown[],
 }));
 
 // Deliberately exposes only the uncached drain: this aggregate is retained for far longer than the
@@ -50,11 +51,16 @@ vi.mock('@lfx-one/shared/constants', () => ({
 }));
 
 // The cache layer pulls in the Valkey client, which this node suite has no business starting.
-// `withOrgGroupsCache` is stubbed as a straight pass-through to its fetcher — i.e. a permanent
-// cache miss — so these tests keep exercising the aggregation logic rather than the cache.
+// `withOrgGroupsCache` is stubbed as a permanent cache miss that records what its fetcher would
+// store in `cacheWrites`, so these tests exercise the aggregation logic and can inspect exactly
+// what is shared across callers.
 vi.mock('./valkey.service', () => ({
-  buildOrgGroupsCacheKey: (orgUid: string) => `test:org-lens-groups:v1:${orgUid}`,
-  withOrgGroupsCache: (_orgUid: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher(),
+  buildOrgGroupsCacheKey: (orgUid: string) => `test:org-lens-groups:v2:${orgUid}`,
+  withOrgGroupsCache: async (_orgUid: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+    const value = await fetcher();
+    cacheWrites.push(value);
+    return value;
+  },
 }));
 
 import type { Request } from 'express';
@@ -83,13 +89,30 @@ async function run(): Promise<OrgLensGroupsResponse> {
   return new OrgLensGroupsService().getGroups(req, ORG_UID, 'org-grant');
 }
 
-/** An `enrichFoundationNames` result that resolved `names` from one project lookup. */
-function foundationNames(names: [string, string][] = []): FoundationNameEnrichment {
-  return { names: new Map(names), cachedHits: 0, requested: 1, resolved: names.length };
+/**
+ * An `enrichFoundationNames` result from one project lookup. Every named uid is public unless
+ * `publicUids` says otherwise; a uid in `publicUids` without a name is public but unnamed.
+ */
+function foundationNames(names: [string, string][] = [], publicUids: string[] = names.map(([uid]) => uid)): FoundationNameEnrichment {
+  return { names: new Map(names), publicUids: new Set(publicUids), cachedHits: 0, requested: 1, resolved: names.length };
+}
+
+/** The one aggregate this run wrote to the org-shared cache. */
+function writtenAggregate(): OrgLensGroupsResponse {
+  expect(cacheWrites).toHaveLength(1);
+  return cacheWrites[0] as OrgLensGroupsResponse;
+}
+
+/** Answers the committee index for every uid it is given, the way a caller who can see each committee's project would. */
+function committeeIndexAnswers(projectNameByCommittee: Record<string, string>): void {
+  getCommitteesByIds.mockImplementation((_req: unknown, uids: string[]) =>
+    Promise.resolve(new Map(uids.filter((uid) => projectNameByCommittee[uid]).map((uid) => [uid, { uid, project_name: projectNameByCommittee[uid] }])))
+  );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  cacheWrites.length = 0;
   // Default both enrichment sources to "no match" so each test only sets up the source it's
   // actually exercising.
   enrichFoundationNames.mockResolvedValue(foundationNames());
@@ -138,10 +161,10 @@ describe('OrgLensGroupsService.getGroups', () => {
     expect(logger.info).not.toHaveBeenCalledWith(req, 'org_lens_groups_enrich', expect.any(String), expect.anything());
   });
 
-  it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {
+  it('falls back to the committee-index name for a public project the project index left unnamed (e.g. uepf-style gap)', async () => {
     fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Ultra Ethernet Consortium Fund' }]]));
-    enrichFoundationNames.mockResolvedValue(foundationNames());
+    enrichFoundationNames.mockResolvedValue(foundationNames([], ['p-cncf']));
 
     const result = await run();
 
@@ -159,6 +182,7 @@ describe('OrgLensGroupsService.getGroups', () => {
 
   it('omits project_name (but keeps project_slug) when both enrichment sources miss', async () => {
     fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
+    enrichFoundationNames.mockResolvedValue(foundationNames([], ['p-cncf']));
 
     const result = await run();
 
@@ -184,7 +208,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   it('still returns groups (falling back to the slug) when the committee-index lookup throws', async () => {
     fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     getCommitteesByIds.mockRejectedValue(new Error('query-service unavailable'));
-    enrichFoundationNames.mockResolvedValue(foundationNames());
+    enrichFoundationNames.mockResolvedValue(foundationNames([], ['p-cncf']));
 
     const result = await run();
 
@@ -200,5 +224,88 @@ describe('OrgLensGroupsService.getGroups', () => {
 
     expect(result.groups).toHaveLength(0);
     expect(result.total_groups).toBe(0);
+  });
+
+  describe('shared aggregate carries only public foundation names', () => {
+    const privateSeat = seat({ uid: 'seat-2', committee_uid: 'c-priv', committee_name: 'Secret TAG', project_uid: 'p-priv', project_slug: 'secret' });
+    const unnamedPublicSeat = seat({ uid: 'seat-3', committee_uid: 'c-uepf', committee_name: 'UEC WG', project_uid: 'p-uepf', project_slug: 'uepf' });
+
+    it('keeps a private project name the filler can read out of the cached aggregate, from either source', async () => {
+      fetchAllOrgSeatsUncached.mockResolvedValue([seat(), privateSeat]);
+      // The filler holds `viewer` on p-priv, so the project index names it — but it is not public.
+      enrichFoundationNames.mockResolvedValue(
+        foundationNames(
+          [
+            ['p-cncf', 'Cloud Native Computing Foundation'],
+            ['p-priv', 'Secret Foundation'],
+          ],
+          ['p-cncf']
+        )
+      );
+      committeeIndexAnswers({ 'c-priv': 'Secret Foundation' });
+
+      await run();
+
+      const stored = writtenAggregate();
+      const priv = stored.groups.find((g) => g.uid === 'c-priv');
+      expect(priv?.project_name).toBeUndefined();
+      expect(priv?.project_slug).toBe('secret');
+      expect(stored.groups.find((g) => g.uid === 'c-1')?.project_name).toBe('Cloud Native Computing Foundation');
+      expect(JSON.stringify(stored)).not.toContain('Secret Foundation');
+      // A withheld private name is not a gap: the committee index is never asked about it.
+      expect(getCommitteesByIds).toHaveBeenCalledWith(req, []);
+    });
+
+    it('drops a private project name the committee index returns, while still filling a public gap from it', async () => {
+      fetchAllOrgSeatsUncached.mockResolvedValue([privateSeat, unnamedPublicSeat]);
+      // p-uepf is public but unnamed in the project index; p-priv is invisible to the project lookup.
+      enrichFoundationNames.mockResolvedValue(foundationNames([], ['p-uepf']));
+      // Blanket answer: the committee index hands back the private project's name even for a uid
+      // it was not asked about, so only the public gate in toGroupSummary keeps it out.
+      getCommitteesByIds.mockResolvedValue(
+        new Map([
+          ['c-priv', { uid: 'c-priv', project_name: 'Secret Foundation' }],
+          ['c-uepf', { uid: 'c-uepf', project_name: 'Ultra Ethernet Consortium Fund' }],
+        ])
+      );
+
+      await run();
+
+      const stored = writtenAggregate();
+      expect(getCommitteesByIds).toHaveBeenCalledWith(req, ['c-uepf']);
+      expect(stored.groups.find((g) => g.uid === 'c-uepf')?.project_name).toBe('Ultra Ethernet Consortium Fund');
+      const priv = stored.groups.find((g) => g.uid === 'c-priv');
+      expect(priv?.project_name).toBeUndefined();
+      expect(priv?.project_slug).toBe('secret');
+      expect(JSON.stringify(stored)).not.toContain('Secret Foundation');
+    });
+
+    it('names nothing (slug fallback) and leaks nothing private when the project lookup fails', async () => {
+      fetchAllOrgSeatsUncached.mockResolvedValue([seat(), privateSeat]);
+      // What enrichFoundationNames yields on a query-service outage: no names, no confirmed visibility.
+      enrichFoundationNames.mockResolvedValue(foundationNames());
+      committeeIndexAnswers({ 'c-1': 'Cloud Native Computing Foundation', 'c-priv': 'Secret Foundation' });
+
+      await run();
+
+      const stored = writtenAggregate();
+      expect(stored.groups.map((g) => [g.project_slug, g.project_name])).toEqual([
+        ['secret', undefined],
+        ['cncf', undefined],
+      ]);
+      expect(getCommitteesByIds).toHaveBeenCalledWith(req, []);
+    });
+
+    it('applies the same public-only rule on the uncached auditor-entitlement path', async () => {
+      fetchAllOrgSeatsUncached.mockResolvedValue([privateSeat]);
+      enrichFoundationNames.mockResolvedValue(foundationNames([['p-priv', 'Secret Foundation']], []));
+      committeeIndexAnswers({ 'c-priv': 'Secret Foundation' });
+
+      const result = await new OrgLensGroupsService().getGroups(req, ORG_UID, 'auditor-entitlement');
+
+      expect(cacheWrites).toHaveLength(0);
+      expect(result.groups[0].project_name).toBeUndefined();
+      expect(result.groups[0].project_slug).toBe('secret');
+    });
   });
 });

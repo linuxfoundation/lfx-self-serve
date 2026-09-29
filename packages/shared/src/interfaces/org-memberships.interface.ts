@@ -310,7 +310,10 @@ export interface CommitteeServiceOrgSeat {
 
 /** Foundation-name lookup for a set of seats: uid → display name, plus counts for the timing logs. */
 export interface FoundationNameEnrichment {
+  /** Names readable by the caller who ran the lookup — private projects included, so never share them across callers as-is. */
   names: Map<string, string>;
+  /** Uids confirmed public (answered by the public-name cache, or returned with `public: true`), whose names every caller may read. A uid the lookup did not return is absent: its visibility is unknown. */
+  publicUids: Set<string>;
   /** Uids answered by the per-pod public-name cache. */
   cachedHits: number;
   /** Uids asked of the project lookup (the cache misses). */

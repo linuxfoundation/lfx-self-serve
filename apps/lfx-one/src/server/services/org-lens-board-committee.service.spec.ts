@@ -69,7 +69,7 @@ vi.mock('./valkey.service', () => ({
 // The People services' foundation-name enrichment reaches project-service; the seat mapping itself
 // is not what these tests are about.
 vi.mock('./committee-seat-assignment.mapper', () => ({
-  enrichFoundationNames: vi.fn(async () => ({ names: new Map(), cachedHits: 0, requested: 0, resolved: 0 })),
+  enrichFoundationNames: vi.fn(async () => ({ names: new Map(), publicUids: new Set(), cachedHits: 0, requested: 0, resolved: 0 })),
   toAssignment: (s: CommitteeServiceOrgSeat) => ({ seatId: s.uid, committeeUid: s.committee_uid, person: { email: s.email } }),
 }));
 
@@ -372,7 +372,7 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — coalescing (GH-1906)
 });
 
 describe('People Board/Committee roster timing log', () => {
-  const enrichment = { names: new Map([['p-1', 'Identity Foundation']]), cachedHits: 1, requested: 2, resolved: 1 };
+  const enrichment = { names: new Map([['p-1', 'Identity Foundation']]), publicUids: new Set(['p-1']), cachedHits: 1, requested: 2, resolved: 1 };
   const timingFields = (seatsDrained: boolean, assignmentCount: number) => ({
     org_uid: ORG,
     seat_count: 2,

@@ -30,9 +30,12 @@ export const VALKEY_CACHE = {
    * per-caller entry lives 30 seconds. The aggregate is small, carries no per-caller filtering, and
    * is kept for 15 minutes with explicit invalidation on seat reassignment, which is what makes this
    * page cacheable across callers. The value carries no PII, and it is served only to callers holding a resolved
-   * per-org grant — see `assertOrgLensRead`'s returned qualification.
+   * per-org grant — see `assertOrgLensRead`'s returned qualification. Because every such caller gets
+   * the same value, it names only public foundations (`project_name` is omitted for a private one).
+   * `v2` (#3109): `v1` entries could carry a private foundation name read under whichever caller's
+   * token filled them, so none of them may be read back.
    */
-  ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v1',
+  ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v2',
 
   /** Domain + schema-version segment for the per-user org People key-contacts cache. */
   ORG_PEOPLE_KC_NAMESPACE: 'org-people-kc:v1',

@@ -52,13 +52,18 @@ export class OrgLensGroupsService {
    *
    * `qualification` comes from `assertOrgLensRead`, which the controller runs *before* this call.
    * Only a caller with a grant resolved on this org is served the shared entry.
+   *
+   * Because every such caller receives the same entry, it carries only foundation names every
+   * caller may read: `project_name` is set for public projects only (see `resolveGroups`). A group
+   * under a private foundation shows its slug to everyone, including callers who could read the name.
    */
   public async getGroups(req: Request, orgUid: string, qualification: OrgLensReadQualification): Promise<OrgLensGroupsResponse> {
     const startedAt = Date.now();
     const cacheKey = qualification === 'org-grant' ? buildOrgGroupsCacheKey(orgUid) : null;
 
     // Auditor-entitled caller (no grant resolved on this org), or an org uid too unsafe to key on:
-    // resolve directly and store nothing.
+    // resolve directly and store nothing. `resolveGroups` applies the same public-only naming rule
+    // here, so one caller never sees different names depending on how their access was resolved.
     if (cacheKey === null) {
       const response = await this.resolveGroups(req, orgUid);
       this.logGroupsRequest(req, orgUid, response, startedAt, 'uncached');
@@ -138,18 +143,27 @@ export class OrgLensGroupsService {
 
     const committeeMap = this.aggregateByCommittee(nonBoardSeats);
 
-    // Two independent enrichment sources: the project-service index (live, keyed by project_uid)
-    // is primary — the committee-service index only fills the gaps it misses (e.g. a project
-    // entirely absent from the project index). committee_service.ProjectName is a write-time
-    // snapshot resolved once at committee create/update with no rename subscriber, so it goes
-    // stale on a project rename — it must stay secondary, not primary. Both sources fail soft to
-    // an empty map. Resolved sequentially (not in parallel): the committee-index fan-out only
-    // targets committees the project index actually missed, so on the common path where the
-    // project index resolves everything, the second upstream call is skipped entirely rather than
-    // firing — and discarding its result — on every single request.
-    const { names: foundationNames } = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
+    // Foundation names: this aggregate is shared by every org-grant caller of the org, but both name
+    // sources below read under the token of whichever caller fills it. A private project's name must
+    // not reach callers without `viewer` on that project, so `project_name` is set only for projects
+    // confirmed public (`publicUids`: every caller holds `viewer` on them). A project that is private,
+    // missing from the project index, or whose lookup failed gets no name from either source and falls
+    // back to its slug in the UI.
+    //
+    // Two sources, for public projects only: the project-service index (live, keyed by project_uid)
+    // is primary — the committee-service index only fills the names it misses. committee_service.
+    // ProjectName is a write-time snapshot resolved once at committee create/update with no rename
+    // subscriber, so it goes stale on a project rename — it must stay secondary, not primary. Both
+    // sources fail soft to an empty map. Resolved sequentially (not in parallel): the committee-index
+    // fan-out only targets committees of public projects the project index left unnamed, so on the
+    // common path the second upstream call is skipped entirely rather than firing — and discarding
+    // its result — on every single request.
+    const { names: foundationNames, publicUids } = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
     const unresolvedCommitteeUids = Array.from(committeeMap.entries())
-      .filter(([, groupSeats]) => !foundationNames.get(groupSeats[0]?.project_uid ?? ''))
+      .filter(([, groupSeats]) => {
+        const projectUid = groupSeats[0]?.project_uid ?? '';
+        return publicUids.has(projectUid) && !foundationNames.get(projectUid);
+      })
       .map(([uid]) => uid);
     const committeesByUid = await this.getCommitteesByUid(req, unresolvedCommitteeUids);
 
@@ -168,7 +182,7 @@ export class OrgLensGroupsService {
     }
 
     const groups: OrgLensGroupSummary[] = Array.from(committeeMap.entries()).map(([uid, groupSeats]) =>
-      this.toGroupSummary(uid, groupSeats, foundationNames, committeesByUid)
+      this.toGroupSummary(uid, groupSeats, foundationNames, publicUids, committeesByUid)
     );
 
     // Primary sort: most org members first; secondary: alphabetical by name.
@@ -214,6 +228,7 @@ export class OrgLensGroupsService {
     uid: string,
     seats: CommitteeServiceOrgSeat[],
     foundationNames: Map<string, string>,
+    publicUids: Set<string>,
     committeesByUid: Map<string, Committee>
   ): OrgLensGroupSummary {
     // aggregateByCommittee only adds to the map on push, so this is always true — guard is defensive.
@@ -230,10 +245,13 @@ export class OrgLensGroupsService {
 
     // Only set project_name when enrichment actually resolved one — the slug fallback belongs to
     // the view model (OrgLensGroupVm.projectLabel), not this field, or project_name would silently
-    // hold a slug and no longer mean what its name says. Precedence: the project-service index
+    // hold a slug and no longer mean what its name says. Only a project confirmed public is named:
+    // this summary is stored in the org-shared aggregate, and either source may hold a private
+    // project's name read under the filling caller's token. Precedence: the project-service index
     // (live) beats the committee-service index (a write-time snapshot that goes stale on rename —
-    // see the comment in getGroups) — the committee index only fills gaps the project index misses.
-    const projectName = foundationNames.get(first.project_uid ?? '') || committeesByUid.get(uid)?.project_name;
+    // see the comment in resolveGroups) — the committee index only fills gaps the project index misses.
+    const projectUid = first.project_uid ?? '';
+    const projectName = publicUids.has(projectUid) ? foundationNames.get(projectUid) || committeesByUid.get(uid)?.project_name : undefined;
 
     return {
       uid,

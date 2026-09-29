@@ -25,9 +25,9 @@ import { ProjectService } from './project.service';
  * public; the per-user seat and directory caches downstream (30 s) can add at most 30 s. The exposure
  * is limited to the NAME: the caller already receives that seat's project slug and committee name
  * through their own authorized seat roster. Groups compounds it: `OrgLensGroupsService` stores the
- * resolved `project_name` in its org-shared aggregate (`ORG_LENS_GROUPS_TTL_SECONDS`, 15 min), so a
- * flip can stay visible there for up to ~20 min. That aggregate already shares names fetched under
- * whichever caller's token filled it, private ones included, independently of this cache.
+ * public `project_name`s in its org-shared aggregate (`ORG_LENS_GROUPS_TTL_SECONDS`, 15 min), so a
+ * flip can stay visible there for up to ~20 min. That aggregate keeps only names of projects
+ * confirmed public (`publicUids`); private names never enter it.
  *
  * Bounded like `FormationService.userMetadataCache`: each successful fetch first drops expired
  * entries; each write evicts the oldest entry once `PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES` is reached
@@ -65,25 +65,31 @@ function cachePublicProjectName(uid: string, name: string, now: number): void {
  * from the per-pod cache; only the remaining uids go to `ProjectService.getProjectsByIds` (chunks
  * 100/req, FGA-aware). Uids left unnamed fall back to their `project_slug` in `toAssignment`.
  *
+ * `names` holds every name the caller may read, private ones included — right for a per-caller
+ * response. `publicUids` marks which of them (and which nameless uids) are confirmed public, for a
+ * result shared across callers: only those names are safe to store there.
+ *
  * `getProjectsByIds` swallows per-batch failures (each failed batch contributes no projects), so a
  * query-service outage does not reject here — it shows up as `resolved` far below `requested`.
  */
 export async function enrichFoundationNames(req: Request, seats: CommitteeServiceOrgSeat[], projectService: ProjectService): Promise<FoundationNameEnrichment> {
   const uids = [...new Set(seats.map((s) => s.project_uid).filter((u): u is string => !!u))];
   const names = new Map<string, string>();
+  const publicUids = new Set<string>();
   const now = Date.now();
   const missing: string[] = [];
   for (const uid of uids) {
     const cached = publicProjectNameCache.get(uid);
     if (cached && now < cached.expiresAt) {
       names.set(uid, cached.name);
+      publicUids.add(uid);
     } else {
       missing.push(uid);
     }
   }
   const cachedHits = names.size;
   if (missing.length === 0) {
-    return { names, cachedHits, requested: 0, resolved: 0 };
+    return { names, publicUids, cachedHits, requested: 0, resolved: 0 };
   }
 
   try {
@@ -91,6 +97,9 @@ export async function enrichFoundationNames(req: Request, seats: CommitteeServic
     const fetchedAt = Date.now();
     evictExpiredPublicProjectNames(fetchedAt);
     for (const [uid, project] of byUid) {
+      if (project?.public === true) {
+        publicUids.add(uid);
+      }
       if (!project?.name) {
         continue;
       }
@@ -105,7 +114,7 @@ export async function enrichFoundationNames(req: Request, seats: CommitteeServic
       err: error,
     });
   }
-  return { names, cachedHits, requested: missing.length, resolved: names.size - cachedHits };
+  return { names, publicUids, cachedHits, requested: missing.length, resolved: names.size - cachedHits };
 }
 
 /** Map an upstream seat to the People-tab `CommitteeMemberAssignment` (camelCase + person envelope + foundation). */

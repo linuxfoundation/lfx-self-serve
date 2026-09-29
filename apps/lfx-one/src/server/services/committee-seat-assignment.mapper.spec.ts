@@ -60,11 +60,12 @@ describe('enrichFoundationNames — public project name cache', () => {
         ['pub-a', 'Name pub-a'],
         ['pub-b', 'Name pub-b'],
       ]),
+      publicUids: new Set(['pub-a', 'pub-b']),
       cachedHits: 0,
       requested: 2,
       resolved: 2,
     });
-    expect(second).toEqual({ names: first.names, cachedHits: 2, requested: 0, resolved: 0 });
+    expect(second).toEqual({ names: first.names, publicUids: first.publicUids, cachedHits: 2, requested: 0, resolved: 0 });
   });
 
   it('never caches a private project name, so every lookup re-fetches it with the caller token', async () => {
@@ -75,10 +76,11 @@ describe('enrichFoundationNames — public project name cache', () => {
     const second = await enrichFoundationNames(req, [seat('priv')], projectService);
 
     expect(first.names.get('priv')).toBe('Name priv');
+    expect(first.publicUids.has('priv')).toBe(false);
     expect(getProjectsByIds).toHaveBeenCalledTimes(2);
     expect(getProjectsByIds).toHaveBeenLastCalledWith(req, ['priv']);
     // The lookup answered but returned nothing: asked for 1, resolved 0.
-    expect(second).toEqual({ names: new Map(), cachedHits: 0, requested: 1, resolved: 0 });
+    expect(second).toEqual({ names: new Map(), publicUids: new Set(), cachedHits: 0, requested: 1, resolved: 0 });
   });
 
   it('re-fetches a public name once the TTL has elapsed', async () => {
@@ -94,7 +96,7 @@ describe('enrichFoundationNames — public project name cache', () => {
     const expired = await enrichFoundationNames(req, [seat('pub-a')], projectService);
 
     expect(getProjectsByIds).toHaveBeenCalledTimes(2);
-    expect(expired).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 0, requested: 1, resolved: 1 });
+    expect(expired).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), publicUids: new Set(['pub-a']), cachedHits: 0, requested: 1, resolved: 1 });
   });
 
   it('serves a project that turned private from cache only until the TTL, then fetches it per request', async () => {
@@ -113,7 +115,7 @@ describe('enrichFoundationNames — public project name cache', () => {
     const next = await enrichFoundationNames(req, [seat('flip')], projectService);
 
     // Once private, the name comes from the caller's own lookup each time and is never re-cached.
-    expect(afterTtl).toEqual({ names: new Map([['flip', 'Name flip']]), cachedHits: 0, requested: 1, resolved: 1 });
+    expect(afterTtl).toEqual({ names: new Map([['flip', 'Name flip']]), publicUids: new Set(), cachedHits: 0, requested: 1, resolved: 1 });
     expect(next.cachedHits).toBe(0);
     expect(getProjectsByIds).toHaveBeenCalledTimes(3);
   });
@@ -131,10 +133,20 @@ describe('enrichFoundationNames — public project name cache', () => {
         ['pub-b', 'Name pub-b'],
         ['priv', 'Name priv'],
       ]),
+      publicUids: new Set(['pub-a', 'pub-b']),
       cachedHits: 1,
       requested: 2,
       resolved: 2,
     });
+  });
+
+  it('marks a public project without a name as public, and a project the lookup did not return as unknown', async () => {
+    serve([{ uid: 'pub-unnamed', name: '', public: true } as Project, project('priv', false)]);
+
+    const result = await enrichFoundationNames(req, [seat('pub-unnamed'), seat('priv'), seat('absent')], projectService);
+
+    expect(result.names).toEqual(new Map([['priv', 'Name priv']]));
+    expect(result.publicUids).toEqual(new Set(['pub-unnamed']));
   });
 
   it('evicts the oldest public name once the cap is reached', async () => {
@@ -159,7 +171,7 @@ describe('enrichFoundationNames — public project name cache', () => {
 
     const result = await enrichFoundationNames(req, [seat('pub-a'), seat('pub-b'), seat('pub-c')], projectService);
 
-    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, requested: 2, resolved: 0 });
+    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), publicUids: new Set(['pub-a']), cachedHits: 1, requested: 2, resolved: 0 });
   });
 
   it('stays fail-soft when the project lookup itself rejects', async () => {
@@ -169,7 +181,7 @@ describe('enrichFoundationNames — public project name cache', () => {
 
     const result = await enrichFoundationNames(req, [seat('pub-a'), seat('pub-b')], projectService);
 
-    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, requested: 1, resolved: 0 });
+    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), publicUids: new Set(['pub-a']), cachedHits: 1, requested: 1, resolved: 0 });
     expect(logger.warning).toHaveBeenCalledOnce();
   });
 });
