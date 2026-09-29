@@ -1730,24 +1730,30 @@ export class UserService {
     // usable (allowlisted) link; among equally usable rows, keep the earliest cutoff (parseable
     // per the filter). Without the link preference, an earliest/kept row missing its link would
     // discard a survey another invitation row could still action (index order is not stable).
-    const validLink = (row: SurveyResponseRecord): string | null =>
-      row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
-    const earliestBySurvey = new Map<string, SurveyResponseRecord>();
+    const preferredBySurvey = new Map<string, SurveyResponseRecord>();
     for (const row of openRows) {
-      const kept = earliestBySurvey.get(row.survey_uid);
+      const kept = preferredBySurvey.get(row.survey_uid);
       if (!kept) {
-        earliestBySurvey.set(row.survey_uid, row);
+        preferredBySurvey.set(row.survey_uid, row);
         continue;
       }
-      const rowHasLink = validLink(row) !== null;
-      const keptHasLink = validLink(kept) !== null;
+      const rowHasLink = this.surveyActionLink(row) !== null;
+      const keptHasLink = this.surveyActionLink(kept) !== null;
       const rowCutoff = new Date(row.survey_cutoff_date as string).getTime();
       const keptCutoff = new Date(kept.survey_cutoff_date as string).getTime();
       if ((rowHasLink && !keptHasLink) || (rowHasLink === keptHasLink && rowCutoff < keptCutoff)) {
-        earliestBySurvey.set(row.survey_uid, row);
+        preferredBySurvey.set(row.survey_uid, row);
       }
     }
-    return [...earliestBySurvey.values()];
+    return [...preferredBySurvey.values()];
+  }
+
+  /**
+   * Validates a survey row's link against the allowlist — the single check shared by dedup
+   * (prefer rows with a usable link) and transform (skip rows without one), so the two can't drift.
+   */
+  private surveyActionLink(row: SurveyResponseRecord): string | null {
+    return row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
   }
 
   /**
@@ -1760,7 +1766,7 @@ export class UserService {
     // frontend renders server order sliced to the display limit; cutoffs are parseable per the fetch filter.
     const sorted = [...rows].sort((a, b) => new Date(a.survey_cutoff_date as string).getTime() - new Date(b.survey_cutoff_date as string).getTime());
     for (const row of sorted) {
-      const buttonLink = row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
+      const buttonLink = this.surveyActionLink(row);
       // A pending action without a valid link can't be acted on — skip rather than render a dead
       // button. The row still shows in My Surveys, so the survey is not hidden altogether.
       if (!buttonLink) {

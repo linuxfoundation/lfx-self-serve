@@ -708,9 +708,14 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
     expect(surveyActions[0].badge).toBe('Acme Project');
   });
 
-  it('prefers an invitation row with a usable link when the earliest-cutoff row lacks one', async () => {
-    // Links are per-invitation: the earliest-cutoff row can be the one missing a link (or off the
-    // allowlist), and index order is not stable — dedup must not discard a survey another row can action.
+  // Links are per-invitation: the earliest-cutoff row can be the one missing a link (or off the
+  // allowlist), and index order is not stable — dedup must not discard a survey another row can
+  // action. Both orders pin the link-preference guard: covering only the first would still pass
+  // with the `rowHasLink === keptHasLink` tie-break dropped, reviving the vanishing-survey bug.
+  it.each([
+    ['unlinked earlier-cutoff row seen first', false],
+    ['linked later-cutoff row seen first', true],
+  ])('prefers an invitation row with a usable link when the earliest-cutoff row lacks one (%s)', async (_label, reversed) => {
     const earlierNoLink = {
       ...openSurveyRow,
       uid: 'resp-earlier-no-link',
@@ -722,8 +727,9 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
       uid: 'resp-later-with-link',
       survey_cutoff_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
     };
+    const rows = reversed ? [laterWithLink, earlierNoLink] : [earlierNoLink, laterWithLink];
     proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
-      params?.type === 'survey_response' ? queryPage([earlierNoLink, laterWithLink]) : queryPage([])
+      params?.type === 'survey_response' ? queryPage(rows) : queryPage([])
     );
 
     const actions = await service.getPendingActions(req, undefined, email, undefined);
