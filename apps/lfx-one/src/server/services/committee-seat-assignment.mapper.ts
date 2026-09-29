@@ -6,35 +6,92 @@
 // with zero duplication. Behavior is byte-identical to the original private methods; the committee
 // read/reassign responses are unchanged.
 
-import type { CommitteeMemberAssignment, CommitteeMemberPerson, CommitteeServiceOrgSeat } from '@lfx-one/shared/interfaces';
+import { PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES, PUBLIC_PROJECT_NAME_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import type { CommitteeMemberAssignment, CommitteeMemberPerson, CommitteeServiceOrgSeat, FoundationNameEnrichment } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { logger } from './logger.service';
 import { ProjectService } from './project.service';
 
-/** D-003 foundation-name enrichment: distinct `project_uid`s → `ProjectService.getProjectsByIds` (chunks 100/req, FGA-aware) → `Map<uid, name>`; fail-soft to empty map (each seat falls back to `project_slug`). */
-export async function enrichFoundationNames(req: Request, seats: CommitteeServiceOrgSeat[], projectService: ProjectService): Promise<Map<string, string>> {
-  const uids = [...new Set(seats.map((s) => s.project_uid).filter((u): u is string => !!u))];
-  if (uids.length === 0) {
-    return new Map();
+/**
+ * Per-pod uid → name cache for PUBLIC projects only. A public project's name is visible to every
+ * caller, so sharing it across users leaks nothing; a private project's name is never stored here and
+ * is fetched with the caller's own token on every request, as before. Bounded like
+ * `FormationService.userMetadataCache`: each fetch that stores names first drops expired entries,
+ * then each write evicts the oldest live one once `PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES` is reached
+ * (Map preserves insertion order).
+ */
+const publicProjectNameCache = new Map<string, { name: string; expiresAt: number }>();
+
+/** Test-only: clears the module-level public-name cache so one spec's entries don't answer the next. */
+export function resetPublicProjectNameCacheForTests(): void {
+  publicProjectNameCache.clear();
+}
+
+function evictExpiredPublicProjectNames(now: number): void {
+  for (const [key, entry] of publicProjectNameCache) {
+    if (entry.expiresAt <= now) {
+      publicProjectNameCache.delete(key);
+    }
   }
+}
+
+function cachePublicProjectName(uid: string, name: string, now: number): void {
+  publicProjectNameCache.delete(uid);
+  if (publicProjectNameCache.size >= PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES) {
+    const oldest = publicProjectNameCache.keys().next();
+    if (!oldest.done) {
+      publicProjectNameCache.delete(oldest.value);
+    }
+  }
+  publicProjectNameCache.set(uid, { name, expiresAt: now + PUBLIC_PROJECT_NAME_CACHE_TTL_MS });
+}
+
+/**
+ * D-003 foundation-name enrichment: distinct `project_uid`s → names. Cached public names are served
+ * from the per-pod cache; only the remaining uids go to `ProjectService.getProjectsByIds` (chunks
+ * 100/req, FGA-aware). Fail-soft: a fetch error leaves those uids unnamed, so each seat falls back
+ * to its `project_slug`.
+ */
+export async function enrichFoundationNames(req: Request, seats: CommitteeServiceOrgSeat[], projectService: ProjectService): Promise<FoundationNameEnrichment> {
+  const uids = [...new Set(seats.map((s) => s.project_uid).filter((u): u is string => !!u))];
+  const names = new Map<string, string>();
+  const now = Date.now();
+  const missing: string[] = [];
+  for (const uid of uids) {
+    const cached = publicProjectNameCache.get(uid);
+    if (cached && now < cached.expiresAt) {
+      names.set(uid, cached.name);
+    } else {
+      missing.push(uid);
+    }
+  }
+  const cachedHits = names.size;
+  if (missing.length === 0) {
+    return { names, cachedHits, fetched: 0 };
+  }
+
   try {
-    const byUid = await projectService.getProjectsByIds(req, uids);
-    const names = new Map<string, string>();
+    const byUid = await projectService.getProjectsByIds(req, missing);
+    const fetchedAt = Date.now();
+    evictExpiredPublicProjectNames(fetchedAt);
     for (const [uid, project] of byUid) {
-      if (project?.name) {
-        names.set(uid, project.name);
+      if (!project?.name) {
+        continue;
+      }
+      names.set(uid, project.name);
+      if (project.public === true) {
+        cachePublicProjectName(uid, project.name, fetchedAt);
       }
     }
-    return names;
   } catch (error) {
     logger.warning(req, 'enrich_foundation_names', 'project-name enrichment failed; falling back to project_slug', {
-      uid_count: uids.length,
+      uid_count: missing.length,
       err: error,
     });
-    return new Map();
   }
+  return { names, cachedHits, fetched: missing.length };
 }
 
 /** Map an upstream seat to the People-tab `CommitteeMemberAssignment` (camelCase + person envelope + foundation). */

@@ -308,6 +308,13 @@ export interface CommitteeServiceOrgSeat {
   username?: string | null;
 }
 
+/** Foundation-name lookup for a set of seats: uid → display name, plus how many uids came from the per-pod public-name cache versus the upstream fetch (timing logs only). */
+export interface FoundationNameEnrichment {
+  names: Map<string, string>;
+  cachedHits: number;
+  fetched: number;
+}
+
 /** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */
 export interface CommitteeServiceOrgSeatPage {
   seats: CommitteeServiceOrgSeat[];

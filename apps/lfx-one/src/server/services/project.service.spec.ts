@@ -1986,6 +1986,21 @@ describe('ProjectService — getProjectsByIds', () => {
       error: 'query failed',
     });
   });
+
+  it('requests each 100-uid batch as a single page', async () => {
+    const uids = Array.from({ length: 150 }, (_, i) => `uid-${i}`);
+    proxyRequest.mockImplementation(async (_req, _svc, _path, _method, params: { filters_or: string[] }) =>
+      pageOf(params.filters_or.map((f) => ({ uid: f.slice('uid:'.length), slug: f })))
+    );
+
+    const result = await service.getProjectsByIds(req, uids);
+
+    expect(result.size).toBe(150);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    const sent = proxyRequest.mock.calls.map((call) => call[4] as { filters_or: string[]; page_size: number });
+    expect(sent.map((p) => p.filters_or.length)).toEqual([100, 50]);
+    expect(sent.map((p) => p.page_size)).toEqual([100, 100]);
+  });
 });
 
 describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/meeting_coordinator gating)', () => {

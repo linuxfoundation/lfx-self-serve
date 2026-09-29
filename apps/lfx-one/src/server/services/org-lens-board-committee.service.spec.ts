@@ -69,7 +69,7 @@ vi.mock('./valkey.service', () => ({
 // The People services' foundation-name enrichment reaches project-service; the seat mapping itself
 // is not what these tests are about.
 vi.mock('./committee-seat-assignment.mapper', () => ({
-  enrichFoundationNames: vi.fn(async () => new Map()),
+  enrichFoundationNames: vi.fn(async () => ({ names: new Map(), cachedHits: 0, fetched: 0 })),
   toAssignment: (s: CommitteeServiceOrgSeat) => ({ seatId: s.uid, committeeUid: s.committee_uid }),
 }));
 

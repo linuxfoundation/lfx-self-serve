@@ -24,6 +24,15 @@ export const EDIT_TOOLTIP_DEFAULT = 'Edit committee role';
 /** Sub-row Edit pencil tooltip — seat is foundation-controlled and not editable here (fallback when no upstream reason). */
 export const EDIT_TOOLTIP_NOT_ORG_EDITABLE = 'This seat is foundation-controlled and not editable here.';
 
+/**
+ * TTL of the per-pod cache of PUBLIC project names used to label Board/Committee seats with their
+ * foundation. Project names change rarely; a rename shows up within this window.
+ */
+export const PUBLIC_PROJECT_NAME_CACHE_TTL_MS = 15 * 60 * 1000;
+
+/** Hard cap on cached public project names per process; the oldest entry is evicted once reached. */
+export const PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES = 5000;
+
 /** Zero-valued envelope — `toSignal` initialValue + the no-account / no-seats fallback. */
 export const EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE: OrgPeopleCommitteeMembersResponse = {
   orgUid: '',

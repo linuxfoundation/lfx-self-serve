@@ -219,8 +219,12 @@ export class OrgLensBoardCommitteeService {
    * A consequence for monitoring: an oversize warning now counts a burst, not a caller.
    *
    * What is shared is the COMPACT envelope; each caller rebuilds its own seat objects from it.
+   *
+   * `onDrain` fires only when THIS call runs the committee-service drain (a Valkey miss on the
+   * flight it started), not on a cache hit or when it joins another caller's flight; timing logs
+   * use it to tell the two apart.
    */
-  public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+  public async fetchAllOrgSeats(req: Request, orgUid: string, onDrain?: () => void): Promise<CommitteeServiceOrgSeat[]> {
     const username = getEffectiveUsername(req) ?? '';
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
@@ -232,7 +236,10 @@ export class OrgLensBoardCommitteeService {
         username,
         orgUid,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid)),
+        async () => {
+          onDrain?.();
+          return toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid));
+        },
         isCompactOrgSeatsEntry,
         isCurrent
       )

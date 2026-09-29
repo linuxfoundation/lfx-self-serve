@@ -147,7 +147,7 @@ export class OrgLensGroupsService {
     // targets committees the project index actually missed, so on the common path where the
     // project index resolves everything, the second upstream call is skipped entirely rather than
     // firing — and discarding its result — on every single request.
-    const foundationNames = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
+    const { names: foundationNames } = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
     const unresolvedCommitteeUids = Array.from(committeeMap.entries())
       .filter(([, groupSeats]) => !foundationNames.get(groupSeats[0]?.project_uid ?? ''))
       .map(([uid]) => uid);

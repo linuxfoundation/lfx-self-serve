@@ -624,10 +624,9 @@ export class ProjectService {
     if (idArray.length === 0) return new Map();
 
     // URL-length guard: ~36-char UUIDs × 100 keeps query strings under ~5KB.
-    const BATCH_SIZE = 100;
     const batches: string[][] = [];
-    for (let i = 0; i < idArray.length; i += BATCH_SIZE) {
-      batches.push(idArray.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < idArray.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(idArray.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
     }
 
     const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
@@ -8320,6 +8319,9 @@ export class ProjectService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'project',
             filters_or: batch.map((uid) => `uid:${uid}`),
+            // One page per batch: without this the query service's 50-result default splits a
+            // 100-uid batch into two sequential round-trips.
+            page_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
             ...(pageToken && { page_token: pageToken }),
           }),
         { failOnPartial: true }
