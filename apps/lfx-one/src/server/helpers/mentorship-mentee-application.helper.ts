@@ -86,6 +86,7 @@ export const mapMentorshipMenteeApplicationHistory = (applications: MentorshipUp
     .sort((a, b) => historyStatusRank(a) - historyStatusRank(b) || b.created_on.localeCompare(a.created_on))
     .map((application) => ({
       id: application.id,
+      programId: application.program?.id ?? '',
       programName: application.program?.name ?? '',
       termName: application.term?.name ?? '',
       submittedOn: formatIsoDateLabel(application.created_on.slice(0, 10)),

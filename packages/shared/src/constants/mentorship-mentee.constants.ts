@@ -431,7 +431,7 @@ export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE = 'Programs you apply to will appear here once you submit your first application.';
-export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL = 'View application';
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL = 'View program';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL = 'Withdraw application';
 
 /**

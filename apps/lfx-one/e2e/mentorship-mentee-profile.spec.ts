@@ -93,7 +93,9 @@ const POPULATED_PROFILE = {
     resumeFileName: 'test-user-1-resume.pdf',
     resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
-  history: [{ id: 'hist_pending', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' }],
+  history: [
+    { id: 'hist_pending', programId: 'prog_gridflow', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' },
+  ],
 };
 
 test.describe('Mentee Profile — edit drawer golden path', () => {

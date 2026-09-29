@@ -164,7 +164,9 @@ describe('MentorshipMenteeService profile reads', () => {
     const result = await service.getMenteeProfile(buildReq());
 
     expect(result.profile).toMatchObject({ aboutMe: 'Test mentee introduction.', skillsHave: ['Go'], skillsWant: ['Code Review'] });
-    expect(result.history).toEqual([{ id: 'app-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' }]);
+    expect(result.history).toEqual([
+      { id: 'app-1', programId: 'prog-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' },
+    ]);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
     expect(proxyRequest).toHaveBeenCalledWith(
       expect.anything(),

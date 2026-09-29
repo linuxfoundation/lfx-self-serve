@@ -237,6 +237,7 @@ export type MentorshipMenteeApplicationHistoryStatus = MentorshipUpstreamApplica
  * `program_terms` + `programs`. Mentees are not `program_members`.
  *
  * - `id` ← `applications.id`
+ * - `programId` ← `programs.id`, used to link the row to the program's public page
  * - `programName` ← `programs.name` (`project_uid` is not a column — do not send a project)
  * - `termName` ← `program_terms.name`
  * - `submittedOn` ← BFF-formatted `applications.created_on`
@@ -244,6 +245,7 @@ export type MentorshipMenteeApplicationHistoryStatus = MentorshipUpstreamApplica
  */
 export interface MentorshipMenteeApplicationHistoryEntry {
   id: string;
+  programId: string;
   programName: string;
   termName: string;
   /**

@@ -132,8 +132,8 @@ describe('mapMentorshipMenteeApplicationHistory', () => {
     ]);
 
     expect(history).toEqual([
-      { id: 'app-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' },
-      { id: 'older', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jan 10, 2026', status: 'declined' },
+      { id: 'app-1', programId: 'prog-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' },
+      { id: 'older', programId: 'prog-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jan 10, 2026', status: 'declined' },
     ]);
   });
 

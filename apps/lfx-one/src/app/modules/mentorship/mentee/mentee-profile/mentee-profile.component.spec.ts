@@ -39,7 +39,16 @@ describe('MenteeProfileComponent', () => {
       resumeFileName: 'test-mentee-resume.pdf',
       resumeUrl: 'https://example.com/resume.pdf',
     },
-    history: [{ id: 'app_pending', programName: 'GridFlow: Ingestion Pipeline', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' }],
+    history: [
+      {
+        id: 'app_pending',
+        programId: 'prog_gridflow',
+        programName: 'GridFlow: Ingestion Pipeline',
+        termName: 'Fall 2026',
+        submittedOn: 'Jun 28, 2026',
+        status: 'pending',
+      },
+    ],
   };
 
   let fixture: ComponentFixture<MenteeProfileComponent>;
