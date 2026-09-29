@@ -78,6 +78,8 @@ test.describe('Mentee applications — Robust Tests', () => {
 
   test.describe('Withdraw', () => {
     const PENDING_APPLICATION_ID = '0b6e1f2a-3c4d-4e5f-8a6b-7c8d9e0f1a2b';
+    const ACCEPTED_APPLICATION_ID = '1c7f2a3b-4d5e-4f6a-9b7c-8d9e0f1a2b3c';
+    const withdrawTestId = (id: string) => `mentee-overview-withdraw-${id}`;
     const application = (id: string, upstreamStatus: string) => ({
       id,
       programId: `prog-${id}`,
@@ -91,7 +93,7 @@ test.describe('Mentee applications — Robust Tests', () => {
 
     test.beforeEach(async ({ page }) => {
       await enableMentorshipFlag(page);
-      const data = [application(PENDING_APPLICATION_ID, 'pending'), application('1c7f2a3b-4d5e-4f6a-9b7c-8d9e0f1a2b3c', 'accepted')];
+      const data = [application(PENDING_APPLICATION_ID, 'pending'), application(ACCEPTED_APPLICATION_ID, 'accepted')];
       await stubMenteeApplications(page, 200, JSON.stringify({ data, total: data.length }));
     });
 
@@ -99,9 +101,12 @@ test.describe('Mentee applications — Robust Tests', () => {
       await openMenteeTab(page, MENTEE_OVERVIEW_URL);
 
       await expect(page.getByTestId('mentee-application-card')).toHaveCount(2, { timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
-      await expect(page.getByTestId('mentee-overview-withdraw')).toHaveCount(1);
-      await expect(page.getByTestId('mentee-overview-withdraw')).toBeEnabled();
-      await expect(page.getByTestId('mentee-overview-withdraw')).toHaveAttribute('aria-busy', 'false');
+      // Scoped to buttons: the confirm dialog's testid shares the `mentee-overview-withdraw-` prefix.
+      await expect(page.locator('button[data-testid^="mentee-overview-withdraw-"]')).toHaveCount(1);
+      await expect(page.getByTestId(withdrawTestId(ACCEPTED_APPLICATION_ID))).toHaveCount(0);
+      const withdraw = page.getByTestId(withdrawTestId(PENDING_APPLICATION_ID));
+      await expect(withdraw).toBeEnabled();
+      await expect(withdraw).toHaveAttribute('aria-busy', 'false');
       await expect(page.getByTestId('mentee-overview-withdraw-confirm-dialog')).toBeAttached();
     });
 
@@ -114,7 +119,7 @@ test.describe('Mentee applications — Robust Tests', () => {
       });
 
       await openMenteeTab(page, MENTEE_OVERVIEW_URL);
-      const withdraw = page.getByTestId('mentee-overview-withdraw');
+      const withdraw = page.getByTestId(withdrawTestId(PENDING_APPLICATION_ID));
       await expect(withdraw).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
 
       await withdraw.click();

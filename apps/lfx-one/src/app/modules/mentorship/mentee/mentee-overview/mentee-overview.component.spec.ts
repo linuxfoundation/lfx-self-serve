@@ -205,7 +205,7 @@ describe('MenteeOverviewComponent', () => {
     await bootstrap({ applications: [menteeTestApplication({ id: 'graduated', upstreamStatus: 'graduated' })] });
     expect(allByTestId('mentee-application-card')).toHaveLength(1);
     expect(text(byTestId('mentee-application-card-status'))).toBe('Graduated');
-    expect(byTestId('mentee-overview-withdraw')).toBeNull();
+    expect(byTestId('mentee-overview-withdraw-graduated')).toBeNull();
     expect(byTestId('mentee-overview-past-applications')).toBeNull();
   });
 
@@ -297,7 +297,7 @@ describe('MenteeOverviewComponent', () => {
 
   it('asks to confirm the withdraw of the card application', async () => {
     await bootstrap({ applications: [menteeTestApplication({ id: 'app-pending' })] });
-    (byTestId('mentee-overview-withdraw') as HTMLButtonElement).click();
+    (byTestId('mentee-overview-withdraw-app-pending') as HTMLButtonElement).click();
     expect(confirmWithdraw).toHaveBeenCalledWith('app-pending');
   });
 
@@ -306,17 +306,19 @@ describe('MenteeOverviewComponent', () => {
     withdrawingId.set('first');
     await settle();
 
-    const buttons = allByTestId('mentee-overview-withdraw') as HTMLButtonElement[];
-    expect(buttons).toHaveLength(2);
-    expect(buttons.every((button) => button.disabled)).toBe(true);
-    expect(buttons.map((button) => button.getAttribute('aria-busy'))).toEqual(['true', 'false']);
+    const first = byTestId('mentee-overview-withdraw-first') as HTMLButtonElement;
+    const second = byTestId('mentee-overview-withdraw-second') as HTMLButtonElement;
+    expect(first.disabled).toBe(true);
+    expect(second.disabled).toBe(true);
+    expect(first.getAttribute('aria-busy')).toBe('true');
+    expect(second.getAttribute('aria-busy')).toBe('false');
   });
 
   it('offers Withdraw only on pending cards, not on the active one', async () => {
     await bootstrap({ applications: [menteeTestApplication({ id: 'accepted', upstreamStatus: 'accepted' }), menteeTestApplication()] });
     const [activeCard, pendingCard] = allByTestId('mentee-application-card');
-    expect(activeCard.querySelector('[data-testid="mentee-overview-withdraw"]')).toBeNull();
-    expect(pendingCard.querySelector('[data-testid="mentee-overview-withdraw"]')).toBeTruthy();
+    expect(activeCard.querySelector('button[data-testid^="mentee-overview-withdraw-"]')).toBeNull();
+    expect(pendingCard.querySelector('button[data-testid^="mentee-overview-withdraw-"]')).toBeTruthy();
   });
 
   // ---- Past applications ----------------------------------------------------

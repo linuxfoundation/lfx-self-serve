@@ -34,6 +34,7 @@ test.setTimeout(60_000);
 test.use({ viewport: { width: 1440, height: 900 } });
 
 const PENDING_APPLICATION_ID = '0b6e1f2a-3c4d-4e5f-8a6b-7c8d9e0f1a2b';
+const WITHDRAW_TESTID = `mentee-overview-withdraw-${PENDING_APPLICATION_ID}`;
 
 /** The one synthetic application, with no tasks, in the given upstream status. */
 function application(upstreamStatus: string) {
@@ -90,7 +91,7 @@ function confirmDialog(page: Page) {
 
 async function openPendingCard(page: Page): Promise<void> {
   await openMenteeTab(page, MENTEE_OVERVIEW_URL);
-  await expect(page.getByTestId('mentee-overview-withdraw')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
+  await expect(page.getByTestId(WITHDRAW_TESTID)).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
 }
 
 test.describe('Mentee Overview — withdraw', () => {
@@ -102,7 +103,7 @@ test.describe('Mentee Overview — withdraw', () => {
     const stub = await stubWithdrawFlow(page, 204, 'withdrawn');
     await openPendingCard(page);
 
-    await page.getByTestId('mentee-overview-withdraw').click();
+    await page.getByTestId(WITHDRAW_TESTID).click();
     await confirmDialog(page).getByRole('button', { name: MENTORSHIP_MENTEE_WITHDRAW_CANCEL_LABEL }).click();
 
     await expect(confirmDialog(page)).toHaveCount(0);
@@ -115,7 +116,7 @@ test.describe('Mentee Overview — withdraw', () => {
     await openPendingCard(page);
     const readsBefore = stub.applicationReads;
 
-    await page.getByTestId('mentee-overview-withdraw').click();
+    await page.getByTestId(WITHDRAW_TESTID).click();
     await confirmDialog(page).getByRole('button', { name: MENTORSHIP_MENTEE_WITHDRAW_LABEL, exact: true }).click();
 
     await expect(page.locator('p-toast .p-toast-message-success')).toContainText(MENTORSHIP_MENTEE_WITHDRAW_SUCCESS_SUMMARY);
@@ -131,13 +132,13 @@ test.describe('Mentee Overview — withdraw', () => {
     await openPendingCard(page);
     const readsBefore = stub.applicationReads;
 
-    await page.getByTestId('mentee-overview-withdraw').click();
+    await page.getByTestId(WITHDRAW_TESTID).click();
     await confirmDialog(page).getByRole('button', { name: MENTORSHIP_MENTEE_WITHDRAW_LABEL, exact: true }).click();
 
     await expect(page.locator('p-toast .p-toast-message-error')).toContainText(MENTORSHIP_MENTEE_WITHDRAW_STALE_ERROR_MESSAGES[409]);
     // The re-read shows the accepted card, which offers no Withdraw.
     await expect(page.getByTestId('mentee-application-card')).toHaveCount(1);
-    await expect(page.getByTestId('mentee-overview-withdraw')).toHaveCount(0);
+    await expect(page.getByTestId(WITHDRAW_TESTID)).toHaveCount(0);
     expect(stub.applicationReads).toBeGreaterThan(readsBefore);
   });
 });
