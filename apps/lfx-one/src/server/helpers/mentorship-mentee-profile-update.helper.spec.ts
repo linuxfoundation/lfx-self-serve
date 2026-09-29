@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE } from '@lfx-one/shared/constants';
+import { MentorshipUpstreamUserProfile } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
@@ -214,5 +215,53 @@ describe('buildMentorshipUpstreamMenteeProfileUpdate', () => {
     expect(Object.keys(upstream)).toEqual(['introduction']);
     expect(JSON.stringify(buildMentorshipUpstreamMenteeProfileUpdate({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } }))).not.toContain('null');
     expect(buildMentorshipUpstreamMenteeProfileUpdate({})).toEqual({});
+  });
+
+  describe('with the stored row', () => {
+    const storedRow: MentorshipUpstreamUserProfile = {
+      id: 'prof-1',
+      user_id: 'user-1',
+      profile_type: 'mentee',
+      terms_and_conditions: true,
+      number_of_projects: 0,
+      skill_set: { skills: ['C'], improvementSkills: ['Zig'], comments: 'Old notes.', legacyLevel: 'beginner' },
+      demographics: { age: 30, race: 'asian', legacyField: 'kept' },
+      socioeconomics: { income: 'workingClass', legacyScore: 3 },
+      created_on: '2026-01-01T00:00:00Z',
+      updated_on: '2026-01-02T00:00:00Z',
+    };
+
+    it('keeps stored demographics and socioeconomics keys the update leaves out, including unmapped values', () => {
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ demographics: { gender: 'female' }, socioeconomics: { education: 'college' } }, storedRow)).toEqual({
+        demographics: { age: 30, race: 'asian', legacyField: 'kept', gender: 'female' },
+        socioeconomics: { income: 'workingClass', legacyScore: 3, educationLevel: 'college' },
+      });
+    });
+
+    it('lets a changed answer win over the stored one', () => {
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ demographics: { raceEthnicity: 'preferNotToSay' } }, storedRow).demographics).toEqual({
+        age: 30,
+        race: 'preferNotToSay',
+        legacyField: 'kept',
+      });
+    });
+
+    it('keeps only the unmodelled skill_set keys, so blank notes still clear the stored comments', () => {
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } }, storedRow).skill_set).toEqual({
+        legacyLevel: 'beginner',
+        skills: ['Go'],
+        improvementSkills: ['Rust'],
+      });
+    });
+
+    it('does not add a column the update leaves out', () => {
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: 'Hi' }, storedRow)).toEqual({ introduction: '<p>Hi</p>' });
+    });
+
+    it('ignores a stored column that is not an object', () => {
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ demographics: { age: '61+' } }, { ...storedRow, demographics: 'garbled' })).toEqual({
+        demographics: { age: '61+' },
+      });
+    });
   });
 });

@@ -82,6 +82,7 @@ import type {
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
   MentorshipMenteeApplicationView,
+  MentorshipMenteeDemographicGroupName,
   MentorshipMenteeDemographics,
   MentorshipMenteeDemographicsFormValue,
   MentorshipMenteeOverview,
@@ -248,7 +249,7 @@ export function buildMentorshipMenteeDemographicsUpdate(
 ): MentorshipMenteeProfileUpdateRequest {
   const request: MentorshipMenteeProfileUpdateRequest = {};
 
-  for (const groupName of ['demographics', 'socioeconomics'] as const) {
+  for (const groupName of Object.keys(MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS) as MentorshipMenteeDemographicGroupName[]) {
     const answers: Record<string, string> = {};
     let changed = false;
 

@@ -483,6 +483,9 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
   socioeconomics: ['income', 'education'],
 } as const;
 
+/** Keys of the upstream `skill_set` column the mentee profile update owns; any other stored key is kept on save. */
+export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvementSkills', 'comments'] as const;
+
 /** Top-level keys the profile update accepts. Anything else is a 400. */
 export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
 export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;

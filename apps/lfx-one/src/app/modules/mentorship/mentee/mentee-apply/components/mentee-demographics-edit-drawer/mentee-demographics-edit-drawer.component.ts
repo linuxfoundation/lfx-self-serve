@@ -57,15 +57,8 @@ export class MenteeDemographicsEditDrawerComponent {
   private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
   private readonly errorRef = viewChild<ElementRef<HTMLElement>>('errorRef');
 
-  protected readonly saving = this.saveService.saving;
-  /** The message for the last failed Save, shown inline. Cleared on the next Save, on any edit and on re-seed. */
-  protected readonly errorMessage = signal('');
-
-  protected readonly title = MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EDIT_LABEL;
-  protected readonly intro = MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO;
-  protected readonly saveLabel = MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL;
-  protected readonly cancelLabel = MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL;
-  protected readonly titleId = MENTORSHIP_MENTEE_DEMOGRAPHICS_EDIT_DRAWER_TITLE_ID;
+  /** Emits the saved profile once the update succeeds, just before the drawer closes. */
+  public readonly saved = output<MentorshipMenteeProfileUpdateResponse>();
 
   protected readonly form = new FormGroup({
     ageConsent: new FormControl(false, { nonNullable: true }),
@@ -82,8 +75,15 @@ export class MenteeDemographicsEditDrawerComponent {
 
   public readonly visible = model(false);
 
-  /** Emits the saved profile once the update succeeds, just before the drawer closes. */
-  public readonly saved = output<MentorshipMenteeProfileUpdateResponse>();
+  protected readonly saving = this.saveService.saving;
+  /** The message for the last failed Save, shown inline. Cleared on the next Save, on any edit and on re-seed. */
+  protected readonly errorMessage = signal('');
+
+  protected readonly title = MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EDIT_LABEL;
+  protected readonly intro = MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO;
+  protected readonly saveLabel = MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL;
+  protected readonly cancelLabel = MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL;
+  protected readonly titleId = MENTORSHIP_MENTEE_DEMOGRAPHICS_EDIT_DRAWER_TITLE_ID;
 
   protected readonly drawerPt = computed(() => ({
     root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': this.titleId },

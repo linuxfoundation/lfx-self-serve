@@ -143,20 +143,25 @@ export class MentorshipMenteeService {
   /**
    * Saves the changed groups of the signed-in user's mentee profile. Upstream keeps every column the body
    * omits and replaces a JSON column whole, so only the groups the caller changed are forwarded, and never
-   * `profile_links` (the resume is not editable yet). The response is the re-mapped row: no history, since
-   * the caller layers it over the profile it already has. Upstream's 404 (no mentee profile) and 409 (more
-   * than one) propagate.
+   * `profile_links` (the resume is not editable yet). When a JSON column is among them, the stored row is
+   * read first and each column is layered over its stored value, so keys this BFF does not model survive;
+   * a failed read propagates rather than risk dropping them. The two calls are not atomic, so an edit made
+   * elsewhere in between can be overwritten. The response is the re-mapped row: no history, since the caller
+   * layers it over the profile it already has. Upstream's 404 (no mentee profile) and 409 (more than one)
+   * propagate.
    */
   public async updateMenteeProfile(req: Request, request: MentorshipMenteeProfileUpdateRequest): Promise<MentorshipMenteeProfileUpdateResponse> {
     // Group names only: the values are personal data.
     logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
+    const writesJsonColumn = request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined;
+    const [stored] = writesJsonColumn ? await this.listMenteeProfiles(req) : [];
     const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
       this.microserviceProxy,
       req,
       MENTORSHIP_ME_MENTEE_PROFILE_PATH,
       'PATCH',
       undefined,
-      buildMentorshipUpstreamMenteeProfileUpdate(request)
+      buildMentorshipUpstreamMenteeProfileUpdate(request, stored)
     );
     const { profile, demographics } = mapMentorshipMenteeProfile(upstream);
     logger.debug(req, 'mentorship_update_mentee_profile', 'Mentee profile updated', { has_demographics: demographics !== undefined });

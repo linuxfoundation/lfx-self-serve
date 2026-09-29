@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorship-mentee.constants';
+
 // ---------------------------------------------------------------------------
 // Become a Mentee form types
 // ---------------------------------------------------------------------------
@@ -325,6 +327,9 @@ export interface MentorshipMenteeProfileFormValue {
 /** `form.getRawValue()` of the demographics drawer: `${key}Consent` booleans and `${key}` answers per `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS`. */
 export type MentorshipMenteeDemographicsFormValue = Record<string, string | boolean>;
 
+/** A demographics column the profile update writes: a key of `MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS`. */
+export type MentorshipMenteeDemographicGroupName = keyof typeof MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS;
+
 /** Both ids required to open `/mentorship/mentee/apply` and to return there after registration. */
 export interface MentorshipMenteeApplyIds {
   programId: string;
@@ -585,11 +590,30 @@ export interface MentorshipUpstreamUserProfile {
   updated_on: string;
 }
 
-/** The `skill_set` column as the mentee profile update writes it. */
+/**
+ * The `skill_set` column as the mentee profile update writes it. The index signature carries stored keys
+ * the BFF does not model, which the update keeps because upstream replaces the column whole.
+ */
 export interface MentorshipUpstreamMenteeSkillSet {
   skills: string[];
   improvementSkills: string[];
   comments?: string;
+  [key: string]: unknown;
+}
+
+/** The `demographics` column as the mentee profile update writes it, with any stored keys the BFF does not model. */
+export interface MentorshipUpstreamMenteeDemographics {
+  age?: string;
+  gender?: string;
+  race?: string;
+  [key: string]: unknown;
+}
+
+/** The `socioeconomics` column as the mentee profile update writes it, with any stored keys the BFF does not model. */
+export interface MentorshipUpstreamMenteeSocioeconomics {
+  income?: string;
+  educationLevel?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -600,6 +624,6 @@ export interface MentorshipUpstreamMenteeProfileUpdate {
   /** HTML built by the BFF. `''` clears. */
   introduction?: string;
   skill_set?: MentorshipUpstreamMenteeSkillSet;
-  demographics?: { age?: string; gender?: string; race?: string };
-  socioeconomics?: { income?: string; educationLevel?: string };
+  demographics?: MentorshipUpstreamMenteeDemographics;
+  socioeconomics?: MentorshipUpstreamMenteeSocioeconomics;
 }

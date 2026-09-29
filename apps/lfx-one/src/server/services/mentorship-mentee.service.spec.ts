@@ -495,19 +495,44 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     service = new MentorshipMenteeService();
   });
 
-  it('patches the single-type mentee route with only the built upstream body', async () => {
-    proxyRequest.mockResolvedValueOnce(updatedRow);
+  it('reads the stored row, then patches the single-type mentee route with only the built upstream body', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), { skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'], additionalNotes: 'Test notes.' } });
 
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
       skill_set: { skills: ['Go'], improvementSkills: ['Rust'], comments: 'Test notes.' },
     });
   });
 
+  it('layers each changed JSON column over its stored value, so keys the BFF does not model survive', async () => {
+    const storedRow = {
+      ...updatedRow,
+      skill_set: { skills: ['C'], improvementSkills: ['Zig'], comments: 'Old notes.', legacyLevel: 'beginner' },
+      demographics: { age: 30, gender: 'female', legacyField: 'kept' },
+    };
+    proxyRequest.mockResolvedValueOnce({ data: [storedRow], meta: { total: 1, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
+
+    await service.updateMenteeProfile(buildReq(), { skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] }, demographics: { gender: 'male' } });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+      skill_set: { legacyLevel: 'beginner', skills: ['Go'], improvementSkills: ['Rust'] },
+      demographics: { age: 30, gender: 'male', legacyField: 'kept' },
+    });
+  });
+
+  it('does not patch when the stored row cannot be read before a JSON column change', async () => {
+    const error = upstreamError(500, { error: 'boom' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMenteeProfile(buildReq(), { demographics: { age: '20-39' } })).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('converts the introduction to HTML and maps demographics keys on the way upstream', async () => {
-    proxyRequest.mockResolvedValueOnce(updatedRow);
+    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), {
       introduction: 'Hello & welcome',
@@ -522,11 +547,12 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     });
   });
 
-  it('never sends profile_links or a key for a group the caller did not change', async () => {
+  it('never sends profile_links or a key for a group the caller did not change, and skips the stored read', async () => {
     proxyRequest.mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), { introduction: '' });
 
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
     const body = proxyRequest.mock.calls[0][5] as Record<string, unknown>;
     expect(body).toEqual({ introduction: '' });
     expect(Object.keys(body)).not.toContain('profile_links');
@@ -587,7 +613,7 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
   });
 
   it('logs group names only, never the values', async () => {
-    proxyRequest.mockResolvedValueOnce(updatedRow);
+    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), { introduction: 'Private text', skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } });
 
