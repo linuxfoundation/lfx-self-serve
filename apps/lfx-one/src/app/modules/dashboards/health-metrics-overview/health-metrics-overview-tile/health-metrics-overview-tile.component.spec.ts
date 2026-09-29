@@ -76,6 +76,13 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Needs attention');
   });
 
+  it('renders no status row for a statusless tile without a link, leaving the "as of" label first', async () => {
+    await render({ area: 'evt', classification: 'none', showStatus: false, statValue: '—' });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-status-row"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('as of');
+  });
+
   it('renders no "as of" label for a never-evaluated (empty evaluatedAt) tile', async () => {
     await render({ evaluatedAt: '' });
 

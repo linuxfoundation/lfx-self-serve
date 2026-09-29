@@ -5,6 +5,7 @@ import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
 import type {
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewEngagementLinkSpec,
   HealthMetricsOverviewEventsLinkSpec,
   HealthMetricsOverviewTileLinkSpec,
@@ -130,7 +131,7 @@ export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
   eng: { linkTarget: 'eng.groups', label: 'View groups' },
   evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
-} as const satisfies Partial<Record<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'], HealthMetricsOverviewTileLinkSpec>>;
+} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
