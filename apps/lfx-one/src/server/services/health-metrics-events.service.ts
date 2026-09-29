@@ -25,6 +25,7 @@ import {
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
+import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -112,7 +113,7 @@ const UNTYPED_FORMAT_LABEL = 'All formats';
 
 /** True when the Events views carry columns for the range; for a controller to check before binding. */
 export function isSupportedEventsRange(range: string): range is HealthMetricsL2Range {
-  return Object.prototype.hasOwnProperty.call(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX, range);
+  return isHealthMetricsL2Range(range);
 }
 
 interface ForecastEventRow {

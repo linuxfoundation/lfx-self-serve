@@ -1,15 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX } from '@lfx-one/shared/constants';
-
+import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { SnowflakeService } from './snowflake.service';
 
 import type { HealthMetricsL2Range } from '@lfx-one/shared/interfaces';
 
 /** True when the Members views carry columns for the range; for a controller to check before binding. */
 export function isSupportedMembersRange(range: string): range is HealthMetricsL2Range {
-  return Object.prototype.hasOwnProperty.call(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX, range);
+  return isHealthMetricsL2Range(range);
 }
 
 /**
