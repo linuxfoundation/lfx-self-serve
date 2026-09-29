@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { AnalyticsService } from '@services/analytics.service';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MembersMovementsDrawerComponent } from './members-movements-drawer.component';
 
@@ -66,8 +66,15 @@ describe('MembersMovementsDrawerComponent', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    // The title reads "this year" only for the running year, so pin the clock to the fixtures' year.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-29T12:00:00Z'));
     document.body.innerHTML = '';
     getMembersMovements = vi.fn().mockReturnValue(of<HealthMetricsMembersMovements>({ rows: [movement(1, -89_000), movement(2, -40_000)], totalRecords: 2 }));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('reads nothing until it opens, then reads the bar it was opened for', async () => {
