@@ -34,3 +34,6 @@ export const MENTORSHIP_LIST_PAGE_SIZE = 100;
 
 /** Application statuses whose tasks the mentee views track; every other status is a past application. */
 export const MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'accepted', 'graduated'];
+
+/** Application History lists these statuses first, in this order; every other status follows. */
+export const MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER: readonly MentorshipUpstreamApplicationStatus[] = ['graduated', 'accepted', 'pending'];

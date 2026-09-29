@@ -11,6 +11,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
+import { MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER } from '../constants/mentorship.constants';
+
 /** An upstream task counts as submitted once the mentee has handed it in, whether or not it was reviewed. */
 const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status === 'submitted' || task.status === 'complete';
 
@@ -71,13 +73,20 @@ export const mapMentorshipMenteeApplication = (
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 
+/** Sort rank of an application on Application History; a status outside the order ranks last. */
+const historyStatusRank = (application: MentorshipUpstreamApplication): number => {
+  const rank = MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER.indexOf(application.status);
+  return rank === -1 ? MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER.length : rank;
+};
+
 /**
- * Maps the caller's applications to Application History rows, newest first. `submittedOn` is the
- * UTC calendar date of `created_on`, formatted for display.
+ * Maps the caller's applications to Application History rows: graduated, then accepted, then
+ * pending, then every other status, newest first within each. `submittedOn` is the UTC calendar
+ * date of `created_on`, formatted for display.
  */
 export const mapMentorshipMenteeApplicationHistory = (applications: MentorshipUpstreamApplication[]): MentorshipMenteeApplicationHistoryEntry[] =>
   [...applications]
-    .sort((a, b) => b.created_on.localeCompare(a.created_on))
+    .sort((a, b) => historyStatusRank(a) - historyStatusRank(b) || b.created_on.localeCompare(a.created_on))
     .map((application) => ({
       id: application.id,
       programName: application.program?.name ?? '',

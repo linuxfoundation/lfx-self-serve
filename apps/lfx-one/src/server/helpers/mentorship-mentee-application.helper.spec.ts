@@ -138,4 +138,18 @@ describe('mapMentorshipMenteeApplicationHistory', () => {
       { id: 'older', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jan 10, 2026', status: 'declined' },
     ]);
   });
+
+  it('lists graduated, then accepted, then pending, then every other status, newest first within each', () => {
+    const history = mapMentorshipMenteeApplicationHistory([
+      { ...baseApplication, id: 'withdrawn', status: 'withdrawn', created_on: '2026-07-01T10:00:00Z' },
+      { ...baseApplication, id: 'pending-old', status: 'pending', created_on: '2026-02-01T10:00:00Z' },
+      { ...baseApplication, id: 'declined', status: 'declined', created_on: '2026-05-01T10:00:00Z' },
+      { ...baseApplication, id: 'accepted', status: 'accepted', created_on: '2026-03-01T10:00:00Z' },
+      { ...baseApplication, id: 'pending-new', status: 'pending', created_on: '2026-06-01T10:00:00Z' },
+      { ...baseApplication, id: 'graduated', status: 'graduated', created_on: '2025-01-01T10:00:00Z' },
+      { ...baseApplication, id: 'hold', status: 'hold', created_on: '2026-04-01T10:00:00Z' },
+    ]);
+
+    expect(history.map((entry) => entry.id)).toEqual(['graduated', 'accepted', 'pending-new', 'pending-old', 'withdrawn', 'declined', 'hold']);
+  });
 });
