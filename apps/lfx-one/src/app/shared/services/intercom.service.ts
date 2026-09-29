@@ -59,6 +59,16 @@ export class IntercomService {
     window.Intercom('show');
   }
 
+  // Re-scan the DOM so the widget (re)binds custom launchers that entered the page after boot —
+  // e.g. the profile help link, which is router-mounted on client-side navigation into /profile/*.
+  // Fire-and-forget: pre-load, the stub queues the call and replays it once the script boots.
+  public update(): void {
+    if (typeof window === 'undefined' || !window.Intercom || !this.isBootRequested) {
+      return;
+    }
+    window.Intercom('update', window.intercomSettings!);
+  }
+
   // Records who a later on-demand boot should identify as, without loading the widget.
   public setIdentity(options: IntercomBootOptions): void {
     this.identity = options;

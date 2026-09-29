@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
@@ -17,6 +17,7 @@ import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, Profi
 import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -80,6 +81,7 @@ export class ProfileLayoutComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly rumService = inject(DataDogRumService);
+  private readonly intercomService = inject(IntercomService);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -176,6 +178,13 @@ export class ProfileLayoutComponent {
   });
 
   public constructor() {
+    // The help link is an Intercom custom launcher, which the widget binds at boot/update scan
+    // time. This layout is router-mounted, so on client-side navigation into /profile/* the link
+    // enters the DOM after the boot scan — notify the widget once the view renders or the launcher
+    // is dead on that path. afterNextRender is browser-only, so SSR never fires it; pre-boot, the
+    // Intercom stub queues the update and replays it once the widget script loads.
+    afterNextRender(() => this.intercomService.update());
+
     // Handle Flow C return — restore saved form state and auto-save
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       if (params['success'] === 'profile_token_obtained') {

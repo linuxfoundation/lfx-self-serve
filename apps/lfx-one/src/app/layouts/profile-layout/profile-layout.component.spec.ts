@@ -8,6 +8,7 @@ import { OPEN_PROFILE_BANNER_LINK_CLICKED, PENDING_PROFILE_SAVE_KEY } from '@lfx
 import { CombinedProfile, User } from '@lfx-one/shared/interfaces';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject } from 'rxjs';
@@ -395,5 +396,51 @@ describe('ProfileLayoutComponent — profile help link click tracking (#2986)', 
     fixture.componentInstance.trackOpenProfileBannerClick();
 
     expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED);
+  });
+});
+
+// Guards the Intercom custom-launcher re-scan on mount (#2986): the help link is router-mounted,
+// so on client-side navigation into /profile/* it enters the DOM after Intercom's boot scan —
+// without an update the launcher binds only on full-page loads. The service itself is mocked;
+// its boot/window gating is covered in intercom.service.spec.ts.
+describe('ProfileLayoutComponent — Intercom launcher re-scan on mount (#2986)', () => {
+  const update = vi.fn();
+
+  beforeEach(() => {
+    update.mockClear();
+    TestBed.resetTestingModule();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            impersonating: signal(false),
+            uploadedAvatarUrl: signal<string | null>(null),
+            effectiveAvatarUrl: computed(() => ''),
+            identitiesRefresh$: EMPTY,
+            getCurrentUserProfile: vi.fn(() => EMPTY),
+            getIdentities: vi.fn(() => of([])),
+          },
+        },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: IntercomService, useValue: { update } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+  });
+
+  it('notifies Intercom to re-scan for the launcher after the view renders', async () => {
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(update).toHaveBeenCalledTimes(1);
   });
 });
