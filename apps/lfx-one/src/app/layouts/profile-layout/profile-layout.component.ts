@@ -5,9 +5,17 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_AUTH_ERROR_MESSAGES, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import {
+  MY_CLAS_ENABLED_FLAG,
+  normalizeTShirtSize,
+  OPEN_PROFILE_BANNER_LINK_CLICKED,
+  PENDING_PROFILE_SAVE_KEY,
+  PROFILE_AUTH_ERROR_MESSAGES,
+  TSHIRT_SIZES,
+} from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
+import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -18,6 +26,7 @@ import { ProfileEditDrawerComponent } from '../../modules/profile/components/pro
 import { ProfileEditDrawerService } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.service';
 import { ProfileVisibilityDrawerComponent } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.component';
 import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
+import { OpenProfileBannerComponent } from './open-profile-banner/open-profile-banner.component';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
 
 /**
@@ -34,7 +43,16 @@ import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [NgClass, RouterOutlet, RouterLink, RouterLinkActive, ProfilePanelComponent, ProfileEditDrawerComponent, ProfileVisibilityDrawerComponent],
+  imports: [
+    NgClass,
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    ProfilePanelComponent,
+    ProfileEditDrawerComponent,
+    ProfileVisibilityDrawerComponent,
+    OpenProfileBannerComponent,
+  ],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
   // is left; each drawer child shares this injector instance via the providers below. MessageService
   // is deliberately NOT scoped here — the app's only <p-toast/> lives in AppComponent and reads from
@@ -61,6 +79,7 @@ export class ProfileLayoutComponent {
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly rumService = inject(DataDogRumService);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -193,6 +212,11 @@ export class ProfileLayoutComponent {
   public openVisibilityDrawer(): void {
     // The drawer fetches its own state; it only needs the username to build the public-profile URL.
     this.visibilityDrawer.open(this.displayUsername() ?? '');
+  }
+
+  // The banner button is inert in-app by design (the support-side launcher owns the click); this only records it.
+  public trackOpenProfileBannerClick(): void {
+    this.rumService.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED);
   }
 
   /** Apply the optimistic update emitted by the edit drawer's `saved` output. */
