@@ -23,9 +23,9 @@ describe('OrgHealthPopupComponent', () => {
   };
 
   // Angular always builds the projected markup, so read #popupContent without opening the popover.
-  const renderPopup = (inputs: Record<string, unknown>): HTMLElement => {
+  const renderPopup = async (inputs: Record<string, unknown>): Promise<HTMLElement> => {
     setInputs(inputs);
-    fixture.detectChanges();
+    await fixture.whenStable();
     const popup = component['content']()?.nativeElement;
     if (!popup) {
       throw new Error('popup content was not rendered');
@@ -66,12 +66,12 @@ describe('OrgHealthPopupComponent', () => {
       },
     ])(
       'renders the asterisk, dotted remainder, divider and footnote when the $name category is missing',
-      ({ inputs, headline, remainder, missingRow, missingRowText, category }) => {
-        const popup = renderPopup(inputs);
+      async ({ inputs, headline, remainder, missingRow, missingRowText, category }) => {
+        const popup = await renderPopup(inputs);
 
         expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe(headline);
         // The asterisk belongs to the semibold label, ahead of the (score/max) text.
-        expect(byTestId(popup, 'org-health-popup-headline')?.querySelector('.font-semibold')?.textContent).toBe(headline.split(' ')[0]);
+        expect(byTestId(popup, 'org-health-popup-headline-label')?.textContent).toBe(headline.split(' ')[0]);
         expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe(remainder);
         expect(byTestId(popup, `org-health-popup-row-${missingRow}`)?.textContent).toContain(missingRowText);
         // The footnote names the same category whose row shows the dash.
@@ -86,16 +86,16 @@ describe('OrgHealthPopupComponent', () => {
       }
     );
 
-    it('renders the other categories with their scores on a partial score', () => {
-      const popup = renderPopup({ label: 'healthy', score: 52, maxScore: 65, maintainer: 30, security: null, development: 22 });
+    it('renders the other categories with their scores on a partial score', async () => {
+      const popup = await renderPopup({ label: 'healthy', score: 52, maxScore: 65, maintainer: 30, security: null, development: 22 });
 
       expect(byTestId(popup, 'org-health-popup-row-maintainer')?.textContent).toContain('30/40');
       expect(byTestId(popup, 'org-health-popup-row-security')?.textContent).toContain('—/35');
       expect(byTestId(popup, 'org-health-popup-row-development')?.textContent).toContain('22/25');
     });
 
-    it('names the missing category in the footnote even when the max maps to no single category', () => {
-      const popup = renderPopup({ label: 'fair', score: 50, maxScore: 70, maintainer: 30, security: null, development: 20 });
+    it('names the missing category in the footnote even when the max maps to no single category', async () => {
+      const popup = await renderPopup({ label: 'fair', score: 50, maxScore: 70, maintainer: 30, security: null, development: 20 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Fair* (50/70)');
       expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe('30%');
@@ -109,8 +109,8 @@ describe('OrgHealthPopupComponent', () => {
       { maxScore: 60, headline: 'Healthy* (50/60)', remainder: '40%' },
       { maxScore: 65, headline: 'Healthy* (50/65)', remainder: '35%' },
       { maxScore: 75, headline: 'Healthy* (50/75)', remainder: '25%' },
-    ])('marks a max of $maxScore with an asterisk but omits the footnote when every category has a score', ({ maxScore, headline, remainder }) => {
-      const popup = renderPopup({ label: 'healthy', score: 50, maxScore, maintainer: 20, security: 15, development: 15 });
+    ])('marks a max of $maxScore with an asterisk but omits the footnote when every category has a score', async ({ maxScore, headline, remainder }) => {
+      const popup = await renderPopup({ label: 'healthy', score: 50, maxScore, maintainer: 20, security: 15, development: 15 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe(headline);
       expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe(remainder);
@@ -118,8 +118,8 @@ describe('OrgHealthPopupComponent', () => {
       expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
     });
 
-    it('has no asterisk, divider or footnote for a max of 100 even when a category score is missing', () => {
-      const popup = renderPopup({ label: 'excellent', score: 88, maxScore: 100, maintainer: 35, security: null, development: 23 });
+    it('has no asterisk, divider or footnote for a max of 100 even when a category score is missing', async () => {
+      const popup = await renderPopup({ label: 'excellent', score: 88, maxScore: 100, maintainer: 35, security: null, development: 23 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Excellent (88/100)');
       expect(byTestId(popup, 'org-health-popup-bar-missing')).toBeNull();
@@ -128,8 +128,8 @@ describe('OrgHealthPopupComponent', () => {
       expect(popup.textContent).not.toContain('*');
     });
 
-    it('has no dotted remainder, asterisk, divider or footnote for a score out of 100', () => {
-      const popup = renderPopup({ label: 'excellent', score: 88, maxScore: 100, maintainer: 35, security: 30, development: 23 });
+    it('has no dotted remainder, asterisk, divider or footnote for a score out of 100', async () => {
+      const popup = await renderPopup({ label: 'excellent', score: 88, maxScore: 100, maintainer: 35, security: 30, development: 23 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Excellent (88/100)');
       expect(byTestId(popup, 'org-health-popup-bar')).not.toBeNull();
@@ -140,8 +140,8 @@ describe('OrgHealthPopupComponent', () => {
       expect(popup.textContent).not.toContain('*');
     });
 
-    it('has no asterisk, divider or footnote when the max score is missing', () => {
-      const popup = renderPopup({ label: 'excellent', score: 88, maxScore: null, maintainer: 35, security: 30, development: 23 });
+    it('has no asterisk, divider or footnote when the max score is missing', async () => {
+      const popup = await renderPopup({ label: 'excellent', score: 88, maxScore: null, maintainer: 35, security: 30, development: 23 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Excellent (88/100)');
       expect(byTestId(popup, 'org-health-popup-bar-missing')).toBeNull();
@@ -150,8 +150,8 @@ describe('OrgHealthPopupComponent', () => {
       expect(popup.textContent).not.toContain('*');
     });
 
-    it('renders only the unavailable block when there is no score', () => {
-      const popup = renderPopup({ label: null, score: null, maxScore: 65 });
+    it('renders only the unavailable block when there is no score', async () => {
+      const popup = await renderPopup({ label: null, score: null, maxScore: 65 });
 
       expect(byTestId(popup, 'org-health-popup-unavailable')?.textContent).toBe('Health score is unavailable for this project.');
       expect(byTestId(popup, 'org-health-popup-headline')).toBeNull();
@@ -161,24 +161,24 @@ describe('OrgHealthPopupComponent', () => {
       expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
     });
 
-    it('keeps the fill and the dotted remainder inside the track when the score exceeds the max', () => {
-      const popup = renderPopup({ label: 'healthy', score: 70, maxScore: 65, maintainer: 40, security: null, development: 25 });
+    it('keeps the fill and the dotted remainder inside the track when the score exceeds the max', async () => {
+      const popup = await renderPopup({ label: 'healthy', score: 70, maxScore: 65, maintainer: 40, security: null, development: 25 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Healthy* (70/65)');
       expect(byTestId(popup, 'org-health-popup-bar-fill')?.style.width).toBe('70%');
       expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe('30%');
     });
 
-    it('renders a zero score with real zeros rather than dashes', () => {
-      const popup = renderPopup({ label: 'critical', score: 0, maxScore: 100, maintainer: 0, security: 0, development: 0 });
+    it('renders a zero score with real zeros rather than dashes', async () => {
+      const popup = await renderPopup({ label: 'critical', score: 0, maxScore: 100, maintainer: 0, security: 0, development: 0 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Critical (0/100)');
       expect(byTestId(popup, 'org-health-popup-row-security')?.textContent).toContain('0/35');
       expect(byTestId(popup, 'org-health-popup-row-security')?.textContent).not.toContain('—');
     });
 
-    it('paints the band colour on the headline dot and the bar fill', () => {
-      const popup = renderPopup({ label: 'critical', score: 20, maxScore: 100, maintainer: 10, security: 5, development: 5 });
+    it('paints the band colour on the headline dot and the bar fill', async () => {
+      const popup = await renderPopup({ label: 'critical', score: 20, maxScore: 100, maintainer: 10, security: 5, development: 5 });
       // jsdom serialises inline colours as rgb(), so normalise the hex constant via a style probe.
       const probe = document.createElement('span');
       probe.style.backgroundColor = HEALTH_SCORE_BAR_FILL.critical;
@@ -192,13 +192,12 @@ describe('OrgHealthPopupComponent', () => {
     // A `#content` ref inside <p-popover> is captured as its template and throws on open.
     it('opens without the PrimeNG content-ref collision and attaches the popup to document.body', async () => {
       setInputs({ label: 'healthy', score: 52, maxScore: 65, maintainer: 30, security: null, development: 22 });
-      fixture.detectChanges();
+      await fixture.whenStable();
       const badge = document.createElement('button');
       fixture.nativeElement.appendChild(badge);
       badge.addEventListener('mouseenter', (event) => component.show(event));
 
       badge.dispatchEvent(new Event('mouseenter'));
-      fixture.detectChanges();
       await fixture.whenStable();
 
       const popup = document.querySelector('[data-testid="org-health-popup-content"]');
@@ -275,8 +274,8 @@ describe('OrgHealthPopupComponent', () => {
       { name: 'a score above the track', score: 150, maxScore: 65, fill: 100, missing: 0 },
       { name: 'a negative score', score: -5, maxScore: 100, fill: 0, missing: 0 },
       { name: 'a max above the track', score: 40, maxScore: 120, fill: 40, missing: 0 },
-    ])('keeps fill + remainder within 100% for $name', ({ score, maxScore, fill, missing }) => {
-      const popup = renderPopup({ label: 'healthy', score, maxScore });
+    ])('keeps fill + remainder within 100% for $name', async ({ score, maxScore, fill, missing }) => {
+      const popup = await renderPopup({ label: 'healthy', score, maxScore });
 
       expect(component['barFillPercent']()).toBe(fill);
       expect(component['barMissingPercent']()).toBe(missing);
