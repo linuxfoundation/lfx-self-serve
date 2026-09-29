@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Importing the logger module pulls in Angular-dependent shared code; without the compiler the
-// suite fails to collect at all.
+// The service's URL checks come from `validation.helper`, whose shared utils barrel pulls in
+// Angular-dependent siblings. Without the compiler the suite fails to collect at all.
 import '@angular/compiler';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
