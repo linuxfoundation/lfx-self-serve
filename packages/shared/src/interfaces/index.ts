@@ -201,6 +201,9 @@ export * from './health-metrics-events.interface';
 // Health Metrics Level 2 tab shell interfaces
 export * from './health-metrics-l2.interface';
 
+// Health Metrics Members page interfaces
+export * from './health-metrics-members.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
 

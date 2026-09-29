@@ -15,14 +15,14 @@ import type {
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
- * Health Metrics tab bar. Overview, Engagement and Events are routable today; the remaining three
- * render disabled so the bar does not reshuffle as their tabs land.
+ * Health Metrics tab bar. Overview, Engagement, Events and Members are routable today; the remaining
+ * two render disabled so the bar does not reshuffle as their tabs land.
  */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
   { key: 'events', label: 'Events', route: 'events' },
-  { key: 'members', label: 'Members', route: null },
+  { key: 'members', label: 'Members', route: 'members' },
   { key: 'non-members', label: 'Non-Members', route: null },
   { key: 'training', label: 'Training', route: null },
 ] as const;

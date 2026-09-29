@@ -1,0 +1,32 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component } from '@angular/core';
+import {
+  HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
+  HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX,
+  HEALTH_METRICS_MEMBERS_SECTIONS,
+  HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE_NOTE,
+} from '@lfx-one/shared/constants';
+import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
+
+import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+
+import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
+
+/**
+ * Members (Level 2) — seven anchored sections in the shared Level 2 shell, each an "Awaiting data"
+ * placeholder until its section lands. Rendered inside HealthMetricsGateComponent's outlet.
+ */
+@Component({
+  selector: 'lfx-health-metrics-members',
+  imports: [HealthMetricsL2ShellComponent],
+  templateUrl: './health-metrics-members.component.html',
+})
+export class HealthMetricsMembersComponent {
+  protected readonly sections = HEALTH_METRICS_MEMBERS_SECTIONS;
+  protected readonly idPrefix = HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX;
+  protected readonly dataSections = HEALTH_METRICS_MEMBERS_DATA_SECTIONS;
+  protected readonly crossReferenceNote = HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE_NOTE;
+  protected readonly subNavItems: HealthMetricsMembersSubNavItem[] = buildHealthMetricsMembersSubNavItems();
+}
