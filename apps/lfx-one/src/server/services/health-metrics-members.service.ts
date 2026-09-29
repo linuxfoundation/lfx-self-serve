@@ -155,6 +155,7 @@ export class HealthMetricsMembersService {
           AND movement_type = ?
           -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
           AND account_id IS NOT NULL
+          AND account_id <> ''
       ),
       totals AS (
         SELECT COUNT(*) AS total_records
@@ -313,7 +314,7 @@ function mapMovement(row: MovementRow): HealthMetricsMembersMovement[] {
   return [
     {
       accountId: row.ACCOUNT_ID,
-      accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
       membershipTier: row.MEMBERSHIP_TIER || null,
       duesImpactUsd: toNullableNumber(row.DUES_IMPACT_USD),
       movementDate: toIsoDate(row.MOVEMENT_DATE),

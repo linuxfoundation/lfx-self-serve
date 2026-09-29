@@ -279,12 +279,13 @@ describe('HealthMetricsMembersService.getMovements', () => {
     expect(sql).toContain('LEFT JOIN page ON TRUE');
   });
 
-  it('leaves unnamed accounts out of both the total and the page window', async () => {
+  it('leaves rows without an account id out of both the total and the page window', async () => {
     await new HealthMetricsMembersService().getMovements(req, query);
 
     const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
     expect(scoped).toContain('AND account_id IS NOT NULL');
+    expect(scoped).toContain("AND account_id <> ''");
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
@@ -323,6 +324,14 @@ describe('HealthMetricsMembersService.getMovements', () => {
         },
       ],
     });
+  });
+
+  it('falls back to the account id for a blank name', async () => {
+    execute.mockResolvedValue({ rows: [movementRow({ ACCOUNT_NAME: '' })] });
+
+    const response = await new HealthMetricsMembersService().getMovements(req, query);
+
+    expect(response.rows[0].accountName).toBe('0014100000AcmeAAAA');
   });
 
   it('keeps the total when the page is past the end', async () => {
