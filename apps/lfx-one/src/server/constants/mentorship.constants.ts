@@ -15,8 +15,8 @@ export const MENTORSHIP_BOOTSTRAP_PATH = '/mentorship/v1/me';
  */
 export const MENTORSHIP_NOT_PROVISIONED_ERROR = 'local user is not provisioned';
 
-/** Upstream path for the signed-in user's own mentee `user_profiles` row. */
-export const MENTORSHIP_MENTEE_PROFILE_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/profiles/mentee`;
+/** Upstream path that lists the signed-in user's own `user_profiles` rows (filter with `profile_type`). */
+export const MENTORSHIP_ME_PROFILES_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/profiles`;
 
 /**
  * The `error` the mentorship service returns with a 404 for a missing resource. Matching it,

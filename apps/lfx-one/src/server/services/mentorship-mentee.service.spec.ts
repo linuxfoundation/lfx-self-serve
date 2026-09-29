@@ -23,10 +23,10 @@ const { MentorshipMenteeService } = await import('./mentorship-mentee.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
 const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
 
-const PROFILE_PATH = '/mentorship/v1/me/profiles/mentee';
+const PROFILES_PATH = '/mentorship/v1/me/profiles';
 
 function upstreamError(status: number, body: unknown) {
-  return MicroserviceError.fromMicroserviceResponse(status, 'Upstream error', body, 'LFX_V2_SERVICE', PROFILE_PATH);
+  return MicroserviceError.fromMicroserviceResponse(status, 'Upstream error', body, 'LFX_V2_SERVICE', PROFILES_PATH);
 }
 
 function buildReq(): Request {
@@ -65,22 +65,21 @@ describe('MentorshipMenteeService profile reads', () => {
     service = new MentorshipMenteeService();
   });
 
-  it('reports a profile when the mentorship service returns one', async () => {
-    proxyRequest.mockResolvedValueOnce({ id: 'prof-1', profile_type: 'mentee' });
+  it("reports a profile when the caller's mentee list has a row, reading the list route rather than the single-type one", async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'prof-1', profile_type: 'mentee' }], meta: { total: 1, limit: 1, offset: 0 } });
 
     await expect(service.hasMenteeProfile(buildReq())).resolves.toEqual({ hasProfile: true });
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILE_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
   });
 
-  it("reports no profile on the mentorship service's own 404", async () => {
-    proxyRequest.mockRejectedValueOnce(upstreamError(404, { error: 'not found' }));
+  it("reports no profile when the caller's mentee list is empty", async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } });
 
     await expect(service.hasMenteeProfile(buildReq())).resolves.toEqual({ hasProfile: false });
   });
 
   it.each([
-    ['a 404 without the service error body', 404, undefined],
-    ['a 409 for duplicate profiles', 409, { error: 'conflict' }],
+    ['a gateway 404', 404, undefined],
     ['a 500', 500, { error: 'internal server error' }],
   ])('propagates %s instead of reporting no profile', async (_label, status, body) => {
     const error = upstreamError(status, body);
@@ -89,27 +88,33 @@ describe('MentorshipMenteeService profile reads', () => {
     await expect(service.hasMenteeProfile(buildReq())).rejects.toBe(error);
   });
 
-  it('maps the stored profile for the profile page', async () => {
+  it("maps the caller's mentee row for the profile page, reading the same list route with limit 1", async () => {
     proxyRequest.mockResolvedValueOnce({
-      id: 'prof-1',
-      user_id: 'user-1',
-      profile_type: 'mentee',
-      introduction: 'Test mentee introduction.',
-      skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
-      terms_and_conditions: true,
-      number_of_projects: 0,
-      created_on: '2026-01-01T00:00:00Z',
-      updated_on: '2026-01-01T00:00:00Z',
+      data: [
+        {
+          id: 'prof-1',
+          user_id: 'user-1',
+          profile_type: 'mentee',
+          introduction: 'Test mentee introduction.',
+          skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
+          terms_and_conditions: true,
+          number_of_projects: 0,
+          created_on: '2026-01-01T00:00:00Z',
+          updated_on: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { total: 1, limit: 1, offset: 0 },
     });
 
     const result = await service.getMenteeProfile(buildReq());
 
     expect(result.profile).toMatchObject({ aboutMe: 'Test mentee introduction.', skillsHave: ['Go'], skillsWant: ['Code Review'] });
     expect(result.history).toEqual([]);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
   });
 
-  it("returns an empty profile on the mentorship service's own 404, so the apply page loads straight after registering", async () => {
-    proxyRequest.mockRejectedValueOnce(upstreamError(404, { error: 'not found' }));
+  it("returns an empty profile when the caller's mentee list is empty, so the apply page loads straight after registering", async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } });
 
     await expect(service.getMenteeProfile(buildReq())).resolves.toEqual({
       profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
@@ -118,8 +123,7 @@ describe('MentorshipMenteeService profile reads', () => {
   });
 
   it.each([
-    ['a 404 without the service error body', 404, undefined],
-    ['a 409 for duplicate profiles', 409, { error: 'conflict' }],
+    ['a gateway 404', 404, undefined],
     ['a 500', 500, { error: 'internal server error' }],
   ])('propagates %s on the profile read', async (_label, status, body) => {
     const error = upstreamError(status, body);
