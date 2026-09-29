@@ -71,6 +71,10 @@ export class OrgPeopleBoardMembersService {
       }
     );
 
+    // The tab re-fetches right after a reassign; drop the caller's own 30-second seat roster and
+    // directory entries so that re-fetch reflects the new seat instead of the cached old one.
+    await this.boardCommitteeService.invalidateCallerSeatCaches(req, orgUid);
+
     const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);
     const seat = toAssignment(upstream, foundationNames);
     logger.debug(req, 'reassign_board_member_proxy', 'committee-service returned reassigned seat', {

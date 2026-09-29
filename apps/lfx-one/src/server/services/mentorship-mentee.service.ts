@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY,
-  MOCK_MENTORSHIP_MENTEE_PROFILE,
   MOCK_MENTORSHIP_MENTEE_TASKS,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
@@ -19,27 +19,39 @@ import {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeTasksResponse,
   MentorshipProgram,
+  MentorshipUpstreamListResponse,
+  MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { MENTORSHIP_ME_PROFILES_PATH } from '../constants';
 import { ResourceNotFoundError } from '../errors';
+import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * BFF for the mentee pages at `/mentorship/mentee/*`. Still serves mock data; each endpoint
- * moves to the mentorship service under linuxfoundation/lfx-mentorship#184.
+ * BFF for the mentee pages at `/mentorship/mentee/*`. The profile reads call the mentorship
+ * service; the remaining endpoints still serve mock data and move to it under
+ * linuxfoundation/lfx-mentorship#184.
  */
 export class MentorshipMenteeService {
+  private readonly microserviceProxy = new MicroserviceProxyService();
+
   /**
-   * Mock — always returns `false` so the guard falls through to the register page.
-   * When the real profiles endpoint lands, this calls it and returns `true` if
-   * the signed-in user already has a mentee profile.
+   * Whether the signed-in user has a mentee profile. A user has at most one, so the check
+   * lists the caller's own mentee rows with `limit: 1` and reports whether one came back.
+   * A failure propagates so it is logged and reported with its real status; the frontend
+   * treats any failed check as "no profile" and shows the register page.
    */
   public async hasMenteeProfile(req: Request): Promise<MentorshipMenteeHasProfileResponse> {
-    logger.debug(req, 'mentorship_has_mentee_profile', 'Checking mentee profile existence (mock: false)');
-    return { hasProfile: false };
+    logger.debug(req, 'mentorship_has_mentee_profile', 'Checking mentee profile existence');
+    const hasProfile = (await this.listMenteeProfiles(req)).length > 0;
+    logger.debug(req, 'mentorship_has_mentee_profile', 'Mentee profile existence checked', { hasProfile });
+    return { hasProfile };
   }
 
   public async getMenteeOverview(req: Request, phase?: MentorshipMenteePhase): Promise<MentorshipMenteeOverviewResponse> {
@@ -67,22 +79,24 @@ export class MentorshipMenteeService {
   }
 
   /**
-   * Mock BFF until the Mentorship `user_profiles` read is wired. Authenticated, but not
-   * scoped to `req`'s user — identity filtering is tracked with that real read
-   * (linuxfoundation/lfx-self-serve#2764). Do not invent authorization here.
+   * The signed-in user's mentee profile. Upstream lists only the caller's own rows, off their
+   * token, so no other user's profile is reachable from here. A user has at most one, so the
+   * read asks for `limit: 1`, the same as the has-profile check.
+   *
+   * An empty list returns an empty profile rather than an error: the apply page is reachable
+   * straight after registering, and registration does not save a profile yet
+   * (linuxfoundation/lfx-mentorship#187). Any failure propagates.
    */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
-    const response: MentorshipMenteeProfileResponse = {
-      profile: {
-        ...MOCK_MENTORSHIP_MENTEE_PROFILE.profile,
-        skillsHave: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsHave],
-        skillsWant: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsWant],
-      },
-      history: MOCK_MENTORSHIP_MENTEE_PROFILE.history.map((entry) => ({ ...entry })),
-      demographics: MOCK_MENTORSHIP_MENTEE_PROFILE.demographics ? { ...MOCK_MENTORSHIP_MENTEE_PROFILE.demographics } : undefined,
-    };
-    logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded', { history_count: response.history.length });
+    const [profile] = await this.listMenteeProfiles(req);
+    if (!profile) {
+      logger.debug(req, 'mentorship_get_mentee_profile', 'No mentee profile for the signed-in user, returning an empty profile');
+      return EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE;
+    }
+
+    const response = mapMentorshipMenteeProfile(profile);
+    logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded', { has_demographics: response.demographics !== undefined });
     return response;
   }
 
@@ -115,6 +129,18 @@ export class MentorshipMenteeService {
       termName: target.termName,
     });
     return target;
+  }
+
+  /** The caller's own mentee `user_profiles` rows; at most one, since a user has one mentee profile. */
+  private async listMenteeProfiles(req: Request): Promise<MentorshipUpstreamUserProfile[]> {
+    const { data } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamUserProfile>>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_ME_PROFILES_PATH,
+      'GET',
+      { profile_type: 'mentee', limit: 1 }
+    );
+    return data;
   }
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */

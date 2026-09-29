@@ -27,6 +27,7 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { OrgLensBoardCommitteeService } from '@services/org-lens-board-committee.service';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 
 import { ReassignBoardRolesModalComponent } from './reassign-board-roles-modal.component';
@@ -52,6 +53,7 @@ export class BoardCommitteeCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
 
   // === Internal: per-section data + load state ===
   protected readonly boardSeats = signal<BoardSeat[]>([]);
@@ -224,6 +226,7 @@ export class BoardCommitteeCardComponent {
           summary: event.seatKind === 'board' ? 'Board roles reassigned' : 'Committee seat reassigned',
           life: 3000,
         });
+        this.directory.invalidate(this.orgUid());
         this.fetchSeats();
       });
   }

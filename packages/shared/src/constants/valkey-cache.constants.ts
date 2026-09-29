@@ -186,7 +186,7 @@ export const VALKEY_CACHE = {
   /** Cap for the post-`fn()` release attempt made after an `acquireLock` that already came back `unavailable` (LFXV2 #2241) — that call just spent up to `LOCK_OP_TIMEOUT_MS` finding the backend unresponsive, so the release doesn't get another full budget on top of it. The release is best-effort either way (the lock's own `PX` TTL is the real backstop), so a short cap here only trims tail latency on an already-degraded request; it never affects correctness. */
   DEGRADED_LOCK_RELEASE_TIMEOUT_MS: 250,
 
-  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. Stays the default for every sub-resource absent from `MAX_VALUE_BYTES_BY_SUBRESOURCE`. */
+  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. Stays the default for every cache absent from both `MAX_VALUE_BYTES_BY_SUBRESOURCE` and `MAX_VALUE_BYTES_BY_NAMESPACE`. */
   MAX_VALUE_BYTES: 1_048_576,
 
   /**
@@ -224,5 +224,23 @@ export const VALKEY_CACHE = {
     // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
     // every row, so there is nothing left to deduplicate.
     'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
+  } as Readonly<Record<string, number>>,
+
+  /**
+   * Per-namespace overrides of `MAX_VALUE_BYTES`, keyed by the code-defined `{domain}:v{N}` cache
+   * family (e.g. `org-seats:v2`). For namespaces that carry no code-defined sub-resource — their
+   * post-principal segment is data (an org uid, a digest), so `MAX_VALUE_BYTES_BY_SUBRESOURCE` can
+   * never address them. A sub-resource entry takes precedence over a namespace entry; see
+   * `ValkeyService.maxBytesFor`, used by BOTH the write and read size checks.
+   *
+   * Same rules as `MAX_VALUE_BYTES_BY_SUBRESOURCE`: every entry is a deliberate, measured exception
+   * citing its measured compact size and date, sized at the measured maximum × ~1.25 rounded up to a
+   * whole MiB, and `Readonly` because it is a release decision, not a runtime knob.
+   */
+  MAX_VALUE_BYTES_BY_NAMESPACE: {
+    // Measured 2026-09-28 from prod `valkey_set` oversize logs: largest compact per-user seat
+    // roster 1,103,412 bytes (The Linux Foundation, 2,725 seats). Refused at the 1 MiB default,
+    // so every People Board/Committee/All Employees load re-drained committee-service (~27 s).
+    'org-seats:v2': 2 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

@@ -55,6 +55,15 @@ describe('proxyMentorshipRequest', () => {
     expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'PATCH', { limit: 5 }, body);
   });
 
+  it('does not provision an impersonated user, since impersonation is read-only', async () => {
+    const error = upstream401('local user is not provisioned');
+    proxyRequest.mockRejectedValueOnce(error);
+    const impersonatedReq = { ...req, impersonationActive: true } as Request;
+
+    await expect(proxyMentorshipRequest(proxy, impersonatedReq, path)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('does not retry any other 401', async () => {
     const error = upstream401('authenticated gateway principal is required');
     proxyRequest.mockRejectedValueOnce(error);

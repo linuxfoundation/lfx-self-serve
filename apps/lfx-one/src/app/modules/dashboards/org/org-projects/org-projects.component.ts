@@ -48,7 +48,7 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildHealthAriaLabel, buildInsightsUrl, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
@@ -806,7 +806,6 @@ export class OrgProjectsComponent {
           ...project,
           projectLink,
           orgMetricsUnavailable,
-          insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
           // Fallback rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather
           // than mapProject's active-row fallbacks, which would misreport "Silent" / "Non-LF Project".
           technicalBars: orgMetricsUnavailable ? [] : this.bandBars(project.technicalInfluence),

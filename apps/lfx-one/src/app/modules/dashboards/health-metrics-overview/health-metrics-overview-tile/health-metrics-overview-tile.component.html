@@ -24,21 +24,27 @@
         data-testid="health-metrics-overview-tile-insights-link">
         LFX Insights <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
       </a>
-    } @else if (tile().route; as route) {
-      <a
-        [routerLink]="route.commands"
-        [fragment]="route.fragment"
-        [queryParams]="route.queryParams"
-        queryParamsHandling="merge"
-        class="text-xs font-medium text-blue-600 hover:underline"
-        data-testid="health-metrics-overview-tile-engagement-link">
-        View groups <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
-      </a>
-    } @else if (tile().showStatus !== false) {
-      <span class="flex items-center gap-1.5 text-xs font-medium" [ngClass]="classificationMeta().textClass">
-        <i [class]="classificationMeta().icon" aria-hidden="true"></i>
-        {{ classificationMeta().label }}
-      </span>
+    } @else if (tile().showStatus !== false || tile().route) {
+      <!-- A linked tile keeps its status chip; the link sits beside it. -->
+      <div class="flex flex-wrap items-center gap-3" data-testid="health-metrics-overview-tile-status-row">
+        @if (tile().showStatus !== false) {
+          <span class="flex items-center gap-1.5 text-xs font-medium" [ngClass]="classificationMeta().textClass">
+            <i [class]="classificationMeta().icon" aria-hidden="true"></i>
+            {{ classificationMeta().label }}
+          </span>
+        }
+        @if (tile().route; as route) {
+          <a
+            [routerLink]="route.commands"
+            [fragment]="route.fragment"
+            [queryParams]="route.queryParams"
+            queryParamsHandling="merge"
+            class="text-xs font-medium text-blue-600 hover:underline"
+            [attr.data-testid]="'health-metrics-overview-tile-' + tile().area + '-link'">
+            {{ tile().routeLabel }} <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+          </a>
+        }
+      </div>
     }
     @if (asOfLabel(); as asOfLabelText) {
       <span class="text-xs text-gray-400">{{ asOfLabelText }}</span>

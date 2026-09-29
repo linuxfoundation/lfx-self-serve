@@ -72,9 +72,7 @@ export class MentorshipMenteeController {
   }
 
   // GET /api/mentorship/mentee/profile
-  // Auth: logged-in user required (401 otherwise). Identity-scoped payload is tracked
-  // with the real Mentorship `user_profiles` read (linuxfoundation/lfx-self-serve#2764)
-  // — do not invent authorization against this shared mock.
+  // Auth: logged-in user required (401 otherwise). Upstream scopes the read to the caller's token.
   public async getMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentee_profile');
 

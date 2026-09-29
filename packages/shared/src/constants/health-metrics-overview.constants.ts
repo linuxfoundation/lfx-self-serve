@@ -4,12 +4,19 @@
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsOverviewEngagementLinkSpec, HealthOverviewKpisRow, HealthOverviewRevenueRow } from '../interfaces/health-metrics-overview.interface';
+import type {
+  HealthMetricsOverviewArea,
+  HealthMetricsOverviewEngagementLinkSpec,
+  HealthMetricsOverviewEventsLinkSpec,
+  HealthMetricsOverviewTileLinkSpec,
+  HealthOverviewKpisRow,
+  HealthOverviewRevenueRow,
+} from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
- * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS} and
- * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS}.
+ * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS},
+ * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS}.
  * Order here is the tile-strip render order — never re-sorted.
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
@@ -87,10 +94,9 @@ export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
  * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
  * A one-line map so retiring a link when its Level 2 page ships is a one-line change.
  * `code.insights` is not here — it opens LFX Insights externally via `buildLensAwareInsightsUrl`.
- * Engagement's targets moved to {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS}.
+ * Engagement's and Events' targets moved to their own in-app maps below.
  */
 export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
-  'evt.forecast': '/events#forecast',
   'mem.atrisk': '/members#at-risk',
   'mem.renewals': '/members#renewals',
   'mem.list': '/members',
@@ -110,11 +116,22 @@ export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS = {
   'eng.participation': { section: 'participation', queryParams: { partMode: null } },
 } as const satisfies Record<string, HealthMetricsOverviewEngagementLinkSpec>;
 
+/**
+ * `evt.*` `link_target` → the Events section that owns it. `event` is cleared until a finding carries
+ * the event it names, so a stale pick in the URL cannot stand in for it.
+ */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS = {
+  'evt.forecast': { section: 'forecast', queryParams: { event: null } },
+} as const satisfies Record<string, HealthMetricsOverviewEventsLinkSpec>;
+
 /** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
 export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 
-/** The Engagement tile links to the unfiltered group attendance view, the source of its counts. */
-export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET = 'eng.groups';
+/** Each linked tile's target and link text; Engagement opens the unfiltered group attendance, the source of its counts. */
+export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
+  eng: { linkTarget: 'eng.groups', label: 'View groups' },
+  evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
+} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';

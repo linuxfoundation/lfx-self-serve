@@ -14,3 +14,6 @@ export const MENTORSHIP_BOOTSTRAP_PATH = '/mentorship/v1/me';
  * that call has run once for the user.
  */
 export const MENTORSHIP_NOT_PROVISIONED_ERROR = 'local user is not provisioned';
+
+/** Upstream path that lists the signed-in user's own `user_profiles` rows (filter with `profile_type`). */
+export const MENTORSHIP_ME_PROFILES_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/profiles`;

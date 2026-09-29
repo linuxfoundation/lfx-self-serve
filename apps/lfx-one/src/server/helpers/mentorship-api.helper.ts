@@ -7,6 +7,7 @@ import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
+import { isImpersonating } from '../utils/auth-helper';
 
 /** Whether an upstream failure is the mentorship service saying the caller has no local record yet. */
 export function isMentorshipNotProvisionedError(error: unknown): boolean {
@@ -22,6 +23,9 @@ export function isMentorshipNotProvisionedError(error: unknown): boolean {
  * Retrying a write is safe: upstream rejects an unprovisioned caller in middleware, before
  * the handler runs, so the first attempt changed nothing. `PUT /me` is an upsert, so two
  * requests provisioning the same user at once is harmless.
+ *
+ * While impersonating, the token is the target's, so provisioning would write the target's
+ * record from a read. Impersonation is read-only, so the 401 propagates instead.
  */
 export async function proxyMentorshipRequest<T>(
   proxy: MicroserviceProxyService,
@@ -34,7 +38,7 @@ export async function proxyMentorshipRequest<T>(
   try {
     return await proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
   } catch (error) {
-    if (!isMentorshipNotProvisionedError(error)) {
+    if (!isMentorshipNotProvisionedError(error) || isImpersonating(req)) {
       throw error;
     }
   }

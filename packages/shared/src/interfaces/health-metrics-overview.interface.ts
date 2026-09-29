@@ -5,12 +5,14 @@ import type {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsEngagementQueryParams, HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
+import type { HealthMetricsEventsQueryParams, HealthMetricsEventsSectionKey } from './health-metrics-events.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -21,10 +23,11 @@ export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OV
 /** A rail revenue-stream key — fixed 3-stream set per `railHTML()`'s legend. */
 export type HealthMetricsOverviewRevenueStreamKey = keyof typeof HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS;
 
-/** A recognized `hm_findings.link_target` value — every PCC anchor key, every Engagement target, and the one external Insights target. */
+/** A recognized `hm_findings.link_target` value — every PCC anchor key, every in-app tab target, and the one external Insights target. */
 export type HealthMetricsOverviewLinkTarget =
   | keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS
   | keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS
+  | keyof typeof HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS
   | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
 
 /** One entry of `HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS`: the owning section and its arrival filters. */
@@ -34,11 +37,24 @@ export interface HealthMetricsOverviewEngagementLinkSpec {
   queryParams: Readonly<HealthMetricsEngagementQueryParams>;
 }
 
-/** An in-app Overview link, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
+/** One entry of `HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS`: the owning section and its arrival params. */
+export interface HealthMetricsOverviewEventsLinkSpec {
+  section: HealthMetricsEventsSectionKey;
+  /** Merged into the current query string; `null` clears a param the URL already carries. */
+  queryParams: Readonly<HealthMetricsEventsQueryParams>;
+}
+
+/** One entry of `HEALTH_METRICS_OVERVIEW_TILE_LINKS`: the in-app target a tile opens and the link's text. */
+export interface HealthMetricsOverviewTileLinkSpec {
+  linkTarget: HealthMetricsOverviewLinkTarget;
+  label: string;
+}
+
+/** An in-app Overview link into a Level 2 tab, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
 export interface HealthMetricsOverviewFindingRoute {
   commands: readonly string[];
-  fragment: HealthMetricsEngagementSectionKey;
-  queryParams: Readonly<HealthMetricsEngagementQueryParams>;
+  fragment: HealthMetricsEngagementSectionKey | HealthMetricsEventsSectionKey;
+  queryParams: Readonly<HealthMetricsEngagementQueryParams> | Readonly<HealthMetricsEventsQueryParams>;
 }
 
 /**
@@ -198,8 +214,10 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
-  /** Set only for the `eng` area — the tile links into the Engagement tab's group attendance. */
+  /** Set for the `eng` and `evt` areas while they carry a figure — the tile links into its Level 2 tab. */
   route?: HealthMetricsOverviewFindingRoute;
+  /** The tile link's text, set with {@link route}. */
+  routeLabel?: string;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */
@@ -217,7 +235,7 @@ export interface HealthMetricsOverviewFindingViewModel {
   evaluatedAt: string;
   /** Set for a PCC or Insights link; mutually exclusive with {@link linkRoute}. */
   linkHref?: string;
-  /** Set for an `eng.*` finding, which links into the Engagement tab instead of PCC. */
+  /** Set for an `eng.*` or `evt.*` finding, which links into its Level 2 tab instead of PCC. */
   linkRoute?: HealthMetricsOverviewFindingRoute;
   linkIsExternal: boolean;
   visual?: HealthMetricsFindingVisual;
