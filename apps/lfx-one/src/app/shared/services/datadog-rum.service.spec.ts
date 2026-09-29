@@ -11,8 +11,9 @@ import { DataDogRumService } from './datadog-rum.service';
 
 /**
  * Pins where the Admin Mode impersonation gate lives. setUser() assigns the impersonated user's
- * identity to the RUM session, so an admin's clicks are attributed to that user — the "Open
- * Profile" banner click count (LFXV2-3336) would silently absorb admin traffic. The suppression
+ * identity to the RUM session, so an admin's clicks are attributed to that user — the profile
+ * help link click count (#2986, originally LFXV2-3336's sidebar banner) would silently absorb
+ * admin traffic. The suppression
  * has to be a property of the service, not a check each caller remembers: a call site that forgets
  * it corrupts the count with no visible failure. addError is deliberately NOT gated — errors are
  * session telemetry, not user-attributed product events, and an impersonated session's errors are
@@ -39,9 +40,9 @@ describe('DataDogRumService — impersonation suppression', () => {
   });
 
   it('forwards addAction with its name and context', () => {
-    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'sidebar' });
+    service.addAction(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'test' });
 
-    expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'sidebar' });
+    expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED, { source: 'test' });
   });
 
   it('forwards addAction with no context when none is given', () => {

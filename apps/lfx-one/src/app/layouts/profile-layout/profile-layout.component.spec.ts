@@ -387,12 +387,12 @@ describe('ProfileLayoutComponent — profile help link click tracking (#2986)', 
     TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
   });
 
-  it('emits the profile-help click action when the banner link is clicked', async () => {
+  it('emits the profile-help click action', async () => {
     const fixture = TestBed.createComponent(ProfileLayoutComponent);
     fixture.detectChanges();
     await fixture.whenStable();
 
-    (fixture.componentInstance as unknown as { trackOpenProfileBannerClick: () => void }).trackOpenProfileBannerClick();
+    fixture.componentInstance.trackOpenProfileBannerClick();
 
     expect(addAction).toHaveBeenCalledWith(OPEN_PROFILE_BANNER_LINK_CLICKED);
   });

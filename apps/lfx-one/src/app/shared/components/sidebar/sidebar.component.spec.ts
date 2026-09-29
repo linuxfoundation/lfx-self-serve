@@ -6,7 +6,6 @@ import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, Router } from '@angular/router';
 import { LensItem, User } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
@@ -38,7 +37,6 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
       imports: [SidebarComponent],
       providers: [
         { provide: Router, useValue: { url, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
-        { provide: DataDogRumService, useValue: { addAction: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
           provide: LensService,
