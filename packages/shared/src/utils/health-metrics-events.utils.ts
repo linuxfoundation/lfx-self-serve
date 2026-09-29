@@ -496,12 +496,11 @@ export function buildHealthMetricsEventsSponsorshipView(
   });
   const tierPackages = period?.tierPackages ?? null;
   const addOns = period?.addOns ?? null;
-  const packages = tierPackages === null || addOns === null ? null : tierPackages + addOns;
 
   return {
     foundationMeasured: sponsorship.periods.length > 0,
     measured: period !== null && period.revenueUsd !== null,
-    packagesLabel: formatSponsorshipPackagesLabel(packages),
+    packagesLabel: formatSponsorshipPackagesLabel(tierPackages),
     headline: stat(
       'revenue',
       'Sponsorship revenue',

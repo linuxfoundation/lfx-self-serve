@@ -944,7 +944,7 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
 
     expect(view.foundationMeasured).toBe(true);
     expect(view.measured).toBe(true);
-    expect(view.packagesLabel).toBe('15 packages sold');
+    expect(view.packagesLabel).toBe('12 packages sold');
     expect(view.headline).toMatchObject({ label: 'Sponsorship revenue', value: '$750K', delta: '+25%', deltaDirection: 'up' });
     expect(view.side.map((stat) => [stat.label, stat.value])).toEqual([
       ['Goal', '$1M'],
@@ -1002,6 +1002,12 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 1, addOns: 0 })), 'YTD');
 
     expect(view.packagesLabel).toBe('1 package sold');
+  });
+
+  it('counts tier packages only in the packages pill, keeping add-ons out', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 5, addOns: 7 })), 'YTD');
+
+    expect(view.packagesLabel).toBe('5 packages sold');
   });
 
   it('reads as unmeasured for a period missing from the response', () => {

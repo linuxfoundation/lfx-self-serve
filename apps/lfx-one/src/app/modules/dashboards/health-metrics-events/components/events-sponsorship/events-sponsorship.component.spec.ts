@@ -109,7 +109,7 @@ describe('EventsSponsorshipComponent', () => {
     expect(text('events-sponsorship-side-goal-value')).toBe('$1M');
     expect(text('events-sponsorship-side-tier-packages-value')).toBe('30');
     expect(text('events-sponsorship-side-add-ons-value')).toBe('12');
-    expect(text('events-sponsorship-packages')).toBe('42 packages sold');
+    expect(text('events-sponsorship-packages')).toBe('30 packages sold');
   });
 
   it('shows progress to the goal and ranks the tiers', async () => {

@@ -638,7 +638,7 @@ export interface HealthMetricsEventsSponsorshipView {
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** e.g. `42 packages sold`; empty when unmeasured. */
+  /** Tier packages only, e.g. `30 packages sold`; add-ons are counted separately. Empty when unmeasured. */
   packagesLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
