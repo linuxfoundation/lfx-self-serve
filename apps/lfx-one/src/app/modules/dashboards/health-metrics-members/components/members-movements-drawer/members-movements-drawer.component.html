@@ -21,6 +21,10 @@
   </ng-template>
 
   <div class="flex flex-col gap-4" data-testid="members-movements-drawer-body">
+    <!-- Above the branches so an empty list still explains its bar; null until a read settles. -->
+    @if (countNote(); as note) {
+      <p class="rounded-md bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800" data-testid="members-movements-drawer-count-note">{{ note }}</p>
+    }
     @if (loadFailed() && rows().length === 0) {
       <lfx-empty-state
         icon="fa-light fa-triangle-exclamation"
@@ -32,10 +36,6 @@
     } @else if (rows().length === 0) {
       <p class="text-sm text-gray-500" data-testid="members-movements-drawer-empty">No organizations are listed for this movement.</p>
     } @else {
-      @if (countNote(); as note) {
-        <p class="rounded-md bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800" data-testid="members-movements-drawer-count-note">{{ note }}</p>
-      }
-
       <ul class="flex flex-col" data-testid="members-movements-drawer-list">
         @for (row of rows(); track row.accountId) {
           <li class="flex items-start justify-between gap-4 border-b border-gray-100 py-2.5" data-testid="members-movements-drawer-row">
