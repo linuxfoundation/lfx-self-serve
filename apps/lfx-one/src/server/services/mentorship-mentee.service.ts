@@ -105,11 +105,13 @@ export class MentorshipMenteeService {
    *
    * An empty list returns an empty profile rather than an error: the apply page is reachable
    * straight after registering, and registration does not save a profile yet
-   * (linuxfoundation/lfx-mentorship#187). Any failure propagates.
+   * (linuxfoundation/lfx-mentorship#187). A failed profile read propagates; a failed applications
+   * read logs a warning and leaves the history empty, since the apply page reads this profile too
+   * and never shows the history.
    */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
-    const [[profile], applications] = await Promise.all([this.listMenteeProfiles(req), this.listMenteeApplications(req)]);
+    const [[profile], applications] = await Promise.all([this.listMenteeProfiles(req), this.listMenteeApplicationsForHistory(req)]);
     const history = mapMentorshipMenteeApplicationHistory(applications);
     if (!profile) {
       logger.debug(req, 'mentorship_get_mentee_profile', 'No mentee profile for the signed-in user, returning an empty profile', {
@@ -170,6 +172,16 @@ export class MentorshipMenteeService {
   }
 
   /** The caller's own mentee applications, every page. */
+  /** The caller's applications for the profile's history, or none when the read fails. */
+  private async listMenteeApplicationsForHistory(req: Request): Promise<MentorshipUpstreamApplication[]> {
+    try {
+      return await this.listMenteeApplications(req);
+    } catch (error) {
+      logger.warning(req, 'mentorship_get_mentee_profile', 'Failed to load mentee applications, leaving the history empty', { err: error });
+      return [];
+    }
+  }
+
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
     return this.listAllPages<MentorshipUpstreamApplication>(req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
   }

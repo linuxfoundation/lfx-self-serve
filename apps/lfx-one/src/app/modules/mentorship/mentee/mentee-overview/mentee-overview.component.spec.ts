@@ -140,10 +140,17 @@ describe('MenteeOverviewComponent', () => {
     expect(text(element())).toContain(MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX.trim());
   });
 
-  it('renders the applicant layout for an accepted-only mentee', async () => {
+  it('renders the applicant layout without the review banner for an accepted-only mentee', async () => {
     await bootstrap({ applications: [menteeTestApplication({ upstreamStatus: 'accepted' })] });
     expect(byTestId('mentee-overview-applicant')).toBeTruthy();
-    expect(text(byTestId('mentee-overview-banner-title'))).toBe('0 applications under review');
+    expect(allByTestId('mentee-application-card')).toHaveLength(1);
+    expect(byTestId('mentee-overview-banner')).toBeNull();
+  });
+
+  it('hides the review banner when every application is past', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ upstreamStatus: 'declined' })] });
+    expect(byTestId('mentee-overview-applicant')).toBeTruthy();
+    expect(byTestId('mentee-overview-banner')).toBeNull();
   });
 
   // ---- Application cards ----------------------------------------------------

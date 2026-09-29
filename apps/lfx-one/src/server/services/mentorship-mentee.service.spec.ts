@@ -199,16 +199,18 @@ describe('MentorshipMenteeService profile reads', () => {
     await expect(service.getMenteeProfile(buildReq())).rejects.toBe(error);
   });
 
-  it('propagates a failed applications read on the profile read', async () => {
-    const error = upstreamError(500, { error: 'internal server error' });
+  it('leaves the history empty when the applications read fails on the profile read', async () => {
     routeProxy(proxyRequest, {
       [PROFILES_PATH]: () => listOf([]),
       [ME_APPLICATIONS_PATH]: () => {
-        throw error;
+        throw upstreamError(500, { error: 'internal server error' });
       },
     });
 
-    await expect(service.getMenteeProfile(buildReq())).rejects.toBe(error);
+    await expect(service.getMenteeProfile(buildReq())).resolves.toEqual({
+      profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
+      history: [],
+    });
   });
 });
 

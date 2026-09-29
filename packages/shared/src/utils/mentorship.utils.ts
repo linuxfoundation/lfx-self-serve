@@ -97,7 +97,6 @@ function isBlank(value: string): boolean {
   return !value.trim();
 }
 
-/** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
 /**
  * A date-only value (`YYYY-MM-DD`) as its UTC midnight instant, so `DatePipe` with `'UTC'` shows the
  * same calendar day in every timezone. Any other value comes back unchanged.
@@ -106,6 +105,7 @@ export function toMentorshipUtcInstant(value: string): string {
   return MENTORSHIP_ISO_DATE.test(value) ? `${value}T00:00:00Z` : value;
 }
 
+/** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
 export function isMentorshipIsoDate(value: string): boolean {
   const match = MENTORSHIP_ISO_DATE.exec(value);
   if (!match) return false;
