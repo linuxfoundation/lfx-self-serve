@@ -714,6 +714,9 @@ describe('OrgClaService.getPdfUrl', () => {
     [{ signed_cla_url: 'http://s3.example.org/ccla.pdf' }],
     [{ signed_cla_url: '/ccla.pdf' }],
     [{ signedClaUrl: 'javascript:alert(1)' }],
+    [{ signed_cla_url: {} }],
+    [{ signed_cla_url: ['https://s3.example.org/ccla.pdf'] }],
+    [{ signedClaUrl: 42 }],
   ])('refuses a signed document address of %j with a 502', async (document) => {
     stageDocument(document);
 

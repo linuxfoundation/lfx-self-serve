@@ -646,12 +646,15 @@ export class ClaService {
       throw error;
     }
 
-    if (!result?.url) return null;
+    // Typed as a string, but `gatewayFetch` only casts the parsed body, and `new URL` would coerce
+    // an array of one https address into a pass.
+    const url: unknown = result?.url;
+    if (!url) return null;
 
-    if (!isHttpsUrl(result.url)) {
+    if (typeof url !== 'string' || !isHttpsUrl(url)) {
       logger.warning(req, 'cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
         signature_id: signatureId,
-        pdf_url_scheme: urlSchemeForLog(result.url),
+        pdf_url_scheme: typeof url === 'string' ? urlSchemeForLog(url) : 'non-string',
       });
       throw new MicroserviceError('Upstream returned an unusable signed document address', 502, 'CLA_PDF_URL_INVALID', {
         operation: 'cla_get_pdf_url',
@@ -660,7 +663,7 @@ export class ClaService {
     }
 
     logger.success(req, 'cla_get_pdf_url', startTime);
-    return { url: result.url, expiresInSeconds: result.expiresInSeconds ?? 0 };
+    return { url, expiresInSeconds: result?.expiresInSeconds ?? 0 };
   }
 
   /**

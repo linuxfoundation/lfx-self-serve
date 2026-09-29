@@ -964,6 +964,8 @@ describe('ClaService.getPdfUrl', () => {
     ['data:text/html,<p>x</p>'],
     ['http://s3.example.org/signed.pdf'],
     ['/signed.pdf'],
+    [['https://s3.example.org/signed.pdf']],
+    [{ href: 'https://s3.example.org/signed.pdf' }],
   ])('refuses a signed document address of %p with a 502', async (url) => {
     gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url, expiresInSeconds: 900 });
 
