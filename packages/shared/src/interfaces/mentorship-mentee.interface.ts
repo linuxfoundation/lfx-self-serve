@@ -109,7 +109,7 @@ export type MentorshipMenteeTaskCategory = 'prerequisite' | 'non_prerequisite';
  * BFF mapping from `GET /mentorship/v1/applications/{id}/tasks`:
  * - `submitFile` ← `tasks.submit_file` (`null` | `'required'` | URL)
  * - `fileUrl` ← `tasks.file`
- * - `dueDate` ← `tasks.due_date` as its UTC midnight instant, else the term's application close for a prerequisite task
+ * - `dueDate` ← `tasks.due_date`, else the term's application close for a prerequisite task, as its UTC midnight instant
  * - `submittedOn` ← `tasks.updated_on` when status is `submitted` or `complete`
  * - `updatedOn` ← `tasks.updated_on`
  */
@@ -320,7 +320,7 @@ export interface MentorshipMenteeTermRef {
  * - `programName` / `programLogoUrl` ← the embedded `program`
  * - `projectName` ← the embedded `program.project_name`; absent when the program has no LF project
  * - `term` ← the embedded `term`
- * - `decisionExpectedDate` ← `term.application_end_date`
+ * - `decisionExpectedDate` ← `term.application_end_date` as its UTC midnight instant
  * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`, read only with `withTasks=true` and
  *   only for pending, accepted and graduated applications; absent otherwise, never an empty stand-in
  */

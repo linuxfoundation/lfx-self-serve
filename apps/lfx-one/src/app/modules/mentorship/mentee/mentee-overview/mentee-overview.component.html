@@ -91,9 +91,9 @@
             </div>
             <p class="text-sm font-semibold text-gray-900">{{ app.programName }}</p>
             <p class="text-xs text-gray-400">
-              Last updated {{ app.lastUpdatedOn | date: 'MMM d, y' }}
+              <!-- UTC so the server render and the browser show the same calendar day in every timezone -->
+              Last updated {{ app.lastUpdatedOn | date: 'MMM d, y' : 'UTC' }}
               @if (app.decisionExpectedDate) {
-                <!-- UTC so a midnight-UTC term timestamp does not shift a day in western timezones -->
                 · Decision expected {{ app.decisionExpectedDate | date: 'MMM d, y' : 'UTC' }}
               }
             </p>

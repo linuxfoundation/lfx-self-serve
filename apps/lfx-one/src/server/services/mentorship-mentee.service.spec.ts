@@ -22,6 +22,7 @@ vi.mock('./logger.service', () => ({
 
 const { MentorshipMenteeService } = await import('./mentorship-mentee.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { logger } = await import('./logger.service');
 const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
 
 const PROFILES_PATH = '/mentorship/v1/me/profiles';
@@ -310,6 +311,56 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
     });
 
     await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
+  });
+
+  it('stops after one page when the page carries no total', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => ({ data: [upstreamApplication()] }),
+    });
+
+    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
+    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_APPLICATIONS_PATH)).toHaveLength(1);
+  });
+
+  it('stops at the page cap when upstream keeps returning rows', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => ({ data: [upstreamApplication()], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } }),
+    });
+
+    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 50 });
+    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_APPLICATIONS_PATH)).toHaveLength(50);
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_list_all_pages', expect.any(String), {
+      path: ME_APPLICATIONS_PATH,
+      max_pages: 50,
+      count: 50,
+    });
+  });
+
+  it('reads tasks a few applications at a time', async () => {
+    const applications = Array.from({ length: 7 }, (_, index) => upstreamApplication({ id: `app-${index}` }));
+    let inFlight = 0;
+    let peak = 0;
+    const tasksRoutes = Object.fromEntries(
+      applications.map((application) => [
+        `${APPLICATIONS_PATH}/${application.id}/tasks`,
+        async () => {
+          inFlight++;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          inFlight--;
+          return listOf([]);
+        },
+      ])
+    );
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => listOf(applications),
+      ...tasksRoutes,
+    });
+
+    const result = await service.getMenteeApplications(buildReq(), true);
+
+    expect(result.data.map((app) => app.id)).toEqual(applications.map((application) => application.id));
+    expect(peak).toBe(5);
   });
 
   it('propagates a failed task read', async () => {

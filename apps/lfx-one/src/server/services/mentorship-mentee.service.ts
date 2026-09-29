@@ -22,9 +22,11 @@ import { Request } from 'express';
 
 import {
   MENTORSHIP_APPLICATIONS_PATH,
+  MENTORSHIP_LIST_MAX_PAGES,
   MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
+  MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
 } from '../constants';
 import { ResourceNotFoundError } from '../errors';
@@ -62,19 +64,25 @@ export class MentorshipMenteeService {
    * their token. Every page is read: a mentee holds a handful of applications, so paging to the
    * end costs one request in practice and keeps the overview counts complete.
    *
-   * With `withTasks`, the tasks of each pending, accepted or graduated application are listed in parallel,
-   * and a task failure propagates, since the task views would otherwise show wrong progress. Past
+   * With `withTasks`, the tasks of each pending, accepted or graduated application are listed a
+   * few applications at a time, and a task failure propagates, since the task views would otherwise show wrong progress. Past
    * applications only show their outcome, so their tasks are not read. The program and its LF
    * project come embedded on each application, so no program is read.
    */
   public async getMenteeApplications(req: Request, withTasks: boolean): Promise<MentorshipMenteeApplicationsResponse> {
     logger.debug(req, 'mentorship_get_mentee_applications', 'Loading mentee applications', { withTasks });
     const applications = await this.listMenteeApplications(req);
-    const tasksByApplication = await Promise.all(
-      applications.map((application) =>
-        withTasks && MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES.includes(application.status) ? this.listApplicationTasks(req, application.id) : undefined
-      )
-    );
+    const tasksByApplication: (MentorshipUpstreamTask[] | undefined)[] = [];
+    for (let start = 0; start < applications.length; start += MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY) {
+      const batch = applications.slice(start, start + MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY);
+      tasksByApplication.push(
+        ...(await Promise.all(
+          batch.map((application) =>
+            withTasks && MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES.includes(application.status) ? this.listApplicationTasks(req, application.id) : undefined
+          )
+        ))
+      );
+    }
 
     const data = applications.map((application, index) => mapMentorshipMenteeApplication(application, tasksByApplication[index]));
     logger.debug(req, 'mentorship_get_mentee_applications', 'Mentee applications loaded', {
@@ -180,21 +188,30 @@ export class MentorshipMenteeService {
 
   /**
    * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
-   * the reported total or a page comes back empty.
+   * the reported total, a page comes back empty, or the page carries no usable total. A list still
+   * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
    */
   private async listAllPages<T>(req: Request, path: string, query: Record<string, unknown> = {}): Promise<T[]> {
     const items: T[] = [];
-    for (;;) {
+    for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
       const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(this.microserviceProxy, req, path, 'GET', {
         ...query,
         limit: MENTORSHIP_LIST_PAGE_SIZE,
         offset: items.length,
       });
-      items.push(...data);
-      if (data.length === 0 || items.length >= meta.total) {
+      const rows = data ?? [];
+      items.push(...rows);
+      const total = meta?.total;
+      if (rows.length === 0 || typeof total !== 'number' || !Number.isFinite(total) || items.length >= total) {
         return items;
       }
     }
+    logger.warning(req, 'mentorship_list_all_pages', 'Upstream list exceeded the page cap, returning the rows read so far', {
+      path,
+      max_pages: MENTORSHIP_LIST_MAX_PAGES,
+      count: items.length,
+    });
+    return items;
   }
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */

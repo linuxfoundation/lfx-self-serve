@@ -50,7 +50,7 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       status: 'incomplete',
       submitFile: null,
       fileUrl: undefined,
-      dueDate: '2026-08-01',
+      dueDate: '2026-08-01T00:00:00Z',
       submittedOn: undefined,
       updatedOn: '2026-06-05T10:00:00Z',
     });
@@ -102,7 +102,7 @@ describe('mapMentorshipMenteeApplication', () => {
       upstreamStatus: 'pending',
       createdOn: '2026-06-28T10:00:00Z',
       updatedOn: '2026-06-29T10:00:00Z',
-      decisionExpectedDate: '2026-08-01',
+      decisionExpectedDate: '2026-08-01T00:00:00Z',
       tasks: [mapMentorshipMenteeApplicationTask(baseTask, '2026-08-01')],
     });
   });

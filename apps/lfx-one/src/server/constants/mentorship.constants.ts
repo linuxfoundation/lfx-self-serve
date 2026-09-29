@@ -29,6 +29,12 @@ export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 /** Page size for upstream mentorship list reads: the largest `limit` the service accepts. */
 export const MENTORSHIP_LIST_PAGE_SIZE = 100;
 
+/** Most pages one upstream mentorship list read follows, so a list that never ends cannot loop forever. */
+export const MENTORSHIP_LIST_MAX_PAGES = 50;
+
+/** Most application task reads the mentee applications read runs at once. */
+export const MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY = 5;
+
 /** Application statuses whose tasks the mentee views track; every other status is a past application. */
 export const MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'accepted', 'graduated'];
 

@@ -16,13 +16,13 @@ import { MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER } from '../constants/mentorship.
 const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status === 'submitted' || task.status === 'complete';
 
 /**
- * A task's own due date as its UTC midnight instant, else the term's application close for a
- * prerequisite task. Upstream stores `due_date` as a bare date, which `DatePipe` would read as
- * local midnight and show a day early east of UTC.
+ * A task's own due date, else the term's application close for a prerequisite task, as its UTC
+ * midnight instant. Upstream stores both as bare dates, which `DatePipe` would read as local
+ * midnight and show a day early east of UTC.
  */
 const resolveTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
   if (task.due_date) return toMentorshipUtcInstant(task.due_date);
-  if (task.category === 'prerequisite') return applicationEndDate;
+  if (task.category === 'prerequisite' && applicationEndDate) return toMentorshipUtcInstant(applicationEndDate);
   return undefined;
 };
 
@@ -66,7 +66,7 @@ export const mapMentorshipMenteeApplication = (
   upstreamStatus: application.status,
   createdOn: application.created_on,
   updatedOn: application.updated_on,
-  decisionExpectedDate: application.term?.application_end_date || undefined,
+  decisionExpectedDate: application.term?.application_end_date ? toMentorshipUtcInstant(application.term.application_end_date) : undefined,
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 
