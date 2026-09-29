@@ -819,7 +819,14 @@ export class CampaignServiceClient {
    * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
    * without one configured refuses rather than inventing copy.
    */
-  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string, variant?: string): Promise<GenerateEmailCopyResult> {
+  public async generateEmailCopy(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    stage?: string,
+    variant?: string,
+    segment?: string
+  ): Promise<GenerateEmailCopyResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       return { enabled: false };
     }
@@ -836,7 +843,10 @@ export class CampaignServiceClient {
       //
       // `variant` is also a query param upstream (same reasoning as `stage`), so it joins `stage`
       // in the same query object rather than the sixth (body) argument.
-      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
+      //
+      // `segment` follows the same query-param shape again -- upstream composes it additively
+      // alongside `variant` rather than replacing it.
+      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',

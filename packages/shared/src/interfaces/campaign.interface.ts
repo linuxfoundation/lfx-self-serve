@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_EMAIL_SEGMENTS, CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -1216,6 +1216,12 @@ export interface HubSpotCampaignCreateRequest {
    * ignored when `heroImageUrl` is not set.
    */
   heroLinkUrl?: string;
+  /**
+   * Hero image alt text, read by screen readers (`internal/dispatch/hubspot.go`'s
+   * `HeroImageAlt`). OPTIONAL; ignored when `heroImageUrl` is not set. Empty falls back to a
+   * generic "Event banner" upstream rather than the image going undescribed.
+   */
+  heroImageAlt?: string;
   /**
    * Sponsor logos, each rendered as its own image module in tiered rows during the same full
    * content rebuild (`internal/dispatch/hubspot.go`'s `Sponsors`). Capped upstream at 10, split
@@ -2539,6 +2545,20 @@ export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
  * cannot drift apart.
  */
 export type CampaignEmailVariant = (typeof CAMPAIGN_EMAIL_VARIANTS)[number];
+
+/**
+ * Narrows which of a `generate-email-copy` draft's content blocks are relevant to a named
+ * audience -- `'developer'`, `'business-decision-maker'`, `'alumni'`, or `'prospect'`. Orthogonal
+ * to `CampaignEmailVariant`: variant restyles the whole draft's framing, segment narrows which
+ * blocks within that draft matter to this audience. Both may be set together, either alone, or
+ * neither. Same free-text, lenient-fallback shape as `CampaignEmailStage` and
+ * `CampaignEmailVariant`: an unrecognised or absent value produces the normal stage-based copy
+ * under a 200 rather than an error.
+ *
+ * Derived from `CAMPAIGN_EMAIL_SEGMENTS` rather than restated, so the UI's selector and this type
+ * cannot drift apart.
+ */
+export type CampaignEmailSegment = (typeof CAMPAIGN_EMAIL_SEGMENTS)[number];
 
 /**
  * One selectable email type.

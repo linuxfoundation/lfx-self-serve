@@ -191,6 +191,25 @@
             </p>
           </div>
 
+          <!--
+            Narrows which content blocks the generated copy keeps for a named audience -- orthogonal
+            to the stage above (WHAT the email is for) and independent of the variant/A-B split
+            (HOW the draft is styled). Defaults to "All audiences" (no segment sent upstream).
+          -->
+          <div class="flex flex-col gap-2" data-testid="campaigns-email-segment-picker">
+            <label for="email-segment" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience segment</label>
+            <lfx-select
+              [form]="selectorForm"
+              control="emailSegment"
+              inputId="email-segment"
+              [options]="emailSegments"
+              optionLabel="label"
+              optionValue="id"
+              size="small"
+              ariaLabel="Audience segment"
+              dataTest="campaigns-email-segment-select" />
+          </div>
+
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             deliveryType="email"
@@ -668,7 +687,11 @@
                       the operator sees what the draft will actually contain.
                     -->
                     @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
-                      <img [src]="heroUrl" alt="Event banner" class="block w-full" data-testid="campaigns-email-preview-hero" />
+                      <img
+                        [src]="heroUrl"
+                        [alt]="(emailBriefOutput()?.eventDetails?.name || 'Event') + ' banner'"
+                        class="block w-full"
+                        data-testid="campaigns-email-preview-hero" />
                     }
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -801,7 +824,7 @@
                              subject/body differ between them -- because HubSpot's native A/B test
                              swaps subject/body on the clone and leaves its other widgets untouched. -->
                         @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
-                          <img [src]="heroUrl" alt="Event banner" class="block w-full" />
+                          <img [src]="heroUrl" [alt]="(emailBriefOutput()?.eventDetails?.name || 'Event') + ' banner'" class="block w-full" />
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -828,7 +851,7 @@
                           <p class="text-sm font-semibold text-gray-900">{{ abTestSubjectB() || '(no subject yet)' }}</p>
                         </div>
                         @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
-                          <img [src]="heroUrl" alt="Event banner" class="block w-full" />
+                          <img [src]="heroUrl" [alt]="(emailBriefOutput()?.eventDetails?.name || 'Event') + ' banner'" class="block w-full" />
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -889,6 +912,17 @@
                     data-testid="campaigns-email-stage-message">
                     {{ message }}
                   </p>
+                  @if (emailStagingUrl(); as hubspotUrl) {
+                    <a
+                      [href]="hubspotUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-sm text-blue-600 hover:underline"
+                      data-testid="campaigns-email-stage-hubspot-link">
+                      Open in HubSpot
+                      <i class="fa-light fa-arrow-up-right-from-square ml-1"></i>
+                    </a>
+                  }
                 }
               </div>
             </div>

@@ -577,7 +577,10 @@ export class CampaignController {
       // `variant` follows the same forward-without-validating shape as `stage` above.
       const rawVariant = (req.body as { variant?: unknown } | undefined)?.variant;
       const variant = typeof rawVariant === 'string' && rawVariant.trim() !== '' ? rawVariant.trim() : undefined;
-      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant);
+      // `segment` follows the same forward-without-validating shape as `stage`/`variant` above.
+      const rawSegment = (req.body as { segment?: unknown } | undefined)?.segment;
+      const segment = typeof rawSegment === 'string' && rawSegment.trim() !== '' ? rawSegment.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant, segment);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {

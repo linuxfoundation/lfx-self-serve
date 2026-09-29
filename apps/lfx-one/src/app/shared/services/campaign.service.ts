@@ -31,6 +31,7 @@ import {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignDeliveryType,
+  CampaignEmailSegment,
   CampaignEmailStage,
   CampaignEmailVariant,
   CampaignJobOutcome,
@@ -184,7 +185,8 @@ export class CampaignService {
     projectSlug: string,
     briefId: string,
     stage?: CampaignEmailStage,
-    variant?: CampaignEmailVariant
+    variant?: CampaignEmailVariant,
+    segment?: CampaignEmailSegment
   ): Observable<GenerateEmailCopyResult> {
     // `stage` travels in this request's BODY, and in the BFF's own request to campaign-service it
     // travels in the QUERY STRING. The two hops differ deliberately: declaring it as a Goa body
@@ -200,7 +202,10 @@ export class CampaignService {
     //
     // `variant` follows the exact same shape as `stage` for the same reason: omitted rather than
     // sent empty, and unrecognised upstream falls back to ordinary stage-based copy under a 200.
-    const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
+    //
+    // `segment` follows the same shape again: composes additively alongside `variant` rather than
+    // replacing it, and an unrecognised value upstream is likewise a no-op, not an error.
+    const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
     return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', body, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });

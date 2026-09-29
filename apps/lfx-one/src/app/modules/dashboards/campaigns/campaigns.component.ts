@@ -9,6 +9,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_SEGMENT_LABELS,
+  CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
@@ -33,6 +35,7 @@ import type {
   CampaignAudience,
   CampaignServiceEmailMetrics,
   CampaignJobOutcome,
+  CampaignEmailSegment,
   CampaignEmailStage,
   CampaignEmailVariant,
   EmailBriefCopy,
@@ -117,6 +120,10 @@ export class CampaignsComponent {
     // so `onGenerateEmailCopy` keeps reading a plain signal like every other piece of request
     // state it assembles.
     emailVariant: new FormControl<CampaignEmailVariant>('urgency-fomo', { nonNullable: true }),
+    // Unlike `emailVariant`, no single segment is a sensible default -- narrowing toward one
+    // audience by default would silently drop content relevant to every other reader. `''` means
+    // "no segment requested", mirrored into `selectedEmailSegment` below the same way.
+    emailSegment: new FormControl<CampaignEmailSegment | ''>('', { nonNullable: true }),
   });
 
   /**
@@ -1071,6 +1078,14 @@ export class CampaignsComponent {
   protected readonly selectedEmailVariant = signal<CampaignEmailVariant>('urgency-fomo');
 
   /**
+   * The audience segment to narrow content blocks toward, if any -- mirrored from
+   * `selectorForm.controls.emailSegment` in the constructor, the same relationship
+   * `selectedEmailVariant` has to `selectorForm.controls.emailVariant`. `''` means no segment was
+   * chosen, and `onGenerateEmailCopy` omits it from the request in that case.
+   */
+  protected readonly selectedEmailSegment = signal<CampaignEmailSegment | ''>('');
+
+  /**
    * The chosen type's label, for the read-only line on Implement.
    *
    * Implement DISPLAYS the type; it no longer selects it. Both surfaces used to bind the same
@@ -1086,6 +1101,16 @@ export class CampaignsComponent {
   // array is not assignable to it -- widening the wrapper's input would relax it for every caller
   // to satisfy one. The shared constant stays readonly, which is what protects it.
   protected readonly emailTypes = [...CAMPAIGN_EMAIL_TYPES];
+
+  /**
+   * The segment picker's options, `lfx-select`-shaped (`id`/`label`) like `emailTypes` above.
+   * Leads with the no-segment choice (`id: ''`) since that is the control's default and the only
+   * option that means "narrow toward no particular audience".
+   */
+  protected readonly emailSegments = [
+    { id: '' as const, label: 'All audiences' },
+    ...CAMPAIGN_EMAIL_SEGMENTS.map((segment) => ({ id: segment, label: CAMPAIGN_EMAIL_SEGMENT_LABELS[segment] })),
+  ];
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
@@ -1186,6 +1211,9 @@ export class CampaignsComponent {
 
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
+
+  /** Deep link to the created draft in the HubSpot editor — empty until the portal that created it is known. */
+  protected readonly emailStagingUrl = signal<string>('');
 
   /**
    * Whether a send can be staged right now.
@@ -1689,6 +1717,12 @@ export class CampaignsComponent {
       this.selectedEmailVariant.set(value);
     });
 
+    // Same mirroring again for the segment control -- see `selectedEmailSegment`'s own comment
+    // for why `''` (no segment) is the meaningful default rather than any named audience.
+    this.selectorForm.controls.emailSegment.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      this.selectedEmailSegment.set(value);
+    });
+
     // Disabled while a generation is in flight, mirroring the generate button's own
     // `[loading]="emailCopyState() === 'generating'"` -- picking a different variant mid-request
     // would not affect the request already out, so it must not look choosable until it lands.
@@ -1697,8 +1731,10 @@ export class CampaignsComponent {
       .subscribe((state) => {
         if (state === 'generating') {
           this.selectorForm.controls.emailVariant.disable();
+          this.selectorForm.controls.emailSegment.disable();
         } else {
           this.selectorForm.controls.emailVariant.enable();
+          this.selectorForm.controls.emailSegment.enable();
         }
       });
 
@@ -2141,6 +2177,7 @@ export class CampaignsComponent {
       this.stagingJobSubscription = null;
       this.emailStaging.set('idle');
       this.emailStagingMessage.set('');
+      this.emailStagingUrl.set('');
     }
   }
 
@@ -2193,8 +2230,9 @@ export class CampaignsComponent {
       // Variant A requests whichever draft style the operator picked -- variant B
       // (`onGenerateAbTestCopy` below) stays on ordinary stage-based copy so the two drafts differ
       // in more than wording.
+      const segment = this.selectedEmailSegment();
       const result = await firstValueFrom(
-        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), this.selectedEmailVariant())
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), this.selectedEmailVariant(), segment || undefined)
       );
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
@@ -2354,7 +2392,13 @@ export class CampaignsComponent {
         return;
       }
 
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      // `segment` composes additively (it narrows content blocks, it does not restyle the draft),
+      // so variant B applies the same chosen segment as variant A even though it omits `variant`
+      // itself to keep the two drafts contrasting in structure.
+      const abTestSegment = this.selectedEmailSegment();
+      const result = await firstValueFrom(
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), undefined, abTestSegment || undefined)
+      );
       if (!isCurrent()) {
         return;
       }
@@ -2423,6 +2467,7 @@ export class CampaignsComponent {
 
     this.emailStaging.set('staging');
     this.emailStagingMessage.set('');
+    this.emailStagingUrl.set('');
 
     // Bumped BEFORE the await below; the reset bumps the same counter to invalidate it.
     const generation = ++this.emailStagingGeneration;
@@ -2485,7 +2530,12 @@ export class CampaignsComponent {
           // hero as its own hosted image module and each sponsor as its own image module in tiered
           // rows. The hero links to the event's registration page, matching the only link target a
           // brief carries.
-          ...(details.heroImageUrl ? { heroImageUrl: details.heroImageUrl, heroLinkUrl: details.registrationUrl } : {}),
+          // heroImageAlt is derived from the event name rather than left for HubSpot's generic
+          // fallback ("Event banner") — a screen-reader listener hears which event the banner is
+          // for, not just that a banner exists.
+          ...(details.heroImageUrl
+            ? { heroImageUrl: details.heroImageUrl, heroLinkUrl: details.registrationUrl, heroImageAlt: `${details.name} banner` }
+            : {}),
           ...(details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
@@ -3096,18 +3146,16 @@ export class CampaignsComponent {
           this.emailStaging.set('done');
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
-          // `campaignId` is already on the result and was simply discarded here.
-          //
-          // The id is shown rather than linked: a HubSpot deep link needs the PORTAL id, which the
-          // connection row does not reliably carry (it is empty for `tlf` today), and a link built
-          // without it points at whichever portal the reader happens to be signed into. An id the
-          // user can paste into HubSpot's own search is worth more than a link that may 404.
           const draftId = hubspotResult?.campaignId ?? '';
           this.emailStagingMessage.set(
             draftId === ''
               ? 'Draft created in HubSpot. Review and send it from there.'
               : `Draft created in HubSpot (id ${draftId}). Review and send it from there.`
           );
+          // `hubspotUrl` is only set once campaign-service knows the portal that created the
+          // draft (see `CampaignPlatformResult`), unlike a link built from `campaignId` alone,
+          // which would guess at whichever portal the reader happens to be signed into.
+          this.emailStagingUrl.set(hubspotResult?.hubspotUrl ?? '');
         },
         error: () => {
           this.emailStaging.set('error');
@@ -4244,6 +4292,7 @@ export class CampaignsComponent {
     this.stagingJobSubscription = null;
     this.emailStaging.set('idle');
     this.emailStagingMessage.set('');
+    this.emailStagingUrl.set('');
     // Cleared with the rest of the brief-derived state. These counters belong to ONE brief's
     // campaigns; leaving them set would render the previous brief's sends under the new one.
     // Back to `null`/`idle` rather than an empty result, so the panel reads "nothing staged yet"
