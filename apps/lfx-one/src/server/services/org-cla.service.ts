@@ -547,6 +547,17 @@ export class OrgClaService {
       return null;
     }
 
+    if (!isHttpsUrl(url)) {
+      logger.warning(req, 'org_cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
+        signature_id: signatureId,
+        pdf_url_scheme: urlSchemeForLog(url),
+      });
+      throw new MicroserviceError('Upstream returned an unusable signed document address', 502, 'CLA_PDF_URL_INVALID', {
+        operation: 'org_cla_get_pdf_url',
+        service: SERVICE,
+      });
+    }
+
     logger.debug(req, 'org_cla_get_pdf_url', 'resolved a signed document url', { signature_id: signatureId });
     // No expiry reported: the signed-document response carries only the URL, so any number here
     // would be invented. The URL is presigned and short-lived, but its lifetime is upstream's to

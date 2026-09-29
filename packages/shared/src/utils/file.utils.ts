@@ -348,9 +348,22 @@ export function parseContentDispositionFilename(header: string | null | undefine
   return quotedMatch ? quotedMatch[1].trim() : null;
 }
 
+const DOWNLOADABLE_URL_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'blob:']);
+
 /** Trigger a browser file download from a URL via `<a download>` (no new tab). No-op during SSR. */
 export function downloadFromUrl(url: string, filename?: string): void {
   if (typeof document === 'undefined') {
+    return;
+  }
+
+  let protocol: string;
+  try {
+    protocol = new URL(url, document.baseURI).protocol;
+  } catch {
+    protocol = '';
+  }
+  if (!DOWNLOADABLE_URL_PROTOCOLS.has(protocol)) {
+    console.warn('downloadFromUrl: refused a URL with an unsupported scheme', protocol || 'unparseable');
     return;
   }
 
