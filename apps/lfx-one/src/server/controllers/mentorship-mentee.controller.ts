@@ -6,6 +6,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMenteeService } from '../services/mentorship-mentee.service';
@@ -94,6 +95,28 @@ export class MentorshipMenteeController {
       const profile = await this.menteeService.getMenteeProfile(req);
       logger.success(req, 'get_mentorship_mentee_profile', startTime, { history_count: profile.history.length });
       res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentee/profile  { introduction?, skillSet?, demographics?, socioeconomics? } -> 200 { profile, demographics? }
+  // Auth: logged-in user required (401 otherwise); refused while impersonating (403, route middleware).
+  // The body is validated strictly here because upstream ignores unknown fields and validates nothing (400).
+  // Upstream's 404 (no mentee profile) and 409 (more than one) pass through.
+  public async updateMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentee_profile' });
+      }
+
+      const request = parseMentorshipMenteeProfileUpdate(req.body, 'update_mentorship_mentee_profile');
+      const result = await this.menteeService.updateMenteeProfile(req, request);
+      // Group names only: the values are personal data.
+      logger.success(req, 'update_mentorship_mentee_profile', startTime, { changed_groups: Object.keys(request) });
+      res.json(result);
     } catch (error) {
       next(error);
     }

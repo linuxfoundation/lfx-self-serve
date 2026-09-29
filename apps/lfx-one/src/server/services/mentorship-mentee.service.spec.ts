@@ -468,3 +468,131 @@ describe('MentorshipMenteeService.withdrawMenteeApplication', () => {
     await expect(service.withdrawMenteeApplication(buildReq(), applicationId)).rejects.toBe(error);
   });
 });
+
+describe('MentorshipMenteeService.updateMenteeProfile', () => {
+  const MENTEE_PROFILE_PATH = `${PROFILES_PATH}/mentee`;
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const updatedRow = {
+    id: 'prof-1',
+    user_id: 'user-1',
+    profile_type: 'mentee',
+    introduction: '<p>Updated introduction.</p>',
+    skill_set: { skills: ['Go'], improvementSkills: ['Rust'], comments: 'Test notes.' },
+    demographics: { age: '20-39', gender: 'female', race: 'asian' },
+    socioeconomics: { income: 'workingClass', educationLevel: 'college' },
+    profile_links: { resumeLink: 'https://example.com/files/test-resume.pdf' },
+    terms_and_conditions: true,
+    number_of_projects: 0,
+    created_on: '2026-01-01T00:00:00Z',
+    updated_on: '2026-01-02T00:00:00Z',
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('patches the single-type mentee route with only the built upstream body', async () => {
+    proxyRequest.mockResolvedValueOnce(updatedRow);
+
+    await service.updateMenteeProfile(buildReq(), { skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'], additionalNotes: 'Test notes.' } });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+      skill_set: { skills: ['Go'], improvementSkills: ['Rust'], comments: 'Test notes.' },
+    });
+  });
+
+  it('converts the introduction to HTML and maps demographics keys on the way upstream', async () => {
+    proxyRequest.mockResolvedValueOnce(updatedRow);
+
+    await service.updateMenteeProfile(buildReq(), {
+      introduction: 'Hello & welcome',
+      demographics: { age: '20-39', raceEthnicity: 'asian' },
+      socioeconomics: { education: 'college' },
+    });
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+      introduction: '<p>Hello &amp; welcome</p>',
+      demographics: { age: '20-39', race: 'asian' },
+      socioeconomics: { educationLevel: 'college' },
+    });
+  });
+
+  it('never sends profile_links or a key for a group the caller did not change', async () => {
+    proxyRequest.mockResolvedValueOnce(updatedRow);
+
+    await service.updateMenteeProfile(buildReq(), { introduction: '' });
+
+    const body = proxyRequest.mock.calls[0][5] as Record<string, unknown>;
+    expect(body).toEqual({ introduction: '' });
+    expect(Object.keys(body)).not.toContain('profile_links');
+  });
+
+  it('returns the mapped profile and demographics without a history', async () => {
+    proxyRequest.mockResolvedValueOnce(updatedRow);
+
+    const result = await service.updateMenteeProfile(buildReq(), { introduction: 'Updated introduction.' });
+
+    expect(result).toEqual({
+      profile: {
+        aboutMe: '<p>Updated introduction.</p>',
+        skillsHave: ['Go'],
+        skillsWant: ['Rust'],
+        additionalNotes: 'Test notes.',
+        resumeUrl: 'https://example.com/files/test-resume.pdf',
+        resumeFileName: 'test-resume.pdf',
+      },
+      demographics: { age: '20-39', gender: 'female', raceEthnicity: 'asian', income: 'workingClass', education: 'college' },
+    });
+    expect(result).not.toHaveProperty('history');
+  });
+
+  it('leaves demographics undefined when the saved row holds no answers', async () => {
+    proxyRequest.mockResolvedValueOnce({ ...updatedRow, demographics: undefined, socioeconomics: undefined });
+
+    const result = await service.updateMenteeProfile(buildReq(), { introduction: 'Updated introduction.' });
+
+    expect(result.demographics).toBeUndefined();
+  });
+
+  it.each([
+    [404, 'not found'],
+    [409, 'conflict'],
+  ])('propagates an upstream %i', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMenteeProfile(buildReq(), { introduction: 'x' })).rejects.toBe(error);
+  });
+
+  it('retries once after the not-provisioned 401 through the shared proxy helper', async () => {
+    const notProvisioned = MicroserviceError.fromMicroserviceResponse(
+      401,
+      'Unauthorized',
+      { error: 'local user is not provisioned' },
+      'LFX_V2_SERVICE',
+      MENTEE_PROFILE_PATH
+    );
+    proxyRequest.mockRejectedValueOnce(notProvisioned).mockResolvedValueOnce({}).mockResolvedValueOnce(updatedRow);
+
+    await expect(service.updateMenteeProfile(buildReq(), { introduction: 'x' })).resolves.toMatchObject({ profile: { skillsHave: ['Go'] } });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, { introduction: '<p>x</p>' });
+  });
+
+  it('logs group names only, never the values', async () => {
+    proxyRequest.mockResolvedValueOnce(updatedRow);
+
+    await service.updateMenteeProfile(buildReq(), { introduction: 'Private text', skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } });
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logged).toContain('introduction');
+    expect(logged).not.toContain('Private text');
+  });
+});

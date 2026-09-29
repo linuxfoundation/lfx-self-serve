@@ -24,10 +24,14 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
+  MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
+  MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY,
+  MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
+  MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
@@ -78,15 +82,20 @@ import type {
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
   MentorshipMenteeApplicationView,
+  MentorshipMenteeDemographics,
+  MentorshipMenteeDemographicsFormValue,
   MentorshipMenteeOverview,
   MentorshipMenteePastApplication,
+  MentorshipMenteeProfileDetails,
+  MentorshipMenteeProfileFormValue,
+  MentorshipMenteeProfileUpdateRequest,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
-import { stripHtml } from './html-utils';
+import { escapeHtml, stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
 const MENTORSHIP_ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -151,6 +160,127 @@ export function mentorshipDescriptionLength(html: string): number {
 /** True when a rich-text field's raw HTML is over `MENTORSHIP_RICH_TEXT_RAW_MAX`, so its plain-text count is not computed. */
 export function isMentorshipRichTextOverRawMax(html: string): boolean {
   return html.length > MENTORSHIP_RICH_TEXT_RAW_MAX;
+}
+
+/**
+ * Plain text as the rich editor's HTML: `''` for blank input; otherwise CRLF and lone CR are
+ * normalised, the text is trimmed, each non-blank line becomes an escaped `<p>` and a run of blank
+ * lines becomes ONE `<p><br></p>`. That shape round-trips through `htmlClipboardToText`, which
+ * turns `<br>` and `</p>` into newlines and collapses three or more to two. Escaping means a
+ * caller can never store markup through this path.
+ */
+export function mentorshipPlainTextToHtml(text: string | null | undefined): string {
+  const normalized = normalizeMentorshipPlainText(text);
+  if (!normalized) return '';
+
+  const paragraphs: string[] = [];
+  let previousBlank = false;
+  for (const line of normalized.split('\n')) {
+    const blank = isBlank(line);
+    if (blank && !previousBlank) paragraphs.push('<p><br></p>');
+    if (!blank) paragraphs.push(`<p>${escapeHtml(line)}</p>`);
+    previousBlank = blank;
+  }
+  return paragraphs.join('');
+}
+
+/** CRLF and lone CR to LF, then trimmed. Both sides of the introduction comparison go through it. */
+function normalizeMentorshipPlainText(text: string | null | undefined): string {
+  return (text ?? '').replace(/\r\n?/g, '\n').trim();
+}
+
+function cleanMentorshipSkillList(skills: readonly string[] | null | undefined): string[] {
+  return (skills ?? []).map((skill) => skill.trim()).filter((skill) => skill !== '');
+}
+
+function isSameMentorshipList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
+/**
+ * The changed groups of a mentee profile edit, or `{}` when nothing changed. `introduction` is
+ * omitted when it equals `seededIntroduction` once both go through the same CRLF and trim
+ * normalisation, so an untouched introduction is never sent (and its stored rich text is never
+ * rewritten as plain paragraphs). `skillSet` is present when the skills (trimmed, blanks dropped,
+ * order-sensitive) or the trimmed notes differ from `seed`, and then always carries all three
+ * fields, since upstream replaces the whole column. Never emits demographics or socioeconomics.
+ */
+export function buildMentorshipMenteeProfileUpdate(
+  seed: MentorshipMenteeProfileDetails,
+  seededIntroduction: string,
+  value: MentorshipMenteeProfileFormValue
+): MentorshipMenteeProfileUpdateRequest {
+  const request: MentorshipMenteeProfileUpdateRequest = {};
+
+  const introduction = normalizeMentorshipPlainText(value.introduction);
+  if (introduction !== normalizeMentorshipPlainText(seededIntroduction)) {
+    request.introduction = introduction;
+  }
+
+  const skillsHave = cleanMentorshipSkillList(value.skillsHave);
+  const skillsWant = cleanMentorshipSkillList(value.skillsWant);
+  const additionalNotes = (value.additionalNotes ?? '').trim();
+  const skillsChanged =
+    !isSameMentorshipList(skillsHave, cleanMentorshipSkillList(seed.skillsHave)) ||
+    !isSameMentorshipList(skillsWant, cleanMentorshipSkillList(seed.skillsWant)) ||
+    additionalNotes !== (seed.additionalNotes ?? '').trim();
+  if (skillsChanged) {
+    request.skillSet = { skillsHave, skillsWant, ...(additionalNotes ? { additionalNotes } : {}) };
+  }
+
+  return request;
+}
+
+/**
+ * The changed groups of a demographics edit, or `{}` when nothing changed. Per row the answer is
+ * the trimmed selection when its consent box is checked and blank otherwise (`raw` is
+ * `form.getRawValue()`, since the section disables an answer while its consent is off). A stored
+ * blank or `preferNotToSay` token and a new blank or `preferNotToSay` answer all count as
+ * "no answer", so neither swapping one for the other nor choosing "I don't want to provide" over
+ * an unanswered row is a change. A changed row writes its answer, or `preferNotToSay` when consent
+ * was withdrawn or no answer was chosen. A group is present only when one of its rows changed and
+ * then carries every row: unchanged rows keep their stored token and rows that were never
+ * answered are left out. Never emits introduction or skillSet.
+ */
+export function buildMentorshipMenteeDemographicsUpdate(
+  current: MentorshipMenteeDemographics | undefined,
+  raw: MentorshipMenteeDemographicsFormValue
+): MentorshipMenteeProfileUpdateRequest {
+  const request: MentorshipMenteeProfileUpdateRequest = {};
+
+  for (const groupName of ['demographics', 'socioeconomics'] as const) {
+    const answers: Record<string, string> = {};
+    let changed = false;
+
+    for (const key of MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS[groupName]) {
+      const row = MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS.find((candidate) => candidate.answerControl === key);
+      if (!row) continue;
+
+      const stored = (current?.[key] ?? '').trim();
+      const answer = typeof raw[row.answerControl] === 'string' ? (raw[row.answerControl] as string).trim() : '';
+      const now = raw[row.consentControl] === true ? answer : '';
+      if (mentorshipDemographicAnswer(now) === mentorshipDemographicAnswer(stored)) {
+        if (stored) answers[key] = stored;
+        continue;
+      }
+      changed = true;
+      answers[key] = now || MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY;
+    }
+
+    if (changed) request[groupName] = answers;
+  }
+
+  return request;
+}
+
+/** A demographic token as the answer it stands for: `preferNotToSay` and blank both mean no answer. */
+function mentorshipDemographicAnswer(token: string): string {
+  return token === MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY ? '' : token;
+}
+
+/** True when no group of the update is present, so there is nothing to send. */
+export function isMentorshipMenteeProfileUpdateEmpty(request: MentorshipMenteeProfileUpdateRequest): boolean {
+  return MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS.every((key) => request[key] === undefined);
 }
 
 /**

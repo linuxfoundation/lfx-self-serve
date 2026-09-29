@@ -7,6 +7,9 @@
   [pt]="drawerPt()"
   position="right"
   [modal]="true"
+  [closable]="!saving()"
+  [dismissible]="!saving()"
+  [closeOnEscape]="!saving()"
   styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
   data-testid="mentorship-mentee-demographics-edit-drawer">
   <ng-template #header>
@@ -28,11 +31,24 @@
       <lfx-mentorship-mentee-demographics-section [form]="form" [isDrawer]="true" />
     }
 
+    <!-- Kept next to the actions, not at the top of the body: Save sits below the scrolling form, so an error at the top would render off-screen. -->
+    @if (errorMessage(); as message) {
+      <div
+        #errorRef
+        role="alert"
+        tabindex="-1"
+        class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 focus:outline-none"
+        data-testid="mentorship-mentee-demographics-edit-drawer-error">
+        {{ message }}
+      </div>
+    }
+
     <div class="flex justify-end gap-3 border-t border-gray-200 pt-4 mt-auto">
       <lfx-button
         type="button"
         variant="outlined"
         [label]="cancelLabel"
+        [disabled]="saving()"
         (onClick)="onCancel()"
         size="small"
         data-testid="mentorship-mentee-demographics-edit-drawer-cancel" />
@@ -40,6 +56,8 @@
         type="button"
         severity="info"
         [label]="saveLabel"
+        [loading]="saving()"
+        [disabled]="saving()"
         (onClick)="onSave()"
         size="small"
         data-testid="mentorship-mentee-demographics-edit-drawer-save" />

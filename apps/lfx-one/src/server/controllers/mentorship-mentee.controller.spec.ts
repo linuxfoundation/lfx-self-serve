@@ -27,6 +27,7 @@ const { MentorshipMenteeController } = await import('./mentorship-mentee.control
 const { MentorshipMenteeService } = await import('../services/mentorship-mentee.service');
 const { AuthenticationError, ServiceValidationError } = await import('../errors');
 const { getUsernameFromAuth } = await import('../utils/auth-helper');
+const { logger } = await import('../services/logger.service');
 
 describe('MentorshipMenteeController', () => {
   let controller: InstanceType<typeof MentorshipMenteeController>;
@@ -217,6 +218,65 @@ describe('MentorshipMenteeController', () => {
       await controller.applyToMenteeTerm(buildApplyReq({ programId, programTermId }), res, next);
 
       expect(apply).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+  describe('updateMenteeProfile', () => {
+    type UpdateResponse = Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['updateMenteeProfile']>>;
+    const updated = { profile: { aboutMe: '<p>Test</p>', skillsHave: ['Go'], skillsWant: ['Rust'] } } as UpdateResponse;
+    const buildUpdateReq = (body: unknown): Request => ({ body, query: {} }) as unknown as Request;
+
+    it('answers 200 with the service result and passes the normalized request to the service', async () => {
+      const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeProfile').mockResolvedValue(updated);
+
+      await controller.updateMenteeProfile(buildUpdateReq({ introduction: '  Hello  ', skillSet: { skillsHave: [' Go '], skillsWant: ['Rust'] } }), res, next);
+
+      expect(update).toHaveBeenCalledWith(expect.anything(), { introduction: 'Hello', skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } });
+      expect(res.json).toHaveBeenCalledWith(updated);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, null, [], {}, { unknown: 'x' }, { introduction: 3 }, { demographics: { age: '' } }])(
+      'rejects the body %j before calling the service',
+      async (body) => {
+        const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeProfile');
+
+        await controller.updateMenteeProfile(buildUpdateReq(body), res, next);
+
+        expect(update).not.toHaveBeenCalled();
+        expect(res.json).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      }
+    );
+
+    it('logs the changed group names, never the values', async () => {
+      vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeProfile').mockResolvedValue(updated);
+
+      await controller.updateMenteeProfile(buildUpdateReq({ introduction: 'Private text', demographics: { age: '20-39' } }), res, next);
+
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'update_mentorship_mentee_profile', expect.anything(), {
+        changed_groups: ['introduction', 'demographics'],
+      });
+      expect(JSON.stringify(vi.mocked(logger.success).mock.calls.map((call) => call[3]))).not.toContain('Private text');
+    });
+
+    it('passes an upstream failure to the error handler', async () => {
+      const error = new Error('conflict');
+      vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeProfile').mockRejectedValue(error);
+
+      await controller.updateMenteeProfile(buildUpdateReq({ introduction: 'Hello' }), res, next);
+
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(error);
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeProfile');
+
+      await controller.updateMenteeProfile(buildUpdateReq({ introduction: 'Hello' }), res, next);
+
+      expect(update).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });

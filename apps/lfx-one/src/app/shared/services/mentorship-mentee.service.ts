@@ -9,6 +9,8 @@ import {
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
+  MentorshipMenteeProfileUpdateRequest,
+  MentorshipMenteeProfileUpdateResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
@@ -80,6 +82,17 @@ export class MentorshipMenteeService {
 
   public getMenteeProfile(): Observable<MentorshipMenteeProfileResponse> {
     return this.http.get<MentorshipMenteeProfileResponse>('/api/mentorship/mentee/profile').pipe(catchError(this.rethrowError('getMenteeProfile')));
+  }
+
+  /**
+   * Saves the changed groups of the signed-in mentee's profile and returns the saved profile. Unlike
+   * a withdraw or an apply it leaves the cached applications alone: a profile edit changes no
+   * application or task, so nothing else needs to re-read. Rethrows so the drawer can show the failure.
+   */
+  public updateMenteeProfile(request: MentorshipMenteeProfileUpdateRequest): Observable<MentorshipMenteeProfileUpdateResponse> {
+    return this.http
+      .patch<MentorshipMenteeProfileUpdateResponse>('/api/mentorship/mentee/profile', request)
+      .pipe(take(1), catchError(this.rethrowError('updateMenteeProfile')));
   }
 
   /**

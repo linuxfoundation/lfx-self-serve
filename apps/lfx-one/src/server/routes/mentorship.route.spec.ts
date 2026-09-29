@@ -173,3 +173,30 @@ describe('mentorship router — program review', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('mentorship router — mentee profile update', () => {
+  const body = JSON.stringify({ introduction: 'Test intro' });
+
+  it('routes PATCH /api/mentorship/mentee/profile (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a profile update while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body,
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
+  it('still allows reading the profile while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/profile`, { headers: { 'x-test-impersonating': 'true' } });
+
+    expect(res.status).toBe(401);
+  });
+});

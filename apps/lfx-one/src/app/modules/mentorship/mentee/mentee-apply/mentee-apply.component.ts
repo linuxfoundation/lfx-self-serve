@@ -38,6 +38,7 @@ import {
   MentorshipMenteeApplyBlockedState,
   MentorshipMenteeApplyTarget,
   MentorshipMenteeProfileResponse,
+  MentorshipMenteeProfileUpdateResponse,
 } from '@lfx-one/shared/interfaces';
 import { mentorshipMenteeApplyIds } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
@@ -55,6 +56,10 @@ import { MenteeDemographicsEditDrawerComponent } from './components/mentee-demog
 /**
  * Mentee apply review. Opened from the mentorship site with `programId` and
  * `programTermId`. Lives outside the mentee shell so it can own its own header.
+ *
+ * Saving either edit drawer shows the saved profile and demographics in place (`savedProfile`) instead of
+ * reloading, so the page keeps its target and never flashes its skeleton. A genuine load (Retry, or a change
+ * to the program) drops that override so the freshly loaded data wins.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-apply',
@@ -105,11 +110,19 @@ export class MenteeApplyComponent {
   protected readonly profileCreated = signal(this.readProfileCreated());
 
   private readonly reload = signal(0);
+  /** What the last successful save returned. Layered over the loaded profile and dropped when a load starts. */
+  private readonly savedProfile = signal<MentorshipMenteeProfileUpdateResponse | null>(null);
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   private readonly applyIds = computed(() => mentorshipMenteeApplyIds(this.queryParamMap()));
   private readonly pageState: Signal<{ target: MentorshipMenteeApplyTarget; profile: MentorshipMenteeProfileResponse } | null> = this.initPage();
 
-  protected readonly page = computed(() => this.pageState());
+  protected readonly page = computed(() => {
+    const state = this.pageState();
+    const saved = this.savedProfile();
+    if (!state || !saved) return state;
+    // A response without demographics means none are stored, so the summary clears rather than keeping stale answers.
+    return { ...state, profile: { ...state.profile, profile: saved.profile, demographics: saved.demographics } };
+  });
   protected readonly blocked: Signal<MentorshipMenteeApplyBlockedState | null> = computed(() => {
     const reason = this.blockedReason();
     return reason ? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason] : null;
@@ -130,6 +143,10 @@ export class MenteeApplyComponent {
   protected onEditDemographics(): void {
     this.demographicsDrawer()?.seed(this.page()?.profile.demographics);
     this.demographicsOpen.set(true);
+  }
+
+  protected onProfileSaved(response: MentorshipMenteeProfileUpdateResponse): void {
+    this.savedProfile.set(response);
   }
 
   protected retry(): void {
@@ -193,6 +210,7 @@ export class MenteeApplyComponent {
     return toSignal(
       combineLatest([toObservable(this.reload), toObservable(this.applyIds)]).pipe(
         switchMap(([, ids]) => {
+          this.savedProfile.set(null);
           this.blockedReason.set(null);
           if (!ids) {
             this.hasLoaded.set(true);

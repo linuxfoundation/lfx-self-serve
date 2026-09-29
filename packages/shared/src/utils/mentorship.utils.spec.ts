@@ -13,10 +13,18 @@ import {
 import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
-import type { MentorshipMenteeApplication, MentorshipMenteeApplicationTask } from '../interfaces/mentorship-mentee.interface';
+import { htmlClipboardToText } from './html-utils';
+import type {
+  MentorshipMenteeApplication,
+  MentorshipMenteeApplicationTask,
+  MentorshipMenteeProfileDetails,
+  MentorshipMenteeProfileFormValue,
+} from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipMenteeApplicationView,
+  buildMentorshipMenteeDemographicsUpdate,
+  buildMentorshipMenteeProfileUpdate,
   buildMentorshipMenteeOverview,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
@@ -57,12 +65,14 @@ import {
   mentorshipApplicantDisplayStatus,
   mentorshipMenteeActionsFor,
   mentorshipMenteeDisplayStatus,
+  isMentorshipMenteeProfileUpdateEmpty,
   mentorshipMenteeProgressTasks,
   mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
+  mentorshipPlainTextToHtml,
   mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -1271,5 +1281,206 @@ describe('rich-text fields over MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
   it('reports formatting as the problem on the mentee introduction', () => {
     const form = { ...createEmptyMentorshipMenteeForm(), introduction: overRawCap };
     expect(getMentorshipMenteeRegisterErrors(form).introduction).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+});
+
+describe('mentorshipPlainTextToHtml', () => {
+  it('returns an empty string for null, undefined, empty and whitespace-only input', () => {
+    expect(mentorshipPlainTextToHtml(null)).toBe('');
+    expect(mentorshipPlainTextToHtml(undefined)).toBe('');
+    expect(mentorshipPlainTextToHtml('')).toBe('');
+    expect(mentorshipPlainTextToHtml(' \n\t \r\n ')).toBe('');
+  });
+
+  it('wraps each non-blank line in a paragraph and turns a blank line into an empty paragraph', () => {
+    expect(mentorshipPlainTextToHtml('First\nSecond')).toBe('<p>First</p><p>Second</p>');
+    expect(mentorshipPlainTextToHtml('First\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
+  });
+
+  it('collapses a run of blank lines into one empty paragraph', () => {
+    expect(mentorshipPlainTextToHtml('First\n\n \n\t\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
+  });
+
+  it('escapes markup so a caller can never store tags', () => {
+    expect(mentorshipPlainTextToHtml(`<script>alert("x")</script> & 'y'`)).toBe('<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;</p>');
+  });
+
+  it('normalizes CRLF and lone CR line endings', () => {
+    expect(mentorshipPlainTextToHtml('One\r\nTwo\rThree')).toBe('<p>One</p><p>Two</p><p>Three</p>');
+  });
+
+  it('round-trips through htmlClipboardToText to the same text', () => {
+    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\nTwo'))).toBe('One\nTwo');
+    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\n\nTwo'))).toBe('One\n\nTwo');
+    expect(htmlClipboardToText(mentorshipPlainTextToHtml(`A & B <c> "d" 'e'\n\n\n\nF`))).toBe(`A & B <c> "d" 'e'\n\nF`);
+  });
+});
+
+describe('buildMentorshipMenteeProfileUpdate', () => {
+  const seed: MentorshipMenteeProfileDetails = {
+    aboutMe: '<p>Hello world</p>',
+    skillsHave: ['Go', 'Python'],
+    skillsWant: ['Kubernetes'],
+    additionalNotes: 'Evenings only',
+  };
+  const seededIntroduction = 'Hello world';
+  const unchanged: MentorshipMenteeProfileFormValue = {
+    introduction: seededIntroduction,
+    skillsHave: ['Go', 'Python'],
+    skillsWant: ['Kubernetes'],
+    additionalNotes: 'Evenings only',
+  };
+
+  it('returns an empty request when nothing changed', () => {
+    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, unchanged);
+    expect(request).toEqual({});
+    expect(isMentorshipMenteeProfileUpdateEmpty(request)).toBe(true);
+  });
+
+  it('omits the introduction when it equals the seeded text, ignoring surrounding whitespace and CRLF', () => {
+    const multiline = 'Line one\nLine two';
+    expect(buildMentorshipMenteeProfileUpdate(seed, multiline, { ...unchanged, introduction: '  Line one\r\nLine two\r\n' })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(seed, '  Line one\r\nLine two \n', { ...unchanged, introduction: multiline })).toEqual({});
+  });
+
+  it('sends the introduction only when it was edited, and an empty string when it was cleared', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: ' Hello there\r\n' })).toEqual({
+      introduction: 'Hello there',
+    });
+    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: '  ' })).toEqual({ introduction: '' });
+  });
+
+  it('sends the whole skill set when only the additional notes changed', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
+      skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'], additionalNotes: 'Weekends too' },
+    });
+  });
+
+  it('compares skills after trimming and detects a reorder', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
+      skillSet: { skillsHave: ['Python', 'Go'], skillsWant: ['Kubernetes'], additionalNotes: 'Evenings only' },
+    });
+  });
+
+  it('omits additional notes when the trimmed notes are blank', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: '   ' })).toEqual({
+      skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'] },
+    });
+  });
+
+  it('treats missing stored notes and blank notes as the same', () => {
+    const withoutNotes: MentorshipMenteeProfileDetails = { ...seed, additionalNotes: undefined };
+    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, seededIntroduction, { ...unchanged, additionalNotes: '' })).toEqual({});
+  });
+
+  it('never emits demographics or socioeconomics', () => {
+    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, {
+      introduction: 'New',
+      skillsHave: ['Rust'],
+      skillsWant: ['Go'],
+      additionalNotes: 'x',
+    });
+    expect(Object.keys(request).sort()).toEqual(['introduction', 'skillSet']);
+  });
+});
+
+describe('buildMentorshipMenteeDemographicsUpdate', () => {
+  const blank = {
+    ageConsent: false,
+    age: '',
+    raceEthnicityConsent: false,
+    raceEthnicity: '',
+    genderConsent: false,
+    gender: '',
+    incomeConsent: false,
+    income: '',
+    educationConsent: false,
+    education: '',
+  };
+  const stored = { age: '20-39', gender: 'female', raceEthnicity: 'asian', income: 'workingClass', education: 'college' };
+  const storedForm = {
+    ageConsent: true,
+    age: '20-39',
+    raceEthnicityConsent: true,
+    raceEthnicity: 'asian',
+    genderConsent: true,
+    gender: 'female',
+    incomeConsent: true,
+    income: 'workingClass',
+    educationConsent: true,
+    education: 'college',
+  };
+
+  it('returns an empty request when no row changed, including a stored preferNotToSay row left unconsented', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, storedForm)).toEqual({});
+    expect(buildMentorshipMenteeDemographicsUpdate({ age: 'preferNotToSay' }, blank)).toEqual({});
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, blank)).toEqual({});
+  });
+
+  it(`returns an empty request when the user picks "I don't want to provide" over an unanswered row`, () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, ageConsent: true, age: 'preferNotToSay' })).toEqual({});
+  });
+
+  it('sends only the demographics group when only age changed and keeps the other rows original values', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, age: '40-60' })).toEqual({
+      demographics: { age: '40-60', gender: 'female', raceEthnicity: 'asian' },
+    });
+  });
+
+  it('sends only the socioeconomics group when only income changed', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, income: 'upperClass' })).toEqual({
+      socioeconomics: { income: 'upperClass', education: 'college' },
+    });
+  });
+
+  it('writes the preferNotToSay token when consent is withdrawn from an answered row', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, educationConsent: false, education: '' })).toEqual({
+      socioeconomics: { income: 'workingClass', education: 'preferNotToSay' },
+    });
+  });
+
+  it('writes the preferNotToSay token when the user picks it over an answered row', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, gender: 'preferNotToSay' })).toEqual({
+      demographics: { age: '20-39', gender: 'preferNotToSay', raceEthnicity: 'asian' },
+    });
+  });
+
+  it('treats consent checked with no answer as unanswered', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, ageConsent: true, age: '' })).toEqual({});
+    expect(buildMentorshipMenteeDemographicsUpdate({ age: '20-39' }, { ...blank, ageConsent: true, age: ' ' })).toEqual({
+      demographics: { age: 'preferNotToSay' },
+    });
+  });
+
+  it('preserves an original preferNotToSay token on an unchanged row inside a changed group', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate({ age: 'preferNotToSay', gender: 'male' }, { ...blank, genderConsent: true, gender: 'nonBinary' })).toEqual({
+      demographics: { age: 'preferNotToSay', gender: 'nonBinary' },
+    });
+  });
+
+  it('omits rows that were never answered and stay unconsented', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, ageConsent: true, age: '61+' })).toEqual({ demographics: { age: '61+' } });
+  });
+
+  it('ignores an answer whose consent box is unchecked, as form.getRawValue reports a disabled control', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, incomeConsent: true, income: 'upperMiddleClass', education: 'phd' })).toEqual({
+      socioeconomics: { income: 'upperMiddleClass' },
+    });
+  });
+
+  it('never emits introduction or skillSet', () => {
+    const request = buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, age: '61+', income: 'upperClass' });
+    expect(Object.keys(request).sort()).toEqual(['demographics', 'socioeconomics']);
+  });
+});
+
+describe('isMentorshipMenteeProfileUpdateEmpty', () => {
+  it('is true for an empty request and false for any group', () => {
+    expect(isMentorshipMenteeProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } })).toBe(false);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ demographics: { age: '61+' } })).toBe(false);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ socioeconomics: { income: 'upperClass' } })).toBe(false);
   });
 });

@@ -7,6 +7,8 @@ import {
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
+  MentorshipMenteeProfileUpdateRequest,
+  MentorshipMenteeProfileUpdateResponse,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamProgram,
@@ -21,6 +23,7 @@ import {
   MENTORSHIP_LIST_MAX_PAGES,
   MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
+  MENTORSHIP_ME_MENTEE_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
@@ -33,6 +36,7 @@ import {
   mapMentorshipMenteeApplyTarget,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
+import { buildMentorshipUpstreamMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -134,6 +138,29 @@ export class MentorshipMenteeService {
       history_count: history.length,
     });
     return response;
+  }
+
+  /**
+   * Saves the changed groups of the signed-in user's mentee profile. Upstream keeps every column the body
+   * omits and replaces a JSON column whole, so only the groups the caller changed are forwarded, and never
+   * `profile_links` (the resume is not editable yet). The response is the re-mapped row: no history, since
+   * the caller layers it over the profile it already has. Upstream's 404 (no mentee profile) and 409 (more
+   * than one) propagate.
+   */
+  public async updateMenteeProfile(req: Request, request: MentorshipMenteeProfileUpdateRequest): Promise<MentorshipMenteeProfileUpdateResponse> {
+    // Group names only: the values are personal data.
+    logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
+    const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_ME_MENTEE_PROFILE_PATH,
+      'PATCH',
+      undefined,
+      buildMentorshipUpstreamMenteeProfileUpdate(request)
+    );
+    const { profile, demographics } = mapMentorshipMenteeProfile(upstream);
+    logger.debug(req, 'mentorship_update_mentee_profile', 'Mentee profile updated', { has_demographics: demographics !== undefined });
+    return { profile, demographics };
   }
 
   /**

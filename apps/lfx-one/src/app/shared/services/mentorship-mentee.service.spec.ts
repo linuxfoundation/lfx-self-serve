@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MentorshipMenteeApplicationsResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeApplicationsResponse, MentorshipMenteeProfileUpdateRequest, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorshipMenteeService } from './mentorship-mentee.service';
@@ -209,5 +209,58 @@ describe('MentorshipMenteeService — applyToMenteeTerm', () => {
 
     expect(status).toBe(422);
     expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+});
+
+describe('MentorshipMenteeService — updateMenteeProfile', () => {
+  let service: MentorshipMenteeService;
+  let http: HttpTestingController;
+
+  const PROFILE_URL = '/api/mentorship/mentee/profile';
+  const request: MentorshipMenteeProfileUpdateRequest = { skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'], additionalNotes: 'Test notes.' } };
+  const response: MentorshipMenteeProfileUpdateResponse = { profile: { aboutMe: '<p>Test</p>', skillsHave: ['Go'], skillsWant: ['Rust'] } };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipMenteeService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipMenteeService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('sends PATCH /api/mentorship/mentee/profile with the request body and returns the saved profile', () => {
+    let result: MentorshipMenteeProfileUpdateResponse | undefined;
+    service.updateMenteeProfile(request).subscribe((value) => (result = value));
+
+    const req = http.expectOne(PROFILE_URL);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(request);
+    req.flush(response);
+
+    expect(result).toEqual(response);
+  });
+
+  it('does not clear the applications cache or bump menteeApplicationsRevision', () => {
+    const before = service.menteeApplicationsRevision();
+    service.updateMenteeProfile(request).subscribe();
+
+    http.expectOne(PROFILE_URL).flush(response);
+
+    expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+
+  it('rethrows the HttpErrorResponse unchanged', () => {
+    let error: HttpErrorResponse | undefined;
+    service.updateMenteeProfile(request).subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+    http.expectOne(PROFILE_URL).flush({ error: 'conflict' }, { status: 409, statusText: 'Conflict' });
+
+    expect(error).toBeInstanceOf(HttpErrorResponse);
+    expect(error?.status).toBe(409);
+    expect(error?.error).toEqual({ error: 'conflict' });
   });
 });

@@ -453,8 +453,7 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<n
 
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
- * "Edit Mentee Profile" button. Save fires the coming-soon toast until the update
- * endpoint is wired. Drawer-only labels: the Become a Mentee register form keeps its
+ * "Edit Mentee Profile" button. Drawer-only labels: the Become a Mentee register form keeps its
  * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
@@ -472,6 +471,37 @@ export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL = 'What skills are
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL = 'What areas do you want to improve in?';
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL = 'Save Changes';
 export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
+
+/** Ceilings the profile drawer validators and the BFF share. Above anything the skills picker catalogue reaches. */
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS = 100;
+export const MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH = 100;
+export const MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH = 100;
+
+/** Which upstream column each demographics row is stored in, in the profile update's camelCase keys. */
+export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
+  demographics: ['age', 'gender', 'raceEthnicity'],
+  socioeconomics: ['income', 'education'],
+} as const;
+
+/** Top-level keys the profile update accepts. Anything else is a 400. */
+export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
+export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
+
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE =
+  'Your introduction has too many line breaks or special characters to save. Shorten it or remove extra blank lines.';
+
+/** Copy per status; 403 is intentionally absent (the BFF impersonation guard authors its own message). */
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'Some of your changes could not be saved. Review them and try again.',
+  404: 'We could not find your mentee profile. Refresh the page and try again.',
+  409: 'Your mentee profile could not be updated because of a conflict. Refresh the page and try again.',
+};
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save your changes. Please try again.';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
+export const MENTORSHIP_MENTEE_DEMOGRAPHICS_SAVE_SUCCESS_SUMMARY = 'Demographics updated';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_TOAST_LIFE = 5000;
+export const MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';

@@ -10,8 +10,9 @@ import {
   MENTORSHIP_MENTOR_RESUME_SIZE_ERROR,
   MENTORSHIP_MENTOR_RESUME_TYPE_ERROR,
 } from '@lfx-one/shared/constants';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
 import { ResumeSectionComponent } from './resume-section.component';
 
 /**
@@ -168,4 +169,74 @@ describe('ResumeSectionComponent', () => {
       });
     });
   }
+});
+
+describe('ResumeSectionComponent coming-soon opt-in', () => {
+  const idPrefix = 'mentorship-mentee-resume';
+  let fixture: ComponentFixture<ResumeSectionComponent>;
+  let form: FormGroup<{ resumeFileName: FormControl<string> }>;
+  let notify: ReturnType<typeof vi.fn>;
+
+  const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const fileInput = (): HTMLInputElement => element().querySelector(`[data-testid="${idPrefix}-file"]`) as HTMLInputElement;
+  const clickButton = (testId: string): void => {
+    (element().querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement).click();
+    fixture.detectChanges();
+  };
+
+  const render = (comingSoonSummary: string | null, fileName = ''): void => {
+    form = new FormGroup({ resumeFileName: new FormControl(fileName, { nonNullable: true }) });
+    notify = vi.fn();
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [ResumeSectionComponent],
+      providers: [provideNoopAnimations(), { provide: MentorshipComingSoonService, useValue: { notify } }],
+    });
+
+    fixture = TestBed.createComponent(ResumeSectionComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.componentRef.setInput('intro', 'intro copy');
+    fixture.componentRef.setInput('idPrefix', idPrefix);
+    fixture.componentRef.setInput('comingSoonSummary', comingSoonSummary);
+    fixture.detectChanges();
+  };
+
+  it('shows the coming-soon toast from Browse and does not open the file picker when opted in', () => {
+    render('Resume upload');
+    const inputClick = vi.spyOn(fileInput(), 'click');
+
+    clickButton(`${idPrefix}-browse`);
+
+    expect(notify).toHaveBeenCalledExactlyOnceWith('Resume upload');
+    expect(inputClick).not.toHaveBeenCalled();
+  });
+
+  it('detaches the label from the input and disables the input when opted in', () => {
+    render('Resume upload');
+
+    expect(element().querySelector('label')?.getAttribute('for')).toBeNull();
+    expect(fileInput().disabled).toBe(true);
+  });
+
+  it('keeps a stored file name and shows the coming-soon toast when Clear is pressed while opted in', () => {
+    render('Resume upload', 'resume.pdf');
+
+    clickButton(`${idPrefix}-clear`);
+
+    expect(notify).toHaveBeenCalledExactlyOnceWith('Resume upload');
+    expect(form.controls.resumeFileName.value).toBe('resume.pdf');
+  });
+
+  it('keeps the normal picker when not opted in', () => {
+    render(null);
+    const inputClick = vi.spyOn(fileInput(), 'click');
+
+    clickButton(`${idPrefix}-browse`);
+
+    expect(inputClick).toHaveBeenCalledOnce();
+    expect(notify).not.toHaveBeenCalled();
+    expect(element().querySelector('label')?.getAttribute('for')).toBe(`${idPrefix}-input`);
+    expect(fileInput().disabled).toBe(false);
+  });
 });
