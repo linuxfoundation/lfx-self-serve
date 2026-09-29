@@ -130,4 +130,4 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 - `CLAUDE.md`'s **Pre-PR review** section — names this check in its `Preflight` value.
 - `/preflight` — mechanical checks (license, format, lint, build, protected files). Run after this passes.
-- `/lfx-review-pr` — post-PR reviewer. Not part of pre-PR.
+- Once the PR exists: `CLAUDE.md`'s **Post-PR review** section (process the PR's bot and human threads). There is no local reviewer after PR-open.

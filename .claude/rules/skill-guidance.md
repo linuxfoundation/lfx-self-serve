@@ -65,12 +65,12 @@ Follow `CLAUDE.md`'s **Pre-PR review** section exactly. If the user asks to revi
 - "Format check", "License check"
 - "Check my code" when the user wants the mechanical pipeline rather than a standards audit
 
-**Post-PR feedback** — match any of these intents (an existing PR with a number):
+**Post-PR feedback** — match these intents on a PR the user authored (an existing PR with a number):
 
-- "Review this PR", "Check PR quality", "Audit PR #123"
-- "Review #123", "Is PR #123 ready to merge?"
 - "Address the review comments", "Handle the bot findings on #123"
-- Any mention of reviewing or auditing a pull request by number
+- "Get #123 ready to merge", "Fix what the reviewers found"
+
+**Reviewer-side questions** on a PR the user did not author — "Review this PR", "Audit PR #123", "Is PR #123 ready to merge?" — get no local review and no writes: summarise the PR's existing review threads and CI state, and do not commit, push, comment on or resolve anything unless the user explicitly asks.
 
 Follow `CLAUDE.md`'s **Post-PR review** section exactly: process the PR's bot and human review threads (verify each finding against the current head, fix or rebut, comment, then resolve). Do not launch any local reviewer for an open PR — the former `/lfx-review-pr` skill did exactly that and is retired.
 
