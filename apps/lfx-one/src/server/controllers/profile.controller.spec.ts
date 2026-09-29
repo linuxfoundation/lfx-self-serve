@@ -1270,6 +1270,29 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('holds the success response until the v1 sync settles (awaited, not fire-and-forget)', async () => {
+    let resolveSync!: (synced: boolean) => void;
+    userSvc.syncVerifiedEmailToUserService.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSync = resolve;
+        })
+    );
+    const res = buildRes();
+
+    const pending = controller.verifyAndLinkEmail(buildVerifyReq(), res, vi.fn());
+    // One macrotask drains the already-resolved upstream mocks, so execution has reached the sync call.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+
+    resolveSync(true);
+    await pending;
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, message: 'Email identity verified and linked successfully' });
+  });
+
   it('callback path: exchanges for a gateway token, then syncs the pending verification email', async () => {
     vi.stubEnv('API_GW_AUDIENCE', 'https://gw.test/');
     exchangeRefreshTokenForAudienceMock.mockResolvedValue('fresh-gw-token');
@@ -1292,6 +1315,40 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
     );
     expect(req.apiGatewayToken).toBe('fresh-gw-token');
     expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
+  });
+
+  it('callback path: holds the redirect until the v1 sync settles (awaited, not fire-and-forget)', async () => {
+    vi.stubEnv('API_GW_AUDIENCE', 'https://gw.test/');
+    exchangeRefreshTokenForAudienceMock.mockResolvedValue('fresh-gw-token');
+    authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    let resolveSync!: (synced: boolean) => void;
+    userSvc.syncVerifiedEmailToUserService.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSync = resolve;
+        })
+    );
+    const req = buildReq({
+      path: '/api/profile/auth/callback',
+      query: { state: 'state-1', code: 'code-1' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+      appSession: { pendingEmailVerification: { email: 'pending@example.com', otp: '654321' } },
+    });
+    const res = buildRes();
+
+    const pending = controller.handleProfileAuthCallback(req, res);
+    // One macrotask drains the already-resolved upstream mocks, so execution has reached the sync call.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
+    expect(res.redirect).not.toHaveBeenCalled();
+
+    resolveSync(true);
+    await pending;
+
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
 });
