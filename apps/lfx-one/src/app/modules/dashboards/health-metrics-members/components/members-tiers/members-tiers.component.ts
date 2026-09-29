@@ -169,6 +169,7 @@ export class MembersTiersComponent {
     const cell = tier?.cells[yearIndex];
     if (!tier || !cell) return '';
 
-    return `${tier.tier}: ${cell.label} (${Math.round(cell.sharePct)}%)`;
+    // An unmeasured count has no share to state.
+    return cell.sharePct === null ? `${tier.tier}: ${cell.label}` : `${tier.tier}: ${cell.label} (${Math.round(cell.sharePct)}%)`;
   }
 }

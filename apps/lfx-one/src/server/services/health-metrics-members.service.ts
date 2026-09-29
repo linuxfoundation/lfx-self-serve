@@ -66,7 +66,9 @@ export class HealthMetricsMembersService {
         is_partial_year
       FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY year DESC, tier_sort_rank, membership_tier
+        AND year IS NOT NULL
+        AND membership_tier IS NOT NULL
+      ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC
       LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}
     `;
 
@@ -97,10 +99,13 @@ export class HealthMetricsMembersService {
   private async getFoundationRevenue(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersFoundationRevenue[]> {
     // The suffixes come from constants, never from the request, so interpolating them is safe.
     // The view holds one row per foundation and revenue domain, so `LIMIT 1` needs no ORDER BY.
-    const columns = HEALTH_METRICS_L2_RANGES.map((range) => `foundation_total_revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`).join(',\n        ');
+    const columns = HEALTH_METRICS_L2_RANGES.map((range) => ({
+      range,
+      column: `foundation_total_revenue_usd_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`,
+    }));
     const sql = `
       SELECT
-        ${columns}
+        ${columns.map(({ column }) => column).join(',\n        ')}
       FROM ${OVERVIEW_REVENUE_VIEW}
       WHERE foundation_slug = ?
         AND LOWER(revenue_domain) = 'memberships'
@@ -117,8 +122,8 @@ export class HealthMetricsMembersService {
     if (!row) return [];
 
     // A null total is no data for that period, so the period is left out and its share reads as not available.
-    return HEALTH_METRICS_L2_RANGES.flatMap((range) => {
-      const totalUsd = toNullableNumber(row[`FOUNDATION_TOTAL_REVENUE_USD_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`.toUpperCase()]);
+    return columns.flatMap(({ range, column }) => {
+      const totalUsd = toNullableNumber(row[column.toUpperCase()]);
       return totalUsd === null ? [] : [{ range, totalUsd }];
     });
   }

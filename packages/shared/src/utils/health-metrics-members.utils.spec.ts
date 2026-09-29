@@ -85,8 +85,9 @@ describe('buildHealthMetricsMembersTiersView', () => {
   it('compares a completed year with the one before it', () => {
     const view = buildHealthMetricsMembersTiersView(TIERS, 'COMPLETED_YEAR', 'members');
 
-    expect(view.headline).toMatchObject({ key: 'members', value: '20', delta: '+33%', deltaDirection: 'up' });
+    expect(view.headline).toMatchObject({ key: 'members', value: '20', delta: '+33%', deltaDirection: 'up', baseline: 'vs 2024' });
     expect(view.side.map((stat) => stat.key)).toEqual(['revenue', 'new', 'share']);
+    expect(view.side.map((stat) => stat.baseline)).toEqual([null, null, null]);
     expect(view.side[0]).toMatchObject({ value: '$1.8M', delta: null });
     expect(view.side[1]).toMatchObject({ label: 'New in 2025', value: '7', positive: true });
     expect(view.side[2]).toMatchObject({ value: '50%' });
@@ -95,7 +96,7 @@ describe('buildHealthMetricsMembersTiersView', () => {
   it('leads with revenue in revenue mode', () => {
     const view = buildHealthMetricsMembersTiersView(TIERS, 'COMPLETED_YEAR', 'revenue');
 
-    expect(view.headline).toMatchObject({ key: 'revenue', value: '$1.8M', delta: '+17%', deltaDirection: 'up' });
+    expect(view.headline).toMatchObject({ key: 'revenue', value: '$1.8M', delta: '+17%', deltaDirection: 'up', baseline: 'vs 2024' });
     expect(view.side.map((stat) => stat.key)).toEqual(['members', 'new', 'share']);
     expect(view.side[0].delta).toBeNull();
   });
@@ -103,7 +104,7 @@ describe('buildHealthMetricsMembersTiersView', () => {
   it('gives a partial year no delta and labels its new members as this year', () => {
     const view = buildHealthMetricsMembersTiersView(TIERS, 'YTD', 'members');
 
-    expect(view.headline).toMatchObject({ value: '22', delta: 'not available', deltaDirection: 'neutral' });
+    expect(view.headline).toMatchObject({ value: '22', delta: 'not available', deltaDirection: 'neutral', baseline: null });
     expect(view.side[1].label).toBe('New this year');
     expect(view.side[2].value).toBe('50%');
   });
@@ -120,6 +121,8 @@ describe('buildHealthMetricsMembersTiersView', () => {
     const silver = view.tiers.find((tier) => tier.tier === 'Silver');
 
     expect(silver?.cells.map((cell) => cell.label)).toEqual(['—', '—', '—']);
+    // A measured zero is a 0% share; a year the tier is missing from has no share at all.
+    expect(silver?.cells.map((cell) => cell.sharePct)).toEqual([null, 0, null]);
     expect(view.yearMeasured).toBe(false);
     expect(view.headline).toMatchObject({ value: '—', delta: 'not available' });
   });

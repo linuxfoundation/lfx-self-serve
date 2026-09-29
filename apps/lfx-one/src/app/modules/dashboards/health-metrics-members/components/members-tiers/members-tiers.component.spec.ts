@@ -132,6 +132,7 @@ describe('MembersTiersComponent', () => {
     expect(text('members-tiers-meta')).toBe('3 tiers · 3 years');
     expect(text('members-tiers-headline-value')).toBe('22');
     expect(text('members-tiers-headline-delta')).toBe('not available');
+    expect(query('members-tiers-headline-baseline')).toBeNull();
     expect(text('members-tiers-headline-label')).toBe('Members');
     expect(text('members-tiers-side-revenue-value')).toBe('$2M');
     expect(text('members-tiers-side-new')).toContain('New this year');
@@ -162,6 +163,7 @@ describe('MembersTiersComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled', 'settled']);
     expect(text('members-tiers-headline-value')).toBe('20');
     expect(text('members-tiers-headline-delta')).toBe('+33%');
+    expect(text('members-tiers-headline-baseline')).toBe('vs 2024');
     expect(text('members-tiers-side-new')).toContain('New in 2025');
   });
 

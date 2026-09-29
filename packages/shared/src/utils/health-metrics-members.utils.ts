@@ -64,20 +64,22 @@ export function buildHealthMetricsMembersTiersView(
     cells: yearViews.map((yearView) => {
       const count = (rowsByYear.get(yearView.year) ?? []).find((row) => row.tier === tier)?.memberCount ?? null;
       const total = yearView.totalMembers ?? 0;
-      return { year: yearView.year, count, label: count ? formatCount(count) : '—', sharePct: total > 0 ? ((count ?? 0) / total) * 100 : 0 };
+      return { year: yearView.year, count, label: count ? formatCount(count) : '—', sharePct: sharePercent(count, total) };
     }),
   }));
 
   // A partial year has no same-window prior to compare with, so its delta is not available.
   const comparable = yearMeasured && !selected.isPartial && prior.measured;
-  const membersStat = buildStat('members', 'Members', formatCount(selected.members), comparable, selected.members, prior.members);
-  const revenueStat = buildStat('revenue', 'Annual revenue', formatUsd(selected.revenue), comparable, selected.revenue, prior.revenue);
+  const baseline = `vs ${selectedYear - 1}`;
+  const membersStat = buildStat('members', 'Members', formatCount(selected.members), comparable, baseline, selected.members, prior.members);
+  const revenueStat = buildStat('revenue', 'Annual revenue', formatUsd(selected.revenue), comparable, baseline, selected.revenue, prior.revenue);
   const newStat: HealthMetricsMembersTiersStatView = {
     key: 'new',
     label: range === 'YTD' ? 'New this year' : `New in ${selectedYear}`,
     value: formatCount(selected.newMembers),
     delta: null,
     deltaDirection: 'neutral',
+    baseline: null,
     positive: selected.newMembers !== null && selected.newMembers > 0,
   };
   const shareStat: HealthMetricsMembersTiersStatView = {
@@ -86,14 +88,15 @@ export function buildHealthMetricsMembersTiersView(
     value: formatShare(selected.revenue, tiers.foundationRevenue.find((period) => period.range === range)?.totalUsd ?? null),
     delta: null,
     deltaDirection: 'neutral',
+    baseline: null,
     positive: false,
   };
 
   const headline = mode === 'members' ? membersStat : revenueStat;
   const side = [
     mode === 'members'
-      ? { ...revenueStat, delta: null, deltaDirection: 'neutral' as const }
-      : { ...membersStat, delta: null, deltaDirection: 'neutral' as const },
+      ? { ...revenueStat, delta: null, deltaDirection: 'neutral' as const, baseline: null }
+      : { ...membersStat, delta: null, deltaDirection: 'neutral' as const, baseline: null },
     newStat,
     shareStat,
   ];
@@ -130,7 +133,7 @@ function orderTiers(rows: HealthMetricsMembersTierYear[]): string[] {
   const rankByTier = new Map<string, number>();
   for (const row of rows) rankByTier.set(row.tier, Math.min(rankByTier.get(row.tier) ?? Infinity, row.sortRank));
 
-  return [...rankByTier.entries()].sort(([a, rankA], [b, rankB]) => rankA - rankB || a.localeCompare(b)).map(([tier]) => tier);
+  return [...rankByTier.entries()].sort(([a, rankA], [b, rankB]) => rankA - rankB || a.localeCompare(b, 'en-US')).map(([tier]) => tier);
 }
 
 function buildStat(
@@ -138,11 +141,18 @@ function buildStat(
   label: string,
   value: string,
   comparable: boolean,
+  baseline: string,
   current: number | null,
   previous: number | null
 ): HealthMetricsMembersTiersStatView {
   const change = comparable && current !== null && previous !== null && previous > 0 ? (current - previous) / previous : null;
-  return { key, label, value, ...formatDelta(change), positive: false };
+  return { key, label, value, ...formatDelta(change), baseline: change === null ? null : baseline, positive: false };
+}
+
+/** A tier's share of its year; an unmeasured count stays `null` rather than reading as 0%. */
+function sharePercent(count: number | null, total: number): number | null {
+  if (count === null) return null;
+  return total > 0 ? (count / total) * 100 : 0;
 }
 
 /** A change as a whole percent (`−25%`); the sign follows the rounded value. */

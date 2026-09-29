@@ -38,6 +38,9 @@
                 {{ view().headline.delta }}
               </span>
             }
+            @if (view().headline.baseline) {
+              <span class="text-[12px] text-gray-400" data-testid="members-tiers-headline-baseline">{{ view().headline.baseline }}</span>
+            }
           </div>
           <span class="text-[12.5px] text-gray-500" data-testid="members-tiers-headline-label">{{ view().headline.label }}</span>
         </div>

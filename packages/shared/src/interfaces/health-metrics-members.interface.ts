@@ -56,6 +56,8 @@ export interface HealthMetricsMembersTiersStatView {
   /** `null` renders no delta; `not available` renders as text. */
   delta: string | null;
   deltaDirection: 'up' | 'down' | 'neutral';
+  /** What a measured delta compares against, e.g. `vs 2024`; `null` when there is none to state. */
+  baseline: string | null;
   /** Drawn in the design's green, e.g. new members. */
   positive: boolean;
 }
@@ -76,8 +78,8 @@ export interface HealthMetricsMembersTiersCellView {
   count: number | null;
   /** `—` for a measured zero or an unmeasured count. */
   label: string;
-  /** Share of that year's members, 0–100; 0 when the year has none. */
-  sharePct: number;
+  /** Share of that year's members, 0–100; 0 when the year has none, `null` when the count is unmeasured. */
+  sharePct: number | null;
 }
 
 export interface HealthMetricsMembersTiersTierView {

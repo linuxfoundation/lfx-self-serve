@@ -77,7 +77,9 @@ describe('HealthMetricsMembersService.getTiers', () => {
     const [sql, binds] = readOf('MEMBERSHIP_TIER_YEAR');
     expect(binds).toEqual(['acme']);
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_TIER_YEAR');
-    expect(sql).toContain('ORDER BY year DESC, tier_sort_rank, membership_tier');
+    expect(sql).toContain('AND year IS NOT NULL');
+    expect(sql).toContain('AND membership_tier IS NOT NULL');
+    expect(sql).toContain('ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}`);
     expect(sql).not.toMatch(/WHERE[\s\S]*year\s*=/);
   });
