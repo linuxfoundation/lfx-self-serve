@@ -94,6 +94,8 @@ import {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlanceQuery,
   HealthMetricsEventsForecast,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
   HealthMetricsEventsForecastQuery,
@@ -1311,6 +1313,18 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsSponsorship>('/api/analytics/events-sponsorship', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-sponsorship failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getEventsGeography(query: HealthMetricsEventsGeographyQuery): Observable<HealthMetricsEventsGeography> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a measured zero.
+    return this.http.get<HealthMetricsEventsGeography>('/api/analytics/events-geography', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-geography failed', { query, error });
         return throwError(() => error);
       })
     );

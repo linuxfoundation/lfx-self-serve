@@ -5,6 +5,7 @@ import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
@@ -60,6 +61,10 @@ import type {
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSpeakersStatusGroup,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyCountry,
+  HealthMetricsEventsGeographyPeriod,
+  HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipPeriod,
   HealthMetricsEventsSponsorshipQuery,
@@ -77,6 +82,7 @@ const SPEAKERS_DRILLDOWN_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEA
 const SPEAKERS_LIST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST';
 const ORGANIZATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW';
 const SPONSORSHIP_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIP_SUMMARY';
+const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY';
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -223,6 +229,18 @@ interface OrganizationRow {
 interface SponsorshipSummaryRow {
   IS_ALL_TIERS: boolean | null;
   NORMALIZED_TIER_NAME: string | null;
+  [periodColumn: string]: unknown;
+}
+
+/** The foundation's rollup row; the country view keys foundations by this id, not by slug. */
+interface GeographyScopeRow {
+  FOUNDATION_ID: string | null;
+  [periodColumn: string]: unknown;
+}
+
+/** One country's registrations per period, summed over the codes it is recorded under. */
+interface GeographyCountryRow {
+  COUNTRY: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -605,6 +623,18 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapSponsorshipPeriod(scope, tierRows, changes, range)) };
   }
 
+  /** Each period's countries represented, from the rollup, and the countries with the most registrations. */
+  public async getGeography(req: Request, query: HealthMetricsEventsGeographyQuery): Promise<HealthMetricsEventsGeography> {
+    const scope = await this.getGeographyScope(req, query);
+    if (!scope?.FOUNDATION_ID) {
+      logger.debug(req, 'get_events_geography', 'No at-a-glance row for the foundation', { foundation_slug: query.foundationSlug });
+      return { periods: [] };
+    }
+
+    const countries = await this.getGeographyCountries(req, scope.FOUNDATION_ID);
+    return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapGeographyPeriod(scope, countries, range)) };
+  }
+
   /** Every year the foundation held events, oldest first; the section always shows the full history, so no period applies. */
   public async getRegistrationsGrowth(req: Request, query: HealthMetricsEventsRegistrationsGrowthQuery): Promise<HealthMetricsEventsRegistrationsGrowth> {
     const sql = `
@@ -711,6 +741,57 @@ export class HealthMetricsEventsService {
   }
 
   /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  private async getGeographyScope(req: Request, query: HealthMetricsEventsGeographyQuery): Promise<GeographyScopeRow | undefined> {
+    // Suffixes come from constants, never from the request, so interpolating them is safe.
+    const columns = [
+      ...HEALTH_METRICS_L2_RANGES.map((range) => `countries_count_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`),
+      ...HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES.map((range) => `countries_change_pct_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`),
+    ].join(',\n        ');
+
+    const sql = `
+      SELECT
+        foundation_id,
+        ${columns}
+      FROM ${AT_A_GLANCE_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+      LIMIT 1
+    `;
+
+    const result = await executeSnowflakeViewRead<GeographyScopeRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: AT_A_GLANCE_VIEW,
+      operation: 'get_events_geography',
+      clientMessage: 'Geographic distribution is unavailable right now.',
+    });
+    return result.rows[0];
+  }
+
+  /** The view is already foundation-level, so rows are only summed where one country repeats under several codes. */
+  private async getGeographyCountries(req: Request, foundationId: string): Promise<GeographyCountryRow[]> {
+    // Suffixes come from constants, never from the request, so interpolating them is safe.
+    const sums = HEALTH_METRICS_L2_RANGES.map((range) => {
+      const column = `registration_count_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}`;
+      return `SUM(${column}) AS ${column}`;
+    }).join(',\n        ');
+
+    const sql = `
+      SELECT
+        country,
+        ${sums}
+      FROM ${REGISTRATION_COUNTRY_VIEW}
+      WHERE project_id = ?
+        AND country IS NOT NULL
+      GROUP BY country
+    `;
+
+    const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {
+      view: REGISTRATION_COUNTRY_VIEW,
+      operation: 'get_events_geography',
+      clientMessage: 'Geographic distribution is unavailable right now.',
+    });
+    return result.rows;
+  }
+
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
@@ -1039,6 +1120,29 @@ function mapSponsorshipPeriod(
       ? { revenue: toNullableNumber(changes?.[periodColumn('foundation_sponsorship_revenue_change_pct', range)]) }
       : null,
     tiers,
+  };
+}
+
+/** Countries with no registration in the period drop out; the rest rank by registrations, then name. */
+function mapGeographyPeriod(scope: GeographyScopeRow, rows: GeographyCountryRow[], range: HealthMetricsL2Range): HealthMetricsEventsGeographyPeriod {
+  const ranked = rows
+    .map(
+      (row): HealthMetricsEventsGeographyCountry => ({
+        country: row.COUNTRY ?? '',
+        registrations: toNullableNumber(row[periodColumn('registration_count', range)]) ?? 0,
+      })
+    )
+    .filter((country) => country.country !== '' && country.registrations > 0)
+    .sort((a, b) => b.registrations - a.registrations || a.country.localeCompare(b.country));
+
+  return {
+    range,
+    countries: toNullableNumber(scope[periodColumn('countries_count', range)]),
+    changes: HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES.includes(range)
+      ? { countries: toNullableNumber(scope[periodColumn('countries_change_pct', range)]) }
+      : null,
+    topCountries: ranked.slice(0, HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES),
+    rankedCountries: ranked.length,
   };
 }
 

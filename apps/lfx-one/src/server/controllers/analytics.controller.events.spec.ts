@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   getAtAGlance,
+  getGeography,
   getOrganizations,
   getPastEvents,
   getRegistrationForecast,
@@ -16,6 +17,7 @@ const {
   getSponsorship,
 } = vi.hoisted(() => ({
   getAtAGlance: vi.fn(),
+  getGeography: vi.fn(),
   getOrganizations: vi.fn(),
   getPastEvents: vi.fn(),
   getRegistrationForecast: vi.fn(),
@@ -37,6 +39,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getSpeakers = getSpeakers;
     public getOrganizations = getOrganizations;
     public getSponsorship = getSponsorship;
+    public getGeography = getGeography;
   },
   // Mirrors the service: the Events views carry no columns for the oldest range.
   isSupportedEventsRange: (range: string) => range !== 'COMPLETED_YEAR_4',
@@ -57,6 +60,7 @@ import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED,
   HEALTH_METRICS_EVENTS_PAST_UNMEASURED,
@@ -78,7 +82,8 @@ type Handler =
   | 'getEventsRevenue'
   | 'getEventsSpeakers'
   | 'getEventsOrganizations'
-  | 'getEventsSponsorship';
+  | 'getEventsSponsorship'
+  | 'getEventsGeography';
 
 function call(handler: Handler, queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -431,6 +436,40 @@ describe('AnalyticsController.getEventsSponsorship', () => {
     getSponsorship.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsSponsorship', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsGeography', () => {
+  beforeEach(() => {
+    getGeography.mockReset();
+    getGeography.mockResolvedValue(HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED);
+  });
+
+  it('passes the foundation to the service and returns its response', async () => {
+    const { res, next, promise } = call('getEventsGeography', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getGeography).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED);
+  });
+
+  it.each([{}, { foundationSlug: 'Acme Corp' }])('rejects a missing or malformed foundation (%o)', async (query) => {
+    const { next, promise } = call('getEventsGeography', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getGeography).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getGeography.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsGeography', { foundationSlug: 'acme' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

@@ -10,6 +10,7 @@ import {
   buildHealthMetricsEventsOrganizationRowView,
   buildHealthMetricsEventsForecastNote,
   buildHealthMetricsEventsForecastRowViews,
+  buildHealthMetricsEventsGeographyView,
   buildHealthMetricsEventsPastView,
   buildHealthMetricsEventsRegistrationsGrowthView,
   buildHealthMetricsEventsRevenueView,
@@ -34,6 +35,8 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlancePeriod,
   HealthMetricsEventsForecastEvent,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyPeriod,
   HealthMetricsEventsOrganization,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
@@ -1023,6 +1026,95 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
 
   it('reads as unmeasured for a foundation with no sponsorship', () => {
     const view = buildHealthMetricsEventsSponsorshipView({ periods: [] }, 'YTD');
+
+    expect(view.foundationMeasured).toBe(false);
+    expect(view.measured).toBe(false);
+  });
+});
+
+describe('buildHealthMetricsEventsGeographyView', () => {
+  function geographyPeriod(overrides: Partial<HealthMetricsEventsGeographyPeriod> = {}): HealthMetricsEventsGeographyPeriod {
+    return {
+      range: 'YTD',
+      countries: 42,
+      changes: { countries: 0.1 },
+      topCountries: [
+        { country: 'Canada', registrations: 800 },
+        { country: 'Germany', registrations: 400 },
+        { country: 'Japan', registrations: 200 },
+      ],
+      rankedCountries: 40,
+      ...overrides,
+    };
+  }
+
+  function geography(...periods: HealthMetricsEventsGeographyPeriod[]): HealthMetricsEventsGeography {
+    return { periods: periods.length ? periods : [geographyPeriod()] };
+  }
+
+  it('builds the headline, the pill and bars scaled to the top country', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(true);
+    expect(view.countries).toBe(42);
+    expect(view.countriesLabel).toBe('42 countries');
+    expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
+    expect(view.bars.map((bar) => [bar.label, bar.valueLabel, bar.widthPct])).toEqual([
+      ['Canada', '800', 100],
+      ['Germany', '400', 50],
+      ['Japan', '200', 25],
+    ]);
+    expect(view.moreLabel).toBe('+37 more');
+  });
+
+  it('shows no tail line when the bars cover every country', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ rankedCountries: 3 })), 'YTD');
+
+    expect(view.moreLabel).toBe('');
+  });
+
+  it('uses the singular for one country', () => {
+    const view = buildHealthMetricsEventsGeographyView(
+      geography(geographyPeriod({ countries: 1, topCountries: [{ country: 'Canada', registrations: 5 }], rankedCountries: 1 })),
+      'YTD'
+    );
+
+    expect(view.countriesLabel).toBe('1 country');
+  });
+
+  it('carries no delta for a period that is not compared', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ range: 'COMPLETED_YEAR_2', changes: null })), 'COMPLETED_YEAR_2');
+
+    expect(view.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+
+  it('marks a compared period with no prior value as not available', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ changes: { countries: null } })), 'YTD');
+
+    expect(view.headline).toMatchObject({ delta: 'not available', deltaDirection: 'neutral' });
+  });
+
+  it('reads a period with no country registrations as unmeasured, even with a rollup count', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, topCountries: [], rankedCountries: 0 })), 'YTD');
+
+    expect(view.measured).toBe(false);
+    expect(view.countries).toBeNull();
+    expect(view.countriesLabel).toBe('');
+    expect(view.headline).toMatchObject({ value: 'not available', delta: null });
+    expect(view.bars).toEqual([]);
+    expect(view.moreLabel).toBe('');
+  });
+
+  it('reads as unmeasured for a period missing from the response', () => {
+    const view = buildHealthMetricsEventsGeographyView(geography(), 'COMPLETED_YEAR');
+
+    expect(view.foundationMeasured).toBe(true);
+    expect(view.measured).toBe(false);
+  });
+
+  it('reads as unmeasured for a foundation with no geography', () => {
+    const view = buildHealthMetricsEventsGeographyView({ periods: [] }, 'YTD');
 
     expect(view.foundationMeasured).toBe(false);
     expect(view.measured).toBe(false);

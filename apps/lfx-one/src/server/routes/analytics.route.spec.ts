@@ -146,6 +146,7 @@ describe.each([
   ['/events-speakers', 'foundationSlug'],
   ['/events-organizations', 'foundationSlug'],
   ['/events-sponsorship', 'foundationSlug'],
+  ['/events-geography', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

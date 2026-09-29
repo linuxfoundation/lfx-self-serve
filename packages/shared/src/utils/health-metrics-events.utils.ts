@@ -8,6 +8,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
@@ -39,6 +40,8 @@ import type {
   HealthMetricsEventsForecastRowView,
   HealthMetricsEventsForecastStatus,
   HealthMetricsEventsForecastVerdict,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyView,
   HealthMetricsEventsOrganization,
   HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsPast,
@@ -520,6 +523,39 @@ export function buildHealthMetricsEventsSponsorshipView(
   };
 }
 
+/** The section for one period; a period with no country registrations reads as not available, never as zero countries. */
+export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEventsGeography, range: HealthMetricsRange): HealthMetricsEventsGeographyView {
+  const period = geography.periods.find((candidate) => candidate.range === range) ?? null;
+  const topCountries = period?.topCountries ?? [];
+  const measured = topCountries.length > 0;
+  const countries = measured ? (period?.countries ?? null) : null;
+  const changes = measured ? (period?.changes ?? null) : null;
+  const hidden = measured ? Math.max((period?.rankedCountries ?? 0) - topCountries.length, 0) : 0;
+
+  return {
+    foundationMeasured: geography.periods.length > 0,
+    measured,
+    countries,
+    countriesLabel: formatGeographyCountriesLabel(countries),
+    headline: {
+      key: 'countries',
+      label: 'Countries represented',
+      value: formatAtAGlanceCount(countries),
+      ...(changes ? formatAtAGlanceDelta(changes.countries, 'pct') : { delta: null, deltaDirection: 'neutral' }),
+      warn: false,
+    },
+    bars: buildSpeakersBars(
+      topCountries.map((country) => ({
+        key: country.country,
+        label: country.country,
+        value: country.registrations,
+        barClass: HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+      }))
+    ),
+    moreLabel: hidden > 0 ? `+${hidden.toLocaleString('en-US')} more` : '',
+  };
+}
+
 function formatAtAGlanceCount(value: number | null | undefined): string {
   return value === null || value === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : value.toLocaleString('en-US');
 }
@@ -653,6 +689,13 @@ function formatSponsorshipPackagesLabel(value: number | null): string {
   if (value === null) return '';
 
   return `${value.toLocaleString('en-US')} ${value === 1 ? 'package' : 'packages'} sold`;
+}
+
+/** Empty when unmeasured, since the section then renders no pill. */
+function formatGeographyCountriesLabel(value: number | null): string {
+  if (value === null) return '';
+
+  return `${value.toLocaleString('en-US')} ${value === 1 ? 'country' : 'countries'}`;
 }
 
 /** Empty when unmeasured, since the section then renders no figures at all. */

@@ -120,6 +120,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no sponsorship.
       call: () => service.getEventsSponsorship({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getEventsGeography',
+      url: '/api/analytics/events-geography',
+      // A swallowed failure would read as a foundation with no registrations by country.
+      call: () => service.getEventsGeography({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

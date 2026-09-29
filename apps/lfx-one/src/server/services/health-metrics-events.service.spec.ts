@@ -27,6 +27,7 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_PAST_EVENT_CAP,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD,
@@ -1182,5 +1183,105 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
     mockReads([tierRow('Gold', 5, 1)], []);
 
     await expect(new HealthMetricsEventsService().getSponsorship(req, { foundationSlug: 'acme' })).resolves.toEqual({ periods: [] });
+  });
+});
+
+describe('HealthMetricsEventsService.getGeography', () => {
+  const scopeRow = {
+    FOUNDATION_ID: 'fdn-acme',
+    COUNTRIES_COUNT_YTD: 7,
+    COUNTRIES_CHANGE_PCT_YTD: '0.4',
+    COUNTRIES_COUNT_LAST_COMPLETED_YEAR: 6,
+    COUNTRIES_CHANGE_PCT_LAST_COMPLETED_YEAR: null,
+    COUNTRIES_COUNT_PREV_COMPLETED_YEAR: 2,
+    COUNTRIES_COUNT_3RD_LAST_COMPLETED_YEAR: null,
+  };
+
+  function countryRow(country: string | null, ytd: number | null, lastYear: number | null = 0) {
+    return { COUNTRY: country, REGISTRATION_COUNT_YTD: ytd, REGISTRATION_COUNT_LAST_COMPLETED_YEAR: lastYear };
+  }
+
+  function mockReads(scope: Record<string, unknown>[], countries: Record<string, unknown>[]) {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('REGISTRATION_COUNTRY') ? countries : scope }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReads(
+      [scopeRow],
+      [
+        countryRow('Japan', 50),
+        countryRow('Canada', 300, 10),
+        countryRow('Germany', 50),
+        countryRow('Brazil', 20),
+        countryRow('Kenya', 10),
+        countryRow('Norway', 5),
+        countryRow('Chile', 0),
+        countryRow('Peru', null),
+        countryRow(null, 99),
+      ]
+    );
+  });
+
+  it('reads the rollup by slug, then the countries by its foundation id', async () => {
+    await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    const [scopeSql, scopeBinds] = execute.mock.calls.find(([sql]) => sql.includes('MARKETING_EVENT_AT_A_GLANCE')) ?? [];
+    const [countrySql, countryBinds] = execute.mock.calls.find(([sql]) => sql.includes('REGISTRATION_COUNTRY')) ?? [];
+    expect(scopeBinds).toEqual(['acme']);
+    expect(scopeSql).toContain('is_all_projects = TRUE');
+    expect(scopeSql).toContain('countries_change_pct_last_completed_year');
+    expect(scopeSql).not.toContain('countries_change_pct_prev_completed_year');
+    expect(countryBinds).toEqual(['fdn-acme']);
+    expect(countrySql).toContain('GROUP BY country');
+    for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
+      expect(scopeSql).toContain(`countries_count_${suffix}`);
+      expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
+    }
+  });
+
+  it('ranks each period by registrations, then name, and caps the list while counting every country', async () => {
+    const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
+
+    const byRange = (range: string) => periods.find((period) => period.range === range);
+    expect(periods.map((period) => period.range)).toEqual(HEALTH_METRICS_L2_RANGES);
+    expect(byRange('YTD')).toEqual({
+      range: 'YTD',
+      countries: 7,
+      changes: { countries: 0.4 },
+      topCountries: [
+        { country: 'Canada', registrations: 300 },
+        { country: 'Germany', registrations: 50 },
+        { country: 'Japan', registrations: 50 },
+        { country: 'Brazil', registrations: 20 },
+        { country: 'Kenya', registrations: 10 },
+      ],
+      rankedCountries: 6,
+    });
+    expect(byRange('YTD')?.topCountries).toHaveLength(HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES);
+    expect(byRange('COMPLETED_YEAR')).toMatchObject({
+      countries: 6,
+      changes: { countries: null },
+      topCountries: [{ country: 'Canada', registrations: 10 }],
+      rankedCountries: 1,
+    });
+    expect(byRange('COMPLETED_YEAR_2')).toMatchObject({ countries: 2, changes: null, topCountries: [], rankedCountries: 0 });
+    expect(byRange('COMPLETED_YEAR_3')).toMatchObject({ countries: null, changes: null });
+  });
+
+  it('returns no periods without a rollup row, skipping the country read', async () => {
+    mockReads([], []);
+
+    await expect(new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' })).resolves.toEqual({ periods: [] });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns empty periods for a rolled-up foundation with no country rows', async () => {
+    mockReads([scopeRow], []);
+
+    const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
+
+    expect(periods.every((period) => period.topCountries.length === 0 && period.rankedCountries === 0)).toBe(true);
   });
 });

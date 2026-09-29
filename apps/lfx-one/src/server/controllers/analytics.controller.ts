@@ -3654,6 +3654,23 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/events-geography` — each period's countries represented and top countries by registrations. */
+  public async getEventsGeography(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_geography');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_geography');
+
+      const response = await this.healthMetricsEventsService.getGeography(req, { foundationSlug });
+
+      logger.success(req, 'get_events_geography', startTime, { foundation_slug: foundationSlug, period_count: response.periods.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** `GET /api/analytics/events-organizations` — one page of the organizations active at the foundation's events in a period. */
   public async getEventsOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_events_organizations');
