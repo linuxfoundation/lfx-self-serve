@@ -9,7 +9,7 @@ import {
 } from '../constants/health-metrics-members.constants';
 import { formatCurrency } from './number.utils';
 
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsMembersSubNavItem,
   HealthMetricsMembersTiers,
@@ -21,7 +21,7 @@ import type {
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
 
-/** Sub-nav items for the Members tab. No section reads data yet, so none carries a badge or note. */
+/** Sub-nav items for the Members tab. No section reports a count yet, so none carries a badge or note. */
 export function buildHealthMetricsMembersSubNavItems(): HealthMetricsMembersSubNavItem[] {
   return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: '' }));
 }
@@ -32,7 +32,7 @@ export function buildHealthMetricsMembersSubNavItems(): HealthMetricsMembersSubN
  */
 export function buildHealthMetricsMembersTiersView(
   tiers: HealthMetricsMembersTiers,
-  range: HealthMetricsL2Range,
+  range: HealthMetricsRange,
   mode: HealthMetricsMembersTiersMode
 ): HealthMetricsMembersTiersView {
   const years = [...new Set(tiers.rows.map((row) => row.year))].sort((a, b) => a - b);

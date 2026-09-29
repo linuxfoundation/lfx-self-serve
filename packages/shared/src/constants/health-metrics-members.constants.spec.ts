@@ -20,8 +20,8 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
     expect(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.key)).toEqual(['tiers', 'list', 'risk', 'renewals', 'board', 'nps', 'churn']);
   });
 
-  it('holds no data section until a section issue wires one', () => {
-    expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual([]);
+  it('holds a deep link for every section that reads data', () => {
+    expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['tiers']);
   });
 });
 

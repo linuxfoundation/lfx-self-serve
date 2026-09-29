@@ -20,7 +20,7 @@ describe('buildHealthMetricsMembersSubNavItems', () => {
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.label));
   });
 
-  it('renders no badge or note while no section reads data', () => {
+  it('renders no badge or note while no section reports a count', () => {
     expect(buildHealthMetricsMembersSubNavItems().every((item) => item.count === null && item.note === '')).toBe(true);
   });
 });

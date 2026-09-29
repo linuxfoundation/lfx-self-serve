@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { Component, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_MEMBERS_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
@@ -10,9 +11,17 @@ import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
-// Covers only what Members wires into the shell: its copy, placeholders and sub-nav. The scroll-spy
+/** Stands in for Membership & revenue by tier, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-members-tiers', template: '<div data-testid="members-tiers-stub"></div>' })
+class TiersStubComponent {
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+// Covers only what Members wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
 // and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsMembersComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
@@ -26,7 +35,9 @@ describe('HealthMetricsMembersComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(HealthMetricsMembersComponent, { remove: { imports: [MembersTiersComponent] }, add: { imports: [TiersStubComponent] } })
+      .compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsMembersComponent);
     fixture.detectChanges();
@@ -43,14 +54,20 @@ describe('HealthMetricsMembersComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the seven sections in order, each anchored with its design copy and a placeholder', async () => {
+  it('renders the seven sections in order, each anchored with its design copy and a body or placeholder', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="members-section-"]')] as HTMLElement[];
 
     expect(rendered.map((element) => element.id)).toEqual(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => `sec-mem-${section.key}`));
     rendered.forEach((element, index) => {
+      const key = HEALTH_METRICS_MEMBERS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_MEMBERS_SECTIONS[index].heading);
-      expect(element.textContent).toContain('Awaiting data');
+      if (key === 'tiers') {
+        expect(element.querySelector('[data-testid="members-tiers-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
+      } else {
+        expect(element.textContent).toContain('Awaiting data');
+      }
     });
   });
 
@@ -78,10 +95,16 @@ describe('HealthMetricsMembersComponent', () => {
     );
   });
 
-  it('scrolls to the section a deep link names', async () => {
+  it('scrolls to the section a deep link names once the tiers settle', async () => {
     await setup('renewals');
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    // The shell re-lands a held deep link once every data section has settled.
+    scrollIntoView.mockClear();
+    (fixture.debugElement.query(By.directive(TiersStubComponent)).componentInstance as TiersStubComponent).settled.emit();
+    await fixture.whenStable();
+    fixture.detectChanges();
 
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-renewals');
   });
 });

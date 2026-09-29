@@ -35,7 +35,7 @@ export interface HealthMetricsMembersFoundationRevenue {
 }
 
 export interface HealthMetricsMembersTiers {
-  /** Ordered by year, then `tier_sort_rank`, then tier name. */
+  /** Newest year first, then `tier_sort_rank`, then tier name; the view re-sorts years for display. */
   rows: HealthMetricsMembersTierYear[];
   /** A period the Overview model has no total for is left out, so its share reads as not available. */
   foundationRevenue: HealthMetricsMembersFoundationRevenue[];

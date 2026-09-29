@@ -6,12 +6,17 @@
   {{ scopeNote }}
 </p>
 
-<!-- No section projects a body yet; each one's issue adds its template and data-section key. -->
+<!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
 <lfx-health-metrics-l2-shell
+  #shell
   [sections]="sections"
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
   [subNavItems]="subNavItems"
   navLabel="Members sections"
   testIdPrefix="members"
-  [crossReference]="crossReference" />
+  [crossReference]="crossReference">
+  <ng-template lfxHealthMetricsL2Section="tiers">
+    <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers')" />
+  </ng-template>
+</lfx-health-metrics-l2-shell>

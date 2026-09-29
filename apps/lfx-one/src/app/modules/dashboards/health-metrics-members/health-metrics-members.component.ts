@@ -11,17 +11,19 @@ import {
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 
+import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 
 import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Members (Level 2) — seven anchored sections in the shared Level 2 shell, each an "Awaiting data"
- * placeholder until its section lands. Rendered inside HealthMetricsGateComponent's outlet.
+ * Members (Level 2) — seven anchored sections in the shared Level 2 shell; a section without a body
+ * stays an "Awaiting data" placeholder until it lands. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
   selector: 'lfx-health-metrics-members',
-  imports: [HealthMetricsL2ShellComponent],
+  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, MembersTiersComponent],
   templateUrl: './health-metrics-members.component.html',
 })
 export class HealthMetricsMembersComponent {

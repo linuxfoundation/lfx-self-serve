@@ -82,7 +82,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [] as const satisfies readonly HealthMetricsMembersSectionKey[];
+export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers'] as const satisfies readonly HealthMetricsMembersSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
 export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {

@@ -66,7 +66,7 @@ export class HealthMetricsMembersService {
         is_partial_year
       FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY year, tier_sort_rank, membership_tier
+      ORDER BY year DESC, tier_sort_rank, membership_tier
       LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}
     `;
 
@@ -76,7 +76,7 @@ export class HealthMetricsMembersService {
       clientMessage: 'Membership by tier is unavailable right now.',
     });
 
-    // Rows sort oldest first, so hitting the cap drops the latest years; logged rather than silently truncated.
+    // Newest years first, so hitting the cap drops the oldest; the view re-sorts years for display.
     if (result.rows.length > HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP) {
       logger.warning(req, 'get_members_tiers', 'Membership tier rows hit the read cap', {
         foundation_slug: query.foundationSlug,
