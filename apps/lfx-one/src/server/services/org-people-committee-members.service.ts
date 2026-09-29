@@ -47,7 +47,7 @@ export class OrgPeopleCommitteeMembersService {
     const nonBoard = seats.filter((s) => !isBoardCategory(s.committee_category));
 
     const enrichStartedAt = Date.now();
-    const { names: foundationNames, cachedHits, fetched } = await enrichFoundationNames(req, nonBoard, this.projectService);
+    const { names: foundationNames, cachedHits, requested, resolved, fetchFailed } = await enrichFoundationNames(req, nonBoard, this.projectService);
     const enrichDurationMs = Date.now() - enrichStartedAt;
     const assignments = nonBoard.map((s) => toAssignment(s, foundationNames));
     const stats = this.computeStats(assignments);
@@ -62,7 +62,9 @@ export class OrgPeopleCommitteeMembersService {
       seats_duration_ms: seatsDurationMs,
       name_enrichment_duration_ms: enrichDurationMs,
       names_cached_hits: cachedHits,
-      names_fetched: fetched,
+      names_requested: requested,
+      names_resolved: resolved,
+      names_fetch_failed: fetchFailed,
       total_duration_ms: Date.now() - startedAt,
     });
 

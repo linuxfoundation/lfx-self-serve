@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CommitteeServiceOrgSeat, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import type { CommitteeServiceOrgSeat, FoundationNameEnrichment, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors org-people-directory.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
@@ -83,11 +83,16 @@ async function run(): Promise<OrgLensGroupsResponse> {
   return new OrgLensGroupsService().getGroups(req, ORG_UID, 'org-grant');
 }
 
+/** An `enrichFoundationNames` result that resolved `names` from one project lookup. */
+function foundationNames(names: [string, string][] = []): FoundationNameEnrichment {
+  return { names: new Map(names), cachedHits: 0, requested: 1, resolved: names.length, fetchFailed: false };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // Default both enrichment sources to "no match" so each test only sets up the source it's
   // actually exercising.
-  enrichFoundationNames.mockResolvedValue({ names: new Map(), cachedHits: 0, fetched: 0 });
+  enrichFoundationNames.mockResolvedValue(foundationNames());
   getCommitteesByIds.mockResolvedValue(new Map());
 });
 
@@ -108,7 +113,7 @@ describe('OrgLensGroupsService.getGroups', () => {
     getCommitteesByIds.mockImplementation((_req: unknown, uids: string[]) =>
       Promise.resolve(new Map(uids.map((uid) => [uid, { uid, project_name: 'Cloud Native Computing Foundation (stale)' }])))
     );
-    enrichFoundationNames.mockResolvedValue({ names: new Map([['p-cncf', 'Cloud Native Computing Foundation']]), cachedHits: 0, fetched: 1 });
+    enrichFoundationNames.mockResolvedValue(foundationNames([['p-cncf', 'Cloud Native Computing Foundation']]));
 
     const result = await run();
 
@@ -119,7 +124,7 @@ describe('OrgLensGroupsService.getGroups', () => {
 
   it('skips the committee-index fan-out entirely when the project index already resolved every group', async () => {
     fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
-    enrichFoundationNames.mockResolvedValue({ names: new Map([['p-cncf', 'Cloud Native Computing Foundation']]), cachedHits: 0, fetched: 1 });
+    enrichFoundationNames.mockResolvedValue(foundationNames([['p-cncf', 'Cloud Native Computing Foundation']]));
 
     await run();
 
@@ -136,7 +141,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   it('falls back to the committee-index name when the project index has no match (e.g. uepf-style gap)', async () => {
     fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     getCommitteesByIds.mockResolvedValue(new Map([['c-1', { uid: 'c-1', project_name: 'Ultra Ethernet Consortium Fund' }]]));
-    enrichFoundationNames.mockResolvedValue({ names: new Map(), cachedHits: 0, fetched: 1 });
+    enrichFoundationNames.mockResolvedValue(foundationNames());
 
     const result = await run();
 
@@ -179,7 +184,7 @@ describe('OrgLensGroupsService.getGroups', () => {
   it('still returns groups (falling back to the slug) when the committee-index lookup throws', async () => {
     fetchAllOrgSeatsUncached.mockResolvedValue([seat()]);
     getCommitteesByIds.mockRejectedValue(new Error('query-service unavailable'));
-    enrichFoundationNames.mockResolvedValue({ names: new Map(), cachedHits: 0, fetched: 1 });
+    enrichFoundationNames.mockResolvedValue(foundationNames());
 
     const result = await run();
 

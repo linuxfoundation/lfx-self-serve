@@ -221,8 +221,9 @@ export class OrgLensBoardCommitteeService {
    * What is shared is the COMPACT envelope; each caller rebuilds its own seat objects from it.
    *
    * `onDrain` fires only when THIS call runs the committee-service drain (a Valkey miss on the
-   * flight it started), not on a cache hit or when it joins another caller's flight; timing logs
-   * use it to tell the two apart.
+   * flight it started). It stays silent on a Valkey hit, and also when this request joined an
+   * in-flight drain started by the same user — so the timing log's `seats_drained: false` covers
+   * both, and `seats_duration_ms` tells them apart.
    */
   public async fetchAllOrgSeats(req: Request, orgUid: string, onDrain?: () => void): Promise<CommitteeServiceOrgSeat[]> {
     const username = getEffectiveUsername(req) ?? '';

@@ -14,11 +14,16 @@ vi.mock('./logger.service', () => ({ logger }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 // The shared utils barrel behind the avatar helper pulls Angular into this node-environment suite.
 vi.mock('../helpers/avatar.helper', () => ({ resolveSeatAvatar: () => null }));
+// A cap of 2 makes the oldest-entry eviction observable with three projects.
+vi.mock('@lfx-one/shared/constants', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES: 2,
+}));
 
 import { enrichFoundationNames, resetPublicProjectNameCacheForTests } from './committee-seat-assignment.mapper';
 import type { ProjectService } from './project.service';
 
-const req = {} as unknown as Request;
+const req = {} as Request;
 
 const seat = (projectUid: string): CommitteeServiceOrgSeat => ({ project_uid: projectUid }) as CommitteeServiceOrgSeat;
 
@@ -56,11 +61,11 @@ describe('enrichFoundationNames — public project name cache', () => {
         ['pub-b', 'Name pub-b'],
       ]),
       cachedHits: 0,
-      fetched: 2,
+      requested: 2,
+      resolved: 2,
+      fetchFailed: false,
     });
-    expect(second.names).toEqual(first.names);
-    expect(second.cachedHits).toBe(2);
-    expect(second.fetched).toBe(0);
+    expect(second).toEqual({ names: first.names, cachedHits: 2, requested: 0, resolved: 0, fetchFailed: false });
   });
 
   it('never caches a private project name, so every lookup re-fetches it with the caller token', async () => {
@@ -73,7 +78,8 @@ describe('enrichFoundationNames — public project name cache', () => {
     expect(first.names.get('priv')).toBe('Name priv');
     expect(getProjectsByIds).toHaveBeenCalledTimes(2);
     expect(getProjectsByIds).toHaveBeenLastCalledWith(req, ['priv']);
-    expect(second).toEqual({ names: new Map(), cachedHits: 0, fetched: 1 });
+    // The lookup answered but returned nothing: asked for 1, resolved 0, not a failure.
+    expect(second).toEqual({ names: new Map(), cachedHits: 0, requested: 1, resolved: 0, fetchFailed: false });
   });
 
   it('re-fetches a public name once the TTL has elapsed', async () => {
@@ -89,8 +95,28 @@ describe('enrichFoundationNames — public project name cache', () => {
     const expired = await enrichFoundationNames(req, [seat('pub-a')], projectService);
 
     expect(getProjectsByIds).toHaveBeenCalledTimes(2);
-    expect(expired.cachedHits).toBe(0);
-    expect(expired.names.get('pub-a')).toBe('Name pub-a');
+    expect(expired).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 0, requested: 1, resolved: 1, fetchFailed: false });
+  });
+
+  it('serves a project that turned private from cache only until the TTL, then fetches it per request', async () => {
+    vi.useFakeTimers();
+    serve([project('flip', true)]);
+    await enrichFoundationNames(req, [seat('flip')], projectService);
+
+    serve([project('flip', false)]);
+    vi.advanceTimersByTime(PUBLIC_PROJECT_NAME_CACHE_TTL_MS - 1);
+    const withinTtl = await enrichFoundationNames(req, [seat('flip')], projectService);
+    expect(withinTtl.cachedHits).toBe(1);
+    expect(getProjectsByIds).toHaveBeenCalledOnce();
+
+    vi.advanceTimersByTime(1);
+    const afterTtl = await enrichFoundationNames(req, [seat('flip')], projectService);
+    const next = await enrichFoundationNames(req, [seat('flip')], projectService);
+
+    // Once private, the name comes from the caller's own lookup each time and is never re-cached.
+    expect(afterTtl).toEqual({ names: new Map([['flip', 'Name flip']]), cachedHits: 0, requested: 1, resolved: 1, fetchFailed: false });
+    expect(next.cachedHits).toBe(0);
+    expect(getProjectsByIds).toHaveBeenCalledTimes(3);
   });
 
   it('fetches only the uids missing from the cache when cached and uncached ones are mixed', async () => {
@@ -107,8 +133,23 @@ describe('enrichFoundationNames — public project name cache', () => {
         ['priv', 'Name priv'],
       ]),
       cachedHits: 1,
-      fetched: 2,
+      requested: 2,
+      resolved: 2,
+      fetchFailed: false,
     });
+  });
+
+  it('evicts the oldest public name once the cap is reached', async () => {
+    serve([project('pub-1', true), project('pub-2', true), project('pub-3', true)]);
+    await enrichFoundationNames(req, [seat('pub-1')], projectService);
+    await enrichFoundationNames(req, [seat('pub-2')], projectService);
+    await enrichFoundationNames(req, [seat('pub-3')], projectService);
+
+    const afterCap = await enrichFoundationNames(req, [seat('pub-2'), seat('pub-3'), seat('pub-1')], projectService);
+
+    expect(getProjectsByIds).toHaveBeenLastCalledWith(req, ['pub-1']);
+    expect(afterCap.cachedHits).toBe(2);
+    expect(afterCap.requested).toBe(1);
   });
 
   it('keeps cached names and falls back to the slug for the rest when the fetch fails', async () => {
@@ -118,7 +159,7 @@ describe('enrichFoundationNames — public project name cache', () => {
 
     const result = await enrichFoundationNames(req, [seat('pub-a'), seat('pub-b')], projectService);
 
-    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, fetched: 1 });
+    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, requested: 1, resolved: 0, fetchFailed: true });
     expect(logger.warning).toHaveBeenCalledOnce();
   });
 });

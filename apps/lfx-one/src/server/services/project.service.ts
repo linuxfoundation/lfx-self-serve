@@ -8319,8 +8319,8 @@ export class ProjectService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'project',
             filters_or: batch.map((uid) => `uid:${uid}`),
-            // One page per batch: without this the query service's 50-result default splits a
-            // 100-uid batch into two sequential round-trips.
+            // One page per batch: without this the query service's default page size of 50
+            // (docs/architecture/backend/pagination.md) splits a 100-uid batch into two sequential calls.
             page_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
             ...(pageToken && { page_token: pageToken }),
           }),

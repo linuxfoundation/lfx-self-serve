@@ -308,11 +308,17 @@ export interface CommitteeServiceOrgSeat {
   username?: string | null;
 }
 
-/** Foundation-name lookup for a set of seats: uid → display name, plus how many uids came from the per-pod public-name cache versus the upstream fetch (timing logs only). */
+/** Foundation-name lookup for a set of seats: uid → display name, plus counts for the timing logs. */
 export interface FoundationNameEnrichment {
   names: Map<string, string>;
+  /** Uids answered by the per-pod public-name cache. */
   cachedHits: number;
-  fetched: number;
+  /** Uids asked of the project lookup (the cache misses). */
+  requested: number;
+  /** Names the project lookup actually returned for those uids. */
+  resolved: number;
+  /** True when the project lookup threw and the requested uids fell back to their slugs. */
+  fetchFailed: boolean;
 }
 
 /** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */

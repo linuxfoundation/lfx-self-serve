@@ -26,9 +26,10 @@ export const EDIT_TOOLTIP_NOT_ORG_EDITABLE = 'This seat is foundation-controlled
 
 /**
  * TTL of the per-pod cache of PUBLIC project names used to label Board/Committee seats with their
- * foundation. Project names change rarely; a rename shows up within this window.
+ * foundation. It also bounds how long a project that turns private keeps its cached name on a pod,
+ * and how long a rename takes to show up.
  */
-export const PUBLIC_PROJECT_NAME_CACHE_TTL_MS = 15 * 60 * 1000;
+export const PUBLIC_PROJECT_NAME_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** Hard cap on cached public project names per process; the oldest entry is evicted once reached. */
 export const PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES = 5000;

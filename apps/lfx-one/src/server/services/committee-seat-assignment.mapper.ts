@@ -3,8 +3,7 @@
 
 // Shared seat→assignment mapper extracted from `OrgPeopleCommitteeMembersService` so both the
 // Committee tab and the Board tab reuse the same foundation-name enrichment + camelCase mapping
-// with zero duplication. Behavior is byte-identical to the original private methods; the committee
-// read/reassign responses are unchanged.
+// with zero duplication.
 
 import { PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES, PUBLIC_PROJECT_NAME_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import type { CommitteeMemberAssignment, CommitteeMemberPerson, CommitteeServiceOrgSeat, FoundationNameEnrichment } from '@lfx-one/shared/interfaces';
@@ -15,12 +14,22 @@ import { logger } from './logger.service';
 import { ProjectService } from './project.service';
 
 /**
- * Per-pod uid → name cache for PUBLIC projects only. A public project's name is visible to every
- * caller, so sharing it across users leaks nothing; a private project's name is never stored here and
- * is fetched with the caller's own token on every request, as before. Bounded like
- * `FormationService.userMetadataCache`: each fetch that stores names first drops expired entries,
- * then each write evicts the oldest live one once `PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES` is reached
- * (Map preserves insertion order).
+ * Per-pod uid → name cache for PUBLIC projects only. `public` is the project's own flag
+ * (`ProjectBase.IndexingConfig` in lfx-v2-project-service `internal/domain/models/project.go`), which
+ * lfx-v2-fga-sync `handler.go` turns into a `user:*` viewer tuple — so a public project's name is
+ * readable by every caller, and sharing it across users leaks nothing. A private project's name is
+ * never stored here; it is fetched with the caller's own token on every request, as before.
+ *
+ * Staleness window: a project that flips from public to private keeps serving its cached name on
+ * this pod for at most `PUBLIC_PROJECT_NAME_CACHE_TTL_MS` (5 min) after it was last fetched as
+ * public; the per-user seat and directory caches downstream (30 s) can add at most 30 s. The exposure
+ * is limited to the NAME: the caller already receives that seat's project slug and committee name
+ * through their own authorized seat roster.
+ *
+ * Bounded like `FormationService.userMetadataCache`: each successful fetch first drops expired
+ * entries; each write evicts the oldest entry once `PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES` is reached
+ * (Map preserves insertion order). Concurrent cold misses for the same uid are not coalesced — each
+ * fetches it once, which is bounded and accepted.
  */
 const publicProjectNameCache = new Map<string, { name: string; expiresAt: number }>();
 
@@ -69,7 +78,7 @@ export async function enrichFoundationNames(req: Request, seats: CommitteeServic
   }
   const cachedHits = names.size;
   if (missing.length === 0) {
-    return { names, cachedHits, fetched: 0 };
+    return { names, cachedHits, requested: 0, resolved: 0, fetchFailed: false };
   }
 
   try {
@@ -85,13 +94,14 @@ export async function enrichFoundationNames(req: Request, seats: CommitteeServic
         cachePublicProjectName(uid, project.name, fetchedAt);
       }
     }
+    return { names, cachedHits, requested: missing.length, resolved: names.size - cachedHits, fetchFailed: false };
   } catch (error) {
     logger.warning(req, 'enrich_foundation_names', 'project-name enrichment failed; falling back to project_slug', {
       uid_count: missing.length,
       err: error,
     });
+    return { names, cachedHits, requested: missing.length, resolved: 0, fetchFailed: true };
   }
-  return { names, cachedHits, fetched: missing.length };
 }
 
 /** Map an upstream seat to the People-tab `CommitteeMemberAssignment` (camelCase + person envelope + foundation). */

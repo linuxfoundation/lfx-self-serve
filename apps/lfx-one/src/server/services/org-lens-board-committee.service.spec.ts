@@ -69,8 +69,8 @@ vi.mock('./valkey.service', () => ({
 // The People services' foundation-name enrichment reaches project-service; the seat mapping itself
 // is not what these tests are about.
 vi.mock('./committee-seat-assignment.mapper', () => ({
-  enrichFoundationNames: vi.fn(async () => ({ names: new Map(), cachedHits: 0, fetched: 0 })),
-  toAssignment: (s: CommitteeServiceOrgSeat) => ({ seatId: s.uid, committeeUid: s.committee_uid }),
+  enrichFoundationNames: vi.fn(async () => ({ names: new Map(), cachedHits: 0, requested: 0, resolved: 0, fetchFailed: false })),
+  toAssignment: (s: CommitteeServiceOrgSeat) => ({ seatId: s.uid, committeeUid: s.committee_uid, person: { email: s.email } }),
 }));
 
 // The `@lfx-one/shared/*` barrels pull Angular into this node-environment suite. The compact-cache
@@ -94,6 +94,8 @@ import type { Request } from 'express';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { resetSingleFlightForTests } from '../utils/single-flight';
+import { enrichFoundationNames } from './committee-seat-assignment.mapper';
+import { logger } from './logger.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgPeopleBoardMembersService } from './org-people-board-members.service';
 import { OrgPeopleCommitteeMembersService } from './org-people-committee-members.service';
@@ -177,11 +179,16 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — cache round trip (GH
     const drained = [seat(), seat({ uid: 'seat-2', email: 'mrivas@lfx-partner.example', username: 'mrivas' }), sparseSeat()];
     proxyRequest.mockResolvedValue(page(drained));
     const service = new OrgLensBoardCommitteeService();
+    const onMissDrain = vi.fn();
+    const onHitDrain = vi.fn();
 
-    const miss = await service.fetchAllOrgSeats(req, ORG);
-    const hit = await service.fetchAllOrgSeats(req, ORG);
+    const miss = await service.fetchAllOrgSeats(req, ORG, onMissDrain);
+    const hit = await service.fetchAllOrgSeats(req, ORG, onHitDrain);
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+    // `onDrain` reports only the call that actually drained committee-service.
+    expect(onMissDrain).toHaveBeenCalledOnce();
+    expect(onHitDrain).not.toHaveBeenCalled();
     // Against the DRAINED roster, not hit-vs-miss: the miss path returns the decoded envelope too, so
     // comparing the two only proves the encoder is self-consistent, not that it is faithful.
     expect(miss).toStrictEqual(drained);
@@ -361,6 +368,54 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — coalescing (GH-1906)
     expect(proxyRequest).toHaveBeenCalledTimes(2);
     expect(first[0].uid).toBe('seat-1');
     expect(second[0].uid).toBe('seat-2');
+  });
+});
+
+describe('People Board/Committee roster timing log', () => {
+  const enrichment = { names: new Map([['p-1', 'Identity Foundation']]), cachedHits: 1, requested: 2, resolved: 1, fetchFailed: false };
+  const timingFields = (seatsDrained: boolean, assignmentCount: number) => ({
+    org_uid: ORG,
+    seat_count: 2,
+    assignment_count: assignmentCount,
+    seats_drained: seatsDrained,
+    seats_duration_ms: expect.any(Number),
+    name_enrichment_duration_ms: expect.any(Number),
+    names_cached_hits: 1,
+    names_requested: 2,
+    names_resolved: 1,
+    names_fetch_failed: false,
+    total_duration_ms: expect.any(Number),
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockResolvedValue(page([seat(), sparseSeat()]));
+    vi.mocked(enrichFoundationNames).mockResolvedValue(enrichment);
+  });
+
+  it('logs the Board roster split into seats and name enrichment, draining only on the first read', async () => {
+    const service = new OrgPeopleBoardMembersService();
+
+    await service.getBoardMembers(req, ORG);
+    await service.getBoardMembers(req, ORG);
+
+    const lines = vi.mocked(logger.info).mock.calls.filter(([, operation]) => operation === 'get_org_people_board_members');
+    expect(lines).toEqual([
+      [req, 'get_org_people_board_members', 'Board roster built', timingFields(true, 1)],
+      [req, 'get_org_people_board_members', 'Board roster built', timingFields(false, 1)],
+    ]);
+  });
+
+  it('logs the Committee roster split into seats and name enrichment, draining only on the first read', async () => {
+    const service = new OrgPeopleCommitteeMembersService();
+
+    await service.getCommitteeMembers(req, ORG);
+    await service.getCommitteeMembers(req, ORG);
+
+    const lines = vi.mocked(logger.info).mock.calls.filter(([, operation]) => operation === 'get_org_people_committee_members');
+    expect(lines).toEqual([
+      [req, 'get_org_people_committee_members', 'Committee roster built', timingFields(true, 1)],
+      [req, 'get_org_people_committee_members', 'Committee roster built', timingFields(false, 1)],
+    ]);
   });
 });
 
