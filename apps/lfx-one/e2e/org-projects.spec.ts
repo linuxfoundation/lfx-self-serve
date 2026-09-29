@@ -494,7 +494,7 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveCount(0);
   });
 
-  test('opens the health popup on focus with badge, popup, and aria in agreement', async ({ page }) => {
+  test('opens the health popup on focus with no partial marker in the headline while the badge and aria label keep Partial', async ({ page }) => {
     await stubOrgContext(page);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();

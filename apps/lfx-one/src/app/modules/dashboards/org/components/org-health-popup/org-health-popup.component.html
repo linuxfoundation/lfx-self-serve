@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact Figma px via [Npx]: the app's 14px root font makes rem utilities undershoot (see .claude/rules/styling.md). -->
+<!-- Exact design px via [Npx]: the app's 14px root makes the rem scale undershoot (styling.md). -->
 <p-popover
   #popover
   [dismissable]="true"
@@ -27,8 +27,9 @@
     @if (available()) {
       <div class="flex flex-col gap-[8px]">
         <div class="flex items-center gap-[8px] text-[14px] leading-[20px]" data-testid="org-health-popup-headline">
+          <!-- 12px box around the 8px dot keeps the label 20px from the content edge, as in the design. -->
           <span class="flex size-[12px] shrink-0 items-center justify-center">
-            <span class="size-[8px] rounded-full" [style.backgroundColor]="barFillColor()"></span>
+            <span class="size-[8px] rounded-full" [style.backgroundColor]="barFillColor()" data-testid="org-health-popup-headline-dot"></span>
           </span>
           <span
             ><span class="font-semibold text-gray-900">{{ labelText() }}</span
@@ -36,7 +37,11 @@
           >
         </div>
         <div class="flex h-[4px] w-full items-center overflow-hidden rounded-full" aria-hidden="true" data-testid="org-health-popup-bar">
-          <div class="h-full shrink-0" [style.width.%]="barFillPercent()" [style.backgroundColor]="barFillColor()"></div>
+          <div
+            class="h-full shrink-0"
+            [style.width.%]="barFillPercent()"
+            [style.backgroundColor]="barFillColor()"
+            data-testid="org-health-popup-bar-fill"></div>
           <div class="h-full grow bg-gray-200"></div>
           @if (barMissingPercent() > 0) {
             <div
@@ -58,6 +63,7 @@
             <span class="font-medium text-gray-900">{{ row.name }}</span>
             <span class="ml-auto shrink-0">
               @if (row.score === null) {
+                <!-- The 3px gap replaces the trailing space the Insights markup renders after the dash. -->
                 <span class="mr-[3px] font-semibold text-gray-900">—</span>
               } @else {
                 <span class="font-semibold text-gray-900">{{ row.score }}</span>

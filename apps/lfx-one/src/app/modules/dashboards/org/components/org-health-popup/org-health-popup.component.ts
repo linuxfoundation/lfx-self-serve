@@ -10,7 +10,7 @@ import type { Popover } from 'primeng/popover';
 
 import type { HealthScore, OrgLensHealthPopupRow } from '@lfx-one/shared/interfaces';
 
-// Health badge popover shared by the Projects table and project-detail hero; hosts open it and call scheduleHide on leave.
+// Health popover for the Projects table and project-detail hero; hosts call show and scheduleHide.
 @Component({
   selector: 'lfx-org-health-popup',
   imports: [PopoverModule],
