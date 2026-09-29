@@ -119,6 +119,10 @@ test.describe('Mentee Profile — Robust Tests', () => {
       await expect(page.getByTestId(`mentorship-application-history-withdraw-${PENDING_APPLICATION_ID}`)).toBeAttached();
       await expect(page.getByTestId(`mentorship-application-history-withdraw-${ACCEPTED_APPLICATION_ID}`)).toHaveCount(0);
     });
+
+    test('attaches the withdraw confirm dialog', async ({ page }) => {
+      await expect(page.getByTestId('mentorship-mentee-profile-withdraw-confirm-dialog')).toBeAttached();
+    });
   });
 
   test.describe('Loading state', () => {

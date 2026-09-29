@@ -13,7 +13,7 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { MENTORSHIP_MENTEE_TASKS_URL } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASKS_URL, MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_HEADER, MENTORSHIP_MENTEE_WITHDRAW_LABEL } from '@lfx-one/shared/constants';
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
@@ -73,6 +73,61 @@ test.describe('Mentee applications — Robust Tests', () => {
       await expect(page.getByTestId('mentee-tasks-error')).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
       await expect(page.getByTestId('mentee-tasks-empty')).toHaveCount(0);
       await expect(page.getByTestId('mentee-tasks')).toHaveCount(0);
+    });
+  });
+
+  test.describe('Withdraw', () => {
+    const PENDING_APPLICATION_ID = '0b6e1f2a-3c4d-4e5f-8a6b-7c8d9e0f1a2b';
+    const application = (id: string, upstreamStatus: string) => ({
+      id,
+      programId: `prog-${id}`,
+      programName: 'Test Program',
+      term: { id: 'term-1', name: 'Fall 2026' },
+      upstreamStatus,
+      createdOn: '2026-06-01T10:00:00Z',
+      updatedOn: '2026-06-02T10:00:00Z',
+      tasks: [],
+    });
+
+    test.beforeEach(async ({ page }) => {
+      await enableMentorshipFlag(page);
+      const data = [application(PENDING_APPLICATION_ID, 'pending'), application('1c7f2a3b-4d5e-4f6a-9b7c-8d9e0f1a2b3c', 'accepted')];
+      await stubMenteeApplications(page, 200, JSON.stringify({ data, total: data.length }));
+    });
+
+    test('Overview offers withdraw on the pending card only and attaches its confirm dialog', async ({ page }) => {
+      await openMenteeTab(page, MENTEE_OVERVIEW_URL);
+
+      await expect(page.getByTestId('mentee-application-card')).toHaveCount(2, { timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
+      await expect(page.getByTestId('mentee-overview-withdraw')).toHaveCount(1);
+      await expect(page.getByTestId('mentee-overview-withdraw')).toBeEnabled();
+      await expect(page.getByTestId('mentee-overview-withdraw')).toHaveAttribute('aria-busy', 'false');
+      await expect(page.getByTestId('mentee-overview-withdraw-confirm-dialog')).toBeAttached();
+    });
+
+    test('Overview disables withdraw and marks it busy while the withdraw is in flight', async ({ page }) => {
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      await page.route('**/api/mentorship/mentee/applications/*/withdraw', async (route) => {
+        await held;
+        await route.fulfill({ status: 204, body: '' });
+      });
+
+      await openMenteeTab(page, MENTEE_OVERVIEW_URL);
+      const withdraw = page.getByTestId('mentee-overview-withdraw');
+      await expect(withdraw).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
+
+      await withdraw.click();
+      // PrimeNG appends the dialog to `<body>`, outside its testid host, so it is found by role.
+      await page
+        .getByRole('alertdialog')
+        .filter({ hasText: MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_HEADER })
+        .getByRole('button', { name: MENTORSHIP_MENTEE_WITHDRAW_LABEL, exact: true })
+        .click();
+
+      await expect(withdraw).toBeDisabled();
+      await expect(withdraw).toHaveAttribute('aria-busy', 'true');
+      release();
     });
   });
 });
