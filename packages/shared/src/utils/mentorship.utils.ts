@@ -929,7 +929,7 @@ export function buildMentorshipMenteeApplicationView(
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
-    orgAbbreviation: mentorshipPersonInitials(app.projectName ?? app.programName),
+    programLogoUrl: app.programLogoUrl,
     status,
     accepted: isMentorshipMenteeAccepted(app),
     statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[status],

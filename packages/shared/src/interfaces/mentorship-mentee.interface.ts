@@ -184,8 +184,8 @@ export interface MentorshipMenteeApplicationView {
   /** Absent when the program lookup failed; the card falls back to the program name. */
   projectName?: string;
   termName: string;
-  /** Two-letter initials for the card's avatar circle. */
-  orgAbbreviation: string;
+  /** The program's logo for the card's avatar; the program's initial shows when it is absent. */
+  programLogoUrl?: string;
   status: MentorshipMenteeApplicationStatus;
   /**
    * True for an accepted or graduated application: the card tracks its non-prerequisite tasks,

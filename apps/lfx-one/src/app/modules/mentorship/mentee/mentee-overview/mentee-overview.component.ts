@@ -7,6 +7,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
+import { AvatarComponent } from '@components/avatar/avatar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { TableComponent } from '@components/table/table.component';
@@ -40,7 +41,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe],
+  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

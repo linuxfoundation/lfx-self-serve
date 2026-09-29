@@ -155,6 +155,20 @@ describe('MenteeOverviewComponent', () => {
 
   // ---- Application cards ----------------------------------------------------
 
+  it('shows the program logo in the card avatar when the program has one', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ programLogoUrl: 'https://example.com/logo.png' })] });
+    const avatar = byTestId('mentee-application-card-avatar');
+    expect(avatar?.querySelector('img')?.getAttribute('src')).toBe('https://example.com/logo.png');
+    expect(avatar?.querySelector('.p-avatar-label')).toBeNull();
+  });
+
+  it("falls back to the program's initial in the card avatar when the program has no logo", async () => {
+    await bootstrap({ applications: [menteeTestApplication()] });
+    const avatar = byTestId('mentee-application-card-avatar');
+    expect(avatar?.querySelector('img')).toBeNull();
+    expect(text(avatar?.querySelector('.p-avatar-label'))).toBe('P');
+  });
+
   it('orders the cards active, then graduated, then awaiting review, then in progress', async () => {
     await bootstrap({
       applications: [

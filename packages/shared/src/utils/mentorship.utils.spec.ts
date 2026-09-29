@@ -1156,10 +1156,10 @@ describe('buildMentorshipMenteeApplicationView', () => {
     expect(view.tasks.map((task) => task.id)).toEqual(['a']);
   });
 
-  it('builds the avatar initials from the project, falling back to the program', () => {
-    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').orgAbbreviation).toBe('PO');
-    const noProject = menteeApplication({ projectName: undefined, programName: 'Zeta Program' });
-    expect(buildMentorshipMenteeApplicationView(noProject, 'awaiting-review').orgAbbreviation).toBe('ZP');
+  it('carries the program logo for the avatar, leaving it absent when the program has none', () => {
+    const withLogo = menteeApplication({ programLogoUrl: 'https://example.com/logo.png' });
+    expect(buildMentorshipMenteeApplicationView(withLogo, 'awaiting-review').programLogoUrl).toBe('https://example.com/logo.png');
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').programLogoUrl).toBeUndefined();
   });
 });
 
