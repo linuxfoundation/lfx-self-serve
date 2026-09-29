@@ -121,6 +121,22 @@ describe('MenteeTaskRowComponent', () => {
       expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
     });
 
+    it('shows the saved status icon and pill before the refresh lands', async () => {
+      const task = pendingTask();
+      const form = await buildRow(task);
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+
+      inFlight.next(true);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      const row = byTestId('mentee-tasks-task-row-row_pending');
+      expect(row?.querySelector('.fa-clock')).toBeTruthy();
+      expect(row?.querySelector('.fa-circle')).toBeNull();
+      expect(select().styleClass()).toBe(`mentee-task-status-dropdown ${inProgressTask().statusClass}`);
+    });
+
     it('drops the confirmed status once the refresh lands, so a later reset to the old status is read as it is', async () => {
       const task = pendingTask();
       const form = await buildRow(task);

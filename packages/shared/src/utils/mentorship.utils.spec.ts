@@ -15,6 +15,7 @@ import {
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
@@ -42,6 +43,7 @@ import {
   formatMentorshipMonthYear,
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
+  mentorshipMenteeTaskStatusFields,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
@@ -959,6 +961,23 @@ describe('countSubmittedMentorshipMenteeTasks', () => {
 
   it('returns 0 for an empty list', () => {
     expect(countSubmittedMentorshipMenteeTasks([])).toBe(0);
+  });
+});
+
+describe('mentorshipMenteeTaskStatusFields', () => {
+  it('derives the flags and pill class from the normalised status', () => {
+    expect(mentorshipMenteeTaskStatusFields('in_progress')).toEqual({
+      status: 'in_progress',
+      submitted: false,
+      inProgress: true,
+      statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.in_progress,
+    });
+    expect(mentorshipMenteeTaskStatusFields('complete')).toEqual({
+      status: 'submitted',
+      submitted: true,
+      inProgress: false,
+      statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.submitted,
+    });
   });
 });
 

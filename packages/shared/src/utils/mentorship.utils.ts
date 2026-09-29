@@ -989,6 +989,22 @@ export function countSubmittedMentorshipMenteeTasks(tasks: readonly { status: Me
 }
 
 /**
+ * The status-derived fields of a task row, from the normalised status. Shared by `buildMentorshipMenteeTaskView`
+ * and the row's saved-status override, so the icon and pill always match the status the dropdown shows.
+ */
+export function mentorshipMenteeTaskStatusFields(
+  rawStatus: MentorshipMenteeTaskStatus
+): Pick<MentorshipMenteeTaskView, 'status' | 'submitted' | 'inProgress' | 'statusClass'> {
+  const status = normalizeMentorshipMenteeTaskStatus(rawStatus);
+  return {
+    status,
+    submitted: status === 'submitted',
+    inProgress: status === 'in_progress',
+    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status],
+  };
+}
+
+/**
  * Build a display-ready task row from the fields both mentee phases share, so the
  * template reads flat fields instead of recomputing presentation logic in bindings.
  * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
@@ -1008,8 +1024,7 @@ export function buildMentorshipMenteeTaskView(input: {
   // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
   // it would read as `pending` in the dropdown yet render unstyled and vanish
   // under the Pending filter (which matches on the normalised status).
-  const status = normalizeMentorshipMenteeTaskStatus(input.status);
-  const submitted = status === 'submitted';
+  const statusFields = mentorshipMenteeTaskStatusFields(input.status);
   const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
   // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
   // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
@@ -1019,10 +1034,7 @@ export function buildMentorshipMenteeTaskView(input: {
     id: input.id,
     title: input.title,
     description: input.description,
-    status,
-    submitted,
-    inProgress: status === 'in_progress',
-    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status],
+    ...statusFields,
     hasUploadedFile,
     needsUpload: input.submitFile === 'required' && !input.fileUrl,
     // Raw stored file, not the `fileUrl` display fallback: upstream reads the stored `file` when a request sends none.

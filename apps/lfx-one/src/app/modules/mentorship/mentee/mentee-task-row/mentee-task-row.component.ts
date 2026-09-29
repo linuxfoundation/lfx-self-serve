@@ -2,16 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import {
   MentorshipMenteeTaskStatus,
+  MentorshipMenteeTaskStatusChange,
   MentorshipMenteeTaskStatusOptionsState,
   MentorshipMenteeTaskView,
   MentorshipMenteeUpdatableTaskStatus,
 } from '@lfx-one/shared/interfaces';
-import { getMentorshipMenteeTaskStatusOptions, isMentorshipMenteeUpdatableTaskStatus, normalizeMentorshipMenteeTaskStatus } from '@lfx-one/shared/utils';
+import {
+  getMentorshipMenteeTaskStatusOptions,
+  isMentorshipMenteeUpdatableTaskStatus,
+  mentorshipMenteeTaskStatusFields,
+  normalizeMentorshipMenteeTaskStatus,
+} from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 
@@ -51,10 +57,14 @@ export class MenteeTaskRowComponent {
   // ---- 3. Simple writable signals -------------------------------------------
   /** True while a status change is in flight; blocks the select and shows the spinner. */
   protected readonly saving = signal(false);
-  /** The change just saved, held until the refreshed task arrives so the options never lag behind the write. */
-  private readonly confirmed = signal<{ from: MentorshipMenteeTaskStatus; to: MentorshipMenteeTaskStatus } | null>(null);
 
   // ---- 4. Computed signals --------------------------------------------------
+  /**
+   * The change just saved, held until the refreshed task arrives so the options never lag behind the write.
+   * Reset whenever the task's status moves off the one it was saved from, so a later reset back to that
+   * status (say a reviewer reopening the task) is read as it is, not as `to`.
+   */
+  private readonly confirmed: WritableSignal<MentorshipMenteeTaskStatusChange | null> = this.initConfirmed();
   /** The task as the mentee last saw it succeed: `task()` with the confirmed status until the refresh lands. */
   protected readonly effectiveTask: Signal<MentorshipMenteeTaskView> = this.initEffectiveTask();
   protected readonly statusState: Signal<MentorshipMenteeTaskStatusOptionsState> = computed(() => getMentorshipMenteeTaskStatusOptions(this.effectiveTask()));
@@ -64,19 +74,6 @@ export class MenteeTaskRowComponent {
   protected readonly statusLabelledBy: Signal<string> = computed(() =>
     this.statusState().hint === null ? this.statusLabelId() : `${this.statusLabelId()} ${this.statusHintId()}`
   );
-
-  // ---- Constructor ----------------------------------------------------------
-
-  public constructor() {
-    // Drop the override once the refreshed task has moved off the status it was saved from, so a later
-    // reset back to that status (say a reviewer reopening the task) is read as it is, not as `to`.
-    effect(() => {
-      const confirmed = this.confirmed();
-      if (confirmed !== null && normalizeMentorshipMenteeTaskStatus(this.task().status) !== confirmed.from) {
-        this.confirmed.set(null);
-      }
-    });
-  }
 
   // ---- 5. Actions -----------------------------------------------------------
 
@@ -114,13 +111,20 @@ export class MenteeTaskRowComponent {
 
   // ---- 6. Private initializers ----------------------------------------------
 
+  private initConfirmed(): WritableSignal<MentorshipMenteeTaskStatusChange | null> {
+    return linkedSignal<MentorshipMenteeTaskStatus, MentorshipMenteeTaskStatusChange | null>({
+      source: () => normalizeMentorshipMenteeTaskStatus(this.task().status),
+      computation: (status, previous) => (previous?.value && previous.value.from === status ? previous.value : null),
+    });
+  }
+
   private initEffectiveTask(): Signal<MentorshipMenteeTaskView> {
     return computed(() => {
       const task = this.task();
       const confirmed = this.confirmed();
-      // Ignored (and cleared by the constructor effect) once the refreshed task no longer carries the status it was saved from.
+      // Ignored once the refreshed task no longer carries the status it was saved from (it also moved while the save was in flight).
       if (confirmed !== null && normalizeMentorshipMenteeTaskStatus(task.status) === confirmed.from) {
-        return { ...task, status: confirmed.to };
+        return { ...task, ...mentorshipMenteeTaskStatusFields(confirmed.to) };
       }
       return task;
     });

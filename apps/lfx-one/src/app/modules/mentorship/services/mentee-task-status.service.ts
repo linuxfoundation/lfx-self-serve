@@ -50,6 +50,7 @@ export class MenteeTaskStatusService {
         return true;
       }),
       catchError((err: HttpErrorResponse) => {
+        console.error('[MenteeTaskStatusService] changeStatus failed', err);
         this.showStatusError(err);
         return of(false);
       })

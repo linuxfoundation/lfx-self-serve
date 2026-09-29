@@ -4,9 +4,9 @@
 <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" [ngClass]="paddingClass()" [attr.data-testid]="'mentee-tasks-task-row-' + task().id">
   <!-- Check icon -->
   <div class="flex items-center gap-3">
-    @if (task().submitted) {
+    @if (effectiveTask().submitted) {
       <i class="fa-solid fa-circle-check text-lg text-emerald-500" aria-hidden="true"></i>
-    } @else if (task().inProgress) {
+    } @else if (effectiveTask().inProgress) {
       <i class="fa-light fa-clock text-lg text-blue-500" aria-hidden="true"></i>
     } @else {
       <i class="fa-light fa-circle text-lg text-gray-300" aria-hidden="true"></i>
@@ -79,13 +79,13 @@
         variant="filled"
         [readonly]="statusState().locked || saving()"
         [ariaLabelledBy]="statusLabelledBy()"
-        [styleClass]="'mentee-task-status-dropdown ' + task().statusClass"
+        [styleClass]="'mentee-task-status-dropdown ' + effectiveTask().statusClass"
         [dataTest]="'mentee-tasks-status-dropdown-' + task().id"
         (onChange)="onStatusChange()" />
     </div>
     @if (statusState().hint; as hint) {
       <p
-        class="text-xs text-gray-500 md:max-w-[14rem] md:text-right"
+        class="text-xs text-gray-500 md:max-w-56 md:text-right"
         [id]="statusHintId()"
         [class.sr-only]="!statusState().hintVisible"
         [attr.data-testid]="'mentee-tasks-status-hint-' + task().id">

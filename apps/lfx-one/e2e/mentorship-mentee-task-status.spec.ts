@@ -131,6 +131,7 @@ test.describe('Mentee My Tasks — status change', () => {
     await expect(page.locator('lfx-route-loading')).toHaveCount(0);
     await expect(page.locator(STATUS_DROPDOWN)).toBeVisible();
     await expect(page.locator(STATUS_DROPDOWN)).toContainText('In Progress');
+    await expect(page.getByTestId(`mentee-tasks-task-row-${TASK_ID}`).locator('.fa-clock')).toHaveCount(1);
 
     releaseRead();
     await expect(page.locator(STATUS_DROPDOWN)).toContainText('In Progress');

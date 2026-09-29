@@ -197,6 +197,12 @@ export interface MentorshipMenteeTaskStatusOption {
   disabled: boolean;
 }
 
+/** A task status change the mentee just saved: the status it was saved from and the one it moved to. */
+export interface MentorshipMenteeTaskStatusChange {
+  from: MentorshipMenteeTaskStatus;
+  to: MentorshipMenteeTaskStatus;
+}
+
 /** Derived dropdown state for one task row. */
 export interface MentorshipMenteeTaskStatusOptionsState {
   options: MentorshipMenteeTaskStatusOption[];
