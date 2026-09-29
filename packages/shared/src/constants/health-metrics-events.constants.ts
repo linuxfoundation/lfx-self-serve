@@ -11,6 +11,7 @@ import type {
   HealthMetricsEventsPast,
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthMetricOption,
+  HealthMetricsEventsQueryParams,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSpeakers,
@@ -131,7 +132,7 @@ export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {
   orgSegment: 'orgSegment',
   orgSearch: 'orgSearch',
   orgPage: 'orgPage',
-} as const;
+} as const satisfies Record<string, keyof HealthMetricsEventsQueryParams>;
 
 /** Pace chips, EVT-01. `No data` covers a missing forecast and a goal off by an order of magnitude. */
 export const HEALTH_METRICS_EVENTS_FORECAST_STATUSES = {

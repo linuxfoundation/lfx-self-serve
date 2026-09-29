@@ -534,6 +534,14 @@ export interface HealthMetricsEventsSpeakersView {
 /** The membership cut over the organizations table. */
 export type HealthMetricsEventsOrganizationsSegment = 'all' | 'members' | 'non-members';
 
+/** Query params the Events sections read on arrival and write back; `null` clears one the URL carries. */
+export interface HealthMetricsEventsQueryParams {
+  event?: string | null;
+  orgSegment?: HealthMetricsEventsOrganizationsSegment | null;
+  orgSearch?: string | null;
+  orgPage?: number | null;
+}
+
 /** A segment pill whose id is the cut it applies. */
 export interface HealthMetricsEventsOrganizationsSegmentOption extends FilterPillOption {
   id: HealthMetricsEventsOrganizationsSegment;
