@@ -82,10 +82,12 @@ export class HealthMetricsMembersService {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
       });
-      // Newest years first, so the cap drops the oldest; its cut year goes too, unless it is the only one.
+      // Newest years first, so the cap drops the oldest; a year the extra row shows was split goes too,
+      // unless it is the only one.
+      const cutYear = rows[HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 1].YEAR;
+      const yearWasSplit = rows[HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP].YEAR === cutYear;
       rows = rows.slice(0, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
-      const cutYear = rows[rows.length - 1].YEAR;
-      if (rows.some((row) => row.YEAR !== cutYear)) rows = rows.filter((row) => row.YEAR !== cutYear);
+      if (yearWasSplit && rows.some((row) => row.YEAR !== cutYear)) rows = rows.filter((row) => row.YEAR !== cutYear);
     }
 
     return rows.map(mapTierYear).filter((row): row is HealthMetricsMembersTierYear => row !== null);

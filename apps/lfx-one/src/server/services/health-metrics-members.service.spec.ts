@@ -132,6 +132,19 @@ describe('HealthMetricsMembersService.getTiers', () => {
     );
   });
 
+  it('keeps the last capped year whole when the cap lands on a year boundary', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 2 }, (_, index) => tierRow({ YEAR: 2026, MEMBERSHIP_TIER: `Tier ${index}` }));
+    respond(
+      [...newest, tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Gold' }), tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Silver' }), tierRow({ YEAR: 2024 })],
+      [REVENUE_ROW]
+    );
+
+    const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
+    expect(response.rows.filter((row) => row.year === 2025)).toHaveLength(2);
+  });
+
   it('keeps the capped rows when the cap cuts through the only year', async () => {
     respond(
       Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1 }, (_, index) => tierRow({ MEMBERSHIP_TIER: `Tier ${index}` })),
