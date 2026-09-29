@@ -740,7 +740,7 @@ export class HealthMetricsEventsService {
     return result.rows[0];
   }
 
-  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  /** The foundation's all-projects rollup row: countries represented per period, and its id for the country read. */
   private async getGeographyScope(req: Request, query: HealthMetricsEventsGeographyQuery): Promise<GeographyScopeRow | undefined> {
     // Suffixes come from constants, never from the request, so interpolating them is safe.
     const columns = [
@@ -792,6 +792,7 @@ export class HealthMetricsEventsService {
     return result.rows;
   }
 
+  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
