@@ -1137,7 +1137,7 @@ describe('HealthMetricsEventsService.getSponsorship', () => {
     expect(summarySql).not.toContain('progress_to_goal_pct_prev_completed_year');
     expect(changeSql).toContain('foundation_sponsorship_revenue_change_pct_prev_completed_year');
     expect(changeSql).not.toContain('change_pct_3rd_last_completed_year');
-    expect(changeSql).toContain('LIMIT 1');
+    expect(changeSql).toMatch(/ORDER BY event_id ASC\s+LIMIT 1/);
   });
 
   it("maps each period in the view's tier order, treating a zero or missing goal as not set", async () => {

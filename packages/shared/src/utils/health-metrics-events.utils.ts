@@ -501,7 +501,7 @@ export function buildHealthMetricsEventsSponsorshipView(
   return {
     foundationMeasured: sponsorship.periods.length > 0,
     measured: period !== null && period.revenueUsd !== null,
-    packagesLabel: packages === null ? '' : `${packages.toLocaleString('en-US')} ${packages === 1 ? 'package' : 'packages'} sold`,
+    packagesLabel: formatSponsorshipPackagesLabel(packages),
     headline: stat(
       'revenue',
       'Sponsorship revenue',
@@ -647,6 +647,13 @@ function buildRegistrationsGrowthRowView(
     // The design dashes a year with no virtual count, since most in-person-only years record zero.
     virtualLabel: virtual === 0 ? '—' : formatHealthMetricsEventsCount(virtual),
   };
+}
+
+/** Empty when unmeasured, since the section then renders no pill. */
+function formatSponsorshipPackagesLabel(value: number | null): string {
+  if (value === null) return '';
+
+  return `${value.toLocaleString('en-US')} ${value === 1 ? 'package' : 'packages'} sold`;
 }
 
 /** Empty when unmeasured, since the section then renders no figures at all. */

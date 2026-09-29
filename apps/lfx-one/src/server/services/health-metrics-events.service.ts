@@ -698,6 +698,7 @@ export class HealthMetricsEventsService {
         ${changeColumns}
       FROM ${REVENUE_VIEW}
       WHERE foundation_slug = ?
+      ORDER BY event_id ASC
       LIMIT 1
     `;
 
