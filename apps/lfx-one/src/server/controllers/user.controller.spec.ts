@@ -52,6 +52,11 @@ vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: getEffectiveEmailMock,
   getUsernameFromAuth: getUsernameFromAuthMock,
   stripAuthPrefix: (value: string) => value.replace(/^auth0\|/, ''),
+  // Composed from the mocks above (0-arity vi.fns) so per-test identity control is unchanged.
+  resolveUserIdentity: async () => {
+    const raw = await getUsernameFromAuthMock();
+    return { email: getEffectiveEmailMock(), username: raw ? raw.replace(/^auth0\|/, '') : raw };
+  },
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },

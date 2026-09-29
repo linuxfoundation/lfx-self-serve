@@ -16,6 +16,12 @@ vi.mock('../utils/auth-helper', () => ({
   // Real implementation strips the provider prefix; pinned here so the filters_or assertions
   // exercise the strip without importing the full auth-helper module graph.
   stripAuthPrefix: (value: string) => (value.includes('|') ? value.substring(value.indexOf('|') + 1) : value),
+  // Composed from the mocks above so per-test identity control is unchanged.
+  resolveUserIdentity: async (req: Request) => {
+    const raw: string | null = await getUsernameFromAuth(req);
+    const username = raw && raw.includes('|') ? raw.substring(raw.indexOf('|') + 1) : raw;
+    return { email: getEffectiveEmail(req), username };
+  },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
 
@@ -137,20 +143,20 @@ describe('fetchCurrentUserSurveyResponses', () => {
     expect(rows.map((r) => r.uid).sort()).toEqual(['unanswered-1', 'unanswered-2', 'whitespace']);
   });
 
-  it('merges caller filters (e.g. project scoping) alongside the identity filters_or', async () => {
+  it('merges caller tags (e.g. project scoping) alongside the identity filters_or', async () => {
     getUsernameFromAuth.mockResolvedValue(null);
     getEffectiveEmail.mockReturnValue('invitee@example.com');
     const proxy = mockProxy();
     proxy.proxyRequest.mockResolvedValue(page([]));
 
-    await fetchCurrentUserSurveyResponses(req, proxy as unknown as MicroserviceProxyService, { filters: ['project.project_uid:proj-1'] });
+    await fetchCurrentUserSurveyResponses(req, proxy as unknown as MicroserviceProxyService, { tags: ['project_uid:proj-1'] });
 
     expect(proxy.proxyRequest).toHaveBeenCalledWith(
       req,
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      expect.objectContaining({ filters: ['project.project_uid:proj-1'], filters_or: ['email:invitee@example.com'] })
+      expect.objectContaining({ tags: ['project_uid:proj-1'], filters_or: ['email:invitee@example.com'] })
     );
   });
 

@@ -33,7 +33,18 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('../utils/auth-helper', async () => {
   // Keep the real stripAuthPrefix — the auth0|-prefix stripping is part of the pinned contract.
   const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
-  return { ...actual, getEffectiveEmail, getRawEffectiveEmail, getUsernameFromAuth };
+  // resolveUserIdentity composed from the mocked getters (the real one closes over the module's
+  // unmocked bindings); the real stripAuthPrefix stays exercised through it.
+  return {
+    ...actual,
+    getEffectiveEmail,
+    getRawEffectiveEmail,
+    getUsernameFromAuth,
+    resolveUserIdentity: async (req: Request) => {
+      const raw: string | null = await getUsernameFromAuth(req);
+      return { email: getEffectiveEmail(req), username: raw ? actual.stripAuthPrefix(raw) : raw };
+    },
+  };
 });
 
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';

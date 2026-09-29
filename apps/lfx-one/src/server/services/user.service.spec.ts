@@ -54,6 +54,9 @@ vi.mock('../utils/auth-helper', () => ({
   getRawEffectiveEmail: vi.fn(),
   stripAuthPrefix: (value: string) => value,
   isImpersonating,
+  // Composed from the mocks above (stripAuthPrefix is the identity here) so per-test identity
+  // control is unchanged for the real survey/vote response helpers running under this suite.
+  resolveUserIdentity: async (req: Request) => ({ email: getEffectiveEmail(req), username: await getUsernameFromAuth(req) }),
 }));
 vi.mock('./logger.service', () => ({
   logger: {
@@ -800,11 +803,12 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
     expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
   });
 
-  it('pushes project scoping server-side via project.project_uid when a project lens is active', async () => {
+  it('pushes project scoping server-side via the project_uid tag when a project lens is active', async () => {
     await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
 
     const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
-    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ filters: ['project.project_uid:proj-uid-1'] }));
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ tags: ['project_uid:proj-uid-1'] }));
+    expect(surveyCall?.[4]).not.toHaveProperty('filters');
   });
 });
 

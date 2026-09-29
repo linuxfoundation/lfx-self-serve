@@ -7,7 +7,7 @@ import { Request } from 'express';
 
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
-import { getEffectiveEmail, getRawEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getRawEffectiveEmail, resolveUserIdentity } from '../utils/auth-helper';
 import { fetchAllQueryResources } from './query-service.helper';
 
 export interface FetchCurrentUserVoteResponsesOptions {
@@ -44,7 +44,7 @@ export function getParentVoteId(r: IndexedVoteResponse): string | undefined {
  * read NOT routed here is `VoteService.createVoteResponse`'s post-cast index poll — it matches
  * a known `vote_response_uid` rather than resolving identity (see the known-gap note there).
  *
- * Identity resolution: `getUsernameFromAuth` + `stripAuthPrefix` + `getEffectiveEmail`, matched
+ * Identity resolution: `resolveUserIdentity` (`getUsernameFromAuth` + `stripAuthPrefix` + `getEffectiveEmail`), matched
  * via `filters_or` on `user_email` / `username` (whichever are present). The email is queried
  * twice when its raw casing differs from the lowercased effective value: the index stores the
  * invitee email exactly as entered (no upstream normalization) and the query service matches
@@ -73,9 +73,7 @@ export async function fetchCurrentUserVoteResponses(
   proxy: MicroserviceProxyService,
   options: FetchCurrentUserVoteResponsesOptions = {}
 ): Promise<IndexedVoteResponse[]> {
-  const rawUsername = await getUsernameFromAuth(req);
-  const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-  const email = getEffectiveEmail(req);
+  const { email, username } = await resolveUserIdentity(req);
   const rawEmail = getRawEffectiveEmail(req);
 
   if (!username && !email) {

@@ -6,12 +6,12 @@ import { Request } from 'express';
 
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { logger } from '../services/logger.service';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { resolveUserIdentity } from '../utils/auth-helper';
 import { fetchAllQueryResources } from './query-service.helper';
 
 export interface FetchCurrentUserSurveyResponsesOptions {
-  /** Extra query-service `filters` merged alongside the identity `filters_or` (e.g. project scoping). */
-  filters?: string[];
+  /** Query-service `tags` merged alongside the identity `filters_or` (e.g. `project_uid:` scoping). */
+  tags?: string[];
   /** Fail closed on mid-pagination errors — pending-action callers can't risk silently missing a row. */
   failOnPartial?: boolean;
 }
@@ -25,9 +25,7 @@ export async function fetchCurrentUserSurveyResponses(
   proxy: MicroserviceProxyService,
   options: FetchCurrentUserSurveyResponsesOptions = {}
 ): Promise<SurveyResponseRecord[]> {
-  const rawUsername = await getUsernameFromAuth(req);
-  const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-  const email = getEffectiveEmail(req);
+  const { email, username } = await resolveUserIdentity(req);
 
   if (!email && !username) {
     logger.debug(req, 'fetch_current_user_survey_responses', 'No email or username in auth context, skipping survey response fetch');
@@ -49,7 +47,7 @@ export async function fetchCurrentUserSurveyResponses(
       proxy.proxyRequest<QueryServiceResponse<SurveyResponseRecord>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'survey_response',
         filters_or: filtersOr,
-        ...(options.filters?.length && { filters: options.filters }),
+        ...(options.tags?.length && { tags: options.tags }),
         ...(pageToken && { page_token: pageToken }),
       }),
     { failOnPartial: options.failOnPartial }

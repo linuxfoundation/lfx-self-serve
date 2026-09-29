@@ -16,6 +16,7 @@ import {
   isImpersonating,
   resolveAuditUserDisplayName,
   resolveRealAccessToken,
+  resolveUserIdentity,
 } from './auth-helper';
 
 interface TargetUser {
@@ -357,5 +358,22 @@ describe('buildImpersonationIdentityOverride', () => {
       .sort();
     const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
     expect(keys).toEqual(expected);
+  });
+});
+
+describe('resolveUserIdentity', () => {
+  it('resolves the lowercased effective email and the prefix-stripped username together', async () => {
+    const req = buildReq({ oidc: { email: 'User@Example.com', username: 'auth0|someuser' } });
+    await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'user@example.com', username: 'someuser' });
+  });
+
+  it('returns null for whichever side the auth context lacks', async () => {
+    await expect(resolveUserIdentity(buildReq({ oidc: { username: 'auth0|someuser' } }))).resolves.toEqual({ email: null, username: 'someuser' });
+    await expect(resolveUserIdentity(buildReq({ oidc: { email: 'user@example.com' } }))).resolves.toEqual({ email: 'user@example.com', username: null });
+  });
+
+  it('resolves the impersonation target, never the operator, when impersonating', async () => {
+    const req = buildReq({ impersonating: true, target: { email: 'Target@Example.com', username: 'targetuser' }, oidc: OPERATOR_OIDC });
+    await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'target@example.com', username: 'targetuser' });
   });
 });

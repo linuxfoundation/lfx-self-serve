@@ -1709,9 +1709,10 @@ export class UserService {
     // failOnPartial: a truncated page set can silently miss a pending survey. The caller catches
     // and degrades the whole source, so fail closed here.
     const rows = await fetchCurrentUserSurveyResponses(req, this.microserviceProxy, {
-      // `project.project_uid` is a documented indexed field (survey-service indexer contract) and
-      // verified live against dev — dotted filters resolve on this singleton object.
-      ...(projectUid && { filters: [`project.project_uid:${projectUid}`] }),
+      // Project scoping rides the indexer-emitted `project_uid` tag (survey-service indexer
+      // contract: "Find responses for a project") — a flat keyword term query, the same
+      // tags=project_uid: pattern committee.service and create-picker.service already use.
+      ...(projectUid && { tags: [`project_uid:${projectUid}`] }),
       failOnPartial: true,
     });
 

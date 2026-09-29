@@ -75,6 +75,19 @@ export function getEffectiveEmail(req: Request): string | null {
 }
 
 /**
+ * Resolves the effective identity pair behind every email-OR-username index query (My Surveys,
+ * My Votes, Pending Actions) in one place: the lowercased effective email plus the
+ * prefix-stripped username. A future identity-resolution change (new provider claim, new
+ * normalization rule) lands here instead of drifting across call sites — the GH-2987 class of
+ * bug. Either side can be null (email-only or username-only auth contexts); callers decide how
+ * to handle the both-null case.
+ */
+export async function resolveUserIdentity(req: Request): Promise<{ email: string | null; username: string | null }> {
+  const rawUsername = await getUsernameFromAuth(req);
+  return { email: getEffectiveEmail(req), username: rawUsername ? stripAuthPrefix(rawUsername) : null };
+}
+
+/**
  * Gets the effective email WITHOUT lowercasing — the same resolution as `getEffectiveEmail`
  * (impersonation target first, never the impersonator's own), preserving the stored casing.
  * Pair it with `getEffectiveEmail` only when querying a case-sensitive exact-match index whose

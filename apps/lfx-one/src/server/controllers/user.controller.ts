@@ -8,7 +8,7 @@ import { stripHostKey } from '../helpers/meeting.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, resolveUserIdentity } from '../utils/auth-helper';
 
 /**
  * Controller for handling user-related HTTP requests
@@ -42,9 +42,7 @@ export class UserController {
       // email-OR-username (surveys, RSVPs); only pending invitations are strictly email-keyed, and
       // the service skips that source when email is absent — a username-only identity must not
       // 400 here (GH-2987).
-      const userEmail = getEffectiveEmail(req);
-      const rawUsername = await getUsernameFromAuth(req);
-      const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+      const { email: userEmail, username } = await resolveUserIdentity(req);
       if (!userEmail && !username) {
         const validationError = ServiceValidationError.forField('identity', 'No email or username found in authentication context', {
           operation: 'get_pending_actions',
