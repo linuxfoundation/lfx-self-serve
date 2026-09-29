@@ -133,6 +133,9 @@ export const HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED: HealthMetricsMembersBridg
 /** Upper bound on bridge rows read: six per year, so a century of years. */
 export const HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP = 600;
 
+/** Every `MEMBERSHIP_WATERFALL` step in bar order, and the allowlist the bridge read keeps rows against. */
+export const HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES = ['start_of_year', 'new', 'upgrade', 'downgrade', 'churned', 'today'] as const;
+
 /** The movements a bar opens as a named list, and the allowlist the movements read validates against. */
 export const HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES = ['new', 'upgrade', 'downgrade'] as const;
 
@@ -163,7 +166,7 @@ export const HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY: Record<HealthMetricsMe
   new: {
     title: 'Joined this year',
     pastTitle: 'Joined in',
-    subtitle: 'New memberships, most recent first',
+    subtitle: 'New memberships, largest dues first',
     note: "The dues column is annual. A new member's first 90 days predict whether they renew — worth checking that each one has attended something.",
     verb: 'joined',
   },

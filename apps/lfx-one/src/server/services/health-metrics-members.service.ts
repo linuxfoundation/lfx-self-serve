@@ -5,6 +5,7 @@ import {
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
@@ -39,14 +40,7 @@ const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENU
 const MEMBERSHIP_WATERFALL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFALL';
 const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL';
 
-const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>([
-  'start_of_year',
-  'new',
-  'upgrade',
-  'downgrade',
-  'churned',
-  'today',
-]);
+const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 
 interface TierYearRow {
   YEAR: number;
@@ -159,6 +153,8 @@ export class HealthMetricsMembersService {
         WHERE foundation_slug = ?
           AND year = ?
           AND movement_type = ?
+          -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
+          AND account_id IS NOT NULL
       ),
       totals AS (
         SELECT COUNT(*) AS total_records

@@ -279,6 +279,14 @@ describe('HealthMetricsMembersService.getMovements', () => {
     expect(sql).toContain('LEFT JOIN page ON TRUE');
   });
 
+  it('leaves unnamed accounts out of both the total and the page window', async () => {
+    await new HealthMetricsMembersService().getMovements(req, query);
+
+    const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
+    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
+    expect(scoped).toContain('AND account_id IS NOT NULL');
+  });
+
   it('clamps an oversized page and offset before interpolating them', async () => {
     await new HealthMetricsMembersService().getMovements(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
 

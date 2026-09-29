@@ -1,7 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
+import type {
+  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
+  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
+  HEALTH_METRICS_MEMBERS_SECTIONS,
+} from '../constants/health-metrics-members.constants';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -119,10 +123,10 @@ export interface HealthMetricsMembersBridgeQuery {
 }
 
 /** A `MEMBERSHIP_WATERFALL` movement: the four that change the base between its start and end totals. */
-export type HealthMetricsMembersMovementType = 'new' | 'upgrade' | 'downgrade' | 'churned';
+export type HealthMetricsMembersMovementType = Exclude<HealthMetricsMembersBridgeStepType, 'start_of_year' | 'today'>;
 
 /** A bridge step: the start-of-year total, a movement, or the closing total the model calls `today`. */
-export type HealthMetricsMembersBridgeStepType = 'start_of_year' | HealthMetricsMembersMovementType | 'today';
+export type HealthMetricsMembersBridgeStepType = (typeof HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES)[number];
 
 /** One `MEMBERSHIP_WATERFALL` row. `null` is unmeasured, never zero. */
 export interface HealthMetricsMembersBridgeStep {

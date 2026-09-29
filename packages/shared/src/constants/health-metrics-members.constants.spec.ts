@@ -10,6 +10,8 @@ import {
 } from './health-metrics-engagement.constants';
 import { HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE } from './health-metrics-events.constants';
 import {
+  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE,
@@ -22,6 +24,12 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
 
   it('holds a deep link for every section that reads data', () => {
     expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['tiers', 'bridge']);
+  });
+});
+
+describe('HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES', () => {
+  it('labels every step except the closing total, whose label is built per year', () => {
+    expect(Object.keys(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS)).toEqual(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES.filter((step) => step !== 'today'));
   });
 });
 
