@@ -2,30 +2,29 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, Signal, viewChildren } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import {
   MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL,
   MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
   MENTORSHIP_MENTEE_SHELL_TITLE,
-  MENTORSHIP_MENTEE_TABS_ACCEPTED,
-  MENTORSHIP_MENTEE_TABS_APPLICANT,
-  MENTORSHIP_MENTEE_TABS_EMPTY,
+  MENTORSHIP_MENTEE_TABS,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteePageTab, MentorshipMenteePhase } from '@lfx-one/shared/interfaces';
-import { filter, map } from 'rxjs';
+import { MentorshipMenteeOverview, MentorshipMenteePageTab } from '@lfx-one/shared/interfaces';
+import { buildMentorshipMenteeOverview } from '@lfx-one/shared/utils';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
+import { catchError, filter, map, of, switchMap } from 'rxjs';
 
 /**
  * Shell for the mentee experience — owns the page H1 ("My Mentorship"), the
- * "Find a Program" button, and the underline tab bar. The tab config changes
- * per phase:
+ * "Find a Program" button, and the underline tab bar (Overview, My Tasks, Mentee
+ * Profile — always all three; My Tasks renders its own empty state).
  *
- * - **empty** — Overview + Mentee Profile (no tasks tab)
- * - **applicant** — Overview + My Application Tasks (N open) + Mentee Profile
- * - **accepted** — Overview + My Tasks (N open) + Mentee Profile
- *
- * The active phase is set by the overview child via `onChildActivate()`.
+ * The shell reads the same cached applications as its tabs to decide whether to show
+ * "Find a Program" and the "N open" badge on My Tasks. A failed read hides both; the
+ * routed tab shows the error and its Retry refreshes the shell through
+ * `menteeApplicationsRevision`.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-page',
@@ -35,6 +34,7 @@ import { filter, map } from 'rxjs';
 })
 export class MenteePageComponent {
   private readonly router = inject(Router);
+  private readonly menteeService = inject(MentorshipMenteeService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
@@ -42,21 +42,14 @@ export class MenteePageComponent {
   protected readonly title = MENTORSHIP_MENTEE_SHELL_TITLE;
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
   protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
+  protected readonly tabs = MENTORSHIP_MENTEE_TABS;
 
-  /** Phase reported by the overview child. */
-  public readonly phase = signal<MentorshipMenteePhase>('empty');
-  /** Open task count reported by the overview child. */
-  public readonly openTaskCount = signal(0);
+  /** The overview derived from the mentee's applications, or null while loading or after a failed read. */
+  private readonly overview: Signal<MentorshipMenteeOverview | null> = this.initOverview();
 
-  private static readonly tabConfigs: Record<MentorshipMenteePhase, readonly { value: MentorshipMenteePageTab; label: string }[]> = {
-    empty: MENTORSHIP_MENTEE_TABS_EMPTY,
-    applicant: MENTORSHIP_MENTEE_TABS_APPLICANT,
-    accepted: MENTORSHIP_MENTEE_TABS_ACCEPTED,
-  };
+  protected readonly showFindProgram = computed(() => this.overview()?.phase === 'applicant');
 
-  protected readonly tabs = computed(() => MenteePageComponent.tabConfigs[this.phase()]);
-
-  protected readonly showFindProgram = computed(() => this.phase() !== 'empty');
+  protected readonly openTaskCount = computed(() => this.overview()?.openTaskCount ?? 0);
 
   private readonly currentUrl: Signal<string> = this.initCurrentUrl();
 
@@ -65,44 +58,12 @@ export class MenteePageComponent {
   /** The tab value that should show the open-task count badge, or null if none. */
   protected readonly tabWithCount = computed<MentorshipMenteePageTab | null>(() => (this.openTaskCount() > 0 ? 'tasks' : null));
 
-  /** Called by the overview child (via output signal or directly) when phase is known. */
-  public onPhaseChange(phase: MentorshipMenteePhase): void {
-    this.phase.set(phase);
-  }
-
-  /** Called by the overview child when the open task count is known. */
-  public onOpenTaskCountChange(count: number): void {
-    this.openTaskCount.set(count);
-  }
-
-  /**
-   * Wire up `output()` signal subscriptions from the routed child. The overview
-   * component emits `phaseChange` and `openTaskCountChange`; the tasks component
-   * exposes a writable `phase` signal. Other children simply lack these
-   * properties and the wiring is a no-op.
-   * `OutputEmitterRef.subscribe` returns a cleanup-managed subscription.
-   */
-  public onChildActivate(child: unknown): void {
-    const c = child as {
-      phaseChange?: import('@angular/core').OutputEmitterRef<MentorshipMenteePhase>;
-      openTaskCountChange?: import('@angular/core').OutputEmitterRef<number>;
-      phase?: import('@angular/core').WritableSignal<MentorshipMenteePhase>;
-    };
-    c.phaseChange?.subscribe((phase) => this.onPhaseChange(phase));
-    c.openTaskCountChange?.subscribe((count) => this.onOpenTaskCountChange(count));
-
-    // Pass the current phase to children that accept it (e.g. MenteeApplicationTasksComponent)
-    if (c.phase && typeof c.phase.set === 'function') {
-      c.phase.set(this.phase());
-    }
-  }
-
   protected onTabClick(tab: MentorshipMenteePageTab): void {
     void this.router.navigate(['/mentorship/mentee', tab]);
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
-    const tabValues = this.tabs().map((tab) => tab.value);
+    const tabValues = this.tabs.map((tab) => tab.value);
     const current = tabValues.indexOf(this.activeTab());
     let next: number | null = null;
     if (event.key === 'ArrowRight') next = (current + 1) % tabValues.length;
@@ -116,6 +77,21 @@ export class MenteePageComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.tabBtns()[next]?.nativeElement.focus();
     }
+  }
+
+  private initOverview(): Signal<MentorshipMenteeOverview | null> {
+    return toSignal(
+      toObservable(this.menteeService.menteeApplicationsRevision).pipe(
+        switchMap(() =>
+          this.menteeService.getMenteeApplications().pipe(
+            map((response) => buildMentorshipMenteeOverview(response.data)),
+            // The routed tab surfaces the failure; the shell just hides its extras.
+            catchError(() => of(null))
+          )
+        )
+      ),
+      { initialValue: null }
+    );
   }
 
   private initCurrentUrl(): Signal<string> {

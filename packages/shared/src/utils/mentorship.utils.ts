@@ -20,9 +20,12 @@ import {
   MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
 import {
+  MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
+  MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
@@ -69,11 +72,14 @@ import type {
 } from '../interfaces/mentorship.interface';
 import type {
   MentorshipMenteeApplication,
+  MentorshipMenteeApplicationStatus,
+  MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
   MentorshipMenteeApplicationView,
+  MentorshipMenteeOverview,
+  MentorshipMenteePastApplication,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
-  MentorshipMenteeTask,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
@@ -877,20 +883,51 @@ export function buildMentorshipMenteeTaskView(input: {
   };
 }
 
-/** Build the applicant-phase application cards (each with its prerequisite task rows). */
-export function buildMentorshipMenteeApplicationViews(applications: MentorshipMenteeApplication[]): MentorshipMenteeApplicationView[] {
-  return applications.map((app) => ({
+/**
+ * Display status of a pending or accepted application: accepted → `active`; pending with every
+ * prerequisite task submitted (or none assigned) → `awaiting-review`; otherwise `in-progress`.
+ * Returns `null` for every other stored status, since those rows belong in Past Applications.
+ */
+export function mentorshipMenteeDisplayStatus(app: MentorshipMenteeApplication): MentorshipMenteeApplicationStatus | null {
+  if (app.upstreamStatus === 'accepted') return 'active';
+  if (app.upstreamStatus !== 'pending') return null;
+  const tasks = mentorshipMenteeProgressTasks(app);
+  return countSubmittedMentorshipMenteeTasks(tasks) === tasks.length ? 'awaiting-review' : 'in-progress';
+}
+
+/**
+ * Tasks an application card tracks: the non-prerequisite tasks once accepted, the prerequisite
+ * tasks while pending. A task without a category counts as non-prerequisite.
+ */
+export function mentorshipMenteeProgressTasks(app: MentorshipMenteeApplication): MentorshipMenteeApplicationTask[] {
+  const wantPrerequisite = app.upstreamStatus !== 'accepted';
+  return app.tasks.filter((task) => (task.category === 'prerequisite') === wantPrerequisite);
+}
+
+/** Build the card for a pending or accepted application with its display status. */
+export function buildMentorshipMenteeApplicationView(
+  app: MentorshipMenteeApplication,
+  status: MentorshipMenteeApplicationStatus
+): MentorshipMenteeApplicationView {
+  const tasks = mentorshipMenteeProgressTasks(app);
+  const submittedCount = countSubmittedMentorshipMenteeTasks(tasks);
+  const totalCount = tasks.length;
+  return {
     id: app.id,
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
-    statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[app.status] ?? '',
-    statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[app.status] ?? '',
-    // Use one consistent source: when the tab-only `tasks` list is present, count/size it;
-    // otherwise fall back to the overview's precomputed counts so both tabs agree.
-    submittedCount: app.tasks ? countSubmittedMentorshipMenteeTasks(app.tasks) : app.prerequisiteTasksCompleted,
-    totalCount: app.tasks ? app.tasks.length : app.prerequisiteTasksTotal,
-    tasks: (app.tasks ?? []).map((task) =>
+    orgAbbreviation: mentorshipPersonInitials(app.projectName ?? app.programName),
+    status,
+    statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[status],
+    statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[status],
+    progressLabel: MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS[status],
+    submittedCount,
+    totalCount,
+    progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
+    lastUpdatedOn: latestIsoInstant([app.updatedOn, ...app.tasks.map((task) => task.updatedOn)]),
+    decisionExpectedDate: app.decisionExpectedDate ?? null,
+    tasks: tasks.map((task) =>
       buildMentorshipMenteeTaskView({
         id: task.id,
         title: task.name,
@@ -902,21 +939,46 @@ export function buildMentorshipMenteeApplicationViews(applications: MentorshipMe
         submittedDate: task.submittedOn,
       })
     ),
-  }));
+  };
 }
 
-/** Build the accepted-phase flat task rows. */
-export function buildMentorshipMenteeTaskViews(tasks: MentorshipMenteeTask[]): MentorshipMenteeTaskView[] {
-  return tasks.map((task) =>
-    buildMentorshipMenteeTaskView({
-      id: task.id,
-      title: task.title,
-      description: task.description,
-      status: task.status,
-      submitFile: task.submitFile,
-      fileUrl: task.fileUrl,
-      dueDate: task.dueDate,
-      submittedDate: task.submittedDate,
-    })
-  );
+/**
+ * Derive the mentee overview from the mentee's applications. Pending and accepted applications
+ * become cards ordered active → awaiting review → in progress; declined, withdrawn, graduated
+ * and held applications become Past Applications rows, newest first.
+ */
+export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[]): MentorshipMenteeOverview {
+  const cards: MentorshipMenteeApplicationView[] = [];
+  const past: MentorshipMenteePastApplication[] = [];
+  for (const app of applications) {
+    const status = mentorshipMenteeDisplayStatus(app);
+    if (status) {
+      cards.push(buildMentorshipMenteeApplicationView(app, status));
+      continue;
+    }
+    const outcome = MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS[app.upstreamStatus];
+    if (outcome) {
+      past.push({ id: app.id, programName: app.programName, projectName: app.projectName, termName: app.term.name, createdOn: app.createdOn, outcome });
+    }
+  }
+  cards.sort((a, b) => MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER.indexOf(a.status) - MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER.indexOf(b.status));
+  past.sort((a, b) => isoInstantMs(b.createdOn) - isoInstantMs(a.createdOn));
+  return {
+    phase: applications.length > 0 ? 'applicant' : 'empty',
+    pendingCount: applications.filter((app) => app.upstreamStatus === 'pending').length,
+    openTaskCount: cards.reduce((sum, card) => sum + card.totalCount - card.submittedCount, 0),
+    cards,
+    past,
+  };
+}
+
+/** Milliseconds for an ISO instant; an unparseable value sorts as the oldest. */
+function isoInstantMs(value: string): number {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/** The latest of several ISO instants, returned as given. */
+function latestIsoInstant(values: readonly string[]): string {
+  return values.reduce((latest, value) => (isoInstantMs(value) > isoInstantMs(latest) ? value : latest));
 }

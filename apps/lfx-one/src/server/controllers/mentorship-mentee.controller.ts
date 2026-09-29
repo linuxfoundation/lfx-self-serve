@@ -29,43 +29,24 @@ export class MentorshipMenteeController {
     }
   }
 
-  // GET /api/mentorship/mentee/overview
-  public async getMenteeOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentee_overview');
+  // GET /api/mentorship/mentee/applications?withTasks=true|false
+  // Auth: logged-in user required (401 otherwise). Upstream scopes the read to the caller's token.
+  public async getMenteeApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_applications');
 
     try {
       if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_overview' });
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_applications' });
       }
 
-      const rawPhase = parseTrimmedString(req.query['phase']);
-      const validPhases = ['empty', 'applicant', 'accepted'] as const;
-      if (rawPhase !== undefined && !validPhases.includes(rawPhase as (typeof validPhases)[number])) {
-        throw ServiceValidationError.forField('phase', `phase must be one of: ${validPhases.join(', ')}`, {
-          operation: 'get_mentorship_mentee_overview',
-        });
+      const rawWithTasks = req.query['withTasks'];
+      if (rawWithTasks !== undefined && rawWithTasks !== 'true' && rawWithTasks !== 'false') {
+        throw ServiceValidationError.forField('withTasks', 'withTasks must be true or false', { operation: 'get_mentorship_mentee_applications' });
       }
-      const phase = rawPhase as (typeof validPhases)[number] | undefined;
-      const overview = await this.menteeService.getMenteeOverview(req, phase);
-      logger.success(req, 'get_mentorship_mentee_overview', startTime, { phase: overview.phase });
-      res.json(overview);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentee/tasks
-  public async getMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentee_tasks');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_tasks' });
-      }
-
-      const tasks = await this.menteeService.getMenteeTasks(req);
-      logger.success(req, 'get_mentorship_mentee_tasks', startTime, { count: tasks.data.length });
-      res.json(tasks);
+      const withTasks = rawWithTasks === 'true';
+      const applications = await this.menteeService.getMenteeApplications(req, withTasks);
+      logger.success(req, 'get_mentorship_mentee_applications', startTime, { count: applications.data.length, withTasks });
+      res.json(applications);
     } catch (error) {
       next(error);
     }

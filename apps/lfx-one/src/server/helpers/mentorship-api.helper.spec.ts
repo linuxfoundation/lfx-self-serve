@@ -20,7 +20,7 @@ const { proxyMentorshipRequest } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
-const req = { path: '/api/mentorship/mentee/overview' } as Request;
+const req = { path: '/api/mentorship/mentee/applications' } as Request;
 const path = '/mentorship/v1/me/applications';
 
 function upstream401(message: string) {

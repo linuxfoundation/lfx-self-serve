@@ -17,3 +17,15 @@ export const MENTORSHIP_NOT_PROVISIONED_ERROR = 'local user is not provisioned';
 
 /** Upstream path that lists the signed-in user's own `user_profiles` rows (filter with `profile_type`). */
 export const MENTORSHIP_ME_PROFILES_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/profiles`;
+
+/** Upstream path that lists the signed-in user's own applications (filter with `role`). */
+export const MENTORSHIP_ME_APPLICATIONS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/applications`;
+
+/** Upstream applications collection; an application's tasks live at `/{id}/tasks`. */
+export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
+
+/** Upstream programs collection; a program's detail lives at `/{id}`. */
+export const MENTORSHIP_PROGRAMS_PATH = '/mentorship/v1/programs';
+
+/** Page size for upstream mentorship list reads: the largest `limit` the service accepts. */
+export const MENTORSHIP_LIST_PAGE_SIZE = 100;

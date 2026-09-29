@@ -43,7 +43,7 @@ const mapDemographics = (profile: MentorshipUpstreamUserProfile): MentorshipMent
 /**
  * Maps the caller's `user_profiles` row (`profile_type = mentee`) to the profile page payload.
  * Application history is not on this row; it comes from the caller's applications, so it is
- * empty here until that read is wired (linuxfoundation/lfx-mentorship#189).
+ * empty here and the service fills it in.
  */
 export const mapMentorshipMenteeProfile = (profile: MentorshipUpstreamUserProfile): MentorshipMenteeProfileResponse => {
   const skillSet = asRecord(profile.skill_set);

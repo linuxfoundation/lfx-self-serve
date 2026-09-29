@@ -70,13 +70,8 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rejects unauthenticated GET /api/mentorship/mentee/overview with 401', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/mentee/overview`);
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects unauthenticated GET /api/mentorship/mentee/tasks with 401', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/mentee/tasks`);
+  it('rejects unauthenticated GET /api/mentorship/mentee/applications with 401', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/applications?withTasks=true`);
     expect(res.status).toBe(401);
   });
 
@@ -85,9 +80,9 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('requires auth before phase validation runs', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/mentee/overview?phase=invalid`);
-    // Auth check fires before phase validation — unauthenticated requests get 401.
+  it('requires auth before withTasks validation runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/applications?withTasks=invalid`);
+    // Auth check fires before withTasks validation — unauthenticated requests get 401.
     expect(res.status).toBe(401);
   });
 

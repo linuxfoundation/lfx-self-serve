@@ -3,6 +3,7 @@
 
 import '@angular/compiler';
 
+import type { MentorshipUpstreamApplication, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -24,6 +25,9 @@ const { MicroserviceProxyService } = await import('./microservice-proxy.service'
 const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
 
 const PROFILES_PATH = '/mentorship/v1/me/profiles';
+const ME_APPLICATIONS_PATH = '/mentorship/v1/me/applications';
+const APPLICATIONS_PATH = '/mentorship/v1/applications';
+const PROGRAMS_PATH = '/mentorship/v1/programs';
 
 function upstreamError(status: number, body: unknown) {
   return MicroserviceError.fromMicroserviceResponse(status, 'Upstream error', body, 'LFX_V2_SERVICE', PROFILES_PATH);
@@ -31,6 +35,55 @@ function upstreamError(status: number, body: unknown) {
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentee/apply-target' } as Request;
+}
+
+function listOf<T>(data: T[]) {
+  return { data, meta: { total: data.length, limit: 100, offset: 0 } };
+}
+
+function upstreamApplication(overrides: Partial<MentorshipUpstreamApplication> = {}): MentorshipUpstreamApplication {
+  return {
+    id: 'app-1',
+    program_term_id: 'term-1',
+    user_id: 'user-1',
+    role: 'mentee',
+    status: 'pending',
+    tasks_submitted: false,
+    admin_notified: false,
+    created_on: '2026-06-28T10:00:00Z',
+    updated_on: '2026-06-29T10:00:00Z',
+    program: { id: 'prog-1', name: 'Test Program', slug: 'test-program' },
+    term: { id: 'term-1', name: 'Fall 2026', status: 'open' },
+    ...overrides,
+  };
+}
+
+function upstreamTask(overrides: Partial<MentorshipUpstreamTask> = {}): MentorshipUpstreamTask {
+  return {
+    id: 'task-1',
+    assignee_id: 'user-1',
+    name: 'Test task',
+    category: 'prerequisite',
+    status: 'incomplete',
+    custom: false,
+    created_on: '2026-06-01T10:00:00Z',
+    updated_on: '2026-06-05T10:00:00Z',
+    ...overrides,
+  };
+}
+
+/** Answers each proxied call by its upstream path; an unrouted path fails the test. */
+function routeProxy(
+  proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>,
+  routes: Record<string, (query?: Record<string, unknown>) => unknown>
+) {
+  proxyRequest.mockImplementation(async (_req, _service, path, _method, query) => {
+    const handler = routes[path];
+    if (!handler) {
+      throw new Error(`Unexpected upstream path ${path}`);
+    }
+    return handler(query as Record<string, unknown> | undefined) as never;
+  });
 }
 
 describe('MentorshipMenteeService.getMenteeApplyTarget', () => {
@@ -88,33 +141,42 @@ describe('MentorshipMenteeService profile reads', () => {
     await expect(service.hasMenteeProfile(buildReq())).rejects.toBe(error);
   });
 
-  it("maps the caller's mentee row for the profile page, reading the same list route with limit 1", async () => {
-    proxyRequest.mockResolvedValueOnce({
-      data: [
-        {
-          id: 'prof-1',
-          user_id: 'user-1',
-          profile_type: 'mentee',
-          introduction: 'Test mentee introduction.',
-          skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
-          terms_and_conditions: true,
-          number_of_projects: 0,
-          created_on: '2026-01-01T00:00:00Z',
-          updated_on: '2026-01-01T00:00:00Z',
-        },
-      ],
-      meta: { total: 1, limit: 1, offset: 0 },
+  it("maps the caller's mentee row and fills the history from their applications", async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () =>
+        listOf([
+          {
+            id: 'prof-1',
+            user_id: 'user-1',
+            profile_type: 'mentee',
+            introduction: 'Test mentee introduction.',
+            skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
+            terms_and_conditions: true,
+            number_of_projects: 0,
+            created_on: '2026-01-01T00:00:00Z',
+            updated_on: '2026-01-01T00:00:00Z',
+          },
+        ]),
+      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
     });
 
     const result = await service.getMenteeProfile(buildReq());
 
     expect(result.profile).toMatchObject({ aboutMe: 'Test mentee introduction.', skillsHave: ['Go'], skillsWant: ['Code Review'] });
-    expect(result.history).toEqual([]);
+    expect(result.history).toEqual([{ id: 'app-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' }]);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      ME_APPLICATIONS_PATH,
+      'GET',
+      { role: 'mentee', limit: 100, offset: 0 },
+      undefined
+    );
   });
 
   it("returns an empty profile when the caller's mentee list is empty, so the apply page loads straight after registering", async () => {
-    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } });
+    routeProxy(proxyRequest, { [PROFILES_PATH]: () => listOf([]), [ME_APPLICATIONS_PATH]: () => listOf([]) });
 
     await expect(service.getMenteeProfile(buildReq())).resolves.toEqual({
       profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
@@ -127,8 +189,129 @@ describe('MentorshipMenteeService profile reads', () => {
     ['a 500', 500, { error: 'internal server error' }],
   ])('propagates %s on the profile read', async (_label, status, body) => {
     const error = upstreamError(status, body);
-    proxyRequest.mockRejectedValueOnce(error);
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => {
+        throw error;
+      },
+      [ME_APPLICATIONS_PATH]: () => listOf([]),
+    });
 
     await expect(service.getMenteeProfile(buildReq())).rejects.toBe(error);
+  });
+
+  it('propagates a failed applications read on the profile read', async () => {
+    const error = upstreamError(500, { error: 'internal server error' });
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [ME_APPLICATIONS_PATH]: () => {
+        throw error;
+      },
+    });
+
+    await expect(service.getMenteeProfile(buildReq())).rejects.toBe(error);
+  });
+});
+
+describe('MentorshipMenteeService.getMenteeApplications', () => {
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('joins each application to its tasks and its program project', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication(), upstreamApplication({ id: 'app-2' })]),
+      [`${APPLICATIONS_PATH}/app-1/tasks`]: () => listOf([upstreamTask()]),
+      [`${APPLICATIONS_PATH}/app-2/tasks`]: () => listOf([]),
+      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program', project_name: 'Test Project' }),
+    });
+
+    const result = await service.getMenteeApplications(buildReq(), true);
+
+    expect(result.total).toBe(2);
+    expect(result.data.map((app) => [app.id, app.projectName, app.tasks.map((task) => task.id)])).toEqual([
+      ['app-1', 'Test Project', ['task-1']],
+      ['app-2', 'Test Project', []],
+    ]);
+    // Both applications share a program, so it is read once.
+    expect(proxyRequest.mock.calls.filter(([, , path]) => path === `${PROGRAMS_PATH}/prog-1`)).toHaveLength(1);
+  });
+
+  it('skips the task reads without withTasks', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
+      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
+    });
+
+    const result = await service.getMenteeApplications(buildReq(), false);
+
+    expect(result.data[0].tasks).toEqual([]);
+    expect(proxyRequest.mock.calls.some(([, , path]) => path.startsWith(APPLICATIONS_PATH))).toBe(false);
+  });
+
+  it('reads every page of applications', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => upstreamApplication({ id: `app-${index}` }));
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: (query) =>
+        query?.['offset'] === 0
+          ? { data: firstPage, meta: { total: 101, limit: 100, offset: 0 } }
+          : { data: [upstreamApplication({ id: 'app-last' })], meta: { total: 101, limit: 100, offset: 100 } },
+      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
+    });
+
+    const result = await service.getMenteeApplications(buildReq(), false);
+
+    expect(result.total).toBe(101);
+    expect(result.data.at(-1)?.id).toBe('app-last');
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      ME_APPLICATIONS_PATH,
+      'GET',
+      { role: 'mentee', limit: 100, offset: 100 },
+      undefined
+    );
+  });
+
+  it('stops paging on an empty page even when the total says there are more', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: (query) =>
+        query?.['offset'] === 0
+          ? { data: [upstreamApplication()], meta: { total: 5, limit: 100, offset: 0 } }
+          : { data: [], meta: { total: 5, limit: 100, offset: 1 } },
+      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
+    });
+
+    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
+  });
+
+  it('leaves the project out when the program read fails', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
+      [`${PROGRAMS_PATH}/prog-1`]: () => {
+        throw upstreamError(404, { error: 'not found' });
+      },
+    });
+
+    const result = await service.getMenteeApplications(buildReq(), false);
+
+    expect(result.data[0]).toMatchObject({ programName: 'Test Program', projectName: undefined });
+  });
+
+  it('propagates a failed task read', async () => {
+    const error = upstreamError(500, { error: 'internal server error' });
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
+      [`${APPLICATIONS_PATH}/app-1/tasks`]: () => {
+        throw error;
+      },
+      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
+    });
+
+    await expect(service.getMenteeApplications(buildReq(), true)).rejects.toBe(error);
   });
 });

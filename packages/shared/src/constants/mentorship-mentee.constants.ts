@@ -147,39 +147,23 @@ export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
   'Your mentee registration passed all checks. Submission to the mentorship platform will complete once the backend goes live.';
 
 // ---------------------------------------------------------------------------
-// Mentee shell page — tab metadata, profile labels, and mock data
+// Mentee shell page — tab metadata, overview, and tasks
 // ---------------------------------------------------------------------------
 
 import type {
   MentorshipMenteeApplicationHistoryStatus,
   MentorshipMenteeApplicationStatus,
-  MentorshipMenteeOverviewAccepted,
-  MentorshipMenteeOverviewApplicant,
-  MentorshipMenteeOverviewEmpty,
   MentorshipMenteePastOutcome,
   MentorshipMenteeProfileResponse,
-  MentorshipMenteeTask,
-  MentorshipMenteeTasksResponse,
   MentorshipMenteeTaskStatus,
-  MentorshipMenteeUpNextTaskStatus,
+  MentorshipUpstreamApplicationStatus,
 } from '../interfaces/mentorship-mentee.interface';
 
 // ---------------------------------------------------------------------------
-// Tab configs — one per phase
+// Tab config — My Tasks is always shown and renders its own empty state
 // ---------------------------------------------------------------------------
 
-export const MENTORSHIP_MENTEE_TABS_EMPTY = [
-  { value: 'overview' as const, label: 'Overview' },
-  { value: 'profile' as const, label: 'Mentee Profile' },
-] as const;
-
-export const MENTORSHIP_MENTEE_TABS_APPLICANT = [
-  { value: 'overview' as const, label: 'Overview' },
-  { value: 'tasks' as const, label: 'My Application Tasks' },
-  { value: 'profile' as const, label: 'Mentee Profile' },
-] as const;
-
-export const MENTORSHIP_MENTEE_TABS_ACCEPTED = [
+export const MENTORSHIP_MENTEE_TABS = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'tasks' as const, label: 'My Tasks' },
   { value: 'profile' as const, label: 'Mentee Profile' },
@@ -192,17 +176,19 @@ export const MENTORSHIP_MENTEE_TABS_ACCEPTED = [
 export const MENTORSHIP_MENTEE_SHELL_TITLE = 'My Mentorship';
 export const MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL = 'Find a Program';
 export const MENTORSHIP_MENTEE_FIND_PROGRAM_URL = 'https://mentorship.dev.lfx.dev/programs';
+export const MENTORSHIP_MENTEE_TASKS_URL = '/mentorship/mentee/tasks';
 
 // ---------------------------------------------------------------------------
-// Overview — empty phase (screen 1)
+// Overview — empty phase
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_EMPTY_TITLE = "You haven't applied to a program yet";
 export const MENTORSHIP_MENTEE_EMPTY_SUBTITLE =
   'Browse open programs and apply to up to three in a term. Your applications, prerequisite tasks and decisions will show up here.';
+export const MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR = 'We could not load your mentee overview. Please retry.';
 
 // ---------------------------------------------------------------------------
-// Overview — applicant phase (screen 2)
+// Overview — applicant phase
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR = 'application under review';
@@ -210,61 +196,69 @@ export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL = 'applicati
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY =
   'Program admins review submissions after the application window closes. Finish the prerequisite tasks to be considered.';
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX =
-  ' You can hold three applications at a time and you are at the limit \u2014 withdraw one before you apply to another program.';
+  ' You can hold three applications at a time and you are at the limit — withdraw one before you apply to another program.';
 export const MENTORSHIP_MENTEE_APPLICATION_LIMIT = 3;
 
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
-  'in-progress': 'In Progress',
+  active: 'Active',
   'awaiting-review': 'Awaiting Review',
+  'in-progress': 'In Progress',
 };
 
+/**
+ * Runtime Tailwind class map for the application status badge. Spread into the
+ * Tailwind safelist, since these tokens live outside the app's `content` glob.
+ */
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES: Record<MentorshipMenteeApplicationStatus, string> = {
-  'in-progress': 'bg-emerald-50 text-emerald-700',
+  active: 'bg-blue-50 text-blue-700',
   'awaiting-review': 'bg-amber-50 text-amber-700',
+  'in-progress': 'bg-emerald-50 text-emerald-700',
+};
+
+/** Display order of the application cards on the Overview and My Tasks tabs. */
+export const MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER: readonly MentorshipMenteeApplicationStatus[] = ['active', 'awaiting-review', 'in-progress'];
+
+/**
+ * Progress label per card status. An accepted (active) card counts its non-prerequisite
+ * tasks; a pending card counts its prerequisite tasks.
+ */
+export const MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
+  active: 'Tasks',
+  'awaiting-review': 'Prerequisite Tasks',
+  'in-progress': 'Prerequisite Tasks',
+};
+
+/**
+ * Upstream application statuses that land in Past Applications, and the outcome each
+ * one shows. `pending` and `accepted` are absent because they render as cards.
+ */
+export const MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS: Partial<Record<MentorshipUpstreamApplicationStatus, MentorshipMenteePastOutcome>> = {
+  declined: 'not-selected',
+  withdrawn: 'withdrawn',
+  graduated: 'graduated',
+  hold: 'on-hold',
 };
 
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'Not selected',
   withdrawn: 'Withdrawn',
-  accepted: 'Accepted',
   graduated: 'Graduated',
+  'on-hold': 'On Hold',
 };
 
+/** Runtime Tailwind class map for the past-outcome badge. Spread into the Tailwind safelist. */
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  accepted: 'bg-emerald-100 text-emerald-700',
   graduated: 'bg-emerald-100 text-emerald-700',
+  'on-hold': 'bg-blue-100 text-blue-700',
 };
 
 export const MENTORSHIP_MENTEE_WITHDRAW_LABEL = 'Withdraw';
 export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY = 'Coming Soon';
 export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_DETAIL = 'Withdraw will be available once the backend endpoint is live.';
 export const MENTORSHIP_MENTEE_VIEW_TASKS_LABEL = 'View Tasks';
-export const MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY = 'Coming Soon';
-export const MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY = 'Coming Soon';
 export const MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE = 'Past Applications';
-
-// ---------------------------------------------------------------------------
-// Overview — accepted phase (screen 3)
-// ---------------------------------------------------------------------------
-
-export const MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL = 'Active';
-export const MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL = 'YOUR MENTORS';
-export const MENTORSHIP_MENTEE_UP_NEXT_TITLE = 'Up Next';
-export const MENTORSHIP_MENTEE_ALL_TASKS_LABEL = 'All tasks';
-
-export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_LABELS: Record<MentorshipMenteeUpNextTaskStatus, string> = {
-  'in-progress': 'In Progress',
-  pending: 'To Do',
-  incomplete: 'To Do',
-};
-
-export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES: Record<MentorshipMenteeUpNextTaskStatus, string> = {
-  'in-progress': 'bg-blue-100 text-blue-600',
-  pending: 'bg-gray-100 text-gray-600',
-  incomplete: 'bg-gray-100 text-gray-600',
-};
 
 // ---------------------------------------------------------------------------
 // Tasks tab — unified task status labels, classes, and dropdown options
@@ -287,19 +281,19 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_CLASSES: Record<MentorshipMenteeTaskS
 };
 
 /**
- * Selectable task statuses in the dropdown (both phases) — the single source of
+ * Selectable task statuses in the dropdown (every card) — the single source of
  * truth for which statuses a mentee can pick. `incomplete` / `complete` are
  * backend aliases that collapse onto these three.
  */
 export const MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES: readonly MentorshipMenteeTaskStatus[] = ['pending', 'in_progress', 'submitted'];
 
-/** Dropdown options for the task status selector (both phases). Labels derived from the label map so edits propagate. */
+/** Dropdown options for the task status selector (every card). Labels derived from the label map so edits propagate. */
 export const MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS: { value: MentorshipMenteeTaskStatus; label: string }[] = MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES.map(
   (value) => ({ value, label: MENTORSHIP_MENTEE_TASK_STATUS_LABELS[value] })
 );
 
 /**
- * Filter chip options on the accepted-phase My Tasks tab. `null` value = show all.
+ * Filter chip options on an accepted application's My Tasks card. `null` value = show all.
  * Derived from `MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS` (the single source of truth
  * for selectable statuses) plus a leading "All" chip, so new status options
  * propagate here automatically.
@@ -312,257 +306,10 @@ export const MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS: { value: MentorshipMenteeTas
 /** Natural case — the template applies the `uppercase` Tailwind class for display. */
 export const MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL = 'Prerequisite Tasks';
 
-// ---------------------------------------------------------------------------
-// Empty overview response (loading fallback)
-// ---------------------------------------------------------------------------
-
-export const EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE: MentorshipMenteeOverviewEmpty = {
-  phase: 'empty',
-};
-
-// ---------------------------------------------------------------------------
-// Mock data — three phases
-// ---------------------------------------------------------------------------
-
-export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY: MentorshipMenteeOverviewEmpty = {
-  phase: 'empty',
-};
-
-export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverviewApplicant = {
-  phase: 'applicant',
-  openTaskCount: 3,
-  applications: [
-    {
-      id: 'app_apicurio',
-      programId: 'prog_apicurio',
-      orgAbbreviation: 'AR',
-      projectName: 'CNCF',
-      term: { id: 'term_apicurio_fall26', name: 'Fall 2026' },
-      programName: 'Apicurio Registry: Prompt Template Playground',
-      status: 'in-progress',
-      lastTaskUpdatedOn: 'Jun 28, 2026',
-      decisionExpectedDate: 'Jul 22, 2026',
-      prerequisiteTasksCompleted: 1,
-      prerequisiteTasksTotal: 3,
-      tasks: [
-        {
-          id: 'task_apicurio_1',
-          name: 'Read the contributor guide and set up the dev environment',
-          description: 'Follow the repo CONTRIBUTING.md and confirm the test suite passes locally.',
-          status: 'complete',
-          submitFile: null,
-          dueDate: '2026-07-02T00:00:00Z',
-          submittedOn: '2026-07-02T00:00:00Z',
-        },
-        {
-          id: 'task_apicurio_2',
-          name: 'Open a good-first-issue pull request',
-          description: 'Pick any issue labelled "good first issue" and submit a working PR.',
-          status: 'in_progress',
-          submitFile: 'required',
-          dueDate: '2026-07-09T00:00:00Z',
-        },
-        {
-          id: 'task_apicurio_3',
-          name: 'Write a short proposal for the playground UI',
-          description: 'One-page design brief describing your planned prompt-template playground.',
-          status: 'incomplete',
-          submitFile: 'required',
-          dueDate: '2026-07-14T00:00:00Z',
-        },
-      ],
-    },
-    {
-      id: 'app_zephyr',
-      programId: 'prog_zephyr',
-      orgAbbreviation: 'ZR',
-      projectName: 'Zephyr Project',
-      term: { id: 'term_zephyr_win26', name: 'Winter 2026' },
-      programName: 'Zephyr RTOS: Power Management Test Harness',
-      status: 'in-progress',
-      lastTaskUpdatedOn: 'Jul 1, 2026',
-      decisionExpectedDate: 'Aug 5, 2026',
-      prerequisiteTasksCompleted: 1,
-      prerequisiteTasksTotal: 2,
-      tasks: [
-        {
-          id: 'task_zephyr_1',
-          name: 'Build Zephyr for a supported board',
-          description: 'Clone the Zephyr SDK and produce a bootable image for any supported board.',
-          status: 'submitted',
-          submitFile: 'required',
-          fileUrl: 'https://example.com/uploads/zephyr-build-log.txt',
-          dueDate: '2026-07-06T00:00:00Z',
-          submittedOn: '2026-07-06T00:00:00Z',
-        },
-        {
-          id: 'task_zephyr_2',
-          name: 'Run the existing power management tests',
-          description: 'Execute the PM test suite and attach the report.',
-          status: 'pending',
-          submitFile: 'required',
-          dueDate: '2026-07-16T00:00:00Z',
-        },
-      ],
-    },
-    {
-      id: 'app_janusgraph',
-      programId: 'prog_janusgraph',
-      orgAbbreviation: 'JA',
-      projectName: 'LF AI & Data',
-      term: { id: 'term_janusgraph_fall26', name: 'Fall 2026' },
-      programName: 'JanusGraph: Adjacency Cache Instrumentation',
-      status: 'awaiting-review',
-      lastTaskUpdatedOn: 'Jul 4, 2026',
-      decisionExpectedDate: 'Jul 29, 2026',
-      prerequisiteTasksCompleted: 3,
-      prerequisiteTasksTotal: 3,
-      tasks: [
-        {
-          id: 'task_janus_1',
-          name: 'Introduce yourself on the dev mailing list',
-          description: 'Post an introduction to the JanusGraph dev mailing list.',
-          status: 'submitted',
-          submitFile: null,
-          dueDate: '2026-07-07T00:00:00Z',
-          submittedOn: '2026-07-07T00:00:00Z',
-        },
-        {
-          id: 'task_janus_2',
-          name: 'Reproduce the cache benchmark locally',
-          description: 'Run the adjacency cache benchmark and share results.',
-          status: 'submitted',
-          submitFile: 'required',
-          fileUrl: 'https://example.com/uploads/janus-benchmark.pdf',
-          dueDate: '2026-07-18T00:00:00Z',
-          submittedOn: '2026-07-18T00:00:00Z',
-        },
-        {
-          id: 'task_janus_3',
-          name: 'Summarise where instrumentation is missing',
-          description: 'Review the codebase and list modules without tracing hooks.',
-          status: 'submitted',
-          submitFile: 'required',
-          fileUrl: 'https://example.com/uploads/janus-audit.md',
-          dueDate: '2026-07-25T00:00:00Z',
-          submittedOn: '2026-07-25T00:00:00Z',
-        },
-      ],
-    },
-  ],
-  pastApplications: [
-    {
-      id: 'past_backstage',
-      programName: 'Backstage: Plugin Accessibility Audit',
-      projectName: 'CNCF',
-      termName: 'Summer 2026',
-      createdOn: 'Feb 12, 2026',
-      outcome: 'not-selected',
-    },
-    {
-      id: 'past_openapi',
-      programName: 'OpenAPI Tools: Type-Safe Client Generation',
-      projectName: 'OpenAPI Initiative',
-      termName: 'Spring 2026',
-      createdOn: 'Nov 8, 2025',
-      outcome: 'not-selected',
-    },
-  ],
-};
-
-export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewAccepted = {
-  phase: 'accepted',
-  openTaskCount: 3,
-  program: {
-    id: 'app_gridflow',
-    programId: 'prog_gridflow',
-    projectName: 'LF Energy',
-    programName: 'GridFlow: Time-Series Ingestion Pipeline',
-    tasksCompleted: 7,
-    tasksTotal: 12,
-    mentors: [
-      { id: 'mentor_1', name: 'Test Mentor A' },
-      { id: 'mentor_2', name: 'Test Mentor B' },
-    ],
-    // Mirror the OPEN tasks in MOCK_MENTEE_TASKS so Overview "Up Next" and the My Tasks
-    // tab never disagree — a submitted task (e.g. "Benchmark 1M points per minute") must
-    // not appear here while it reads as Submitted on the tasks tab.
-    upNextTasks: [
-      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'pending', dueDate: '2026-09-18T00:00:00Z' },
-      { id: 'unt_2', name: 'Backpressure design note', status: 'in-progress', dueDate: '2026-09-12T00:00:00Z' },
-      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02T00:00:00Z' },
-    ],
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Tasks tab constants and mock data
-// ---------------------------------------------------------------------------
-
-export const EMPTY_MENTORSHIP_MENTEE_TASKS_RESPONSE: MentorshipMenteeTasksResponse = {
-  data: [],
-  total: 0,
-};
-
-const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
-  {
-    id: 'mt_1',
-    title: 'Implement replay from durable buffer',
-    description: 'Build the replay mechanism that reads from the durable write-ahead log.',
-    status: 'pending',
-    submitFile: null,
-    dueDate: '2026-09-18T00:00:00Z',
-  },
-  {
-    id: 'mt_2',
-    title: 'Backpressure design note',
-    description: 'Document how the pipeline handles backpressure from slow consumers.',
-    status: 'in_progress',
-    submitFile: 'required',
-    dueDate: '2026-09-12T00:00:00Z',
-  },
-  {
-    id: 'mt_3',
-    title: 'Benchmark 1M points per minute',
-    description: 'Run the ingestion benchmark at 1M points/min and capture a flame graph.',
-    status: 'submitted',
-    submitFile: 'required',
-    fileUrl: 'https://example.com/uploads/benchmark-report.pdf',
-    dueDate: '2026-09-25T00:00:00Z',
-    submittedDate: '2026-09-25T00:00:00Z',
-  },
-  {
-    id: 'mt_4',
-    title: 'Ingestion worker refactor',
-    description: 'Refactor the worker pool to use a bounded channel instead of mutex.',
-    status: 'submitted',
-    submitFile: null,
-    dueDate: '2026-09-04T00:00:00Z',
-    submittedDate: '2026-09-04T00:00:00Z',
-  },
-  {
-    id: 'mt_5',
-    title: 'Set up local dev environment',
-    description: 'Clone the repo, run the test suite, and confirm the CI pipeline passes.',
-    status: 'complete',
-    submitFile: null,
-    dueDate: '2026-08-29T00:00:00Z',
-    submittedDate: '2026-08-29T00:00:00Z',
-  },
-  {
-    id: 'mt_6',
-    title: 'Write contributor onboarding doc',
-    description: 'Create a CONTRIBUTING.md with setup, branching, and review conventions.',
-    status: 'pending',
-    submitFile: 'required',
-    dueDate: '2026-10-02T00:00:00Z',
-  },
-];
-
-export const MOCK_MENTORSHIP_MENTEE_TASKS: MentorshipMenteeTasksResponse = {
-  data: MOCK_MENTEE_TASKS,
-  total: MOCK_MENTEE_TASKS.length,
-};
+export const MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE = 'No tasks yet';
+export const MENTORSHIP_MENTEE_TASKS_EMPTY_SUBTITLE = 'Tasks from the programs you apply to will appear here. Browse open programs to get started.';
+export const MENTORSHIP_MENTEE_TASKS_LOAD_ERROR = 'Could not load your tasks. Please retry.';
+export const MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY = 'No tasks for this application yet.';
 
 // ---------------------------------------------------------------------------
 // Profile tab constants and mock data
@@ -702,6 +449,3 @@ export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileRe
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_DEV_DASHBOARD_LABEL = 'Go to Mentee Dashboard';
-export const MENTORSHIP_MENTEE_DEV_VIEW_EMPTY_LABEL = 'View the empty state \u2192';
-export const MENTORSHIP_MENTEE_DEV_VIEW_APPLICANT_LABEL = 'View the applicant state \u2192';
-export const MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL = 'View the accepted state \u2192';

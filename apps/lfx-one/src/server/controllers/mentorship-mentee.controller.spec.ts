@@ -45,43 +45,40 @@ describe('MentorshipMenteeController', () => {
     vi.restoreAllMocks();
   });
 
-  describe('getMenteeOverview', () => {
-    it('passes a valid, trimmed phase through to the service', async () => {
-      const overview = { phase: 'applicant' } as Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['getMenteeOverview']>>;
-      const getMenteeOverview = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeOverview').mockResolvedValue(overview);
+  describe('getMenteeApplications', () => {
+    type ApplicationsResponse = Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['getMenteeApplications']>>;
+    const applications = { data: [], total: 0 } as ApplicationsResponse;
 
-      await controller.getMenteeOverview(buildReq({ phase: ' applicant ' }), res, next);
+    it.each([
+      [{ withTasks: 'true' }, true],
+      [{ withTasks: 'false' }, false],
+      [{}, false],
+    ])('reads the query %j as withTasks=%s', async (query, withTasks) => {
+      const getMenteeApplications = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeApplications').mockResolvedValue(applications);
 
-      expect(getMenteeOverview).toHaveBeenCalledWith(expect.anything(), 'applicant');
-      expect(res.json).toHaveBeenCalledWith(overview);
+      await controller.getMenteeApplications(buildReq(query), res, next);
+
+      expect(getMenteeApplications).toHaveBeenCalledWith(expect.anything(), withTasks);
+      expect(res.json).toHaveBeenCalledWith(applications);
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('lets the service pick the phase when none is given', async () => {
-      const overview = { phase: 'empty' } as Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['getMenteeOverview']>>;
-      const getMenteeOverview = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeOverview').mockResolvedValue(overview);
+    it.each([{ withTasks: 'yes' }, { withTasks: '' }, { withTasks: ['true', 'false'] }])('rejects the query %j before calling the service', async (query) => {
+      const getMenteeApplications = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeApplications');
 
-      await controller.getMenteeOverview(buildReq({}), res, next);
+      await controller.getMenteeApplications(buildReq(query), res, next);
 
-      expect(getMenteeOverview).toHaveBeenCalledWith(expect.anything(), undefined);
-    });
-
-    it('rejects a phase outside the allow-list before calling the service', async () => {
-      const getMenteeOverview = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeOverview');
-
-      await controller.getMenteeOverview(buildReq({ phase: 'bogus' }), res, next);
-
-      expect(getMenteeOverview).not.toHaveBeenCalled();
+      expect(getMenteeApplications).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     });
 
     it('requires an authenticated user', async () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
-      const getMenteeOverview = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeOverview');
+      const getMenteeApplications = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeApplications');
 
-      await controller.getMenteeOverview(buildReq({ phase: 'applicant' }), res, next);
+      await controller.getMenteeApplications(buildReq({ withTasks: 'true' }), res, next);
 
-      expect(getMenteeOverview).not.toHaveBeenCalled();
+      expect(getMenteeApplications).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });

@@ -94,7 +94,7 @@ export const MENTORSHIP_ROUTES: Routes = [
       },
       {
         path: 'tasks',
-        title: 'My Application Tasks',
+        title: 'My Tasks',
         loadComponent: () => import('./mentee/mentee-application-tasks/mentee-application-tasks.component').then((m) => m.MenteeApplicationTasksComponent),
       },
       {
