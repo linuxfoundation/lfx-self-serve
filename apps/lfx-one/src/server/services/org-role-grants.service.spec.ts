@@ -5,7 +5,7 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as PersonaConstants from '../../../../../packages/shared/src/constants/persona.constants';
-import { ORG_WIDE_READ_TEAM_IDS } from '../../../../../packages/shared/src/constants/persona.constants';
+import { LF_TEAM_IDS, ORG_ADMIN_TEAM_IDS } from '../../../../../packages/shared/src/constants/persona.constants';
 
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
@@ -22,7 +22,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // test below can cross a wave boundary with a handful of candidates. Only
     // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
     ACCESS_CHECK_BATCH_SIZE: 2,
-    ORG_WIDE_READ_TEAM_IDS: personaConstants.ORG_WIDE_READ_TEAM_IDS,
+    LF_TEAM_IDS: personaConstants.LF_TEAM_IDS,
+    ORG_ADMIN_TEAM_IDS: personaConstants.ORG_ADMIN_TEAM_IDS,
     LF_CONTRACTOR_TEAM_ID: personaConstants.LF_CONTRACTOR_TEAM_ID,
     ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
     ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
@@ -130,19 +131,22 @@ describe('OrgRoleGrantsService — LF team determination', () => {
   // `ORG_WIDE_READ_TEAM_IDS` lights the affordance on its own. FR-010 (spec 044): membership is
   // read-only; the write gate (`OrgLensAccessService.assertCanManage`) decides through
   // `hasEditorAccess`, which reads writer grants only. #2961: such a caller never gets the contractor state.
-  it.each([...ORG_WIDE_READ_TEAM_IDS])('reports isStaff for a %s member with no roster grants, never as a contractor or an editor', async (team) => {
-    setTeamAnswer(teamMembership([team, 'lf-contractor']));
+  it.each([...LF_TEAM_IDS, ...ORG_ADMIN_TEAM_IDS])(
+    'reports isStaff for a %s member with no roster grants, never as a contractor or an editor',
+    async (team) => {
+      setTeamAnswer(teamMembership([team, 'lf-contractor']));
 
-    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+      const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
-    expect(teamCalls()).toHaveLength(1);
-    expect(teamCalls()[0]).toEqual([req, TEAM_REQUESTS]);
-    expect(response.isStaff).toBe(true);
-    expect(response.isContractor).toBe(false);
-    expect(response.writers).toEqual([]);
-    expect(response.auditors).toEqual([]);
-    expect(OrgRoleGrantsService.hasEditorAccess(response, 'any-org')).toBe(false);
-  });
+      expect(teamCalls()).toHaveLength(1);
+      expect(teamCalls()[0]).toEqual([req, TEAM_REQUESTS]);
+      expect(response.isStaff).toBe(true);
+      expect(response.isContractor).toBe(false);
+      expect(response.writers).toEqual([]);
+      expect(response.auditors).toEqual([]);
+      expect(OrgRoleGrantsService.hasEditorAccess(response, 'any-org')).toBe(false);
+    }
+  );
 
   it('reports isStaff false for a caller in no company-wide team', async () => {
     setTeamAnswer(teamMembership());

@@ -33,10 +33,10 @@ export class OrgRoleGrantsService {
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly errorInternal: WritableSignal<string | null> = signal<string | null>(null);
   private readonly loadedAtMsInternal: WritableSignal<number | null> = signal<number | null>(null);
-  // Caller-level, not per-org: LF-team membership (global auditor population) carries read access to every org, so it is
-  // deliberately not folded into the sets above. Defaults false and resets to false on error.
+  // Caller-level, not per-org: membership of a company-wide team (server `ORG_WIDE_READ_TEAM_IDS`) carries read
+  // access to every org, so it is deliberately not folded into the sets above. Defaults false and resets to false on error.
   private readonly isStaffInternal: WritableSignal<boolean> = signal<boolean>(false);
-  // #2961 — an LF contractor (not LF team). Explains an empty Org Lens only; it grants nothing and never widens the switcher.
+  // #2961 — an LF contractor (not in a company-wide team). Explains an empty Org Lens only; it grants nothing and never widens the switcher.
   private readonly isContractorInternal: WritableSignal<boolean> = signal<boolean>(false);
   // LFXV2-3029 — the server resolved fewer orgs than the caller may actually hold (roll-up
   // expansion or authoritative classification was incomplete). Without it an empty/short list is
@@ -45,7 +45,7 @@ export class OrgRoleGrantsService {
   // Spec 053 (FR-020) — why the sets are a lower bound: `failed` (roster never loaded — the answer is
   // unknown) vs `partial` (direct grants loaded, roll-up incomplete — every listed uid is authoritative).
   private readonly lookupOutcomeInternal: WritableSignal<OrgLensLookupOutcome> = signal<OrgLensLookupOutcome>('ok');
-  // Spec 053 (FR-011) — the LF-team check threw; `isStaff` is a fail-closed false, not a verdict.
+  // Spec 053 (FR-011) — the team-membership check threw; `isStaff` is a fail-closed false, not a verdict.
   private readonly staffCheckInternal: WritableSignal<OrgLensStaffCheck> = signal<OrgLensStaffCheck>('ok');
   private readonly correlationIdInternal: WritableSignal<string | null> = signal<string | null>(null);
 
@@ -67,7 +67,7 @@ export class OrgRoleGrantsService {
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
-  /** Caller is a member of an LF team (`lf-staff`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
+  /** Caller is in a company-wide team — one that reads every org, e.g. `lf-staff` (server `ORG_WIDE_READ_TEAM_IDS`); "LF team" in Org Lens comments. Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
   public readonly isContractor: Signal<boolean> = this.isContractorInternal.asReadonly();
   /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */

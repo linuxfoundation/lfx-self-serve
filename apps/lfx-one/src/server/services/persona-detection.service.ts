@@ -202,8 +202,8 @@ export class PersonaDetectionService {
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
    * `require-marketing-access.middleware.ts`. Distinct from the Org Lens affordance in
    * `OrgRoleGrantsService` (`ORG_WIDE_READ_TEAM_IDS`), which is a separate list with separate
-   * consumers — widening either does not widen the
-   * other. Neither is a read gate; that is the authorizer-backed `assertOrgLensRead`.
+   * consumers — widening either does not widen the other. Neither is a read gate; that is the
+   * authorizer-backed `assertOrgLensRead`.
    * Request-cached; fails closed to `false`.
    */
   public async checkLFStaff(req: Request): Promise<boolean> {

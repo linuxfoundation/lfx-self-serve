@@ -17,7 +17,7 @@ import { PersonaService } from './persona.service';
  * Mirrors the server gate (`org-lens-read-access.helper.ts`): a resolved entry is authoritative, and an
  * incomplete roll-up must not veto an organization that is present. So the order is
  *
- *   1. caller holds the selected organization (or is LF team)  → render the page (`null`)
+ *   1. caller holds the selected organization (or is in a company-wide team) → render the page (`null`)
  *   2. lookup failed outright (roster never loaded)             → `could-not-load`
  *   3. lookup partial AND caller holds nothing loaded           → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
@@ -100,7 +100,7 @@ export class OrgLensEmptyStateService {
    */
   public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
 
-  /** The selected organization is in the caller's resolved set (direct, inherited, or LF-team entitlement). */
+  /** The selected organization is in the caller's resolved set (direct, inherited, or company-wide team entitlement). */
   public readonly selectedHeld: Signal<boolean> = computed(() => {
     if (this.roleGrants.isStaff()) {
       return true;

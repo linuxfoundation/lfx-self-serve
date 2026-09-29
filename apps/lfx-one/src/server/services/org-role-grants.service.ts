@@ -4,14 +4,15 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   LF_CONTRACTOR_TEAM_ID,
+  LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
+  ORG_ADMIN_TEAM_IDS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
   ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
   ORG_ROLE_GRANTS_HARD_CAP,
-  ORG_WIDE_READ_TEAM_IDS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -36,6 +37,15 @@ import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { cacheKeyNamespace, valkeyService } from './valkey.service';
+
+/**
+ * #3077 — every team that can read every organization, whatever grant gives it that read: plain
+ * `auditor` (`LF_TEAM_IDS`) or the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`). Org Lens search
+ * and the switcher follow this list (`RoleGrantsResponse.isStaff`); it is never a read gate. Built here,
+ * not in the shared package, so neither team name reaches the browser bundle: a top-level spread in a
+ * shared module survives tree-shaking. A new team joins one of the two source lists, never this one.
+ */
+const ORG_WIDE_READ_TEAM_IDS = [...LF_TEAM_IDS, ...ORG_ADMIN_TEAM_IDS] as const;
 
 /** Loads caller role grants from b2b_org_settings (FR-018a "what can I see" pattern; spec 022 data-model.md). */
 export class OrgRoleGrantsService {
