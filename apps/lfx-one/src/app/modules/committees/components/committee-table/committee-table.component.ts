@@ -5,6 +5,7 @@ import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -12,7 +13,9 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
-import { getGroupCommands } from '@lfx-one/shared/utils';
+import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
+import { getGroupCommands, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { PersonaService } from '@services/persona.service';
@@ -27,12 +30,14 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     DatePipe,
     DecimalPipe,
     RouterLink,
+    BadgeComponent,
     CardComponent,
     ButtonComponent,
     TableComponent,
     TagComponent,
     CommitteeFilterBarComponent,
     TooltipModule,
+    JoinModeLabelPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
     EmptyStateComponent,
@@ -72,6 +77,25 @@ export class CommitteeTableComponent {
 
   protected readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.committees().length > 10 ? [10, 25, 50] : undefined));
+
+  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
+  protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
+  protected readonly resolveRoleSeverity = resolveGroupsCardRoleSeverity;
+  protected readonly joinModeTooltips = JOIN_MODE_TOOLTIPS;
+
+  /** Maps join_mode to a tag severity so joinability is scannable at a glance. */
+  protected resolveJoinModeSeverity(mode: string | undefined): 'success' | 'info' | 'secondary' | 'warn' {
+    switch (mode) {
+      case 'open':
+        return 'success';
+      case 'application':
+        return 'info';
+      case 'invite_only':
+        return 'warn';
+      default:
+        return 'secondary';
+    }
+  }
 
   /**
    * Rows decorated with their canonical view/edit link state (GH-1566): `getGroupCommands`

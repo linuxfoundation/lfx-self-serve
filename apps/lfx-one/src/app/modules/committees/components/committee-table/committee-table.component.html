@@ -53,6 +53,10 @@
               <th>Members</th>
               <th>Channels</th>
               <th>Voting</th>
+              <th>Join Mode</th>
+              @if (hasRoleColumn()) {
+                <th>My Role</th>
+              }
               <th>Last Updated</th>
               @if (canManageCommittee()) {
                 <th></th>
@@ -168,6 +172,27 @@
                   <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
                 }
               </td>
+              <td>
+                @if (committee.join_mode) {
+                  <lfx-tag
+                    [value]="committee.join_mode | joinModeLabel"
+                    [severity]="resolveJoinModeSeverity(committee.join_mode)"
+                    [pTooltip]="joinModeTooltips[committee.join_mode]"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'join-mode-tag-' + committee.uid" />
+                } @else {
+                  <span class="text-gray-400 text-xs">—</span>
+                }
+              </td>
+              @if (hasRoleColumn()) {
+                <td>
+                  @if (committee.my_role) {
+                    <lfx-badge [value]="committee.my_role" [severity]="resolveRoleSeverity(committee.my_role)" />
+                  } @else {
+                    <span class="text-gray-400 text-xs">—</span>
+                  }
+                </td>
+              }
               <td>
                 <span class="text-sm text-gray-700">{{ committee.updated_at | date: 'MMM d, y' }}</span>
               </td>
