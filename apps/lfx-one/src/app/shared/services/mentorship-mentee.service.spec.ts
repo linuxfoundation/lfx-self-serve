@@ -166,3 +166,48 @@ describe('MentorshipMenteeService — withdrawMenteeApplication', () => {
     expect(service.menteeApplicationsRevision()).toBe(before);
   });
 });
+
+describe('MentorshipMenteeService — applyToMenteeTerm', () => {
+  let service: MentorshipMenteeService;
+  let http: HttpTestingController;
+
+  const APPLY_URL = '/api/mentorship/mentee/apply';
+  const APPLY_IDS = { programId: '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e', programTermId: '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e' };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipMenteeService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipMenteeService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('posts the program and term ids and refreshes the cached applications', () => {
+    const before = service.menteeApplicationsRevision();
+    let done = false;
+    service.applyToMenteeTerm(APPLY_IDS).subscribe({ complete: () => (done = true) });
+
+    const req = http.expectOne(APPLY_URL);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(APPLY_IDS);
+    req.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(done).toBe(true);
+    expect(service.menteeApplicationsRevision()).toBe(before + 1);
+  });
+
+  it('leaves the cache alone and passes the failure on when the application is refused', () => {
+    const before = service.menteeApplicationsRevision();
+    let status = 0;
+    service.applyToMenteeTerm(APPLY_IDS).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne(APPLY_URL).flush({ error: 'term is not accepting applications' }, { status: 422, statusText: 'Unprocessable Entity' });
+
+    expect(status).toBe(422);
+    expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+});

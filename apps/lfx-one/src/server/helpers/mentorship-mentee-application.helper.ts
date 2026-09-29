@@ -5,7 +5,10 @@ import {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationHistoryEntry,
   MentorshipMenteeApplicationTask,
+  MentorshipMenteeApplyTarget,
   MentorshipUpstreamApplication,
+  MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
@@ -68,6 +71,32 @@ export const mapMentorshipMenteeApplication = (
   updatedOn: application.updated_on,
   decisionExpectedDate: application.term?.application_end_date ? toMentorshipUtcInstant(application.term.application_end_date) : undefined,
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
+});
+
+/**
+ * Whether a term takes applications at `now`, by the check upstream runs on submit: the term is
+ * `open`, `now` is not before its application start and not after its application end. Upstream
+ * stores both as bare dates, read here as UTC midnight as upstream does, and a missing date leaves
+ * that side of the window open.
+ */
+const isAcceptingApplications = (term: MentorshipUpstreamProgramTerm, now: Date): boolean => {
+  if (term.status !== 'open') return false;
+  const time = now.getTime();
+  if (term.application_start_date && time < Date.parse(toMentorshipUtcInstant(term.application_start_date))) return false;
+  if (term.application_end_date && time > Date.parse(toMentorshipUtcInstant(term.application_end_date))) return false;
+  return true;
+};
+
+/** Maps a program and one of its terms to the mentee apply page header, with whether the term takes applications at `now`. */
+export const mapMentorshipMenteeApplyTarget = (
+  program: MentorshipUpstreamProgram,
+  term: MentorshipUpstreamProgramTerm,
+  now: Date
+): MentorshipMenteeApplyTarget => ({
+  programName: program.name,
+  projectName: program.project_name ?? '',
+  termName: term.name,
+  acceptingApplications: isAcceptingApplications(term, now),
 });
 
 /** Sort rank of an application on Application History; a status outside the order ranks last. */

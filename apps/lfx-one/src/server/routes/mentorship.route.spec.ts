@@ -102,8 +102,10 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(403);
   });
 
+  const applyIds = { programId: '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e', programTermId: '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e' };
+
   it('rejects unauthenticated GET /api/mentorship/mentee/apply-target with 401', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target?programId=p1&programTermId=t1`);
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target?${new URLSearchParams(applyIds)}`);
     expect(res.status).toBe(401);
   });
 
@@ -111,6 +113,27 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target`);
     // Auth check fires before missing-parameter validation — unauthenticated requests get 401, not 400.
     expect(res.status).toBe(401);
+  });
+
+  it('routes POST /api/mentorship/mentee/apply (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(applyIds),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses an apply while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: JSON.stringify(applyIds),
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
   });
 });
 

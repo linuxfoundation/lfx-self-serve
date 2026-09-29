@@ -585,11 +585,16 @@ export type MentorshipProgramDecisionStatus = Extract<MentorshipUpstreamProgramS
 /** The `?decision=` value on an approve/reject email link. */
 export type MentorshipProgramReviewDecision = (typeof MENTORSHIP_PROGRAM_REVIEW_DECISIONS)[number];
 
-/** The upstream program fields the program-review BFF reads. */
+/**
+ * The upstream program fields the BFF reads: program review reads the id, name and status, and the
+ * mentee apply page reads the name and project name.
+ */
 export interface MentorshipUpstreamProgram {
   id: string;
   name: string;
   status: MentorshipUpstreamProgramStatus;
+  /** Name of the program's LF project; absent when the program has none. */
+  project_name?: string;
 }
 
 /** Upstream body for `POST /mentorship/v1/programs/{id}/decision`. */

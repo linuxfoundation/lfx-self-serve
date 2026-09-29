@@ -23,7 +23,7 @@ vi.mock('./logger.service', () => ({
 const { MentorshipMenteeService } = await import('./mentorship-mentee.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
 const { logger } = await import('./logger.service');
-const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
+const { MicroserviceError } = await import('../errors');
 
 const PROFILES_PATH = '/mentorship/v1/me/profiles';
 const ME_APPLICATIONS_PATH = '/mentorship/v1/me/applications';
@@ -87,25 +87,78 @@ function routeProxy(
   });
 }
 
-describe('MentorshipMenteeService.getMenteeApplyTarget', () => {
+describe('MentorshipMenteeService apply', () => {
+  const programId = '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e';
+  const programTermId = '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e';
+  const programPath = `${PROGRAMS_PATH}/${programId}`;
+  const termPath = `${programPath}/terms/${programTermId}`;
   let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
     service = new MentorshipMenteeService();
   });
 
-  it('resolves the program name, project, and the requested term', async () => {
-    const target = await service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'trm_apicurio_winter26');
+  it('builds the apply target from the program and the term', async () => {
+    routeProxy(proxyRequest, {
+      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published', project_name: 'Test Project' }),
+      // No window dates, so the term takes applications whatever today is.
+      [termPath]: () => ({ id: programTermId, program_id: programId, name: 'Fall 2026', status: 'open' }),
+    });
 
-    expect(target).toEqual({
-      programName: 'Apicurio Registry: Prompt Template Playground',
-      projectName: 'CNCF',
-      termName: 'Winter 2026',
+    await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).resolves.toEqual({
+      programName: 'Test Program',
+      projectName: 'Test Project',
+      termName: 'Fall 2026',
+      acceptingApplications: true,
+    });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', programPath, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', termPath, 'GET', undefined, undefined);
+  });
+
+  it('reports a closed term as not accepting applications', async () => {
+    routeProxy(proxyRequest, {
+      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published' }),
+      [termPath]: () => ({ id: programTermId, program_id: programId, name: 'Fall 2026', status: 'closed' }),
+    });
+
+    await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).resolves.toMatchObject({
+      projectName: '',
+      acceptingApplications: false,
     });
   });
 
-  it('rejects an unknown term on a known program', async () => {
-    await expect(service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'missing-term')).rejects.toBeInstanceOf(ResourceNotFoundError);
+  it('propagates a 404 on the term read', async () => {
+    const error = upstreamError(404, { error: 'not found' });
+    routeProxy(proxyRequest, {
+      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published' }),
+      [termPath]: () => {
+        throw error;
+      },
+    });
+
+    await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).rejects.toBe(error);
+  });
+
+  it('posts a mentee application to the term, with only the role in the body', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamApplication({ program_term_id: programTermId, program: undefined, term: undefined }));
+
+    await expect(service.applyToMenteeTerm(buildReq(), programId, programTermId)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${termPath}/applications`, 'POST', undefined, { role: 'mentee' });
+  });
+
+  it.each([
+    [422, 'eligibility criteria not met: applications are not open for this term'],
+    [409, 'conflict'],
+    [404, 'not found'],
+  ])('propagates an upstream %i on apply', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.applyToMenteeTerm(buildReq(), programId, programTermId)).rejects.toBe(error);
   });
 });
 

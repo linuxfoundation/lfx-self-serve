@@ -287,8 +287,28 @@ export interface MentorshipMenteeApplyIds {
 /** Header fields for the mentee apply page, from `GET /api/mentorship/mentee/apply-target`. */
 export interface MentorshipMenteeApplyTarget {
   programName: string;
+  /** Empty when upstream has no LF project on the program. */
   projectName: string;
   termName: string;
+  /**
+   * Whether the term takes applications today, by the same rule upstream applies on submit: the
+   * term is `open` and today is inside its application window. A missing window date leaves that
+   * side open.
+   */
+  acceptingApplications: boolean;
+}
+
+/**
+ * Why the apply page shows a state in place of the form: the term was not found or cannot be
+ * viewed, it is not taking applications, or the mentee already has an application for it.
+ */
+export type MentorshipMenteeApplyBlockedReason = 'not-found' | 'closed' | 'already-applied';
+
+/** Copy for one of the apply page's blocked states. */
+export interface MentorshipMenteeApplyBlockedState {
+  icon: string;
+  title: string;
+  subtitle: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,13 +5,14 @@
 // partially-compiled @angular/common and needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import { MentorshipUpstreamApplication, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
+import { MentorshipUpstreamApplication, MentorshipUpstreamProgram, MentorshipUpstreamProgramTerm, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import {
   mapMentorshipMenteeApplication,
   mapMentorshipMenteeApplicationHistory,
   mapMentorshipMenteeApplicationTask,
+  mapMentorshipMenteeApplyTarget,
 } from './mentorship-mentee-application.helper';
 
 const baseTask: MentorshipUpstreamTask = {
@@ -149,5 +150,54 @@ describe('mapMentorshipMenteeApplicationHistory', () => {
     ]);
 
     expect(history.map((entry) => entry.id)).toEqual(['graduated', 'accepted', 'pending-new', 'pending-old', 'withdrawn', 'declined', 'hold']);
+  });
+});
+
+describe('mapMentorshipMenteeApplyTarget', () => {
+  const program: MentorshipUpstreamProgram = { id: 'prog-1', name: 'Test Program', status: 'published', project_name: 'Test Project' };
+  const term: MentorshipUpstreamProgramTerm = {
+    id: 'term-1',
+    program_id: 'prog-1',
+    name: 'Fall 2026',
+    status: 'open',
+    active_users: 0,
+    application_start_date: '2026-06-01',
+    application_end_date: '2026-08-01',
+    created_on: '2026-05-01T10:00:00Z',
+    updated_on: '2026-05-01T10:00:00Z',
+  };
+  const insideWindow = new Date('2026-07-01T12:00:00Z');
+
+  it('maps the program and term names, and accepts applications inside the window of an open term', () => {
+    expect(mapMentorshipMenteeApplyTarget(program, term, insideWindow)).toEqual({
+      programName: 'Test Program',
+      projectName: 'Test Project',
+      termName: 'Fall 2026',
+      acceptingApplications: true,
+    });
+  });
+
+  it('leaves the project empty when the program has none', () => {
+    expect(mapMentorshipMenteeApplyTarget({ ...program, project_name: undefined }, term, insideWindow).projectName).toBe('');
+  });
+
+  it.each([
+    ['a closed term', { status: 'closed' as const }, insideWindow],
+    ['a deleted term', { status: 'deleted' as const }, insideWindow],
+    ['a window that has not opened', {}, new Date('2026-05-31T23:59:59Z')],
+    ['a window that has closed', {}, new Date('2026-08-01T00:00:01Z')],
+  ])('does not accept applications for %s', (_label, overrides, now) => {
+    expect(mapMentorshipMenteeApplyTarget(program, { ...term, ...overrides }, now).acceptingApplications).toBe(false);
+  });
+
+  it('reads the window dates as UTC midnight, as upstream does, so both edges still accept', () => {
+    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-06-01T00:00:00Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T00:00:00Z')).acceptingApplications).toBe(true);
+  });
+
+  it('leaves a side of the window open when its date is missing', () => {
+    const openEnded = { ...term, application_start_date: undefined, application_end_date: undefined };
+    expect(mapMentorshipMenteeApplyTarget(program, openEnded, new Date('2020-01-01T00:00:00Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget(program, openEnded, new Date('2030-01-01T00:00:00Z')).acceptingApplications).toBe(true);
   });
 });

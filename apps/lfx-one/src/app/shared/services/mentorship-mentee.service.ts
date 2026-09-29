@@ -5,6 +5,7 @@ import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http'
 import { inject, Injectable, signal } from '@angular/core';
 import {
   MentorshipMenteeApplicationsResponse,
+  MentorshipMenteeApplyIds,
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
@@ -81,12 +82,27 @@ export class MentorshipMenteeService {
     return this.http.get<MentorshipMenteeProfileResponse>('/api/mentorship/mentee/profile').pipe(catchError(this.rethrowError('getMenteeProfile')));
   }
 
-  /** Program name, project, and term name for the mentee apply header. Rethrows so the page can show a retry. */
+  /**
+   * Program name, project, term name, and whether the term is taking applications, for the mentee
+   * apply page. Rethrows so the page can tell a missing term (404) from a failure it can retry.
+   */
   public getMenteeApplyTarget(programId: string, programTermId: string): Observable<MentorshipMenteeApplyTarget> {
     const params = new HttpParams().set('programId', programId).set('programTermId', programTermId);
     return this.http
       .get<MentorshipMenteeApplyTarget>('/api/mentorship/mentee/apply-target', { params })
       .pipe(catchError(this.rethrowError('getMenteeApplyTarget')));
+  }
+
+  /**
+   * Applies the signed-in user as a mentee to a program term. On success the cached applications
+   * are dropped, so the Overview and My Tasks show the new application. A failure is left to the
+   * caller, which maps upstream's 422 (closed) and 409 (already applied) to their own states.
+   */
+  public applyToMenteeTerm(ids: MentorshipMenteeApplyIds): Observable<void> {
+    return this.http.post<void>('/api/mentorship/mentee/apply', ids).pipe(
+      take(1),
+      tap(() => this.clearMenteeCaches())
+    );
   }
 
   /** A 404 falls back silently; other failures log to the console and fall back too. */

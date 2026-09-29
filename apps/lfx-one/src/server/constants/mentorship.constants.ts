@@ -26,6 +26,12 @@ export const MENTORSHIP_ME_APPLICATIONS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/app
 /** Upstream applications collection; an application's tasks live at `/{id}/tasks`. */
 export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 
+/**
+ * Upstream programs collection. A program's terms live at `/{id}/terms/{termId}` and a term takes
+ * applications at `.../applications`; each needs the program's UUID, since the gateway denies a slug.
+ */
+export const MENTORSHIP_PROGRAMS_PATH = '/mentorship/v1/programs';
+
 /** Page size for upstream mentorship list reads: the largest `limit` the service accepts. */
 export const MENTORSHIP_LIST_PAGE_SIZE = 100;
 

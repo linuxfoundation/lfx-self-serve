@@ -1,7 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship-mentee.interface';
+import type {
+  MentorshipMenteeApplyBlockedReason,
+  MentorshipMenteeApplyBlockedState,
+  MentorshipMenteeDemographicRow,
+} from '../interfaces/mentorship-mentee.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -405,6 +409,46 @@ export const MENTORSHIP_MENTEE_APPLY_MISSING_TITLE = 'This application link is i
 export const MENTORSHIP_MENTEE_APPLY_MISSING_SUBTITLE = 'Open the apply link from the mentorship program so the program and term are included.';
 export const MENTORSHIP_MENTEE_APPLY_LOAD_ERROR_TITLE = 'Could not load this application';
 export const MENTORSHIP_MENTEE_APPLY_LOAD_ERROR_FALLBACK = 'We could not load this application. Please retry.';
+
+export const MENTORSHIP_MENTEE_APPLY_SUCCESS_SUMMARY = 'Application submitted';
+export const MENTORSHIP_MENTEE_APPLY_SUCCESS_DETAIL = 'Your application has been submitted. You can follow it from your overview.';
+export const MENTORSHIP_MENTEE_APPLY_ERROR_SUMMARY = 'Could not submit the application';
+export const MENTORSHIP_MENTEE_APPLY_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTEE_APPLY_TOAST_LIFE = 5000;
+
+/** Copy for each state the apply page shows in place of the form. */
+export const MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES: Readonly<Record<MentorshipMenteeApplyBlockedReason, MentorshipMenteeApplyBlockedState>> = {
+  'not-found': {
+    icon: 'fa-light fa-magnifying-glass',
+    title: 'This program term could not be found',
+    subtitle: 'The link may be out of date, or the program is no longer available.',
+  },
+  closed: {
+    icon: 'fa-light fa-calendar-xmark',
+    title: 'This term is not accepting applications',
+    subtitle: 'Applications for this term are closed or have not opened yet.',
+  },
+  'already-applied': {
+    icon: 'fa-light fa-circle-check',
+    title: 'You already applied to this term',
+    subtitle: 'You have an application for this term, so you cannot apply again. Your applications are on your overview.',
+  },
+};
+
+/**
+ * Upstream statuses on the apply-target read or the submit that mean the form cannot be used,
+ * keyed by status. 400 is an id that is not a UUID, 403 a program the mentee cannot view, 404 a
+ * term that is not in the program, 422 a term outside its application window, and 409 an existing
+ * application for the term (pending, decided or declined; upstream does not say which). Any other
+ * status keeps the form and reports the failure.
+ */
+export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<number, MentorshipMenteeApplyBlockedReason>> = {
+  400: 'not-found',
+  403: 'not-found',
+  404: 'not-found',
+  409: 'already-applied',
+  422: 'closed',
+};
 
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the

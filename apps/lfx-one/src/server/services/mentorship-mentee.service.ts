@@ -1,20 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
-  EMPTY_MENTORSHIP_PROGRAM_LISTS,
-  MOCK_MENTORSHIP_PROGRAM_LISTS,
-  MOCK_MENTORSHIP_PROGRAMS,
-} from '@lfx-one/shared/constants';
+import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
-  MentorshipProgram,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
@@ -28,21 +24,20 @@ import {
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
+  MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
-import { ResourceNotFoundError } from '../errors';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
-import { mapMentorshipMenteeApplication, mapMentorshipMenteeApplicationHistory } from '../helpers/mentorship-mentee-application.helper';
+import {
+  mapMentorshipMenteeApplication,
+  mapMentorshipMenteeApplicationHistory,
+  mapMentorshipMenteeApplyTarget,
+} from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
-import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
-/**
- * BFF for the mentee pages at `/mentorship/mentee/*`. The profile and application reads and the
- * withdraw call the mentorship service; the apply target still serves mock data and moves to it under
- * linuxfoundation/lfx-mentorship#184.
- */
+/** BFF for the mentee pages at `/mentorship/mentee/*`. Every read and write calls the mentorship service with the caller's token. */
 export class MentorshipMenteeService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
@@ -142,34 +137,47 @@ export class MentorshipMenteeService {
   }
 
   /**
-   * Header fields for the mentee apply page. Resolves the program the same way the
-   * admin detail does (id, then slug) and the term against that program's term rows.
-   * Does not return the admin lists — those include other applicants.
+   * Header fields for the mentee apply page, from the program and the term read in parallel. The
+   * term read 404s when the term is not in that program, is deleted, or the program is not visible
+   * to the caller; that and any other failure propagate so the page can say why. Only the program
+   * and term names are read, never the program's applicants.
    */
   public async getMenteeApplyTarget(req: Request, programId: string, programTermId: string): Promise<MentorshipMenteeApplyTarget> {
     logger.debug(req, 'mentorship_get_mentee_apply_target', 'Resolving mentee apply target', { programId, programTermId });
-    const program = this.findProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_mentee_apply_target' });
-    }
+    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`;
+    const [program, term] = await Promise.all([
+      proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
+      proxyMentorshipRequest<MentorshipUpstreamProgramTerm>(this.microserviceProxy, req, `${programPath}/terms/${encodeURIComponent(programTermId)}`),
+    ]);
 
-    const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
-    const term = lists.terms.find((item) => item.id === programTermId);
-    if (!term) {
-      throw new ResourceNotFoundError('Mentorship program term', programTermId, { operation: 'mentorship_get_mentee_apply_target' });
-    }
-
-    const target: MentorshipMenteeApplyTarget = {
-      programName: program.name,
-      projectName: program.projectName,
-      termName: term.name,
-    };
+    const target = mapMentorshipMenteeApplyTarget(program, term, new Date());
     logger.debug(req, 'mentorship_get_mentee_apply_target', 'Mentee apply target resolved', {
-      programName: target.programName,
-      projectName: target.projectName,
-      termName: target.termName,
+      programId,
+      programTermId,
+      termStatus: term.status,
+      acceptingApplications: target.acceptingApplications,
     });
     return target;
+  }
+
+  /**
+   * Applies the signed-in user to a program term as a mentee. Upstream takes the applicant from the
+   * token, so the body carries only the role. Its 422 (the term is not taking applications), 409
+   * (the user already has an application for the term) and 404 (the term is not in the program)
+   * propagate so the page can say why. The created application carries no program or term, so it is
+   * dropped and the pages re-read the applications instead.
+   */
+  public async applyToMenteeTerm(req: Request, programId: string, programTermId: string): Promise<void> {
+    logger.debug(req, 'mentorship_apply_to_mentee_term', 'Applying to mentee term', { programId, programTermId });
+    await proxyMentorshipRequest<MentorshipUpstreamApplication>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(programTermId)}/applications`,
+      'POST',
+      undefined,
+      { role: 'mentee' }
+    );
+    logger.debug(req, 'mentorship_apply_to_mentee_term', 'Applied to mentee term', { programId, programTermId });
   }
 
   /** The caller's own mentee `user_profiles` rows; at most one, since a user has one mentee profile. */
@@ -230,10 +238,5 @@ export class MentorshipMenteeService {
       count: items.length,
     });
     return items;
-  }
-
-  /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
-  private findProgram(programId: string): MentorshipProgram | undefined {
-    return findByIdOrSlug(MOCK_MENTORSHIP_PROGRAMS, programId);
   }
 }

@@ -137,31 +137,87 @@ describe('MentorshipMenteeController', () => {
     });
   });
 
+  const programId = '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e';
+  const programTermId = '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e';
+  const invalidApplyIds = [
+    { programTermId },
+    { programId: '   ', programTermId },
+    { programId },
+    { programId, programTermId: '' },
+    { programId: [programId], programTermId },
+    { programId: 'test-program', programTermId },
+    { programId, programTermId: 'term-1' },
+  ];
+
   describe('getMenteeApplyTarget', () => {
     it('passes the trimmed program and term ids through to the service', async () => {
       const target = { programName: 'Program' } as Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['getMenteeApplyTarget']>>;
       const getMenteeApplyTarget = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeApplyTarget').mockResolvedValue(target);
 
-      await controller.getMenteeApplyTarget(buildReq({ programId: ' p-1 ', programTermId: 't-1' }), res, next);
+      await controller.getMenteeApplyTarget(buildReq({ programId: ` ${programId} `, programTermId }), res, next);
 
-      expect(getMenteeApplyTarget).toHaveBeenCalledWith(expect.anything(), 'p-1', 't-1');
+      expect(getMenteeApplyTarget).toHaveBeenCalledWith(expect.anything(), programId, programTermId);
       expect(res.json).toHaveBeenCalledWith(target);
       expect(next).not.toHaveBeenCalled();
     });
 
-    it.each([
-      { programTermId: 't-1' },
-      { programId: '   ', programTermId: 't-1' },
-      { programId: 'p-1' },
-      { programId: 'p-1', programTermId: '' },
-      { programId: ['p-1'], programTermId: 't-1' },
-    ])('rejects the query %j before calling the service', async (query) => {
+    it.each(invalidApplyIds)('rejects the query %j before calling the service', async (query) => {
       const getMenteeApplyTarget = vi.spyOn(MentorshipMenteeService.prototype, 'getMenteeApplyTarget');
 
       await controller.getMenteeApplyTarget(buildReq(query), res, next);
 
       expect(getMenteeApplyTarget).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+  });
+
+  describe('applyToMenteeTerm', () => {
+    const buildApplyReq = (body: unknown): Request => ({ body, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('applies with the trimmed ids from the body and answers 204 with no body', async () => {
+      const apply = vi.spyOn(MentorshipMenteeService.prototype, 'applyToMenteeTerm').mockResolvedValue(undefined);
+
+      await controller.applyToMenteeTerm(buildApplyReq({ programId, programTermId: ` ${programTermId} ` }), res, next);
+
+      expect(apply).toHaveBeenCalledWith(expect.anything(), programId, programTermId);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, ...invalidApplyIds])('rejects the body %j before calling the service', async (body) => {
+      const apply = vi.spyOn(MentorshipMenteeService.prototype, 'applyToMenteeTerm');
+
+      await controller.applyToMenteeTerm(buildApplyReq(body), res, next);
+
+      expect(apply).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes an upstream failure to the error handler', async () => {
+      const error = new Error('conflict');
+      vi.spyOn(MentorshipMenteeService.prototype, 'applyToMenteeTerm').mockRejectedValue(error);
+
+      await controller.applyToMenteeTerm(buildApplyReq({ programId, programTermId }), res, next);
+
+      expect(res.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(error);
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const apply = vi.spyOn(MentorshipMenteeService.prototype, 'applyToMenteeTerm');
+
+      await controller.applyToMenteeTerm(buildApplyReq({ programId, programTermId }), res, next);
+
+      expect(apply).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });
 });
