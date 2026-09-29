@@ -160,6 +160,7 @@ import type {
   MentorshipMenteePastOutcome,
   MentorshipMenteeProfileResponse,
   MentorshipMenteeTaskStatus,
+  MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplicationStatus,
 } from '../interfaces/mentorship-mentee.interface';
 
@@ -344,6 +345,44 @@ export const MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE = 'No tasks yet';
 export const MENTORSHIP_MENTEE_TASKS_EMPTY_SUBTITLE = 'Tasks from the programs you apply to will appear here. Browse open programs to get started.';
 export const MENTORSHIP_MENTEE_TASKS_LOAD_ERROR = 'Could not load your tasks. Please retry.';
 export const MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY = 'No tasks for this application yet.';
+
+// ---------------------------------------------------------------------------
+// Tasks tab — status change (PATCH /mentorship/v1/tasks/{id}/submission)
+// ---------------------------------------------------------------------------
+
+/**
+ * The only statuses a mentee can request: `pending → in_progress` and `in_progress → submitted`.
+ * `incomplete` and `complete` are reviewer-only, and anything else is a 409 upstream. The BFF never
+ * sends `file` (upload is a coming-soon toast), so the stored file satisfies upstream's file check.
+ */
+export const MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES: readonly MentorshipMenteeUpdatableTaskStatus[] = ['in_progress', 'submitted'];
+export const MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE = 5000;
+export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_SUMMARY = 'Task updated';
+export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_DETAIL = 'Your task status has been saved.';
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_SUMMARY = 'Could not update task';
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK = 'We could not update this task right now. Please try again.';
+
+/** Statuses where the local view is stale, so the applications are re-read after the toast. */
+export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [403, 404, 409];
+
+/**
+ * Status-change failures with their own copy, keyed by status. A 400 is either the BFF rejecting the
+ * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both.
+ * A 403 can come from the gateway's assignee check or the service's; the OpenFGA assignee tuple is written
+ * asynchronously, so a valid assignee may see one just after the task is created. The stale statuses
+ * (403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This task could not be updated. If it needs a file, file upload is coming soon.',
+  403: 'You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed.',
+  404: 'This task no longer exists. Your tasks have been refreshed.',
+  409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',
+};
+
+/** Reasons a status option is unavailable. They are read by assistive tech; only the file-required one shows on screen. */
+export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. File upload is coming soon.';
+export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
+export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
 
 // ---------------------------------------------------------------------------
 // Profile tab constants and mock data

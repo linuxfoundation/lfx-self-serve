@@ -32,7 +32,12 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
+  MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
+  MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
+  MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
+  MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES,
 } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
@@ -93,7 +98,9 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeTaskStatus,
+  MentorshipMenteeTaskStatusOptionsState,
   MentorshipMenteeTaskView,
+  MentorshipMenteeUpdatableTaskStatus,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
 import { escapeHtml, stripHtml } from './html-utils';
@@ -1018,10 +1025,44 @@ export function buildMentorshipMenteeTaskView(input: {
     statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status],
     hasUploadedFile,
     needsUpload: input.submitFile === 'required' && !input.fileUrl,
+    // Raw stored file, not the `fileUrl` display fallback: upstream reads the stored `file` when a request sends none.
+    requiresFile: !!input.submitFile && !input.fileUrl,
     fileUrl: input.fileUrl ?? submitFileUrl,
     dueDate: input.dueDate ?? null,
     submittedDate: input.submittedDate ?? null,
   };
+}
+
+/** Whether a value is a status a mentee may request (`in_progress` or `submitted`). Narrows for the controller and the row. */
+export function isMentorshipMenteeUpdatableTaskStatus(value: unknown): value is MentorshipMenteeUpdatableTaskStatus {
+  return MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES.includes(value as MentorshipMenteeUpdatableTaskStatus);
+}
+
+/**
+ * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
+ * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
+ * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
+ * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`.
+ * The hint explains a disabled forward move or a locked row; only the file-required hint shows on screen.
+ */
+export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskView): MentorshipMenteeTaskStatusOptionsState {
+  const status = normalizeMentorshipMenteeTaskStatus(task.status);
+  const withDisabled = (isDisabled: (value: MentorshipMenteeTaskStatus) => boolean): MentorshipMenteeTaskStatusOptionsState['options'] =>
+    MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS.map((option) => ({ ...option, disabled: isDisabled(option.value) }));
+
+  if (status === 'submitted') {
+    return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_LOCKED, hintVisible: false };
+  }
+  if (status === 'in_progress') {
+    const fileBlocked = task.requiresFile;
+    return {
+      options: withDisabled((value) => value === 'pending' || (value === 'submitted' && fileBlocked)),
+      locked: false,
+      hint: fileBlocked ? MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED : null,
+      hintVisible: fileBlocked,
+    };
+  }
+  return { options: withDisabled((value) => value === 'submitted'), locked: false, hint: MENTORSHIP_MENTEE_TASK_HINT_START_FIRST, hintVisible: false };
 }
 
 /**

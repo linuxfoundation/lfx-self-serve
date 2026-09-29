@@ -11,6 +11,8 @@ import {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeProfileUpdateRequest,
   MentorshipMenteeProfileUpdateResponse,
+  MentorshipMenteeTaskStatusUpdateRequest,
+  MentorshipMenteeUpdatableTaskStatus,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
@@ -75,6 +77,20 @@ export class MentorshipMenteeService {
    */
   public withdrawMenteeApplication(applicationId: string): Observable<void> {
     return this.http.post<void>(`/api/mentorship/mentee/applications/${encodeURIComponent(applicationId)}/withdraw`, null).pipe(
+      take(1),
+      tap(() => this.clearMenteeCaches())
+    );
+  }
+
+  /**
+   * Moves one of the signed-in mentee's tasks to `in_progress` or `submitted`. The body is only the
+   * status: file upload is not wired, so no file is ever sent. On success the cached applications are
+   * dropped, so the Overview, My Tasks and the open-task badge re-read. A failure is left to the caller,
+   * which decides whether the tasks are stale.
+   */
+  public updateMenteeTaskStatus(taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Observable<void> {
+    const body: MentorshipMenteeTaskStatusUpdateRequest = { status };
+    return this.http.patch<void>(`/api/mentorship/mentee/tasks/${encodeURIComponent(taskId)}`, body).pipe(
       take(1),
       tap(() => this.clearMenteeCaches())
     );

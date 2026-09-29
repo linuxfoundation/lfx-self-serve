@@ -167,6 +167,68 @@ describe('MentorshipMenteeService — withdrawMenteeApplication', () => {
   });
 });
 
+describe('MentorshipMenteeService — updateMenteeTaskStatus', () => {
+  let service: MentorshipMenteeService;
+  let http: HttpTestingController;
+
+  const TASK_ID = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const TASK_URL = `/api/mentorship/mentee/tasks/${TASK_ID}`;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipMenteeService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipMenteeService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('patches only the status to the task route and refreshes the cached applications', () => {
+    const before = service.menteeApplicationsRevision();
+    let done = false;
+    service.updateMenteeTaskStatus(TASK_ID, 'in_progress').subscribe({ complete: () => (done = true) });
+
+    const req = http.expectOne(TASK_URL);
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'in_progress' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(done).toBe(true);
+    expect(service.menteeApplicationsRevision()).toBe(before + 1);
+  });
+
+  it('drops the cached applications so the next read fetches them again', () => {
+    service.getMenteeApplications().subscribe();
+    http.expectOne('/api/mentorship/mentee/applications?withTasks=true').flush({ data: [], total: 0 });
+
+    service.updateMenteeTaskStatus(TASK_ID, 'submitted').subscribe();
+    http.expectOne(TASK_URL).flush(null, { status: 204, statusText: 'No Content' });
+    service.getMenteeApplications().subscribe();
+
+    http.expectOne('/api/mentorship/mentee/applications?withTasks=true').flush({ data: [], total: 0 });
+  });
+
+  it('encodes the task id in the path', () => {
+    service.updateMenteeTaskStatus('a/b?c', 'in_progress').subscribe();
+
+    http.expectOne('/api/mentorship/mentee/tasks/a%2Fb%3Fc').flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('leaves the cache alone and passes the failure on when the update fails', () => {
+    const before = service.menteeApplicationsRevision();
+    let status = 0;
+    service.updateMenteeTaskStatus(TASK_ID, 'submitted').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne(TASK_URL).flush({ error: 'conflict' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+});
+
 describe('MentorshipMenteeService — applyToMenteeTerm', () => {
   let service: MentorshipMenteeService;
   let http: HttpTestingController;

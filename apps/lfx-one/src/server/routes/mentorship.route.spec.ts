@@ -102,6 +102,26 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(403);
   });
 
+  it('routes PATCH /api/mentorship/mentee/tasks/:taskId (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/tasks/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a task status change while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/tasks/7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-test-impersonating': 'true' },
+      body: JSON.stringify({ status: 'in_progress' }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
   const applyIds = { programId: '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e', programTermId: '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e' };
 
   it('rejects unauthenticated GET /api/mentorship/mentee/apply-target with 401', async () => {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MentorshipMenteeApplyIds } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isMentorshipMenteeUpdatableTaskStatus, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -76,6 +76,41 @@ export class MentorshipMenteeController {
 
       await this.menteeService.withdrawMenteeApplication(req, applicationId);
       logger.success(req, 'withdraw_mentorship_mentee_application', startTime, { applicationId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentee/tasks/:taskId  { status: 'in_progress' | 'submitted' } -> 204
+  // Auth: logged-in user required (401 otherwise). A mentee can only start a task or submit one; the
+  // reviewer statuses are refused here. Any other body key, notably `file`, is ignored and never
+  // forwarded: upload is not wired, so upstream checks a required file against the one already stored.
+  // Upstream's 400 (a required file is missing), 403 (not the assignee), 404 and 409 (not a legal
+  // move from the task's status) pass through.
+  public async updateMenteeTaskStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentee_task_status');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentee_task_status' });
+      }
+
+      // Upstream checks access on `mentorship_task:<id>`, so only a UUID can match.
+      const taskId = parseTrimmedString(req.params['taskId']);
+      if (!taskId || !isUuid(taskId)) {
+        throw ServiceValidationError.forField('taskId', 'taskId must be a valid UUID', { operation: 'update_mentorship_mentee_task_status' });
+      }
+
+      const status = req.body?.status;
+      if (!isMentorshipMenteeUpdatableTaskStatus(status)) {
+        throw ServiceValidationError.forField('status', 'status must be one of: in_progress, submitted', {
+          operation: 'update_mentorship_mentee_task_status',
+        });
+      }
+
+      await this.menteeService.updateMenteeTaskStatus(req, taskId, status);
+      logger.success(req, 'update_mentorship_mentee_task_status', startTime, { taskId, status });
       res.status(204).send();
     } catch (error) {
       next(error);

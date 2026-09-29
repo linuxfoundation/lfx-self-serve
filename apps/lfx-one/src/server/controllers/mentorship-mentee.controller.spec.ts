@@ -138,6 +138,98 @@ describe('MentorshipMenteeController', () => {
     });
   });
 
+  describe('updateMenteeTaskStatus', () => {
+    const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+    const buildTaskReq = (params: Record<string, unknown>, body?: unknown): Request => ({ params, body, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it.each(['in_progress', 'submitted'])('updates the trimmed task id to %s and answers 204 with no body', async (status) => {
+      const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus').mockResolvedValue(undefined);
+
+      await controller.updateMenteeTaskStatus(buildTaskReq({ taskId: ` ${taskId} ` }, { status }), res, next);
+
+      expect(update).toHaveBeenCalledWith(expect.anything(), taskId, status);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('logs the operation, task and status on success', async () => {
+      vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus').mockResolvedValue(undefined);
+
+      await controller.updateMenteeTaskStatus(buildTaskReq({ taskId }, { status: 'submitted' }), res, next);
+
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'update_mentorship_mentee_task_status', 0, { taskId, status: 'submitted' });
+    });
+
+    it('ignores a file in the body and forwards only the task id and status', async () => {
+      const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus').mockResolvedValue(undefined);
+
+      await controller.updateMenteeTaskStatus(buildTaskReq({ taskId }, { status: 'submitted', file: 'https://files.example.com/upload.pdf' }), res, next);
+
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update.mock.calls[0]).toEqual([expect.anything(), taskId, 'submitted']);
+    });
+
+    it.each([{}, { taskId: '' }, { taskId: 'task-1' }, { taskId: [taskId] }])(
+      'rejects the params %j on the taskId field before calling the service',
+      async (params) => {
+        const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus');
+
+        await controller.updateMenteeTaskStatus(buildTaskReq(params, { status: 'in_progress' }), res, next);
+
+        expect(update).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+        expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ validationErrors: [{ field: 'taskId' }] });
+      }
+    );
+
+    it.each([
+      undefined,
+      {},
+      { status: '' },
+      { status: 'pending' },
+      { status: 'incomplete' },
+      { status: 'complete' },
+      { status: 'IN_PROGRESS' },
+      { status: ['submitted'] },
+    ])('rejects the body %j on the status field before calling the service', async (body) => {
+      const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus');
+
+      await controller.updateMenteeTaskStatus(buildTaskReq({ taskId }, body), res, next);
+
+      expect(update).not.toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ validationErrors: [{ field: 'status' }] });
+    });
+
+    it('passes an upstream failure to the error handler', async () => {
+      const error = new Error('conflict');
+      vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus').mockRejectedValue(error);
+
+      await controller.updateMenteeTaskStatus(buildTaskReq({ taskId }, { status: 'in_progress' }), res, next);
+
+      expect(res.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(error);
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeTaskStatus');
+
+      await controller.updateMenteeTaskStatus(buildTaskReq({ taskId }, { status: 'in_progress' }), res, next);
+
+      expect(update).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
   const programId = '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e';
   const programTermId = '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e';
   const invalidApplyIds = [

@@ -10,7 +10,12 @@ import {
   MENTORSHIP_RICH_TEXT_RAW_MAX,
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
+import {
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
+  MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+} from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import { htmlClipboardToText } from './html-utils';
@@ -19,6 +24,8 @@ import type {
   MentorshipMenteeApplicationTask,
   MentorshipMenteeProfileDetails,
   MentorshipMenteeProfileFormValue,
+  MentorshipMenteeTaskStatus,
+  MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
@@ -33,6 +40,8 @@ import {
   normalizeMentorshipMenteeTaskStatus,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
+  getMentorshipMenteeTaskStatusOptions,
+  isMentorshipMenteeUpdatableTaskStatus,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
@@ -1030,6 +1039,91 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.submitted).toBe(false);
     expect(view.inProgress).toBe(false);
     expect(view.statusClass).not.toBe('');
+  });
+});
+
+describe('buildMentorshipMenteeTaskView requiresFile', () => {
+  const build = (submitFile: string | null, fileUrl?: string): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status: 'in_progress', submitFile, fileUrl });
+
+  it('is true for submit_file "required" with no stored file', () => {
+    expect(build('required').requiresFile).toBe(true);
+  });
+
+  it('is true for a URL submit_file with no stored file, even though View and Download show', () => {
+    const view = build('https://files.example.com/template.pdf');
+    expect(view.requiresFile).toBe(true);
+    expect(view.hasUploadedFile).toBe(true);
+  });
+
+  it('is false when a file is stored', () => {
+    expect(build('required', 'https://files.example.com/upload.pdf').requiresFile).toBe(false);
+  });
+
+  it('is false when the task needs no file', () => {
+    expect(build(null).requiresFile).toBe(false);
+  });
+});
+
+describe('isMentorshipMenteeUpdatableTaskStatus', () => {
+  it('accepts in_progress and submitted only', () => {
+    expect(isMentorshipMenteeUpdatableTaskStatus('in_progress')).toBe(true);
+    expect(isMentorshipMenteeUpdatableTaskStatus('submitted')).toBe(true);
+    for (const value of ['pending', 'incomplete', 'complete', 'IN_PROGRESS', '', null, undefined, 1]) {
+      expect(isMentorshipMenteeUpdatableTaskStatus(value)).toBe(false);
+    }
+  });
+});
+
+describe('getMentorshipMenteeTaskStatusOptions', () => {
+  const taskView = (status: MentorshipMenteeTaskStatus, submitFile: string | null = null, fileUrl?: string): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status, submitFile, fileUrl });
+  const disabledByValue = (view: MentorshipMenteeTaskView): Record<string, boolean> =>
+    Object.fromEntries(getMentorshipMenteeTaskStatusOptions(view).options.map((option) => [option.value, option.disabled]));
+
+  it('lets a pending task start but not skip to submitted', () => {
+    const state = getMentorshipMenteeTaskStatusOptions(taskView('pending'));
+    expect(disabledByValue(taskView('pending'))).toEqual({ pending: false, in_progress: false, submitted: true });
+    expect(state.locked).toBe(false);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_START_FIRST);
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('lets an in-progress task be submitted, with no way back and no hint', () => {
+    const state = getMentorshipMenteeTaskStatusOptions(taskView('in_progress'));
+    expect(disabledByValue(taskView('in_progress'))).toEqual({ pending: true, in_progress: false, submitted: false });
+    expect(state.locked).toBe(false);
+    expect(state.hint).toBeNull();
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('disables submitted with a visible hint when a file is required and not stored', () => {
+    const view = taskView('in_progress', 'required');
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED);
+    expect(state.hintVisible).toBe(true);
+  });
+
+  it('keeps submitted enabled when the required file is already stored', () => {
+    const view = taskView('in_progress', 'required', 'https://files.example.com/upload.pdf');
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: false });
+    expect(getMentorshipMenteeTaskStatusOptions(view).hint).toBeNull();
+  });
+
+  it('locks a submitted task with every option disabled and a hidden hint', () => {
+    const view = taskView('submitted');
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(state.locked).toBe(true);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: true, submitted: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_LOCKED);
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('locks a complete task, which normalises to submitted', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), status: 'complete' });
+    expect(state.locked).toBe(true);
+    expect(state.options.every((option) => option.disabled)).toBe(true);
   });
 });
 

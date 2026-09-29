@@ -9,11 +9,13 @@ import {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeProfileUpdateRequest,
   MentorshipMenteeProfileUpdateResponse,
+  MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTaskSubmissionUpdate,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -28,6 +30,7 @@ import {
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
@@ -106,6 +109,29 @@ export class MentorshipMenteeService {
       'POST'
     );
     logger.debug(req, 'mentorship_withdraw_mentee_application', 'Mentee application withdrawn', { applicationId });
+  }
+
+  /**
+   * Changes the status of one of the signed-in user's tasks through the assignee route,
+   * `PATCH /tasks/{id}/submission`. The body is only the status: upload is not wired, so `file` is never
+   * sent, and upstream checks a required file against the one already stored on the task. Its 400 (a
+   * required file is missing), 403 (the gateway or the service refuses a non-assignee; the assignee grant
+   * is written asynchronously, so a fresh task can briefly answer 403), 404 and 409 (not a legal move
+   * from the task's status) propagate so the row can say why. The returned task is dropped and the pages
+   * re-read their applications instead.
+   */
+  public async updateMenteeTaskStatus(req: Request, taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Promise<void> {
+    logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
+    const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
+    await proxyMentorshipRequest<MentorshipUpstreamTask>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}/submission`,
+      'PATCH',
+      undefined,
+      body
+    );
+    logger.debug(req, 'mentorship_update_mentee_task_status', 'Mentee task status updated', { taskId, status });
   }
 
   /**

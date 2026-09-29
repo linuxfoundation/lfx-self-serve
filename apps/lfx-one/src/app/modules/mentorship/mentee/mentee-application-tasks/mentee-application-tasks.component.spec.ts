@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE, MENTORSHIP_MENTEE_TASKS_LOAD_ERROR } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplication, MentorshipMenteeApplicationsResponse } from '@lfx-one/shared/interfaces';
+import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { menteeServiceTestDouble, menteeTestApplication, menteeTestTask } from '@shared/testing/mentorship-mentee-test-data';
@@ -43,6 +44,7 @@ describe('MenteeApplicationTasksComponent', () => {
       providers: [
         { provide: MentorshipMenteeService, useValue: menteeService },
         { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
+        { provide: MenteeTaskStatusService, useValue: { changeStatus: vi.fn() } },
       ],
     });
 
@@ -88,6 +90,39 @@ describe('MenteeApplicationTasksComponent', () => {
     expect(menteeService.clearMenteeCaches).toHaveBeenCalledTimes(1);
     expect(byTestId('mentee-tasks-error')).toBeNull();
     expect(byTestId('mentee-tasks')).toBeTruthy();
+  });
+
+  it('shows the loader again on Retry after an error', async () => {
+    await bootstrap({ fail: true });
+    const reread = new Subject<MentorshipMenteeApplicationsResponse>();
+    menteeService.getMenteeApplications.mockReturnValue(reread.asObservable());
+
+    Array.from(element().querySelectorAll('button'))
+      .find((btn) => btn.textContent?.trim() === 'Retry')
+      ?.click();
+    await settle();
+
+    expect(element().querySelector('lfx-route-loading')).toBeTruthy();
+    expect(byTestId('mentee-tasks-error')).toBeNull();
+  });
+
+  it('keeps the tasks mounted, with no loader, while a refresh after a saved change is in flight', async () => {
+    await bootstrap({ applications: [accepted()] });
+    const tasks = byTestId('mentee-tasks');
+    expect(tasks).toBeTruthy();
+
+    const reread = new Subject<MentorshipMenteeApplicationsResponse>();
+    menteeService.getMenteeApplications.mockReturnValue(reread.asObservable());
+    menteeService.clearMenteeCaches();
+    await settle();
+
+    expect(element().querySelector('lfx-route-loading')).toBeNull();
+    expect(byTestId('mentee-tasks')).toBe(tasks);
+
+    reread.next({ data: [accepted()], total: 1 });
+    reread.complete();
+    await settle();
+    expect(byTestId('mentee-tasks')).toBe(tasks);
   });
 
   it('shows the empty state when there are no applications', async () => {

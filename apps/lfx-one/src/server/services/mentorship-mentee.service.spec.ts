@@ -622,3 +622,73 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     expect(logged).not.toContain('Private text');
   });
 });
+
+describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
+  const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const TASKS_PATH = '/mentorship/v1/tasks';
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('patches the task submission route with a body of only the status', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
+      status: 'in_progress',
+    });
+  });
+
+  it('never sends file, even when submitting', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      upstreamTask({ id: taskId, status: 'submitted', submit_file: 'required', file: 'https://files.example.com/upload.pdf' })
+    );
+
+    await service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted');
+
+    const body = proxyRequest.mock.calls[0][5];
+    expect(body).toEqual({ status: 'submitted' });
+    expect(Object.keys(body as object)).toEqual(['status']);
+  });
+
+  it('URL-encodes the task id in the path', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask());
+
+    await service.updateMenteeTaskStatus(buildReq(), 'a/b?c', 'in_progress');
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/a%2Fb%3Fc/submission`, 'PATCH', undefined, expect.anything());
+  });
+
+  it('provisions the user and retries once when upstream says the local user is not provisioned', async () => {
+    proxyRequest
+      .mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }))
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
+      status: 'in_progress',
+    });
+  });
+
+  it.each([
+    [400, 'invalid input: submitted tasks requiring a file must include file'],
+    [403, 'forbidden'],
+    [404, 'not found'],
+    [409, 'invalid state transition: cannot transition task from "submitted" to "in_progress"'],
+  ])('propagates an upstream %i', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+});

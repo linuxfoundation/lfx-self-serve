@@ -13,6 +13,8 @@ router.get('/has-profile', (req, res, next) => menteeController.hasMenteeProfile
 router.get('/applications', (req, res, next) => menteeController.getMenteeApplications(req, res, next));
 // Refused while impersonating: upstream would withdraw the impersonated mentee's application.
 router.post('/applications/:applicationId/withdraw', blockDuringImpersonation, (req, res, next) => menteeController.withdrawMenteeApplication(req, res, next));
+// Refused while impersonating: upstream would change the impersonated mentee's task.
+router.patch('/tasks/:taskId', blockDuringImpersonation, (req, res, next) => menteeController.updateMenteeTaskStatus(req, res, next));
 router.get('/profile', (req, res, next) => menteeController.getMenteeProfile(req, res, next));
 // Refused while impersonating: upstream would rewrite the impersonated mentee's profile.
 router.patch('/profile', blockDuringImpersonation, (req, res, next) => menteeController.updateMenteeProfile(req, res, next));

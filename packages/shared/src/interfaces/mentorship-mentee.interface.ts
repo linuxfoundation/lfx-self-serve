@@ -165,6 +165,13 @@ export interface MentorshipMenteeTaskView {
   hasUploadedFile: boolean;
   /** An upload is required but no file exists yet (renders Upload). */
   needsUpload: boolean;
+  /**
+   * True when upstream requires a file to submit (`submit_file` non-empty: `'required'` or a URL) and none is
+   * stored yet. Computed from the raw stored file, not the display-fallback `fileUrl`. Gates the `submitted`
+   * option. Note a URL-valued `submit_file` with no stored file also has `hasUploadedFile = true`; upstream
+   * still treats it as file-required, and no upstream path writes a URL there today.
+   */
+  requiresFile: boolean;
   fileUrl: string | null;
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
@@ -173,6 +180,32 @@ export interface MentorshipMenteeTaskView {
    * not "label" — the template formats it via `DatePipe` with `'UTC'` (same contract as `dueDate`).
    */
   submittedDate: string | null;
+}
+
+/** Task statuses a mentee may request. Upstream `incomplete` and `complete` are reviewer-only. */
+export type MentorshipMenteeUpdatableTaskStatus = 'in_progress' | 'submitted';
+
+/** BFF request body for `PATCH /api/mentorship/mentee/tasks/:taskId`. Any other key (e.g. `file`) is ignored and never forwarded. */
+export interface MentorshipMenteeTaskStatusUpdateRequest {
+  status: MentorshipMenteeUpdatableTaskStatus;
+}
+
+/** One status option in the mentee task row dropdown (`lfx-select` reads `disabled` through `optionDisabled`). */
+export interface MentorshipMenteeTaskStatusOption {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/** Derived dropdown state for one task row. */
+export interface MentorshipMenteeTaskStatusOptionsState {
+  options: MentorshipMenteeTaskStatusOption[];
+  /** True when the mentee cannot change this task at all (submitted or complete). */
+  locked: boolean;
+  /** Reason text for a disabled forward move or a locked row; always rendered (sr-only unless `hintVisible`); `null` when none. */
+  hint: string | null;
+  /** True only for the actionable file-required case, where the hint is also shown visibly. */
+  hintVisible: boolean;
 }
 
 /**
@@ -561,6 +594,11 @@ export interface MentorshipUpstreamTask {
   created_by?: string;
   created_on: string;
   updated_on: string;
+}
+
+/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. `file` is intentionally omitted: upload is not in scope. */
+export interface MentorshipUpstreamTaskSubmissionUpdate {
+  status: MentorshipMenteeUpdatableTaskStatus;
 }
 
 /**
