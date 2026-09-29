@@ -151,7 +151,6 @@ export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
 // ---------------------------------------------------------------------------
 
 import type {
-  MentorshipMenteeApplicationHistoryEntry,
   MentorshipMenteeApplicationHistoryStatus,
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeOverviewAccepted,
@@ -696,52 +695,6 @@ export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS = 
 export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileResponse = {
   profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
   history: [],
-};
-
-/**
- * Deterministic mock backing the standalone mentee profile page while the mentorship
- * profiles endpoint is unavailable. Removed once the real read is wired up.
- */
-export const MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY: MentorshipMenteeApplicationHistoryEntry[] = [
-  {
-    id: 'hist_gridflow_fall26',
-    programName: 'GridFlow: Time-Series Ingestion Pipeline',
-    termName: 'Fall 2026',
-    submittedOn: 'Jun 28, 2026',
-    status: 'accepted',
-  },
-  {
-    id: 'hist_apicurio_fall26',
-    programName: 'Apicurio Registry: Prompt Template Playground',
-    termName: 'Fall 2026',
-    submittedOn: 'Jul 2, 2026',
-    status: 'pending',
-  },
-  {
-    id: 'hist_backstage_summer26',
-    programName: 'Backstage: Plugin Accessibility Audit',
-    termName: 'Summer 2026',
-    submittedOn: 'Apr 9, 2026',
-    status: 'declined',
-  },
-];
-
-export const MOCK_MENTORSHIP_MENTEE_PROFILE: MentorshipMenteeProfileResponse = {
-  profile: {
-    aboutMe:
-      'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
-    skillsHave: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
-    skillsWant: ['Distributed Systems', 'Code Review', 'Observability'],
-    additionalNotes:
-      'I co-run a student Linux user group and have been maintaining our campus microgrid dashboards for two terms. I am comfortable working asynchronously across time zones.',
-    resumeFileName: 'test-user-1-resume.pdf',
-    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
-  },
-  demographics: {
-    age: '20-39',
-    education: 'college',
-  },
-  history: MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY,
 };
 
 // ---------------------------------------------------------------------------

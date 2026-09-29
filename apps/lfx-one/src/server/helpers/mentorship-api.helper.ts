@@ -3,7 +3,7 @@
 
 import { Request } from 'express';
 
-import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../constants';
+import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_NOT_FOUND_ERROR, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
@@ -11,6 +11,11 @@ import type { MicroserviceProxyService } from '../services/microservice-proxy.se
 /** Whether an upstream failure is the mentorship service saying the caller has no local record yet. */
 export function isMentorshipNotProvisionedError(error: unknown): boolean {
   return error instanceof MicroserviceError && error.statusCode === 401 && error.errorBody?.error === MENTORSHIP_NOT_PROVISIONED_ERROR;
+}
+
+/** Whether an upstream failure is the mentorship service's own 404 for a resource that does not exist. */
+export function isMentorshipNotFoundError(error: unknown): boolean {
+  return error instanceof MicroserviceError && error.statusCode === 404 && error.errorBody?.error === MENTORSHIP_NOT_FOUND_ERROR;
 }
 
 /**

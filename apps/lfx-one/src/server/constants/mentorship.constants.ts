@@ -14,3 +14,12 @@ export const MENTORSHIP_BOOTSTRAP_PATH = '/mentorship/v1/me';
  * that call has run once for the user.
  */
 export const MENTORSHIP_NOT_PROVISIONED_ERROR = 'local user is not provisioned';
+
+/** Upstream path for the signed-in user's own mentee `user_profiles` row. */
+export const MENTORSHIP_MENTEE_PROFILE_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/profiles/mentee`;
+
+/**
+ * The `error` the mentorship service returns with a 404 for a missing resource. Matching it,
+ * not just the status, keeps a gateway 404 (an unrouted path) from reading as "no profile".
+ */
+export const MENTORSHIP_NOT_FOUND_ERROR = 'not found';

@@ -42,6 +42,16 @@ describe('MentorshipMenteeService — error mapping', () => {
     http.expectOne('/api/mentorship/mentee/profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
     expect(failed).toBe(true);
   });
+
+  it('reads a failed has-profile check as "no profile" so the guards open the register page', () => {
+    let result: unknown = 'unset';
+    service.hasMenteeProfile().subscribe((response) => {
+      result = response;
+    });
+
+    http.expectOne('/api/mentorship/mentee/has-profile').flush('conflict', { status: 409, statusText: 'Conflict' });
+    expect(result).toEqual({ hasProfile: false });
+  });
 });
 
 describe('MentorshipMenteeService — mentee overview/tasks caching', () => {

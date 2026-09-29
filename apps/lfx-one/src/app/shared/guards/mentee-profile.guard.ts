@@ -13,8 +13,8 @@ import { firstValueFrom } from 'rxjs';
  *
  * - **Has profile** and both apply ids → `/mentorship/mentee/apply` with those ids.
  * - **Has profile** otherwise → `/mentorship/mentee/overview` (the shell).
- * - **No profile** (404 / error / mock default) → returns `true`, letting the
- *   register page render. Apply ids on the URL stay there for the return trip.
+ * - **No profile** (or the check failed) → returns `true`, letting the register page
+ *   render. Apply ids on the URL stay there for the return trip.
  *
  * The service's `hasMenteeProfile()` already catches HTTP errors and returns
  * `{ hasProfile: false }`, so no guard-level `catchError` is needed.

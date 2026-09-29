@@ -8,8 +8,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_PROFILE_CREATED_STATE, MOCK_MENTORSHIP_MENTEE_PROFILE } from '@lfx-one/shared/constants';
-import { MentorshipMenteeApplyTarget } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_PROFILE_CREATED_STATE } from '@lfx-one/shared/constants';
+import { MentorshipMenteeApplyTarget, MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
@@ -36,6 +36,11 @@ const target: MentorshipMenteeApplyTarget = {
   programName: 'Apicurio Registry: Prompt Template Playground',
   projectName: 'CNCF',
   termName: 'Winter 2026',
+};
+
+const menteeProfile: MentorshipMenteeProfileResponse = {
+  profile: { aboutMe: 'Test mentee introduction.', skillsHave: ['Go'], skillsWant: ['Code Review'] },
+  history: [],
 };
 
 const applyParams = { programId: 'mp_apicurio_winter26', programTermId: 'trm_apicurio_winter26' };
@@ -66,7 +71,7 @@ describe('MenteeApplyComponent', () => {
 
   beforeEach(() => {
     getMenteeApplyTarget = vi.fn(() => of(target));
-    getMenteeProfile = vi.fn(() => of(MOCK_MENTORSHIP_MENTEE_PROFILE));
+    getMenteeProfile = vi.fn(() => of(menteeProfile));
     toast = vi.fn();
 
     TestBed.resetTestingModule();
