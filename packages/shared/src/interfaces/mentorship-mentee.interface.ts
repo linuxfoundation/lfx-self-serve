@@ -181,7 +181,7 @@ export interface MentorshipMenteeTaskView {
 export interface MentorshipMenteeApplicationView {
   id: string;
   programName: string;
-  /** Absent when the program lookup failed; the card falls back to the program name. */
+  /** Absent when the program has no LF project; the card then shows only the term. */
   projectName?: string;
   termName: string;
   /** The program's logo for the card's avatar; the program's initial shows when it is absent. */
@@ -320,7 +320,7 @@ export interface MentorshipMenteeTermRef {
  *
  * BFF mapping from `GET /mentorship/v1/me/applications?role=mentee`:
  * - `programName` / `programLogoUrl` ← the embedded `program`
- * - `projectName` ← `GET /mentorship/v1/programs/{id}` `project_name`; absent when that lookup fails
+ * - `projectName` ← the embedded `program.project_name`; absent when the program has no LF project
  * - `term` ← the embedded `term`
  * - `decisionExpectedDate` ← `term.application_end_date`
  * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`, read only with `withTasks=true` and
@@ -420,6 +420,8 @@ export interface MentorshipUpstreamApplicationProgram {
   name: string;
   slug: string;
   logo_url?: string;
+  /** Display name of the program's LF project; absent when the program has none. */
+  project_name?: string;
 }
 
 /** Term summary embedded on an application row. Dates are ISO 8601 strings. */
@@ -450,17 +452,6 @@ export interface MentorshipUpstreamApplication {
   updated_on: string;
   program?: MentorshipUpstreamApplicationProgram;
   term?: MentorshipUpstreamApplicationTerm;
-}
-
-/**
- * The fields the mentee BFF reads from `GET /mentorship/v1/programs/{id}`. The body carries
- * more; only the LF project display fields are needed, since applications do not embed them.
- */
-export interface MentorshipUpstreamProgramDetail {
-  id: string;
-  name: string;
-  project_name?: string;
-  project_logo_url?: string;
 }
 
 /** Body of `GET /mentorship/v1/programs/{programID}/terms/{termID}`. */

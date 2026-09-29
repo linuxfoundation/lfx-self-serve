@@ -6,7 +6,6 @@ import {
   MentorshipMenteeApplicationHistoryEntry,
   MentorshipMenteeApplicationTask,
   MentorshipUpstreamApplication,
-  MentorshipUpstreamProgramDetail,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
@@ -46,21 +45,20 @@ export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask,
 });
 
 /**
- * Maps one of the caller's `applications` rows, its tasks, and its program's detail to the mentee
- * application shape. Applications embed the program but not its LF project, so the project comes
- * from the program detail and is absent when that lookup failed. `tasks` is left out when they
- * were not read, so the result never looks like an application with no tasks assigned.
+ * Maps one of the caller's `applications` rows and its tasks to the mentee application shape. The
+ * program and its LF project come from the embedded `program`; the project is absent when the
+ * program has none. `tasks` is left out when they were not read, so the result never looks like an
+ * application with no tasks assigned.
  */
 export const mapMentorshipMenteeApplication = (
   application: MentorshipUpstreamApplication,
-  tasks: MentorshipUpstreamTask[] | undefined,
-  program?: MentorshipUpstreamProgramDetail
+  tasks: MentorshipUpstreamTask[] | undefined
 ): MentorshipMenteeApplication => ({
   id: application.id,
   programId: application.program?.id ?? '',
   programName: application.program?.name ?? '',
   programLogoUrl: application.program?.logo_url || undefined,
-  projectName: program?.project_name || undefined,
+  projectName: application.program?.project_name || undefined,
   term: {
     id: application.term?.id ?? application.program_term_id,
     name: application.term?.name ?? '',

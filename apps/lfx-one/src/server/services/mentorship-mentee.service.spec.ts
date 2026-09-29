@@ -224,12 +224,15 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
     service = new MentorshipMenteeService();
   });
 
-  it('joins each application to its tasks and its program project', async () => {
+  it('joins each application to its tasks and the project on its embedded program', async () => {
     routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication(), upstreamApplication({ id: 'app-2' })]),
+      [ME_APPLICATIONS_PATH]: () =>
+        listOf([
+          upstreamApplication({ program: { id: 'prog-1', name: 'Test Program', slug: 'test-program', project_name: 'Test Project' } }),
+          upstreamApplication({ id: 'app-2' }),
+        ]),
       [`${APPLICATIONS_PATH}/app-1/tasks`]: () => listOf([upstreamTask()]),
       [`${APPLICATIONS_PATH}/app-2/tasks`]: () => listOf([]),
-      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program', project_name: 'Test Project' }),
     });
 
     const result = await service.getMenteeApplications(buildReq(), true);
@@ -237,16 +240,15 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
     expect(result.total).toBe(2);
     expect(result.data.map((app) => [app.id, app.projectName, app.tasks?.map((task) => task.id)])).toEqual([
       ['app-1', 'Test Project', ['task-1']],
-      ['app-2', 'Test Project', []],
+      ['app-2', undefined, []],
     ]);
-    // Both applications share a program, so it is read once.
-    expect(proxyRequest.mock.calls.filter(([, , path]) => path === `${PROGRAMS_PATH}/prog-1`)).toHaveLength(1);
+    // The project comes embedded, so no program is read.
+    expect(proxyRequest.mock.calls.some(([, , path]) => path.startsWith(PROGRAMS_PATH))).toBe(false);
   });
 
   it('skips the task reads without withTasks', async () => {
     routeProxy(proxyRequest, {
       [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
-      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
     });
 
     const result = await service.getMenteeApplications(buildReq(), false);
@@ -267,7 +269,6 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
       [`${APPLICATIONS_PATH}/app-1/tasks`]: () => listOf([upstreamTask()]),
       [`${APPLICATIONS_PATH}/app-accepted/tasks`]: () => listOf([]),
       [`${APPLICATIONS_PATH}/app-graduated/tasks`]: () => listOf([]),
-      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
     });
 
     const result = await service.getMenteeApplications(buildReq(), true);
@@ -284,7 +285,6 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
         query?.['offset'] === 0
           ? { data: firstPage, meta: { total: 101, limit: 100, offset: 0 } }
           : { data: [upstreamApplication({ id: 'app-last' })], meta: { total: 101, limit: 100, offset: 100 } },
-      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
     });
 
     const result = await service.getMenteeApplications(buildReq(), false);
@@ -307,23 +307,9 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
         query?.['offset'] === 0
           ? { data: [upstreamApplication()], meta: { total: 5, limit: 100, offset: 0 } }
           : { data: [], meta: { total: 5, limit: 100, offset: 1 } },
-      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
     });
 
     await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
-  });
-
-  it('leaves the project out when the program read fails', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
-      [`${PROGRAMS_PATH}/prog-1`]: () => {
-        throw upstreamError(404, { error: 'not found' });
-      },
-    });
-
-    const result = await service.getMenteeApplications(buildReq(), false);
-
-    expect(result.data[0]).toMatchObject({ programName: 'Test Program', projectName: undefined });
   });
 
   it('propagates a failed task read', async () => {
@@ -333,7 +319,6 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
       [`${APPLICATIONS_PATH}/app-1/tasks`]: () => {
         throw error;
       },
-      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
     });
 
     await expect(service.getMenteeApplications(buildReq(), true)).rejects.toBe(error);

@@ -36,7 +36,7 @@ const baseApplication: MentorshipUpstreamApplication = {
   admin_notified: false,
   created_on: '2026-06-28T10:00:00Z',
   updated_on: '2026-06-29T10:00:00Z',
-  program: { id: 'prog-1', name: 'Test Program', slug: 'test-program', logo_url: 'https://example.com/logo.png' },
+  program: { id: 'prog-1', name: 'Test Program', slug: 'test-program', logo_url: 'https://example.com/logo.png', project_name: 'Test Project' },
   term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-08-01' },
 };
 
@@ -89,12 +89,8 @@ describe('mapMentorshipMenteeApplicationTask', () => {
 });
 
 describe('mapMentorshipMenteeApplication', () => {
-  it('maps the application, its tasks, and the project from the program detail', () => {
-    const result = mapMentorshipMenteeApplication(baseApplication, [baseTask], {
-      id: 'prog-1',
-      name: 'Test Program',
-      project_name: 'Test Project',
-    });
+  it('maps the application, its tasks, and the project from the embedded program', () => {
+    const result = mapMentorshipMenteeApplication(baseApplication, [baseTask]);
 
     expect(result).toEqual({
       id: 'app-1',
@@ -111,8 +107,10 @@ describe('mapMentorshipMenteeApplication', () => {
     });
   });
 
-  it('leaves the project out when the program lookup failed', () => {
-    expect(mapMentorshipMenteeApplication(baseApplication, []).projectName).toBeUndefined();
+  it('leaves the project out when the program has none', () => {
+    const noProject = { ...baseApplication, program: { id: 'prog-1', name: 'Test Program', slug: 'test-program', project_name: '' } };
+    expect(mapMentorshipMenteeApplication(noProject, []).projectName).toBeUndefined();
+    expect(mapMentorshipMenteeApplication({ ...baseApplication, program: undefined }, []).projectName).toBeUndefined();
   });
 
   it('leaves tasks out when they were not read, and keeps an empty list when none are assigned', () => {

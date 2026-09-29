@@ -48,7 +48,7 @@ describe('MenteeApplicantTasksComponent', () => {
     expect(card).toContain('Project One · Fall 2026 · 1 of 2 submitted');
   });
 
-  it('drops the project from the header when it could not be resolved', async () => {
+  it('drops the project from the header when the program has none', async () => {
     await bootstrap([menteeTestApplication({ projectName: undefined, tasks: [menteeTestTask()] })]);
     const card = text(byTestId('mentee-tasks-application-card-app-1'));
     expect(card).not.toContain('Project One');

@@ -15,7 +15,6 @@ import {
   MentorshipProgram,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
-  MentorshipUpstreamProgramDetail,
   MentorshipUpstreamTask,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
@@ -27,7 +26,6 @@ import {
   MENTORSHIP_ME_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
-  MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { ResourceNotFoundError } from '../errors';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
@@ -66,31 +64,21 @@ export class MentorshipMenteeService {
    *
    * With `withTasks`, the tasks of each pending, accepted or graduated application are listed in parallel,
    * and a task failure propagates, since the task views would otherwise show wrong progress. Past
-   * applications only show their outcome, so their tasks are not read. Each distinct program
-   * is read once for its LF project, which applications do not embed; a failed program read
-   * logs a warning and leaves the project out, so the card falls back to the program name.
+   * applications only show their outcome, so their tasks are not read. The program and its LF
+   * project come embedded on each application, so no program is read.
    */
   public async getMenteeApplications(req: Request, withTasks: boolean): Promise<MentorshipMenteeApplicationsResponse> {
     logger.debug(req, 'mentorship_get_mentee_applications', 'Loading mentee applications', { withTasks });
     const applications = await this.listMenteeApplications(req);
-    const programIds = [...new Set(applications.map((application) => application.program?.id).filter((id): id is string => !!id))];
-    const [tasksByApplication, programs] = await Promise.all([
-      Promise.all(
-        applications.map((application) =>
-          withTasks && MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES.includes(application.status) ? this.listApplicationTasks(req, application.id) : undefined
-        )
-      ),
-      Promise.all(programIds.map((programId) => this.findProgramDetail(req, programId))),
-    ]);
-    const programsById = new Map(programs.filter((program): program is MentorshipUpstreamProgramDetail => !!program).map((program) => [program.id, program]));
-
-    const data = applications.map((application, index) =>
-      mapMentorshipMenteeApplication(application, tasksByApplication[index], application.program ? programsById.get(application.program.id) : undefined)
+    const tasksByApplication = await Promise.all(
+      applications.map((application) =>
+        withTasks && MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES.includes(application.status) ? this.listApplicationTasks(req, application.id) : undefined
+      )
     );
+
+    const data = applications.map((application, index) => mapMentorshipMenteeApplication(application, tasksByApplication[index]));
     logger.debug(req, 'mentorship_get_mentee_applications', 'Mentee applications loaded', {
       count: data.length,
-      programs_resolved: programsById.size,
-      programs_requested: programIds.length,
     });
     return { data, total: data.length };
   }
@@ -188,27 +176,6 @@ export class MentorshipMenteeService {
   /** Every task on one of the caller's applications; upstream lets an applicant list their own. */
   private listApplicationTasks(req: Request, applicationId: string): Promise<MentorshipUpstreamTask[]> {
     return this.listAllPages<MentorshipUpstreamTask>(req, `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`);
-  }
-
-  /**
-   * A program's detail, for the LF project applications do not embed. A failure, such as a
-   * program hidden since the mentee applied, returns `undefined` so the card falls back to the
-   * program name.
-   */
-  private async findProgramDetail(req: Request, programId: string): Promise<MentorshipUpstreamProgramDetail | undefined> {
-    try {
-      return await proxyMentorshipRequest<MentorshipUpstreamProgramDetail>(
-        this.microserviceProxy,
-        req,
-        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`
-      );
-    } catch (error) {
-      logger.warning(req, 'mentorship_get_mentee_applications', 'Failed to load program detail, leaving the project out', {
-        program_id: programId,
-        err: error,
-      });
-      return undefined;
-    }
   }
 
   /**

@@ -71,7 +71,7 @@ describe('MenteeAcceptedTasksComponent', () => {
     expect(badge?.classList).not.toContain('bg-blue-50');
   });
 
-  it('drops the project from the card when it could not be resolved', async () => {
+  it('drops the project from the card when the program has none', async () => {
     await bootstrap(mixedTasks(), { projectName: undefined });
     const card = text(byTestId('mentee-tasks-accepted-card-app-1'));
     expect(card).not.toContain('Project One');
