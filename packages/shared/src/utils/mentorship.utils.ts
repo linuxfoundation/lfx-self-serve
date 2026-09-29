@@ -26,6 +26,8 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
+  MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
+  MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
@@ -96,6 +98,14 @@ function isBlank(value: string): boolean {
 }
 
 /** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
+/**
+ * A date-only value (`YYYY-MM-DD`) as its UTC midnight instant, so `DatePipe` with `'UTC'` shows the
+ * same calendar day in every timezone. Any other value comes back unchanged.
+ */
+export function toMentorshipUtcInstant(value: string): string {
+  return MENTORSHIP_ISO_DATE.test(value) ? `${value}T00:00:00Z` : value;
+}
+
 export function isMentorshipIsoDate(value: string): boolean {
   const match = MENTORSHIP_ISO_DATE.exec(value);
   if (!match) return false;
@@ -961,7 +971,16 @@ export function buildMentorshipMenteeOverview(applications: readonly MentorshipM
     }
     const outcome = MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS[app.upstreamStatus];
     if (outcome) {
-      past.push({ id: app.id, programName: app.programName, projectName: app.projectName, termName: app.term.name, createdOn: app.createdOn, outcome });
+      past.push({
+        id: app.id,
+        programName: app.programName,
+        projectName: app.projectName,
+        termName: app.term.name,
+        createdOn: app.createdOn,
+        outcome,
+        outcomeLabel: MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS[outcome],
+        outcomeBadgeClass: MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES[outcome],
+      });
     }
   }
   cards.sort((a, b) => MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER.indexOf(a.status) - MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER.indexOf(b.status));

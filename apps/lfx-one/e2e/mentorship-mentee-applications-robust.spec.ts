@@ -14,10 +14,10 @@
  */
 
 import { MENTORSHIP_MENTEE_TASKS_URL } from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
+import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -25,10 +25,6 @@ test.setTimeout(60_000);
 
 // The sidebar `openMenteeTab` waits on is `hidden lg:flex`, so pin a desktop viewport.
 test.use({ viewport: { width: 1440, height: 900 } });
-
-async function stubMenteeApplications(page: Page, status: number, body: string): Promise<void> {
-  await page.route('**/api/mentorship/mentee/applications*', (route) => route.fulfill({ status, contentType: 'application/json', body }));
-}
 
 test.describe('Mentee applications — Robust Tests', () => {
   test.describe('Empty state', () => {

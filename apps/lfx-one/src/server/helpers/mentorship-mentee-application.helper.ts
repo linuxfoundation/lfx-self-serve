@@ -9,14 +9,18 @@ import {
   MentorshipUpstreamProgramDetail,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 /** An upstream task counts as submitted once the mentee has handed it in, whether or not it was reviewed. */
 const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status === 'submitted' || task.status === 'complete';
 
-/** A task's own due date, else the term's application close for a prerequisite task. */
+/**
+ * A task's own due date as its UTC midnight instant, else the term's application close for a
+ * prerequisite task. Upstream stores `due_date` as a bare date, which `DatePipe` would read as
+ * local midnight and show a day early east of UTC.
+ */
 const resolveTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
-  if (task.due_date) return task.due_date;
+  if (task.due_date) return toMentorshipUtcInstant(task.due_date);
   if (task.category === 'prerequisite') return applicationEndDate;
   return undefined;
 };

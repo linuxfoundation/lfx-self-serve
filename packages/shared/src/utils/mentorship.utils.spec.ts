@@ -67,6 +67,7 @@ import {
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
+  toMentorshipUtcInstant,
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
@@ -1162,6 +1163,16 @@ describe('buildMentorshipMenteeApplicationView', () => {
   });
 });
 
+describe('toMentorshipUtcInstant', () => {
+  it('turns a date-only value into its UTC midnight instant', () => {
+    expect(toMentorshipUtcInstant('2026-07-15')).toBe('2026-07-15T00:00:00Z');
+  });
+
+  it('leaves a full timestamp unchanged', () => {
+    expect(toMentorshipUtcInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
+  });
+});
+
 describe('buildMentorshipMenteeOverview', () => {
   it('returns the empty phase when there are no applications', () => {
     expect(buildMentorshipMenteeOverview([])).toEqual({ phase: 'empty', pendingCount: 0, openTaskCount: 0, cards: [], past: [] });
@@ -1178,9 +1189,9 @@ describe('buildMentorshipMenteeOverview', () => {
     ]);
     expect(overview.phase).toBe('applicant');
     expect(overview.cards.map((card) => card.id)).toEqual(['accepted', 'graduated', 'awaiting', 'in-progress']);
-    expect(overview.past.map((row) => [row.id, row.outcome])).toEqual([
-      ['hold', 'on-hold'],
-      ['declined', 'not-selected'],
+    expect(overview.past.map((row) => [row.id, row.outcome, row.outcomeLabel, row.outcomeBadgeClass])).toEqual([
+      ['hold', 'on-hold', 'On Hold', 'bg-blue-100 text-blue-700'],
+      ['declined', 'not-selected', 'Not selected', 'bg-red-100 text-red-600'],
     ]);
     expect(overview.pendingCount).toBe(2);
     expect(overview.openTaskCount).toBe(2);

@@ -109,7 +109,7 @@ export type MentorshipMenteeTaskCategory = 'prerequisite' | 'non_prerequisite';
  * BFF mapping from `GET /mentorship/v1/applications/{id}/tasks`:
  * - `submitFile` ← `tasks.submit_file` (`null` | `'required'` | URL)
  * - `fileUrl` ← `tasks.file`
- * - `dueDate` ← `tasks.due_date`
+ * - `dueDate` ← `tasks.due_date` as its UTC midnight instant, else the term's application close for a prerequisite task
  * - `submittedOn` ← `tasks.updated_on` when status is `submitted` or `complete`
  * - `updatedOn` ← `tasks.updated_on`
  */
@@ -127,7 +127,10 @@ export interface MentorshipMenteeApplicationTask {
   submitFile: string | null;
   /** Uploaded file URL — present when `submitFile` is a URL or after a successful upload */
   fileUrl?: string;
-  /** ISO 8601 date string, rendered via `DatePipe` with `'UTC'`. */
+  /**
+   * ISO 8601 UTC instant, rendered via `DatePipe` with `'UTC'`. The BFF turns the upstream date-only
+   * value into its UTC midnight instant, since `DatePipe` reads a bare date as local midnight.
+   */
   dueDate?: string;
   /**
    * ISO 8601 instant, rendered via `DatePipe` with `'UTC'` like `dueDate`. Present when the task
@@ -356,6 +359,9 @@ export interface MentorshipMenteePastApplication {
   /** ISO 8601 instant the application was submitted, rendered via `DatePipe`. */
   createdOn: string;
   outcome: MentorshipMenteePastOutcome;
+  outcomeLabel: string;
+  /** Tailwind classes for the outcome badge. */
+  outcomeBadgeClass: string;
 }
 
 /** The mentee overview, derived from the applications by `buildMentorshipMenteeOverview`. */
@@ -365,7 +371,7 @@ export interface MentorshipMenteeOverview {
   pendingCount: number;
   /** Tasks not yet submitted across every card. */
   openTaskCount: number;
-  /** Pending and accepted applications, ordered active → awaiting review → in progress. */
+  /** Pending, accepted and graduated applications, ordered active → graduated → awaiting review → in progress. */
   cards: MentorshipMenteeApplicationView[];
   /** Every other application, newest first. */
   past: MentorshipMenteePastApplication[];
@@ -469,7 +475,7 @@ export interface MentorshipUpstreamProgramTerm {
   updated_on: string;
 }
 
-/** One task row from the mentorship service. `due_date` is an ISO date string. */
+/** One task row from the mentorship service. `due_date` is a date-only `YYYY-MM-DD` string. */
 export interface MentorshipUpstreamTask {
   id: string;
   application_id?: string;

@@ -23,6 +23,11 @@ export async function enableMentorshipFlag(page: Page): Promise<void> {
   ] as const);
 }
 
+/** Answers every mentee applications read with the given status and body. */
+export async function stubMenteeApplications(page: Page, status: number, body: string): Promise<void> {
+  await page.route('**/api/mentorship/mentee/applications*', (route) => route.fulfill({ status, contentType: 'application/json', body }));
+}
+
 export async function openMenteeProfile(page: Page): Promise<void> {
   await page.goto(MENTEE_OVERVIEW_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);

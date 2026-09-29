@@ -165,8 +165,8 @@
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-600">{{ past.createdOn | date: 'MMM d, y' }}</td>
                 <td class="px-4 py-3">
-                  <span class="text-sm font-medium rounded-lg px-2 py-1 leading-4" [ngClass]="pastOutcomeClass(past.outcome)">
-                    {{ pastOutcomeLabel(past.outcome) }}
+                  <span class="text-sm font-medium rounded-lg px-2 py-1 leading-4" [ngClass]="past.outcomeBadgeClass">
+                    {{ past.outcomeLabel }}
                   </span>
                 </td>
               </tr>

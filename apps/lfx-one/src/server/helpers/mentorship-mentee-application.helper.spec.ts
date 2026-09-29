@@ -62,7 +62,7 @@ describe('mapMentorshipMenteeApplicationTask', () => {
     expect(mapMentorshipMenteeApplicationTask({ ...baseTask, status: 'in_progress' }, '2026-08-01').submittedOn).toBeUndefined();
   });
 
-  it('maps the file fields and due date when set', () => {
+  it('maps the file fields, and the due date as its UTC midnight instant, when set', () => {
     const task = mapMentorshipMenteeApplicationTask(
       {
         ...baseTask,
@@ -72,7 +72,7 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       },
       '2026-08-01'
     );
-    expect(task).toMatchObject({ submitFile: 'required', fileUrl: 'https://example.com/files/answer.pdf', dueDate: '2026-07-15' });
+    expect(task).toMatchObject({ submitFile: 'required', fileUrl: 'https://example.com/files/answer.pdf', dueDate: '2026-07-15T00:00:00Z' });
   });
 
   it('gives a non-prerequisite task without its own due date no due date', () => {

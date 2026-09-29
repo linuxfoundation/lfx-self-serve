@@ -22,14 +22,12 @@ import {
   MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
   MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR,
   MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE,
-  MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
-  MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
   MENTORSHIP_MENTEE_TASKS_URL,
   MENTORSHIP_MENTEE_VIEW_TASKS_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeOverview, MentorshipMenteePastOutcome } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeOverview } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeOverview } from '@lfx-one/shared/utils';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
@@ -77,14 +75,6 @@ export class MenteeOverviewComponent {
       ? MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY + MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX
       : MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY
   );
-
-  protected pastOutcomeLabel(outcome: MentorshipMenteePastOutcome): string {
-    return MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS[outcome];
-  }
-
-  protected pastOutcomeClass(outcome: MentorshipMenteePastOutcome): string {
-    return MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES[outcome];
-  }
 
   protected onViewTasks(): void {
     void this.router.navigate([MENTORSHIP_MENTEE_TASKS_URL]);
