@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
@@ -42,7 +43,8 @@ export class MentorshipMenteeService {
   /**
    * Whether the signed-in user has a mentee profile. Only the mentorship service's own 404
    * means "no profile"; any other failure (a 409 for duplicate rows, a 5xx, a gateway 404)
-   * propagates so the caller shows an error rather than sending the user to register again.
+   * propagates so it is logged and reported with its real status. The frontend treats any
+   * failed check as "no profile" and shows the register page.
    */
   public async hasMenteeProfile(req: Request): Promise<MentorshipMenteeHasProfileResponse> {
     logger.debug(req, 'mentorship_has_mentee_profile', 'Checking mentee profile existence');
@@ -85,10 +87,25 @@ export class MentorshipMenteeService {
   /**
    * The signed-in user's mentee profile. Upstream reads it off the caller's own token
    * (`/me/profiles/mentee`), so no other user's profile is reachable from here.
+   *
+   * The mentorship service's own 404 returns an empty profile rather than an error: the
+   * apply page is reachable straight after registering, and registration does not save a
+   * profile yet (linuxfoundation/lfx-mentorship#187). Any other failure propagates.
    */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
-    const response = mapMentorshipMenteeProfile(await this.fetchMenteeProfile(req));
+    let profile: MentorshipUpstreamUserProfile;
+    try {
+      profile = await this.fetchMenteeProfile(req);
+    } catch (error) {
+      if (!isMentorshipNotFoundError(error)) {
+        throw error;
+      }
+      logger.debug(req, 'mentorship_get_mentee_profile', 'No mentee profile for the signed-in user, returning an empty profile');
+      return EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE;
+    }
+
+    const response = mapMentorshipMenteeProfile(profile);
     logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded', { has_demographics: response.demographics !== undefined });
     return response;
   }

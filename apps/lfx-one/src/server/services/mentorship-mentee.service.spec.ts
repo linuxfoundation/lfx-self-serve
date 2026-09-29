@@ -108,8 +108,21 @@ describe('MentorshipMenteeService profile reads', () => {
     expect(result.history).toEqual([]);
   });
 
-  it('propagates a missing profile on the profile read', async () => {
-    const error = upstreamError(404, { error: 'not found' });
+  it("returns an empty profile on the mentorship service's own 404, so the apply page loads straight after registering", async () => {
+    proxyRequest.mockRejectedValueOnce(upstreamError(404, { error: 'not found' }));
+
+    await expect(service.getMenteeProfile(buildReq())).resolves.toEqual({
+      profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
+      history: [],
+    });
+  });
+
+  it.each([
+    ['a 404 without the service error body', 404, undefined],
+    ['a 409 for duplicate profiles', 409, { error: 'conflict' }],
+    ['a 500', 500, { error: 'internal server error' }],
+  ])('propagates %s on the profile read', async (_label, status, body) => {
+    const error = upstreamError(status, body);
     proxyRequest.mockRejectedValueOnce(error);
 
     await expect(service.getMenteeProfile(buildReq())).rejects.toBe(error);
