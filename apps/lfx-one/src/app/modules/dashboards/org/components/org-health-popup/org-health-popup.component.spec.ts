@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { HEALTH_SCORE_BAR_FILL } from '@lfx-one/shared/constants';
+import { HEALTH_SCORE_BAR_FILL, HEALTH_SCORE_PARTIAL_SUFFIX } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { OrgHealthPopupComponent } from './org-health-popup.component';
@@ -36,43 +36,108 @@ describe('OrgHealthPopupComponent', () => {
   const byTestId = (popup: HTMLElement, testId: string): HTMLElement | null => popup.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
 
   describe('rendered popup', () => {
-    it('renders a partial score with a dotted remainder, a dash for the uncovered category and no partial chrome', () => {
+    it.each([
+      {
+        name: 'security',
+        inputs: { label: 'healthy', score: 52, maxScore: 65, maintainer: 30, security: null, development: 22 },
+        headline: 'Healthy* (52/65)',
+        remainder: '35%',
+        missingRow: 'security',
+        missingRowText: '—/35',
+        category: 'Security & Supply Chain',
+      },
+      {
+        name: 'development',
+        inputs: { label: 'concerning', score: 38, maxScore: 75, maintainer: 20, security: 18, development: null },
+        headline: 'Concerning* (38/75)',
+        remainder: '25%',
+        missingRow: 'development',
+        missingRowText: '—/25',
+        category: 'Development Activity',
+      },
+      {
+        name: 'maintainer',
+        inputs: { label: 'critical', score: 21, maxScore: 60, maintainer: null, security: 12, development: 9 },
+        headline: 'Critical* (21/60)',
+        remainder: '40%',
+        missingRow: 'maintainer',
+        missingRowText: '—/40',
+        category: 'Maintainer Health',
+      },
+    ])(
+      'renders the asterisk, dotted remainder, divider and footnote when the $name category is missing',
+      ({ inputs, headline, remainder, missingRow, missingRowText, category }) => {
+        const popup = renderPopup(inputs);
+
+        expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe(headline);
+        // The asterisk belongs to the semibold label, ahead of the (score/max) text.
+        expect(byTestId(popup, 'org-health-popup-headline')?.querySelector('.font-semibold')?.textContent).toBe(headline.split(' ')[0]);
+        expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe(remainder);
+        expect(byTestId(popup, `org-health-popup-row-${missingRow}`)?.textContent).toContain(missingRowText);
+        expect(byTestId(popup, 'org-health-popup-partial-divider')).not.toBeNull();
+        expect(byTestId(popup, 'org-health-popup-partial-note')?.textContent?.trim()).toBe(
+          `*The Health score is partial because the ${category} category is missing data for this project.`
+        );
+        expect(byTestId(popup, 'org-health-popup-link')).toBeNull();
+        // The badge's " - Partial" suffix never appears in the popup.
+        expect(popup.textContent).not.toContain(HEALTH_SCORE_PARTIAL_SUFFIX);
+      }
+    );
+
+    it('renders the other categories with their scores on a partial score', () => {
       const popup = renderPopup({ label: 'healthy', score: 52, maxScore: 65, maintainer: 30, security: null, development: 22 });
 
-      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Healthy (52/65)');
-      expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe('35%');
       expect(byTestId(popup, 'org-health-popup-row-maintainer')?.textContent).toContain('30/40');
       expect(byTestId(popup, 'org-health-popup-row-security')?.textContent).toContain('—/35');
       expect(byTestId(popup, 'org-health-popup-row-development')?.textContent).toContain('22/25');
-      expect(byTestId(popup, 'org-health-popup-link')).toBeNull();
-      // The popup text must be non-empty before the negative checks mean anything.
-      expect(popup.textContent).toContain('Maintainer Health');
-      expect(popup.textContent).not.toContain('*');
-      expect(popup.textContent).not.toContain('Partial');
     });
 
-    it('has no dotted remainder for a score out of 100', () => {
+    it('marks a partial score with an asterisk but omits the footnote when the max maps to no single category', () => {
+      const popup = renderPopup({ label: 'fair', score: 50, maxScore: 70, maintainer: 30, security: null, development: 20 });
+
+      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Fair* (50/70)');
+      expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe('30%');
+      expect(byTestId(popup, 'org-health-popup-partial-divider')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
+    });
+
+    it('has no dotted remainder, asterisk, divider or footnote for a score out of 100', () => {
       const popup = renderPopup({ label: 'excellent', score: 88, maxScore: 100, maintainer: 35, security: 30, development: 23 });
 
       expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Excellent (88/100)');
       expect(byTestId(popup, 'org-health-popup-bar')).not.toBeNull();
       expect(byTestId(popup, 'org-health-popup-bar-missing')).toBeNull();
       expect(byTestId(popup, 'org-health-popup-row-security')?.textContent).toContain('30/35');
+      expect(byTestId(popup, 'org-health-popup-partial-divider')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
+      expect(popup.textContent).not.toContain('*');
+    });
+
+    it('has no asterisk, divider or footnote when the max score is missing', () => {
+      const popup = renderPopup({ label: 'excellent', score: 88, maxScore: null, maintainer: 35, security: 30, development: 23 });
+
+      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Excellent (88/100)');
+      expect(byTestId(popup, 'org-health-popup-bar-missing')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-divider')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
+      expect(popup.textContent).not.toContain('*');
     });
 
     it('renders only the unavailable block when there is no score', () => {
-      const popup = renderPopup({ label: null, score: null });
+      const popup = renderPopup({ label: null, score: null, maxScore: 65 });
 
       expect(byTestId(popup, 'org-health-popup-unavailable')?.textContent).toBe('Health score is unavailable for this project.');
       expect(byTestId(popup, 'org-health-popup-headline')).toBeNull();
       expect(byTestId(popup, 'org-health-popup-bar')).toBeNull();
       expect(byTestId(popup, 'org-health-popup-row-maintainer')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-divider')).toBeNull();
+      expect(byTestId(popup, 'org-health-popup-partial-note')).toBeNull();
     });
 
     it('keeps the fill and the dotted remainder inside the track when the score exceeds the max', () => {
       const popup = renderPopup({ label: 'healthy', score: 70, maxScore: 65, maintainer: 40, security: null, development: 25 });
 
-      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Healthy (70/65)');
+      expect(byTestId(popup, 'org-health-popup-headline')?.textContent).toBe('Healthy* (70/65)');
       expect(byTestId(popup, 'org-health-popup-bar-fill')?.style.width).toBe('70%');
       expect(byTestId(popup, 'org-health-popup-bar-missing')?.style.width).toBe('30%');
     });
@@ -119,7 +184,7 @@ describe('OrgHealthPopupComponent', () => {
     it('splits a partial score into label, (score/max) and per-category rows', () => {
       setInputs({ label: 'healthy', score: 52, maxScore: 65, maintainer: 30, security: null, development: 22 });
 
-      expect(component['labelText']()).toBe('Healthy');
+      expect(component['labelText']()).toBe('Healthy*');
       expect(component['scoreText']()).toBe('(52/65)');
       expect(component['barFillPercent']()).toBe(52);
       expect(component['barMissingPercent']()).toBe(35);
@@ -132,8 +197,24 @@ describe('OrgHealthPopupComponent', () => {
     it('defaults a missing max score to 100', () => {
       setInputs({ label: 'excellent', score: 88, maxScore: null });
 
+      expect(component['labelText']()).toBe('Excellent');
       expect(component['scoreText']()).toBe('(88/100)');
       expect(component['barMissingPercent']()).toBe(0);
+    });
+
+    it.each([
+      { maxScore: 60, partial: true, category: 'Maintainer Health' },
+      { maxScore: 65, partial: true, category: 'Security & Supply Chain' },
+      { maxScore: 75, partial: true, category: 'Development Activity' },
+      { maxScore: 70, partial: true, category: undefined },
+      { maxScore: 100, partial: false, category: undefined },
+      { maxScore: 120, partial: false, category: undefined },
+      { maxScore: null, partial: false, category: undefined },
+    ])('treats a max of $maxScore as partial=$partial and names the missing category $category', ({ maxScore, partial, category }) => {
+      setInputs({ label: 'healthy', score: 50, maxScore });
+
+      expect(component['isPartial']()).toBe(partial);
+      expect(component['missingCategoryName']()).toBe(category);
     });
 
     it('is unavailable without a label', () => {

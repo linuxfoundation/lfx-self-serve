@@ -73,6 +73,12 @@
           </div>
         }
       </div>
+      @if (missingCategoryName(); as categoryName) {
+        <div class="h-px bg-gray-200" data-testid="org-health-popup-partial-divider"></div>
+        <p class="text-[10px] leading-[14px] text-gray-400 italic" data-testid="org-health-popup-partial-note">
+          *The Health score is partial because the {{ categoryName }} category is missing data for this project.
+        </p>
+      }
     } @else {
       <p class="text-gray-500 leading-[16px]" data-testid="org-health-popup-unavailable">{{ unavailableText }}</p>
     }

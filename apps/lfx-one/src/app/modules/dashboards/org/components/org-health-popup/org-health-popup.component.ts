@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { HEALTH_SCORE_BAR_FILL, HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, ORG_HEALTH_POPUP_UNAVAILABLE_TEXT } from '@lfx-one/shared/constants';
-import { getHealthScoreDescription } from '@lfx-one/shared/utils';
+import { getHealthScoreDescription, getMissingHealthCategoryName } from '@lfx-one/shared/utils';
 import { PopoverModule } from 'primeng/popover';
 import type { Popover } from 'primeng/popover';
 
@@ -27,10 +27,19 @@ export class OrgHealthPopupComponent {
 
   protected readonly unavailableText = ORG_HEALTH_POPUP_UNAVAILABLE_TEXT;
   protected readonly available = computed(() => this.label() != null && this.score() != null);
+  // Partial = the max is capped under 100, the same condition that draws the dotted remainder.
+  protected readonly isPartial = computed(() => {
+    const max = this.maxScore();
+    return max != null && max < 100;
+  });
   protected readonly labelText = computed(() => {
     const band = this.label();
-    return band == null ? '' : HEALTH_SCORE_LABELS[band];
+    if (band == null) {
+      return '';
+    }
+    return `${HEALTH_SCORE_LABELS[band]}${this.isPartial() ? '*' : ''}`;
   });
+  protected readonly missingCategoryName = computed(() => getMissingHealthCategoryName(this.maxScore()));
   protected readonly scoreText = computed(() => `(${this.score() ?? 0}/${this.maxScore() ?? 100})`);
   // Raw score on a 0-100 track; the points no covered category can earn render as a dotted remainder.
   protected readonly barFillPercent = computed(() => Math.min(Math.max(this.score() ?? 0, 0), 100));
