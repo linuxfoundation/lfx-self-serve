@@ -6,14 +6,16 @@ import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
+import { TagComponent } from '@components/tag/tag.component';
+import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_LABELS, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
+import { JoinMode, MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TooltipModule],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, JoinModeLabelPipe, RouterLink, TagComponent, TooltipModule],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
@@ -43,6 +45,22 @@ export class MyGroupsCardGridComponent {
     this.expandedPages.update((pages) => pages + 1);
   }
 
+  protected readonly joinModeTooltips = JOIN_MODE_TOOLTIPS;
+
+  /** Maps join_mode to a tag severity so joinability is scannable at a glance. Mirrors committee-table. */
+  protected resolveJoinModeSeverity(mode: JoinMode | undefined): 'success' | 'info' | 'secondary' | 'warn' {
+    switch (mode) {
+      case 'open':
+        return 'success';
+      case 'application':
+        return 'info';
+      case 'invite_only':
+        return 'warn';
+      default:
+        return 'secondary';
+    }
+  }
+
   /**
    * `ariaLabel` folds every piece of metadata the card visually shows (behavioral-class label,
    * project/foundation name, role, member count, last-updated, privacy) into the link's accessible
@@ -57,11 +75,13 @@ export class MyGroupsCardGridComponent {
         const memberCount = committee.total_members;
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const scopeLabel = committee.project_name || committee.foundation_name;
+        const joinModeLabel = committee.join_mode ? JOIN_MODE_LABELS[committee.join_mode] : null;
         const parts = [
           `Open ${committee.name || 'group'}`,
           ...(committee.classDisplay ? [committee.classDisplay.label] : []),
           ...(scopeLabel ? [scopeLabel] : []),
           committee.my_role || 'Member',
+          ...(joinModeLabel ? [joinModeLabel] : []),
           `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
           `updated ${lastActivityLabel}`,
         ];
