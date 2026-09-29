@@ -1234,7 +1234,9 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(scopeSql).toContain('countries_change_pct_last_completed_year');
     expect(scopeSql).not.toContain('countries_change_pct_prev_completed_year');
     expect(countryBinds).toEqual(['fdn-acme']);
-    expect(countrySql).toContain('GROUP BY country');
+    expect(countrySql).toContain("NULLIF(TRIM(country), '') AS country");
+    expect(countrySql).toContain("AND NULLIF(TRIM(country), '') IS NOT NULL");
+    expect(countrySql).toContain("GROUP BY NULLIF(TRIM(country), '')");
     for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
       expect(scopeSql).toContain(`countries_count_${suffix}`);
       expect(countrySql).toContain(`SUM(registration_count_${suffix}) AS registration_count_${suffix}`);
@@ -1277,11 +1279,10 @@ describe('HealthMetricsEventsService.getGeography', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('returns empty periods for a rolled-up foundation with no country rows', async () => {
+  it('returns no periods for a rolled-up foundation with no country rows', async () => {
     mockReads([scopeRow], []);
 
-    const { periods } = await new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' });
-
-    expect(periods.every((period) => period.topCountries.length === 0 && period.rankedCountries === 0)).toBe(true);
+    await expect(new HealthMetricsEventsService().getGeography(req, { foundationSlug: 'acme' })).resolves.toEqual({ periods: [] });
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 });

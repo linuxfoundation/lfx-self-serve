@@ -632,6 +632,11 @@ export class HealthMetricsEventsService {
     }
 
     const countries = await this.getGeographyCountries(req, scope.FOUNDATION_ID);
+    if (countries.length === 0) {
+      logger.debug(req, 'get_events_geography', 'No country rows for the foundation', { foundation_slug: query.foundationSlug });
+      return { periods: [] };
+    }
+
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapGeographyPeriod(scope, countries, range)) };
   }
 
@@ -774,14 +779,15 @@ export class HealthMetricsEventsService {
       return `SUM(${column}) AS ${column}`;
     }).join(',\n        ');
 
+    // Trimmed so blank and padded names cannot split one country or take a bar.
     const sql = `
       SELECT
-        country,
+        NULLIF(TRIM(country), '') AS country,
         ${sums}
       FROM ${REGISTRATION_COUNTRY_VIEW}
       WHERE project_id = ?
-        AND country IS NOT NULL
-      GROUP BY country
+        AND NULLIF(TRIM(country), '') IS NOT NULL
+      GROUP BY NULLIF(TRIM(country), '')
     `;
 
     const result = await executeSnowflakeViewRead<GeographyCountryRow>(this.snowflakeService, req, sql, [foundationId], {
