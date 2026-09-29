@@ -62,7 +62,6 @@ export const mapMentorshipMenteeApplication = (
   term: {
     id: application.term?.id ?? application.program_term_id,
     name: application.term?.name ?? '',
-    application_end_date: application.term?.application_end_date || undefined,
   },
   upstreamStatus: application.status,
   createdOn: application.created_on,

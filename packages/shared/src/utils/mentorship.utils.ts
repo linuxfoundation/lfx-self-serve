@@ -896,13 +896,15 @@ export function buildMentorshipMenteeTaskView(input: {
 /**
  * Display status of a pending, accepted or graduated application: accepted → `active`;
  * graduated → `graduated`; pending with every prerequisite task submitted (or none assigned) →
- * `awaiting-review`; otherwise `in-progress`. Returns `null` for every other stored status, since
- * those rows belong in Past Applications.
+ * `awaiting-review`; otherwise `in-progress`, including a pending application whose tasks were not
+ * read. Returns `null` for every other stored status, since those rows belong in Past Applications.
  */
 export function mentorshipMenteeDisplayStatus(app: MentorshipMenteeApplication): MentorshipMenteeApplicationStatus | null {
   if (app.upstreamStatus === 'accepted') return 'active';
   if (app.upstreamStatus === 'graduated') return 'graduated';
   if (app.upstreamStatus !== 'pending') return null;
+  // Unread tasks are unknown, not none assigned, so the application is not yet awaiting review.
+  if (!app.tasks) return 'in-progress';
   const tasks = mentorshipMenteeProgressTasks(app);
   return countSubmittedMentorshipMenteeTasks(tasks) === tasks.length ? 'awaiting-review' : 'in-progress';
 }

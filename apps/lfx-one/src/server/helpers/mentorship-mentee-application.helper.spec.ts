@@ -98,7 +98,7 @@ describe('mapMentorshipMenteeApplication', () => {
       programName: 'Test Program',
       programLogoUrl: 'https://example.com/logo.png',
       projectName: 'Test Project',
-      term: { id: 'term-1', name: 'Fall 2026', application_end_date: '2026-08-01' },
+      term: { id: 'term-1', name: 'Fall 2026' },
       upstreamStatus: 'pending',
       createdOn: '2026-06-28T10:00:00Z',
       updatedOn: '2026-06-29T10:00:00Z',

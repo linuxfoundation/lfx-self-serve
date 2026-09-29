@@ -1081,6 +1081,10 @@ describe('mentorshipMenteeDisplayStatus', () => {
     expect(mentorshipMenteeDisplayStatus(menteeApplication())).toBe('awaiting-review');
   });
 
+  it('shows a pending application whose tasks were not read as in progress', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ tasks: undefined }))).toBe('in-progress');
+  });
+
   it('returns null for statuses that belong in Past Applications', () => {
     for (const upstreamStatus of ['declined', 'withdrawn', 'hold'] as const) {
       expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus }))).toBeNull();

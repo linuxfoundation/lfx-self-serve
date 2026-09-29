@@ -301,7 +301,7 @@ export type MentorshipMenteePhase = 'empty' | 'applicant';
  * - `'active'` — application accepted
  * - `'graduated'` — application graduated; otherwise shown like an accepted one
  * - `'awaiting-review'` — application pending, every prerequisite task submitted (or none assigned)
- * - `'in-progress'` — application pending, a prerequisite task still open
+ * - `'in-progress'` — application pending, a prerequisite task still open or its tasks not read
  */
 export type MentorshipMenteeApplicationStatus = 'active' | 'graduated' | 'awaiting-review' | 'in-progress';
 
@@ -310,8 +310,6 @@ export interface MentorshipMenteeTermRef {
   id: string;
   /** Display name for the term (e.g. "Fall 2026"). */
   name: string;
-  /** The date the term's application window closes, or `null` when the term has none. */
-  application_end_date?: string | null;
 }
 
 /**

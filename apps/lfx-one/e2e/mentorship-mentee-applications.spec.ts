@@ -17,6 +17,7 @@
 import {
   MENTORSHIP_MENTEE_EMPTY_TITLE,
   MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR,
+  MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY,
   MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE,
   MENTORSHIP_MENTEE_TASKS_LOAD_ERROR,
   MENTORSHIP_MENTEE_TASKS_URL,
@@ -53,6 +54,93 @@ test.describe('Mentee applications — empty state', () => {
     await expect(page.getByTestId('mentee-tasks-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentee-tasks-empty')).toContainText(MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE);
     await expect(page.getByTestId('mentee-tasks')).toHaveCount(0);
+  });
+});
+
+test.describe('Mentee applications — per-application empty states', () => {
+  // Synthetic applications: one accepted with a single open task, one pending with none assigned.
+  const applications = [
+    {
+      id: 'app-accepted',
+      programId: 'prog-1',
+      programName: 'Test Program One',
+      term: { id: 'term-1', name: 'Fall 2026' },
+      upstreamStatus: 'accepted',
+      createdOn: '2026-06-01T10:00:00Z',
+      updatedOn: '2026-06-02T10:00:00Z',
+      tasks: [
+        {
+          id: 'task-1',
+          name: 'Test Task',
+          description: 'Test description',
+          category: 'non_prerequisite',
+          status: 'incomplete',
+          submitFile: null,
+          updatedOn: '2026-06-02T10:00:00Z',
+        },
+      ],
+    },
+    {
+      id: 'app-pending',
+      programId: 'prog-2',
+      programName: 'Test Program Two',
+      term: { id: 'term-2', name: 'Fall 2026' },
+      upstreamStatus: 'pending',
+      createdOn: '2026-06-01T10:00:00Z',
+      updatedOn: '2026-06-02T10:00:00Z',
+      tasks: [],
+    },
+  ];
+
+  test.beforeEach(async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubMenteeApplications(page, 200, JSON.stringify({ data: applications, total: applications.length }));
+  });
+
+  test('a pending application with no tasks shows its own empty row', async ({ page }) => {
+    await openMenteeTab(page, MENTORSHIP_MENTEE_TASKS_URL);
+
+    const empty = page.getByTestId('mentee-tasks-application-empty-app-pending');
+    await expect(empty).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
+    await expect(empty).toContainText(MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY);
+    await expect(page.getByTestId('mentee-tasks-empty')).toHaveCount(0);
+  });
+
+  test('a filter matching no task on the accepted application shows the filter empty state', async ({ page }) => {
+    await openMenteeTab(page, MENTORSHIP_MENTEE_TASKS_URL);
+
+    await expect(page.getByTestId('mentee-tasks-accepted-card-app-accepted')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentee-tasks-accepted-empty-filter')).toHaveCount(0);
+
+    await page.getByTestId('mentee-tasks-filter-submitted').click();
+
+    await expect(page.getByTestId('mentee-tasks-accepted-empty-filter')).toBeVisible();
+    await expect(page.getByTestId('mentee-tasks-accepted-empty-all')).toHaveCount(0);
+  });
+});
+
+test.describe('Mentee applications — accepted application with no tasks', () => {
+  test.beforeEach(async ({ page }) => {
+    await enableMentorshipFlag(page);
+    const accepted = {
+      id: 'app-accepted',
+      programId: 'prog-1',
+      programName: 'Test Program One',
+      term: { id: 'term-1', name: 'Fall 2026' },
+      upstreamStatus: 'accepted',
+      createdOn: '2026-06-01T10:00:00Z',
+      updatedOn: '2026-06-02T10:00:00Z',
+      tasks: [],
+    };
+    await stubMenteeApplications(page, 200, JSON.stringify({ data: [accepted], total: 1 }));
+  });
+
+  test('shows the no-tasks-assigned empty state on the accepted card', async ({ page }) => {
+    await openMenteeTab(page, MENTORSHIP_MENTEE_TASKS_URL);
+
+    await expect(page.getByTestId('mentee-tasks-accepted-empty-all')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentee-tasks-accepted-empty-filter')).toHaveCount(0);
+    await expect(page.getByTestId('mentee-tasks-empty')).toHaveCount(0);
   });
 });
 
