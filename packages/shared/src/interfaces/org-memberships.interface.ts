@@ -315,10 +315,8 @@ export interface FoundationNameEnrichment {
   cachedHits: number;
   /** Uids asked of the project lookup (the cache misses). */
   requested: number;
-  /** Names the project lookup actually returned for those uids. */
+  /** Names the project lookup actually returned for those uids. A query-service outage shows up as this falling far below `requested` (failed batches are swallowed upstream, not thrown). */
   resolved: number;
-  /** True when the project lookup threw and the requested uids fell back to their slugs. */
-  fetchFailed: boolean;
 }
 
 /** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */

@@ -85,7 +85,7 @@ async function run(): Promise<OrgLensGroupsResponse> {
 
 /** An `enrichFoundationNames` result that resolved `names` from one project lookup. */
 function foundationNames(names: [string, string][] = []): FoundationNameEnrichment {
-  return { names: new Map(names), cachedHits: 0, requested: 1, resolved: names.length, fetchFailed: false };
+  return { names: new Map(names), cachedHits: 0, requested: 1, resolved: names.length };
 }
 
 beforeEach(() => {

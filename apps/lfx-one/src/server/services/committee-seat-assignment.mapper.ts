@@ -24,7 +24,10 @@ import { ProjectService } from './project.service';
  * this pod for at most `PUBLIC_PROJECT_NAME_CACHE_TTL_MS` (5 min) after it was last fetched as
  * public; the per-user seat and directory caches downstream (30 s) can add at most 30 s. The exposure
  * is limited to the NAME: the caller already receives that seat's project slug and committee name
- * through their own authorized seat roster.
+ * through their own authorized seat roster. Groups compounds it: `OrgLensGroupsService` stores the
+ * resolved `project_name` in its org-shared aggregate (`ORG_LENS_GROUPS_TTL_SECONDS`, 15 min), so a
+ * flip can stay visible there for up to ~20 min. That aggregate already shares names fetched under
+ * whichever caller's token filled it, private ones included, independently of this cache.
  *
  * Bounded like `FormationService.userMetadataCache`: each successful fetch first drops expired
  * entries; each write evicts the oldest entry once `PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES` is reached
@@ -60,8 +63,10 @@ function cachePublicProjectName(uid: string, name: string, now: number): void {
 /**
  * D-003 foundation-name enrichment: distinct `project_uid`s → names. Cached public names are served
  * from the per-pod cache; only the remaining uids go to `ProjectService.getProjectsByIds` (chunks
- * 100/req, FGA-aware). Fail-soft: a fetch error leaves those uids unnamed, so each seat falls back
- * to its `project_slug`.
+ * 100/req, FGA-aware). Uids left unnamed fall back to their `project_slug` in `toAssignment`.
+ *
+ * `getProjectsByIds` swallows per-batch failures (each failed batch contributes no projects), so a
+ * query-service outage does not reject here — it shows up as `resolved` far below `requested`.
  */
 export async function enrichFoundationNames(req: Request, seats: CommitteeServiceOrgSeat[], projectService: ProjectService): Promise<FoundationNameEnrichment> {
   const uids = [...new Set(seats.map((s) => s.project_uid).filter((u): u is string => !!u))];
@@ -78,7 +83,7 @@ export async function enrichFoundationNames(req: Request, seats: CommitteeServic
   }
   const cachedHits = names.size;
   if (missing.length === 0) {
-    return { names, cachedHits, requested: 0, resolved: 0, fetchFailed: false };
+    return { names, cachedHits, requested: 0, resolved: 0 };
   }
 
   try {
@@ -94,14 +99,13 @@ export async function enrichFoundationNames(req: Request, seats: CommitteeServic
         cachePublicProjectName(uid, project.name, fetchedAt);
       }
     }
-    return { names, cachedHits, requested: missing.length, resolved: names.size - cachedHits, fetchFailed: false };
   } catch (error) {
     logger.warning(req, 'enrich_foundation_names', 'project-name enrichment failed; falling back to project_slug', {
       uid_count: missing.length,
       err: error,
     });
-    return { names, cachedHits, requested: missing.length, resolved: 0, fetchFailed: true };
   }
+  return { names, cachedHits, requested: missing.length, resolved: names.size - cachedHits };
 }
 
 /** Map an upstream seat to the People-tab `CommitteeMemberAssignment` (camelCase + person envelope + foundation). */

@@ -63,9 +63,8 @@ describe('enrichFoundationNames — public project name cache', () => {
       cachedHits: 0,
       requested: 2,
       resolved: 2,
-      fetchFailed: false,
     });
-    expect(second).toEqual({ names: first.names, cachedHits: 2, requested: 0, resolved: 0, fetchFailed: false });
+    expect(second).toEqual({ names: first.names, cachedHits: 2, requested: 0, resolved: 0 });
   });
 
   it('never caches a private project name, so every lookup re-fetches it with the caller token', async () => {
@@ -78,8 +77,8 @@ describe('enrichFoundationNames — public project name cache', () => {
     expect(first.names.get('priv')).toBe('Name priv');
     expect(getProjectsByIds).toHaveBeenCalledTimes(2);
     expect(getProjectsByIds).toHaveBeenLastCalledWith(req, ['priv']);
-    // The lookup answered but returned nothing: asked for 1, resolved 0, not a failure.
-    expect(second).toEqual({ names: new Map(), cachedHits: 0, requested: 1, resolved: 0, fetchFailed: false });
+    // The lookup answered but returned nothing: asked for 1, resolved 0.
+    expect(second).toEqual({ names: new Map(), cachedHits: 0, requested: 1, resolved: 0 });
   });
 
   it('re-fetches a public name once the TTL has elapsed', async () => {
@@ -95,7 +94,7 @@ describe('enrichFoundationNames — public project name cache', () => {
     const expired = await enrichFoundationNames(req, [seat('pub-a')], projectService);
 
     expect(getProjectsByIds).toHaveBeenCalledTimes(2);
-    expect(expired).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 0, requested: 1, resolved: 1, fetchFailed: false });
+    expect(expired).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 0, requested: 1, resolved: 1 });
   });
 
   it('serves a project that turned private from cache only until the TTL, then fetches it per request', async () => {
@@ -114,7 +113,7 @@ describe('enrichFoundationNames — public project name cache', () => {
     const next = await enrichFoundationNames(req, [seat('flip')], projectService);
 
     // Once private, the name comes from the caller's own lookup each time and is never re-cached.
-    expect(afterTtl).toEqual({ names: new Map([['flip', 'Name flip']]), cachedHits: 0, requested: 1, resolved: 1, fetchFailed: false });
+    expect(afterTtl).toEqual({ names: new Map([['flip', 'Name flip']]), cachedHits: 0, requested: 1, resolved: 1 });
     expect(next.cachedHits).toBe(0);
     expect(getProjectsByIds).toHaveBeenCalledTimes(3);
   });
@@ -135,7 +134,6 @@ describe('enrichFoundationNames — public project name cache', () => {
       cachedHits: 1,
       requested: 2,
       resolved: 2,
-      fetchFailed: false,
     });
   });
 
@@ -152,14 +150,26 @@ describe('enrichFoundationNames — public project name cache', () => {
     expect(afterCap.requested).toBe(1);
   });
 
-  it('keeps cached names and falls back to the slug for the rest when the fetch fails', async () => {
+  // The production outage path: `getProjectsByIds` swallows each failed batch and resolves an empty
+  // Map, so the outage is visible only as `resolved` far below `requested`.
+  it('keeps cached names and falls back to the slug for the rest when query-service is down', async () => {
     serve([project('pub-a', true)]);
     await enrichFoundationNames(req, [seat('pub-a')], projectService);
-    getProjectsByIds.mockRejectedValue(new Error('query-service down'));
+    getProjectsByIds.mockResolvedValue(new Map());
+
+    const result = await enrichFoundationNames(req, [seat('pub-a'), seat('pub-b'), seat('pub-c')], projectService);
+
+    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, requested: 2, resolved: 0 });
+  });
+
+  it('stays fail-soft when the project lookup itself rejects', async () => {
+    serve([project('pub-a', true)]);
+    await enrichFoundationNames(req, [seat('pub-a')], projectService);
+    getProjectsByIds.mockRejectedValue(new Error('unexpected'));
 
     const result = await enrichFoundationNames(req, [seat('pub-a'), seat('pub-b')], projectService);
 
-    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, requested: 1, resolved: 0, fetchFailed: true });
+    expect(result).toEqual({ names: new Map([['pub-a', 'Name pub-a']]), cachedHits: 1, requested: 1, resolved: 0 });
     expect(logger.warning).toHaveBeenCalledOnce();
   });
 });
