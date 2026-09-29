@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
 import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE,
@@ -20,7 +20,8 @@ import { MentorshipComingSoonService } from '../../../../services/mentorship-com
  * Application History for the mentee profile page. Each row is an `applications`
  * record with `role = mentee` (mentees are not `program_members`). Status values
  * are the stored enum; the trash control is withdraw (`pending → withdrawn`), not
- * a hard delete — Mentorship has no application delete.
+ * a hard delete — Mentorship has no application delete. The row emits `withdraw` with
+ * the application id and the parent page runs the confirm and the write.
  *
  * Row-level display fields (badge label + Tailwind classes + whether withdraw is
  * legal) are resolved in a single `computed` so the template only reads
@@ -35,6 +36,10 @@ export class ApplicationHistoryComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
 
   public readonly entries = input.required<MentorshipMenteeApplicationHistoryEntry[]>();
+  /** The application the parent is withdrawing; every Withdraw button is disabled while set. */
+  public readonly withdrawingId = input<string | null>(null);
+
+  public readonly withdraw = output<string>();
 
   protected readonly title = MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE;
   protected readonly emptyTitle = MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE;
@@ -51,7 +56,7 @@ export class ApplicationHistoryComponent {
 
   protected onWithdraw(entry: MentorshipMenteeApplicationHistoryEntry): void {
     if (entry.status !== 'pending') return;
-    this.comingSoon.notify(this.withdrawLabel);
+    this.withdraw.emit(entry.id);
   }
 
   private initRows(): Signal<

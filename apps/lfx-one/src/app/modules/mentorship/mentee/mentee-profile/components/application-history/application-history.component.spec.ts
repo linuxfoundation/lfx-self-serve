@@ -3,11 +3,9 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
-  MENTORSHIP_COMING_SOON_DETAIL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
-  MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationHistoryEntry } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -105,18 +103,25 @@ describe('ApplicationHistoryComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_hold"]')).toBeNull();
   });
 
-  it('fires the coming-soon toast when the mentee withdraws a pending application', () => {
+  it('emits the application id when the mentee withdraws a pending application', () => {
     setup(entries);
+    const withdrawn: string[] = [];
+    fixture.componentInstance.withdraw.subscribe((id) => withdrawn.push(id));
 
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-application-history-withdraw-app_pending"]')?.click();
 
-    expect(messageAdd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        severity: 'info',
-        summary: MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
-        detail: MENTORSHIP_COMING_SOON_DETAIL,
-      })
-    );
+    expect(withdrawn).toEqual(['app_pending']);
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('disables Withdraw and marks the row busy while the parent withdraws it', () => {
+    setup(entries);
+    fixture.componentRef.setInput('withdrawingId', 'app_pending');
+    fixture.detectChanges();
+
+    const button = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-application-history-withdraw-app_pending"]');
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute('aria-busy')).toBe('true');
   });
 
   it('shows the empty state when the mentee has no history', () => {

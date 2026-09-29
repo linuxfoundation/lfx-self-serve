@@ -83,6 +83,60 @@ describe('MentorshipMenteeController', () => {
     });
   });
 
+  describe('withdrawMenteeApplication', () => {
+    const applicationId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+    const buildWithdrawReq = (params: Record<string, unknown>): Request => ({ params, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('withdraws the trimmed application id and answers 204 with no body', async () => {
+      const withdraw = vi.spyOn(MentorshipMenteeService.prototype, 'withdrawMenteeApplication').mockResolvedValue(undefined);
+
+      await controller.withdrawMenteeApplication(buildWithdrawReq({ applicationId: ` ${applicationId} ` }), res, next);
+
+      expect(withdraw).toHaveBeenCalledWith(expect.anything(), applicationId);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([{}, { applicationId: '' }, { applicationId: 'app-1' }, { applicationId: [applicationId] }])(
+      'rejects the params %j before calling the service',
+      async (params) => {
+        const withdraw = vi.spyOn(MentorshipMenteeService.prototype, 'withdrawMenteeApplication');
+
+        await controller.withdrawMenteeApplication(buildWithdrawReq(params), res, next);
+
+        expect(withdraw).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      }
+    );
+
+    it('passes an upstream failure to the error handler', async () => {
+      const error = new Error('conflict');
+      vi.spyOn(MentorshipMenteeService.prototype, 'withdrawMenteeApplication').mockRejectedValue(error);
+
+      await controller.withdrawMenteeApplication(buildWithdrawReq({ applicationId }), res, next);
+
+      expect(res.status).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(error);
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const withdraw = vi.spyOn(MentorshipMenteeService.prototype, 'withdrawMenteeApplication');
+
+      await controller.withdrawMenteeApplication(buildWithdrawReq({ applicationId }), res, next);
+
+      expect(withdraw).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
   describe('getMenteeApplyTarget', () => {
     it('passes the trimmed program and term ids through to the service', async () => {
       const target = { programName: 'Program' } as Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['getMenteeApplyTarget']>>;

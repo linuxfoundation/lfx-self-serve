@@ -86,6 +86,22 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(401);
   });
 
+  it('routes POST /api/mentorship/mentee/applications/:applicationId/withdraw (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/applications/6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f/withdraw`, { method: 'POST' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a withdraw while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/applications/6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f/withdraw`, {
+      method: 'POST',
+      headers: { 'x-test-impersonating': 'true' },
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
   it('rejects unauthenticated GET /api/mentorship/mentee/apply-target with 401', async () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target?programId=p1&programTermId=t1`);
     expect(res.status).toBe(401);

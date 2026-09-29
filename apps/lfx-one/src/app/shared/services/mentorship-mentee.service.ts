@@ -9,7 +9,7 @@ import {
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, shareReplay, throwError } from 'rxjs';
+import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 /** Talks to the LFX One BFF's `/api/mentorship/mentee/*` endpoints. */
 @Injectable({ providedIn: 'root' })
@@ -63,6 +63,18 @@ export class MentorshipMenteeService {
       );
     }
     return this.menteeApplications$;
+  }
+
+  /**
+   * Withdraws one of the signed-in mentee's pending applications. On success the cached
+   * applications are dropped, so the Overview, My Tasks and the profile's history re-read.
+   * A failure is left to the caller, which decides whether the list is stale.
+   */
+  public withdrawMenteeApplication(applicationId: string): Observable<void> {
+    return this.http.post<void>(`/api/mentorship/mentee/applications/${encodeURIComponent(applicationId)}/withdraw`, null).pipe(
+      take(1),
+      tap(() => this.clearMenteeCaches())
+    );
   }
 
   public getMenteeProfile(): Observable<MentorshipMenteeProfileResponse> {

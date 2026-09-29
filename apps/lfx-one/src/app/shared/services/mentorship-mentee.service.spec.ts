@@ -121,3 +121,48 @@ describe('MentorshipMenteeService — mentee applications caching', () => {
     expect(service.menteeApplicationsRevision()).toBe(before + 2);
   });
 });
+
+describe('MentorshipMenteeService — withdrawMenteeApplication', () => {
+  let service: MentorshipMenteeService;
+  let http: HttpTestingController;
+
+  const APPLICATION_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  const WITHDRAW_URL = `/api/mentorship/mentee/applications/${APPLICATION_ID}/withdraw`;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipMenteeService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipMenteeService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('posts an empty body to the withdraw route and refreshes the cached applications', () => {
+    const before = service.menteeApplicationsRevision();
+    let done = false;
+    service.withdrawMenteeApplication(APPLICATION_ID).subscribe({ complete: () => (done = true) });
+
+    const req = http.expectOne(WITHDRAW_URL);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toBeNull();
+    req.flush(null, { status: 204, statusText: 'No Content' });
+
+    expect(done).toBe(true);
+    expect(service.menteeApplicationsRevision()).toBe(before + 1);
+  });
+
+  it('leaves the cache alone and passes the failure on when the withdraw fails', () => {
+    const before = service.menteeApplicationsRevision();
+    let status = 0;
+    service.withdrawMenteeApplication(APPLICATION_ID).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne(WITHDRAW_URL).flush({ error: 'conflict' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(service.menteeApplicationsRevision()).toBe(before);
+  });
+});

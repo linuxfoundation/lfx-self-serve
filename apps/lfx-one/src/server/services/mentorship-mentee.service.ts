@@ -39,8 +39,8 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * BFF for the mentee pages at `/mentorship/mentee/*`. The profile and application reads call
- * the mentorship service; the apply target still serves mock data and moves to it under
+ * BFF for the mentee pages at `/mentorship/mentee/*`. The profile and application reads and the
+ * withdraw call the mentorship service; the apply target still serves mock data and moves to it under
  * linuxfoundation/lfx-mentorship#184.
  */
 export class MentorshipMenteeService {
@@ -89,6 +89,23 @@ export class MentorshipMenteeService {
       count: data.length,
     });
     return { data, total: data.length };
+  }
+
+  /**
+   * Withdraws one of the signed-in user's applications. Upstream sends no body and moves only a
+   * pending application to `withdrawn`; its 403 (not the applicant), 404 and 409 (no longer
+   * pending) propagate so the page can say why and re-read. The updated row carries no program or
+   * term, so it is dropped and the page re-reads its applications instead.
+   */
+  public async withdrawMenteeApplication(req: Request, applicationId: string): Promise<void> {
+    logger.debug(req, 'mentorship_withdraw_mentee_application', 'Withdrawing mentee application', { applicationId });
+    await proxyMentorshipRequest<MentorshipUpstreamApplication>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/withdraw`,
+      'POST'
+    );
+    logger.debug(req, 'mentorship_withdraw_mentee_application', 'Mentee application withdrawn', { applicationId });
   }
 
   /**

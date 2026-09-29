@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -47,6 +48,33 @@ export class MentorshipMenteeController {
       const applications = await this.menteeService.getMenteeApplications(req, withTasks);
       logger.success(req, 'get_mentorship_mentee_applications', startTime, { count: applications.data.length, withTasks });
       res.json(applications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/mentee/applications/:applicationId/withdraw  (no body) -> 204
+  // Auth: logged-in user required (401 otherwise). Upstream only lets the applicant withdraw
+  // (403 otherwise) and only a pending application (409 otherwise); both pass through.
+  public async withdrawMenteeApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'withdraw_mentorship_mentee_application');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'withdraw_mentorship_mentee_application' });
+      }
+
+      // Upstream checks access on `mentorship_application:<id>`, so only a UUID can match.
+      const applicationId = parseTrimmedString(req.params['applicationId']);
+      if (!applicationId || !isUuid(applicationId)) {
+        throw ServiceValidationError.forField('applicationId', 'applicationId must be an application UUID', {
+          operation: 'withdraw_mentorship_mentee_application',
+        });
+      }
+
+      await this.menteeService.withdrawMenteeApplication(req, applicationId);
+      logger.success(req, 'withdraw_mentorship_mentee_application', startTime, { applicationId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

@@ -260,8 +260,32 @@ export const MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES: Record<MentorshipMenteePast
 };
 
 export const MENTORSHIP_MENTEE_WITHDRAW_LABEL = 'Withdraw';
-export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY = 'Coming Soon';
-export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_DETAIL = 'Withdraw will be available once the backend endpoint is live.';
+export const MENTORSHIP_MENTEE_WITHDRAW_CANCEL_LABEL = 'Cancel';
+export const MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_HEADER = 'Withdraw Application';
+export const MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_MESSAGE = 'Are you sure you want to withdraw this application? Its mentors will no longer review it.';
+export const MENTORSHIP_MENTEE_WITHDRAW_SUCCESS_SUMMARY = 'Application withdrawn';
+export const MENTORSHIP_MENTEE_WITHDRAW_SUCCESS_DETAIL = 'Your application has been withdrawn.';
+export const MENTORSHIP_MENTEE_WITHDRAW_ERROR_SUMMARY = 'Could not withdraw the application';
+export const MENTORSHIP_MENTEE_WITHDRAW_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_LIFE = 5000;
+
+/**
+ * The code the BFF's impersonation guard puts on its 403. That 403 says nothing about the
+ * application, so the page shows the server's message and keeps the list as it is.
+ */
+export const MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
+
+/**
+ * Withdraw failures that mean the mentee's view of the application is out of date, keyed by
+ * status: 409 is upstream refusing a transition out of anything but `pending`, 403 is the
+ * applicant check failing, and 404 is an application that no longer exists. The page shows
+ * this copy and re-reads the applications; any other status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTEE_WITHDRAW_STALE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer withdraw this application. Your applications have been refreshed.',
+  404: 'This application no longer exists. Your applications have been refreshed.',
+  409: 'This application is no longer pending, so it cannot be withdrawn. Your applications have been refreshed.',
+};
 export const MENTORSHIP_MENTEE_VIEW_TASKS_LABEL = 'View Tasks';
 export const MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE = 'Past Applications';
 

@@ -26,28 +26,31 @@ import {
   MENTORSHIP_MENTEE_TASKS_URL,
   MENTORSHIP_MENTEE_VIEW_TASKS_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_LABEL,
-  MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeOverview } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMenteeOverview } from '@lfx-one/shared/utils';
-import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
+import { MenteeApplicationWithdrawService } from '@modules/mentorship/services/mentee-application-withdraw.service';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 /**
  * Overview child of the mentee shell. With no applications it shows the empty state and a
  * link to browse programs; otherwise a banner counting the pending applications, one card
  * per pending, accepted or graduated application, and a Past Applications table for the rest.
+ * A pending card's Withdraw confirms first; a successful withdraw re-reads the applications.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe],
+  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule],
+  providers: [ConfirmationService, MenteeApplicationWithdrawService],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeOverviewComponent {
   private readonly menteeService = inject(MentorshipMenteeService);
-  private readonly comingSoonService = inject(MentorshipComingSoonService);
+  private readonly withdrawService = inject(MenteeApplicationWithdrawService);
   private readonly router = inject(Router);
 
   protected readonly emptyTitle = MENTORSHIP_MENTEE_EMPTY_TITLE;
@@ -60,6 +63,7 @@ export class MenteeOverviewComponent {
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
+  protected readonly withdrawingId = this.withdrawService.withdrawingId;
 
   protected readonly overview: Signal<MentorshipMenteeOverview | null> = this.initOverview();
 
@@ -81,8 +85,8 @@ export class MenteeOverviewComponent {
     void this.router.navigate([MENTORSHIP_MENTEE_TASKS_URL]);
   }
 
-  protected onWithdraw(): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY);
+  protected onWithdraw(applicationId: string): void {
+    this.withdrawService.confirmWithdraw(applicationId);
   }
 
   protected retry(): void {

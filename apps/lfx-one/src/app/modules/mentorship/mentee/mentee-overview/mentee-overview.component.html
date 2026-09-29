@@ -129,8 +129,10 @@
                 <button
                   type="button"
                   data-testid="mentee-overview-withdraw"
-                  class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50"
-                  (click)="onWithdraw()">
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  [disabled]="withdrawingId() !== null"
+                  [attr.aria-busy]="withdrawingId() === app.id"
+                  (click)="onWithdraw(app.id)">
                   <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
                   {{ withdrawLabel }}
                 </button>
@@ -186,3 +188,5 @@
     </div>
   }
 }
+
+<p-confirmDialog />
