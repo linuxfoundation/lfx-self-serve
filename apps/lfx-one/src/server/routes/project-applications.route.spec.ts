@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 /**
  * Router-level coverage for `/api/project-applications` (#3037): identity is taken from the session and
  * never from the body, writes are refused during impersonation, every mutation requires `If-Match` and a
- * UUID, invalid answers are refused before any upstream call, and accept requires a parent project.
+ * UUID, invalid answers are refused before any upstream call, and accept requires a parent project and a valid slug.
  */
 
 const service = {
@@ -140,8 +140,8 @@ describe('create', () => {
     });
   });
 
-  it('never forwards a parent_project_uid at create time', async () => {
-    await send('POST', '/', { application: { project_name: 'Example', parent_project_uid: PARENT_UID } });
+  it('never forwards the staff-only keys (parent, slug, project uid) at create time', async () => {
+    await send('POST', '/', { application: { project_name: 'Example', parent_project_uid: PARENT_UID, project_slug: 'example', project_uid: PARENT_UID } });
     expect(service.create.mock.calls[0][1].application).toEqual({ project_name: 'Example' });
   });
 
@@ -180,7 +180,7 @@ describe('impersonation', () => {
     ['DELETE', `/${UID}`],
   ])('%s %s is refused while impersonating', async (method, path) => {
     auth.isImpersonating.mockReturnValue(true);
-    const res = await send(method, path, { application: {}, parent_project_uid: PARENT_UID }, { 'If-Match': '2' });
+    const res = await send(method, path, { application: {}, parent_project_uid: PARENT_UID, project_slug: 'example' }, { 'If-Match': '2' });
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('IMPERSONATION_READ_ONLY');
   });
@@ -204,6 +204,12 @@ describe('mutations', () => {
     service.isFormationTeamMemberStrict.mockResolvedValue(false);
     const res = await send('PUT', `/${UID}`, { application: { project_name: 'X', parent_project_uid: PARENT_UID } }, { 'If-Match': '2' });
     expect(res.status).toBe(200);
+    expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' });
+  });
+
+  it('revise drops a planted project_uid or project_slug from a caller outside the formation team', async () => {
+    service.isFormationTeamMemberStrict.mockResolvedValue(false);
+    await send('PUT', `/${UID}`, { application: { project_name: 'X', project_uid: PARENT_UID, project_slug: 'x' } }, { 'If-Match': '2' });
     expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' });
   });
 
@@ -239,10 +245,21 @@ describe('mutations', () => {
     expect(service.accept).not.toHaveBeenCalled();
   });
 
-  it('accept forwards the parent and the complete answers', async () => {
-    const res = await send('POST', `/${UID}/accept`, { parent_project_uid: PARENT_UID, application: { project_name: 'X' } }, { 'If-Match': '2' });
+  it.each([undefined, '', 'Has-Caps', '1starts-with-digit', 'ends-with-dash-', 'a', 'has space'])('accept refuses project slug %j', async (slug) => {
+    const res = await send('POST', `/${UID}/accept`, { parent_project_uid: PARENT_UID, project_slug: slug, application: {} }, { 'If-Match': '2' });
+    expect(res.status).toBe(400);
+    expect(service.accept).not.toHaveBeenCalled();
+  });
+
+  it('accept forwards the parent, the slug and the complete answers', async () => {
+    const res = await send(
+      'POST',
+      `/${UID}/accept`,
+      { parent_project_uid: PARENT_UID, project_slug: 'my_project-1', application: { project_name: 'X' } },
+      { 'If-Match': '2' }
+    );
     expect(res.status).toBe(200);
-    expect(service.accept).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' }, PARENT_UID);
+    expect(service.accept).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' }, PARENT_UID, 'my_project-1');
   });
 
   it('delete returns 204', async () => {

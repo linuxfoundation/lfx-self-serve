@@ -389,3 +389,6 @@ export * from './feature-flag.interface';
 export * from './formation-checklist.interface';
 export * from './formation-people.interface';
 export * from './project-application.interface';
+
+// LFX Insights API tokens (IN-1233)
+export * from './insights-tokens.interface';

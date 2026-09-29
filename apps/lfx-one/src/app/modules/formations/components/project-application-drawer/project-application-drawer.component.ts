@@ -10,7 +10,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
 import type {
-  Project,
+  ProjectApplicationAcceptChoice,
   ProjectApplication,
   ProjectApplicationAcceptDialogData,
   ProjectApplicationAnswerLink,
@@ -215,11 +215,15 @@ export class ProjectApplicationDrawerComponent {
     });
   }
 
-  /** Opens the parent-project picker; accepting runs only once the team has chosen a parent. */
+  /** Opens the accept dialog; accepting runs only once the team has chosen a parent and a slug. */
   protected onAccept(): void {
     const application = this.application();
     if (!application) return;
-    const data: ProjectApplicationAcceptDialogData = { projectName: this.projectName() };
+    const recordedSlug = application.application.project_slug;
+    const data: ProjectApplicationAcceptDialogData = {
+      projectName: this.projectName(),
+      ...(typeof recordedSlug === 'string' && recordedSlug && { projectSlug: recordedSlug }),
+    };
     const ref = this.dialogService.open(ProjectApplicationAcceptDialogComponent, {
       header: 'Accept proposal',
       width: '520px',
@@ -227,9 +231,9 @@ export class ProjectApplicationDrawerComponent {
       closable: true,
       data,
     });
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((parent: Project | undefined) => {
-      if (parent?.uid) {
-        this.acceptUnder(application, parent);
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((choice: ProjectApplicationAcceptChoice | undefined) => {
+      if (choice?.parent?.uid && choice.slug) {
+        this.acceptUnder(application, choice);
       }
     });
   }
@@ -290,19 +294,21 @@ export class ProjectApplicationDrawerComponent {
     }
   }
 
-  private acceptUnder(application: ProjectApplication, parent: Project): void {
+  private acceptUnder(application: ProjectApplication, { parent, slug }: ProjectApplicationAcceptChoice): void {
+    const projectName = this.projectName();
     this.busyAction.set('accept');
     this.projectApplicationService
-      .accept(application, parent.uid)
+      .accept(application, parent.uid, slug)
       .pipe(finalize(() => this.busyAction.set(null)))
       .subscribe({
         next: (result) => {
-          this.messageService.add({ severity: 'success', summary: `Proposal accepted under ${parent.name}` });
+          this.messageService.add({ severity: 'success', summary: 'Proposal accepted', detail: `Created ${projectName} (${slug}) under ${parent.name}` });
           this.changed.emit(result.application);
         },
-        // Accept is two upstream writes (record the parent, then accept). Any failure may have landed
-        // after the first, so the held revision can no longer be trusted: never retry — a 404 drops the
-        // application, anything else reloads.
+        // Accept is several upstream writes (record the choices, create the project, record it, accept). Any
+        // failure may have landed after an earlier step, so the held revision can no longer be trusted: never
+        // retry — a 404 drops the application, anything else reloads. A retry after reload skips the create
+        // when the project was already recorded.
         error: (error: unknown) => this.handleAcceptError(error, application.uid),
       });
   }

@@ -20,7 +20,7 @@ const { proxyMentorshipRequest } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
-const req = { path: '/api/mentorship/mentee/overview' } as Request;
+const req = { path: '/api/mentorship/mentee/applications' } as Request;
 const path = '/mentorship/v1/me/applications';
 
 function upstream401(message: string) {
@@ -53,6 +53,15 @@ describe('proxyMentorshipRequest', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(3);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
     expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'PATCH', { limit: 5 }, body);
+  });
+
+  it('does not provision an impersonated user, since impersonation is read-only', async () => {
+    const error = upstream401('local user is not provisioned');
+    proxyRequest.mockRejectedValueOnce(error);
+    const impersonatedReq = { ...req, impersonationActive: true } as Request;
+
+    await expect(proxyMentorshipRequest(proxy, impersonatedReq, path)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
   it('does not retry any other 401', async () => {

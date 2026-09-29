@@ -74,7 +74,7 @@ export class MenteeRegisterComponent {
   private readonly route = inject(ActivatedRoute);
 
   protected readonly title = MENTORSHIP_MENTEE_REGISTER_TITLE;
-  /** Dev shortcut — bypasses the guard while the mock returns `hasProfile: false`. */
+  /** Dev shortcut — bypasses the guard while registration does not save a profile yet (linuxfoundation/lfx-mentorship#187). */
   protected readonly devDashboardLabel = MENTORSHIP_MENTEE_DEV_DASHBOARD_LABEL;
   protected readonly subtitlePrefix = MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX;
   protected readonly subtitleSuffix = MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX;

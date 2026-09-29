@@ -23,6 +23,10 @@ export class OrgPeopleDirectoryStateService {
 
   private readonly byOrg = new Map<string, { value: OrgAllEmployeesResponse; expiresAt: number }>();
   private readonly inFlight = new Map<string, Observable<OrgAllEmployeesResponse>>();
+  // Bumped by `invalidate`. A request remembers the generation it started under and only writes its
+  // response into `byOrg` if that is still current, so a request already in flight when the cache was
+  // invalidated (e.g. started before a seat reassign) can't put the pre-invalidate roster back for the TTL.
+  private readonly generation = new Map<string, number>();
 
   /** Cached merged directory for the org; fetches once and replays until the TTL lapses. */
   public getDirectory(orgUid: string): Observable<OrgAllEmployeesResponse> {
@@ -33,13 +37,21 @@ export class OrgPeopleDirectoryStateService {
     const existing = this.inFlight.get(orgUid);
     if (existing) return existing;
 
-    const request$ = this.http.get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: { live: 'true' } }).pipe(
-      tap({
-        next: (res) => this.byOrg.set(orgUid, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS }),
-        finalize: () => this.inFlight.delete(orgUid),
-      }),
-      shareReplay({ bufferSize: 1, refCount: false })
-    );
+    const startedGeneration = this.generation.get(orgUid) ?? 0;
+    const request$: Observable<OrgAllEmployeesResponse> = this.http
+      .get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, { params: { live: 'true' } })
+      .pipe(
+        tap({
+          next: (res) => {
+            if ((this.generation.get(orgUid) ?? 0) !== startedGeneration) return;
+            this.byOrg.set(orgUid, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
+          },
+          finalize: () => {
+            if (this.inFlight.get(orgUid) === request$) this.inFlight.delete(orgUid);
+          },
+        }),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
     this.inFlight.set(orgUid, request$);
     return request$;
   }
@@ -56,8 +68,9 @@ export class OrgPeopleDirectoryStateService {
     );
   }
 
-  /** Drop the cached directory for an org so the next `getDirectory` refetches (used by the tab's retry CTA). */
+  /** Drop the cached directory for an org so the next `getDirectory` refetches (the tab's retry CTA, and after a seat reassign). A request still in flight keeps serving its own subscribers but no longer fills the cache. */
   public invalidate(orgUid: string): void {
+    this.generation.set(orgUid, (this.generation.get(orgUid) ?? 0) + 1);
     this.byOrg.delete(orgUid);
     this.inFlight.delete(orgUid);
   }

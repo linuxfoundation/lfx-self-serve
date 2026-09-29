@@ -102,6 +102,30 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no event revenue.
       call: () => service.getEventsRevenue({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getEventsSpeakers',
+      url: '/api/analytics/events-speakers',
+      // A swallowed failure would read as a foundation with no proposals.
+      call: () => service.getEventsSpeakers({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEventsOrganizations',
+      url: '/api/analytics/events-organizations',
+      // A swallowed failure would read as a foundation with no organizations at its events.
+      call: () => service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: '', offset: 0, pageSize: 25 }),
+    },
+    {
+      name: 'getEventsSponsorship',
+      url: '/api/analytics/events-sponsorship',
+      // A swallowed failure would read as a foundation with no sponsorship.
+      call: () => service.getEventsSponsorship({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEventsGeography',
+      url: '/api/analytics/events-geography',
+      // A swallowed failure would read as a foundation with no registrations by country.
+      call: () => service.getEventsGeography({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
@@ -121,6 +145,15 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       expect(emitted).toBeUndefined();
     });
   }
+
+  // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
+  it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {
+    service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25 }).subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
+    expect(req.request.urlWithParams).toContain('search=A%2BE');
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
 
   afterEach(() => {
     http.verify();

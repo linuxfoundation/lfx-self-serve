@@ -51,6 +51,7 @@ vi.mock('./formation.service', () => ({
 vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth,
   getEffectiveEmail,
+  getRawEffectiveEmail: vi.fn(),
   stripAuthPrefix: (value: string) => value,
   isImpersonating,
 }));
@@ -804,3 +805,175 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
 function queriedTypes(): string[] {
   return proxyRequest.mock.calls.map((call) => (call[4] as { type?: string } | undefined)?.type).filter((type): type is string => !!type);
 }
+
+// GH #2985: pending votes must come from the same identity `filters_or` query as My Votes —
+// `filter_grants=direct` silently dropped email-only invitees (their FGA tuple is only emitted
+// for a non-empty Username). The real vote-response helper + paginator run against the mocked
+// proxy, so these specs pin both the outgoing query shape and the pending-only filtering.
+describe('UserService.getPendingActions pending votes (GH #2985)', () => {
+  const req = {} as unknown as Request;
+  const email = 'voter@example.org';
+  const futureEnd = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+  const pastEnd = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
+  const activeVoteDoc = { vote_uid: 'vote-active', name: 'Active Ballot', status: 'active', end_time: futureEnd, project_uid: 'project-1' };
+  // Rows carry the request's resolved identity (`username: 'testuser'`) so they survive the
+  // helper's server-side identity re-check; getEffectiveEmail is mocked unset in this file.
+  const awaitingRow = { vote_uid: 'vote-active', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' };
+
+  let service: UserService;
+
+  function routeByType(voteResponses: object[], voteDocs: object[]): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      switch (params?.type) {
+        case 'vote_response':
+          return queryPage(voteResponses);
+        case 'vote':
+          return queryPage(voteDocs);
+        default:
+          return queryPage([]);
+      }
+    });
+  }
+
+  function voteResponseParams(): Record<string, unknown> | undefined {
+    const call = proxyRequest.mock.calls.find((c) => (c[4] as { type?: string } | undefined)?.type === 'vote_response');
+    return call?.[4] as Record<string, unknown> | undefined;
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getMyPendingInvitations.mockReset();
+    getUsernameFromAuth.mockReset();
+    // mockReset leaves getEffectiveEmail unset — this block's specs assume username-only identity.
+    getEffectiveEmail.mockReset();
+    getMyFormationWork.mockReset();
+
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
+
+    service = new UserService();
+  });
+
+  it('emits a Cast Vote action for an unanswered active vote matched by identity', async () => {
+    routeByType([awaitingRow], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const voteActions = actions.filter((action) => action.type === 'Vote');
+
+    expect(voteActions).toHaveLength(1);
+    expect(voteActions[0]).toMatchObject({ buttonText: 'Cast Vote', voteUid: 'vote-active', text: 'Cast your vote on Active Ballot' });
+  });
+
+  it('queries vote_response by identity filters_or with no filter_grants (the #2985 fix)', async () => {
+    routeByType([awaitingRow], [activeVoteDoc]);
+
+    await service.getPendingActions(req, undefined, email, undefined);
+
+    const params = voteResponseParams();
+    expect(params).toBeDefined();
+    expect(params).not.toHaveProperty('filter_grants');
+    // getEffectiveEmail is mocked unset in this file, so only the username clause is present.
+    expect(params?.['filters_or']).toEqual(['username:testuser']);
+  });
+
+  it('pushes project scoping server-side on the project-lens path', async () => {
+    routeByType([awaitingRow], [activeVoteDoc]);
+
+    await service.getPendingActions(req, 'project-1', email, 'acme-project');
+
+    expect(voteResponseParams()?.['filters']).toEqual(['project_uid:project-1']);
+  });
+
+  it('excludes rows the user already responded to', async () => {
+    routeByType([{ ...awaitingRow, vote_status: 'responded' }], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
+  it('excludes a vote with both an awaiting row and a responded row for the same vote_uid', async () => {
+    // Duplicate-row case the widened identity query admits (e.g. an email-keyed invite row plus
+    // a username-keyed row from a later re-invite): My Votes' "any responded row wins" rule must
+    // win here too, or Pending Actions and My Votes disagree on the same vote.
+    routeByType([awaitingRow, { ...awaitingRow, vote_status: 'responded' }], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
+  it('excludes rows keyed only by vote_id — the response row own v1 id, never a parent key (GH #2985)', async () => {
+    // vote_id-only legacy row: no vote_uid/poll_id means no parent key, so the row must not
+    // produce a pending action (the dropped `?? vote_id` fallback would have mis-keyed it).
+    routeByType([{ vote_id: 'v1-row-1', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' }], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
+  it('excludes removed voters even when the row is still awaiting_response', async () => {
+    routeByType([{ ...awaitingRow, voter_removed: true }], [activeVoteDoc]);
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
+  it('excludes votes whose parent is not active or has already ended', async () => {
+    routeByType(
+      [
+        { vote_uid: 'vote-ended', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' },
+        { vote_uid: 'vote-expired', vote_status: 'awaiting_response', voter_removed: false, username: 'testuser' },
+      ],
+      [
+        { ...activeVoteDoc, vote_uid: 'vote-ended', status: 'ended' },
+        { ...activeVoteDoc, vote_uid: 'vote-expired', end_time: pastEnd },
+      ]
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
+  it('degrades to no vote actions when the vote_response source errors, without failing the whole aggregation', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'vote_response') {
+        // Non-5xx: fetchWithRetry only retries 5xx, so this surfaces on the first attempt.
+        return Promise.reject(new Error('boom'));
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+
+  it('fails closed when a LATER vote_response page errors (failOnPartial), instead of acting on partial rows', async () => {
+    // The first-page degradation test above can't pin failOnPartial — page-1 failures propagate
+    // either way. Here page 1 succeeds with a live page_token and page 2 rejects (non-5xx: no
+    // retry): with failOnPartial dropped the paginator would return the partial page-1 row and a
+    // bogus Cast Vote action would be emitted, so this test discriminates.
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; page_token?: string }) => {
+      if (params?.type === 'vote_response') {
+        if (!params.page_token) {
+          return Promise.resolve({ resources: [{ id: 'item:0', data: awaitingRow }], page_token: 'cursor-2' } as QueryServiceResponse<object>);
+        }
+        return Promise.reject(new Error('boom'));
+      }
+      if (params?.type === 'vote') {
+        return queryPage([activeVoteDoc]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+});

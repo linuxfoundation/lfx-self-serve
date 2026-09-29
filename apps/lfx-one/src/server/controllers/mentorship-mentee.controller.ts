@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -29,52 +30,58 @@ export class MentorshipMenteeController {
     }
   }
 
-  // GET /api/mentorship/mentee/overview
-  public async getMenteeOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentee_overview');
+  // GET /api/mentorship/mentee/applications?withTasks=true|false
+  // Auth: logged-in user required (401 otherwise). Upstream scopes the read to the caller's token.
+  public async getMenteeApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_applications');
 
     try {
       if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_overview' });
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_applications' });
       }
 
-      const rawPhase = parseTrimmedString(req.query['phase']);
-      const validPhases = ['empty', 'applicant', 'accepted'] as const;
-      if (rawPhase !== undefined && !validPhases.includes(rawPhase as (typeof validPhases)[number])) {
-        throw ServiceValidationError.forField('phase', `phase must be one of: ${validPhases.join(', ')}`, {
-          operation: 'get_mentorship_mentee_overview',
-        });
+      const rawWithTasks = req.query['withTasks'];
+      if (rawWithTasks !== undefined && rawWithTasks !== 'true' && rawWithTasks !== 'false') {
+        throw ServiceValidationError.forField('withTasks', 'withTasks must be true or false', { operation: 'get_mentorship_mentee_applications' });
       }
-      const phase = rawPhase as (typeof validPhases)[number] | undefined;
-      const overview = await this.menteeService.getMenteeOverview(req, phase);
-      logger.success(req, 'get_mentorship_mentee_overview', startTime, { phase: overview.phase });
-      res.json(overview);
+      const withTasks = rawWithTasks === 'true';
+      const applications = await this.menteeService.getMenteeApplications(req, withTasks);
+      logger.success(req, 'get_mentorship_mentee_applications', startTime, { count: applications.data.length, withTasks });
+      res.json(applications);
     } catch (error) {
       next(error);
     }
   }
 
-  // GET /api/mentorship/mentee/tasks
-  public async getMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentee_tasks');
+  // POST /api/mentorship/mentee/applications/:applicationId/withdraw  (no body) -> 204
+  // Auth: logged-in user required (401 otherwise). Upstream only lets the applicant withdraw
+  // (403 otherwise) and only a pending application (409 otherwise); both pass through.
+  public async withdrawMenteeApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'withdraw_mentorship_mentee_application');
 
     try {
       if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_tasks' });
+        throw new AuthenticationError('User authentication required', { operation: 'withdraw_mentorship_mentee_application' });
       }
 
-      const tasks = await this.menteeService.getMenteeTasks(req);
-      logger.success(req, 'get_mentorship_mentee_tasks', startTime, { count: tasks.data.length });
-      res.json(tasks);
+      // Upstream checks access on `mentorship_application:<id>`, so only a UUID can match.
+      const applicationId = parseTrimmedString(req.params['applicationId']);
+      if (!applicationId || !isUuid(applicationId)) {
+        throw ServiceValidationError.forField('applicationId', 'applicationId must be an application UUID', {
+          operation: 'withdraw_mentorship_mentee_application',
+        });
+      }
+
+      await this.menteeService.withdrawMenteeApplication(req, applicationId);
+      logger.success(req, 'withdraw_mentorship_mentee_application', startTime, { applicationId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
   }
 
   // GET /api/mentorship/mentee/profile
-  // Auth: logged-in user required (401 otherwise). Identity-scoped payload is tracked
-  // with the real Mentorship `user_profiles` read (linuxfoundation/lfx-self-serve#2764)
-  // — do not invent authorization against this shared mock.
+  // Auth: logged-in user required (401 otherwise). Upstream scopes the read to the caller's token.
   public async getMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentee_profile');
 

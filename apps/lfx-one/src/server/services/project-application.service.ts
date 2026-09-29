@@ -1,8 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_TEAM_NAME, PROJECT_APPLICATION_PARENT_KEY } from '@lfx-one/shared/constants';
+import {
+  FORMATION_TEAM_NAME,
+  PROJECT_APPLICATION_PARENT_KEY,
+  PROJECT_APPLICATION_PROJECT_UID_KEY,
+  PROJECT_APPLICATION_SLUG_KEY,
+} from '@lfx-one/shared/constants';
 import type {
+  CreateProjectRequest,
+  Project,
   ProjectApplication,
   ProjectApplicationAction,
   ProjectApplicationAnswers,
@@ -12,7 +19,7 @@ import type {
   UpstreamProjectApplication,
   UpstreamProjectApplicationDoc,
 } from '@lfx-one/shared/interfaces';
-import { normalizeProjectApplicationDoc, normalizeUpstreamProjectApplication } from '@lfx-one/shared/utils';
+import { buildCreateProjectRequest, normalizeProjectApplicationDoc, normalizeUpstreamProjectApplication } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError, ConflictError, InvalidRequestError, isMicroserviceError, PreconditionFailedError, ResourceNotFoundError } from '../errors';
@@ -22,6 +29,7 @@ import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { ProjectService } from './project.service';
 
 /**
  * BFF for project applications — "Propose a project" (#3037), backed by `lfx-v2-formation-service`'s
@@ -38,6 +46,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 export class ProjectApplicationService {
   private readonly microserviceProxy = new MicroserviceProxyService();
   private readonly accessCheckService = new AccessCheckService();
+  private readonly projectService = new ProjectService();
 
   /**
    * The signed-in user's own applications. The `submitter:` tag narrows the search; query-service's
@@ -113,27 +122,58 @@ export class ProjectApplicationService {
   }
 
   /**
-   * Records the formation team's chosen parent, then accepts. formation-service's accept route takes no
-   * body, so the parent travels as `application.parent_project_uid` (a product decision on #3037 — the
-   * downstream project create reads it; formation-service itself keeps it as an unknown answer key) via a
-   * revise first, and accept then runs at the revision that revise returned.
+   * Records the formation team's choices, creates the project, then accepts (#1995). formation-service's
+   * accept route takes no body and creates nothing, so:
    *
-   * Revise is guarded upstream on `writer`, which the submitter also holds, while accept needs
-   * `formation_team`. The membership pre-check keeps a non-team caller from committing the revise and
-   * then being refused the accept. The gateway's check on accept remains the real authorization. A
-   * failure after the revise landed still throws; the caller's held revision is then stale, so the UI
-   * never replays either write — it drops the application on a 404 and reloads on anything else.
+   * 1. Revise at the caller's held revision, adding `parent_project_uid` and `project_slug`. This is the
+   *    optimistic-concurrency check, and it records what the team chose before anything is created.
+   * 2. Create the project in project-service under that parent with the caller's own token — project-service's
+   *    FGA decides whether they may create under the parent — then revise again to record its `project_uid`.
+   *    When the answers already carry a `project_uid` (a retry after the create landed but a later step
+   *    failed), the create is skipped and the recorded parent and slug are kept, so the project is never
+   *    created twice. When the uid was lost before it was recorded, the create's slug conflict adopts the
+   *    earlier project if it is under the same parent with the same name.
+   * 3. Accept at the latest revision.
+   *
+   * The create comes before the accept so a refused create (slug taken, no permission) leaves the application
+   * submitted rather than accepted with no project. Revise is guarded upstream on `writer`, which the submitter
+   * also holds, while accept needs `formation_team`; the membership pre-check keeps a non-team caller from
+   * committing any step. Any failure throws; the caller's held revision is then stale, so the UI never replays
+   * a write — it drops the application on a 404 and reloads on anything else.
    */
   public async accept(
     req: Request,
     uid: string,
     ifMatch: string,
     application: ProjectApplicationAnswers,
-    parentProjectUid: string
+    parentProjectUid: string,
+    projectSlug: string
   ): Promise<ProjectApplicationWriteResult> {
     await this.assertFormationTeamMember(req, 'accept_project_application');
-    const revised = await this.revise(req, uid, ifMatch, { ...application, [PROJECT_APPLICATION_PARENT_KEY]: parentProjectUid });
-    return this.transition(req, uid, String(revised.application.revision), 'accept');
+    // Once the project exists, its recorded parent and slug are the truth: a retry must not rewrite them to
+    // choices that no longer describe the project.
+    const recordedProjectUid = this.recordedString(application, PROJECT_APPLICATION_PROJECT_UID_KEY);
+    const parent = (recordedProjectUid && this.recordedString(application, PROJECT_APPLICATION_PARENT_KEY)) || parentProjectUid;
+    const slug = (recordedProjectUid && this.recordedString(application, PROJECT_APPLICATION_SLUG_KEY)) || projectSlug;
+
+    let current = await this.revise(req, uid, ifMatch, {
+      ...application,
+      [PROJECT_APPLICATION_PARENT_KEY]: parent,
+      [PROJECT_APPLICATION_SLUG_KEY]: slug,
+    });
+
+    const existingProjectUid = this.recordedString(current.application.application, PROJECT_APPLICATION_PROJECT_UID_KEY);
+    if (existingProjectUid) {
+      logger.info(req, 'accept_project_application', 'Project already created for this application; skipping create', { uid, project_uid: existingProjectUid });
+    } else {
+      const project = await this.createProject(req, uid, buildCreateProjectRequest(current.application.application, parent, slug));
+      current = await this.revise(req, uid, String(current.application.revision), {
+        ...current.application.application,
+        [PROJECT_APPLICATION_PROJECT_UID_KEY]: project.uid,
+      });
+    }
+
+    return this.transition(req, uid, String(current.application.revision), 'accept');
   }
 
   /**
@@ -168,6 +208,56 @@ export class ProjectApplicationService {
     } catch (error) {
       throw this.mapWriteError(error, req, 'delete_project_application', uid);
     }
+  }
+
+  /**
+   * project-service `POST /projects` with the caller's token. `X-Sync` waits for the indexer, so the project is
+   * searchable (e.g. as a parent in the accept dialog) as soon as the accept returns.
+   */
+  private async createProject(req: Request, uid: string, body: CreateProjectRequest): Promise<Project> {
+    const operation = 'create_project_from_application';
+    try {
+      const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', '/projects', 'POST', undefined, body, { 'X-Sync': 'true' });
+      logger.info(req, operation, 'Created project for accepted application', { uid, project_uid: project.uid, slug: body.slug });
+      return project;
+    } catch (error) {
+      if (isMicroserviceError(error) && error.statusCode === 409) {
+        const adopted = await this.findProjectCreatedEarlier(req, body);
+        if (adopted) {
+          logger.warning(req, operation, "Slug conflict is this application's own earlier create; adopting that project", {
+            uid,
+            project_uid: adopted.uid,
+            slug: body.slug,
+          });
+          return adopted;
+        }
+      }
+      throw this.mapCreateProjectError(error, req, operation, uid, body.slug);
+    }
+  }
+
+  /**
+   * After a slug conflict, finds the project an earlier accept of this same application created but never got
+   * to record — its uid lost to a failed follow-up revise, or wiped by a submitter's revise (which drops staff
+   * keys). It is adopted only when it sits under the same parent with the same name; anything else is a
+   * genuine conflict. A failed lookup reads as "not found", so the caller surfaces the conflict.
+   */
+  private async findProjectCreatedEarlier(req: Request, body: CreateProjectRequest): Promise<Project | null> {
+    try {
+      const { exists, uid } = await this.projectService.getProjectIdBySlug(req, body.slug);
+      if (!exists || !uid) {
+        return null;
+      }
+      const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${encodeURIComponent(uid)}`, 'GET');
+      return project?.parent_uid === body.parent_uid && project.name === body.name ? project : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private recordedString(answers: ProjectApplicationAnswers, key: string): string {
+    const value = answers[key];
+    return typeof value === 'string' ? value : '';
   }
 
   private transition(req: Request, uid: string, ifMatch: string, action: ProjectApplicationAction): Promise<ProjectApplicationWriteResult> {
@@ -261,6 +351,32 @@ export class ProjectApplicationService {
         );
       case 412:
         return new PreconditionFailedError(error.errorBody?.message ?? 'The application changed since it was loaded', options);
+      default:
+        return error;
+    }
+  }
+
+  /**
+   * Maps project-service create errors. A slug conflict and a missing grant on the parent are the expected
+   * refusals, so both get a message the formation team can act on. Only uid, slug and status are logged.
+   */
+  private mapCreateProjectError(error: unknown, req: Request, operation: string, uid: string, slug: string): unknown {
+    if (!isMicroserviceError(error)) {
+      return error;
+    }
+    const options = { operation, service: 'project_service', path: req.path };
+    logger.warning(req, operation, 'Project create refused upstream', { uid, slug, status: error.statusCode });
+
+    switch (error.statusCode) {
+      case 400:
+        return new InvalidRequestError(error.errorBody?.message ?? 'The project could not be created from this application', 'INVALID_PROJECT', options);
+      case 403:
+        return new AuthorizationError('You do not have permission to create a project under the chosen parent project', {
+          ...options,
+          code: 'PROJECT_CREATE_FORBIDDEN',
+        });
+      case 409:
+        return new ConflictError(`The project slug "${slug}" is already used by another project; choose another`, 'PROJECT_SLUG_CONFLICT', options);
       default:
         return error;
     }

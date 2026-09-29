@@ -2,161 +2,73 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED, MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT } from '@lfx-one/shared/constants';
-import { MentorshipMenteeOverviewApplicant } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY } from '@lfx-one/shared/constants';
+import { MentorshipMenteeApplication } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
-import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { menteeTestApplication, menteeTestCards, menteeTestTask } from '@shared/testing/mentorship-mentee-test-data';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MenteeApplicantTasksComponent } from './mentee-applicant-tasks.component';
 
 describe('MenteeApplicantTasksComponent', () => {
   let fixture: ComponentFixture<MenteeApplicantTasksComponent>;
-  let component: MenteeApplicantTasksComponent;
-  let getMenteeOverview: ReturnType<typeof vi.fn>;
-  let clearMenteeCaches: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const byTestId = (id: string): Element | null => element().querySelector(`[data-testid="${id}"]`);
+  const text = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-  const createComponent = async (): Promise<void> => {
+  const bootstrap = async (applications: MentorshipMenteeApplication[]): Promise<void> => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MenteeApplicantTasksComponent],
-      providers: [
-        { provide: MentorshipMenteeService, useValue: { getMenteeOverview, clearMenteeCaches } },
-        { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
-      ],
+      providers: [{ provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } }],
     });
 
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(MenteeApplicantTasksComponent);
-    component = fixture.componentInstance;
+    fixture.componentRef.setInput('applications', menteeTestCards(applications));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   };
 
-  const bootstrap = async (): Promise<void> => {
-    getMenteeOverview = vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT));
-    await createComponent();
-  };
-
-  /**
-   * A single-application applicant overview whose card carries no `tasks` list
-   * (the partial-payload shape the BFF permits). `total` drives the overview's
-   * precomputed `prerequisiteTasksTotal`, which the card header reflects.
-   */
-  const applicantOverviewWithoutTasks = (total: number): MentorshipMenteeOverviewApplicant => {
-    const overview = structuredClone(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
-    const [first] = overview.applications;
-    delete first.tasks;
-    first.prerequisiteTasksTotal = total;
-    first.prerequisiteTasksCompleted = total > 0 ? 1 : 0;
-    overview.applications = [first];
-    return overview;
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    clearMenteeCaches = vi.fn();
+  it('numbers each application card', async () => {
+    await bootstrap([menteeTestApplication({ tasks: [menteeTestTask()] }), menteeTestApplication({ id: 'app-2', tasks: [menteeTestTask({ id: 'task-2' })] })]);
+    const labels = Array.from(element().querySelectorAll('p.uppercase'))
+      .map((el) => text(el))
+      .filter((label) => label.startsWith('Application'));
+    expect(labels).toEqual(['Application 1 of 2', 'Application 2 of 2']);
   });
 
-  it('renders application cards with prerequisite tasks', async () => {
-    await bootstrap();
-    const cards = element().querySelectorAll('[data-testid^="mentee-tasks-application-card-"]');
-    expect(cards.length).toBe(3);
-    const text = element().textContent ?? '';
-    expect(text).toContain('Apicurio Registry');
-    // Label is natural-case in the DOM (CSS `uppercase` only affects display, not textContent).
-    expect(text).toContain('Prerequisite Tasks');
+  it('renders the card header with the program, status badge and submitted count', async () => {
+    await bootstrap([menteeTestApplication({ tasks: [menteeTestTask({ status: 'submitted' }), menteeTestTask({ id: 'task-2' })] })]);
+    const card = text(byTestId('mentee-tasks-application-card-app-1'));
+    expect(card).toContain('Program One');
+    expect(card).toContain('In Progress');
+    expect(card).toContain('Project One · Fall 2026 · 1 of 2 submitted');
   });
 
-  it('renders task rows inside each application card', async () => {
-    await bootstrap();
-    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
-    expect(taskRows.length).toBeGreaterThanOrEqual(3);
+  it('drops the project from the header when the program has none', async () => {
+    await bootstrap([menteeTestApplication({ projectName: undefined, tasks: [menteeTestTask()] })]);
+    const card = text(byTestId('mentee-tasks-application-card-app-1'));
+    expect(card).not.toContain('Project One');
+    expect(card).toContain('Fall 2026 · 0 of 1 submitted');
   });
 
-  it('renders status badges for application cards', async () => {
-    await bootstrap();
-    const text = element().textContent ?? '';
-    expect(text).toContain('In Progress');
-    expect(text).toContain('Awaiting Review');
+  it('renders a row per prerequisite task', async () => {
+    await bootstrap([
+      menteeTestApplication({
+        tasks: [menteeTestTask(), menteeTestTask({ id: 'task-2' }), menteeTestTask({ id: 'task-3', category: 'non_prerequisite' })],
+      }),
+    ]);
+    expect(byTestId('mentee-tasks-task-row-task-1')).toBeTruthy();
+    expect(byTestId('mentee-tasks-task-row-task-2')).toBeTruthy();
+    expect(byTestId('mentee-tasks-task-row-task-3')).toBeNull();
   });
 
-  it('shows submitted count per application', async () => {
-    await bootstrap();
-    const text = element().textContent ?? '';
-    expect(text).toContain('1 of 3 submitted');
-    expect(text).toContain('3 of 3 submitted');
-  });
-
-  it('shows upload button for tasks needing upload', async () => {
-    await bootstrap();
-    const uploadBtns = element().querySelectorAll('[data-testid^="mentee-tasks-upload-"]');
-    expect(uploadBtns.length).toBeGreaterThan(0);
-  });
-
-  it('shows view/download icons for uploaded files', async () => {
-    await bootstrap();
-    const viewBtns = element().querySelectorAll('[data-testid^="mentee-tasks-view-file-"]');
-    expect(viewBtns.length).toBeGreaterThan(0);
-  });
-
-  it('adds aria-label on icon-only file buttons', async () => {
-    await bootstrap();
-    const viewBtn = element().querySelector('[data-testid^="mentee-tasks-view-file-"]');
-    expect(viewBtn?.getAttribute('aria-label')).toContain('View submission for');
-    const downloadBtn = element().querySelector('[data-testid^="mentee-tasks-download-file-"]');
-    expect(downloadBtn?.getAttribute('aria-label')).toContain('Download submission for');
-  });
-
-  it('shows error state when the overview API fails', async () => {
-    getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
-    await createComponent();
-    expect(component['error']()).toBeTruthy();
-    expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
-  });
-
-  it('shows a terminal error (not an endless spinner) when the overview resolves to a non-applicant phase', async () => {
-    getMenteeOverview = vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED));
-    await createComponent();
-    expect(component['loaded']()).toBe(true);
-    expect(component['error']()).toBeTruthy();
-    expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
-  });
-
-  it('shows a "details unavailable" message (not "empty") when a card reports tasks but omits the list', async () => {
-    // Partial payload: header says tasks exist (totalCount > 0) but the rows aren't included.
-    getMenteeOverview = vi.fn().mockReturnValue(of(applicantOverviewWithoutTasks(3)));
-    await createComponent();
-    const { id } = MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications[0];
-    const pending = element().querySelector(`[data-testid="mentee-tasks-application-pending-${id}"]`);
-    expect(pending).toBeTruthy();
-    expect(pending?.textContent).toContain('available yet');
-    // Header and body must not contradict: the true-empty copy must NOT render on this card.
-    expect(element().querySelector('[data-testid^="mentee-tasks-application-empty-"]')).toBeNull();
-  });
-
-  it('shows the true-empty message when a card has no prerequisite tasks at all', async () => {
-    getMenteeOverview = vi.fn().mockReturnValue(of(applicantOverviewWithoutTasks(0)));
-    await createComponent();
-    const { id } = MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications[0];
-    const empty = element().querySelector(`[data-testid="mentee-tasks-application-empty-${id}"]`);
-    expect(empty).toBeTruthy();
-    expect(empty?.textContent).toContain('No prerequisite tasks');
-    expect(element().querySelector('[data-testid^="mentee-tasks-application-pending-"]')).toBeNull();
-  });
-
-  it('retries the overview fetch on retry click', async () => {
-    await bootstrap();
-    const callsBefore = getMenteeOverview.mock.calls.length;
-    component['retry']();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(getMenteeOverview.mock.calls.length).toBeGreaterThan(callsBefore);
-    expect(clearMenteeCaches).toHaveBeenCalledOnce();
+  it('shows the per-application empty text when the application has no prerequisite tasks', async () => {
+    await bootstrap([menteeTestApplication({ tasks: [] })]);
+    expect(text(byTestId('mentee-tasks-application-empty-app-1'))).toBe(MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY);
+    expect(text(byTestId('mentee-tasks-application-card-app-1'))).toContain('Awaiting Review');
   });
 });

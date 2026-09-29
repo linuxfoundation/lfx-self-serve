@@ -1,11 +1,26 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (phase() === 'applicant') {
-  <lfx-mentee-applicant-tasks />
-} @else if (phase() === 'accepted') {
-  <lfx-mentee-accepted-tasks />
-} @else if (phase() === 'empty') {
-  <!-- No tasks tab in the empty phase — redirecting to the overview. -->
-  <lfx-route-loading data-testid="mentee-tasks-redirecting" />
+@if (!hasLoaded()) {
+  <lfx-route-loading />
+} @else if (loadError(); as errorMessage) {
+  <lfx-empty-state
+    icon="fa-light fa-triangle-exclamation"
+    [title]="errorMessage"
+    subtitle="Check your connection and try again."
+    ctaLabel="Retry"
+    ctaIcon="fa-light fa-rotate-right"
+    data-testid="mentee-tasks-error"
+    (ctaClick)="retry()" />
+} @else if (acceptedApplications().length === 0 && pendingApplications().length === 0) {
+  <lfx-empty-state icon="fa-light fa-clipboard-list" [title]="emptyTitle" [subtitle]="emptySubtitle" data-testid="mentee-tasks-empty" />
+} @else {
+  <div class="flex flex-col gap-8" data-testid="mentee-tasks">
+    @for (application of acceptedApplications(); track application.id) {
+      <lfx-mentee-accepted-tasks [application]="application" />
+    }
+    @if (pendingApplications().length > 0) {
+      <lfx-mentee-applicant-tasks [applications]="pendingApplications()" />
+    }
+  </div>
 }

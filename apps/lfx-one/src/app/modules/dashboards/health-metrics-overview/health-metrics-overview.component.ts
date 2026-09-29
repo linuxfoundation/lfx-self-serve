@@ -13,8 +13,8 @@ import {
   HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS,
 } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsOverviewEngagementRoute,
   buildHealthMetricsOverviewPccUrl,
+  buildHealthMetricsOverviewTabRoute,
   buildHealthMetricsOverviewTiles,
   buildLensAwareInsightsUrl,
   groupHealthMetricsOverviewFindings,
@@ -234,8 +234,8 @@ export class HealthMetricsOverviewComponent {
     foundationSfid: string | null
   ): HealthMetricsOverviewFindingViewModel {
     const isInsightsLink = finding.linkTarget === HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
-    // Engagement findings link into the tab in-app and need no Salesforce id.
-    const linkRoute = buildHealthMetricsOverviewEngagementRoute(finding.linkTarget);
+    // Engagement and Events findings link into their tab in-app and need no Salesforce id.
+    const linkRoute = buildHealthMetricsOverviewTabRoute(finding.linkTarget);
     // PCC's `/project/{id}/...` routes are keyed by the Salesforce ID, not the LFX v2 project uid —
     // resolve through `selectedFoundationSfid` (null while resolving degrades to a hidden link).
     let linkHref: string | undefined;

@@ -75,6 +75,20 @@ export function getEffectiveEmail(req: Request): string | null {
 }
 
 /**
+ * Gets the effective email WITHOUT lowercasing — the same resolution as `getEffectiveEmail`
+ * (impersonation target first, never the impersonator's own), preserving the stored casing.
+ * Pair it with `getEffectiveEmail` only when querying a case-sensitive exact-match index whose
+ * stored casing is outside our control (e.g. `vote_response.user_email` — GH #2985), matching
+ * on both the lowercased and the raw value. Almost all callers want `getEffectiveEmail`.
+ */
+export function getRawEffectiveEmail(req: Request): string | null {
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.email as string) || null;
+  }
+  return (req.oidc?.user?.['email'] as string) || null;
+}
+
+/**
  * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — the one
  * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
  * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is

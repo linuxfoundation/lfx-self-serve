@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
-import { MessageService } from 'primeng/api';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,12 +39,23 @@ describe('MenteeProfileComponent', () => {
       resumeFileName: 'test-mentee-resume.pdf',
       resumeUrl: 'https://example.com/resume.pdf',
     },
-    history: [{ id: 'app_pending', programName: 'GridFlow: Ingestion Pipeline', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' }],
+    history: [
+      {
+        id: 'app_pending',
+        programId: 'prog_gridflow',
+        programName: 'GridFlow: Ingestion Pipeline',
+        termName: 'Fall 2026',
+        submittedOn: 'Jun 28, 2026',
+        status: 'pending',
+      },
+    ],
   };
 
   let fixture: ComponentFixture<MenteeProfileComponent>;
   let drawerService: MenteeProfileEditDrawerService;
   let getMenteeProfile: ReturnType<typeof vi.fn>;
+  let withdrawMenteeApplication: ReturnType<typeof vi.fn>;
+  let applicationsRevision: ReturnType<typeof signal<number>>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -60,6 +71,12 @@ describe('MenteeProfileComponent', () => {
 
   beforeEach(() => {
     getMenteeProfile = vi.fn(() => of(mockProfile));
+    applicationsRevision = signal(0);
+    // The real data service bumps the revision when a withdraw succeeds.
+    withdrawMenteeApplication = vi.fn(() => {
+      applicationsRevision.update((value) => value + 1);
+      return of(undefined);
+    });
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -67,7 +84,10 @@ describe('MenteeProfileComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipMenteeService, useValue: { getMenteeProfile } },
+        {
+          provide: MentorshipMenteeService,
+          useValue: { getMenteeProfile, withdrawMenteeApplication, clearMenteeCaches: vi.fn(), menteeApplicationsRevision: applicationsRevision.asReadonly() },
+        },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -154,5 +174,21 @@ describe('MenteeProfileComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-application-history"]')).not.toBeNull();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('omitted history'));
     warn.mockRestore();
+  });
+
+  it('withdraws a pending application from Application History after the mentee confirms, then re-reads the profile', async () => {
+    await bootstrap();
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    const confirm = vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+      confirmation.accept?.();
+      return confirmationService;
+    });
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-application-history-withdraw-app_pending"]')?.click();
+    fixture.detectChanges();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(withdrawMenteeApplication).toHaveBeenCalledWith('app_pending');
+    expect(getMenteeProfile).toHaveBeenCalledTimes(2);
   });
 });

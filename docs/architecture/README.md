@@ -43,6 +43,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Snowflake Integration](./backend/snowflake-integration.md)** - Singleton pool, query deduplication
 - **[Public Meetings](./backend/public-meetings.md)** - Unauthenticated meeting access, M2M tokens
 - **[Gatewaze Embed Proxy](./backend/gw-proxy.md)** - Wildcard BFF proxy, authorization, header policy, body limits
+- **[LFX Insights API Tokens](./backend/insights-tokens.md)** - PAT service proxy, M2M Key Contact check, fail-closed eligibility
 - **[Error Handling](./backend/error-handling-architecture.md)** - Comprehensive error handling patterns
 
 ### 📦 Shared Package Architecture

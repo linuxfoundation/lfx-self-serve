@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   OrgLensAccountContextResponse,
@@ -94,6 +94,8 @@ import {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlanceQuery,
   HealthMetricsEventsForecast,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyQuery,
   HealthMetricsEventsForecastCurve,
   HealthMetricsEventsForecastCurveQuery,
   HealthMetricsEventsForecastQuery,
@@ -103,6 +105,12 @@ import {
   HealthMetricsEventsRegistrationsGrowthQuery,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsOrganizations,
+  HealthMetricsEventsOrganizationsQuery,
+  HealthMetricsEventsSpeakersQuery,
+  HealthMetricsEventsSponsorship,
+  HealthMetricsEventsSponsorshipQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -111,6 +119,7 @@ import {
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
 
 /**
@@ -1279,6 +1288,63 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEventsRevenue>('/api/analytics/events-revenue', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-revenue failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Each period's proposal pipeline, the top organizations and the latest proposals, for the Events tab's speakers section. */
+  public getEventsSpeakers(query: HealthMetricsEventsSpeakersQuery): Observable<HealthMetricsEventsSpeakers> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a measured zero.
+    return this.http.get<HealthMetricsEventsSpeakers>('/api/analytics/events-speakers', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-speakers failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getEventsSponsorship(query: HealthMetricsEventsSponsorshipQuery): Observable<HealthMetricsEventsSponsorship> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a measured zero.
+    return this.http.get<HealthMetricsEventsSponsorship>('/api/analytics/events-sponsorship', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-sponsorship failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getEventsGeography(query: HealthMetricsEventsGeographyQuery): Observable<HealthMetricsEventsGeography> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a measured zero.
+    return this.http.get<HealthMetricsEventsGeography>('/api/analytics/events-geography', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] events-geography failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getEventsOrganizations(query: HealthMetricsEventsOrganizationsQuery): Observable<HealthMetricsEventsOrganizations> {
+    // Strict encoding keeps a typed `+` from reaching Express as a space.
+    let params = strictHttpParams()
+      .set('foundationSlug', query.foundationSlug)
+      .set('range', query.range)
+      .set('segment', query.segment)
+      .set('offset', String(query.offset))
+      .set('pageSize', String(query.pageSize));
+    if (query.search) params = params.set('search', query.search);
+
+    // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
+    return this.http.get<HealthMetricsEventsOrganizations>('/api/analytics/events-organizations', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] events-organizations failed', { foundationSlug: query.foundationSlug, range: query.range, segment: query.segment, status });
         return throwError(() => error);
       })
     );

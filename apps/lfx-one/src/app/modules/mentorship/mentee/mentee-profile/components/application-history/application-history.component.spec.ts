@@ -3,30 +3,62 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
-  MENTORSHIP_COMING_SOON_DETAIL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
-  MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationHistoryEntry } from '@lfx-one/shared/interfaces';
-import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ApplicationHistoryComponent } from './application-history.component';
 
 describe('ApplicationHistoryComponent', () => {
   const entries: MentorshipMenteeApplicationHistoryEntry[] = [
-    { id: 'app_accepted', programName: 'GridFlow: Ingestion Pipeline', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'accepted' },
-    { id: 'app_pending', programName: 'Apicurio Registry: Playground', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' },
-    { id: 'app_declined', programName: 'Backstage: Accessibility Audit', termName: 'Summer 2026', submittedOn: 'Apr 9, 2026', status: 'declined' },
-    { id: 'app_withdrawn', programName: 'Envoy: WASM Filters', termName: 'Spring 2026', submittedOn: 'Jan 12, 2026', status: 'withdrawn' },
-    { id: 'app_graduated', programName: 'Kubernetes: Scheduling', termName: 'Fall 2025', submittedOn: 'Sep 3, 2025', status: 'graduated' },
-    { id: 'app_hold', programName: 'CNCF: Storage Drivers', termName: 'Winter 2026', submittedOn: 'Feb 18, 2026', status: 'hold' },
+    {
+      id: 'app_accepted',
+      programId: 'prog_gridflow',
+      programName: 'GridFlow: Ingestion Pipeline',
+      termName: 'Fall 2026',
+      submittedOn: 'Jun 28, 2026',
+      status: 'accepted',
+    },
+    {
+      id: 'app_pending',
+      programId: 'prog_apicurio',
+      programName: 'Apicurio Registry: Playground',
+      termName: 'Fall 2026',
+      submittedOn: 'Jul 2, 2026',
+      status: 'pending',
+    },
+    {
+      id: 'app_declined',
+      programId: 'prog_backstage',
+      programName: 'Backstage: Accessibility Audit',
+      termName: 'Summer 2026',
+      submittedOn: 'Apr 9, 2026',
+      status: 'declined',
+    },
+    {
+      id: 'app_withdrawn',
+      programId: 'prog_envoy',
+      programName: 'Envoy: WASM Filters',
+      termName: 'Spring 2026',
+      submittedOn: 'Jan 12, 2026',
+      status: 'withdrawn',
+    },
+    {
+      id: 'app_graduated',
+      programId: 'prog_k8s',
+      programName: 'Kubernetes: Scheduling',
+      termName: 'Fall 2025',
+      submittedOn: 'Sep 3, 2025',
+      status: 'graduated',
+    },
+    { id: 'app_hold', programId: 'prog_cncf', programName: 'CNCF: Storage Drivers', termName: 'Winter 2026', submittedOn: 'Feb 18, 2026', status: 'hold' },
   ];
 
   let fixture: ComponentFixture<ApplicationHistoryComponent>;
-  let messageAdd: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -37,12 +69,8 @@ describe('ApplicationHistoryComponent', () => {
   };
 
   beforeEach(() => {
-    messageAdd = vi.fn();
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      imports: [ApplicationHistoryComponent],
-      providers: [{ provide: MessageService, useValue: { add: messageAdd } }],
-    });
+    TestBed.configureTestingModule({ imports: [ApplicationHistoryComponent] });
   });
 
   it('renders the section title', () => {
@@ -94,6 +122,28 @@ describe('ApplicationHistoryComponent', () => {
     expect(hold?.textContent?.trim()).toBe(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS.hold);
   });
 
+  it('links View to the program page on the public Mentorship site in a new tab', () => {
+    setup(entries);
+
+    const view = element().querySelector<HTMLAnchorElement>('a[data-testid="mentorship-application-history-view-app_accepted"]');
+    expect(view?.getAttribute('href')).toBe(`${MENTORSHIP_MENTEE_FIND_PROGRAM_URL}/prog_gridflow`);
+    expect(view?.getAttribute('target')).toBe('_blank');
+    expect(view?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('encodes the program id in the View link', () => {
+    setup([{ ...entries[0], id: 'app_slash', programId: 'prog/with space' }]);
+
+    const view = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-application-history-view-app_slash"]');
+    expect(view?.getAttribute('href')).toBe(`${MENTORSHIP_MENTEE_FIND_PROGRAM_URL}/prog%2Fwith%20space`);
+  });
+
+  it('omits View when the row has no program id', () => {
+    setup([{ ...entries[0], id: 'app_orphan', programId: '' }]);
+
+    expect(element().querySelector('[data-testid="mentorship-application-history-view-app_orphan"]')).toBeNull();
+  });
+
   it('offers withdraw only on pending applications — Mentorship has no hard delete', () => {
     setup(entries);
 
@@ -105,18 +155,24 @@ describe('ApplicationHistoryComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_hold"]')).toBeNull();
   });
 
-  it('fires the coming-soon toast when the mentee withdraws a pending application', () => {
+  it('emits the application id when the mentee withdraws a pending application', () => {
     setup(entries);
+    const withdrawn: string[] = [];
+    fixture.componentInstance.withdraw.subscribe((id) => withdrawn.push(id));
 
     element().querySelector<HTMLButtonElement>('[data-testid="mentorship-application-history-withdraw-app_pending"]')?.click();
 
-    expect(messageAdd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        severity: 'info',
-        summary: MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
-        detail: MENTORSHIP_COMING_SOON_DETAIL,
-      })
-    );
+    expect(withdrawn).toEqual(['app_pending']);
+  });
+
+  it('disables Withdraw and marks the row busy while the parent withdraws it', () => {
+    setup(entries);
+    fixture.componentRef.setInput('withdrawingId', 'app_pending');
+    fixture.detectChanges();
+
+    const button = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-application-history-withdraw-app_pending"]');
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute('aria-busy')).toBe('true');
   });
 
   it('shows the empty state when the mentee has no history', () => {
@@ -130,6 +186,7 @@ describe('ApplicationHistoryComponent', () => {
     setup([
       {
         id: 'app_unknown',
+        programId: 'prog_unknown',
         programName: 'Unknown Status Program',
         termName: 'Fall 2026',
         submittedOn: 'Jul 2, 2026',

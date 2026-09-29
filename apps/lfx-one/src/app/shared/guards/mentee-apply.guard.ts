@@ -12,10 +12,11 @@ import { firstValueFrom, map } from 'rxjs';
  * CanActivate guard on `/mentorship/mentee/apply`.
  *
  * - **Profile just created** (router state from a validated registration) → allow.
- *   The profile check is still a mock that returns false, so this one navigation
- *   has to skip it or the return trip would bounce straight back to register.
+ *   Registration does not save a profile yet (linuxfoundation/lfx-mentorship#187), so
+ *   the profile check still reports none and this one navigation has to skip it or the
+ *   return trip would bounce straight back to register.
  * - **Has profile** → allow.
- * - **No profile** → `/mentorship/mentee`, copying `programId` and `programTermId`
+ * - **No profile** (or the check failed) → `/mentorship/mentee`, copying `programId` and `programTermId`
  *   onto that URL so a refresh of the register page does not drop them.
  */
 export const menteeApplyGuard: CanActivateFn = async (route: ActivatedRouteSnapshot) => {

@@ -5,10 +5,10 @@
  * Mentee Profile page — empty/error states plus the populated edit-drawer golden path
  * (KB: `code-truthiness/missing-e2e-for-empty-state`).
  *
- * The mentorship module is still mock-backed (`MOCK_MENTORSHIP_MENTEE_PROFILE`), so the profile
- * page renders through distinct empty-state branches: profile error, about-me empty, skills empty,
- * areas-to-improve empty, additional-notes empty, resume empty, application-history empty. This
- * suite locks each empty-state independently of the mock's default payload, and drives the
+ * The profile page renders through distinct empty-state branches: profile error, about-me empty,
+ * skills empty, areas-to-improve empty, additional-notes empty, resume empty, application-history
+ * empty. This suite stubs `/api/mentorship/mentee/profile` via `page.route` so it locks each
+ * empty-state independently of whatever the signed-in user has stored upstream, and drives the
  * Edit Mentee Profile drawer through its seeded cancel/save workflow.
  *
  * Prerequisites:
@@ -93,7 +93,9 @@ const POPULATED_PROFILE = {
     resumeFileName: 'test-user-1-resume.pdf',
     resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
-  history: [{ id: 'hist_pending', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' }],
+  history: [
+    { id: 'hist_pending', programId: 'prog_gridflow', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' },
+  ],
 };
 
 test.describe('Mentee Profile — edit drawer golden path', () => {

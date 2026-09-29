@@ -462,26 +462,36 @@ export class ValkeyService implements CachePort {
   }
 
   /**
-   * The size cap that applies to one key: a `VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE` override
-   * when the key's cache has one, else the global `MAX_VALUE_BYTES` default.
+   * The size cap that applies to one key, resolved in order: a
+   * `VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE` override when the key's sub-resource has one, then
+   * a `VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE` override when the key's cache family has one, else
+   * the global `MAX_VALUE_BYTES` default.
    *
    * Used by BOTH `setJson` and `parseCachedJson`, which is the whole point of routing the cap
    * through one resolver: the 1 MiB limit is enforced on the write *and* the read, so a cap raised
    * in only one of them would write entries that every subsequent read rejects as oversized — a
    * cache that silently never hits.
    *
-   * The lookup key is `{namespace}:{label}[:{version}]`: the sub-resource's own `vN` schema segment
-   * is included (so `people-all:v2` can be capped independently of a future `people-all:v3`), and
-   * everything after it — the time range, param signature, or person key — is dropped, so one cap
-   * covers every variant of a cache and no identifier is ever used as a table key.
+   * The sub-resource lookup key is `{namespace}:{label}[:{version}]`: the sub-resource's own `vN`
+   * schema segment is included (so `people-all:v2` can be capped independently of a future
+   * `people-all:v3`), and everything after it — the time range, param signature, or person key — is
+   * dropped, so one cap covers every variant of a cache and no identifier is ever used as a table
+   * key. The namespace lookup key is the code-defined `{domain}:v{N}` from `extractNamespace`, which
+   * covers namespaces whose post-principal segment is data (`org-seats:v2` puts an org uid there)
+   * without ever reading that segment.
    */
   private static maxBytesFor(key: string): number {
     const resolved = ValkeyService.resolveSubResource(key);
-    if (!resolved) return VALKEY_CACHE.MAX_VALUE_BYTES;
-    const [label, next] = resolved.segments;
-    const versioned = next && /^v\d+$/.test(next);
-    const capKey = versioned ? `${resolved.namespace}:${label}:${next}` : `${resolved.namespace}:${label}`;
-    return VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE[capKey] ?? VALKEY_CACHE.MAX_VALUE_BYTES;
+    if (resolved) {
+      const [label, next] = resolved.segments;
+      const versioned = next && /^v\d+$/.test(next);
+      const capKey = versioned ? `${resolved.namespace}:${label}:${next}` : `${resolved.namespace}:${label}`;
+      const subResourceCap = VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE[capKey];
+      if (subResourceCap !== undefined) return subResourceCap;
+    }
+    const namespace = ValkeyService.extractNamespace(key);
+    const namespaceCap = namespace ? VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE[namespace] : undefined;
+    return namespaceCap ?? VALKEY_CACHE.MAX_VALUE_BYTES;
   }
 
   /**
@@ -747,16 +757,17 @@ export function invalidatePerUserCache(namespace: string, username: string, orgU
   return valkeyService.del(buildPerUserOrgKey(namespace, username, orgUid));
 }
 
-/** Read-through helper for a per-user org namespace; a null key (unsafe username) fetches directly. */
+/** Read-through helper for a per-user org namespace; a null key (unsafe username) fetches directly. `storable` is forwarded to `withCache` (e.g. a single-flight `isCurrent` fence). */
 export function withPerUserCache<T>(
   namespace: string,
   username: string,
   orgUid: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
-  accept?: (value: unknown) => boolean
+  accept?: (value: unknown) => boolean,
+  storable?: (value: T) => boolean
 ): Promise<T> {
-  return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept);
+  return valkeyService.withCache(buildPerUserOrgKey(namespace, username, orgUid), ttlSeconds, fetcher, accept, storable);
 }
 
 /** Read-through helper for a per-user, org-independent namespace; a null key (unsafe username) fetches directly. */

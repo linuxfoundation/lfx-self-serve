@@ -1,0 +1,110 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-sponsorship">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Sponsorship unavailable"
+      subtitle="We could not load sponsorship for this foundation. Refresh the page to try again."
+      data-testid="events-sponsorship-error" />
+  } @else if (loading()) {
+    <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="events-sponsorship-loading" aria-hidden="true" />
+  } @else if (!view().foundationMeasured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="No sponsorship yet"
+      subtitle="Once this foundation's events sell sponsorship packages, revenue and tiers appear here."
+      data-testid="events-sponsorship-foundation-unmeasured" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Sponsorship unavailable for this period"
+      subtitle="Sponsorship for the selected period has not been measured yet. Pick another period to see it."
+      data-testid="events-sponsorship-unmeasured" />
+  } @else {
+    @if (view().packagesLabel) {
+      <span class="self-end rounded-full bg-gray-100 px-2.5 py-0.5 text-[12px] text-gray-600" data-testid="events-sponsorship-packages">{{
+        view().packagesLabel
+      }}</span>
+    }
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-sponsorship-hero">
+      <div class="flex flex-col gap-2" data-testid="events-sponsorship-headline">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-sponsorship-headline-value">{{ view().headline.value }}</span>
+          @if (view().headline.delta !== null) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
+              [class.text-red-600]="view().headline.deltaDirection === 'down'"
+              [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
+              data-testid="events-sponsorship-headline-delta">
+              {{ view().headline.delta }}
+            </span>
+          }
+        </div>
+        <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-sponsorship-side">
+        @for (stat of view().side; track stat.key) {
+          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-sponsorship-side-' + stat.key">
+            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-side-' + stat.key + '-value'">
+              {{ stat.value }}
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    @if (view().progress; as progress) {
+      <div class="flex max-w-[420px] flex-col gap-1.5" data-testid="events-sponsorship-progress">
+        <div class="flex items-baseline justify-between gap-2 text-[12.5px]">
+          <span class="text-gray-500" id="events-sponsorship-progress-label">Progress to goal</span>
+          <span class="font-medium tabular-nums text-gray-900" data-testid="events-sponsorship-progress-value">{{ progress.pctLabel }}</span>
+        </div>
+        <div
+          class="h-2 w-full rounded-full bg-gray-100"
+          role="progressbar"
+          aria-labelledby="events-sponsorship-progress-label"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          [attr.aria-valuenow]="progress.widthPct"
+          [attr.aria-valuetext]="progress.pctLabel">
+          <div class="h-full rounded-full" [class]="barClass" [style.width.%]="progress.widthPct"></div>
+        </div>
+      </div>
+    } @else if (!view().goalSet) {
+      <p class="rounded-lg bg-gray-50 px-3 py-2 text-[12.5px] text-gray-500" data-testid="events-sponsorship-no-goal">
+        No sponsorship goal is set for this period, so no progress bar is shown.
+      </p>
+    }
+
+    <div class="flex flex-col gap-3" data-testid="events-sponsorship-tiers">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Tier packages</h4>
+        <span class="text-[12px] text-gray-400">count sold</span>
+      </div>
+      @if (view().tiers.length === 0) {
+        <p class="text-sm text-gray-500" data-testid="events-sponsorship-tiers-empty">No tier package was sold in the selected period.</p>
+      } @else {
+        <ul class="flex flex-col gap-2.5">
+          @for (bar of view().tiers; track bar.key; let index = $index) {
+            <li class="flex flex-col gap-1" [attr.data-testid]="'events-sponsorship-tier-' + index">
+              <div class="flex items-baseline justify-between gap-2 text-[13px]">
+                <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
+                <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-tier-' + index + '-value'">{{ bar.valueLabel }}</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full" [class]="bar.barClass" [style.width.%]="bar.widthPct"></div>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  }
+</div>

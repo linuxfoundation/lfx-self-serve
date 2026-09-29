@@ -18,8 +18,9 @@
       data-testid="mentorship-mentee-profile-error-state" />
   } @else {
     <lfx-mentorship-mentee-profile-details [profile]="profile()" (editClick)="onEditProfile()" />
-    <lfx-mentorship-application-history [entries]="history()" />
+    <lfx-mentorship-application-history [entries]="history()" [withdrawingId]="withdrawingId()" (withdraw)="onWithdraw($event)" />
   }
 </div>
 
 <lfx-mentorship-mentee-profile-edit-drawer />
+<p-confirmDialog data-testid="mentorship-mentee-profile-withdraw-confirm-dialog" />

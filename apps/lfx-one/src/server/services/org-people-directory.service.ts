@@ -240,14 +240,15 @@ export class OrgPeopleDirectoryService {
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
     // other caller that arrived without a resolvable identity.
-    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, accountId, () =>
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, accountId, (isCurrent) =>
       withPerUserCache<CompactOrgPeopleDirectoryEntry>(
         VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
         username,
         accountId,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
         async () => toCompactDirectory(await this.computeLive(req, accountId)),
-        isCompactDirectoryEntry
+        isCompactDirectoryEntry,
+        isCurrent
       )
     );
     return fromCompactDirectory(entry);

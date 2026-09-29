@@ -10,18 +10,15 @@ import {
   MENTORSHIP_RICH_TEXT_RAW_MAX,
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
 } from '../constants/mentorship-enroll.constants';
-import {
-  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
-  MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
-  MOCK_MENTORSHIP_MENTEE_TASKS,
-} from '../constants/mentorship-mentee.constants';
+import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
+import type { MentorshipMenteeApplication, MentorshipMenteeApplicationTask } from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
-  buildMentorshipMenteeApplicationViews,
+  buildMentorshipMenteeApplicationView,
+  buildMentorshipMenteeOverview,
   buildMentorshipMenteeTaskView,
-  buildMentorshipMenteeTaskViews,
   buildMentorshipProgramDetail,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
@@ -59,6 +56,8 @@ import {
   mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
   mentorshipMenteeActionsFor,
+  mentorshipMenteeDisplayStatus,
+  mentorshipMenteeProgressTasks,
   mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
   mentorshipNoteDisplay,
@@ -68,6 +67,7 @@ import {
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
+  toMentorshipUtcInstant,
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
@@ -1023,44 +1023,195 @@ describe('buildMentorshipMenteeTaskView', () => {
   });
 });
 
-describe('buildMentorshipMenteeApplicationViews', () => {
-  it('maps applications into display-ready cards with task rows', () => {
-    const views = buildMentorshipMenteeApplicationViews(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications);
-    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications.length);
-    const [first] = views;
-    expect(first.programName).toBeTruthy();
-    expect(first.statusLabel).toBeTruthy();
-    expect(first.totalCount).toBeGreaterThan(0);
-    expect(first.submittedCount).toBeLessThanOrEqual(first.totalCount);
+function menteeTask(overrides: Partial<MentorshipMenteeApplicationTask> = {}): MentorshipMenteeApplicationTask {
+  return {
+    id: 'task-1',
+    name: 'Task 1',
+    description: 'Synthetic task',
+    category: 'prerequisite',
+    status: 'incomplete',
+    submitFile: null,
+    updatedOn: '2026-07-01T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function menteeApplication(overrides: Partial<MentorshipMenteeApplication> = {}): MentorshipMenteeApplication {
+  return {
+    id: 'app-1',
+    programId: 'prog-1',
+    programName: 'Program One',
+    projectName: 'Project One',
+    term: { id: 'term-1', name: 'Fall 2026' },
+    upstreamStatus: 'pending',
+    createdOn: '2026-06-01T10:00:00Z',
+    updatedOn: '2026-06-02T10:00:00Z',
+    decisionExpectedDate: '2026-08-01',
+    tasks: [],
+    ...overrides,
+  };
+}
+
+describe('mentorshipMenteeDisplayStatus', () => {
+  it('shows an accepted application as active', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus: 'accepted' }))).toBe('active');
   });
 
-  it('falls back to the overview counts when the tab-only tasks list is absent', () => {
-    const [view] = buildMentorshipMenteeApplicationViews([
-      {
-        id: 'app_no_tasks',
-        programId: 'prog_x',
-        orgAbbreviation: 'XX',
-        projectName: 'Project X',
-        term: { id: 'term_x', name: 'Fall 2026' },
-        programName: 'Program X',
-        status: 'in-progress',
-        lastTaskUpdatedOn: 'Jul 1, 2026',
-        decisionExpectedDate: 'Aug 1, 2026',
-        prerequisiteTasksCompleted: 2,
-        prerequisiteTasksTotal: 5,
-      },
-    ]);
-    expect(view.submittedCount).toBe(2);
-    expect(view.totalCount).toBe(5);
-    expect(view.tasks).toEqual([]);
+  it('shows a graduated application as graduated', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus: 'graduated' }))).toBe('graduated');
+  });
+
+  it('shows a pending application with an open prerequisite task as in progress', () => {
+    const app = menteeApplication({ tasks: [menteeTask({ status: 'submitted' }), menteeTask({ id: 'task-2', status: 'in_progress' })] });
+    expect(mentorshipMenteeDisplayStatus(app)).toBe('in-progress');
+  });
+
+  it('shows a pending application with every prerequisite submitted as awaiting review', () => {
+    const app = menteeApplication({
+      tasks: [
+        menteeTask({ status: 'submitted' }),
+        menteeTask({ id: 'task-2', status: 'complete' }),
+        menteeTask({ id: 'task-3', category: 'non_prerequisite' }),
+      ],
+    });
+    expect(mentorshipMenteeDisplayStatus(app)).toBe('awaiting-review');
+  });
+
+  it('shows a pending application with no prerequisite tasks as awaiting review', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication())).toBe('awaiting-review');
+  });
+
+  it('shows a pending application whose tasks were not read as in progress', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ tasks: undefined }))).toBe('in-progress');
+  });
+
+  it('returns null for statuses that belong in Past Applications', () => {
+    for (const upstreamStatus of ['declined', 'withdrawn', 'hold'] as const) {
+      expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus }))).toBeNull();
+    }
   });
 });
 
-describe('buildMentorshipMenteeTaskViews', () => {
-  it('maps every accepted task into a view', () => {
-    const views = buildMentorshipMenteeTaskViews(MOCK_MENTORSHIP_MENTEE_TASKS.data);
-    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
-    expect(views.every((v) => typeof v.statusClass === 'string')).toBe(true);
+describe('mentorshipMenteeProgressTasks', () => {
+  const tasks = [menteeTask({ id: 'prereq' }), menteeTask({ id: 'regular', category: 'non_prerequisite' })];
+
+  it('tracks prerequisite tasks while pending', () => {
+    expect(mentorshipMenteeProgressTasks(menteeApplication({ tasks })).map((task) => task.id)).toEqual(['prereq']);
+  });
+
+  it('tracks non-prerequisite tasks once accepted or graduated', () => {
+    for (const upstreamStatus of ['accepted', 'graduated'] as const) {
+      const ids = mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus, tasks })).map((task) => task.id);
+      expect(ids).toEqual(['regular']);
+    }
+  });
+
+  it('tracks nothing when the tasks were not read', () => {
+    expect(mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus: 'accepted', tasks: undefined }))).toEqual([]);
+  });
+});
+
+describe('buildMentorshipMenteeApplicationView', () => {
+  it('counts the tracked tasks and labels the progress by status', () => {
+    const app = menteeApplication({
+      upstreamStatus: 'accepted',
+      tasks: [
+        menteeTask({ id: 'prereq', status: 'incomplete' }),
+        menteeTask({ id: 'a', category: 'non_prerequisite', status: 'complete', submittedOn: '2026-07-02T10:00:00Z' }),
+        menteeTask({ id: 'b', category: 'non_prerequisite', status: 'in_progress' }),
+        menteeTask({ id: 'c', category: 'non_prerequisite', status: 'incomplete' }),
+      ],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'active');
+    expect(view.progressLabel).toBe('Tasks');
+    expect(view.statusLabel).toBe('Active');
+    expect(view.accepted).toBe(true);
+    expect(view.submittedCount).toBe(1);
+    expect(view.totalCount).toBe(3);
+    expect(view.progressPercent).toBe(33);
+    expect(view.tasks.map((task) => task.id)).toEqual(['a', 'b', 'c']);
+    expect(view.tasks[0].submittedDate).toBe('2026-07-02T10:00:00Z');
+  });
+
+  it('uses the latest application or task change as the last update', () => {
+    const app = menteeApplication({
+      tasks: [menteeTask({ updatedOn: '2026-07-05T10:00:00Z' }), menteeTask({ id: 'task-2', updatedOn: '2026-06-20T10:00:00Z' })],
+    });
+    expect(buildMentorshipMenteeApplicationView(app, 'in-progress').lastUpdatedOn).toBe('2026-07-05T10:00:00Z');
+  });
+
+  it('reports zero progress and a null decision date when there is nothing to track', () => {
+    const view = buildMentorshipMenteeApplicationView(menteeApplication({ decisionExpectedDate: undefined }), 'awaiting-review');
+    expect(view.progressPercent).toBe(0);
+    expect(view.progressLabel).toBe('Prerequisite Tasks');
+    expect(view.accepted).toBe(false);
+    expect(view.decisionExpectedDate).toBeNull();
+  });
+
+  it('drops the decision date once the application is accepted or graduated', () => {
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').decisionExpectedDate).toBe('2026-08-01');
+    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'accepted' }), 'active').decisionExpectedDate).toBeNull();
+    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'graduated' }), 'graduated').decisionExpectedDate).toBeNull();
+  });
+
+  it('labels a graduated card Graduated and tracks its non-prerequisite tasks', () => {
+    const app = menteeApplication({
+      upstreamStatus: 'graduated',
+      tasks: [menteeTask({ id: 'prereq' }), menteeTask({ id: 'a', category: 'non_prerequisite', status: 'complete' })],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'graduated');
+    expect(view.statusLabel).toBe('Graduated');
+    expect(view.progressLabel).toBe('Tasks');
+    expect(view.accepted).toBe(true);
+    expect(view.tasks.map((task) => task.id)).toEqual(['a']);
+  });
+
+  it('carries the program logo for the avatar, leaving it absent when the program has none', () => {
+    const withLogo = menteeApplication({ programLogoUrl: 'https://example.com/logo.png' });
+    expect(buildMentorshipMenteeApplicationView(withLogo, 'awaiting-review').programLogoUrl).toBe('https://example.com/logo.png');
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').programLogoUrl).toBeUndefined();
+  });
+});
+
+describe('toMentorshipUtcInstant', () => {
+  it('turns a date-only value into its UTC midnight instant', () => {
+    expect(toMentorshipUtcInstant('2026-07-15')).toBe('2026-07-15T00:00:00Z');
+  });
+
+  it('leaves a full timestamp unchanged', () => {
+    expect(toMentorshipUtcInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
+  });
+});
+
+describe('buildMentorshipMenteeOverview', () => {
+  it('returns the empty phase when there are no applications', () => {
+    expect(buildMentorshipMenteeOverview([])).toEqual({ phase: 'empty', pendingCount: 0, openTaskCount: 0, cards: [], past: [] });
+  });
+
+  it('orders cards active, awaiting review, in progress and sends the rest to Past Applications', () => {
+    const overview = buildMentorshipMenteeOverview([
+      menteeApplication({ id: 'in-progress', tasks: [menteeTask()] }),
+      menteeApplication({ id: 'declined', upstreamStatus: 'declined', createdOn: '2026-01-01T00:00:00Z' }),
+      menteeApplication({ id: 'awaiting' }),
+      menteeApplication({ id: 'hold', upstreamStatus: 'hold', createdOn: '2026-03-01T00:00:00Z' }),
+      menteeApplication({ id: 'accepted', upstreamStatus: 'accepted', tasks: [menteeTask({ category: 'non_prerequisite' })] }),
+      menteeApplication({ id: 'graduated', upstreamStatus: 'graduated', tasks: [menteeTask({ category: 'non_prerequisite', status: 'complete' })] }),
+    ]);
+    expect(overview.phase).toBe('applicant');
+    expect(overview.cards.map((card) => card.id)).toEqual(['accepted', 'graduated', 'awaiting', 'in-progress']);
+    expect(overview.past.map((row) => [row.id, row.outcome, row.outcomeLabel, row.outcomeBadgeClass])).toEqual([
+      ['hold', 'on-hold', 'On Hold', 'bg-blue-100 text-blue-700'],
+      ['declined', 'not-selected', 'Not selected', 'bg-red-100 text-red-600'],
+    ]);
+    expect(overview.pendingCount).toBe(2);
+    expect(overview.openTaskCount).toBe(2);
+  });
+
+  it('stays in the applicant phase when every application is in the past', () => {
+    const overview = buildMentorshipMenteeOverview([menteeApplication({ upstreamStatus: 'withdrawn' })]);
+    expect(overview.phase).toBe('applicant');
+    expect(overview.cards).toEqual([]);
+    expect(overview.past[0].outcome).toBe('withdrawn');
   });
 });
 

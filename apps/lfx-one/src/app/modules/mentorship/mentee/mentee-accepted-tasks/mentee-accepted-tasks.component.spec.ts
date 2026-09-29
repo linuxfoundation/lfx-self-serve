@@ -2,180 +2,127 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MOCK_MENTORSHIP_MENTEE_TASKS } from '@lfx-one/shared/constants';
-import { MentorshipMenteeTasksResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeApplicationTask, MentorshipUpstreamApplicationStatus } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
-import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { menteeTestApplication, menteeTestCards, menteeTestTask } from '@shared/testing/mentorship-mentee-test-data';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MenteeAcceptedTasksComponent } from './mentee-accepted-tasks.component';
 
 describe('MenteeAcceptedTasksComponent', () => {
   let fixture: ComponentFixture<MenteeAcceptedTasksComponent>;
-  let component: MenteeAcceptedTasksComponent;
-  let getMenteeTasks: ReturnType<typeof vi.fn>;
-  let clearMenteeCaches: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const byTestId = (id: string): Element | null => element().querySelector(`[data-testid="${id}"]`);
+  const text = (el: Element | null | undefined): string => el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  const rowIds = (): string[] =>
+    Array.from(element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]')).map((row) => row.getAttribute('data-testid') ?? '');
+  const chip = (value: string): HTMLButtonElement => byTestId(`mentee-tasks-filter-${value}`) as HTMLButtonElement;
 
-  const createComponent = async (): Promise<void> => {
+  const bootstrap = async (
+    tasks: MentorshipMenteeApplicationTask[],
+    overrides: { projectName?: string; upstreamStatus?: MentorshipUpstreamApplicationStatus } = { projectName: 'Project One' }
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MenteeAcceptedTasksComponent],
-      providers: [
-        { provide: MentorshipMenteeService, useValue: { getMenteeTasks, clearMenteeCaches } },
-        { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
-      ],
+      providers: [{ provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } }],
     });
 
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(MenteeAcceptedTasksComponent);
-    component = fixture.componentInstance;
+    const [card] = menteeTestCards([
+      menteeTestApplication({ upstreamStatus: overrides.upstreamStatus ?? 'accepted', projectName: overrides.projectName, tasks }),
+    ]);
+    fixture.componentRef.setInput('application', card);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   };
 
-  const bootstrap = async (): Promise<void> => {
-    getMenteeTasks = vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_TASKS));
-    await createComponent();
+  const clickChip = async (value: string): Promise<void> => {
+    chip(value).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
   };
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    clearMenteeCaches = vi.fn();
+  const mixedTasks = (): MentorshipMenteeApplicationTask[] => [
+    menteeTestTask({ id: 'prereq', category: 'prerequisite', status: 'complete' }),
+    menteeTestTask({ id: 'todo', category: 'non_prerequisite', status: 'incomplete' }),
+    menteeTestTask({ id: 'doing', category: 'non_prerequisite', status: 'in_progress' }),
+    menteeTestTask({ id: 'done', category: 'non_prerequisite', status: 'complete' }),
+    menteeTestTask({ id: 'uploaded', category: 'non_prerequisite', status: 'submitted' }),
+  ];
+
+  it('renders the program card with the Active badge and project context', async () => {
+    await bootstrap(mixedTasks());
+    const card = text(byTestId('mentee-tasks-accepted-card-app-1'));
+    expect(card).toContain('Program One');
+    expect(card).toContain('Project One · Fall 2026');
+    expect(card).toContain('Active');
+    expect(byTestId('mentee-tasks-accepted-status')?.classList).toContain('bg-blue-50');
   });
 
-  it('renders task list with filter chips', async () => {
-    await bootstrap();
-    const chips = element().querySelectorAll('[data-testid="mentee-tasks-filter-chips"] button');
-    expect(chips.length).toBe(4);
-    expect(chips[0].textContent?.trim()).toBe('All');
+  it('renders the Graduated badge in its own colour for a graduated application', async () => {
+    await bootstrap(mixedTasks(), { projectName: 'Project One', upstreamStatus: 'graduated' });
+    const badge = byTestId('mentee-tasks-accepted-status');
+    expect(text(badge)).toBe('Graduated');
+    expect(badge?.classList).toContain('bg-violet-50');
+    expect(badge?.classList).not.toContain('bg-blue-50');
   });
 
-  it('adds aria-pressed on filter chips', async () => {
-    await bootstrap();
-    const allChip = element().querySelector('[data-testid="mentee-tasks-filter-all"]');
-    expect(allChip?.getAttribute('aria-pressed')).toBe('true');
-    const submittedChip = element().querySelector('[data-testid="mentee-tasks-filter-submitted"]');
-    expect(submittedChip?.getAttribute('aria-pressed')).toBe('false');
+  it('drops the project from the card when the program has none', async () => {
+    await bootstrap(mixedTasks(), { projectName: undefined });
+    const card = text(byTestId('mentee-tasks-accepted-card-app-1'));
+    expect(card).not.toContain('Project One');
+    expect(card).toContain('Fall 2026');
   });
 
-  it('shows submitted summary count', async () => {
-    await bootstrap();
-    const summary = element().querySelector('[data-testid="mentee-tasks-submitted-summary"]');
-    expect(summary?.textContent).toContain('of');
-    expect(summary?.textContent).toContain('submitted');
+  it('summarises progress over the non-prerequisite tasks only', async () => {
+    await bootstrap(mixedTasks());
+    expect(text(byTestId('mentee-tasks-submitted-summary'))).toBe('50% · 2 of 4 submitted');
+    expect(element().querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50');
   });
 
-  it('renders a task row per task', async () => {
-    await bootstrap();
-    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
-    expect(taskRows.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
+  it('lists every non-prerequisite task and leaves out prerequisites', async () => {
+    await bootstrap(mixedTasks());
+    expect(rowIds()).toEqual(['mentee-tasks-task-row-todo', 'mentee-tasks-task-row-doing', 'mentee-tasks-task-row-done', 'mentee-tasks-task-row-uploaded']);
   });
 
-  it('filters tasks when a filter chip is clicked', async () => {
-    await bootstrap();
-    component['onFilterChange']('submitted');
-    fixture.detectChanges();
-    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
-    expect(taskRows.length).toBeLessThan(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
+  it('renders the filter chips with All pressed by default', async () => {
+    await bootstrap(mixedTasks());
+    const chips = Array.from(byTestId('mentee-tasks-filter-chips')?.querySelectorAll('button') ?? []);
+    expect(chips.map((btn) => text(btn))).toEqual(['All', 'To Do', 'In Progress', 'Submitted']);
+    expect(chip('all').getAttribute('aria-pressed')).toBe('true');
+    expect(chip('pending').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('submitted filter includes complete-status tasks', async () => {
-    await bootstrap();
-    component['onFilterChange']('submitted');
-    fixture.detectChanges();
-    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
-    const completeTasks = MOCK_MENTORSHIP_MENTEE_TASKS.data.filter((t) => t.status === 'submitted' || t.status === 'complete');
-    expect(taskRows.length).toBe(completeTasks.length);
+  it('filters the rows by the selected chip and updates aria-pressed', async () => {
+    await bootstrap(mixedTasks());
+
+    await clickChip('pending');
+    expect(rowIds()).toEqual(['mentee-tasks-task-row-todo']);
+    expect(chip('pending').getAttribute('aria-pressed')).toBe('true');
+    expect(chip('all').getAttribute('aria-pressed')).toBe('false');
+
+    await clickChip('submitted');
+    expect(rowIds()).toEqual(['mentee-tasks-task-row-done', 'mentee-tasks-task-row-uploaded']);
+
+    await clickChip('all');
+    expect(rowIds()).toHaveLength(4);
   });
 
-  it('shows all tasks when the "All" filter is selected', async () => {
-    await bootstrap();
-    component['onFilterChange']('submitted');
-    fixture.detectChanges();
-    component['onFilterChange'](null);
-    fixture.detectChanges();
-    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
-    expect(taskRows.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
+  it('shows the empty-filter text when no task matches the selected chip', async () => {
+    await bootstrap([menteeTestTask({ id: 'todo', category: 'non_prerequisite' })]);
+    await clickChip('submitted');
+    expect(byTestId('mentee-tasks-accepted-empty-filter')).toBeTruthy();
+    expect(byTestId('mentee-tasks-accepted-empty-all')).toBeNull();
   });
 
-  it('shows upload button for tasks needing upload', async () => {
-    await bootstrap();
-    const uploadBtns = element().querySelectorAll('[data-testid^="mentee-tasks-upload-"]');
-    expect(uploadBtns.length).toBeGreaterThan(0);
-  });
-
-  it('retries the tasks fetch on retry click', async () => {
-    await bootstrap();
-    const callsBefore = getMenteeTasks.mock.calls.length;
-    component['retry']();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(getMenteeTasks.mock.calls.length).toBeGreaterThan(callsBefore);
-    expect(clearMenteeCaches).toHaveBeenCalledOnce();
-  });
-
-  it('shows the error empty-state when the tasks fetch fails', async () => {
-    getMenteeTasks = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
-    await createComponent();
-    expect(component['error']()).toBeTruthy();
-    expect(element().querySelector('[data-testid="mentee-tasks-accepted-error"]')).toBeTruthy();
-  });
-
-  it('recovers to the task list when a retry succeeds after an error', async () => {
-    getMenteeTasks = vi
-      .fn()
-      .mockReturnValueOnce(throwError(() => new Error('boom')))
-      .mockReturnValueOnce(of(MOCK_MENTORSHIP_MENTEE_TASKS));
-    await createComponent();
-    expect(element().querySelector('[data-testid="mentee-tasks-accepted-error"]')).toBeTruthy();
-
-    component['retry']();
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(component['error']()).toBeNull();
-    expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
-  });
-
-  it('shows the empty-all message (not the filter message) when the mentee has no tasks at all', async () => {
-    getMenteeTasks = vi.fn().mockReturnValue(of({ data: [], total: 0 }));
-    await createComponent();
-    expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
-    expect(element().querySelector('[data-testid="mentee-tasks-accepted-empty-all"]')).toBeTruthy();
-    expect(element().textContent).toContain('No tasks assigned yet.');
-    expect(element().textContent).not.toContain('No tasks match the selected filter.');
-  });
-
-  it('shows the empty-filter message when tasks exist but none match the active filter', async () => {
-    const pendingOnly: MentorshipMenteeTasksResponse = {
-      data: [{ id: 'only_pending', title: 'Pending only', description: 'x', status: 'pending', submitFile: null }],
-      total: 1,
-    };
-    getMenteeTasks = vi.fn().mockReturnValue(of(pendingOnly));
-    await createComponent();
-    component['onFilterChange']('submitted');
-    fixture.detectChanges();
-    expect(element().querySelector('[data-testid="mentee-tasks-accepted-empty-filter"]')).toBeTruthy();
-    expect(element().textContent).toContain('No tasks match the selected filter.');
-    expect(element().textContent).not.toContain('No tasks assigned yet.');
-  });
-
-  it('filters via real chip clicks, including the in-progress chip', async () => {
-    await bootstrap();
-    const inProgressChip = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-filter-in_progress"]');
-    expect(inProgressChip).toBeTruthy();
-    inProgressChip?.click();
-    fixture.detectChanges();
-
-    const rows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
-    const inProgressCount = MOCK_MENTORSHIP_MENTEE_TASKS.data.filter((t) => t.status === 'in_progress').length;
-    expect(rows.length).toBe(inProgressCount);
-    expect(inProgressChip?.getAttribute('aria-pressed')).toBe('true');
+  it('shows the no-tasks text when the application has no non-prerequisite tasks', async () => {
+    await bootstrap([menteeTestTask({ id: 'prereq', category: 'prerequisite', status: 'complete' })]);
+    expect(byTestId('mentee-tasks-accepted-empty-all')).toBeTruthy();
+    expect(byTestId('mentee-tasks-accepted-empty-filter')).toBeNull();
+    expect(text(byTestId('mentee-tasks-submitted-summary'))).toBe('0% · 0 of 0 submitted');
   });
 });

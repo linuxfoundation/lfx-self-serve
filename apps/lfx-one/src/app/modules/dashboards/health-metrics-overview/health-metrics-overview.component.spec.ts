@@ -136,6 +136,16 @@ describe('HealthMetricsOverviewComponent', () => {
     expect(link.getAttribute('target')).toBeNull();
   });
 
+  it('links an Events finding into the Events tab forecast even before the Salesforce id resolves', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
+    fixture.componentRef.setInput('findings', [finding({ area: 'evt', linkTarget: 'evt.forecast', sortRank: 8 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-8"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
   function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
     return {
       area: 'eng',
@@ -230,6 +240,8 @@ describe('HealthMetricsOverviewComponent', () => {
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('no registration goal set');
       expect(evtTile.textContent).not.toContain('Awaiting data');
+      // A "no data" figure has nothing to drill into.
+      expect(evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]')).toBeNull();
       httpMock.verify();
     });
 
@@ -266,6 +278,7 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(engTile.textContent).toContain('no data this period');
       expect(engTile.textContent).not.toContain('8 of 31');
       expect(engTile.textContent).not.toContain('View groups');
+      expect(evtTile.textContent).not.toContain('View forecast');
       // Engagement never shows a status chip, failed read included; other areas keep "Awaiting data".
       expect(engTile.textContent).not.toContain('Awaiting data');
       expect(evtTile.textContent).toContain('Awaiting data');
@@ -289,9 +302,29 @@ describe('HealthMetricsOverviewComponent', () => {
       const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
       expect(engTile.textContent).toContain('3 of 12');
       expect(engTile.textContent).not.toContain('Awaiting data');
-      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-engagement-link"]');
+      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-eng-link"]');
       expect(link.getAttribute('href')).toContain('/foundation/health-metrics/engagement');
       expect(link.getAttribute('href')).toContain('#committees');
+      httpMock.verify();
+    });
+
+    it('renders the live Events tile with its status chip and a link to the Events tab forecast', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'watch' })] });
+      await fixture.whenStable();
+
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('Needs attention');
+      const link: HTMLAnchorElement = evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]');
+      expect(link.textContent).toContain('View forecast');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
       httpMock.verify();
     });
 

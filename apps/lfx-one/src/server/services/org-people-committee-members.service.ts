@@ -79,8 +79,10 @@ export class OrgPeopleCommitteeMembersService {
     // it. The seat-reassign paths already operate at org grain, so the discard is a single key
     // delete rather than a fan-out. Best-effort and deliberately not awaited-for-success: `del`
     // never throws, and a cache fault just leaves the entry to age out. The Memberships-page
-    // reassign carries the same hook, since it reassigns non-board seats too.
-    await invalidateOrgGroupsCache(orgUid);
+    // reassign carries the same hook, since it reassigns non-board seats too. The caller's own
+    // per-user seat roster and directory are dropped too, so the tab's post-reassign re-fetch
+    // doesn't serve the old seat from the 30-second per-user entry.
+    await Promise.all([invalidateOrgGroupsCache(orgUid), this.boardCommitteeService.invalidateCallerSeatCaches(req, orgUid)]);
 
     const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);
     const seat = toAssignment(upstream, foundationNames);

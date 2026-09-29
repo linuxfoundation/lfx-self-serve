@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // actual allowlists, not against a restatement of them.
 vi.mock('@lfx-one/shared/utils', async () => await vi.importActual('@lfx-one/shared/utils/org-selector.utils'));
 
-import { coalescePerUserOrgFetch, resetSingleFlightForTests, singleFlight } from './single-flight';
+import { coalescePerUserOrgFetch, evictPerUserOrgFetch, resetSingleFlightForTests, singleFlight } from './single-flight';
 
 const NAMESPACE = 'org-seats:v2';
 const ORG = 'org-1';
@@ -136,5 +136,46 @@ describe('coalescePerUserOrgFetch', () => {
 
     expect(results).toEqual(['first-callers-roster', 'second-callers-roster']);
     expect(factory).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('evictPerUserOrgFetch', () => {
+  // After a write, a later read must not join the pre-write fetch, and that fetch must be able to
+  // tell it was superseded so it skips persisting its result.
+  it('starts a fresh fetch for the next caller and marks the evicted one as no longer current', async () => {
+    const stale = deferred<string>();
+    let staleIsCurrent!: () => boolean;
+    const first = coalescePerUserOrgFetch(NAMESPACE, 'alice', ORG, (isCurrent) => {
+      staleIsCurrent = isCurrent;
+      return stale.promise;
+    });
+    expect(staleIsCurrent()).toBe(true);
+
+    evictPerUserOrgFetch(NAMESPACE, 'alice', ORG);
+
+    expect(staleIsCurrent()).toBe(false);
+    await expect(coalescePerUserOrgFetch(NAMESPACE, 'alice', ORG, async () => 'fresh')).resolves.toBe('fresh');
+    stale.resolve('stale');
+    await expect(first).resolves.toBe('stale');
+  });
+
+  // The evicted fetch settling must not unregister the fetch that replaced it, or the next caller
+  // would start a third fetch instead of joining the second.
+  it('does not let an evicted fetch unregister its successor when it settles', async () => {
+    const stale = deferred<string>();
+    const fresh = deferred<string>();
+    const first = coalescePerUserOrgFetch(NAMESPACE, 'alice', ORG, () => stale.promise);
+    evictPerUserOrgFetch(NAMESPACE, 'alice', ORG);
+    const second = coalescePerUserOrgFetch(NAMESPACE, 'alice', ORG, () => fresh.promise);
+
+    stale.resolve('stale');
+    await first;
+    const factory = vi.fn(async () => 'third');
+    const joined = coalescePerUserOrgFetch(NAMESPACE, 'alice', ORG, factory);
+    fresh.resolve('fresh');
+
+    await expect(second).resolves.toBe('fresh');
+    await expect(joined).resolves.toBe('fresh');
+    expect(factory).not.toHaveBeenCalled();
   });
 });

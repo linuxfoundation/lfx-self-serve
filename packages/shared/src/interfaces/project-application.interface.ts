@@ -3,6 +3,7 @@
 
 import type { PROJECT_APPLICATION_TABS } from '../constants/project-application.constants';
 import type { MessageSeverity, TagSeverity } from './components.interface';
+import type { Project } from './project.interface';
 
 /**
  * Where an application stands (#3037). `submitted`, `withdrawn`, `accepted` and `denied` are the agreed wire
@@ -39,8 +40,12 @@ export interface ProjectApplicationAnswers {
   agreement_type?: string;
   is_spec_project?: boolean;
   description?: string;
-  /** Parent project the formation team chose at accept time; written by the BFF's revise-then-accept. */
+  /** Parent project the formation team chose at accept time; recorded by the BFF before it creates the project. */
   parent_project_uid?: string;
+  /** Slug the formation team chose for the project created at accept time (#1995). */
+  project_slug?: string;
+  /** UID of the project created at accept time; lets a retried accept skip creating it again (#1995). */
+  project_uid?: string;
   [key: string]: unknown;
 }
 
@@ -112,10 +117,12 @@ export interface ReviseProjectApplicationRequest {
 
 /**
  * Browser → BFF accept body. Accept upstream takes no body, so the BFF first revises `application` with
- * `parent_project_uid` added, then accepts at the revision that revise returned.
+ * `parent_project_uid` and `project_slug` added, creates the project under that parent (#1995), records its
+ * `project_uid`, then accepts at the latest revision.
  */
 export interface AcceptProjectApplicationRequest {
   parent_project_uid: string;
+  project_slug: string;
   application: ProjectApplicationAnswers;
 }
 
@@ -159,6 +166,14 @@ export interface ProjectApplicationRow extends ProjectApplication {
 /** Data handed to the accept dialog. */
 export interface ProjectApplicationAcceptDialogData {
   projectName: string;
+  /** Slug an earlier, failed accept recorded; prefilled so a retry keeps the project that may already exist. */
+  projectSlug?: string;
+}
+
+/** What the accept dialog closes with: the parent the new project goes under, and its slug. */
+export interface ProjectApplicationAcceptChoice {
+  parent: Project;
+  slug: string;
 }
 
 /** How the detail view renders an answer: plain text, or one link per entry. */

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, Signal } from '@angular/core';
 import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE,
@@ -11,19 +11,21 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
+  MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationHistoryEntry } from '@lfx-one/shared/interfaces';
-
-import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 
 /**
  * Application History for the mentee profile page. Each row is an `applications`
  * record with `role = mentee` (mentees are not `program_members`). Status values
  * are the stored enum; the trash control is withdraw (`pending → withdrawn`), not
- * a hard delete — Mentorship has no application delete.
+ * a hard delete — Mentorship has no application delete. The row emits `withdraw` with
+ * the application id and the parent page runs the confirm and the write.
+ *
+ * View opens the program's page on the public Mentorship site in a new tab.
  *
  * Row-level display fields (badge label + Tailwind classes + whether withdraw is
- * legal) are resolved in a single `computed` so the template only reads
+ * legal + the program link) are resolved in a single `computed` so the template only reads
  * pre-formatted rows.
  */
 @Component({
@@ -32,9 +34,11 @@ import { MentorshipComingSoonService } from '../../../../services/mentorship-com
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ApplicationHistoryComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
-
   public readonly entries = input.required<MentorshipMenteeApplicationHistoryEntry[]>();
+  /** The application the parent is withdrawing; every Withdraw button is disabled while set. */
+  public readonly withdrawingId = input<string | null>(null);
+
+  public readonly withdraw = output<string>();
 
   protected readonly title = MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE;
   protected readonly emptyTitle = MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE;
@@ -44,14 +48,9 @@ export class ApplicationHistoryComponent {
 
   protected readonly rows = this.initRows();
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- row reserved for real application navigation
-  protected onView(_entry: MentorshipMenteeApplicationHistoryEntry): void {
-    this.comingSoon.notify(this.viewLabel);
-  }
-
   protected onWithdraw(entry: MentorshipMenteeApplicationHistoryEntry): void {
     if (entry.status !== 'pending') return;
-    this.comingSoon.notify(this.withdrawLabel);
+    this.withdraw.emit(entry.id);
   }
 
   private initRows(): Signal<
@@ -59,6 +58,7 @@ export class ApplicationHistoryComponent {
       statusLabel: string;
       statusBadgeClass: string;
       canWithdraw: boolean;
+      programUrl: string | null;
     })[]
   > {
     const labels: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS;
@@ -72,6 +72,8 @@ export class ApplicationHistoryComponent {
         // Applicant self-withdraw is `pending → withdrawn` only. Declined cannot re-apply;
         // accepted/graduated/hold/withdrawn are not self-withdrawable.
         canWithdraw: entry.status === 'pending',
+        // No program id means there is no page to open, so the row shows no View link.
+        programUrl: entry.programId ? `${MENTORSHIP_MENTEE_FIND_PROGRAM_URL}/${encodeURIComponent(entry.programId)}` : null,
       }))
     );
   }
