@@ -30,6 +30,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
   lfxColors,
@@ -180,6 +181,8 @@ export default {
     // Events organizations membership pills and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).flatMap((m) => m.badgeClass.split(' ')),
     HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
+    // Events sponsorship tier and progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

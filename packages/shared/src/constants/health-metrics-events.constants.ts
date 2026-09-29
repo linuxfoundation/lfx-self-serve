@@ -75,6 +75,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     description: 'What companies paid to sponsor events, and what they bought.',
     footnote: '',
     footnoteCaution: false,
+    headingBadge: 'Provisional',
   },
   {
     key: 'spk',
@@ -114,6 +115,7 @@ export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [
   'past',
   'reg',
   'rev',
+  'spon',
   'spk',
   'orgs',
 ] as const satisfies readonly HealthMetricsEventsSectionKey[];

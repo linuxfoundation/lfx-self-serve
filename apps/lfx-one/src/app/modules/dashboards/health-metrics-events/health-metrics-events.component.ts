@@ -26,6 +26,7 @@ import { EventsRegistrationForecastComponent } from './components/events-registr
 import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 import { EventsRevenueComponent } from './components/events-revenue/events-revenue.component';
 import { EventsSpeakersComponent } from './components/events-speakers/events-speakers.component';
+import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
@@ -45,6 +46,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
     EventsRegistrationsGrowthComponent,
     EventsRevenueComponent,
     EventsSpeakersComponent,
+    EventsSponsorshipComponent,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
   ],

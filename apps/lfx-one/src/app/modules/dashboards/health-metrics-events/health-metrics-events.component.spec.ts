@@ -20,6 +20,7 @@ import { EventsRegistrationForecastComponent } from './components/events-registr
 import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 import { EventsRevenueComponent } from './components/events-revenue/events-revenue.component';
 import { EventsSpeakersComponent } from './components/events-speakers/events-speakers.component';
+import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
@@ -64,6 +65,13 @@ class RegistrationsGrowthStubComponent {
 /** Stands in for Revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-revenue', template: '<div data-testid="events-rev-stub"></div>' })
 class RevenueStubComponent {
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+/** Stands in for Sponsorship, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-events-sponsorship', template: '<div data-testid="events-spon-stub"></div>' })
+class SponsorshipStubComponent {
   public readonly settled = output<void>();
   public readonly reading = output<void>();
 }
@@ -117,6 +125,7 @@ describe('HealthMetricsEventsComponent', () => {
             EventsPastEventsComponent,
             EventsRegistrationsGrowthComponent,
             EventsRevenueComponent,
+            EventsSponsorshipComponent,
             EventsSpeakersComponent,
             EventsOrganizationsComponent,
           ],
@@ -128,6 +137,7 @@ describe('HealthMetricsEventsComponent', () => {
             PastStubComponent,
             RegistrationsGrowthStubComponent,
             RevenueStubComponent,
+            SponsorshipStubComponent,
             SpeakersStubComponent,
             OrganizationsStubComponent,
           ],
@@ -151,6 +161,7 @@ describe('HealthMetricsEventsComponent', () => {
     pastStub.settled.emit();
     (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit();
     (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit();
+    (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit();
     const speakersStub = fixture.debugElement.query(By.directive(SpeakersStubComponent)).componentInstance as SpeakersStubComponent;
     speakersStub.noteChange.emit(speakersNote);
     speakersStub.settled.emit();
@@ -188,7 +199,7 @@ describe('HealthMetricsEventsComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the nine sections in order, with the kpi, forecast, past, reg, rev, spk and orgs bodies and placeholders for the rest', async () => {
+  it('renders the nine sections in order, with the kpi, forecast, past, reg, rev, spon, spk and orgs bodies and placeholders for the rest', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="events-section-"]')] as HTMLElement[];
 
@@ -206,6 +217,8 @@ describe('HealthMetricsEventsComponent', () => {
         expect(element.querySelector('[data-testid="events-reg-stub"]')).not.toBeNull();
       } else if (key === 'rev') {
         expect(element.querySelector('[data-testid="events-rev-stub"]')).not.toBeNull();
+      } else if (key === 'spon') {
+        expect(element.querySelector('[data-testid="events-spon-stub"]')).not.toBeNull();
       } else if (key === 'spk') {
         expect(element.querySelector('[data-testid="events-spk-stub"]')).not.toBeNull();
       } else if (key === 'orgs') {
