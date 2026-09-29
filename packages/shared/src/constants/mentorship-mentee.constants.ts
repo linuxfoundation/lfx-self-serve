@@ -201,6 +201,7 @@ export const MENTORSHIP_MENTEE_APPLICATION_LIMIT = 3;
 
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
   active: 'Active',
+  graduated: 'Graduated',
   'awaiting-review': 'Awaiting Review',
   'in-progress': 'In Progress',
 };
@@ -211,38 +212,43 @@ export const MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS: Record<MentorshipMente
  */
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES: Record<MentorshipMenteeApplicationStatus, string> = {
   active: 'bg-blue-50 text-blue-700',
+  graduated: 'bg-violet-50 text-violet-700',
   'awaiting-review': 'bg-amber-50 text-amber-700',
   'in-progress': 'bg-emerald-50 text-emerald-700',
 };
 
 /** Display order of the application cards on the Overview and My Tasks tabs. */
-export const MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER: readonly MentorshipMenteeApplicationStatus[] = ['active', 'awaiting-review', 'in-progress'];
+export const MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER: readonly MentorshipMenteeApplicationStatus[] = [
+  'active',
+  'graduated',
+  'awaiting-review',
+  'in-progress',
+];
 
 /**
- * Progress label per card status. An accepted (active) card counts its non-prerequisite
- * tasks; a pending card counts its prerequisite tasks.
+ * Progress label per card status. An accepted (active) or graduated card counts its
+ * non-prerequisite tasks; a pending card counts its prerequisite tasks.
  */
 export const MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
   active: 'Tasks',
+  graduated: 'Tasks',
   'awaiting-review': 'Prerequisite Tasks',
   'in-progress': 'Prerequisite Tasks',
 };
 
 /**
  * Upstream application statuses that land in Past Applications, and the outcome each
- * one shows. `pending` and `accepted` are absent because they render as cards.
+ * one shows. `pending`, `accepted` and `graduated` are absent because they render as cards.
  */
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS: Partial<Record<MentorshipUpstreamApplicationStatus, MentorshipMenteePastOutcome>> = {
   declined: 'not-selected',
   withdrawn: 'withdrawn',
-  graduated: 'graduated',
   hold: 'on-hold',
 };
 
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'Not selected',
   withdrawn: 'Withdrawn',
-  graduated: 'Graduated',
   'on-hold': 'On Hold',
 };
 
@@ -250,7 +256,6 @@ export const MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS: Record<MentorshipMenteePastO
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  graduated: 'bg-emerald-100 text-emerald-700',
   'on-hold': 'bg-blue-100 text-blue-700',
 };
 

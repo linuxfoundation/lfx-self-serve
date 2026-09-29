@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MentorshipUpstreamApplicationStatus } from '@lfx-one/shared/interfaces';
+
 // ---------------------------------------------------------------------------
 // Mentorship service — Server-Only Constants
 // ---------------------------------------------------------------------------
@@ -29,3 +31,6 @@ export const MENTORSHIP_PROGRAMS_PATH = '/mentorship/v1/programs';
 
 /** Page size for upstream mentorship list reads: the largest `limit` the service accepts. */
 export const MENTORSHIP_LIST_PAGE_SIZE = 100;
+
+/** Application statuses whose tasks the mentee views track; every other status is a past application. */
+export const MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'accepted', 'graduated'];

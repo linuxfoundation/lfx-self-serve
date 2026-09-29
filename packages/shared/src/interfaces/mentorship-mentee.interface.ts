@@ -184,6 +184,11 @@ export interface MentorshipMenteeApplicationView {
   /** Two-letter initials for the card's avatar circle. */
   orgAbbreviation: string;
   status: MentorshipMenteeApplicationStatus;
+  /**
+   * True for an accepted or graduated application: the card tracks its non-prerequisite tasks,
+   * sits in the My Tasks accepted section and offers no Withdraw.
+   */
+  accepted: boolean;
   statusLabel: string;
   statusBadgeClass: string;
   progressLabel: string;
@@ -288,10 +293,11 @@ export type MentorshipMenteePhase = 'empty' | 'applicant';
 /**
  * Display status on an application card, derived from the stored status and the tasks:
  * - `'active'` — application accepted
+ * - `'graduated'` — application graduated; otherwise shown like an accepted one
  * - `'awaiting-review'` — application pending, every prerequisite task submitted (or none assigned)
  * - `'in-progress'` — application pending, a prerequisite task still open
  */
-export type MentorshipMenteeApplicationStatus = 'active' | 'awaiting-review' | 'in-progress';
+export type MentorshipMenteeApplicationStatus = 'active' | 'graduated' | 'awaiting-review' | 'in-progress';
 
 /** Lightweight term reference for application cards. */
 export interface MentorshipMenteeTermRef {
@@ -311,7 +317,8 @@ export interface MentorshipMenteeTermRef {
  * - `projectName` ← `GET /mentorship/v1/programs/{id}` `project_name`; absent when that lookup fails
  * - `term` ← the embedded `term`
  * - `decisionExpectedDate` ← `term.application_end_date`
- * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`; empty when the caller skipped tasks
+ * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`, read only with `withTasks=true` and
+ *   only for pending, accepted and graduated applications; absent otherwise, never an empty stand-in
  */
 export interface MentorshipMenteeApplication {
   id: string;
@@ -324,7 +331,7 @@ export interface MentorshipMenteeApplication {
   createdOn: string;
   updatedOn: string;
   decisionExpectedDate?: string;
-  tasks: MentorshipMenteeApplicationTask[];
+  tasks?: MentorshipMenteeApplicationTask[];
 }
 
 /** Response body from `GET /api/mentorship/mentee/applications`. */
@@ -338,7 +345,7 @@ export interface MentorshipMenteeApplicationsResponse {
  * - `'not-selected'` is a display-friendly alias for `applications.status = 'declined'`.
  * - `'on-hold'` is `applications.status = 'hold'`.
  */
-export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'graduated' | 'on-hold';
+export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'on-hold';
 
 /** One row in the Past Applications table. */
 export interface MentorshipMenteePastApplication {

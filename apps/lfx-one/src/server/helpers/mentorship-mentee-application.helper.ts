@@ -14,15 +14,19 @@ import { formatIsoDateLabel } from '@lfx-one/shared/utils';
 /** An upstream task counts as submitted once the mentee has handed it in, whether or not it was reviewed. */
 const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status === 'submitted' || task.status === 'complete';
 
+/** A task's own due date, else the term's application close for a prerequisite task. */
+const resolveTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
+  if (task.due_date) return task.due_date;
+  if (task.category === 'prerequisite') return applicationEndDate;
+  return undefined;
+};
+
 /**
  * Maps one `tasks` row to the mentee task shape. The service stores `category` as nullable, and a
  * task without one counts as non-prerequisite. Upstream records no separate submission time, so a
  * submitted task's `updated_on` stands in for it.
  */
-export const mapMentorshipMenteeApplicationTask = (
-  task: MentorshipUpstreamTask,
-  application_end_date: string | undefined
-): MentorshipMenteeApplicationTask => ({
+export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): MentorshipMenteeApplicationTask => ({
   id: task.id,
   name: task.name ?? '',
   description: task.description ?? '',
@@ -30,7 +34,7 @@ export const mapMentorshipMenteeApplicationTask = (
   status: task.status,
   submitFile: task.submit_file || null,
   fileUrl: task.file || undefined,
-  dueDate: task.due_date ? task.due_date : task.category === 'prerequisite' ? (application_end_date ?? undefined) : undefined,
+  dueDate: resolveTaskDueDate(task, applicationEndDate),
   submittedOn: isSubmittedTask(task) ? task.updated_on : undefined,
   updatedOn: task.updated_on,
 });
@@ -38,11 +42,12 @@ export const mapMentorshipMenteeApplicationTask = (
 /**
  * Maps one of the caller's `applications` rows, its tasks, and its program's detail to the mentee
  * application shape. Applications embed the program but not its LF project, so the project comes
- * from the program detail and is absent when that lookup failed.
+ * from the program detail and is absent when that lookup failed. `tasks` is left out when they
+ * were not read, so the result never looks like an application with no tasks assigned.
  */
 export const mapMentorshipMenteeApplication = (
   application: MentorshipUpstreamApplication,
-  tasks: MentorshipUpstreamTask[],
+  tasks: MentorshipUpstreamTask[] | undefined,
   program?: MentorshipUpstreamProgramDetail
 ): MentorshipMenteeApplication => ({
   id: application.id,
@@ -59,7 +64,7 @@ export const mapMentorshipMenteeApplication = (
   createdOn: application.created_on,
   updatedOn: application.updated_on,
   decisionExpectedDate: application.term?.application_end_date || undefined,
-  tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)),
+  ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 
 /**

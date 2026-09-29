@@ -884,27 +884,29 @@ export function buildMentorshipMenteeTaskView(input: {
 }
 
 /**
- * Display status of a pending or accepted application: accepted → `active`; pending with every
- * prerequisite task submitted (or none assigned) → `awaiting-review`; otherwise `in-progress`.
- * Returns `null` for every other stored status, since those rows belong in Past Applications.
+ * Display status of a pending, accepted or graduated application: accepted → `active`;
+ * graduated → `graduated`; pending with every prerequisite task submitted (or none assigned) →
+ * `awaiting-review`; otherwise `in-progress`. Returns `null` for every other stored status, since
+ * those rows belong in Past Applications.
  */
 export function mentorshipMenteeDisplayStatus(app: MentorshipMenteeApplication): MentorshipMenteeApplicationStatus | null {
   if (app.upstreamStatus === 'accepted') return 'active';
+  if (app.upstreamStatus === 'graduated') return 'graduated';
   if (app.upstreamStatus !== 'pending') return null;
   const tasks = mentorshipMenteeProgressTasks(app);
   return countSubmittedMentorshipMenteeTasks(tasks) === tasks.length ? 'awaiting-review' : 'in-progress';
 }
 
 /**
- * Tasks an application card tracks: the non-prerequisite tasks once accepted, the prerequisite
- * tasks while pending. A task without a category counts as non-prerequisite.
+ * Tasks an application card tracks: the non-prerequisite tasks once accepted or graduated, the
+ * prerequisite tasks while pending.
  */
 export function mentorshipMenteeProgressTasks(app: MentorshipMenteeApplication): MentorshipMenteeApplicationTask[] {
-  const wantPrerequisite = app.upstreamStatus !== 'accepted';
-  return app.tasks.filter((task) => (task.category === 'prerequisite') === wantPrerequisite);
+  const wantPrerequisite = !isMentorshipMenteeAccepted(app);
+  return (app.tasks ?? []).filter((task) => (task.category === 'prerequisite') === wantPrerequisite);
 }
 
-/** Build the card for a pending or accepted application with its display status. */
+/** Build the card for a pending, accepted or graduated application with its display status. */
 export function buildMentorshipMenteeApplicationView(
   app: MentorshipMenteeApplication,
   status: MentorshipMenteeApplicationStatus
@@ -919,13 +921,14 @@ export function buildMentorshipMenteeApplicationView(
     termName: app.term.name,
     orgAbbreviation: mentorshipPersonInitials(app.projectName ?? app.programName),
     status,
+    accepted: isMentorshipMenteeAccepted(app),
     statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[status],
     statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[status],
     progressLabel: MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS[status],
     submittedCount,
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
-    lastUpdatedOn: latestIsoInstant([app.updatedOn, ...app.tasks.map((task) => task.updatedOn)]),
+    lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
     decisionExpectedDate: app.decisionExpectedDate ?? null,
     tasks: tasks.map((task) =>
       buildMentorshipMenteeTaskView({
@@ -943,8 +946,8 @@ export function buildMentorshipMenteeApplicationView(
 }
 
 /**
- * Derive the mentee overview from the mentee's applications. Pending and accepted applications
- * become cards ordered active → awaiting review → in progress; declined, withdrawn, graduated
+ * Derive the mentee overview from the mentee's applications. Pending, accepted and graduated
+ * applications become cards ordered active → graduated → awaiting review → in progress; declined, withdrawn
  * and held applications become Past Applications rows, newest first.
  */
 export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[]): MentorshipMenteeOverview {
@@ -970,6 +973,11 @@ export function buildMentorshipMenteeOverview(applications: readonly MentorshipM
     cards,
     past,
   };
+}
+
+/** A graduated application acts as an accepted one: its card tracks the non-prerequisite tasks. */
+function isMentorshipMenteeAccepted(app: MentorshipMenteeApplication): boolean {
+  return app.upstreamStatus === 'accepted' || app.upstreamStatus === 'graduated';
 }
 
 /** Milliseconds for an ISO instant; an unparseable value sorts as the oldest. */

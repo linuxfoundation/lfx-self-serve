@@ -75,6 +75,10 @@ describe('mapMentorshipMenteeApplicationTask', () => {
     expect(task).toMatchObject({ submitFile: 'required', fileUrl: 'https://example.com/files/answer.pdf', dueDate: '2026-07-15' });
   });
 
+  it('gives a non-prerequisite task without its own due date no due date', () => {
+    expect(mapMentorshipMenteeApplicationTask({ ...baseTask, category: 'non_prerequisite' }, '2026-08-01').dueDate).toBeUndefined();
+  });
+
   it('defaults a missing name, description and category', () => {
     const task = mapMentorshipMenteeApplicationTask(
       { ...baseTask, name: undefined, description: undefined, category: undefined, submit_file: '' },
@@ -109,6 +113,11 @@ describe('mapMentorshipMenteeApplication', () => {
 
   it('leaves the project out when the program lookup failed', () => {
     expect(mapMentorshipMenteeApplication(baseApplication, []).projectName).toBeUndefined();
+  });
+
+  it('leaves tasks out when they were not read, and keeps an empty list when none are assigned', () => {
+    expect(mapMentorshipMenteeApplication(baseApplication, undefined)).not.toHaveProperty('tasks');
+    expect(mapMentorshipMenteeApplication(baseApplication, []).tasks).toEqual([]);
   });
 
   it('falls back to the term id on the row when the term is not embedded', () => {

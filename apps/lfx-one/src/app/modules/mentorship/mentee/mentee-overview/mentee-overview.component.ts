@@ -38,7 +38,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
 /**
  * Overview child of the mentee shell. With no applications it shows the empty state and a
  * link to browse programs; otherwise a banner counting the pending applications, one card
- * per pending or accepted application, and a Past Applications table for the rest.
+ * per pending, accepted or graduated application, and a Past Applications table for the rest.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',

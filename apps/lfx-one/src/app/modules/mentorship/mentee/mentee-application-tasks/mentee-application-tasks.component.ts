@@ -17,9 +17,10 @@ import { MenteeAcceptedTasksComponent } from '../mentee-accepted-tasks/mentee-ac
 import { MenteeApplicantTasksComponent } from '../mentee-applicant-tasks/mentee-applicant-tasks.component';
 
 /**
- * My Tasks tab. Reads the mentee's applications and renders the accepted application first
- * (program card, status filter and its non-prerequisite tasks), then each pending application
- * with its prerequisite tasks. With no pending or accepted application it shows an empty state.
+ * My Tasks tab. Reads the mentee's applications and renders each accepted or graduated application
+ * first (program card, status filter and its non-prerequisite tasks), then each pending application
+ * with its prerequisite tasks. With no pending, accepted or graduated application it shows an empty
+ * state.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-application-tasks',
@@ -36,11 +37,11 @@ export class MenteeApplicationTasksComponent {
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
 
-  /** Pending and accepted applications, already ordered active → awaiting review → in progress. */
+  /** Pending, accepted and graduated applications, already ordered active → graduated → awaiting review → in progress. */
   private readonly cards: Signal<MentorshipMenteeApplicationView[]> = this.initCards();
 
-  protected readonly acceptedApplications = computed(() => this.cards().filter((card) => card.status === 'active'));
-  protected readonly pendingApplications = computed(() => this.cards().filter((card) => card.status !== 'active'));
+  protected readonly acceptedApplications = computed(() => this.cards().filter((card) => card.accepted));
+  protected readonly pendingApplications = computed(() => this.cards().filter((card) => !card.accepted));
 
   protected retry(): void {
     this.menteeService.clearMenteeCaches();

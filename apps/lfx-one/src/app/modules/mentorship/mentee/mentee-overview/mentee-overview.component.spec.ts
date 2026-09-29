@@ -148,17 +148,23 @@ describe('MenteeOverviewComponent', () => {
 
   // ---- Application cards ----------------------------------------------------
 
-  it('orders the cards active, then awaiting review, then in progress', async () => {
+  it('orders the cards active, then graduated, then awaiting review, then in progress', async () => {
     await bootstrap({
       applications: [
         menteeTestApplication({ id: 'in-progress', programName: 'In Progress Program', tasks: [menteeTestTask()] }),
+        menteeTestApplication({ id: 'graduated', programName: 'Graduated Program', upstreamStatus: 'graduated' }),
         menteeTestApplication({ id: 'awaiting', programName: 'Awaiting Program', tasks: [menteeTestTask({ status: 'submitted' })] }),
         menteeTestApplication({ id: 'active', programName: 'Active Program', upstreamStatus: 'accepted' }),
       ],
     });
     const cards = allByTestId('mentee-application-card');
-    expect(cards.map((card) => text(card.querySelector('p.font-semibold')))).toEqual(['Active Program', 'Awaiting Program', 'In Progress Program']);
-    expect(allByTestId('mentee-application-card-status').map((badge) => text(badge))).toEqual(['Active', 'Awaiting Review', 'In Progress']);
+    expect(cards.map((card) => text(card.querySelector('p.font-semibold')))).toEqual([
+      'Active Program',
+      'Graduated Program',
+      'Awaiting Program',
+      'In Progress Program',
+    ]);
+    expect(allByTestId('mentee-application-card-status').map((badge) => text(badge))).toEqual(['Active', 'Graduated', 'Awaiting Review', 'In Progress']);
   });
 
   it('treats a pending application with no tasks as awaiting review', async () => {
@@ -166,12 +172,19 @@ describe('MenteeOverviewComponent', () => {
     expect(text(byTestId('mentee-application-card-status'))).toBe('Awaiting Review');
   });
 
-  it('leaves declined, withdrawn, graduated and on-hold applications out of the cards', async () => {
+  it('shows a graduated application as a Graduated card without Withdraw', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ id: 'graduated', upstreamStatus: 'graduated' })] });
+    expect(allByTestId('mentee-application-card')).toHaveLength(1);
+    expect(text(byTestId('mentee-application-card-status'))).toBe('Graduated');
+    expect(byTestId('mentee-overview-withdraw')).toBeNull();
+    expect(byTestId('mentee-overview-past-applications')).toBeNull();
+  });
+
+  it('leaves declined, withdrawn and on-hold applications out of the cards', async () => {
     await bootstrap({
       applications: [
         menteeTestApplication({ id: 'declined', upstreamStatus: 'declined' }),
         menteeTestApplication({ id: 'withdrawn', upstreamStatus: 'withdrawn' }),
-        menteeTestApplication({ id: 'graduated', upstreamStatus: 'graduated' }),
         menteeTestApplication({ id: 'hold', upstreamStatus: 'hold' }),
       ],
     });
@@ -252,6 +265,13 @@ describe('MenteeOverviewComponent', () => {
     expect(comingSoonNotify).toHaveBeenCalledWith(MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY);
   });
 
+  it('offers Withdraw only on pending cards, not on the active one', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ id: 'accepted', upstreamStatus: 'accepted' }), menteeTestApplication()] });
+    const [activeCard, pendingCard] = allByTestId('mentee-application-card');
+    expect(activeCard.querySelector('[data-testid="mentee-overview-withdraw"]')).toBeNull();
+    expect(pendingCard.querySelector('[data-testid="mentee-overview-withdraw"]')).toBeTruthy();
+  });
+
   // ---- Past applications ----------------------------------------------------
 
   it('hides the past applications table when there are none', async () => {
@@ -264,7 +284,6 @@ describe('MenteeOverviewComponent', () => {
       applications: [
         menteeTestApplication({ id: 'declined', programName: 'Declined Program', upstreamStatus: 'declined' }),
         menteeTestApplication({ id: 'withdrawn', programName: 'Withdrawn Program', upstreamStatus: 'withdrawn' }),
-        menteeTestApplication({ id: 'graduated', programName: 'Graduated Program', upstreamStatus: 'graduated' }),
         menteeTestApplication({ id: 'hold', programName: 'Held Program', upstreamStatus: 'hold', projectName: undefined }),
       ],
     });
@@ -272,7 +291,6 @@ describe('MenteeOverviewComponent', () => {
     expect(past).toContain('Declined Program');
     expect(past).toContain('Not selected');
     expect(past).toContain('Withdrawn');
-    expect(past).toContain('Graduated');
     expect(past).toContain('Held Program');
     expect(past).toContain('On Hold');
     expect(past).toContain('Jun 1, 2026');

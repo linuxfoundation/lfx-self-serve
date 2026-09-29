@@ -117,6 +117,13 @@ describe('MenteeApplicationTasksComponent', () => {
     expect(byTestId('mentee-tasks-applicant')).toBeNull();
   });
 
+  it('renders a graduated application in the accepted section', async () => {
+    await bootstrap({ applications: [pending(), menteeTestApplication({ ...accepted(), id: 'graduated', upstreamStatus: 'graduated' })] });
+    expect(byTestId('mentee-tasks-accepted-card-graduated')).toBeTruthy();
+    expect(byTestId('mentee-tasks-application-card-graduated')).toBeNull();
+    expect(byTestId('mentee-tasks-application-card-pending')).toBeTruthy();
+  });
+
   it('renders only the pending section when no application is accepted', async () => {
     await bootstrap({ applications: [pending()] });
     expect(byTestId('mentee-tasks-accepted')).toBeNull();

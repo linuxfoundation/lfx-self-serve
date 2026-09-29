@@ -1056,6 +1056,10 @@ describe('mentorshipMenteeDisplayStatus', () => {
     expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus: 'accepted' }))).toBe('active');
   });
 
+  it('shows a graduated application as graduated', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus: 'graduated' }))).toBe('graduated');
+  });
+
   it('shows a pending application with an open prerequisite task as in progress', () => {
     const app = menteeApplication({ tasks: [menteeTask({ status: 'submitted' }), menteeTask({ id: 'task-2', status: 'in_progress' })] });
     expect(mentorshipMenteeDisplayStatus(app)).toBe('in-progress');
@@ -1077,27 +1081,28 @@ describe('mentorshipMenteeDisplayStatus', () => {
   });
 
   it('returns null for statuses that belong in Past Applications', () => {
-    for (const upstreamStatus of ['declined', 'withdrawn', 'graduated', 'hold'] as const) {
+    for (const upstreamStatus of ['declined', 'withdrawn', 'hold'] as const) {
       expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus }))).toBeNull();
     }
   });
 });
 
 describe('mentorshipMenteeProgressTasks', () => {
-  const tasks = [
-    menteeTask({ id: 'prereq' }),
-    menteeTask({ id: 'regular', category: 'non_prerequisite' }),
-    // A task the service stored without a category.
-    menteeTask({ id: 'uncategorised', category: undefined as unknown as MentorshipMenteeApplicationTask['category'] }),
-  ];
+  const tasks = [menteeTask({ id: 'prereq' }), menteeTask({ id: 'regular', category: 'non_prerequisite' })];
 
   it('tracks prerequisite tasks while pending', () => {
     expect(mentorshipMenteeProgressTasks(menteeApplication({ tasks })).map((task) => task.id)).toEqual(['prereq']);
   });
 
-  it('tracks non-prerequisite tasks once accepted, counting an uncategorised task as non-prerequisite', () => {
-    const ids = mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus: 'accepted', tasks })).map((task) => task.id);
-    expect(ids).toEqual(['regular', 'uncategorised']);
+  it('tracks non-prerequisite tasks once accepted or graduated', () => {
+    for (const upstreamStatus of ['accepted', 'graduated'] as const) {
+      const ids = mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus, tasks })).map((task) => task.id);
+      expect(ids).toEqual(['regular']);
+    }
+  });
+
+  it('tracks nothing when the tasks were not read', () => {
+    expect(mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus: 'accepted', tasks: undefined }))).toEqual([]);
   });
 });
 
@@ -1115,6 +1120,7 @@ describe('buildMentorshipMenteeApplicationView', () => {
     const view = buildMentorshipMenteeApplicationView(app, 'active');
     expect(view.progressLabel).toBe('Tasks');
     expect(view.statusLabel).toBe('Active');
+    expect(view.accepted).toBe(true);
     expect(view.submittedCount).toBe(1);
     expect(view.totalCount).toBe(3);
     expect(view.progressPercent).toBe(33);
@@ -1133,7 +1139,20 @@ describe('buildMentorshipMenteeApplicationView', () => {
     const view = buildMentorshipMenteeApplicationView(menteeApplication({ decisionExpectedDate: undefined }), 'awaiting-review');
     expect(view.progressPercent).toBe(0);
     expect(view.progressLabel).toBe('Prerequisite Tasks');
+    expect(view.accepted).toBe(false);
     expect(view.decisionExpectedDate).toBeNull();
+  });
+
+  it('labels a graduated card Graduated and tracks its non-prerequisite tasks', () => {
+    const app = menteeApplication({
+      upstreamStatus: 'graduated',
+      tasks: [menteeTask({ id: 'prereq' }), menteeTask({ id: 'a', category: 'non_prerequisite', status: 'complete' })],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'graduated');
+    expect(view.statusLabel).toBe('Graduated');
+    expect(view.progressLabel).toBe('Tasks');
+    expect(view.accepted).toBe(true);
+    expect(view.tasks.map((task) => task.id)).toEqual(['a']);
   });
 
   it('builds the avatar initials from the project, falling back to the program', () => {
@@ -1155,9 +1174,10 @@ describe('buildMentorshipMenteeOverview', () => {
       menteeApplication({ id: 'awaiting' }),
       menteeApplication({ id: 'hold', upstreamStatus: 'hold', createdOn: '2026-03-01T00:00:00Z' }),
       menteeApplication({ id: 'accepted', upstreamStatus: 'accepted', tasks: [menteeTask({ category: 'non_prerequisite' })] }),
+      menteeApplication({ id: 'graduated', upstreamStatus: 'graduated', tasks: [menteeTask({ category: 'non_prerequisite', status: 'complete' })] }),
     ]);
     expect(overview.phase).toBe('applicant');
-    expect(overview.cards.map((card) => card.id)).toEqual(['accepted', 'awaiting', 'in-progress']);
+    expect(overview.cards.map((card) => card.id)).toEqual(['accepted', 'graduated', 'awaiting', 'in-progress']);
     expect(overview.past.map((row) => [row.id, row.outcome])).toEqual([
       ['hold', 'on-hold'],
       ['declined', 'not-selected'],

@@ -233,7 +233,7 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
     const result = await service.getMenteeApplications(buildReq(), true);
 
     expect(result.total).toBe(2);
-    expect(result.data.map((app) => [app.id, app.projectName, app.tasks.map((task) => task.id)])).toEqual([
+    expect(result.data.map((app) => [app.id, app.projectName, app.tasks?.map((task) => task.id)])).toEqual([
       ['app-1', 'Test Project', ['task-1']],
       ['app-2', 'Test Project', []],
     ]);
@@ -249,8 +249,30 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
 
     const result = await service.getMenteeApplications(buildReq(), false);
 
-    expect(result.data[0].tasks).toEqual([]);
+    expect(result.data[0]).not.toHaveProperty('tasks');
     expect(proxyRequest.mock.calls.some(([, , path]) => path.startsWith(APPLICATIONS_PATH))).toBe(false);
+  });
+
+  it('reads tasks only for pending, accepted and graduated applications', async () => {
+    routeProxy(proxyRequest, {
+      [ME_APPLICATIONS_PATH]: () =>
+        listOf([
+          upstreamApplication(),
+          upstreamApplication({ id: 'app-accepted', status: 'accepted' }),
+          upstreamApplication({ id: 'app-graduated', status: 'graduated' }),
+          ...(['declined', 'withdrawn', 'hold'] as const).map((status) => upstreamApplication({ id: `app-${status}`, status })),
+        ]),
+      [`${APPLICATIONS_PATH}/app-1/tasks`]: () => listOf([upstreamTask()]),
+      [`${APPLICATIONS_PATH}/app-accepted/tasks`]: () => listOf([]),
+      [`${APPLICATIONS_PATH}/app-graduated/tasks`]: () => listOf([]),
+      [`${PROGRAMS_PATH}/prog-1`]: () => ({ id: 'prog-1', name: 'Test Program' }),
+    });
+
+    const result = await service.getMenteeApplications(buildReq(), true);
+
+    const taskPaths = proxyRequest.mock.calls.map(([, , path]) => path).filter((path) => path.startsWith(APPLICATIONS_PATH));
+    expect(taskPaths).toEqual([`${APPLICATIONS_PATH}/app-1/tasks`, `${APPLICATIONS_PATH}/app-accepted/tasks`, `${APPLICATIONS_PATH}/app-graduated/tasks`]);
+    expect(result.data.filter((app) => app.tasks !== undefined).map((app) => app.id)).toEqual(['app-1', 'app-accepted', 'app-graduated']);
   });
 
   it('reads every page of applications', async () => {

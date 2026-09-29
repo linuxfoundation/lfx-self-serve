@@ -26,6 +26,7 @@ import {
   MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
+  MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { ResourceNotFoundError } from '../errors';
@@ -63,8 +64,9 @@ export class MentorshipMenteeService {
    * their token. Every page is read: a mentee holds a handful of applications, so paging to the
    * end costs one request in practice and keeps the overview counts complete.
    *
-   * With `withTasks`, each application's tasks are listed in parallel, and a task failure
-   * propagates, since the task views would otherwise show wrong progress. Each distinct program
+   * With `withTasks`, the tasks of each pending, accepted or graduated application are listed in parallel,
+   * and a task failure propagates, since the task views would otherwise show wrong progress. Past
+   * applications only show their outcome, so their tasks are not read. Each distinct program
    * is read once for its LF project, which applications do not embed; a failed program read
    * logs a warning and leaves the project out, so the card falls back to the program name.
    */
@@ -74,7 +76,11 @@ export class MentorshipMenteeService {
 
     const programIds = [...new Set(applications.map((application) => application.program?.id).filter((id): id is string => !!id))];
     const [tasksByApplication, programs] = await Promise.all([
-      withTasks ? Promise.all(applications.map((application) => this.listApplicationTasks(req, application.id))) : Promise.resolve(applications.map(() => [])),
+      Promise.all(
+        applications.map((application) =>
+          withTasks && MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES.includes(application.status) ? this.listApplicationTasks(req, application.id) : undefined
+        )
+      ),
       Promise.all(programIds.map((programId) => this.findProgramDetail(req, programId))),
     ]);
     const programsById = new Map(programs.filter((program): program is MentorshipUpstreamProgramDetail => !!program).map((program) => [program.id, program]));
