@@ -23,6 +23,7 @@ import {
   formatHealthMetricsEventsOrganizationsCountLabel,
   formatHealthMetricsEventsPastClosedLabel,
   formatHealthMetricsEventsRevenue,
+  hasHealthMetricsEventsGoal,
   pickHealthMetricsEventsForecastFormat,
   resolveHealthMetricsEventsForecastStatus,
   resolveHealthMetricsEventsForecastVerdict,
@@ -209,6 +210,10 @@ describe('forecast table helpers', () => {
     expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
   });
 
+  it.each([0, -5])('reads a goal of %i as no goal, labelled with a dash', (goal) => {
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
+  });
+
   it('truncates long pill names with an ellipsis', () => {
     expect(truncateHealthMetricsEventsPillName('Short')).toBe('Short');
     const long = truncateHealthMetricsEventsPillName('A'.repeat(40));
@@ -238,6 +243,10 @@ describe('resolveHealthMetricsEventsPastStatus', () => {
 
   it('reads no goal as no goal, never as a miss', () => {
     expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: null, goalMet: null, paceStatus: null }))).toBe('no-goal');
+  });
+
+  it.each([0, -5])('reads a goal of %i as no goal, never as a hit', (goal) => {
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal, registrations: 120, goalMet: null }))).toBe('no-goal');
   });
 
   it('falls back to final registrations when the outcome is not flagged', () => {
@@ -336,6 +345,21 @@ describe('buildHealthMetricsEventsPastView', () => {
       dateLabel: 'Mar 10, 2026',
     });
     expect(noGoal).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null, progressClass: 'bg-gray-200' });
+  });
+
+  it.each([0, -5])('labels a past goal of %i with a dash and draws no bar', (goal) => {
+    const view = buildHealthMetricsEventsPastView({ ...past, events: [pastEvent({ goal, goalMet: null, registrations: 120 })] }, 'YTD');
+
+    expect(view.rows[0]).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null });
+  });
+});
+
+describe('hasHealthMetricsEventsGoal', () => {
+  it('treats only a positive goal as set', () => {
+    expect(hasHealthMetricsEventsGoal(450)).toBe(true);
+    expect(hasHealthMetricsEventsGoal(0)).toBe(false);
+    expect(hasHealthMetricsEventsGoal(-5)).toBe(false);
+    expect(hasHealthMetricsEventsGoal(null)).toBe(false);
   });
 });
 

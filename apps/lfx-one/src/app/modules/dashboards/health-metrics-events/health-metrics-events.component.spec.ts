@@ -24,7 +24,7 @@ import { EventsSpeakersComponent } from './components/events-speakers/events-spe
 import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSectionKey } from '@lfx-one/shared/interfaces';
 
 const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, hasEvents: true };
 
@@ -43,7 +43,7 @@ class ForecastStubComponent {
   public readonly countsChange = output<string>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<string>();
+  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Past events, whose reads its own spec covers; the test drives its outputs. */
@@ -52,7 +52,7 @@ class PastStubComponent {
   public readonly countChange = output<number | null>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<string>();
+  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
@@ -60,7 +60,7 @@ class PastStubComponent {
 class RegistrationsGrowthStubComponent {
   public readonly settled = output<void>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<string>();
+  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Revenue, whose read its own spec covers; the test drives its outputs. */
