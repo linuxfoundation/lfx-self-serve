@@ -55,6 +55,8 @@ test.describe('Formation people card — structural contract', () => {
 
     const groupTestIds = await card.locator('[data-testid^="formation-people-group-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
     expect(groupTestIds).toEqual(GROUPS.map(({ key }) => `formation-people-group-${key}`));
+    // Pinned independently of the helper, so a grouping regression can't move both sides together.
+    expect(groupTestIds).toEqual(['formation-people-group-staff', 'formation-people-group-org-cascade-data', 'formation-people-group-other']);
   });
 
   test('renders a status chip for every invited row and none for staff', async ({ page }) => {

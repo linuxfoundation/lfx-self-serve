@@ -137,9 +137,12 @@ export function buildFormationPeople(settings: Pick<ProjectSettings, 'writers' |
 /**
  * The people card's groups (#2724): LF Staff first, then one group per invited organization
  * (A–Z by name), then Other for invitees with no known organization — email-only entries have no
- * profile to enrich, and enrichment is best-effort. Organizations are bucketed by a slug of the
- * name, so `Contoso Ltd` and `contoso ltd` land together under the first spelling seen. Rows keep
- * the input order (`buildFormationPeople` already sorts by name) and empty groups are omitted.
+ * profile to enrich, and enrichment is best-effort. Organizations are matched on the name with
+ * case and whitespace folded, so `Contoso Ltd` and `contoso  ltd` land together under the first
+ * spelling seen while `C++` and `C` stay apart. A name with no letters or digits, or one that is
+ * literally "Other", joins the Other group rather than rendering a second heading of that name.
+ * Rows keep the input order (`buildFormationPeople` already sorts by name) and empty groups are
+ * omitted.
  */
 export function buildFormationPeopleRowGroups(
   people: readonly FormationPerson[],
@@ -147,6 +150,8 @@ export function buildFormationPeopleRowGroups(
 ): FormationPeopleRowGroup[] {
   const staff: FormationPeopleRowGroup = { key: 'staff', label: FORMATION_PEOPLE_STAFF_GROUP_LABEL, rows: [] };
   const other: FormationPeopleRowGroup = { key: 'other', label: FORMATION_PEOPLE_OTHER_GROUP_LABEL, rows: [] };
+  const otherIdentity = FORMATION_PEOPLE_OTHER_GROUP_LABEL.toLowerCase();
+  // Keyed by the folded name (identity); the render key is assigned after sorting.
   const organizations = new Map<string, FormationPeopleRowGroup>();
 
   for (const person of people) {
@@ -157,28 +162,48 @@ export function buildFormationPeopleRowGroups(
       continue;
     }
 
-    const organization = person.organization?.trim() ?? '';
-    const slug = organization
-      .toLowerCase()
-      .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
-      .replace(/^-+|-+$/g, '');
-    if (!slug) {
+    const label = (person.organization ?? '').trim().replace(/\s+/g, ' ');
+    const identity = label.toLowerCase();
+    if (!slugifyOrganization(identity) || identity === otherIdentity) {
       other.rows.push(row);
       continue;
     }
 
-    const key = `org-${slug}`;
-    const group = organizations.get(key);
+    const group = organizations.get(identity);
     if (group) {
       group.rows.push(row);
     } else {
-      organizations.set(key, { key, label: organization, rows: [row] });
+      organizations.set(identity, { key: '', label, rows: [row] });
     }
   }
 
-  const byOrganization = [...organizations.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  // Pinned locale: the card renders on the server and in the browser, and both must agree on order.
+  const byOrganization = [...organizations.values()].sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base' }));
+
+  // `org-<slug>` for the testid/track key; names that slug alike (`C++` / `C`) get a numeric suffix so keys stay unique.
+  const used = new Set<string>();
+  for (const group of byOrganization) {
+    const base = `org-${slugifyOrganization(group.label.toLowerCase())}`;
+    let key = base;
+    for (let n = 2; used.has(key); n += 1) {
+      key = `${base}-${n}`;
+    }
+    used.add(key);
+    group.key = key;
+  }
 
   return [staff, ...byOrganization, other].filter((group) => group.rows.length > 0);
+}
+
+/**
+ * Letters, marks and digits joined by `-` — split/join rather than a replace plus edge-trim regex,
+ * so the work stays linear on long runs of punctuation.
+ */
+function slugifyOrganization(name: string): string {
+  return name
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter((part) => part.length > 0)
+    .join('-');
 }
 
 /**

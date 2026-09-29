@@ -185,6 +185,19 @@ describe('buildFormationPeopleRowGroups', () => {
     ]);
   });
 
+  it('keeps names that differ only by punctuation apart, with unique keys', () => {
+    expect(shape([person({ key: 'a', organization: 'C++' }), person({ key: 'b', organization: 'C' })])).toEqual([
+      { key: 'org-c', label: 'C', rows: ['b'] },
+      { key: 'org-c-2', label: 'C++', rows: ['a'] },
+    ]);
+  });
+
+  it('folds an organization literally named Other into the Other group instead of a second heading', () => {
+    expect(shape([person({ key: 'a', organization: 'other' }), person({ key: 'b', organization: null })])).toEqual([
+      { key: 'other', label: 'Other', rows: ['a', 'b'] },
+    ]);
+  });
+
   it('keeps non-Latin organization names as their own group', () => {
     expect(shape([person({ key: 'a', organization: '示例公司' })])).toEqual([{ key: 'org-示例公司', label: '示例公司', rows: ['a'] }]);
   });
