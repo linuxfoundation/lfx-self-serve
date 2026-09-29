@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import {
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS,
   MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
   MENTORSHIP_MENTEE_APPLY_CANCEL_LABEL,
@@ -31,7 +32,6 @@ import {
   MENTORSHIP_MENTEE_APPLY_TOAST_LIFE,
   MENTORSHIP_MENTEE_PROFILE_CREATED_STATE,
   MENTORSHIP_MENTEE_SHELL_TITLE,
-  MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplyBlockedReason,
@@ -138,9 +138,10 @@ export class MenteeApplyComponent {
 
   /**
    * Files the application once the checks are complete (or the mentee has just registered). A success
-   * toasts and goes to the Overview, which re-reads the applications. Upstream's 422, 409 and 404 swap
-   * the form for the matching blocked state; the impersonation guard's 403 and any other failure toast
-   * and keep the form so the mentee can try again.
+   * toasts and goes to the Overview, which re-reads the applications. A status in
+   * `MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS` swaps the form for its blocked state: 422 is
+   * closed, 409 is already applied, and 400, 403 and 404 are not found. The impersonation guard's 403
+   * and any unmapped status toast instead and keep the form so the mentee can try again.
    */
   protected onSubmit(): void {
     const ids = this.applyIds();
@@ -245,7 +246,7 @@ export class MenteeApplyComponent {
     const code = (err.error as { code?: string } | null | undefined)?.code;
     const reason = MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS[err.status];
 
-    if (reason && !(err.status === 403 && code === MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE)) {
+    if (reason && !(err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE)) {
       // An application already exists upstream, so the cached list is missing it.
       if (reason === 'already-applied') this.menteeService.clearMenteeCaches();
       this.blockedReason.set(reason);

@@ -274,10 +274,11 @@ export const MENTORSHIP_MENTEE_WITHDRAW_ERROR_FALLBACK = 'Something went wrong. 
 export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_LIFE = 5000;
 
 /**
- * The code the BFF's impersonation guard puts on its 403. That 403 says nothing about the
- * application, so the page shows the server's message and keeps the list as it is.
+ * The code the BFF's impersonation guard (`blockDuringImpersonation`) puts on its 403. That 403
+ * says nothing about the application, so the mentee pages that write (withdraw, apply) show the
+ * server's message and leave what is on screen as it is.
  */
-export const MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
+export const MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
 
 /**
  * Withdraw failures that mean the mentee's view of the application is out of date, keyed by

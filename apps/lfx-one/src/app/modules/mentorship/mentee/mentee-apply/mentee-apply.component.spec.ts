@@ -9,11 +9,11 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import {
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_APPLY_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_APPLY_ERROR_SUMMARY,
   MENTORSHIP_MENTEE_APPLY_SUCCESS_SUMMARY,
   MENTORSHIP_MENTEE_PROFILE_CREATED_STATE,
-  MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplyTarget, MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
@@ -226,9 +226,7 @@ describe('MenteeApplyComponent', () => {
   });
 
   it('toasts and keeps the form when the impersonation guard refuses the application', async () => {
-    applyToMenteeTerm.mockReturnValue(
-      throwError(() => new HttpErrorResponse({ status: 403, error: { code: MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE } }))
-    );
+    applyToMenteeTerm.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } })));
     await bootstrap(applyParams);
 
     submit();

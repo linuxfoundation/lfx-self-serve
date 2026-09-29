@@ -40,7 +40,8 @@ export async function openMenteeProfile(page: Page): Promise<void> {
  * Lands on a mentee tab by client-side navigation from `/`. A `page.goto()` of a mentee URL SSRs
  * the page shell, whose applications read runs on the Express server and reaches the browser
  * through the HTTP transfer cache, so a `page.route` stub of the applications read would never be
- * consulted. The sidebar is `hidden lg:flex`, so callers pin a desktop viewport.
+ * consulted. The sidebar is `hidden lg:flex`, so callers pin a desktop viewport. `path` may carry
+ * a query string (the apply page's ids), which the URL check compares too.
  */
 export async function openMenteeTab(page: Page, path: string): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -50,5 +51,5 @@ export async function openMenteeTab(page: Page, path: string): Promise<void> {
     window.history.pushState({}, '', target);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }, path);
-  await expect(page).toHaveURL((url) => url.pathname === path);
+  await expect(page).toHaveURL((url) => url.pathname + url.search === path);
 }

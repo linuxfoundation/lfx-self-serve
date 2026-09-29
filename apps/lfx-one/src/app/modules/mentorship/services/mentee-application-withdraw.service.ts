@@ -5,12 +5,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import {
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_WITHDRAW_CANCEL_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_HEADER,
   MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_MESSAGE,
   MENTORSHIP_MENTEE_WITHDRAW_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_WITHDRAW_ERROR_SUMMARY,
-  MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE,
   MENTORSHIP_MENTEE_WITHDRAW_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_STALE_ERROR_MESSAGES,
   MENTORSHIP_MENTEE_WITHDRAW_SUCCESS_DETAIL,
@@ -83,7 +83,7 @@ export class MenteeApplicationWithdrawService {
     const staleMessage = MENTORSHIP_MENTEE_WITHDRAW_STALE_ERROR_MESSAGES[err.status];
     let detail = MENTORSHIP_MENTEE_WITHDRAW_ERROR_FALLBACK;
 
-    if (err.status === 403 && code === MENTORSHIP_MENTEE_WITHDRAW_IMPERSONATION_ERROR_CODE) {
+    if (err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
       detail = serverAuthoredMessage(err, MENTORSHIP_MENTEE_WITHDRAW_ERROR_FALLBACK);
     } else if (staleMessage) {
       detail = staleMessage;
