@@ -113,21 +113,34 @@ describe('HealthMetricsMembersService.getTiers', () => {
     expect(response.foundationRevenue).toEqual([]);
   });
 
-  it('warns and truncates when the tier rows hit the cap', async () => {
+  it('warns and drops the year the cap cuts through, so no year shows part of its tiers', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 2 }, (_, index) => tierRow({ YEAR: 2026, MEMBERSHIP_TIER: `Tier ${index}` }));
     respond(
-      Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1 }, () => tierRow()),
+      [...newest, tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Gold' }), tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Silver' }), tierRow({ YEAR: 2025 })],
       [REVENUE_ROW]
     );
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toHaveLength(HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
+    expect(response.rows).toHaveLength(HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 2);
+    expect(response.rows.every((row) => row.year === 2026)).toBe(true);
     expect(warning).toHaveBeenCalledWith(
       req,
       'get_members_tiers',
       'Membership tier rows hit the read cap',
       expect.objectContaining({ foundation_slug: 'acme' })
     );
+  });
+
+  it('keeps the capped rows when the cap cuts through the only year', async () => {
+    respond(
+      Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1 }, (_, index) => tierRow({ MEMBERSHIP_TIER: `Tier ${index}` })),
+      [REVENUE_ROW]
+    );
+
+    const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
   });
 
   it('rethrows a failed read', async () => {

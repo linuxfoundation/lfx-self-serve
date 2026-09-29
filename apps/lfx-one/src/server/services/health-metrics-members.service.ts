@@ -76,18 +76,19 @@ export class HealthMetricsMembersService {
       clientMessage: 'Membership by tier is unavailable right now.',
     });
 
-    // Newest years first, so hitting the cap drops the oldest; the view re-sorts years for display.
-    if (result.rows.length > HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP) {
+    let rows = result.rows;
+    if (rows.length > HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP) {
       logger.warning(req, 'get_members_tiers', 'Membership tier rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
       });
+      // Newest years first, so the cap drops the oldest; its cut year goes too, unless it is the only one.
+      rows = rows.slice(0, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
+      const cutYear = rows[rows.length - 1].YEAR;
+      if (rows.some((row) => row.YEAR !== cutYear)) rows = rows.filter((row) => row.YEAR !== cutYear);
     }
 
-    return result.rows
-      .slice(0, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP)
-      .map(mapTierYear)
-      .filter((row): row is HealthMetricsMembersTierYear => row !== null);
+    return rows.map(mapTierYear).filter((row): row is HealthMetricsMembersTierYear => row !== null);
   }
 
   /** The foundation's total revenue per period, off the Memberships row whose tier revenue reconciles with it. */

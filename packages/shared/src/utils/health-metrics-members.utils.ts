@@ -17,6 +17,7 @@ import type {
   HealthMetricsMembersTiersStatView,
   HealthMetricsMembersTiersTierView,
   HealthMetricsMembersTiersView,
+  HealthMetricsMembersTiersYearSummary,
   HealthMetricsMembersTiersYearView,
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
@@ -108,15 +109,7 @@ export function buildHealthMetricsMembersTiersView(
   };
 }
 
-interface TiersYearSummary {
-  measured: boolean;
-  isPartial: boolean;
-  members: number | null;
-  newMembers: number | null;
-  revenue: number | null;
-}
-
-function summarizeYear(rows: HealthMetricsMembersTierYear[]): TiersYearSummary {
+function summarizeYear(rows: HealthMetricsMembersTierYear[]): HealthMetricsMembersTiersYearSummary {
   return {
     measured: rows.length > 0,
     isPartial: rows.some((row) => row.isPartialYear),

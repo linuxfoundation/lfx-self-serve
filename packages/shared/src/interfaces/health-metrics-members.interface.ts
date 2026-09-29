@@ -98,3 +98,12 @@ export interface HealthMetricsMembersTiersView {
   years: HealthMetricsMembersTiersYearView[];
   tiers: HealthMetricsMembersTiersTierView[];
 }
+
+/** One year's tier rows summed; a figure is `null` when no row in the year measures it. */
+export interface HealthMetricsMembersTiersYearSummary {
+  measured: boolean;
+  isPartial: boolean;
+  members: number | null;
+  newMembers: number | null;
+  revenue: number | null;
+}
