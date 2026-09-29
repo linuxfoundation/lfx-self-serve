@@ -111,6 +111,8 @@ import {
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipQuery,
+  HealthMetricsMembersTiers,
+  HealthMetricsMembersTiersQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1345,6 +1347,18 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] events-organizations failed', { foundationSlug: query.foundationSlug, range: query.range, segment: query.segment, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersTiers(query: HealthMetricsMembersTiersQuery): Observable<HealthMetricsMembersTiers> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate so the section shows its error state, not a foundation with no members.
+    return this.http.get<HealthMetricsMembersTiers>('/api/analytics/members-tiers', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-tiers failed', { query, error });
         return throwError(() => error);
       })
     );

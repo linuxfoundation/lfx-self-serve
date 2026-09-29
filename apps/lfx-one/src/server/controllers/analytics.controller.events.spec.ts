@@ -44,8 +44,9 @@ vi.mock('../services/health-metrics-events.service', () => ({
   // Mirrors the service: the Events views carry no columns for the oldest range.
   isSupportedEventsRange: (range: string) => range !== 'COMPLETED_YEAR_4',
 }));
-// The controller constructs five unrelated domain services; none of them are exercised here.
+// The controller constructs six unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
+vi.mock('../services/health-metrics-members.service', () => ({ HealthMetricsMembersService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));

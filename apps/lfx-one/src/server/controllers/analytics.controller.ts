@@ -25,6 +25,7 @@ import {
 } from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
+import { HealthMetricsMembersService } from '../services/health-metrics-members.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -58,6 +59,7 @@ export class AnalyticsController {
   private readonly projectService: ProjectService;
   private readonly healthMetricsEngagementService: HealthMetricsEngagementService;
   private readonly healthMetricsEventsService: HealthMetricsEventsService;
+  private readonly healthMetricsMembersService: HealthMetricsMembersService;
 
   public constructor() {
     this.userService = new UserService();
@@ -66,6 +68,7 @@ export class AnalyticsController {
     this.projectService = new ProjectService();
     this.healthMetricsEngagementService = new HealthMetricsEngagementService();
     this.healthMetricsEventsService = new HealthMetricsEventsService();
+    this.healthMetricsMembersService = new HealthMetricsMembersService();
   }
 
   /**
@@ -3664,6 +3667,23 @@ export class AnalyticsController {
       const response = await this.healthMetricsEventsService.getGeography(req, { foundationSlug });
 
       logger.success(req, 'get_events_geography', startTime, { foundation_slug: foundationSlug, period_count: response.periods.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-tiers` — every year's members, new members and revenue per tier, and the foundation's revenue per period. */
+  public async getMembersTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_tiers');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_tiers');
+
+      const response = await this.healthMetricsMembersService.getTiers(req, { foundationSlug });
+
+      logger.success(req, 'get_members_tiers', startTime, { foundation_slug: foundationSlug, row_count: response.rows.length });
 
       res.json(response);
     } catch (error) {
