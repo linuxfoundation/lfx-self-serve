@@ -115,7 +115,7 @@ export function formatHealthMetricsEventsOrganizationsCountLabel(total: number |
   return `${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'organization' : 'organizations'}`;
 }
 
-/** A goal of zero or less is no goal set; every goal check in this file reads it through here. */
+/** A registration goal of zero or less is no goal set; every registration-goal check reads it through here. */
 export function hasHealthMetricsEventsGoal(goal: number | null): goal is number {
   return goal !== null && goal > 0;
 }

@@ -97,10 +97,8 @@
                 } @else {
                   Projected to finish about <b>{{ gapLabel() }}</b> short of the {{ goalLabel() }} goal.
                 }
-                @if (v.daysLeft === 0) {
-                  Today is the last day to close the gap &mdash; after that the opportunity is gone.
-                } @else if (v.daysLeft !== null) {
-                  {{ v.daysLeft === 1 ? 'There is' : 'There are' }} {{ daysLeftPhrase() }} to close the gap &mdash; after that the opportunity is gone.
+                @if (v.daysLeft !== null) {
+                  {{ daysLeftGapLead() }} to close the gap &mdash; after that the opportunity is gone.
                 }
               }
             }
