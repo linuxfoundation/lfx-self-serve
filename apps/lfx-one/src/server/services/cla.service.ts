@@ -649,7 +649,7 @@ export class ClaService {
     // Typed as a string, but `gatewayFetch` only casts the parsed body, and `new URL` would coerce
     // an array of one https address into a pass.
     const url: unknown = result?.url;
-    if (!url) return null;
+    if (url == null || url === '') return null;
 
     if (typeof url !== 'string' || !isHttpsUrl(url)) {
       logger.warning(req, 'cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
