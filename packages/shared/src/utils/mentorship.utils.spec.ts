@@ -1144,6 +1144,12 @@ describe('buildMentorshipMenteeApplicationView', () => {
     expect(view.decisionExpectedDate).toBeNull();
   });
 
+  it('drops the decision date once the application is accepted or graduated', () => {
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').decisionExpectedDate).toBe('2026-08-01');
+    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'accepted' }), 'active').decisionExpectedDate).toBeNull();
+    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'graduated' }), 'graduated').decisionExpectedDate).toBeNull();
+  });
+
   it('labels a graduated card Graduated and tracks its non-prerequisite tasks', () => {
     const app = menteeApplication({
       upstreamStatus: 'graduated',

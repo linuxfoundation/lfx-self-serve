@@ -73,7 +73,6 @@ export class MentorshipMenteeService {
   public async getMenteeApplications(req: Request, withTasks: boolean): Promise<MentorshipMenteeApplicationsResponse> {
     logger.debug(req, 'mentorship_get_mentee_applications', 'Loading mentee applications', { withTasks });
     const applications = await this.listMenteeApplications(req);
-
     const programIds = [...new Set(applications.map((application) => application.program?.id).filter((id): id is string => !!id))];
     const [tasksByApplication, programs] = await Promise.all([
       Promise.all(
@@ -171,7 +170,6 @@ export class MentorshipMenteeService {
     return data;
   }
 
-  /** The caller's own mentee applications, every page. */
   /** The caller's applications for the profile's history, or none when the read fails. */
   private async listMenteeApplicationsForHistory(req: Request): Promise<MentorshipUpstreamApplication[]> {
     try {
@@ -182,6 +180,7 @@ export class MentorshipMenteeService {
     }
   }
 
+  /** The caller's own mentee applications, every page. */
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
     return this.listAllPages<MentorshipUpstreamApplication>(req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
   }

@@ -201,7 +201,10 @@ export interface MentorshipMenteeApplicationView {
   progressPercent: number;
   /** ISO 8601 instant: the latest change to the application or any of its tasks. */
   lastUpdatedOn: string;
-  /** ISO 8601 date the term's application window closes, or `null` when the term has none. */
+  /**
+   * ISO 8601 date the term's application window closes, or `null` for an accepted or graduated
+   * application (already decided) or when the term has none.
+   */
   decisionExpectedDate: string | null;
   tasks: MentorshipMenteeTaskView[];
 }

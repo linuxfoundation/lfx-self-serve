@@ -171,7 +171,8 @@
                     {{ past.termName }}
                   </p>
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-600">{{ past.createdOn | date: 'MMM d, y' }}</td>
+                <!-- UTC so the submitted day matches the profile's Application History in every timezone -->
+                <td class="px-4 py-3 text-sm text-gray-600">{{ past.createdOn | date: 'MMM d, y' : 'UTC' }}</td>
                 <td class="px-4 py-3">
                   <span class="text-sm font-medium rounded-lg px-2 py-1 leading-4" [ngClass]="past.outcomeBadgeClass">
                     {{ past.outcomeLabel }}

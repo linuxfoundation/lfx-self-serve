@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MentorshipMenteeApplicationTask } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeApplicationTask, MentorshipUpstreamApplicationStatus } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { menteeTestApplication, menteeTestCards, menteeTestTask } from '@shared/testing/mentorship-mentee-test-data';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,7 +19,10 @@ describe('MenteeAcceptedTasksComponent', () => {
     Array.from(element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]')).map((row) => row.getAttribute('data-testid') ?? '');
   const chip = (value: string): HTMLButtonElement => byTestId(`mentee-tasks-filter-${value}`) as HTMLButtonElement;
 
-  const bootstrap = async (tasks: MentorshipMenteeApplicationTask[], overrides: { projectName?: string } = { projectName: 'Project One' }): Promise<void> => {
+  const bootstrap = async (
+    tasks: MentorshipMenteeApplicationTask[],
+    overrides: { projectName?: string; upstreamStatus?: MentorshipUpstreamApplicationStatus } = { projectName: 'Project One' }
+  ): Promise<void> => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MenteeAcceptedTasksComponent],
@@ -28,7 +31,9 @@ describe('MenteeAcceptedTasksComponent', () => {
 
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(MenteeAcceptedTasksComponent);
-    const [card] = menteeTestCards([menteeTestApplication({ upstreamStatus: 'accepted', projectName: overrides.projectName, tasks })]);
+    const [card] = menteeTestCards([
+      menteeTestApplication({ upstreamStatus: overrides.upstreamStatus ?? 'accepted', projectName: overrides.projectName, tasks }),
+    ]);
     fixture.componentRef.setInput('application', card);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -55,6 +60,15 @@ describe('MenteeAcceptedTasksComponent', () => {
     expect(card).toContain('Program One');
     expect(card).toContain('Project One · Fall 2026');
     expect(card).toContain('Active');
+    expect(byTestId('mentee-tasks-accepted-status')?.classList).toContain('bg-blue-50');
+  });
+
+  it('renders the Graduated badge in its own colour for a graduated application', async () => {
+    await bootstrap(mixedTasks(), { projectName: 'Project One', upstreamStatus: 'graduated' });
+    const badge = byTestId('mentee-tasks-accepted-status');
+    expect(text(badge)).toBe('Graduated');
+    expect(badge?.classList).toContain('bg-violet-50');
+    expect(badge?.classList).not.toContain('bg-blue-50');
   });
 
   it('drops the project from the card when it could not be resolved', async () => {

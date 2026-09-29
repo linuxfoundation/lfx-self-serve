@@ -68,6 +68,7 @@ test.describe('Mentee applications — error state', () => {
 
     await expect(page.getByTestId('mentee-overview-error')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentee-overview-error')).toContainText(MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR);
+    await expect(page.getByTestId('mentee-overview-error').getByRole('button', { name: 'Retry' })).toBeVisible();
     await expect(page.getByTestId('mentee-overview-empty')).toHaveCount(0);
   });
 
@@ -76,6 +77,7 @@ test.describe('Mentee applications — error state', () => {
 
     await expect(page.getByTestId('mentee-tasks-error')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentee-tasks-error')).toContainText(MENTORSHIP_MENTEE_TASKS_LOAD_ERROR);
+    await expect(page.getByTestId('mentee-tasks-error').getByRole('button', { name: 'Retry' })).toBeVisible();
     await expect(page.getByTestId('mentee-tasks-empty')).toHaveCount(0);
   });
 });

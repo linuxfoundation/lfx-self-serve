@@ -15,8 +15,11 @@
         </p>
         <h3 class="text-lg font-semibold text-gray-900">{{ app.programName }}</h3>
       </div>
-      <span class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-        <span class="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true"></span>
+      <span
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
+        [ngClass]="app.statusBadgeClass"
+        data-testid="mentee-tasks-accepted-status">
+        <span class="h-2 w-2 rounded-full bg-current" aria-hidden="true"></span>
         {{ app.statusLabel }}
       </span>
     </div>

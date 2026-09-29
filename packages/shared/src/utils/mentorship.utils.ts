@@ -939,7 +939,7 @@ export function buildMentorshipMenteeApplicationView(
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
-    decisionExpectedDate: app.decisionExpectedDate ?? null,
+    decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
     tasks: tasks.map((task) =>
       buildMentorshipMenteeTaskView({
         id: task.id,

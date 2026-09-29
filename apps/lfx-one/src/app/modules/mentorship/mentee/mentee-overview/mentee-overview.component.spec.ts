@@ -235,6 +235,13 @@ describe('MenteeOverviewComponent', () => {
     expect(text(byTestId('mentee-application-card'))).not.toContain('Decision expected');
   });
 
+  it('hides the decision expected date once the application is accepted', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ upstreamStatus: 'accepted' })] });
+    const card = text(byTestId('mentee-application-card'));
+    expect(card).toContain('Last updated');
+    expect(card).not.toContain('Decision expected');
+  });
+
   it('labels pending progress as prerequisite tasks and counts only prerequisites', async () => {
     await bootstrap({
       applications: [
@@ -315,5 +322,10 @@ describe('MenteeOverviewComponent', () => {
     expect(past).toContain('Held Program');
     expect(past).toContain('On Hold');
     expect(past).toContain('Jun 1, 2026');
+  });
+
+  it('shows the submitted day in UTC so a late-evening submission keeps its calendar day', async () => {
+    await bootstrap({ applications: [menteeTestApplication({ upstreamStatus: 'declined', createdOn: '2026-01-10T23:30:00Z' })] });
+    expect(text(byTestId('mentee-overview-past-applications'))).toContain('Jan 10, 2026');
   });
 });
