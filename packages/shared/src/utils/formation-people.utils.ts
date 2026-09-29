@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_ASSIGNEE_PENDING_NOTE, FORMATION_PEOPLE_GROUP_LABELS, LF_STAFF_EMAIL_DOMAIN } from '../constants/formation-people.constants';
+import {
+  FORMATION_ASSIGNEE_PENDING_NOTE,
+  FORMATION_PEOPLE_GROUP_LABELS,
+  FORMATION_PEOPLE_OTHER_GROUP_LABEL,
+  LF_STAFF_EMAIL_DOMAIN,
+} from '../constants/formation-people.constants';
 import type {
-  FormationPeopleGroup,
-  FormationPeopleGroups,
+  FormationPeopleRowGroup,
   FormationPerson,
   FormationPersonRole,
   FormationPersonRow,
@@ -130,20 +134,51 @@ export function buildFormationPeople(settings: Pick<ProjectSettings, 'writers' |
   return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
-/** The card's group keys in render order — `FORMATION_PEOPLE_GROUP_LABELS`'s declaration order, so the constant stays the single source of truth for both the set and the order. */
-export function formationPeopleGroupKeys(): FormationPeopleGroup[] {
-  return Object.keys(FORMATION_PEOPLE_GROUP_LABELS) as FormationPeopleGroup[];
-}
-
-/** Partitions a people list into the card's groups (every key present, possibly empty), preserving order within each. */
-export function groupFormationPeople(people: readonly FormationPerson[]): FormationPeopleGroups {
-  const groups = Object.fromEntries(formationPeopleGroupKeys().map((key) => [key, [] as FormationPerson[]])) as FormationPeopleGroups;
+/**
+ * The people card's groups (#2724): LF Staff first, then one group per invited organization
+ * (A–Z by name), then Other for invitees with no known organization — email-only entries have no
+ * profile to enrich, and enrichment is best-effort. Organizations are bucketed by a slug of the
+ * name, so `Contoso Ltd` and `contoso ltd` land together under the first spelling seen. Rows keep
+ * the input order (`buildFormationPeople` already sorts by name) and empty groups are omitted.
+ */
+export function buildFormationPeopleRowGroups(
+  people: readonly FormationPerson[],
+  assignees: ReadonlyArray<string | null | undefined>
+): FormationPeopleRowGroup[] {
+  const staff: FormationPeopleRowGroup = { key: 'staff', label: FORMATION_PEOPLE_GROUP_LABELS.staff, rows: [] };
+  const other: FormationPeopleRowGroup = { key: 'other', label: FORMATION_PEOPLE_OTHER_GROUP_LABEL, rows: [] };
+  const organizations = new Map<string, FormationPeopleRowGroup>();
 
   for (const person of people) {
-    groups[person.group].push(person);
+    const row = toFormationPersonRow(person, assignees);
+
+    if (person.group === 'staff') {
+      staff.rows.push(row);
+      continue;
+    }
+
+    const organization = person.organization?.trim() ?? '';
+    const slug = organization
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-+|-+$/g, '');
+    if (!slug) {
+      other.rows.push(row);
+      continue;
+    }
+
+    const key = `org-${slug}`;
+    const group = organizations.get(key);
+    if (group) {
+      group.rows.push(row);
+    } else {
+      organizations.set(key, { key, label: organization, rows: [row] });
+    }
   }
 
-  return groups;
+  const byOrganization = [...organizations.values()].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+
+  return [staff, ...byOrganization, other].filter((group) => group.rows.length > 0);
 }
 
 /**
@@ -159,13 +194,14 @@ export function resolveFormationPersonStatus(person: Pick<FormationPerson, 'grou
 }
 
 /**
- * `Partner contact · Contoso · 3 items` — title and organization when known, else the email
- * (a pending invitee has no metadata to show), with the assigned-item count appended only when
- * it is non-zero so an unassigned person never reads "0 items".
+ * `Partner contact · 3 items` — the title when known, else the email (a pending invitee has no
+ * metadata to show), with the assigned-item count appended only when it is non-zero so an
+ * unassigned person never reads "0 items". The organization is left out: the card groups rows
+ * under it, so the heading already says it.
  */
-export function formatFormationPersonSubtitle(person: Pick<FormationPerson, 'job_title' | 'organization' | 'email'>, assignedItemCount: number): string {
-  const parts = [person.job_title, person.organization].filter((part): part is string => !!part && part.trim().length > 0);
-  const base = parts.length > 0 ? parts.join(' · ') : person.email;
+export function formatFormationPersonSubtitle(person: Pick<FormationPerson, 'job_title' | 'email'>, assignedItemCount: number): string {
+  const title = person.job_title?.trim();
+  const base = title || person.email;
 
   if (assignedItemCount <= 0) {
     return base;

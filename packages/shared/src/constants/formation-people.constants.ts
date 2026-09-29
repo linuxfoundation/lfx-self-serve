@@ -20,6 +20,12 @@ export const FORMATION_PEOPLE_GROUP_LABELS = {
 } as const;
 
 /**
+ * Trailing people-card group for invitees with no known organization — email-only (pending)
+ * entries, which have no profile to enrich, and profiles whose organization is empty or failed to load.
+ */
+export const FORMATION_PEOPLE_OTHER_GROUP_LABEL = 'Other';
+
+/**
  * Status chip copy for non-staff rows. `invited` = the settings entry carries a username (the
  * person has an LF account and the grant is live); `invite_sent` = an email-only entry, i.e. the
  * upstream project service sent the invite and is waiting for acceptance to promote it.
@@ -40,7 +46,7 @@ export const FORMATION_INVITE_DIALOG_HEADER = 'Invite to this formation';
 
 /** Intro line under the dialog header — states the pending label the person will carry until they accept. */
 export const FORMATION_INVITE_DIALOG_INTRO =
-  'If they already have an LF account they are added right away; otherwise they appear under Invited as “Invite Sent” until they accept the emailed invite.';
+  'If they already have an LF account they are added right away; otherwise they appear with an “Invite Sent” label until they accept the emailed invite.';
 
 /** Cap on the invite dialog's free-text name — it is persisted and forwarded into the outbound invite email. */
 export const FORMATION_INVITE_NAME_MAX_LENGTH = 200;
