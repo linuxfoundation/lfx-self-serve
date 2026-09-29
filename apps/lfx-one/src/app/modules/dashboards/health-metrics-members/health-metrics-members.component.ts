@@ -4,9 +4,10 @@
 import { Component } from '@angular/core';
 import {
   HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
+  HEALTH_METRICS_MEMBERS_SCOPE_NOTE,
   HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX,
   HEALTH_METRICS_MEMBERS_SECTIONS,
-  HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE_NOTE,
+  HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 
@@ -27,6 +28,7 @@ export class HealthMetricsMembersComponent {
   protected readonly sections = HEALTH_METRICS_MEMBERS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_MEMBERS_DATA_SECTIONS;
-  protected readonly crossReferenceNote = HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE_NOTE;
+  protected readonly crossReference = HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE;
+  protected readonly scopeNote = HEALTH_METRICS_MEMBERS_SCOPE_NOTE;
   protected readonly subNavItems: HealthMetricsMembersSubNavItem[] = buildHealthMetricsMembersSubNavItems();
 }

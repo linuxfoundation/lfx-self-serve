@@ -12,6 +12,7 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
+import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
@@ -101,8 +102,13 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
 ] as const;
 
-/** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
-export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE = 'Board & voting-member attendance is reported per member in Members';
+/** Note under the sub-nav items, linking to the Members board section. */
+export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
+  text: 'Board & voting-member attendance is reported per member in',
+  linkLabel: 'Members',
+  route: 'members',
+  fragment: 'board',
+};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a

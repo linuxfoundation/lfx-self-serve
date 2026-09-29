@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type { HealthMetricsMembersSectionKey } from '../interfaces/health-metrics-members.interface';
 
 /**
@@ -77,5 +78,13 @@ export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
 export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [] as const satisfies readonly HealthMetricsMembersSectionKey[];
 
-/** Static note under the sub-nav items. */
-export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE_NOTE = 'Group attendance is in Engagement';
+/** Note under the sub-nav items, linking to Engagement's group attendance. */
+export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
+  text: 'Group attendance is in',
+  linkLabel: 'Engagement',
+  route: 'engagement',
+  fragment: 'committees',
+};
+
+/** The project selector does not narrow Members, so the page says so above its sections. */
+export const HEALTH_METRICS_MEMBERS_SCOPE_NOTE = 'Members figures are foundation-wide. The project selector does not narrow them.';
