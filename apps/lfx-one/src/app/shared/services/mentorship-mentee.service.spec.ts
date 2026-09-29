@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MentorshipMenteeApplicationsResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeApplicationsResponse, MentorshipMenteeRegisterRequest } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorshipMenteeService } from './mentorship-mentee.service';
@@ -46,6 +46,55 @@ describe('MentorshipMenteeService — error mapping', () => {
 
     http.expectOne('/api/mentorship/mentee/has-profile').flush('conflict', { status: 409, statusText: 'Conflict' });
     expect(result).toEqual({ hasProfile: false });
+  });
+
+  describe('registerMenteeProfile', () => {
+    const request: MentorshipMenteeRegisterRequest = {
+      introduction: '<p>Test intro</p>',
+      skillsHave: ['Java'],
+      skillsWant: ['Python'],
+      additionalNotes: '',
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    it('posts the request to the mentee profile endpoint and completes after one emission', () => {
+      let emissions = 0;
+      let completed = false;
+      service.registerMenteeProfile(request).subscribe({
+        next: () => {
+          emissions += 1;
+        },
+        complete: () => {
+          completed = true;
+        },
+      });
+
+      const req = http.expectOne('/api/mentorship/mentee/profile');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(emissions).toBe(1);
+      expect(completed).toBe(true);
+    });
+
+    it('propagates the raw HttpErrorResponse so the page can read the status and code', () => {
+      let error: unknown;
+      service.registerMenteeProfile(request).subscribe({
+        error: (err: unknown) => {
+          error = err;
+        },
+      });
+
+      http.expectOne('/api/mentorship/mentee/profile').flush({ code: 'MENTEE_PROFILE_EXISTS' }, { status: 409, statusText: 'Conflict' });
+
+      expect(error).toBeInstanceOf(HttpErrorResponse);
+      expect(error).toMatchObject({ status: 409, error: { code: 'MENTEE_PROFILE_EXISTS' } });
+    });
   });
 });
 

@@ -9,6 +9,7 @@ import {
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
+  MentorshipMenteeRegisterRequest,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
@@ -43,6 +44,15 @@ export class MentorshipMenteeService {
     return this.http
       .get<MentorshipMenteeHasProfileResponse>('/api/mentorship/mentee/has-profile')
       .pipe(catchError(this.handleError({ hasProfile: false }, 'hasMenteeProfile')));
+  }
+
+  /**
+   * Creates the signed-in user's mentee profile from the register form. Failures propagate as the
+   * raw `HttpErrorResponse` so the register page can read the status and code. Nothing cached
+   * changes (the profile is not cached and a new profile has no applications), so no cache is cleared.
+   */
+  public registerMenteeProfile(request: MentorshipMenteeRegisterRequest): Observable<void> {
+    return this.http.post<void>('/api/mentorship/mentee/profile', request).pipe(take(1));
   }
 
   /** Drop the cached applications and tell every reader to fetch them again. */

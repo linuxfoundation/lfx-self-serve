@@ -6,6 +6,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipMenteeRegisterRequest } from '../helpers/mentorship-mentee-register.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMenteeService } from '../services/mentorship-mentee.service';
@@ -26,6 +27,27 @@ export class MentorshipMenteeController {
       const result = await this.menteeService.hasMenteeProfile(req);
       logger.success(req, 'has_mentorship_mentee_profile', startTime, { hasProfile: result.hasProfile });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/mentee/profile  (register form body) -> 204
+  // Auth: logged-in user required (401 otherwise). The body is validated with the rules the form
+  // uses (400 with per-field errors). An existing profile is refused with a 409 rather than
+  // replaced; upstream's 403 and 422 pass through.
+  public async registerMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'register_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'register_mentorship_mentee_profile' });
+      }
+
+      const request = parseMentorshipMenteeRegisterRequest(req.body);
+      await this.menteeService.registerMenteeProfile(req, request);
+      logger.success(req, 'register_mentorship_mentee_profile', startTime, { has_demographics: request.demographics !== undefined });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

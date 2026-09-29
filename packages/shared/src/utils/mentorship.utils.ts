@@ -16,6 +16,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+  MENTORSHIP_SKILL_OPTIONS,
   MENTORSHIP_TERM_NAME_MAX,
   MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
@@ -24,10 +25,20 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
+  MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
@@ -78,10 +89,13 @@ import type {
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
   MentorshipMenteeApplicationView,
+  MentorshipMenteeDemographics,
   MentorshipMenteeOverview,
   MentorshipMenteePastApplication,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
+  MentorshipMenteeRegisterRequest,
+  MentorshipMenteeRegisterSubmitFailure,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
@@ -416,7 +430,8 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
 }
 
 /**
- * Validates the Become a Mentee form.
+ * Validates the Become a Mentee form. Delegates to `getMentorshipMenteeRegisterRequestErrors`, so the
+ * form and the request the BFF receives are held to one rule set.
  *
  * Both skills fields are required: `skillsHave` describes what the mentee brings and
  * `skillsWant` describes what they want to grow, and both sides feed the mentor-match.
@@ -426,24 +441,106 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
  * time by its picker, same as the mentor form.
  */
 export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
+  return getMentorshipMenteeRegisterRequestErrors(form);
+}
+
+/**
+ * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
+ * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
+ * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
+ * so it gets its own message after the required check.
+ */
+export function getMentorshipMenteeRegisterRequestErrors(
+  input: Pick<
+    MentorshipMenteeRegisterRequest,
+    'introduction' | 'skillsHave' | 'skillsWant' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
+  >
+): MentorshipMenteeRegisterFieldErrors {
   const errors: MentorshipMenteeRegisterFieldErrors = {};
 
   const introductionError = mentorshipRichTextError(
-    form.introduction,
+    input.introduction,
     MENTORSHIP_MENTEE_INTRODUCTION_MAX,
     'Introduction is required.',
     `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`
   );
   if (introductionError) errors.introduction = introductionError;
-  if (!form.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
-  if (!form.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
-  if (!isMentorshipTermsAccepted(form.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
-  if (!isMentorshipTermsAccepted(form.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
-  if (!isMentorshipTermsAccepted(form.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
-  if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
-  if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
+  if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
+  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
+  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
+  if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
+  if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
+  if (!isMentorshipTermsAccepted(input.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
+  if (!isMentorshipTermsAccepted(input.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
   return errors;
+}
+
+function hasUnknownMentorshipSkill(skills: string[]): boolean {
+  return skills.some((skill) => !MENTORSHIP_SKILL_OPTIONS.includes(skill));
+}
+
+/**
+ * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
+ * sent only when its consent box is checked and it is not blank, so declining a question never leaves
+ * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
+ * file metadata is sent.
+ */
+export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterRequest {
+  const demographics: MentorshipMenteeDemographics = {};
+  for (const row of MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS) {
+    const answer = form[row.answerControl];
+    if (isMentorshipTermsAccepted(form[row.consentControl]) && typeof answer === 'string' && !isBlank(answer)) {
+      demographics[row.answerControl as keyof MentorshipMenteeDemographics] = answer;
+    }
+  }
+
+  return {
+    introduction: form.introduction,
+    skillsHave: [...form.skillsHave],
+    skillsWant: [...form.skillsWant],
+    additionalNotes: form.additionalNotes.trim(),
+    ...(Object.keys(demographics).length ? { demographics } : {}),
+    ageEligible: isMentorshipTermsAccepted(form.ageEligible),
+    workAuthorized: isMentorshipTermsAccepted(form.workAuthorized),
+    noDuplicateProfile: isMentorshipTermsAccepted(form.noDuplicateProfile),
+    complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
+    termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+  };
+}
+
+/**
+ * Classifies a failed `POST /api/mentorship/mentee/profile` by status and error code, never by message
+ * text (upstream wording is not a contract). A 422 has two upstream causes (the eligibility flags, or
+ * the user row missing), so it gets one fixed message and the checkboxes are not re-highlighted.
+ */
+export function mapMentorshipMenteeRegisterFailure(status: number, body: unknown): MentorshipMenteeRegisterSubmitFailure {
+  const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const code = record['code'];
+
+  if (status === 409 && code === MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE) {
+    return { kind: 'profile-exists', message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS };
+  }
+  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT };
+  if (status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
+    return { kind: 'read-only', message: MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY };
+  }
+  if (status === 400 && Array.isArray(record['errors'])) {
+    const fieldErrors: MentorshipMenteeRegisterFieldErrors = {};
+    for (const entry of record['errors'] as unknown[]) {
+      const item = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
+      const field = MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS.find((key) => key === item['field']);
+      const message = item['message'];
+      if (field && typeof message === 'string' && message.trim() && !fieldErrors[field]) fieldErrors[field] = message;
+    }
+    const firstMessage = Object.values(fieldErrors)[0];
+    if (firstMessage) return { kind: 'field-errors', message: firstMessage, fieldErrors };
+  }
+  if (status === 422) return { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
+
+  return { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
 }
 
 /**

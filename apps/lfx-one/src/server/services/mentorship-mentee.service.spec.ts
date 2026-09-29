@@ -3,7 +3,8 @@
 
 import '@angular/compiler';
 
-import type { MentorshipUpstreamApplication, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE } from '@lfx-one/shared/constants';
+import type { MentorshipMenteeRegisterRequest, MentorshipUpstreamApplication, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -86,6 +87,96 @@ function routeProxy(
     return handler(query as Record<string, unknown> | undefined) as never;
   });
 }
+
+describe('MentorshipMenteeService.registerMenteeProfile', () => {
+  const MENTEE_PROFILE_PATH = `${PROFILES_PATH}/mentee`;
+  const request: MentorshipMenteeRegisterRequest = {
+    introduction: '<p>Test intro</p>',
+    skillsHave: ['Java'],
+    skillsWant: ['Python'],
+    additionalNotes: 'Test notes',
+    demographics: { age: '20-39', education: 'college' },
+    ageEligible: true,
+    workAuthorized: true,
+    noDuplicateProfile: true,
+    complianceAccepted: true,
+    termsAccepted: true,
+  };
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('lists the caller mentee rows, then puts the mapped profile when none exists', async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await expect(service.registerMenteeProfile(buildReq(), request)).resolves.toBeUndefined();
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PUT', undefined, {
+      introduction: '<p>Test intro</p>',
+      terms_and_conditions: true,
+      age_eligible: true,
+      work_eligible: true,
+      skill_set: { skills: ['Java'], improvementSkills: ['Python'], comments: 'Test notes' },
+      demographics: { age: '20-39' },
+      socioeconomics: { educationLevel: 'college' },
+    });
+  });
+
+  it('refuses with a 409 profile-exists conflict, without writing, when a mentee profile exists', async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([{ id: 'profile-1', profile_type: 'mentee' }]),
+    });
+
+    await expect(service.registerMenteeProfile(buildReq(), request)).rejects.toMatchObject({
+      statusCode: 409,
+      code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when the existing-profile check fails', async () => {
+    const error = upstreamError(500, { error: 'boom' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.registerMenteeProfile(buildReq(), request)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [400, 'bad request'],
+    [403, 'forbidden'],
+    [422, 'age eligibility is required'],
+  ])('propagates an upstream %i from the write', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.registerMenteeProfile(buildReq(), request)).rejects.toBe(error);
+  });
+
+  it('does not log the profile answers', async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await service.registerMenteeProfile(buildReq(), request);
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logged).not.toContain('Test intro');
+    expect(logged).not.toContain('Test notes');
+    expect(logged).not.toContain('college');
+  });
+});
 
 describe('MentorshipMenteeService apply', () => {
   const programId = '3b1f6c0e-2d4a-4e8b-9c1d-5f6a7b8c9d0e';

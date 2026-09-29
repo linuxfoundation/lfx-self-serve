@@ -166,7 +166,7 @@ export class MenteeApplyComponent {
   }
 
   /**
-   * Router `state` from the register redirect (#1509), read once at construction — see `menteeApplyGuard`'s equivalent check.
+   * Router `state` from the register redirect, read once at construction — see `menteeApplyGuard`'s equivalent check.
    * Single-use: cleared from history immediately after read so a later reload or back/forward navigation doesn't replay it.
    * SSR has neither a navigation nor a browser `history`, so it falls back to `false`. The flag only skips the client-side
    * checklist: upstream does not look at the mentee profile when an application is filed, and nothing server-side re-checks it.

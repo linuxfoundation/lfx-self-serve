@@ -1,12 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+} from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
+  MentorshipMenteeRegisterRequest,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamProgram,
@@ -21,11 +26,13 @@ import {
   MENTORSHIP_LIST_MAX_PAGES,
   MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
+  MENTORSHIP_ME_MENTEE_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
+import { ConflictError } from '../errors';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
   mapMentorshipMenteeApplication,
@@ -33,6 +40,7 @@ import {
   mapMentorshipMenteeApplyTarget,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
+import { buildMentorshipUpstreamMenteeProfile } from '../helpers/mentorship-mentee-register.helper';
 
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -52,6 +60,28 @@ export class MentorshipMenteeService {
     const hasProfile = (await this.listMenteeProfiles(req)).length > 0;
     logger.debug(req, 'mentorship_has_mentee_profile', 'Mentee profile existence checked', { hasProfile });
     return { hasProfile };
+  }
+
+  /**
+   * Creates the signed-in user's mentee profile. Upstream's `PUT` is an upsert that replaces every
+   * column, so a second registration would wipe the first one's answers; the caller's own mentee
+   * rows are listed first and an existing profile is refused with a 409 the register page reads.
+   * A failed check propagates rather than falling through to the write. Upstream's own 400, 403
+   * and 422 also pass through. The check and the write are two requests, so two simultaneous
+   * registrations by the same user can both pass the check; the later write wins.
+   */
+  public async registerMenteeProfile(req: Request, request: MentorshipMenteeRegisterRequest): Promise<void> {
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Checking for an existing mentee profile');
+    if ((await this.listMenteeProfiles(req)).length > 0) {
+      throw new ConflictError(MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS, MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE, {
+        operation: 'mentorship_register_mentee_profile',
+      });
+    }
+
+    const body = buildMentorshipUpstreamMenteeProfile(request);
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', { has_demographics: body.demographics !== undefined });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH, 'PUT', undefined, body);
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Mentee profile created');
   }
 
   /**
@@ -112,8 +142,8 @@ export class MentorshipMenteeService {
    * names it shows, so it needs no task or program reads.
    *
    * An empty list returns an empty profile rather than an error: the apply page is reachable
-   * straight after registering, and registration does not save a profile yet
-   * (linuxfoundation/lfx-mentorship#187). A failed profile read propagates; a failed applications
+   * before a profile exists, and it reads the profile that `POST /api/mentorship/mentee/profile`
+   * writes. A failed profile read propagates; a failed applications
    * read logs a warning and leaves the history empty, since the apply page reads this profile too
    * and never shows the history.
    */

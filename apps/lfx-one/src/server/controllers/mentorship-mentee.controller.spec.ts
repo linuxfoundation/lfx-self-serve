@@ -45,6 +45,71 @@ describe('MentorshipMenteeController', () => {
     vi.restoreAllMocks();
   });
 
+  describe('registerMenteeProfile', () => {
+    const body = {
+      introduction: '<p>Test intro</p>',
+      skillsHave: ['Java'],
+      skillsWant: ['Python'],
+      additionalNotes: ' Test notes ',
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+    const buildRegisterReq = (requestBody: unknown): Request => ({ body: requestBody, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('registers the parsed request and answers 204 with no body', async () => {
+      const register = vi.spyOn(MentorshipMenteeService.prototype, 'registerMenteeProfile').mockResolvedValue(undefined);
+
+      await controller.registerMenteeProfile(buildRegisterReq(body), res, next);
+
+      expect(register).toHaveBeenCalledWith(expect.anything(), { ...body, additionalNotes: 'Test notes' });
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, null, 'text', [], { ...body, termsAccepted: 'yes' }, { ...body, skillsHave: [] }])(
+      'rejects the body %j with a validation error before calling the service',
+      async (requestBody) => {
+        const register = vi.spyOn(MentorshipMenteeService.prototype, 'registerMenteeProfile');
+
+        await controller.registerMenteeProfile(buildRegisterReq(requestBody), res, next);
+
+        expect(register).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+        expect(res.status).not.toHaveBeenCalled();
+      }
+    );
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMenteeService.prototype, 'registerMenteeProfile').mockRejectedValue(error);
+
+      await controller.registerMenteeProfile(buildRegisterReq(body), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const register = vi.spyOn(MentorshipMenteeService.prototype, 'registerMenteeProfile');
+
+      await controller.registerMenteeProfile(buildRegisterReq(body), res, next);
+
+      expect(register).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
   describe('getMenteeApplications', () => {
     type ApplicationsResponse = Awaited<ReturnType<InstanceType<typeof MentorshipMenteeService>['getMenteeApplications']>>;
     const applications = { data: [], total: 0 } as ApplicationsResponse;

@@ -9,15 +9,27 @@ import {
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
   MENTORSHIP_RICH_TEXT_RAW_MAX,
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+  MENTORSHIP_SKILL_OPTIONS,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
+import {
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
+} from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
-import type { MentorshipMenteeApplication, MentorshipMenteeApplicationTask } from '../interfaces/mentorship-mentee.interface';
+import type { MentorshipMenteeApplication, MentorshipMenteeApplicationTask, MentorshipMenteeRegisterForm } from '../interfaces/mentorship-mentee.interface';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
   buildMentorshipMenteeApplicationView,
   buildMentorshipMenteeOverview,
+  buildMentorshipMenteeRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
   countSubmittedMentorshipMenteeTasks,
@@ -37,6 +49,7 @@ import {
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
   getMentorshipMenteeRegisterErrors,
+  getMentorshipMenteeRegisterRequestErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -53,6 +66,7 @@ import {
   isMentorshipRichTextOverRawMax,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
+  mapMentorshipMenteeRegisterFailure,
   mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
   mentorshipMenteeActionsFor,
@@ -786,7 +800,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const complete = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -805,7 +819,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -820,7 +834,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
   it('treats markup with no text as an empty introduction (rich editor leaves a stray `<p></p>`)', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -837,7 +851,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
   it('caps the introduction at MENTORSHIP_MENTEE_INTRODUCTION_MAX', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -860,7 +874,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       // Array form, not boolean.
       ageEligible: ['yes'] as unknown as boolean,
@@ -880,7 +894,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -906,6 +920,201 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     ] as const) {
       expect(errors).not.toHaveProperty(key);
     }
+  });
+});
+
+const VALID_MENTEE_REGISTER_FORM: MentorshipMenteeRegisterForm = {
+  ...createEmptyMentorshipMenteeForm(),
+  introduction: '<p>Test intro</p>',
+  skillsHave: ['Java'],
+  skillsWant: ['Python'],
+  ageEligible: true,
+  workAuthorized: true,
+  noDuplicateProfile: true,
+  complianceAccepted: true,
+  termsAccepted: true,
+};
+
+describe('buildMentorshipMenteeRegisterRequest', () => {
+  it('copies the introduction and both skill lists and trims the additional notes', () => {
+    const request = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, additionalNotes: '  Test notes.  ' });
+
+    expect(request.introduction).toBe('<p>Test intro</p>');
+    expect(request.skillsHave).toEqual(['Java']);
+    expect(request.skillsWant).toEqual(['Python']);
+    expect(request.additionalNotes).toBe('Test notes.');
+  });
+
+  it('includes only the demographic answers whose consent is checked and non-empty', () => {
+    const request = buildMentorshipMenteeRegisterRequest({
+      ...VALID_MENTEE_REGISTER_FORM,
+      ageConsent: true,
+      age: '20-39',
+      raceEthnicityConsent: false,
+      raceEthnicity: 'asian',
+      genderConsent: true,
+      gender: '',
+      incomeConsent: true,
+      income: 'workingClass',
+      educationConsent: false,
+      education: '',
+    });
+
+    expect(request.demographics).toEqual({ age: '20-39', income: 'workingClass' });
+  });
+
+  it('omits demographics when no consent is checked, and sends preferNotToSay as-is when consented', () => {
+    const declined = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, age: '20-39', raceEthnicity: 'asian' });
+    expect(declined).not.toHaveProperty('demographics');
+
+    const optedOut = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, genderConsent: true, gender: 'preferNotToSay' });
+    expect(optedOut.demographics).toEqual({ gender: 'preferNotToSay' });
+  });
+
+  it('never includes the resume, even when the form holds a file name', () => {
+    const request = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, resumeFileName: 'test-resume.pdf' });
+
+    expect(request).not.toHaveProperty('resumeFileName');
+    expect(JSON.stringify(request)).not.toContain('test-resume.pdf');
+  });
+
+  it('coerces the five flags with isMentorshipTermsAccepted', () => {
+    const request = buildMentorshipMenteeRegisterRequest({
+      ...VALID_MENTEE_REGISTER_FORM,
+      ageEligible: ['yes'] as unknown as boolean,
+      workAuthorized: 'true' as unknown as boolean,
+      noDuplicateProfile: 1 as unknown as boolean,
+      complianceAccepted: false,
+      termsAccepted: [] as unknown as boolean,
+    });
+
+    expect(request).toMatchObject({
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: false,
+      termsAccepted: false,
+    });
+  });
+});
+
+describe('getMentorshipMenteeRegisterRequestErrors', () => {
+  it('reports errors in form order, the order the submit toast reads the first one from', () => {
+    const errors = getMentorshipMenteeRegisterRequestErrors({
+      introduction: '',
+      skillsHave: [],
+      skillsWant: [],
+      ageEligible: false,
+      workAuthorized: false,
+      noDuplicateProfile: false,
+      complianceAccepted: false,
+      termsAccepted: false,
+    });
+
+    expect(Object.keys(errors)).toEqual([
+      'introduction',
+      'skillsHave',
+      'skillsWant',
+      'ageEligible',
+      'workAuthorized',
+      'noDuplicateProfile',
+      'complianceAccepted',
+      'termsAccepted',
+    ]);
+    expect(errors).toEqual(getMentorshipMenteeRegisterErrors(createEmptyMentorshipMenteeForm()));
+  });
+
+  it('rejects a skill outside the catalog on either side', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: ['Java', 'Not A Skill'] }).skillsHave).toBe(
+      MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL
+    );
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(
+      MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL
+    );
+  });
+
+  it('accepts every skill in MENTORSHIP_SKILL_OPTIONS', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+    const errors = getMentorshipMenteeRegisterRequestErrors({
+      ...request,
+      skillsHave: [...MENTORSHIP_SKILL_OPTIONS],
+      skillsWant: [...MENTORSHIP_SKILL_OPTIONS],
+    });
+
+    expect(errors).toEqual({});
+  });
+
+  it('gives the form validator the same result for the same values', () => {
+    const form = { ...VALID_MENTEE_REGISTER_FORM, skillsHave: ['Not A Skill'], termsAccepted: false };
+
+    expect(getMentorshipMenteeRegisterErrors(form)).toEqual(getMentorshipMenteeRegisterRequestErrors(buildMentorshipMenteeRegisterRequest(form)));
+  });
+});
+
+describe('mapMentorshipMenteeRegisterFailure', () => {
+  it('maps a 409 with the profile-exists code to profile-exists and any other 409 to conflict', () => {
+    expect(mapMentorshipMenteeRegisterFailure(409, { code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE })).toEqual({
+      kind: 'profile-exists',
+      message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+    });
+    expect(mapMentorshipMenteeRegisterFailure(409, { code: 'CONFLICT', error: 'slug already exists' })).toEqual({
+      kind: 'conflict',
+      message: MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
+    });
+  });
+
+  it('maps a 403 impersonation guard to read-only and any other 403 to the fallback', () => {
+    expect(mapMentorshipMenteeRegisterFailure(403, { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE })).toEqual({
+      kind: 'read-only',
+      message: MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
+    });
+    expect(mapMentorshipMenteeRegisterFailure(403, { code: 'FORBIDDEN' }).kind).toBe('error');
+  });
+
+  it('keeps only known fields from a 400, first message per field', () => {
+    const failure = mapMentorshipMenteeRegisterFailure(400, {
+      code: 'VALIDATION_ERROR',
+      errors: [
+        { field: 'demographics', message: 'Not a form field.' },
+        { field: 'skillsHave', message: 'Add at least one skill you currently have.' },
+        { field: 'skillsHave', message: 'Second message for the same field.' },
+        { field: 'introduction', message: '' },
+        { field: 'termsAccepted', message: 42 },
+        { field: 'introduction', message: 'Introduction is required.' },
+      ],
+    });
+
+    expect(failure).toEqual({
+      kind: 'field-errors',
+      message: 'Add at least one skill you currently have.',
+      fieldErrors: { skillsHave: 'Add at least one skill you currently have.', introduction: 'Introduction is required.' },
+    });
+  });
+
+  it('falls back when a 400 has no errors list or none that maps to a form field', () => {
+    const fallback = { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+
+    expect(mapMentorshipMenteeRegisterFailure(400, { error: 'bad request' })).toEqual(fallback);
+    expect(mapMentorshipMenteeRegisterFailure(400, { errors: [{ field: 'body', message: 'Body must be an object.' }] })).toEqual(fallback);
+    expect(mapMentorshipMenteeRegisterFailure(400, { errors: [null, 'text', 3] })).toEqual(fallback);
+  });
+
+  it('maps a 422 to the fixed ineligible copy whatever the upstream text says', () => {
+    const expected = { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
+
+    expect(mapMentorshipMenteeRegisterFailure(422, { error: 'age eligibility is required' })).toEqual(expected);
+    expect(mapMentorshipMenteeRegisterFailure(422, null)).toEqual(expected);
+  });
+
+  it('falls back for status 0, 5xx and unusable bodies', () => {
+    const fallback = { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+
+    expect(mapMentorshipMenteeRegisterFailure(0, null)).toEqual(fallback);
+    expect(mapMentorshipMenteeRegisterFailure(500, { error: 'boom' })).toEqual(fallback);
+    expect(mapMentorshipMenteeRegisterFailure(401, 'Unauthorized')).toEqual(fallback);
+    expect(mapMentorshipMenteeRegisterFailure(500, undefined)).toEqual(fallback);
   });
 });
 

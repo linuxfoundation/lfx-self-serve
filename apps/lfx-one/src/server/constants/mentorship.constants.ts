@@ -19,6 +19,7 @@ export const MENTORSHIP_NOT_PROVISIONED_ERROR = 'local user is not provisioned';
 
 /** Upstream path that lists the signed-in user's own `user_profiles` rows (filter with `profile_type`). */
 export const MENTORSHIP_ME_PROFILES_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/profiles`;
+export const MENTORSHIP_ME_MENTEE_PROFILE_PATH = `${MENTORSHIP_ME_PROFILES_PATH}/mentee`;
 
 /** Upstream path that lists the signed-in user's own applications (filter with `role`). */
 export const MENTORSHIP_ME_APPLICATIONS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/applications`;

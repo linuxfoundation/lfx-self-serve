@@ -15,10 +15,9 @@ import { firstValueFrom, map } from 'rxjs';
  * - **SSR** → allow, and let the browser run decide. The server render's profile check goes out
  *   without the session cookie, because `UserService.authenticated` is only set once routing has
  *   begun, so it would always report "no profile" and redirect a registered mentee to register.
- * - **Profile just created** (router state from a validated registration) → allow.
- *   Registration does not save a profile yet (linuxfoundation/lfx-mentorship#187), so
- *   the profile check still reports none and this one navigation has to skip it or the
- *   return trip would bounce straight back to register.
+ * - **Profile just created** (router state set by a successful registration) → allow.
+ *   The profile check may not see the profile that was saved a moment ago, so this one
+ *   navigation skips it, or the return trip could bounce straight back to register.
  * - **Has profile** → allow.
  * - **No profile** (or the check failed) → `/mentorship/mentee`, copying `programId` and `programTermId`
  *   onto that URL so a refresh of the register page does not drop them.

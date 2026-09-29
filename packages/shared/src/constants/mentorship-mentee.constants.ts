@@ -5,6 +5,7 @@ import type {
   MentorshipMenteeApplyBlockedReason,
   MentorshipMenteeApplyBlockedState,
   MentorshipMenteeDemographicRow,
+  MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
@@ -38,6 +39,8 @@ export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other c
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
 export const MENTORSHIP_MENTEE_RESUME_INTRO = 'Optional, but mentors often look you up before accepting a mentee.';
+/** Passed to the resume section's `comingSoonSummary`: upload stays inert and toasts this feature name. */
+export const MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO =
@@ -141,14 +144,33 @@ export const MENTORSHIP_MENTEE_TERMS_INTRO =
 export const MENTORSHIP_MENTEE_EXPORT_DISCLAIMER =
   'At this moment we are not accepting applications from a person or entity restricted by U.S. export controls or sanction programs, or a resident of Cuba, Iran, North Korea, Syria, Sudan, Russian Federation or Crimea region of Ukraine.';
 
-/**
- * Success-toast copy for a client-validated mentee submit. Kept honest because the
- * backend endpoint is not live yet (#1509): the toast reports what actually happened
- * (validation passed) rather than claiming the registration was sent to the platform.
- */
-export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY = 'Registration validated';
-export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
-  'Your mentee registration passed all checks. Submission to the mentorship platform will complete once the backend goes live.';
+/** Success-toast copy shown once the mentee profile has been saved to the mentorship platform. */
+export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY = 'Profile created';
+export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL = 'Your mentee profile has been saved.';
+
+/** Error code the BFF puts on the 409 returned when a mentee profile already exists. */
+export const MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE = 'MENTEE_PROFILE_EXISTS';
+
+/** Inline failure-banner copy for a rejected registration submit, keyed by `MentorshipMenteeRegisterSubmitFailureKind`. */
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS = 'You already have a mentee profile, so we did not overwrite it.';
+export const MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE = 'Go to my mentee dashboard';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict with an existing record. Refresh the page and try again.';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE = 'We could not accept your registration. Please confirm the eligibility statements and try again.';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
+
+/** The form fields a server 400 can name; anything else in `errors[]` is ignored rather than shown against a field that does not exist. */
+export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMenteeRegisterFieldErrors)[] = [
+  'introduction',
+  'skillsHave',
+  'skillsWant',
+  'ageEligible',
+  'workAuthorized',
+  'noDuplicateProfile',
+  'complianceAccepted',
+  'termsAccepted',
+];
 
 // ---------------------------------------------------------------------------
 // Mentee shell page — tab metadata, overview, and tasks
@@ -517,9 +539,3 @@ export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileRe
   profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
   history: [],
 };
-
-// ---------------------------------------------------------------------------
-// Dev shortcuts
-// ---------------------------------------------------------------------------
-
-export const MENTORSHIP_MENTEE_DEV_DASHBOARD_LABEL = 'Go to Mentee Dashboard';

@@ -55,6 +55,38 @@ export interface MentorshipMenteeRegisterFieldErrors {
   termsAccepted?: string;
 }
 
+/**
+ * Body of `POST /api/mentorship/mentee/profile`. Built from the register form by
+ * `buildMentorshipMenteeRegisterRequest`. `resumeFileName` is deliberately absent: resume upload is
+ * coming soon and no file metadata is sent. `demographics` carries only answers whose consent box was
+ * checked; it is omitted when there are none. The five flags are the real checkbox values, validated
+ * `true` by both the client and the BFF.
+ */
+export interface MentorshipMenteeRegisterRequest {
+  introduction: string;
+  skillsHave: string[];
+  skillsWant: string[];
+  additionalNotes: string;
+  demographics?: MentorshipMenteeDemographics;
+  ageEligible: boolean;
+  workAuthorized: boolean;
+  noDuplicateProfile: boolean;
+  complianceAccepted: boolean;
+  termsAccepted: boolean;
+}
+
+/** How a failed registration submit is shown. */
+export type MentorshipMenteeRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
+
+/** Result of `mapMentorshipMenteeRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
+export interface MentorshipMenteeRegisterSubmitFailure {
+  kind: MentorshipMenteeRegisterSubmitFailureKind;
+  /** Banner / toast copy. For 'field-errors' this is the first field message. */
+  message: string;
+  /** Present only for kind 'field-errors'; contains only keys of MentorshipMenteeRegisterFieldErrors. */
+  fieldErrors?: MentorshipMenteeRegisterFieldErrors;
+}
+
 /** One selectable option in a mentee demographic question. */
 export interface MentorshipDemographicOption {
   text: string;
@@ -509,6 +541,41 @@ export interface MentorshipUpstreamTask {
   created_by?: string;
   created_on: string;
   updated_on: string;
+}
+
+/** `skill_set` column written by the mentee register: mirrors what `mapMentorshipMenteeProfile` reads. */
+export interface MentorshipUpstreamMenteeSkillSetInput {
+  skills: string[];
+  improvementSkills: string[];
+  comments: string;
+}
+
+/** `demographics` column: age band, gender token, race/ethnicity token (option values, not labels). */
+export interface MentorshipUpstreamMenteeDemographicsInput {
+  age?: string;
+  gender?: string;
+  race?: string;
+}
+
+/** `socioeconomics` column: income band and education level tokens. */
+export interface MentorshipUpstreamMenteeSocioeconomicsInput {
+  income?: string;
+  educationLevel?: string;
+}
+
+/**
+ * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
+ * upstream from the token and path; name, email, phone and slug are intentionally not sent. A PUT to an
+ * existing profile replaces ALL columns, which is why the BFF pre-checks.
+ */
+export interface MentorshipUpstreamMenteeProfileInput {
+  introduction: string;
+  terms_and_conditions: boolean;
+  age_eligible: boolean;
+  work_eligible: boolean;
+  skill_set: MentorshipUpstreamMenteeSkillSetInput;
+  demographics?: MentorshipUpstreamMenteeDemographicsInput;
+  socioeconomics?: MentorshipUpstreamMenteeSocioeconomicsInput;
 }
 
 /**
