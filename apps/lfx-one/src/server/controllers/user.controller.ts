@@ -8,7 +8,7 @@ import { stripHostKey } from '../helpers/meeting.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 
 /**
  * Controller for handling user-related HTTP requests
@@ -37,10 +37,16 @@ export class UserController {
     });
 
     try {
-      // Extract user email from auth context (impersonation-aware)
+      // Identity gate: proceed when either an effective email or a username can be resolved from
+      // the auth context. Most sources key on username/FGA grants (votes, meetings, formation) or
+      // email-OR-username (surveys, RSVPs); only pending invitations are strictly email-keyed, and
+      // the service skips that source when email is absent — a username-only identity must not
+      // 400 here (GH-2987).
       const userEmail = getEffectiveEmail(req);
-      if (!userEmail) {
-        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
+      const rawUsername = await getUsernameFromAuth(req);
+      const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+      if (!userEmail && !username) {
+        const validationError = ServiceValidationError.forField('identity', 'No email or username found in authentication context', {
           operation: 'get_pending_actions',
           service: 'user_controller',
           path: req.path,

@@ -627,6 +627,22 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
     expect(surveyCall?.[4]).not.toHaveProperty('filters');
   });
 
+  it('matches surveys by username when the auth context carries no email, skipping the email-keyed invitation source', async () => {
+    getEffectiveEmail.mockReturnValue(null);
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([openSurveyRow]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, null, undefined);
+
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+    expect(surveyActions).toHaveLength(1);
+    const surveyCall = proxyRequest.mock.calls.find((call) => (call[4] as { type?: string } | undefined)?.type === 'survey_response');
+    expect(surveyCall?.[4]).toEqual(expect.objectContaining({ filters_or: ['username:testuser'] }));
+    // Pending invitations are strictly email-keyed — skipped when the auth context has no email (GH-2987).
+    expect(getMyPendingInvitations).not.toHaveBeenCalled();
+  });
+
   it('excludes answered surveys (response_datetime populated)', async () => {
     proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
       params?.type === 'survey_response' ? queryPage([{ ...openSurveyRow, response_datetime: '2026-09-01T12:00:00Z' }]) : queryPage([])
@@ -691,6 +707,31 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
     expect(surveyActions[0].badge).toBe('Acme Project');
   });
 
+  it('prefers an invitation row with a usable link when the earliest-cutoff row lacks one', async () => {
+    // Links are per-invitation: the earliest-cutoff row can be the one missing a link (or off the
+    // allowlist), and index order is not stable — dedup must not discard a survey another row can action.
+    const earlierNoLink = {
+      ...openSurveyRow,
+      uid: 'resp-earlier-no-link',
+      survey_link: undefined,
+      survey_cutoff_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const laterWithLink = {
+      ...openSurveyRow,
+      uid: 'resp-later-with-link',
+      survey_cutoff_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'survey_response' ? queryPage([earlierNoLink, laterWithLink]) : queryPage([])
+    );
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const surveyActions = actions.filter((action) => action.type === 'Survey');
+
+    expect(surveyActions).toHaveLength(1);
+    expect(surveyActions[0].buttonLink).toBe('https://www.research.net/r/ABC123');
+  });
+
   it('orders survey actions by soonest cutoff first, regardless of index order', async () => {
     const laterSurvey = {
       ...openSurveyRow,
@@ -725,6 +766,29 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
 
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
+    expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
+    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+  });
+
+  it('fails closed on a mid-pagination survey_response failure, hiding partial rows but not other sources', async () => {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    let surveyCalls = 0;
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'survey_response') {
+        surveyCalls += 1;
+        // Page 1 succeeds with a continuation token; page 2 fails. failOnPartial must turn this
+        // into a degrade (zero Survey actions) rather than silently keeping the truncated page.
+        return surveyCalls === 1 ? Promise.resolve({ ...queryPage([openSurveyRow]), page_token: 'token-2' }) : Promise.reject(new Error('page 2 boom'));
+      }
+      if (params?.type === 'v1_meeting') {
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+      }
+      return queryPage([]);
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(surveyCalls).toBe(2);
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
     expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
   });

@@ -425,7 +425,8 @@ export class UserService {
    * (project-lens / foundation-lens dashboards).
    * @param req - Express request object
    * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
-   * @param email - User email
+   * @param email - User email, or null when the auth context carries only a username (GH-2987) —
+   *   strictly email-keyed sources (pending invitations) are skipped in that case
    * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items)
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
@@ -434,7 +435,7 @@ export class UserService {
   public async getPendingActions(
     req: Request,
     projectUid: string | undefined,
-    email: string,
+    email: string | null,
     projectSlug: string | undefined,
     limit?: number
   ): Promise<PendingActionItem[]> {
@@ -1308,7 +1309,7 @@ export class UserService {
    */
   private async getUserPendingActions(
     req: Request,
-    email: string,
+    email: string | null,
     projectSlug: string | undefined,
     projectUid: string | undefined
   ): Promise<PendingActionItem[]> {
@@ -1323,7 +1324,8 @@ export class UserService {
 
     // Pending committee invitations only belong on the unscoped Me-lens path — they're personal
     // to the user (by email) and not tied to a project lens. On a project/foundation lens, skip
-    // the lookup entirely.
+    // the lookup entirely. They're also the one strictly email-keyed source — skip when the auth
+    // context carries no email (username-only identity, GH-2987).
     const isMeLens = !projectUid && !projectSlug;
 
     // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
@@ -1345,7 +1347,7 @@ export class UserService {
         return [] as Vote[];
       }),
 
-      isMeLens
+      isMeLens && email
         ? this.committeeService.getMyPendingInvitations(req, email).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending invitations', { err: error });
             return [] as PendingInvitation[];
@@ -1503,7 +1505,7 @@ export class UserService {
    * query service may silently ignore it — filtering meeting-side in code is both reliable
    * and cheap at the typical per-user RSVP cardinality (dozens to low hundreds, paginated).
    */
-  private async fetchAllUserRsvps(req: Request, email: string, username: string | null): Promise<MeetingRsvp[]> {
+  private async fetchAllUserRsvps(req: Request, email: string | null, username: string | null): Promise<MeetingRsvp[]> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
@@ -1537,7 +1539,7 @@ export class UserService {
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
-    email: string,
+    email: string | null,
     username: string | null
   ): Promise<{ uids: Set<string>; meetingIds: Set<string> }> {
     const orClauses: string[] = [];
@@ -1673,7 +1675,7 @@ export class UserService {
         month: 'short',
         day: 'numeric',
       });
-      // SAFETY: fetchPendingVotes returns raw indexer-shaped docs typed as Vote — at runtime they carry vote_uid, not uid. Fall back so voteUid is always populated.
+      // fetchPendingVotes returns raw indexer-shaped docs typed as Vote — at runtime they carry vote_uid, not uid. Fall back so voteUid is always populated.
       const voteUid = vote.uid ?? (vote as unknown as IndexedVote).vote_uid;
       return {
         type: 'Vote',
@@ -1715,11 +1717,24 @@ export class UserService {
     });
 
     // One action per survey: the index holds a row per survey × committee invitation; identical
-    // rows would crowd the capped card (#2987). Keep the earliest cutoff (parseable per the filter).
+    // rows would crowd the capped card (#2987). Links are per-invitation, so prefer a row with a
+    // usable (allowlisted) link; among equally usable rows, keep the earliest cutoff (parseable
+    // per the filter). Without the link preference, an earliest/kept row missing its link would
+    // discard a survey another invitation row could still action (index order is not stable).
+    const validLink = (row: SurveyResponseRecord): string | null =>
+      row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
     const earliestBySurvey = new Map<string, SurveyResponseRecord>();
     for (const row of openRows) {
       const kept = earliestBySurvey.get(row.survey_uid);
-      if (!kept || new Date(row.survey_cutoff_date as string).getTime() < new Date(kept.survey_cutoff_date as string).getTime()) {
+      if (!kept) {
+        earliestBySurvey.set(row.survey_uid, row);
+        continue;
+      }
+      const rowHasLink = validLink(row) !== null;
+      const keptHasLink = validLink(kept) !== null;
+      const rowCutoff = new Date(row.survey_cutoff_date as string).getTime();
+      const keptCutoff = new Date(kept.survey_cutoff_date as string).getTime();
+      if ((rowHasLink && !keptHasLink) || (rowHasLink === keptHasLink && rowCutoff < keptCutoff)) {
         earliestBySurvey.set(row.survey_uid, row);
       }
     }
