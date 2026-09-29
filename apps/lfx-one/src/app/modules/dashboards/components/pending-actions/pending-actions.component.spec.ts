@@ -13,7 +13,7 @@ import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsComponent } from './pending-actions.component';
 
@@ -38,6 +38,9 @@ const formationRow = (overrides: Partial<PendingActionItem> = {}): PendingAction
   ...overrides,
 });
 
+// Spyable hide/dismiss mock: the Survey click contract (GH-2987) asserts no hide cookie is written.
+const hiddenActions = { isActionHidden: () => false, hideAction: vi.fn(), dismissAction: vi.fn() };
+
 async function render(actions: PendingActionItem[], flagEnabled = true): Promise<ComponentFixture<PendingActionsComponent>> {
   await TestBed.configureTestingModule({
     imports: [PendingActionsComponent],
@@ -45,7 +48,7 @@ async function render(actions: PendingActionItem[], flagEnabled = true): Promise
       provideRouter([]),
       provideNoopAnimations(),
       { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(flagEnabled) } },
-      { provide: HiddenActionsService, useValue: { isActionHidden: () => false } },
+      { provide: HiddenActionsService, useValue: hiddenActions },
       { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
       { provide: InvitationAcceptFlowService, useValue: {} },
       { provide: MeetingService, useValue: {} },
@@ -110,5 +113,63 @@ describe('PendingActionsComponent — FormationItem row (#2732)', () => {
     const fixture = await render([formationRow()], false);
 
     expect(byTestId(fixture, 'dashboard-pending-actions-item-FormationItem')).toBeNull();
+  });
+});
+
+// GH-2987: a Survey row opens an external SurveyMonkey tab — a click is not a completion the app can
+// observe, so it must not write the 24h hide cookie; the row stays until the server drops it
+// (`response_datetime` stamped on submit). The Agenda contrast case pins the unchanged link-row behavior.
+describe('PendingActionsComponent — Survey row click (GH-2987)', () => {
+  const surveyRow = (overrides: Partial<PendingActionItem> = {}): PendingActionItem => ({
+    type: 'Survey',
+    badge: 'Acme Project',
+    text: 'Acme Project survey is due Oct 1, 2026',
+    icon: 'fa-regular fa-clipboard-list',
+    severity: 'accent',
+    buttonText: 'Submit Survey',
+    buttonLink: 'https://www.surveymonkey.com/r/abc123',
+    date: 'Due Thu, Oct 1',
+    ...overrides,
+  });
+
+  const agendaRow = (): PendingActionItem => ({
+    type: 'Agenda',
+    badge: 'Oct 6',
+    text: 'Review agenda for Board Meeting',
+    icon: 'fa-regular fa-file-lines',
+    severity: 'accent',
+    buttonText: 'Review Agenda',
+    buttonLink: '/meetings/meeting-1',
+    date: 'Mon, Oct 6, 10:00 AM',
+  });
+
+  beforeEach(() => {
+    hiddenActions.hideAction.mockClear();
+  });
+
+  it('keeps the Survey row visible and writes no hide cookie when Submit Survey is clicked', async () => {
+    const fixture = await render([surveyRow()]);
+    const clicked: PendingActionItem[] = [];
+    fixture.componentInstance.actionClick.subscribe((item) => clicked.push(item));
+
+    const anchor = byTestId(fixture, 'dashboard-pending-actions-item-Survey')?.querySelector('lfx-button a');
+    expect(anchor).not.toBeNull();
+    (anchor as HTMLAnchorElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(clicked).toHaveLength(1);
+    expect(byTestId(fixture, 'dashboard-pending-actions-item-Survey')).not.toBeNull();
+  });
+
+  it('still writes the hide cookie for a non-survey link row (Agenda) on click', async () => {
+    const fixture = await render([agendaRow()]);
+
+    const anchor = byTestId(fixture, 'dashboard-pending-actions-item-Agenda')?.querySelector('lfx-button a');
+    expect(anchor).not.toBeNull();
+    (anchor as HTMLAnchorElement).click();
+
+    expect(hiddenActions.hideAction).toHaveBeenCalledTimes(1);
   });
 });
