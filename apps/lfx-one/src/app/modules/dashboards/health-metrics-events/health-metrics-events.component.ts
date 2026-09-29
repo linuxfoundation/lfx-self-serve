@@ -20,6 +20,7 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events-at-a-glance.component';
+import { EventsGeographyComponent } from './components/events-geography/events-geography.component';
 import { EventsOrganizationsComponent } from './components/events-organizations/events-organizations.component';
 import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
@@ -31,8 +32,7 @@ import { EventsSponsorshipComponent } from './components/events-sponsorship/even
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Events (Level 2) — nine anchored sections in the shared Level 2 shell; a section without a body
- * renders as an "Awaiting data" placeholder. A foundation with no event held, none upcoming and no
+ * Events (Level 2) — nine anchored sections in the shared Level 2 shell. A foundation with no event held, none upcoming and no
  * event revenue gets one "No events yet" state in place of the shell. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
@@ -40,6 +40,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
   imports: [
     EmptyStateComponent,
     EventsAtAGlanceComponent,
+    EventsGeographyComponent,
     EventsOrganizationsComponent,
     EventsPastEventsComponent,
     EventsRegistrationForecastComponent,
@@ -68,11 +69,15 @@ export class HealthMetricsEventsComponent {
   // `null` until Past events reports, so the badge never shows a count the section has not read.
   protected readonly pastCount = signal<number | null>(null);
   protected readonly orgsCount = signal<number | null>(null);
+  protected readonly geoCount = signal<number | null>(null);
   // Owned here rather than by the section, since the same read decides whether the tab has any events.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
-    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote(), spk: this.speakersNote() }, { past: this.pastCount(), orgs: this.orgsCount() })
+    buildHealthMetricsEventsSubNavItems(
+      { forecast: this.forecastNote(), spk: this.speakersNote() },
+      { past: this.pastCount(), orgs: this.orgsCount(), geo: this.geoCount() }
+    )
   );
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();

@@ -25,6 +25,7 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
@@ -183,6 +184,8 @@ export default {
     HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
     // Events sponsorship tier and progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+    // Events top-countries bar fill (HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

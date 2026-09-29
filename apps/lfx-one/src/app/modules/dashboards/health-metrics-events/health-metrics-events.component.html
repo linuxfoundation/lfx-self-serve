@@ -6,7 +6,7 @@
   <lfx-empty-state
     icon="fa-light fa-calendar-days"
     title="No events yet"
-    subtitle="Once an event is created in LFX Events, registrations, the forecast, revenue, sponsorship and speakers all appear here."
+    subtitle="Once an event is created in LFX Events, registrations, the forecast, revenue, sponsorship, speakers and countries all appear here."
     data-testid="events-empty" />
 } @else {
   <lfx-health-metrics-l2-shell
@@ -52,6 +52,9 @@
     </ng-template>
     <ng-template lfxHealthMetricsL2Section="orgs">
       <lfx-events-organizations (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="geo">
+      <lfx-events-geography (countChange)="geoCount.set($event)" (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo')" />
     </ng-template>
   </lfx-health-metrics-l2-shell>
 }

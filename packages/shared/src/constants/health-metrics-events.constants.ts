@@ -119,6 +119,7 @@ export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [
   'spon',
   'spk',
   'orgs',
+  'geo',
 ] as const satisfies readonly HealthMetricsEventsSectionKey[];
 
 /** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
