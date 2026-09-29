@@ -7,8 +7,8 @@ import '@angular/compiler';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Runtime collaborators are mocked (the `@lfx-one/shared/*` alias isn't wired into this app's
-// vitest config; cla.service imports only type-only symbols from it, which esbuild elides).
+// Runtime collaborators are mocked; the `@lfx-one/shared/*` alias resolves to the real sources via
+// this app's vitest config.
 const { gatewayFetch } = vi.hoisted(() => ({ gatewayFetch: vi.fn() }));
 const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn<() => string | null>(() => null),

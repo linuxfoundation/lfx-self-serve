@@ -350,7 +350,11 @@ export function parseContentDispositionFilename(header: string | null | undefine
 
 const DOWNLOADABLE_URL_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'blob:']);
 
-/** Trigger a browser file download from a URL via `<a download>` (no new tab). No-op during SSR. */
+/**
+ * Trigger a browser file download from a URL via `<a download>` (no new tab). Refuses — with a
+ * console warning naming only the scheme — any URL whose protocol is not `http:`/`https:`/`blob:`.
+ * No-op during SSR.
+ */
 export function downloadFromUrl(url: string, filename?: string): void {
   if (typeof document === 'undefined') {
     return;
