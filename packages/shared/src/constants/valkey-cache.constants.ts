@@ -242,5 +242,12 @@ export const VALKEY_CACHE = {
     // roster 1,103,412 bytes (The Linux Foundation, 2,725 seats). Refused at the 1 MiB default,
     // so every People Board/Committee/All Employees load re-drained committee-service (~27 s).
     'org-seats:v2': 2 * 1_048_576,
+    // Measured 2026-09-28 → 09-29 from prod `valkey_set` oversize logs, after the seat cap shipped:
+    // largest compact per-user live directory 1,708,222 bytes (1.63 MiB; 7 refused writes, all over
+    // 1.08 MiB). Refused at the 1 MiB default, so every All Employees load re-ran the four-upstream
+    // merge. 1.63 MiB × 1.25 rounds up to 3 MiB; 2 MiB would leave under 25% headroom. A reassign
+    // evicts the caller's own entry; other callers' entries, and a fill already in flight on another
+    // replica, can still serve a pre-reassign roster until the 30 s TTL expires.
+    'org-people-dir:v3': 3 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

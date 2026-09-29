@@ -349,11 +349,13 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
   });
 
-  it('writes AND reads back a value over the global cap but under a configured per-namespace cap', async () => {
-    // The per-user seat roster keys carry an org uid after the principal, so no sub-resource cap can
-    // address them; the namespace cap must apply on both the write and the read, or the entry is
-    // stored and then rejected by every read.
-    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_SEATS_NAMESPACE, 'alice', ORG_UID)!;
+  const cappedNamespaces = Object.keys(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE);
+
+  it.each(cappedNamespaces)('writes AND reads back a value over the global cap but under the %s namespace cap', async (namespace) => {
+    // Per-user keys carry an org uid after the principal, so no sub-resource cap can address them;
+    // the namespace cap must apply on both the write and the read, or the entry is stored and then
+    // rejected by every read.
+    const key = buildPerUserOrgKey(namespace, 'alice', ORG_UID)!;
     const serialized = JSON.stringify(oversized);
     setMock.mockResolvedValue('OK');
     getMock.mockResolvedValue(serialized);
@@ -362,9 +364,9 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     await expect(ValkeyService.getInstance().getJson(key)).resolves.toEqual(oversized);
   });
 
-  it('refuses a value over a configured per-namespace cap on both the write and the read', async () => {
-    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_SEATS_NAMESPACE, 'alice', ORG_UID)!;
-    const cap = VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE[VALKEY_CACHE.ORG_SEATS_NAMESPACE];
+  it.each(cappedNamespaces)('refuses a value over the %s namespace cap on both the write and the read', async (namespace) => {
+    const key = buildPerUserOrgKey(namespace, 'alice', ORG_UID)!;
+    const cap = VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE[namespace];
     const overCap = { padding: 'x'.repeat(cap) };
     setMock.mockResolvedValue('OK');
     getMock.mockResolvedValue(JSON.stringify(overCap));
@@ -372,7 +374,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     await expect(ValkeyService.getInstance().setJson(key, overCap, 60)).resolves.toBe(false);
     expect(setMock).not.toHaveBeenCalled();
     await expect(ValkeyService.getInstance().getJson(key)).resolves.toBeNull();
-    expect(warningPayload()).toMatchObject({ cache_namespace: VALKEY_CACHE.ORG_SEATS_NAMESPACE, max_bytes: cap });
+    expect(warningPayload()).toMatchObject({ cache_namespace: namespace, max_bytes: cap });
   });
 
   it('applies the global cap to a per-user namespace with no configured cap', async () => {
@@ -437,9 +439,9 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
   });
 
   it('applies a configured cap to every cache measured to need one, and to no other', async () => {
-    // Guards the table itself, not the mechanism: each entry exists because that cache's largest
+    // Guards the tables themselves, not the mechanism: each entry exists because that cache's largest
     // measured value does not fit under the 1 MiB default, so a value just over the default must be
-    // storable for exactly these sub-resources and refused for their siblings.
+    // storable for exactly these caches and refused for their siblings.
     setMock.mockResolvedValue('OK');
 
     for (const subResource of ['people-all:v2', 'people-event-attendees:v2', 'people-trainees:v2']) {
@@ -448,5 +450,11 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-contributors:v2:all']) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
+    for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE]) {
+      await expect(ValkeyService.getInstance().setJson(buildPerUserOrgKey(namespace, 'alice', ORG_UID)!, oversized, 60)).resolves.toBe(true);
+    }
+    await expect(ValkeyService.getInstance().setJson(buildPerUserOrgKey(VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE, 'alice', ORG_UID)!, oversized, 60)).resolves.toBe(
+      false
+    );
   });
 });
