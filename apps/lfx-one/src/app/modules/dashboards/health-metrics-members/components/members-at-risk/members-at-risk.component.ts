@@ -37,6 +37,7 @@ import type {
   HealthMetricsMembersAtRiskRowView,
   HealthMetricsMembersAtRiskSummaryView,
 } from '@lfx-one/shared/interfaces';
+import type { TablePageEvent } from 'primeng/table';
 
 /**
  * `#risk` — members 60+ days overdue on dues in the view's own dues-at-risk order, with the foundation's aging and risk totals.
@@ -109,7 +110,7 @@ export class MembersAtRiskComponent {
     this.bucket.set(this.toBucket(id));
   }
 
-  protected onTablePage(event: { first?: number }): void {
+  protected onTablePage(event: TablePageEvent): void {
     this.page.set(Math.floor((event.first ?? 0) / this.size) + 1);
   }
 

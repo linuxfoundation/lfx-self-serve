@@ -163,7 +163,7 @@ describe('MembersAtRiskComponent', () => {
     await render(response({ totalRecords: 30 }));
     getMembersAtRisk.mockClear();
 
-    fixture.componentInstance['onTablePage']({ first: 20 });
+    fixture.componentInstance['onTablePage']({ first: 20, rows: 10 });
     await settle();
 
     expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ offset: 20 }));
