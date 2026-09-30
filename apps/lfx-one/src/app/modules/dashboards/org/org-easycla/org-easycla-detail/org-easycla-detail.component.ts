@@ -203,6 +203,8 @@ export class OrgEasyclaDetailComponent {
    */
   private readonly retriedList$ = new Subject<OrgClaGroupList | null>();
   private readonly rosterChanged$ = new Subject<string>();
+  /** Fires on each organization load, so a roster re-read requested before it can never land after it. */
+  private readonly listReloaded$ = new Subject<void>();
 
   /**
    * A signing trip is in flight: this address carries the flag EasyCLA was told to return with.
@@ -672,6 +674,7 @@ export class OrgEasyclaDetailComponent {
         switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
             map((list) => ({ uid, list })),
+            takeUntil(this.listReloaded$),
             catchError((error: unknown) => {
               console.warn('Failed to refresh organization CLA groups after a manager change:', error);
               return of(null);
@@ -1610,6 +1613,7 @@ export class OrgEasyclaDetailComponent {
         this.fetchError.set(false);
         this.autoEclaWrites.forgetSettled();
         this.selfRemovals.forgetAll();
+        this.listReloaded$.next();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(

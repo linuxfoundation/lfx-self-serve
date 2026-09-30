@@ -3572,6 +3572,32 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
   });
 
+  it('ignores a re-read started before the viewer left the organization and came back', async () => {
+    const OTHER_UID = '0014100000OtherOrgAA';
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
+    const stale = new Subject<OrgClaGroupList>();
+    getClaGroups.mockReturnValueOnce(stale);
+    component.onRosterChanged();
+
+    getClaGroups.mockImplementation((uid: string) => of({ orgUid: uid, claGroups: [row({ viewerIsClaManager: uid === OTHER_UID })] }));
+    selectedAccount.set({ uid: OTHER_UID, accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    selectedAccount.set(SELECTED_ACCOUNT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(getClaGroups).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid);
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+
+    stale.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] });
+    fixture.detectChanges();
+
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+  });
+
   it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
     checkPermission.mockReturnValue(of(false));
 
