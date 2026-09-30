@@ -5,6 +5,7 @@ import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
+import { PD_HEALTH_TAG } from '@lfx-one/shared/constants';
 import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -334,10 +335,32 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
     expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: 'Fair' }));
   });
 
-  it('still appends the partial suffix when exactly 2 of 3 categories are covered (LFXV2-1262)', async () => {
+  it('marks the label with an asterisk, on the bare band colors, when exactly 2 of 3 categories are covered (LFXV2-1262)', async () => {
     const component = await createComponent({ ...HERO, health: 'fair', healthMaxScore: 65, healthCoveredCategoryCount: 2 });
 
-    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: expect.stringContaining('Fair') }));
-    expect(component['healthMeta']()?.label).toContain('Partial');
+    expect(component['healthMeta']()).toEqual({ ...PD_HEALTH_TAG.fair, label: 'Fair*' });
+  });
+
+  it('keeps the "Unavailable" tag bare even when the covered count is 2', async () => {
+    const component = await createComponent({ ...HERO, health: null, healthCoveredCategoryCount: 2 });
+
+    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: 'Unavailable' }));
+  });
+
+  it('names a partial score in words, not with an asterisk, in the badge accessible name', async () => {
+    const component = await createComponent({
+      ...HERO,
+      health: 'fair',
+      healthOverallScore: 52,
+      healthMaxScore: 65,
+      healthCoveredCategoryCount: 2,
+      healthMaintainer: 30,
+      healthSecurity: null,
+      healthDevelopment: 22,
+    });
+
+    expect(component['heroHealthAriaLabel']()).toBe(
+      'Health: Fair, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+    );
   });
 });
