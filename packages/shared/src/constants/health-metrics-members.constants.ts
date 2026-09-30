@@ -6,6 +6,9 @@ import { lfxColors } from './colors.constants';
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsMembersAtRisk,
+  HealthMetricsMembersAtRiskBucket,
+  HealthMetricsMembersAtRiskFilterOption,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersDataSectionKey,
@@ -199,6 +202,8 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   directoryNps: 'memNps',
   directorySearch: 'memSearch',
   directoryPage: 'memPage',
+  atRiskBucket: 'riskBucket',
+  atRiskPage: 'riskPage',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
 /** `MEMBERSHIP_DIRECTORY`'s NPS categories, and the allowlist the directory read validates against. */
@@ -268,3 +273,35 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES: Record<Hea
 
 /** Hover text on a not-tracked cell. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_NOT_TRACKED = 'Not tracked yet for this foundation';
+
+/** `MEMBERSHIP_AT_RISK`'s buckets past 60 days, oldest last; the section leaves out balances under 60 days. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS = ['60_89_days', '90_plus_days'] as const;
+
+/** The design's label for each aging bucket, on its pill and its aging bar. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS: Record<HealthMetricsMembersAtRiskBucket, string> = {
+  '60_89_days': '60–89 days',
+  '90_plus_days': '90+ days',
+};
+
+/** The bucket pills over the hero; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetricsMembersAtRiskFilterOption[] = [
+  { id: 'all', label: 'All at risk' },
+  ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => ({ id: bucket, label: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket] })),
+];
+
+/** Read-failed / no-foundation value: no members, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
+  rows: [],
+  totalRecords: 0,
+  summary: { outstandingBalanceUsd: 0, highRiskBalanceUsd: 0, mediumRiskBalanceUsd: 0, memberCount: 0 },
+  aging: [],
+};
+
+/** Rows per page; the busiest foundation has under a hundred members at risk. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE = 10;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE = 100;
+
+/** The aging bars' fill. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS = 'bg-red-600';

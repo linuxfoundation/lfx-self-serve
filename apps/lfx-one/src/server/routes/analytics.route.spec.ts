@@ -153,6 +153,7 @@ describe.each([
   ['/members-movements', 'year=2025&movementType=new&foundationSlug'],
   ['/members-directory', 'foundationSlug'],
   ['/members-directory-tiers', 'foundationSlug'],
+  ['/members-at-risk', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

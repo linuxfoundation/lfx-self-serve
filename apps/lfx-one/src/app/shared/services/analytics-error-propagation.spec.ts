@@ -156,6 +156,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no tiers.
       call: () => service.getMembersDirectoryTiers('aaif'),
     },
+    {
+      name: 'getMembersAtRisk',
+      url: '/api/analytics/members-at-risk',
+      // A swallowed failure would read as a foundation with no members at risk.
+      call: () => service.getMembersAtRisk({ foundationSlug: 'aaif', bucket: 'all', offset: 0, pageSize: 10 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

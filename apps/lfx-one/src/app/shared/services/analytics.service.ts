@@ -113,6 +113,8 @@ import {
   HealthMetricsEventsSponsorshipQuery,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeQuery,
+  HealthMetricsMembersAtRisk,
+  HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryTiers,
@@ -1427,6 +1429,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersDirectoryTiers>('/api/analytics/members-directory-tiers', { params: { foundationSlug } }).pipe(
       catchError((error) => {
         console.error('[analytics] members-directory-tiers failed', { foundationSlug, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersAtRisk(query: HealthMetricsMembersAtRiskQuery): Observable<HealthMetricsMembersAtRisk> {
+    let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('offset', String(query.offset)).set('pageSize', String(query.pageSize));
+    if (query.bucket !== 'all') params = params.set('bucket', query.bucket);
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersAtRisk>('/api/analytics/members-at-risk', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-at-risk failed', { foundationSlug: query.foundationSlug, bucket: query.bucket, error });
         return throwError(() => error);
       })
     );

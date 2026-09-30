@@ -8,6 +8,9 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
@@ -21,6 +24,7 @@ import {
 import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEventsOrganizationsSegment,
+  HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
 } from '@lfx-one/shared/interfaces';
@@ -63,6 +67,9 @@ const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_
 
 /** NPS categories the Members directory filter accepts. */
 const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
+
+/** Aging buckets the Members at-risk filter accepts, `all` included. */
+const MEMBERS_AT_RISK_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS.map((option) => option.id));
 
 /** A four-digit calendar year, the only shape the movements list's `year` accepts. */
 const YEAR_PATTERN = /^\d{4}$/;
@@ -3844,6 +3851,45 @@ export class AnalyticsController {
       const response = await this.healthMetricsMembersService.getDirectoryTiers(req, { foundationSlug });
 
       logger.success(req, 'get_members_directory_tiers', startTime, { foundation_slug: foundationSlug, tier_count: response.tiers.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-at-risk` — the foundation's members 60+ days overdue, one page at a time, with the balance totals. */
+  public async getMembersAtRisk(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_at_risk');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_at_risk');
+
+      const bucket = getStringQueryParam(req, 'bucket') || 'all';
+      if (!MEMBERS_AT_RISK_FILTERS.has(bucket)) {
+        throw ServiceValidationError.forField('bucket', `Invalid bucket value. Allowed: ${[...MEMBERS_AT_RISK_FILTERS].join(', ')}`, {
+          operation: 'get_members_at_risk',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getAtRisk(req, {
+        foundationSlug,
+        bucket: bucket as HealthMetricsMembersAtRiskFilter,
+        offset,
+        pageSize,
+      });
+
+      logger.success(req, 'get_members_at_risk', startTime, {
+        foundation_slug: foundationSlug,
+        bucket,
+        total_records: response.totalRecords,
+        member_count: response.summary.memberCount,
+      });
 
       res.json(response);
     } catch (error) {

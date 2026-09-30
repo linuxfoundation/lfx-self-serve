@@ -9,6 +9,11 @@ import {
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '../constants/health-metrics-members.constants';
 import {
+  buildHealthMetricsMembersAtRiskAging,
+  buildHealthMetricsMembersAtRiskCountLabel,
+  buildHealthMetricsMembersAtRiskNote,
+  buildHealthMetricsMembersAtRiskRows,
+  buildHealthMetricsMembersAtRiskSummary,
   buildHealthMetricsMembersBridgeView,
   buildHealthMetricsMembersDirectoryRows,
   buildHealthMetricsMembersDirectorySearchPlaceholder,
@@ -21,6 +26,8 @@ import {
 } from './health-metrics-members.utils';
 
 import type {
+  HealthMetricsMembersAtRiskMember,
+  HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersBridge,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersBridgeStep,
@@ -45,6 +52,12 @@ describe('buildHealthMetricsMembersSubNavItems', () => {
 
     expect(items.find((item) => item.key === 'list')?.count).toBe(725);
     expect(items.filter((item) => item.key !== 'list').every((item) => item.count === null)).toBe(true);
+  });
+  it('notes only the sections that report a note', () => {
+    const items = buildHealthMetricsMembersSubNavItems({}, { risk: '3 overdue · $120K' });
+
+    expect(items.find((item) => item.key === 'risk')).toMatchObject({ count: null, note: '3 overdue · $120K' });
+    expect(items.filter((item) => item.key !== 'risk').every((item) => item.note === '')).toBe(true);
   });
 });
 
@@ -425,5 +438,70 @@ describe('buildHealthMetricsMembersMovementCountNote', () => {
     expect(buildHealthMetricsMembersMovementCountNote(6, 7)).toBe(
       '6 organizations listed, while the bar counts 7. The list and the bar are counted separately, so they can differ slightly.'
     );
+  });
+});
+
+describe('members at risk', () => {
+  const summary: HealthMetricsMembersAtRiskSummary = {
+    outstandingBalanceUsd: 120_000,
+    highRiskBalanceUsd: 90_000,
+    mediumRiskBalanceUsd: 30_000,
+    memberCount: 3,
+  };
+
+  function atRiskMember(overrides: Partial<HealthMetricsMembersAtRiskMember> = {}): HealthMetricsMembersAtRiskMember {
+    return {
+      accountId: '0014100000AcmeRsk1',
+      accountName: 'Acme Robotics',
+      membershipTier: 'Gold Membership',
+      outstandingBalanceUsd: 20_000,
+      daysOverdue: 71,
+      lastEngagedDate: '2026-03-04',
+      ...overrides,
+    };
+  }
+
+  it('labels the hero in compact currency', () => {
+    expect(buildHealthMetricsMembersAtRiskSummary(summary)).toEqual({
+      outstandingLabel: '$120K',
+      highRiskLabel: '$90K',
+      mediumRiskLabel: '$30K',
+      memberCountLabel: '3',
+    });
+  });
+
+  it('sizes the aging bars against the largest bucket and leaves out an empty bucket', () => {
+    const bars = buildHealthMetricsMembersAtRiskAging([
+      { bucket: '60_89_days', memberCount: 2, balanceUsd: 30_000 },
+      { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
+    ]);
+
+    expect(bars).toEqual([
+      { bucket: '60_89_days', label: '60–89 days · 2 members', balanceLabel: '$30K', widthPct: (30_000 / 90_000) * 100 },
+      { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
+    ]);
+    expect(buildHealthMetricsMembersAtRiskAging([{ bucket: '60_89_days', memberCount: 0, balanceUsd: 0 }])).toEqual([]);
+  });
+
+  it('renders a row with its age in days, and dashes for missing values', () => {
+    expect(buildHealthMetricsMembersAtRiskRows([atRiskMember()])[0]).toMatchObject({
+      accountId: '0014100000AcmeRsk1',
+      tierLabel: 'Gold Membership',
+      overdueLabel: '$20K',
+      ageLabel: '71 days',
+    });
+    expect(
+      buildHealthMetricsMembersAtRiskRows([atRiskMember({ membershipTier: null, outstandingBalanceUsd: null, daysOverdue: null, lastEngagedDate: null })])[0]
+    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—' });
+  });
+
+  it('notes the overdue count and balance, and nothing while no member is at risk', () => {
+    expect(buildHealthMetricsMembersAtRiskNote(summary)).toBe('3 overdue · $120K');
+    expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: 0 })).toBe('');
+  });
+
+  it('pluralizes the member count', () => {
+    expect(buildHealthMetricsMembersAtRiskCountLabel(1)).toBe('1 member');
+    expect(buildHealthMetricsMembersAtRiskCountLabel(12)).toBe('12 members');
   });
 });

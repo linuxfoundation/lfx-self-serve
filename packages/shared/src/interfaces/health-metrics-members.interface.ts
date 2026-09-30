@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
+import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
@@ -322,4 +324,84 @@ export interface HealthMetricsMembersQueryParams {
   memNps: string;
   memSearch: string;
   memPage: string;
+  riskBucket: string;
+  riskPage: string;
+}
+
+/** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
+export type HealthMetricsMembersAtRiskBucket = (typeof HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS)[number];
+
+/** The bucket pill: one aging bucket, or `all` for both. */
+export type HealthMetricsMembersAtRiskFilter = HealthMetricsMembersAtRiskBucket | 'all';
+
+/** `GET /api/analytics/members-at-risk` — a snapshot of now, so it takes no period. */
+export interface HealthMetricsMembersAtRiskQuery {
+  foundationSlug: string;
+  bucket: HealthMetricsMembersAtRiskFilter;
+  offset: number;
+  pageSize: number;
+}
+
+/** One at-risk member, in the view's own `sort_rank` order. Dates are ISO `YYYY-MM-DD`. */
+export interface HealthMetricsMembersAtRiskMember {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  outstandingBalanceUsd: number | null;
+  daysOverdue: number | null;
+  lastEngagedDate: string | null;
+}
+
+/** The hero, summed over the same rows the table pages through, so it always equals their total. */
+export interface HealthMetricsMembersAtRiskSummary {
+  outstandingBalanceUsd: number;
+  highRiskBalanceUsd: number;
+  mediumRiskBalanceUsd: number;
+  memberCount: number;
+}
+
+/** One aging bar; always both buckets, whatever the selected pill. */
+export interface HealthMetricsMembersAtRiskAging {
+  bucket: HealthMetricsMembersAtRiskBucket;
+  memberCount: number;
+  balanceUsd: number;
+}
+
+export interface HealthMetricsMembersAtRisk {
+  rows: HealthMetricsMembersAtRiskMember[];
+  /** Members in the selected bucket. */
+  totalRecords: number;
+  summary: HealthMetricsMembersAtRiskSummary;
+  aging: HealthMetricsMembersAtRiskAging[];
+}
+
+/** A bucket pill; `all` is "All at risk". */
+export interface HealthMetricsMembersAtRiskFilterOption extends FilterPillOption {
+  id: HealthMetricsMembersAtRiskFilter;
+}
+
+/** The hero as the section renders it. */
+export interface HealthMetricsMembersAtRiskSummaryView {
+  outstandingLabel: string;
+  highRiskLabel: string;
+  mediumRiskLabel: string;
+  memberCountLabel: string;
+}
+
+/** One aging bar as the section renders it; `widthPct` is against the larger bucket's balance. */
+export interface HealthMetricsMembersAtRiskAgingView {
+  bucket: HealthMetricsMembersAtRiskBucket;
+  label: string;
+  balanceLabel: string;
+  widthPct: number;
+}
+
+/** One at-risk row as the table renders it. */
+export interface HealthMetricsMembersAtRiskRowView {
+  accountId: string;
+  accountName: string;
+  tierLabel: string;
+  overdueLabel: string;
+  ageLabel: string;
+  lastEngagedLabel: string;
 }

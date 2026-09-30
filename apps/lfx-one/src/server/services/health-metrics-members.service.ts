@@ -4,6 +4,9 @@
 import {
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
@@ -26,6 +29,9 @@ import { SnowflakeService } from './snowflake.service';
 
 import type {
   HealthMetricsL2Range,
+  HealthMetricsMembersAtRisk,
+  HealthMetricsMembersAtRiskMember,
+  HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersBridgeStep,
@@ -52,6 +58,7 @@ const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENU
 const MEMBERSHIP_WATERFALL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFALL';
 const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL';
 const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
+const MEMBERSHIP_AT_RISK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_AT_RISK';
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -111,6 +118,25 @@ interface DirectoryRow {
   SPONSORSHIP_USD: number | null;
   TRAINING_ENROLLMENT_COUNT: number | null;
   EVENT_REGISTRATION_COUNT: number | null;
+}
+
+interface AtRiskRow {
+  TOTAL_RECORDS: number | null;
+  SCOPE_TOTAL: number | null;
+  TOTAL_OUTSTANDING_USD: number | null;
+  TOTAL_HIGH_RISK_USD: number | null;
+  TOTAL_MEDIUM_RISK_USD: number | null;
+  AGING_60_89_COUNT: number | null;
+  AGING_60_89_BALANCE_USD: number | null;
+  AGING_90_PLUS_COUNT: number | null;
+  AGING_90_PLUS_BALANCE_USD: number | null;
+  IS_PAGE_ROW: boolean | null;
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
+  OUTSTANDING_BALANCE_USD: number | null;
+  DAYS_OVERDUE: number | null;
+  LAST_ENGAGED_DATE: Date | string | null;
 }
 
 interface DirectoryTierRow {
@@ -352,6 +378,92 @@ export class HealthMetricsMembersService {
     return { tiers: result.rows.flatMap((row) => (row.MEMBERSHIP_TIER ? [row.MEMBERSHIP_TIER] : [])) };
   }
 
+  /**
+   * One page of the foundation's members whose balance is 60+ days overdue, in the view's `sort_rank`
+   * order, with the hero and aging totals over every such member whatever the bucket filter.
+   */
+  public async getAtRisk(req: Request, query: HealthMetricsMembersAtRiskQuery): Promise<HealthMetricsMembersAtRisk> {
+    const binds: string[] = [query.foundationSlug, ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS];
+    let matchClause = '';
+    if (query.bucket !== 'all') {
+      matchClause = 'WHERE aging_bucket = ?';
+      binds.push(query.bucket);
+    }
+
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+    const bucketPlaceholders = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map(() => '?').join(', ');
+
+    const sql = `
+      WITH scoped AS (
+        SELECT
+          account_id,
+          account_name,
+          NULLIF(TRIM(membership_tier), '') AS membership_tier,
+          outstanding_balance_usd,
+          days_overdue,
+          aging_bucket,
+          churn_risk,
+          last_engaged_date,
+          sort_rank
+        FROM ${MEMBERSHIP_AT_RISK_VIEW}
+        WHERE foundation_slug = ?
+          AND account_id IS NOT NULL
+          AND account_id <> ''
+          -- Balances under 60 days are not yet at risk, so they stay out of the hero, the aging and the table.
+          AND aging_bucket IN (${bucketPlaceholders})
+      ),
+      matched AS (
+        SELECT * FROM scoped ${matchClause}
+      ),
+      totals AS (
+        SELECT
+          (SELECT COUNT(*) FROM matched) AS total_records,
+          (SELECT COUNT(*) FROM scoped) AS scope_total,
+          (SELECT COALESCE(SUM(outstanding_balance_usd), 0) FROM scoped) AS total_outstanding_usd,
+          (SELECT COALESCE(SUM(IFF(churn_risk = 'High', outstanding_balance_usd, 0)), 0) FROM scoped) AS total_high_risk_usd,
+          (SELECT COALESCE(SUM(IFF(churn_risk = 'Medium', outstanding_balance_usd, 0)), 0) FROM scoped) AS total_medium_risk_usd,
+          (SELECT COUNT_IF(aging_bucket = '60_89_days') FROM scoped) AS aging_60_89_count,
+          (SELECT COALESCE(SUM(IFF(aging_bucket = '60_89_days', outstanding_balance_usd, 0)), 0) FROM scoped) AS aging_60_89_balance_usd,
+          (SELECT COUNT_IF(aging_bucket = '90_plus_days') FROM scoped) AS aging_90_plus_count,
+          (SELECT COALESCE(SUM(IFF(aging_bucket = '90_plus_days', outstanding_balance_usd, 0)), 0) FROM scoped) AS aging_90_plus_balance_usd
+      ),
+      page AS (
+        SELECT account_id, account_name, membership_tier, outstanding_balance_usd, days_overdue, last_engaged_date, sort_rank, TRUE AS is_page_row
+        FROM matched
+        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<AtRiskRow>(this.snowflakeService, req, sql, binds, {
+      view: MEMBERSHIP_AT_RISK_VIEW,
+      operation: 'get_members_at_risk',
+      clientMessage: 'At-risk members are unavailable right now.',
+    });
+
+    const first = result.rows[0];
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapAtRiskMember),
+      totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
+      summary: {
+        outstandingBalanceUsd: Number(first?.TOTAL_OUTSTANDING_USD ?? 0),
+        highRiskBalanceUsd: Number(first?.TOTAL_HIGH_RISK_USD ?? 0),
+        mediumRiskBalanceUsd: Number(first?.TOTAL_MEDIUM_RISK_USD ?? 0),
+        memberCount: Number(first?.SCOPE_TOTAL ?? 0),
+      },
+      aging: [
+        { bucket: '60_89_days', memberCount: Number(first?.AGING_60_89_COUNT ?? 0), balanceUsd: Number(first?.AGING_60_89_BALANCE_USD ?? 0) },
+        { bucket: '90_plus_days', memberCount: Number(first?.AGING_90_PLUS_COUNT ?? 0), balanceUsd: Number(first?.AGING_90_PLUS_BALANCE_USD ?? 0) },
+      ],
+    };
+  }
+
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
     const sql = `
       SELECT
@@ -500,6 +612,21 @@ function mapDirectoryMember(row: DirectoryRow): HealthMetricsMembersDirectoryMem
       sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_USD),
       trainingEnrollmentCount: toNullableNumber(row.TRAINING_ENROLLMENT_COUNT),
       eventRegistrationCount: toNullableNumber(row.EVENT_REGISTRATION_COUNT),
+    },
+  ];
+}
+
+function mapAtRiskMember(row: AtRiskRow): HealthMetricsMembersAtRiskMember[] {
+  if (!row.ACCOUNT_ID) return [];
+
+  return [
+    {
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      membershipTier: row.MEMBERSHIP_TIER || null,
+      outstandingBalanceUsd: toNullableNumber(row.OUTSTANDING_BALANCE_USD),
+      daysOverdue: toNullableNumber(row.DAYS_OVERDUE),
+      lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
     },
   ];
 }
