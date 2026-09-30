@@ -53,7 +53,8 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
     description: 'Act-now view. Sorted by dues at risk rather than days overdue — the money order, not the calendar order.',
-    footnote: '',
+    footnote:
+      'Overdue balance and lapsed engagement together are the strongest churn predictor available today — which is why this sits above churn, not below it.',
     footnoteCaution: false,
   },
   {
@@ -97,7 +98,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
 /** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
-export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge', 'list'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
+export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge', 'list', 'risk'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
 export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {

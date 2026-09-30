@@ -13,6 +13,7 @@ import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
@@ -25,7 +26,14 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
  */
 @Component({
   selector: 'lfx-health-metrics-members',
-  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, MembersBridgeComponent, MembersDirectoryComponent, MembersTiersComponent],
+  imports: [
+    HealthMetricsL2SectionDirective,
+    HealthMetricsL2ShellComponent,
+    MembersAtRiskComponent,
+    MembersBridgeComponent,
+    MembersDirectoryComponent,
+    MembersTiersComponent,
+  ],
   templateUrl: './health-metrics-members.component.html',
 })
 export class HealthMetricsMembersComponent {
@@ -35,5 +43,8 @@ export class HealthMetricsMembersComponent {
   protected readonly crossReference = HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE;
   protected readonly scopeNote = HEALTH_METRICS_MEMBERS_SCOPE_NOTE;
   protected readonly listCount = signal<number | null>(null);
-  protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() => buildHealthMetricsMembersSubNavItems({ list: this.listCount() }));
+  protected readonly riskNote = signal<string>('');
+  protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() =>
+    buildHealthMetricsMembersSubNavItems({ list: this.listCount() }, { risk: this.riskNote() })
+  );
 }

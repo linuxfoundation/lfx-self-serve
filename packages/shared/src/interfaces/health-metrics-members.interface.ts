@@ -352,7 +352,7 @@ export interface HealthMetricsMembersAtRiskMember {
   lastEngagedDate: string | null;
 }
 
-/** The hero, summed over the same rows the table pages through, so it always equals their total. */
+/** The hero, summed over every member 60+ days overdue whatever the bucket pill; with a bucket picked it exceeds the table's total. */
 export interface HealthMetricsMembersAtRiskSummary {
   outstandingBalanceUsd: number;
   highRiskBalanceUsd: number;

@@ -30,6 +30,7 @@ import { SnowflakeService } from './snowflake.service';
 import type {
   HealthMetricsL2Range,
   HealthMetricsMembersAtRisk,
+  HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskMember,
   HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersBridge,
@@ -120,16 +121,13 @@ interface DirectoryRow {
   EVENT_REGISTRATION_COUNT: number | null;
 }
 
-interface AtRiskRow {
+/** The model's per-bucket totals, one pair per `HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS` entry. */
+type AtRiskBucketTotals = Record<`FOUNDATION_${Uppercase<HealthMetricsMembersAtRiskBucket>}_${'MEMBERS_COUNT' | 'OUTSTANDING_BALANCE_USD'}`, number | null>;
+
+interface AtRiskRow extends AtRiskBucketTotals {
   TOTAL_RECORDS: number | null;
-  SCOPE_TOTAL: number | null;
-  TOTAL_OUTSTANDING_USD: number | null;
-  TOTAL_HIGH_RISK_USD: number | null;
-  TOTAL_MEDIUM_RISK_USD: number | null;
-  AGING_60_89_COUNT: number | null;
-  AGING_60_89_BALANCE_USD: number | null;
-  AGING_90_PLUS_COUNT: number | null;
-  AGING_90_PLUS_BALANCE_USD: number | null;
+  FOUNDATION_HIGH_RISK_BALANCE_USD: number | null;
+  FOUNDATION_MEDIUM_RISK_BALANCE_USD: number | null;
   IS_PAGE_ROW: boolean | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
@@ -137,6 +135,7 @@ interface AtRiskRow {
   OUTSTANDING_BALANCE_USD: number | null;
   DAYS_OVERDUE: number | null;
   LAST_ENGAGED_DATE: Date | string | null;
+  SORT_RANK: number | null;
 }
 
 interface DirectoryTierRow {
@@ -393,6 +392,11 @@ export class HealthMetricsMembersService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
     const bucketPlaceholders = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map(() => '?').join(', ');
+    // The model repeats its foundation totals on every row, so any one row carries them; bucket ids are constants.
+    const bucketColumns = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.flatMap((bucket) => [
+      `foundation_${bucket}_members_count`,
+      `foundation_${bucket}_outstanding_balance_usd`,
+    ]);
 
     const sql = `
       WITH scoped AS (
@@ -403,9 +407,11 @@ export class HealthMetricsMembersService {
           outstanding_balance_usd,
           days_overdue,
           aging_bucket,
-          churn_risk,
           last_engaged_date,
-          sort_rank
+          sort_rank,
+          foundation_high_risk_balance_usd,
+          foundation_medium_risk_balance_usd,
+          ${bucketColumns.join(',\n          ')}
         FROM ${MEMBERSHIP_AT_RISK_VIEW}
         WHERE foundation_slug = ?
           AND account_id IS NOT NULL
@@ -419,14 +425,10 @@ export class HealthMetricsMembersService {
       totals AS (
         SELECT
           (SELECT COUNT(*) FROM matched) AS total_records,
-          (SELECT COUNT(*) FROM scoped) AS scope_total,
-          (SELECT COALESCE(SUM(outstanding_balance_usd), 0) FROM scoped) AS total_outstanding_usd,
-          (SELECT COALESCE(SUM(IFF(churn_risk = 'High', outstanding_balance_usd, 0)), 0) FROM scoped) AS total_high_risk_usd,
-          (SELECT COALESCE(SUM(IFF(churn_risk = 'Medium', outstanding_balance_usd, 0)), 0) FROM scoped) AS total_medium_risk_usd,
-          (SELECT COUNT_IF(aging_bucket = '60_89_days') FROM scoped) AS aging_60_89_count,
-          (SELECT COALESCE(SUM(IFF(aging_bucket = '60_89_days', outstanding_balance_usd, 0)), 0) FROM scoped) AS aging_60_89_balance_usd,
-          (SELECT COUNT_IF(aging_bucket = '90_plus_days') FROM scoped) AS aging_90_plus_count,
-          (SELECT COALESCE(SUM(IFF(aging_bucket = '90_plus_days', outstanding_balance_usd, 0)), 0) FROM scoped) AS aging_90_plus_balance_usd
+          ANY_VALUE(foundation_high_risk_balance_usd) AS foundation_high_risk_balance_usd,
+          ANY_VALUE(foundation_medium_risk_balance_usd) AS foundation_medium_risk_balance_usd,
+          ${bucketColumns.map((column) => `ANY_VALUE(${column}) AS ${column}`).join(',\n          ')}
+        FROM scoped
       ),
       page AS (
         SELECT account_id, account_name, membership_tier, outstanding_balance_usd, days_overdue, last_engaged_date, sort_rank, TRUE AS is_page_row
@@ -448,19 +450,25 @@ export class HealthMetricsMembersService {
     });
 
     const first = result.rows[0];
+    const aging = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => {
+      const column = bucket.toUpperCase() as Uppercase<HealthMetricsMembersAtRiskBucket>;
+      return {
+        bucket,
+        memberCount: Number(first?.[`FOUNDATION_${column}_MEMBERS_COUNT`] ?? 0),
+        balanceUsd: Number(first?.[`FOUNDATION_${column}_OUTSTANDING_BALANCE_USD`] ?? 0),
+      };
+    });
     return {
       rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapAtRiskMember),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
+      // The model's foundation-wide total counts balances under 60 days too, so the hero adds up the buckets shown.
       summary: {
-        outstandingBalanceUsd: Number(first?.TOTAL_OUTSTANDING_USD ?? 0),
-        highRiskBalanceUsd: Number(first?.TOTAL_HIGH_RISK_USD ?? 0),
-        mediumRiskBalanceUsd: Number(first?.TOTAL_MEDIUM_RISK_USD ?? 0),
-        memberCount: Number(first?.SCOPE_TOTAL ?? 0),
+        outstandingBalanceUsd: aging.reduce((sum, bucket) => sum + bucket.balanceUsd, 0),
+        highRiskBalanceUsd: Number(first?.FOUNDATION_HIGH_RISK_BALANCE_USD ?? 0),
+        mediumRiskBalanceUsd: Number(first?.FOUNDATION_MEDIUM_RISK_BALANCE_USD ?? 0),
+        memberCount: aging.reduce((sum, bucket) => sum + bucket.memberCount, 0),
       },
-      aging: [
-        { bucket: '60_89_days', memberCount: Number(first?.AGING_60_89_COUNT ?? 0), balanceUsd: Number(first?.AGING_60_89_BALANCE_USD ?? 0) },
-        { bucket: '90_plus_days', memberCount: Number(first?.AGING_90_PLUS_COUNT ?? 0), balanceUsd: Number(first?.AGING_90_PLUS_BALANCE_USD ?? 0) },
-      ],
+      aging,
     };
   }
 

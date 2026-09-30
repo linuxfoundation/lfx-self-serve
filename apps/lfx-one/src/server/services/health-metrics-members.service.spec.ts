@@ -540,14 +540,12 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
   const query = { foundationSlug: 'acme', bucket: 'all' as const, offset: 0, pageSize: 10 };
   const totals = {
     TOTAL_RECORDS: 3,
-    SCOPE_TOTAL: 3,
-    TOTAL_OUTSTANDING_USD: 120000,
-    TOTAL_HIGH_RISK_USD: 90000,
-    TOTAL_MEDIUM_RISK_USD: 30000,
-    AGING_60_89_COUNT: 2,
-    AGING_60_89_BALANCE_USD: 50000,
-    AGING_90_PLUS_COUNT: 1,
-    AGING_90_PLUS_BALANCE_USD: 70000,
+    FOUNDATION_HIGH_RISK_BALANCE_USD: 90000,
+    FOUNDATION_MEDIUM_RISK_BALANCE_USD: 30000,
+    FOUNDATION_60_89_DAYS_MEMBERS_COUNT: 2,
+    FOUNDATION_60_89_DAYS_OUTSTANDING_BALANCE_USD: 50000,
+    FOUNDATION_90_PLUS_DAYS_MEMBERS_COUNT: 1,
+    FOUNDATION_90_PLUS_DAYS_OUTSTANDING_BALANCE_USD: 70000,
   };
 
   function atRiskRow(overrides: Record<string, unknown> = {}) {
@@ -560,6 +558,7 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
       OUTSTANDING_BALANCE_USD: 70000,
       DAYS_OVERDUE: 104,
       LAST_ENGAGED_DATE: new Date(Date.UTC(2026, 2, 4)),
+      SORT_RANK: 1,
       ...overrides,
     };
   }
@@ -586,7 +585,7 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     expect(sql).not.toMatch(/FROM scoped WHERE/);
   });
 
-  it('filters the page and its count to one bucket, but totals the hero and aging over every bucket', async () => {
+  it("filters the page and its count to one bucket, but reads the hero and aging from the model's totals", async () => {
     await new HealthMetricsMembersService().getAtRisk(req, { ...query, bucket: '90_plus_days' });
 
     const [sql, binds] = atRiskRead();
@@ -594,9 +593,12 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     expect(sql).toContain('SELECT * FROM scoped WHERE aging_bucket = ?');
     expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
-    expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
-    expect(sql).toContain("SUM(IFF(churn_risk = 'High', outstanding_balance_usd, 0)), 0) FROM scoped) AS total_high_risk_usd");
-    expect(sql).toContain("COUNT_IF(aging_bucket = '60_89_days') FROM scoped) AS aging_60_89_count");
+    const totalsCte = sql.slice(sql.indexOf('totals AS'), sql.indexOf('page AS'));
+    expect(totalsCte).toContain('ANY_VALUE(foundation_high_risk_balance_usd) AS foundation_high_risk_balance_usd');
+    expect(totalsCte).toContain('ANY_VALUE(foundation_60_89_days_members_count) AS foundation_60_89_days_members_count');
+    expect(totalsCte).toContain('ANY_VALUE(foundation_90_plus_days_outstanding_balance_usd) AS foundation_90_plus_days_outstanding_balance_usd');
+    expect(totalsCte).toContain('FROM scoped');
+    expect(totalsCte).not.toMatch(/SUM\(|COUNT_IF\(/);
   });
 
   it("pages in the view's sort_rank order and clamps an oversized page and offset", async () => {
@@ -608,7 +610,7 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     expect(sql).toContain('LEFT JOIN page ON TRUE');
   });
 
-  it('maps the totals, the aging buckets and a member with an ISO date', async () => {
+  it('maps the totals, adding the hero up from the buckets shown, and a member with an ISO date', async () => {
     const response = await new HealthMetricsMembersService().getAtRisk(req, query);
 
     expect(response).toEqual({

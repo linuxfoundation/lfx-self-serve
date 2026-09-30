@@ -28,4 +28,7 @@
   <ng-template lfxHealthMetricsL2Section="list">
     <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list')" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="risk">
+    <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk')" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>
