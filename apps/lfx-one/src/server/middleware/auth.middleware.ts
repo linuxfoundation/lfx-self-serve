@@ -8,7 +8,7 @@ import { AuthenticationError } from '../errors';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
 import { clearImpersonationSession, decodeJwtPayload, hasActiveImpersonationSession } from '../utils/auth-helper';
-import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
+import { populateApiGatewayToken } from '../utils/refresh-token-exchange.util';
 
 const crowdfundingAuthService = new CrowdfundingAuthService();
 
@@ -308,33 +308,6 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
 }
 
 /**
- * Silently fetches a second access token scoped to the API Gateway audience.
- * Uses the existing refresh token from the OIDC session — no user interaction required.
- * Result is cached in the session (with a 5-minute expiry buffer) and stored on req.apiGatewayToken.
- * Failures are non-blocking; the request continues without the token.
- */
-async function extractApiGatewayToken(req: Request): Promise<void> {
-  const apiGatewayAudience = process.env['API_GW_AUDIENCE'];
-  if (!apiGatewayAudience) {
-    logger.warning(req, 'api_gateway_token', 'API_GW_AUDIENCE env var is not set, skipping secondary token fetch');
-    return;
-  }
-
-  const token = await exchangeRefreshTokenForAudience(req, {
-    issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
-    clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
-    clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
-    audience: apiGatewayAudience,
-    sessionKey: 'apiGatewayToken',
-  });
-
-  if (token) {
-    req.apiGatewayToken = token;
-    logger.debug(req, 'api_gateway_token', 'API Gateway token ready');
-  }
-}
-
-/**
  * Loads the LFX Crowdfunding API token onto req.crowdfundingToken.
  * If the session token is valid, uses it directly. If it is expired or absent but a
  * refresh token is stored, attempts a silent refresh before falling through — avoiding
@@ -572,7 +545,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
 
       // 4. Silently fetch secondary tokens when the user is authenticated
       if (hasToken) {
-        await extractApiGatewayToken(req);
+        await populateApiGatewayToken(req);
         await extractCrowdfundingToken(req);
       }
 

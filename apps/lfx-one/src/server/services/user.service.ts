@@ -1159,7 +1159,8 @@ export class UserService {
    */
   public async syncVerifiedEmailToUserService(req: Request, email: string): Promise<boolean> {
     if (!req.apiGatewayToken) {
-      logger.warning(req, 'sync_verified_email', 'Skipping v1 verified-email sync: no API Gateway token on the request', { email });
+      // No email in log metadata — the address is PII (same reason the PATCH below redacts its response body).
+      logger.warning(req, 'sync_verified_email', 'Skipping v1 verified-email sync: no API Gateway token on the request');
       return false;
     }
 
@@ -1178,11 +1179,11 @@ export class UserService {
         redactResponseBody: true,
       });
     } catch (error) {
-      logger.warning(req, 'sync_verified_email', 'v1 verified-email sync failed; verification result unaffected', { email, err: error });
+      logger.warning(req, 'sync_verified_email', 'v1 verified-email sync failed; verification result unaffected', { err: error });
       return false;
     }
 
-    logger.debug(req, 'sync_verified_email', 'v1 verified-email sync succeeded', { email });
+    logger.debug(req, 'sync_verified_email', 'v1 verified-email sync succeeded');
     return true;
   }
 

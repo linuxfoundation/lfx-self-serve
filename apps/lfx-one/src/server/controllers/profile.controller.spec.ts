@@ -16,7 +16,7 @@ const {
   isImpersonatingMock,
   getLinuxForwardDomainMock,
   withMeetingInviteLockMock,
-  exchangeRefreshTokenForAudienceMock,
+  populateApiGatewayTokenMock,
   objectStoreSvc,
   cdpSvc,
   userSvc,
@@ -35,7 +35,7 @@ const {
   isImpersonatingMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
   withMeetingInviteLockMock: vi.fn((_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
-  exchangeRefreshTokenForAudienceMock: vi.fn(),
+  populateApiGatewayTokenMock: vi.fn(),
   meetingPrefSvc: {
     getMeetingInviteEmail: vi.fn(),
     setMeetingInviteEmail: vi.fn(),
@@ -134,9 +134,9 @@ vi.mock('../utils/auth-helper', () => ({
   isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
-// The callback path exchanges the session refresh token for a gateway audience token — mocked so
-// no real Auth0 call leaves the unit test.
-vi.mock('../utils/refresh-token-exchange.util', () => ({ exchangeRefreshTokenForAudience: exchangeRefreshTokenForAudienceMock }));
+// The callback path populates the gateway audience token through the shared helper (the helper owns
+// the API_GW_AUDIENCE/env wiring and the session cache) — mocked so no real Auth0 call leaves the unit test.
+vi.mock('../utils/refresh-token-exchange.util', () => ({ populateApiGatewayToken: populateApiGatewayTokenMock }));
 // Unit-tested separately in meeting-invite-lock.spec.ts — here it's a passthrough so controller specs exercise
 // the wrapped logic without needing a real/mocked Valkey backend.
 vi.mock('../utils/meeting-invite-lock', () => ({
@@ -1293,9 +1293,10 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
     expect(res.json).toHaveBeenCalledWith({ success: true, message: 'Email identity verified and linked successfully' });
   });
 
-  it('callback path: exchanges for a gateway token, then syncs the pending verification email', async () => {
-    vi.stubEnv('API_GW_AUDIENCE', 'https://gw.test/');
-    exchangeRefreshTokenForAudienceMock.mockResolvedValue('fresh-gw-token');
+  it('callback path: populates the gateway token via the shared helper, then syncs the pending verification email', async () => {
+    populateApiGatewayTokenMock.mockImplementation(async (req: any) => {
+      req.apiGatewayToken = 'fresh-gw-token';
+    });
     authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
     profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
     profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
@@ -1309,18 +1310,15 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
 
     await controller.handleProfileAuthCallback(req, res);
 
-    expect(exchangeRefreshTokenForAudienceMock).toHaveBeenCalledWith(
-      req,
-      expect.objectContaining({ audience: 'https://gw.test/', sessionKey: 'apiGatewayToken' })
-    );
+    expect(populateApiGatewayTokenMock).toHaveBeenCalledWith(req);
+    // The v1 sync needs the populated token — the helper must run before it.
+    expect(populateApiGatewayTokenMock.mock.invocationCallOrder[0]).toBeLessThan(userSvc.syncVerifiedEmailToUserService.mock.invocationCallOrder[0]);
     expect(req.apiGatewayToken).toBe('fresh-gw-token');
     expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
 
   it('callback path: holds the redirect until the v1 sync settles (awaited, not fire-and-forget)', async () => {
-    vi.stubEnv('API_GW_AUDIENCE', 'https://gw.test/');
-    exchangeRefreshTokenForAudienceMock.mockResolvedValue('fresh-gw-token');
     authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
     profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
     profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
@@ -1352,7 +1350,9 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
 
-  it('callback path: skips the gateway token exchange when the request already carries a token', async () => {
+  it('callback path: delegates to the shared helper even when the request already carries a token', async () => {
+    // The helper owns the skip-when-present decision (covered in refresh-token-exchange.util.spec.ts);
+    // the controller always delegates so both call sites share one wiring.
     authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
     profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
     profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
@@ -1367,7 +1367,7 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
 
     await controller.handleProfileAuthCallback(req, res);
 
-    expect(exchangeRefreshTokenForAudienceMock).not.toHaveBeenCalled();
+    expect(populateApiGatewayTokenMock).toHaveBeenCalledWith(req);
     expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
