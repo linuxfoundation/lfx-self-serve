@@ -198,6 +198,8 @@ describe('MembersRenewalsComponent', () => {
     await render(NONE_DUE);
 
     expect(text('members-renewals-empty')).toContain('No renewals in the next 90 days');
+    // The read proves only that the window is empty, not that a later renewal exists.
+    expect(text('members-renewals-empty')).not.toContain('further out');
     expect(query('members-renewals-table')).toBeNull();
     expect(counts.at(-1)).toBe(0);
   });
