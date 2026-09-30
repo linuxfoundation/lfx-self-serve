@@ -417,6 +417,14 @@ describe('MenteeTaskRowComponent', () => {
         nowMs
       );
 
+    // Fakes the timers along with `Date`; rxjs `timer` schedules through setInterval, so that pair is faked too.
+    const fakeClock = (nowMs: number): void => {
+      // Re-faking without restoring first keeps the outer Date-only fake, so the timers would stay real.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(nowMs);
+    };
+
     beforeEach(() => {
       vi.setSystemTime(afterDue);
     });
@@ -457,10 +465,7 @@ describe('MenteeTaskRowComponent', () => {
 
     it('locks Submitted and Upload when the due date closes while the row is open', async () => {
       const lastSecond = Date.parse('2026-09-30T23:59:59Z');
-      // Re-faking without restoring first keeps the outer Date-only fake, so setTimeout would stay real.
-      vi.useRealTimers();
-      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
-      vi.setSystemTime(lastSecond);
+      fakeClock(lastSecond);
       // Built before the cutoff, like a cached view: its own `pastDue` stays false.
       await buildRow(pastDueInProgress(lastSecond));
       expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
@@ -470,6 +475,35 @@ describe('MenteeTaskRowComponent', () => {
 
       expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
       expect(byTestId('mentee-tasks-status-hint-row_late')?.textContent).toContain('due date has passed');
+    });
+
+    it('re-reads the clock when a refresh moves the due date of an open row earlier', async () => {
+      fakeClock(beforeDue);
+      await buildRow(pastDueInProgress(beforeDue));
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+
+      // Time passes with no cutoff reached, then a refresh brings a due date that has already ended.
+      vi.setSystemTime(Date.parse('2026-09-25T12:00:00Z'));
+      fixture.componentRef.setInput('task', { ...pastDueInProgress(beforeDue), dueDate: '2026-09-20T00:00:00Z' });
+      fixture.detectChanges();
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+    });
+
+    it('re-arms the cutoff from the current clock when a refresh changes the due date', async () => {
+      fakeClock(beforeDue);
+      await buildRow(pastDueInProgress(beforeDue));
+
+      // One second before the new due date's cutoff; a timer armed from the build time would not fire for weeks.
+      vi.setSystemTime(Date.parse('2026-10-05T23:59:59Z'));
+      fixture.componentRef.setInput('task', { ...pastDueInProgress(beforeDue), dueDate: '2026-10-05T00:00:00Z' });
+      fixture.detectChanges();
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+
+      vi.advanceTimersByTime(1000);
+      fixture.detectChanges();
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
     });
 
     it('judges a view built before the cutoff against the current clock', async () => {
