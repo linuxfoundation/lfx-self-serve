@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, Subject, throwError } from 'rxjs';
+import { isObservable, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MembersAtRiskComponent } from './members-at-risk.component';
@@ -58,15 +58,16 @@ describe('MembersAtRiskComponent', () => {
   let notes: string[];
   let lifecycle: string[];
 
-  // `payload` answers the first read; `followUpPayload` every read after it.
+  // `payload` answers the first read; `followUpPayload` (a value or a stream) every read after it.
   async function render(
     payload: HealthMetricsMembersAtRisk = response(),
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsMembersAtRisk
+    followUpPayload?: HealthMetricsMembersAtRisk | Observable<HealthMetricsMembersAtRisk>
   ): Promise<void> {
+    const followUp = followUpPayload ?? payload;
     getMembersAtRisk = vi
       .fn()
-      .mockReturnValue(of(followUpPayload ?? payload))
+      .mockReturnValue(isObservable(followUp) ? followUp : of(followUp))
       .mockReturnValueOnce(of(payload));
     navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
 
@@ -221,6 +222,14 @@ describe('MembersAtRiskComponent', () => {
     expect(getMembersAtRisk).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 0 }));
     expect(getMembersAtRisk).toHaveBeenCalledTimes(2);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { riskBucket: '60_89_days', riskPage: null } }));
+  });
+
+  it('holds the skeleton, not a $0 hero, while a URL page past an empty foundation moves back', async () => {
+    await render(NONE_AT_RISK, { riskPage: '3' }, new Subject<HealthMetricsMembersAtRisk>());
+
+    expect(getMembersAtRisk).toHaveBeenCalledTimes(2);
+    expect(query('members-at-risk-loading')).not.toBeNull();
+    expect(query('members-at-risk-outstanding')).toBeNull();
   });
 
   it('shows the empty state and no note when no member is at risk', async () => {

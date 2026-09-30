@@ -162,9 +162,10 @@ export class MembersAtRiskComponent {
               return of(HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
             }),
             tap((response) => {
-              this.responseSlug.set(query.foundationSlug);
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a note.
+              // A clamped page fires a follow-up read, so this one neither settles, reports a note nor ends the skeleton.
               if (this.clampPage(response)) return;
+
+              this.responseSlug.set(query.foundationSlug);
 
               this.loading.set(!foundationSeen);
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersAtRiskNote(response.summary) : '');
