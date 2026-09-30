@@ -1,0 +1,186 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="members-board">
+  <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-board-controls">
+    <lfx-filter-pills [options]="cohortOptions" [selectedFilter]="cohort()" (filterChange)="onCohortChange($event)" data-testid="members-board-cohort-pills" />
+    <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-board-meetings">
+      @if (firstRead() || loadFailed()) {
+        &mdash;
+      } @else {
+        {{ summary().meetingsLabel }}
+      }
+    </span>
+  </div>
+
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Attendance unavailable"
+      subtitle="We could not load this foundation's meeting attendance. Refresh the page to try again."
+      data-testid="members-board-error" />
+  } @else if (firstRead()) {
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-board-loading" aria-hidden="true" />
+  } @else if (!loading() && noMeetings()) {
+    <lfx-empty-state
+      icon="fa-light fa-calendar"
+      [title]="'No ' + meetingNoun() + 's in this period'"
+      subtitle="Attendance appears here once a meeting in the selected period is recorded."
+      data-testid="members-board-empty" />
+  } @else {
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-board-hero">
+      <div class="flex flex-col gap-2">
+        <span
+          class="text-3xl font-semibold tabular-nums"
+          [class.text-amber-600]="summary().isBelowExpectedLevel"
+          [class.text-gray-900]="!summary().isBelowExpectedLevel"
+          data-testid="members-board-latest"
+          >{{ summary().latestPctLabel }}</span
+        >
+        <span class="text-[12.5px] text-gray-500" data-testid="members-board-caption">{{ summary().latestCaption }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-board-side">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">{{ summary().otherCohortLabel }}</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-board-other">{{ summary().otherCohortPctLabel }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">Attended / invited</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-board-attended">{{ summary().attendedInvitedLabel }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">Never attended</dt>
+          <dd
+            class="text-[17px] font-semibold tabular-nums"
+            [class.text-red-600]="summary().neverAttendedCount > 0"
+            [class.text-gray-900]="summary().neverAttendedCount === 0"
+            data-testid="members-board-never">
+            {{ summary().neverAttendedLabel }}
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    @if (trend().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="members-board-trend">
+        <h4 class="text-sm font-medium text-gray-900">Attendance by meeting</h4>
+        <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="members-board-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+        </div>
+        <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+        <table class="sr-only" data-testid="members-board-chart-table">
+          <caption>
+            Attendance by meeting, oldest first
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Meeting</th>
+              <th scope="col">Attendance</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (bar of trend(); track bar.meetingId) {
+              <tr>
+                <th scope="row">{{ bar.dateLabel }}</th>
+                <td>{{ bar.committeeName }}</td>
+                <td>{{ bar.pctLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <div class="flex justify-end">
+      <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-board-count">
+        @if (loading()) {
+          &mdash;
+        } @else {
+          {{ countLabel() }}
+        }
+      </span>
+    </div>
+
+    <lfx-table
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > size"
+      [rows]="size"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      [scrollable]="true"
+      [tableStyle]="{ 'min-width': '560px' }"
+      (onPage)="onTablePage($event)"
+      data-testid="members-board-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Meeting</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Date</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Attended</span></th>
+          <th scope="col" class="w-[150px]"><span class="text-xs font-medium text-gray-500">Rate</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'members-board-row-' + view.meetingId">
+          <td>
+            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-board-row-' + view.meetingId + '-name'">{{
+              view.committeeName
+            }}</span>
+          </td>
+          <td class="text-right">
+            <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-board-row-' + view.meetingId + '-date'">{{ view.dateLabel }}</span>
+          </td>
+          <td class="text-right">
+            <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-board-row-' + view.meetingId + '-attended'">{{
+              view.attendedLabel
+            }}</span>
+          </td>
+          <td>
+            <div class="flex items-center gap-2" [attr.data-testid]="'members-board-row-' + view.meetingId + '-rate'">
+              <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full" [class]="view.rateFillClass" [style.width.%]="view.ratePct ?? 0"></div>
+              </div>
+              <span class="w-14 shrink-0 text-right text-[13px] tabular-nums text-gray-700">{{ view.rateLabel }}</span>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
+      <!-- The footer row stays declared so the table's content query always finds it. -->
+      <ng-template #footer>
+        @if (summary().neverAttendedCount > 0) {
+          <tr>
+            <td colspan="4">
+              <p class="flex flex-wrap items-center gap-1 text-[12px] text-gray-500" data-testid="members-board-never-note">
+                <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                <strong class="font-semibold text-gray-700"
+                  >{{ summary().neverAttendedLabel }} {{ summary().neverAttendedCount === 1 ? 'representative has' : 'representatives have' }} never
+                  attended</strong
+                >
+                &mdash;
+                <a
+                  class="text-blue-600 hover:underline"
+                  [routerLink]="[basePath, neverAttendedLink.route]"
+                  [fragment]="neverAttendedLink.fragment"
+                  [queryParams]="neverAttendedLink.queryParams"
+                  data-testid="members-board-never-link"
+                  >see who &rarr;</a
+                >
+                <span>Board attendance should sit near 100%; a level warning applies even when the trend is improving.</span>
+              </p>
+            </td>
+          </tr>
+        }
+      </ng-template>
+    </lfx-table>
+  }
+</div>

@@ -533,3 +533,13 @@ export interface HealthMetricsMembersBoardMeetingRowView {
   rateLabel: string;
   rateFillClass: string;
 }
+
+/** One bar of the trend chart, oldest first; `pct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersBoardTrendBarView {
+  meetingId: string;
+  label: string;
+  dateLabel: string;
+  committeeName: string;
+  pct: number | null;
+  pctLabel: string;
+}

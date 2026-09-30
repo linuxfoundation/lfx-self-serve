@@ -16,7 +16,7 @@ import {
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
-import { formatIsoDateLabel } from './date-time.utils';
+import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import { formatCurrency } from './number.utils';
 
@@ -33,6 +33,7 @@ import type {
   HealthMetricsMembersBoardMeeting,
   HealthMetricsMembersBoardMeetingRowView,
   HealthMetricsMembersBoardSummaryView,
+  HealthMetricsMembersBoardTrendBarView,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeBarView,
   HealthMetricsMembersBridgeStep,
@@ -347,7 +348,7 @@ export function buildHealthMetricsMembersBoardSummary(
 /** Meeting rows; the rate bar takes the Engagement attendance tones. */
 export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardMeetingRowView[] {
   return rows.map((row) => {
-    const ratePct = row.attendancePct === null ? null : Math.min(100, Math.max(0, Math.round(row.attendancePct * 100)));
+    const ratePct = toWholePct(row.attendancePct);
     return {
       meetingId: row.meetingId,
       committeeName: row.committeeName ?? '—',
@@ -356,6 +357,21 @@ export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMem
       ratePct,
       rateLabel: ratePct === null ? '—' : `${ratePct}%`,
       rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct)],
+    };
+  });
+}
+
+/** Trend bars, labelled by short date; the rate is clamped like the table's. */
+export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
+  return trend.map((meeting) => {
+    const pct = toWholePct(meeting.attendancePct);
+    return {
+      meetingId: meeting.meetingId,
+      label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
+      dateLabel: formatIsoDate(meeting.meetingDate),
+      committeeName: meeting.committeeName ?? '—',
+      pct,
+      pctLabel: pct === null ? '—' : `${pct}%`,
     };
   });
 }
@@ -376,6 +392,10 @@ export function buildHealthMetricsMembersBoardCountLabel(totalRecords: number): 
 
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
   return { key, label: format(value), tracked: value !== null };
+}
+
+function toWholePct(share: number | null): number | null {
+  return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
 }
 
 function formatIsoDate(value: string | null): string {
