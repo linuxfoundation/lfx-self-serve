@@ -112,6 +112,7 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
   'risk',
   'renewals',
   'board',
+  'nps',
 ] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
@@ -222,6 +223,7 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   renewalsPage: 'renewalsPage',
   boardCohort: 'boardCohort',
   boardPage: 'boardPage',
+  npsAudience: 'npsAudience',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
 /** `MEMBERSHIP_DIRECTORY`'s NPS categories, and the allowlist the directory read validates against. */

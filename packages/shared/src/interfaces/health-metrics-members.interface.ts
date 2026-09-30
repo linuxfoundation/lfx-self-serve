@@ -330,6 +330,7 @@ export interface HealthMetricsMembersQueryParams {
   renewalsPage: string;
   boardCohort: string;
   boardPage: string;
+  npsAudience: string;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */

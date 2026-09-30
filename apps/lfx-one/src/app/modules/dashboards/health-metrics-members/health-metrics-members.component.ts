@@ -17,6 +17,7 @@ import { MembersAtRiskComponent } from './components/members-at-risk/members-at-
 import { MembersBoardAttendanceComponent } from './components/members-board-attendance/members-board-attendance.component';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 
@@ -35,6 +36,7 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
     MembersBoardAttendanceComponent,
     MembersBridgeComponent,
     MembersDirectoryComponent,
+    MembersNpsComponent,
     MembersRenewalsComponent,
     MembersTiersComponent,
   ],
