@@ -285,6 +285,25 @@ describe('OrgClaService.listClaGroups — whether the viewer is a CLA manager', 
     expect(row.viewerIsClaManager).toBe(true);
   });
 
+  it('marks a row whose roster names the caller after another manager', async () => {
+    getUsernameFromAuth.mockResolvedValue('kmensah');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('passes over a roster entry whose username is not text rather than failing the list', async () => {
+    gatewayFetch.mockResolvedValue(
+      upstreamList(upstreamEntry({ claManagers: JSON.parse('[{"userID":"user-uuid-9","lfUsername":42},{"userID":"user-uuid-1","lfUsername":"aporter"}]') }))
+    );
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
   it('matches the LF username ignoring case and surrounding whitespace', async () => {
     getUsernameFromAuth.mockResolvedValue('  APorter ');
     gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: 'aporter ' }] })));

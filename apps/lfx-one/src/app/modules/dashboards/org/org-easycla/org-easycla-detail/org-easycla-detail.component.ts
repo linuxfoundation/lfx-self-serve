@@ -512,9 +512,7 @@ export class OrgEasyclaDetailComponent {
   /**
    * Whether the Auto ECLA toggle is shown at all.
    */
-  protected readonly showAutoEclaToggle = computed(
-    () => this.claGroup()?.signed === true && this.claGroup()?.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true
-  );
+  protected readonly showAutoEclaToggle = computed(() => this.initShowAutoEclaToggle());
 
   /**
    * The current toggle value the template binds to.
@@ -1378,6 +1376,11 @@ export class OrgEasyclaDetailComponent {
 
   private initTabs(): OrgClaDetailTabView[] {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
+  }
+
+  private initShowAutoEclaToggle(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;
   }
 
   private initAutoEclaValue(): boolean {

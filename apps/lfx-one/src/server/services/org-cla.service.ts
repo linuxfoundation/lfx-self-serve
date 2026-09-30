@@ -267,7 +267,7 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
 
 function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
   if (!username) return false;
-  return claManagers.some((manager) => manager?.lfUsername?.trim().toLowerCase() === username);
+  return claManagers.some((manager) => typeof manager?.lfUsername === 'string' && manager.lfUsername.trim().toLowerCase() === username);
 }
 
 /**
@@ -1814,8 +1814,7 @@ export class OrgClaService {
    *
    * Fails OPEN when the producer sent no roster at all. That is the deliberate direction: the
    * producer is the authority and rejects the write regardless, so failing open costs a CLA
-   * manager one clear error message, where failing closed would hide the only approval-list
-   * controls Self Serve has from someone entitled to use them.
+   * manager one clear error message.
    */
   private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string): Promise<boolean> {
     if (!Array.isArray(entry.claManagers)) {

@@ -61,7 +61,7 @@ Writes stay blocked while impersonating. The permission check itself is a read, 
 
 ## What to tell a viewer who sees no approval-list, Invalidate, or Auto ECLA controls
 
-Either they lack the ACS grant for that project and organization, or they are not named on that CCLA's CLA-manager roster. An organization admin is routinely neither. Ask a CLA manager on the agreement to add them as a CLA manager if they need to make these changes.
+Either they lack the ACS grant for that project and organization, or they are not named on that CCLA's CLA-manager roster. An organization admin is routinely not on the roster, even when ACS grants them the write. Ask a CLA manager on the agreement to add them as a CLA manager if they need to make these changes.
 
 ## What to tell a viewer who can see EasyCLA but cannot Review and Sign
 

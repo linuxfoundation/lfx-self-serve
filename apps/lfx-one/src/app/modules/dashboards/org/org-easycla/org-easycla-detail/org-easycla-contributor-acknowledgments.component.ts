@@ -231,9 +231,9 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   // Each starts null (checking) and fails closed, so the control stays hidden until ACS says yes.
   // Invalidate is gated on `ecla-invalidate`; the dialog's also-remove option on
   // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
-  private readonly viewerIsClaManager = computed(() => this.claGroup().viewerIsClaManager === true);
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
+  private readonly viewerIsClaManager = computed(() => this.claGroup().viewerIsClaManager === true);
   protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.viewerIsClaManager());
   // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
   // `approval-list-update` grant the tab itself needs, so a read-only reader isn't offered a
