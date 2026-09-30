@@ -794,6 +794,12 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
+    // LFX-Campaigns-Email-QA-Report B5: these two free-text fields leaked from one brief into the
+    // next New Brief click because reset() never touched briefForm -- only the url field is
+    // read/written elsewhere in this flow. Cleared here, not just on the New Brief button itself,
+    // so every reset() caller (New Brief, foundation switch, stage/delivery-type switch) gets a
+    // blank slate for fields that describe the brief just discarded, not the one being started.
+    this.briefForm.patchValue({ targetAudience: '', valueProp: '' });
     // The restore offer is deliberately NOT cleared here, unlike everything above it.
     //
     // Cancel and New Brief discard the GENERATED brief. They say nothing about the STORED one,

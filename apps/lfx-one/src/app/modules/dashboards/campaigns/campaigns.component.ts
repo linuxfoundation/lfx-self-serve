@@ -28,6 +28,7 @@ import {
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
+import { isValidUrl } from '@lfx-one/shared/utils';
 import type {
   BriefMetrics,
   BriefMetricsRow,
@@ -1143,6 +1144,14 @@ export class CampaignsComponent {
   });
 
   /**
+   * Alt text for the hero banner image, derived once so the on-screen preview and the staged
+   * HubSpot draft can never disagree. Falls back to "Event" when the scraped name is blank —
+   * matching this fallback, rather than sending the bare `" banner"` HubSpot would otherwise
+   * receive, keeps the on-screen preview and the staged email in agreement.
+   */
+  protected readonly heroImageAlt = computed(() => this.heroBannerAlt(this.emailBriefOutput()?.eventDetails?.name));
+
+  /**
    * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
    * ONLY supplied event facts and has nothing to work from otherwise; and that brief's event must
    * have a name, or the backend rejects the request outright (see `emailBriefMissingEventName`).
@@ -1228,6 +1237,10 @@ export class CampaignsComponent {
       this.emailBriefOutput() !== null &&
       this.selectedEmailTemplateId() !== '' &&
       this.activeFoundationSlug() !== '' &&
+      // LFX-Campaigns-Email-QA-Report B2: staging with no registration URL shipped a CTA button
+      // with no real destination. `registrationUrl` is what `hubspotConfig.buttonUrl` and
+      // `heroLinkUrl` both send downstream, so a blank one must block staging, not just the CTA.
+      (this.emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '' &&
       // The audience is a real upstream precondition, not just UI copy: campaign-service's
       // `resolveBuiltAudience` refuses to stage when the brief has no BUILT audience. Without
       // this the Stage button is enabled, the HubSpot draft work begins, and the refusal comes
@@ -2523,19 +2536,23 @@ export class CampaignsComponent {
           // The AI-generated CTA rides along as the native HubSpot button widget's text/url, not
           // embedded inline in `body` — `copy.cta` is the button's label; its destination is the
           // same registration URL the rest of the brief already points at. Sent only when the AI
-          // actually produced a CTA, mirroring the subject/body/preheader spread above.
-          ...(copy !== null && copy.cta !== '' ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
+          // actually produced a CTA AND a real destination exists (LFX-Campaigns-Email-QA-Report
+          // B2) — a button with no `buttonUrl` still rendered in production with nowhere to go.
+          ...(copy !== null && copy.cta !== '' && details.registrationUrl.trim() !== ''
+            ? { buttonText: copy.cta, buttonUrl: details.registrationUrl }
+            : {}),
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered
-          // rows. The hero links to the event's registration page, matching the only link target a
-          // brief carries.
-          // heroImageAlt is derived from the event name rather than left for HubSpot's generic
-          // fallback ("Event banner") — a screen-reader listener hears which event the banner is
-          // for, not just that a banner exists.
-          ...(details.heroImageUrl
-            ? { heroImageUrl: details.heroImageUrl, heroLinkUrl: details.registrationUrl, heroImageAlt: `${details.name} banner` }
-            : {}),
+          // rows. heroImageAlt is derived from the event name rather than left for HubSpot's
+          // generic fallback ("Event banner") — a screen-reader listener hears which event the
+          // banner is for, not just that a banner exists.
+          ...(details.heroImageUrl ? { heroImageUrl: details.heroImageUrl, heroImageAlt: this.heroBannerAlt(details.name) } : {}),
+          // The hero links to the event's registration page, matching the only link target a brief
+          // carries. Sent separately from the image because `heroLinkUrl` is independently optional
+          // upstream: a blank registration URL must drop the link, not the banner with it
+          // (LFX-Campaigns-Email-QA-Report B2).
+          ...(details.heroImageUrl && details.registrationUrl.trim() !== '' ? { heroLinkUrl: details.registrationUrl } : {}),
           ...(details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
@@ -3155,7 +3172,10 @@ export class CampaignsComponent {
           // `hubspotUrl` is only set once campaign-service knows the portal that created the
           // draft (see `CampaignPlatformResult`), unlike a link built from `campaignId` alone,
           // which would guess at whichever portal the reader happens to be signed into.
-          this.emailStagingUrl.set(hubspotResult?.hubspotUrl ?? '');
+          // Validated before it ever reaches the template's `[href]` binding -- this field is an
+          // opaque string on the wire, not a value Angular's sanitizer alone should be trusted for.
+          const hubspotUrl = hubspotResult?.hubspotUrl ?? '';
+          this.emailStagingUrl.set(hubspotUrl !== '' && isValidUrl(hubspotUrl) ? hubspotUrl : '');
         },
         error: () => {
           this.emailStaging.set('error');
@@ -3659,6 +3679,16 @@ export class CampaignsComponent {
    * save failed but not which action died with it, which matters most for staging: "not staged" is
    * the part they need in order to know nothing reached HubSpot.
    */
+  /**
+   * Shared by the live preview's `heroImageAlt` computed and the staged HubSpot payload, which
+   * reads a brief snapshot taken before an `await` rather than the signal — so a helper, not the
+   * computed, is what keeps the two in agreement. The "Event" fallback replaces the bare
+   * `" banner"` a blank scraped name would otherwise send.
+   */
+  private heroBannerAlt(eventName: string | undefined): string {
+    return `${eventName?.trim() || 'Event'} banner`;
+  }
+
   private emailSaveFailureMessage(consequence: string): string {
     const conflict = this.emailBriefConflict;
 

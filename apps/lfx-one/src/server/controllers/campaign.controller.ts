@@ -2244,6 +2244,8 @@ export class CampaignController {
     const heroImageUrl = typeof rawHeroImageUrl === 'string' ? rawHeroImageUrl.trim() : '';
     const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
     const heroLinkUrl = typeof rawHeroLinkUrl === 'string' ? rawHeroLinkUrl.trim() : '';
+    const rawHeroImageAlt = body.hubspotConfig?.heroImageAlt;
+    const heroImageAlt = typeof rawHeroImageAlt === 'string' ? rawHeroImageAlt.trim() : '';
     const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
       ? body.hubspotConfig.sponsors.filter(
           (sponsor): sponsor is CampaignEventSponsor =>
@@ -2261,7 +2263,7 @@ export class CampaignController {
       ...(bodyHtml ? { bodyHtml } : {}),
       ...(preheader ? { preheader } : {}),
       ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
-      ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
+      ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}), ...(heroImageAlt ? { heroImageAlt } : {}) } : {}),
       ...(sponsors.length > 0 ? { sponsors } : {}),
       // `abTestEnabled` is forwarded only alongside non-empty variant-B content, mirroring the
       // frontend's own gate (`onStageEmailSend`) — an enabled toggle with nothing typed must not

@@ -687,22 +687,18 @@
                       the operator sees what the draft will actually contain.
                     -->
                     @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
-                      <img
-                        [src]="heroUrl"
-                        [alt]="(emailBriefOutput()?.eventDetails?.name || 'Event') + ' banner'"
-                        class="block w-full"
-                        data-testid="campaigns-email-preview-hero" />
+                      <img [src]="heroUrl" [alt]="heroImageAlt()" class="block w-full" data-testid="campaigns-email-preview-hero" />
                     }
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                       [innerHTML]="copy.body"
                       data-testid="campaigns-email-preview-body"></div>
-                    @if (copy.cta; as ctaLabel) {
+                    @if (copy.cta && (emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '') {
                       <div class="px-4 pb-4">
                         <span
                           class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
                           data-testid="campaigns-email-preview-cta">
-                          {{ ctaLabel }}
+                          {{ copy.cta }}
                         </span>
                       </div>
                     }
@@ -800,6 +796,21 @@
                         data-testid="campaigns-email-abtest-body-b"></textarea>
                     </div>
 
+                    <!--
+                      LFX-Campaigns-Email-QA-Report B3: the textarea above holds raw HTML/merge-tag
+                      source for editing, but with no rendered companion the operator saw only that
+                      markup, never what HubSpot will actually render. This mirrors the dual-variant
+                      preview lower on the page, scoped to variant B alone so it updates live while
+                      typing above, before the operator scrolls down to compare both variants.
+                    -->
+                    <div class="flex flex-col gap-1">
+                      <span class="text-xs font-medium text-gray-700">Variant B rendered preview</span>
+                      <div
+                        class="prose prose-sm max-w-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
+                        [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
+                        data-testid="campaigns-email-abtest-body-b-preview"></div>
+                    </div>
+
                     @if (abTestSubjectB() === '' && abTestBodyHtmlB() === '') {
                       <p class="text-xs text-amber-700" data-testid="campaigns-email-abtest-empty-warning">
                         Variant B has no content yet — staging now will send a single-variant email without a test.
@@ -824,15 +835,15 @@
                              subject/body differ between them -- because HubSpot's native A/B test
                              swaps subject/body on the clone and leaves its other widgets untouched. -->
                         @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
-                          <img [src]="heroUrl" [alt]="(emailBriefOutput()?.eventDetails?.name || 'Event') + ' banner'" class="block w-full" />
+                          <img [src]="heroUrl" [alt]="heroImageAlt()" class="block w-full" />
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                           [innerHTML]="emailCopy()?.body || '(template body)'"
                           data-testid="campaigns-email-abtest-preview-a"></div>
-                        @if (emailCopy()?.cta; as ctaLabel) {
+                        @if (emailCopy()?.cta && (emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '') {
                           <div class="px-4 pb-4">
-                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
+                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ emailCopy()?.cta }}</span>
                           </div>
                         }
                         @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
@@ -851,15 +862,15 @@
                           <p class="text-sm font-semibold text-gray-900">{{ abTestSubjectB() || '(no subject yet)' }}</p>
                         </div>
                         @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
-                          <img [src]="heroUrl" [alt]="(emailBriefOutput()?.eventDetails?.name || 'Event') + ' banner'" class="block w-full" />
+                          <img [src]="heroUrl" [alt]="heroImageAlt()" class="block w-full" />
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                           [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
                           data-testid="campaigns-email-abtest-preview-b"></div>
-                        @if (emailCopy()?.cta; as ctaLabel) {
+                        @if (emailCopy()?.cta && (emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '') {
                           <div class="px-4 pb-4">
-                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
+                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ emailCopy()?.cta }}</span>
                           </div>
                         }
                         @if (emailBriefOutput()?.eventDetails?.sponsors; as sponsors) {
