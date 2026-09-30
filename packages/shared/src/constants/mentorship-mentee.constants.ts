@@ -202,7 +202,6 @@ export const MENTORSHIP_MENTEE_TABS = [
 
 export const MENTORSHIP_MENTEE_SHELL_TITLE = 'My Mentorship';
 export const MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL = 'Find a Program';
-export const MENTORSHIP_MENTEE_FIND_PROGRAM_URL = 'https://mentorship.dev.lfx.dev/programs';
 export const MENTORSHIP_MENTEE_TASKS_URL = '/mentorship/mentee/tasks';
 
 // ---------------------------------------------------------------------------

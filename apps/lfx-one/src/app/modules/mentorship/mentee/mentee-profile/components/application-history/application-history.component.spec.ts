@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { environment } from '@environments/environment';
 import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
-  MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
 } from '@lfx-one/shared/constants';
@@ -126,7 +126,7 @@ describe('ApplicationHistoryComponent', () => {
     setup(entries);
 
     const view = element().querySelector<HTMLAnchorElement>('a[data-testid="mentorship-application-history-view-app_accepted"]');
-    expect(view?.getAttribute('href')).toBe(`${MENTORSHIP_MENTEE_FIND_PROGRAM_URL}/prog_gridflow`);
+    expect(view?.getAttribute('href')).toBe(`${environment.urls.mentorship}/programs/prog_gridflow`);
     expect(view?.getAttribute('target')).toBe('_blank');
     expect(view?.getAttribute('rel')).toBe('noopener noreferrer');
   });
@@ -135,7 +135,7 @@ describe('ApplicationHistoryComponent', () => {
     setup([{ ...entries[0], id: 'app_slash', programId: 'prog/with space' }]);
 
     const view = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-application-history-view-app_slash"]');
-    expect(view?.getAttribute('href')).toBe(`${MENTORSHIP_MENTEE_FIND_PROGRAM_URL}/prog%2Fwith%20space`);
+    expect(view?.getAttribute('href')).toBe(`${environment.urls.mentorship}/programs/prog%2Fwith%20space`);
   });
 
   it('omits View when the row has no program id', () => {

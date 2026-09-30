@@ -11,6 +11,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { TableComponent } from '@components/table/table.component';
+import { environment } from '@environments/environment';
 import {
   MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX,
@@ -20,7 +21,6 @@ import {
   MENTORSHIP_MENTEE_EMPTY_SUBTITLE,
   MENTORSHIP_MENTEE_EMPTY_TITLE,
   MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL,
-  MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
   MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR,
   MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE,
   MENTORSHIP_MENTEE_TASKS_URL,
@@ -56,7 +56,7 @@ export class MenteeOverviewComponent {
   protected readonly emptyTitle = MENTORSHIP_MENTEE_EMPTY_TITLE;
   protected readonly emptySubtitle = MENTORSHIP_MENTEE_EMPTY_SUBTITLE;
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
-  protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
+  protected readonly findProgramUrl = `${environment.urls.mentorship}/programs`;
   protected readonly viewTasksLabel = MENTORSHIP_MENTEE_VIEW_TASKS_LABEL;
   protected readonly withdrawLabel = MENTORSHIP_MENTEE_WITHDRAW_LABEL;
   protected readonly pastApplicationsTitle = MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE;
