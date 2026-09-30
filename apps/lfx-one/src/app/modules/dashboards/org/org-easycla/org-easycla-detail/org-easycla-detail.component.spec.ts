@@ -3553,6 +3553,48 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
   });
 
+  it('keeps the controls hidden when a self-removal lands after the panel closed and an earlier re-read still naming the viewer lands after it', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    const earlier = new Subject<OrgClaGroupList>();
+    getClaGroups.mockReturnValueOnce(earlier);
+    component['onRosterChanged']();
+    const listReads = getClaGroups.mock.calls.length;
+
+    TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+    earlier.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getClaGroups.mock.calls.length).toBe(listReads);
+    expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+  });
+
+  it('keeps a self-removal hidden through a failed re-read, and still applies the next re-read', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fixture = await render();
+    const component = fixture.componentInstance;
+    const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+    selfRemovals.record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+
+    getClaGroups.mockReturnValueOnce(throwError(() => new Error('upstream unavailable')));
+    component['onRosterChanged']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(true);
+    expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] }));
+    component['onRosterChanged']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(false);
+    expect(component['claGroup']()?.viewerIsClaManager).toBe(false);
+    warn.mockRestore();
+  });
+
   it('drops a re-read that lands after the viewer switched organization', async () => {
     const fixture = await render(row({ viewerIsClaManager: false }));
     const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
