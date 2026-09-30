@@ -1024,6 +1024,11 @@ export class OrgClaService {
    * agreements accept the write, because the flag lives on the corporate signature record —
    * an unsigned row has no record for the producer to update.
    *
+   * A caller not named on the agreement's CLA Manager list gets `forbidden` before the producer is
+   * called, the same early refusal `updateApprovalList` makes. EasyCLA would refuse that write on
+   * its ACL check anyway, with a bare "Forbidden"; refusing here names the requirement. A row
+   * with no CLA Manager list is passed through, because EasyCLA re-checks the list on this write.
+   *
    * The write path runs with the caller's own token (no impersonation forwarding). The route
    * has `blockDuringImpersonation` in front of it; the direction is the same as the peer
    * approval-list write, because a support engineer flipping this flag against an ordinary
@@ -2122,6 +2127,13 @@ export type OrgClaApprovalUpdateOutcome =
 
 /**
  * Result of an Auto ECLA toggle write (#1988).
+ *
+ * A union rather than a bare boolean plus a thrown error, because the ordinary outcomes map to
+ * distinct HTTP answers: a signature the organization does not hold is a 404, an unsigned
+ * agreement is a 400 with its own copy, and a caller not on the agreement's CLA Manager list is
+ * a 403 with this application's own sentence, refused before EasyCLA is called. `updated` is the
+ * success shape and carries the state the producer now records — the caller sends the target,
+ * the service echoes it back so the client can trust the new value without a re-read.
  *
  * Producer refusals (sanctions, ACL) travel as thrown 403s carrying the producer's own sentence
  * on `clientMessage`; they are not one of these outcomes. Splitting them out here would force the

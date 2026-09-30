@@ -1417,7 +1417,14 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
   }
 
-  /** Signed row, viewer on its CLA manager list, ACS grants the write, and not the pre-sign preview. */
+  /**
+   * Four conjuncts: the row is signed (the producer stores the flag on the corporate signature,
+   * so an unsigned row has nothing to update); the viewer is on its CLA Manager list (EasyCLA
+   * refuses the write otherwise, whatever ACS says); ACS granted the write (hide-on-deny — the
+   * design withholds the control from a viewer who cannot use it, since the disabled-with-banner
+   * pattern needs #1989 to explain itself); and this page is not showing the pre-sign preview
+   * (the row it would flip does not exist yet).
+   */
   private initShowAutoEclaToggle(): boolean {
     const group = this.claGroup();
     return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;
