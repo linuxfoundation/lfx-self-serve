@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MentorshipMenteeStatus, MentorshipMentorStatus } from '../interfaces/mentorship.interface';
 import type {
-  MentorshipMenteeStatus,
   MentorshipMentorTaskReviewStatus,
   MentorshipMentoringHistoryEntry,
   MentorshipMentoringHistoryStatus,
@@ -12,8 +12,7 @@ import type {
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterForm,
-  MentorshipMentorStatus,
-} from '../interfaces/mentorship.interface';
+} from '../interfaces/mentorship-mentor.interface';
 import {
   mentorshipArtworkIconUrl,
   MENTORSHIP_CURRENT_MENTEE_STATUSES,

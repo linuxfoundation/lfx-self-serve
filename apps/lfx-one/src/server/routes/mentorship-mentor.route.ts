@@ -1,0 +1,15 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Router } from 'express';
+
+import { MentorshipMentorController } from '../controllers/mentorship-mentor.controller';
+
+const router = Router();
+const mentorController = new MentorshipMentorController();
+
+router.get('/programs', (req, res, next) => mentorController.getMentorPrograms(req, res, next));
+router.get('/programs/:programId', (req, res, next) => mentorController.getMentorProgram(req, res, next));
+router.get('/profile', (req, res, next) => mentorController.getMentorProfile(req, res, next));
+
+export default router;
