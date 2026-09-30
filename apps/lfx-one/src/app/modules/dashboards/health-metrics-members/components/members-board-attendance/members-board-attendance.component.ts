@@ -233,7 +233,7 @@ export class MembersBoardAttendanceComponent {
     );
   }
 
-  /** Earlier meetings pale, the latest solid — red when the view flags it below the expected level. */
+  /** Earlier meetings pale, the view's latest solid — red when the view flags it below the expected level. */
   private buildChart(bars: HealthMetricsMembersBoardTrendBarView[], latestBelow: boolean): ChartData<'bar'> {
     const latestColor = latestBelow ? lfxColors.red[600] : lfxColors.blue[600];
     return {
@@ -242,7 +242,7 @@ export class MembersBoardAttendanceComponent {
         {
           label: 'Attendance',
           data: bars.map((bar) => bar.pct),
-          backgroundColor: bars.map((_bar, index) => (index === bars.length - 1 ? latestColor : lfxColors.blue[200])),
+          backgroundColor: bars.map((bar) => (bar.isLatest ? latestColor : lfxColors.blue[200])),
           borderRadius: 2,
           maxBarThickness: 28,
         },

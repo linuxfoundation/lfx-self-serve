@@ -372,6 +372,7 @@ export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersB
       committeeName: meeting.committeeName ?? '—',
       pct,
       pctLabel: pct === null ? '—' : `${pct}%`,
+      isLatest: meeting.isLatestMeeting,
     };
   });
 }

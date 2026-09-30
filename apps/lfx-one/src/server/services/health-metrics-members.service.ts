@@ -187,6 +187,7 @@ interface BoardMeetingRow {
   ATTENDED_COUNT: number | null;
   INVITED_COUNT: number | null;
   ATTENDANCE_PCT: number | null;
+  IS_LATEST_MEETING: boolean | null;
 }
 
 interface BoardMeetingPageRow extends BoardMeetingRow {
@@ -780,11 +781,13 @@ function boardMeetingsSql(range: HealthMetricsL2Range): string {
       meeting_date,
       attended_count,
       invited_count,
-      attendance_pct
+      attendance_pct,
+      is_latest_meeting_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} AS is_latest_meeting
     FROM ${MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW}
     WHERE foundation_slug = ?
       AND attendance_cohort = ?
-      AND meeting_and_occurrence_id IS NOT NULL
+      -- Blank ids are dropped by the mapper, so they must not count toward the total or take a page slot.
+      AND NULLIF(TRIM(meeting_and_occurrence_id), '') IS NOT NULL
       -- The view has no per-row period flags, so the period is read off the meeting date.
       AND ${healthMetricsL2PeriodPredicate('meeting_date', range)}
   `;
@@ -916,7 +919,7 @@ function mapBoardCohort(row: BoardCohortRow | undefined): HealthMetricsMembersBo
 }
 
 function mapBoardMeeting(row: BoardMeetingRow): HealthMetricsMembersBoardMeeting[] {
-  if (!row.MEETING_AND_OCCURRENCE_ID) return [];
+  if (!row.MEETING_AND_OCCURRENCE_ID?.trim()) return [];
 
   return [
     {
@@ -926,6 +929,7 @@ function mapBoardMeeting(row: BoardMeetingRow): HealthMetricsMembersBoardMeeting
       attendedCount: toNullableNumber(row.ATTENDED_COUNT),
       invitedCount: toNullableNumber(row.INVITED_COUNT),
       attendancePct: toNullableNumber(row.ATTENDANCE_PCT),
+      isLatestMeeting: row.IS_LATEST_MEETING === true,
     },
   ];
 }

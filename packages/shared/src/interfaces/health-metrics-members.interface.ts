@@ -498,6 +498,8 @@ export interface HealthMetricsMembersBoardMeeting {
   attendedCount: number | null;
   invitedCount: number | null;
   attendancePct: number | null;
+  /** The view's latest meeting in the period — the one the hero reports. */
+  isLatestMeeting: boolean;
 }
 
 /** `cohorts` carries both cohorts so the hero can show the other one; `null` when the foundation has no row for it. */
@@ -542,4 +544,5 @@ export interface HealthMetricsMembersBoardTrendBarView {
   committeeName: string;
   pct: number | null;
   pctLabel: string;
+  isLatest: boolean;
 }

@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { lfxColors } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { isObservable, Observable, of, Subject, throwError } from 'rxjs';
@@ -34,6 +35,7 @@ function meeting(overrides: Partial<HealthMetricsMembersBoardMeeting> = {}): Hea
     attendedCount: 9,
     invitedCount: 11,
     attendancePct: 0.818,
+    isLatestMeeting: false,
     ...overrides,
   };
 }
@@ -41,7 +43,7 @@ function meeting(overrides: Partial<HealthMetricsMembersBoardMeeting> = {}): Hea
 function response(overrides: Partial<HealthMetricsMembersBoardAttendance> = {}): HealthMetricsMembersBoardAttendance {
   return {
     cohorts: { board: cohort(), voting_members: cohort({ latestAttendancePct: 0.646, isBelowExpectedLevel: false }) },
-    trend: [meeting({ meetingId: 'm-0', meetingDate: '2026-07-31', attendancePct: 0.9 }), meeting()],
+    trend: [meeting({ meetingId: 'm-0', meetingDate: '2026-07-31', attendancePct: 0.9 }), meeting({ isLatestMeeting: true })],
     rows: [meeting()],
     totalRecords: 12,
     ...overrides,
@@ -149,6 +151,13 @@ describe('MembersBoardAttendanceComponent', () => {
       ['Jul 31, 2026', 'Acme Board', '90%'],
       ['Aug 31, 2026', 'Acme Board', '82%'],
     ]);
+  });
+
+  it("highlights the view's latest meeting, not the last bar, when meetings share a date", async () => {
+    const sameDay = [meeting({ meetingId: 'm-a', isLatestMeeting: true }), meeting({ meetingId: 'm-b' })];
+    await render(response({ trend: sameDay, cohorts: { board: cohort({ isBelowExpectedLevel: false }), voting_members: null } }));
+
+    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[600], lfxColors.blue[200]]);
   });
 
   it('flags never-attended seats and links to the representatives who never attended', async () => {

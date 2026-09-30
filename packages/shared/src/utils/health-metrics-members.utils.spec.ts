@@ -674,7 +674,15 @@ describe('buildHealthMetricsMembersBoardMeetingRows', () => {
   it('renders a meeting with its rate bar tone', () => {
     expect(
       buildHealthMetricsMembersBoardMeetingRows([
-        { meetingId: 'm-1', committeeName: 'Acme Board', meetingDate: '2026-09-18', attendedCount: 4, invitedCount: 11, attendancePct: 0.3636 },
+        {
+          meetingId: 'm-1',
+          committeeName: 'Acme Board',
+          meetingDate: '2026-09-18',
+          attendedCount: 4,
+          invitedCount: 11,
+          attendancePct: 0.3636,
+          isLatestMeeting: false,
+        },
       ])
     ).toEqual([
       {
@@ -691,7 +699,7 @@ describe('buildHealthMetricsMembersBoardMeetingRows', () => {
 
   it('dashes missing figures and greys an unmeasured rate', () => {
     const [row] = buildHealthMetricsMembersBoardMeetingRows([
-      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null },
+      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null, isLatestMeeting: false },
     ]);
     expect(row).toMatchObject({ committeeName: '—', dateLabel: '—', attendedLabel: '—', ratePct: null, rateLabel: '—', rateFillClass: 'bg-gray-300' });
   });
@@ -701,15 +709,31 @@ describe('buildHealthMetricsMembersBoardTrend', () => {
   it('labels each bar by its short date and whole percent', () => {
     expect(
       buildHealthMetricsMembersBoardTrend([
-        { meetingId: 'm-1', committeeName: 'Acme Board', meetingDate: '2026-08-31', attendedCount: 9, invitedCount: 11, attendancePct: 0.818 },
+        {
+          meetingId: 'm-1',
+          committeeName: 'Acme Board',
+          meetingDate: '2026-08-31',
+          attendedCount: 9,
+          invitedCount: 11,
+          attendancePct: 0.818,
+          isLatestMeeting: true,
+        },
       ])
-    ).toEqual([{ meetingId: 'm-1', label: 'Aug 31', dateLabel: 'Aug 31, 2026', committeeName: 'Acme Board', pct: 82, pctLabel: '82%' }]);
+    ).toEqual([{ meetingId: 'm-1', label: 'Aug 31', dateLabel: 'Aug 31, 2026', committeeName: 'Acme Board', pct: 82, pctLabel: '82%', isLatest: true }]);
   });
 
   it('keeps an unmeasured bar null and clamps an out-of-range share', () => {
     const [unmeasured, over] = buildHealthMetricsMembersBoardTrend([
-      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: null, attendancePct: null },
-      { meetingId: 'm-3', committeeName: 'Acme Board', meetingDate: '2026-09-18', attendedCount: 12, invitedCount: 11, attendancePct: 1.09 },
+      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: null, attendancePct: null, isLatestMeeting: false },
+      {
+        meetingId: 'm-3',
+        committeeName: 'Acme Board',
+        meetingDate: '2026-09-18',
+        attendedCount: 12,
+        invitedCount: 11,
+        attendancePct: 1.09,
+        isLatestMeeting: false,
+      },
     ]);
     expect(unmeasured).toMatchObject({ label: '—', dateLabel: '—', committeeName: '—', pct: null, pctLabel: '—' });
     expect(over).toMatchObject({ pct: 100, pctLabel: '100%' });
