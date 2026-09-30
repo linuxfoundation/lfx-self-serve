@@ -155,9 +155,9 @@
         </tr>
       </ng-template>
 
-      <!-- The footer row stays declared so the table's content query always finds it. -->
+      <!-- Declared outside the @if so the content query finds it; the copy and link are board-only. -->
       <ng-template #footer>
-        @if (summary().neverAttendedCount > 0) {
+        @if (cohort() === 'board' && summary().neverAttendedCount > 0) {
           <tr>
             <td colspan="4">
               <p class="flex flex-wrap items-center gap-1 text-[12px] text-gray-500" data-testid="members-board-never-note">
@@ -172,6 +172,7 @@
                   [routerLink]="[basePath, neverAttendedLink.route]"
                   [fragment]="neverAttendedLink.fragment"
                   [queryParams]="neverAttendedLink.queryParams"
+                  queryParamsHandling="merge"
                   data-testid="members-board-never-link"
                   >see who &rarr;</a
                 >

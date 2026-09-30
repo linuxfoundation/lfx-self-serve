@@ -676,6 +676,7 @@ export class HealthMetricsMembersService {
       return totalUsd === null ? [] : [{ range, totalUsd }];
     });
   }
+
   private async getBoardCohorts(
     req: Request,
     query: HealthMetricsMembersBoardAttendanceQuery

@@ -548,7 +548,8 @@ function formatUsd(value: number | null): string {
 }
 
 function formatPct(fraction: number | null): string {
-  return fraction === null ? '—' : `${Math.round(fraction * 100)}%`;
+  const pct = toWholePct(fraction);
+  return pct === null ? '—' : `${pct}%`;
 }
 
 function pluralize(count: number, noun: string): string {

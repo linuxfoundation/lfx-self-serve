@@ -65,7 +65,7 @@ export class MembersBoardAttendanceComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav note, always from the board cohort; empty while a read is pending or failed. */
+  /** The sub-nav note, always from the board cohort; empty while a new foundation or period reads, or after a failed read. */
   public readonly noteChange = output<string>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();

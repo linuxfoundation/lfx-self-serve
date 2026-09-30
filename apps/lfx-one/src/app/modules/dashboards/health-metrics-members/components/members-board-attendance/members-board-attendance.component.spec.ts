@@ -161,6 +161,14 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(notes.at(-1)).toBe('3 seats unused');
   });
 
+  it('keeps the board-only never-attended note off the voting members cohort', async () => {
+    const board = cohort({ neverAttendedCount: 3 });
+    await render(response({ cohorts: { board, voting_members: board } }), { boardCohort: 'voting_members' });
+
+    expect(text('members-board-never')).toBe('3');
+    expect(query('members-board-never-note')).toBeNull();
+  });
+
   it('leaves out the never-attended note when every seat has been used', async () => {
     await render();
 

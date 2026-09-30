@@ -644,6 +644,11 @@ describe('buildHealthMetricsMembersBoardSummary', () => {
     });
   });
 
+  it('clamps a share recorded above the invited count to 100%, as the table and chart do', () => {
+    const view = buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 1.09 }), boardCohort({ latestAttendancePct: 1.2 }));
+    expect(view).toMatchObject({ latestPctLabel: '100%', otherCohortPctLabel: '100%' });
+  });
+
   it('dashes every figure for a cohort with no meeting in the period', () => {
     const empty = boardCohort({
       latestAttendancePct: null,
