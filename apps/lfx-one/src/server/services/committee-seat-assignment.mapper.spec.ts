@@ -286,19 +286,42 @@ describe('enrichFoundationNames — public project name cache', () => {
     });
 
     it('caps the direct reads and logs when the cap is hit', async () => {
-      serve([]);
+      serve([project('indexed', true)]);
       getProjectById.mockImplementation(async (_req: Request, uid: string) => project(uid, true));
 
-      const result = await enrichFoundationNames(req, [seat('m-1'), seat('m-2'), seat('m-3')], projectService, fresh);
+      const result = await enrichFoundationNames(req, [seat('indexed'), seat('m-1'), seat('m-2'), seat('m-3')], projectService, fresh);
 
       expect(getProjectById).toHaveBeenCalledTimes(2);
-      expect(result.publicUids).toEqual(new Set(['m-1', 'm-2']));
+      expect(result.publicUids).toEqual(new Set(['indexed', 'm-1', 'm-2']));
       expect(result.privateUids).toEqual(new Set());
       expect(result.confirmedByDirectRead).toBe(2);
       expect(logger.warning).toHaveBeenCalledWith(req, 'enrich_foundation_names', expect.any(String), {
         missing_from_project_index: 3,
         direct_read_cap: 2,
       });
+    });
+
+    it('skips direct reads when the index returns nothing for several projects (likely outage)', async () => {
+      serve([]);
+      getProjectById.mockImplementation(async (_req: Request, uid: string) => project(uid, true));
+
+      const result = await enrichFoundationNames(req, [seat('o-1'), seat('o-2')], projectService, fresh);
+
+      expect(getProjectById).not.toHaveBeenCalled();
+      expect(result.publicUids).toEqual(new Set());
+      expect(result.names.size).toBe(0);
+      expect(logger.warning).toHaveBeenCalledWith(req, 'enrich_foundation_names', expect.any(String), { uid_count: 2 });
+    });
+
+    it('still reads a single project the index did not return', async () => {
+      serve([]);
+      getProjectById.mockImplementation(async (_req: Request, uid: string) => project(uid, true));
+
+      const result = await enrichFoundationNames(req, [seat('solo')], projectService, fresh);
+
+      expect(getProjectById).toHaveBeenCalledTimes(1);
+      expect(result.publicUids).toEqual(new Set(['solo']));
+      expect(result.confirmedByDirectRead).toBe(1);
     });
   });
 });

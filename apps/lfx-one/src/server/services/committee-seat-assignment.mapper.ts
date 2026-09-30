@@ -132,7 +132,16 @@ export async function enrichFoundationNames(
     }
     const notIndexed = missing.filter((uid) => !byUid.has(uid));
     if (options.freshVisibility && notIndexed.length > 0) {
-      confirmedByDirectRead = await confirmPublicByDirectRead(req, notIndexed, projectService, names, publicUids, privateUids);
+      // getProjectsByIds swallows batch failures, so an empty answer for several uids is far more
+      // likely an index outage than several unindexed projects; don't turn it into a burst of
+      // direct reads. Names stay withheld either way (fail closed).
+      if (byUid.size === 0 && missing.length > 1) {
+        logger.warning(req, 'enrich_foundation_names', 'Project index returned no projects; skipping direct reads (slug only)', {
+          uid_count: missing.length,
+        });
+      } else {
+        confirmedByDirectRead = await confirmPublicByDirectRead(req, notIndexed, projectService, names, publicUids, privateUids);
+      }
     }
   } catch (error) {
     logger.warning(req, 'enrich_foundation_names', 'project-name enrichment failed; falling back to project_slug', {

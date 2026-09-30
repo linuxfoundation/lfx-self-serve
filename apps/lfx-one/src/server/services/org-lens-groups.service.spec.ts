@@ -473,7 +473,9 @@ describe('OrgLensGroupsService.getGroups', () => {
         project_uid: 'p-forbidden',
         project_slug: 'closed',
       });
-      fetchAllOrgSeatsUncached.mockResolvedValue([missingFromIndexSeat, forbiddenSeat]);
+      // The index answers for p-cncf, so it is up and the other two are really missing from it.
+      fetchAllOrgSeatsUncached.mockResolvedValue([seat(), missingFromIndexSeat, forbiddenSeat]);
+      serveIndex([project('p-cncf', 'Cloud Native Computing Foundation', true)]);
       // The filler can read p-uepf directly, but it is private; p-forbidden is not readable at all.
       serveDirectReads([project('p-uepf', 'Secret Foundation', false)]);
       getCommitteesByIds.mockResolvedValue(
@@ -486,7 +488,7 @@ describe('OrgLensGroupsService.getGroups', () => {
       await run();
 
       const stored = writtenAggregate();
-      expect(stored.groups.map((g) => [g.project_slug, g.project_name])).toEqual([
+      expect(stored.groups.filter((g) => g.project_uid !== 'p-cncf').map((g) => [g.project_slug, g.project_name])).toEqual([
         ['closed', undefined],
         ['uepf', undefined],
       ]);
