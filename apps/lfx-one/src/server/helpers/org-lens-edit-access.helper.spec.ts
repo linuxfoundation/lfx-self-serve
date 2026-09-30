@@ -28,7 +28,7 @@ vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn(), debug
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 
 const req = {} as Request;
-const ORG = '0014100000Te2QjAAJ';
+const ORG = '0014100000AcmeAAAA';
 
 beforeEach(() => {
   vi.clearAllMocks();
