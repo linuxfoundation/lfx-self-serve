@@ -120,6 +120,8 @@ import {
   HealthMetricsMembersDirectoryTiers,
   HealthMetricsMembersMovements,
   HealthMetricsMembersMovementsQuery,
+  HealthMetricsMembersRenewals,
+  HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
 } from '@lfx-one/shared/interfaces';
@@ -1442,6 +1444,18 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersAtRisk>('/api/analytics/members-at-risk', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] members-at-risk failed', { foundationSlug: query.foundationSlug, bucket: query.bucket, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersRenewals(query: HealthMetricsMembersRenewalsQuery): Observable<HealthMetricsMembersRenewals> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('offset', String(query.offset)).set('pageSize', String(query.pageSize));
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersRenewals>('/api/analytics/members-renewals', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-renewals failed', { foundationSlug: query.foundationSlug, error });
         return throwError(() => error);
       })
     );

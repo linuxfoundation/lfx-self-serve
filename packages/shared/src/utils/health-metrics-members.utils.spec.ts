@@ -21,6 +21,9 @@ import {
   buildHealthMetricsMembersMovementCountNote,
   buildHealthMetricsMembersMovementDrawerTitle,
   buildHealthMetricsMembersMovementRows,
+  buildHealthMetricsMembersRenewalRows,
+  buildHealthMetricsMembersRenewalsCountLabel,
+  buildHealthMetricsMembersRenewalsSummary,
   buildHealthMetricsMembersSubNavItems,
   buildHealthMetricsMembersTiersView,
 } from './health-metrics-members.utils';
@@ -525,5 +528,74 @@ describe('members at risk', () => {
   it('pluralizes the member count', () => {
     expect(buildHealthMetricsMembersAtRiskCountLabel(1)).toBe('1 member');
     expect(buildHealthMetricsMembersAtRiskCountLabel(12)).toBe('12 members');
+  });
+});
+
+describe('buildHealthMetricsMembersRenewalsSummary', () => {
+  it('labels the value and count, with no note when every renewal has dues', () => {
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 3, valueUsd: 185_000, withoutDuesCount: 0 })).toEqual({
+      valueLabel: '$185K',
+      renewalCountLabel: '3',
+      coverageNote: '',
+    });
+  });
+
+  it('notes the renewals without dues, since the value counts only the known dues', () => {
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 4, valueUsd: 95_000, withoutDuesCount: 1 }).coverageNote).toBe(
+      '1 renewal without dues on record, so the value counts only the known dues.'
+    );
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 4, valueUsd: null, withoutDuesCount: 4 })).toEqual({
+      valueLabel: '—',
+      renewalCountLabel: '4',
+      coverageNote: '4 renewals without dues on record, so the value counts only the known dues.',
+    });
+  });
+
+  it('dashes unset totals rather than showing zeros', () => {
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: null, valueUsd: null, withoutDuesCount: null })).toEqual({
+      valueLabel: '—',
+      renewalCountLabel: '—',
+      coverageNote: '',
+    });
+  });
+});
+
+describe('buildHealthMetricsMembersRenewalRows', () => {
+  it('formats the date and dues and keeps the balance marker', () => {
+    expect(
+      buildHealthMetricsMembersRenewalRows([
+        {
+          accountId: 'acct-1',
+          accountName: 'Acme Studios',
+          membershipTier: 'General',
+          renewalDate: '2026-11-18',
+          duesUsd: 20_000,
+          hasOutstandingBalance: true,
+        },
+      ])
+    ).toEqual([
+      {
+        accountId: 'acct-1',
+        accountName: 'Acme Studios',
+        tierLabel: 'General',
+        renewalDateLabel: 'Nov 18, 2026',
+        duesLabel: '$20K',
+        hasOutstandingBalance: true,
+      },
+    ]);
+  });
+
+  it('dashes a missing tier, date or dues instead of $0', () => {
+    const [row] = buildHealthMetricsMembersRenewalRows([
+      { accountId: 'acct-2', accountName: 'Acme Labs', membershipTier: null, renewalDate: null, duesUsd: null, hasOutstandingBalance: false },
+    ]);
+    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false });
+  });
+});
+
+describe('buildHealthMetricsMembersRenewalsCountLabel', () => {
+  it('pluralizes the renewal count', () => {
+    expect(buildHealthMetricsMembersRenewalsCountLabel(1)).toBe('1 renewal');
+    expect(buildHealthMetricsMembersRenewalsCountLabel(61)).toBe('61 renewals');
   });
 });

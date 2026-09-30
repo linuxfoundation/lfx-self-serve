@@ -36,6 +36,10 @@ import type {
   HealthMetricsMembersMovement,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovementRowView,
+  HealthMetricsMembersRenewal,
+  HealthMetricsMembersRenewalRowView,
+  HealthMetricsMembersRenewalsSummary,
+  HealthMetricsMembersRenewalsSummaryView,
   HealthMetricsMembersSubNavItem,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersMode,
@@ -277,6 +281,33 @@ export function buildHealthMetricsMembersAtRiskNote(summary: HealthMetricsMember
 /** The "N members" line beside the bucket pills. */
 export function buildHealthMetricsMembersAtRiskCountLabel(totalRecords: number): string {
   return pluralize(totalRecords, 'member');
+}
+
+/** The renewals hero: the known dues up for renewal, the count, and how many renewals have no dues on record. */
+export function buildHealthMetricsMembersRenewalsSummary(summary: HealthMetricsMembersRenewalsSummary): HealthMetricsMembersRenewalsSummaryView {
+  const withoutDues = summary.withoutDuesCount ?? 0;
+  return {
+    valueLabel: formatUsd(summary.valueUsd),
+    renewalCountLabel: formatCount(summary.renewalCount),
+    coverageNote: withoutDues > 0 ? `${pluralize(withoutDues, 'renewal')} without dues on record, so the value counts only the known dues.` : '',
+  };
+}
+
+/** Renewal rows; a missing tier, date or dues renders as a dash, never $0. */
+export function buildHealthMetricsMembersRenewalRows(rows: HealthMetricsMembersRenewal[]): HealthMetricsMembersRenewalRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    renewalDateLabel: formatIsoDate(row.renewalDate),
+    duesLabel: formatUsd(row.duesUsd),
+    hasOutstandingBalance: row.hasOutstandingBalance,
+  }));
+}
+
+/** The "N renewals" line over the table. */
+export function buildHealthMetricsMembersRenewalsCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'renewal');
 }
 
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {

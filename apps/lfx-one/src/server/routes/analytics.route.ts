@@ -281,6 +281,7 @@ router.get('/members-movements', requireDashboardAccess, (req, res, next) => ana
 router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));
 router.get('/members-directory-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectoryTiers(req, res, next));
 router.get('/members-at-risk', requireDashboardAccess, (req, res, next) => analyticsController.getMembersAtRisk(req, res, next));
+router.get('/members-renewals', requireDashboardAccess, (req, res, next) => analyticsController.getMembersRenewals(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

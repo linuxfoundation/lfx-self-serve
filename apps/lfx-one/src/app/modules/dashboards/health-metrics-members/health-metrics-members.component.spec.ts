@@ -14,6 +14,7 @@ import { HealthMetricsChromeService } from '../health-metrics-gate/health-metric
 import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
@@ -48,6 +49,14 @@ class AtRiskStubComponent {
   public readonly reading = output<void>();
 }
 
+/** Stands in for the renewals section; the test drives its count and settle. */
+@Component({ selector: 'lfx-members-renewals', template: '<div data-testid="members-renewals-stub"></div>' })
+class RenewalsStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
 // Covers only what Members wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
 // and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsMembersComponent', () => {
@@ -64,8 +73,8 @@ describe('HealthMetricsMembersComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsMembersComponent, {
-        remove: { imports: [MembersAtRiskComponent, MembersBridgeComponent, MembersDirectoryComponent, MembersTiersComponent] },
-        add: { imports: [AtRiskStubComponent, BridgeStubComponent, DirectoryStubComponent, TiersStubComponent] },
+        remove: { imports: [MembersAtRiskComponent, MembersBridgeComponent, MembersDirectoryComponent, MembersRenewalsComponent, MembersTiersComponent] },
+        add: { imports: [AtRiskStubComponent, BridgeStubComponent, DirectoryStubComponent, RenewalsStubComponent, TiersStubComponent] },
       })
       .compileComponents();
 
@@ -101,6 +110,9 @@ describe('HealthMetricsMembersComponent', () => {
         expect(element.textContent).not.toContain('Awaiting data');
       } else if (key === 'risk') {
         expect(element.querySelector('[data-testid="members-at-risk-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
+      } else if (key === 'renewals') {
+        expect(element.querySelector('[data-testid="members-renewals-stub"]')).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
       } else {
         expect(element.textContent).toContain('Awaiting data');
@@ -141,7 +153,7 @@ describe('HealthMetricsMembersComponent', () => {
     fixture.detectChanges();
   }
 
-  it('holds a deep link until the tiers, bridge, directory and at-risk reads settle', async () => {
+  it('holds a deep link until the tiers, bridge, directory, at-risk and renewals reads settle', async () => {
     await setup('renewals');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // Each settle re-lands the held link; it is released only once every data section has settled.
@@ -168,6 +180,14 @@ describe('HealthMetricsMembersComponent', () => {
     stub(TiersStubComponent).settled.emit();
     await flush();
 
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stub(RenewalsStubComponent).settled.emit();
+    await flush();
+    scrollIntoView.mockClear();
+    stub(TiersStubComponent).settled.emit();
+    await flush();
+
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-renewals');
   });
@@ -181,6 +201,19 @@ describe('HealthMetricsMembersComponent', () => {
     expect(item()).toContain('725');
 
     stub(DirectoryStubComponent).countChange.emit(null);
+    await flush();
+    expect(item()).not.toMatch(/\d/);
+  });
+
+  it('badges Renewals with the renewals due once it reports them', async () => {
+    await setup();
+    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-renewals"]').textContent;
+
+    stub(RenewalsStubComponent).countChange.emit(61);
+    await flush();
+    expect(item()).toContain('61');
+
+    stub(RenewalsStubComponent).countChange.emit(null);
     await flush();
     expect(item()).not.toMatch(/\d/);
   });

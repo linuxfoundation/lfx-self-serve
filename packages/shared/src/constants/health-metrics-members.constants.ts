@@ -20,6 +20,7 @@ import type {
   HealthMetricsMembersMovements,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
+  HealthMetricsMembersRenewals,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
@@ -62,8 +63,9 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'Renewals',
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
-    footnote: '',
-    footnoteCaution: false,
+    footnote:
+      'Organization, tier, dues and renewal date come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
+    footnoteCaution: true,
   },
   {
     key: 'board',
@@ -98,7 +100,13 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
 /** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
-export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge', 'list', 'risk'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
+export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
+  'tiers',
+  'bridge',
+  'list',
+  'risk',
+  'renewals',
+] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
 export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
@@ -205,6 +213,7 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   directoryPage: 'memPage',
   atRiskBucket: 'riskBucket',
   atRiskPage: 'riskPage',
+  renewalsPage: 'renewalsPage',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
 /** `MEMBERSHIP_DIRECTORY`'s NPS categories, and the allowlist the directory read validates against. */
@@ -306,3 +315,26 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE = 100;
 
 /** The aging bars' fill. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS = 'bg-red-600';
+
+/** Read-failed / no-foundation value: no renewals, and no figures rather than zeros. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED: HealthMetricsMembersRenewals = {
+  rows: [],
+  totalRecords: 0,
+  summary: { renewalCount: null, valueUsd: null, withoutDuesCount: null },
+};
+
+/** `MEMBERSHIP_RENEWALS` covers 0–93 days out; the section shows the next 90. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_DAYS = 90;
+
+/** Rows per page; the busiest foundation has around a hundred renewals in the window. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE = 10;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE = 100;
+
+/** The MEM-02 marker beside a renewing member with an outstanding balance, in the Needs action colour. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER = {
+  label: 'Balance outstanding',
+  icon: 'fa-light fa-circle-exclamation',
+  textClass: 'text-red-600',
+} as const;

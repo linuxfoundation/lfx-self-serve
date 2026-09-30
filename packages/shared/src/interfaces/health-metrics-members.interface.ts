@@ -326,6 +326,7 @@ export interface HealthMetricsMembersQueryParams {
   memPage: string;
   riskBucket: string;
   riskPage: string;
+  renewalsPage: string;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
@@ -407,4 +408,52 @@ export interface HealthMetricsMembersAtRiskRowView {
   overdueLabel: string;
   ageLabel: string;
   lastEngagedLabel: string;
+}
+
+/** `GET /api/analytics/members-renewals` — a snapshot of now, so it takes no period. */
+export interface HealthMetricsMembersRenewalsQuery {
+  foundationSlug: string;
+  offset: number;
+  pageSize: number;
+}
+
+/** One renewal still to happen inside the next 90 days, soonest first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
+export interface HealthMetricsMembersRenewal {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  renewalDate: string | null;
+  duesUsd: number | null;
+  /** The renewal plus a concurrent risk signal (MEM-02); every other row carries no status. */
+  hasOutstandingBalance: boolean;
+}
+
+/** The hero over every renewal in the window. `valueUsd` sums the known dues; `withoutDuesCount` renewals have none on record. */
+export interface HealthMetricsMembersRenewalsSummary {
+  renewalCount: number | null;
+  valueUsd: number | null;
+  withoutDuesCount: number | null;
+}
+
+export interface HealthMetricsMembersRenewals {
+  rows: HealthMetricsMembersRenewal[];
+  totalRecords: number;
+  summary: HealthMetricsMembersRenewalsSummary;
+}
+
+/** The renewals hero as the section renders it; `coverageNote` is empty when every renewal has dues. */
+export interface HealthMetricsMembersRenewalsSummaryView {
+  valueLabel: string;
+  renewalCountLabel: string;
+  coverageNote: string;
+}
+
+/** One renewal row as the table renders it. */
+export interface HealthMetricsMembersRenewalRowView {
+  accountId: string;
+  accountName: string;
+  tierLabel: string;
+  renewalDateLabel: string;
+  duesLabel: string;
+  hasOutstandingBalance: boolean;
 }

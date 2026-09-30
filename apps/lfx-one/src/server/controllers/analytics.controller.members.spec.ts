@@ -4,9 +4,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk } = vi.hoisted(() => ({
+const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk, getRenewals } = vi.hoisted(() => ({
   getTiers: vi.fn(),
   getAtRisk: vi.fn(),
+  getRenewals: vi.fn(),
   getBridge: vi.fn(),
   getMovements: vi.fn(),
   getDirectory: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('../services/health-metrics-members.service', () => ({
     public getDirectory = getDirectory;
     public getDirectoryTiers = getDirectoryTiers;
     public getAtRisk = getAtRisk;
+    public getRenewals = getRenewals;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
@@ -51,13 +53,23 @@ import {
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements' | 'getMembersDirectory' | 'getMembersDirectoryTiers' | 'getMembersAtRisk';
+type Handler =
+  | 'getMembersTiers'
+  | 'getMembersBridge'
+  | 'getMembersMovements'
+  | 'getMembersDirectory'
+  | 'getMembersDirectoryTiers'
+  | 'getMembersAtRisk'
+  | 'getMembersRenewals';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -360,6 +372,54 @@ describe('AnalyticsController.getMembersAtRisk', () => {
     getAtRisk.mockRejectedValue(failure);
 
     const { next, promise } = call(valid, 'getMembersAtRisk');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersRenewals', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getRenewals.mockReset();
+    getRenewals.mockResolvedValue(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
+  });
+
+  it('defaults to the first page and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersRenewals');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', offset: 0, pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
+  });
+
+  it('passes the page', async () => {
+    await call({ ...valid, offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
+
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', offset: 10, pageSize: 10 });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE + 1) }, 'getMembersRenewals').promise;
+
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE }));
+  });
+
+  it.each([[{ foundationSlug: '' }], [{ foundationSlug: 'Acme Corp' }]])('rejects %o on foundationSlug', async (query) => {
+    const { next, promise } = call(query, 'getMembersRenewals');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getRenewals).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getRenewals.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersRenewals');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

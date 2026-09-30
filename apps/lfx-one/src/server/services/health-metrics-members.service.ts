@@ -16,6 +16,9 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_DAYS,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
@@ -48,6 +51,9 @@ import type {
   HealthMetricsMembersMovements,
   HealthMetricsMembersMovementsQuery,
   HealthMetricsMembersNpsCategory,
+  HealthMetricsMembersRenewal,
+  HealthMetricsMembersRenewals,
+  HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
   HealthMetricsMembersTierYear,
@@ -60,6 +66,7 @@ const MEMBERSHIP_WATERFALL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFA
 const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL';
 const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
 const MEMBERSHIP_AT_RISK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_AT_RISK';
+const MEMBERSHIP_RENEWALS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_RENEWALS';
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -137,6 +144,19 @@ interface AtRiskRow extends AtRiskBucketTotals {
   DAYS_OVERDUE: number | null;
   LAST_ENGAGED_DATE: Date | string | null;
   SORT_RANK: number | null;
+}
+
+interface RenewalRow {
+  TOTAL_RECORDS: number | null;
+  VALUE_USD: number | null;
+  WITHOUT_DUES_COUNT: number | null;
+  IS_PAGE_ROW: boolean | null;
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
+  RENEWAL_DATE: Date | string | null;
+  DUES_USD: number | null;
+  HAS_OUTSTANDING_BALANCE: boolean | null;
 }
 
 interface DirectoryTierRow {
@@ -476,6 +496,74 @@ export class HealthMetricsMembersService {
     };
   }
 
+  /** Renewals still to happen in the next 90 days, soonest first, with the window's totals; `renewal_status` has no source and is never read. */
+  public async getRenewals(req: Request, query: HealthMetricsMembersRenewalsQuery): Promise<HealthMetricsMembersRenewals> {
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const sql = `
+      WITH scoped AS (
+        SELECT
+          account_id,
+          account_name,
+          NULLIF(TRIM(membership_tier), '') AS membership_tier,
+          renewal_date,
+          dues_usd,
+          has_outstanding_balance
+        FROM ${MEMBERSHIP_RENEWALS_VIEW}
+        WHERE foundation_slug = ?
+          AND account_id IS NOT NULL
+          AND account_id <> ''
+          AND days_until_renewal BETWEEN 0 AND ?
+          -- A renewal already done is no longer up for renewal.
+          AND COALESCE(has_renewed, FALSE) = FALSE
+      ),
+      totals AS (
+        SELECT
+          COUNT(*) AS total_records,
+          SUM(dues_usd) AS value_usd,
+          COUNT_IF(dues_usd IS NULL) AS without_dues_count
+        FROM scoped
+      ),
+      page AS (
+        SELECT account_id, account_name, membership_tier, renewal_date, dues_usd, has_outstanding_balance, TRUE AS is_page_row
+        FROM scoped
+        ORDER BY renewal_date ASC NULLS LAST, dues_usd DESC NULLS LAST, account_id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.renewal_date ASC NULLS LAST, page.dues_usd DESC NULLS LAST, page.account_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<RenewalRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_DAYS],
+      {
+        view: MEMBERSHIP_RENEWALS_VIEW,
+        operation: 'get_members_renewals',
+        clientMessage: 'Upcoming renewals are unavailable right now.',
+      }
+    );
+
+    const first = result.rows[0];
+    const totalRecords = Number(first?.TOTAL_RECORDS ?? 0);
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapRenewal),
+      totalRecords,
+      // SUM skips NULL dues, so the value counts only known dues; no renewal in the window is a measured zero.
+      summary: {
+        renewalCount: totalRecords,
+        valueUsd: totalRecords > 0 ? toNullableNumber(first?.VALUE_USD) : 0,
+        withoutDuesCount: Number(first?.WITHOUT_DUES_COUNT ?? 0),
+      },
+    };
+  }
+
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
     const sql = `
       SELECT
@@ -639,6 +727,21 @@ function mapAtRiskMember(row: AtRiskRow): HealthMetricsMembersAtRiskMember[] {
       outstandingBalanceUsd: toNullableNumber(row.OUTSTANDING_BALANCE_USD),
       daysOverdue: toNullableNumber(row.DAYS_OVERDUE),
       lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
+    },
+  ];
+}
+
+function mapRenewal(row: RenewalRow): HealthMetricsMembersRenewal[] {
+  if (!row.ACCOUNT_ID) return [];
+
+  return [
+    {
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      membershipTier: row.MEMBERSHIP_TIER || null,
+      renewalDate: toIsoDate(row.RENEWAL_DATE),
+      duesUsd: toNullableNumber(row.DUES_USD),
+      hasOutstandingBalance: row.HAS_OUTSTANDING_BALANCE === true,
     },
   ];
 }

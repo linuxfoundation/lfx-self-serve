@@ -16,6 +16,7 @@ import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-s
 import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 
 import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
@@ -32,6 +33,7 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
     MembersAtRiskComponent,
     MembersBridgeComponent,
     MembersDirectoryComponent,
+    MembersRenewalsComponent,
     MembersTiersComponent,
   ],
   templateUrl: './health-metrics-members.component.html',
@@ -44,7 +46,8 @@ export class HealthMetricsMembersComponent {
   protected readonly scopeNote = HEALTH_METRICS_MEMBERS_SCOPE_NOTE;
   protected readonly listCount = signal<number | null>(null);
   protected readonly riskNote = signal<string>('');
+  protected readonly renewalsCount = signal<number | null>(null);
   protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() =>
-    buildHealthMetricsMembersSubNavItems({ list: this.listCount() }, { risk: this.riskNote() })
+    buildHealthMetricsMembersSubNavItems({ list: this.listCount(), renewals: this.renewalsCount() }, { risk: this.riskNote() })
   );
 }
