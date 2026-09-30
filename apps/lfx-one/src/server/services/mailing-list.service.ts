@@ -254,6 +254,10 @@ export class MailingListService {
 
     const data = resources[0].data;
 
+    // Enrich committee names before parallel enrichment so the linked-groups section
+    // on the view page renders names instead of raw UIDs (index emits uid-only entries).
+    await this.enrichCommitteeNames(req, [data]);
+
     // Service-data and project enrichment both depend only on the query-service payload —
     // run them in parallel so the project lookup adds no sequential latency.
     const [enriched, project] = await Promise.all([
