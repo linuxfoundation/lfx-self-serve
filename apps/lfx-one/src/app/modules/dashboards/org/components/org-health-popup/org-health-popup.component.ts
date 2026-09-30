@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { HEALTH_SCORE_BAR_FILL, HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, ORG_HEALTH_POPUP_UNAVAILABLE_TEXT } from '@lfx-one/shared/constants';
-import { getHealthScoreDescription, getMissingHealthCategoryName } from '@lfx-one/shared/utils';
+import { formatHealthLabel, getHealthScoreDescription, getMissingHealthCategoryName } from '@lfx-one/shared/utils';
 import { PopoverModule } from 'primeng/popover';
 import type { Popover } from 'primeng/popover';
 
@@ -37,7 +37,7 @@ export class OrgHealthPopupComponent {
     if (band == null) {
       return '';
     }
-    return `${HEALTH_SCORE_LABELS[band]}${this.isPartial() ? '*' : ''}`;
+    return formatHealthLabel(HEALTH_SCORE_LABELS[band], this.isPartial());
   });
   protected readonly missingCategoryName = computed(() =>
     getMissingHealthCategoryName(this.maintainer() ?? null, this.security() ?? null, this.development() ?? null)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKS_CONFIG } from '../constants/links.config';
-import { HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_SUFFIX } from '../constants/org-lens-projects.constants';
+import { HEALTH_SCORE_CATEGORIES, HEALTH_SCORE_LABELS, HEALTH_SCORE_PARTIAL_MARKER } from '../constants/org-lens-projects.constants';
 import type { HealthScore } from '../interfaces';
 
 /**
@@ -65,6 +65,11 @@ export function isPartialHealthScore(coveredCategoryCount: number | null): boole
   return coveredCategoryCount === 2;
 }
 
+/** Band label, plus `*` glued to it for a partial score (`Healthy*`), matching Insights. */
+export function formatHealthLabel(label: string, partial: boolean): string {
+  return partial ? `${label}${HEALTH_SCORE_PARTIAL_MARKER}` : label;
+}
+
 const HEALTH_SCORE_BANDS = new Set<Exclude<HealthScore, 'unavailable'>>(['excellent', 'healthy', 'fair', 'concerning', 'critical']);
 
 /**
@@ -83,9 +88,10 @@ export function normalizeHealthScoreCategoryV2(category: string | null | undefin
 
 /**
  * Shared accessible summary for a health badge — the single rule behind the
- * table and hero badge accessible names: `Health: {Label[- Partial]} ({score}/{max}). Maintainer
- * Health {x/40}, Security & Supply Chain {x/35}, Development Activity {x/25}.` A null label or score
- * renders `Health: Unavailable.` — the partial suffix never applies to unavailable.
+ * table and hero badge accessible names: `Health: {Label[, partial score]} ({score}/{max}). Maintainer
+ * Health {x/40}, Security & Supply Chain {x/35}, Development Activity {x/25}.` A partial score is spelled
+ * out because screen readers announce or skip a bare `*` depending on punctuation settings. A null label
+ * or score renders `Health: Unavailable.` — the partial wording never applies to unavailable.
  */
 export function buildHealthAriaLabel(args: {
   label: Exclude<HealthScore, 'unavailable'> | null;
@@ -100,7 +106,8 @@ export function buildHealthAriaLabel(args: {
   if (label == null || score == null) {
     return 'Health: Unavailable.';
   }
-  const headline = `${HEALTH_SCORE_LABELS[label]}${isPartialHealthScore(args.coveredCount) ? HEALTH_SCORE_PARTIAL_SUFFIX : ''}`;
+  const band = HEALTH_SCORE_LABELS[label];
+  const headline = isPartialHealthScore(args.coveredCount) ? `${band}, partial score` : band;
   const rows = HEALTH_SCORE_CATEGORIES.map((c) => `${c.name} ${args[c.key] ?? '-'}/${c.max}`).join(', ');
   return `Health: ${headline} (${score}/${args.maxScore ?? 100}). ${rows}.`;
 }

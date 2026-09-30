@@ -83,7 +83,7 @@ export interface OrgLensProject {
   healthMaxScore: number | null;
   /**
    * Warehouse-computed count (0–3) of categories covered for `health`. `2` marks a partial score and drives only the
-   * ` - Partial` suffix — never availability: a null label is `'unavailable'` regardless of this count. Sourced
+   * `*` label marker — never availability: a null label is `'unavailable'` regardless of this count. Sourced
    * straight from `covered_category_count_v2`, never recomputed locally.
    */
   healthCoveredCategoryCount: number | null;
