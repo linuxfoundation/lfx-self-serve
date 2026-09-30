@@ -120,6 +120,8 @@ import {
   HealthMetricsMembersDirectoryTiers,
   HealthMetricsMembersMovements,
   HealthMetricsMembersMovementsQuery,
+  HealthMetricsMembersBoardAttendance,
+  HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersTiers,
@@ -1456,6 +1458,23 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersRenewals>('/api/analytics/members-renewals', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] members-renewals failed', { foundationSlug: query.foundationSlug, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersBoardAttendance(query: HealthMetricsMembersBoardAttendanceQuery): Observable<HealthMetricsMembersBoardAttendance> {
+    const params = strictHttpParams()
+      .set('foundationSlug', query.foundationSlug)
+      .set('range', query.range)
+      .set('cohort', query.cohort)
+      .set('offset', String(query.offset))
+      .set('pageSize', String(query.pageSize));
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersBoardAttendance>('/api/analytics/members-board-attendance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-board-attendance failed', { foundationSlug: query.foundationSlug, cohort: query.cohort, error });
         return throwError(() => error);
       })
     );

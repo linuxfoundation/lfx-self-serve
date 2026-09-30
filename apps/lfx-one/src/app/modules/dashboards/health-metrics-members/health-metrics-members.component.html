@@ -34,4 +34,7 @@
   <ng-template lfxHealthMetricsL2Section="renewals">
     <lfx-members-renewals (countChange)="renewalsCount.set($event)" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals')" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="board">
+    <lfx-members-board-attendance (noteChange)="boardNote.set($event)" (reading)="shell.sectionReading('board')" (settled)="shell.sectionSettled('board')" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>
