@@ -683,8 +683,8 @@ function hasUnknownMentorshipSkill(skills: string[]): boolean {
  * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
  * sent only when its consent box is checked and it is not blank, so declining a question never leaves
  * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
- * file metadata is sent. `lfxProfile` is the profile card's name, email and avatar, sent only when it
- * has at least one of them.
+ * file metadata is sent. `lfxProfile` is the profile card's name and avatar, sent only when it has
+ * at least one of them; the BFF adds the primary email itself.
  */
 export function buildMentorshipMenteeRegisterRequest(
   form: MentorshipMenteeRegisterForm,

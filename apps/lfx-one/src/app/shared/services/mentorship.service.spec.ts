@@ -113,7 +113,7 @@ describe('MentorshipService — LFX profile sync', () => {
   });
 
   it('patches the fields onto the caller mentorship profiles and surfaces a failure', () => {
-    const fields = { firstName: 'Test', email: 'test.user@example.com' };
+    const fields = { firstName: 'Test', lastName: 'User' };
     let status = 0;
     service.syncLfxProfileFields(fields).subscribe({ error: (err) => (status = err.status) });
 

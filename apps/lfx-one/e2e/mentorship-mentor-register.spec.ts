@@ -115,7 +115,14 @@ test.describe('Mentor registration — save', () => {
     expect(body).toMatchObject({ skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true });
     expect(String(body['introduction'])).toContain('Test introduction from Test User 1.');
     // Resume upload and program requests have no endpoint yet, so neither leaves the browser.
-    expect(Object.keys(body).sort()).toEqual(['complianceAccepted', 'introduction', 'skills', 'termsAccepted']);
+    // `lfxProfile` holds whatever the signed-in profile gave the card, so only its shape is checked:
+    // it never carries the email, which the BFF reads itself.
+    expect(
+      Object.keys(body)
+        .filter((key) => key !== 'lfxProfile')
+        .sort()
+    ).toEqual(['complianceAccepted', 'introduction', 'skills', 'termsAccepted']);
+    expect(body['lfxProfile'] ?? {}).not.toHaveProperty('email');
   });
 
   test('a profile that already exists shows the profile-exists banner and keeps Submit usable', async ({ page }) => {

@@ -38,23 +38,24 @@ export interface LfxProfileSummary {
 }
 
 /**
- * The LFX profile fields a mentorship profile copies, as the "From Your LFX Profile" card shows
- * them. Sent with the mentor and mentee registrations and by the card's sync after an Edit LFX
- * Profile save. A key is absent when the card has no usable value for it: nothing here clears a
- * stored field, so a card that loaded only part of the profile cannot blank the rest.
+ * The LFX profile fields a mentorship profile copies from the browser, as the "From Your LFX
+ * Profile" card shows them. Sent with the mentor and mentee registrations and by the card's sync
+ * after an Edit LFX Profile save. A key is absent when the card has no usable value for it: nothing
+ * here clears a stored field, so a card that loaded only part of the profile cannot blank the rest.
+ * The email is not here: the BFF reads the verified primary email itself, so a browser cannot store
+ * an address it does not own.
  */
 export interface MentorshipLfxProfileFields {
   firstName?: string;
   lastName?: string;
-  email?: string;
   /** An `https` URL: the avatar the card shows. */
   logoUrl?: string;
 }
 
 /**
- * The same fields as `MentorshipLfxProfileFields`, in the upstream profile's column names. Part of
- * the `PUT /mentorship/v1/me/profiles/{profileType}` bodies, and the whole
- * `PATCH /mentorship/v1/me/profiles/by-id/{id}` body the sync sends.
+ * The same fields as `MentorshipLfxProfileFields`, in the upstream profile's column names, plus the
+ * `email` the BFF resolves. Part of the `PUT /mentorship/v1/me/profiles/{profileType}` bodies, and
+ * the whole `PATCH /mentorship/v1/me/profiles/by-id/{id}` body the sync sends.
  */
 export interface MentorshipUpstreamLfxProfileFields {
   first_name?: string;

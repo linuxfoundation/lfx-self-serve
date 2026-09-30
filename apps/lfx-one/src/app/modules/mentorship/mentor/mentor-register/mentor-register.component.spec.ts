@@ -211,12 +211,12 @@ describe('MentorRegisterComponent', () => {
     });
   });
 
-  it('sends the name, email and picture the profile card shows with the registration', async () => {
+  it('sends the name and picture the profile card shows with the registration', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     // The card's own derivation is covered by its spec; this pins that the page sends what the card holds at submit.
     const card = fixture.debugElement.query(By.directive(ProfileCardComponent)).componentInstance as ProfileCardComponent;
     Object.defineProperty(card, 'lfxProfileFields', {
-      value: signal({ firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' }),
+      value: signal({ firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' }),
     });
     fillValidForm();
 
@@ -225,7 +225,6 @@ describe('MentorRegisterComponent', () => {
     expect(registerMentorProfile.mock.calls[0][0].lfxProfile).toEqual({
       firstName: 'Test',
       lastName: 'User',
-      email: 'test.user@example.com',
       logoUrl: 'https://example.com/avatar.png',
     });
   });
@@ -283,17 +282,21 @@ describe('MentorRegisterComponent', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
-  it('makes the form fields inert while the save is in flight, and lifts it when the save fails', async () => {
+  it('makes the profile card and the form fields inert while the save is in flight, and lifts it when the save fails', async () => {
     const pending = new Subject<void>();
     registerMentorProfile.mockReturnValueOnce(pending);
     fillValidForm();
     const fields = (): HTMLElement | null => byTestId('mentorship-mentor-register-fields');
+    const card = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('lfx-mentorship-profile-card');
     expect(fields()?.hasAttribute('inert')).toBe(false);
+    expect(card()?.hasAttribute('inert')).toBe(false);
 
     component['onSubmit']();
     fixture.detectChanges();
 
     expect(fields()?.hasAttribute('inert')).toBe(true);
+    // An Edit LFX Profile save cannot change the name after the request was built.
+    expect(card()?.hasAttribute('inert')).toBe(true);
     expect(fields()?.querySelector('[data-testid="mentorship-mentor-introduction"]')).not.toBeNull();
     // Submit stays outside the inert region, so its loading state is still reachable.
     expect(byTestId('mentorship-mentor-submit')?.closest('[inert]')).toBeNull();
@@ -303,6 +306,7 @@ describe('MentorRegisterComponent', () => {
     fixture.detectChanges();
 
     expect(fields()?.hasAttribute('inert')).toBe(false);
+    expect(card()?.hasAttribute('inert')).toBe(false);
   });
 
   it('re-enables Submit and the form fields when the navigation after a save is cancelled', async () => {

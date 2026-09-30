@@ -597,7 +597,7 @@ describe('program detail helpers', () => {
 
   it('adds the LFX profile fields to the mentor register request only when there are some', () => {
     const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], resumeFileName: '', complianceAccepted: true, termsAccepted: true };
-    const lfxProfile = { firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' };
+    const lfxProfile = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
 
     expect(buildMentorshipMentorRegisterRequest(form, lfxProfile).lfxProfile).toEqual(lfxProfile);
     expect(buildMentorshipMentorRegisterRequest(form, {})).not.toHaveProperty('lfxProfile');
@@ -1055,7 +1055,7 @@ describe('buildMentorshipMenteeRegisterRequest', () => {
   });
 
   it('adds the LFX profile fields only when there are some', () => {
-    const lfxProfile = { firstName: 'Test', email: 'test.user@example.com' };
+    const lfxProfile = { firstName: 'Test', lastName: 'User' };
 
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, lfxProfile).lfxProfile).toEqual(lfxProfile);
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, {})).not.toHaveProperty('lfxProfile');

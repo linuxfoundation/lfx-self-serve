@@ -9,13 +9,14 @@
       <p class="max-w-3xl text-sm text-gray-600">{{ subtitle }}</p>
     </header>
 
-    <lfx-mentorship-profile-card />
-
     <!--
-      Inert while the save is in flight, so an answer cannot change after the request was built and
-      then be dropped by the navigation on success. `inert` also covers the rich editor's
-      contenteditable, which a disabled form control would not reach.
+      The profile card and the fields below are inert while the save is in flight, so an answer or
+      an Edit LFX Profile save cannot change after the request was built and then be dropped by the
+      navigation on success. `inert` also covers the rich editor's contenteditable, which a disabled
+      form control would not reach.
     -->
+    <lfx-mentorship-profile-card [attr.inert]="submitting() ? '' : null" />
+
     <div class="flex flex-col gap-6" [attr.inert]="submitting() ? '' : null" data-testid="mentorship-mentor-register-fields">
       <lfx-mentorship-mentor-programs-section
         [programs]="programs()"

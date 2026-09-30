@@ -148,6 +148,13 @@ export class ProfileCardComponent implements OnInit {
   private readonly optimisticSummary = signal<LfxProfileSummary | null>(null);
 
   /**
+   * Every value the edit drawer has saved on this card, laid over the profile in `lfxProfileFields`.
+   * The optimistic update only reaches `combinedProfile` once a base profile exists; until then it
+   * is stashed, and a register page submitting in that window would otherwise send the old name.
+   */
+  private readonly savedMetadata = signal<Partial<UserMetadata>>({});
+
+  /**
    * Disables the Edit button while the profile endpoint has not returned (or degraded).
    * Without this, a mentor who clicks Edit after a profile-fetch failure gets no drawer,
    * no toast, and no indication of why — the button just does nothing.
@@ -193,8 +200,9 @@ export class ProfileCardComponent implements OnInit {
   protected readonly avatarUrl = computed(() => this.summary()?.avatarUrl || this.userService.effectiveAvatarUrl());
 
   /**
-   * The name, primary email and picture the card shows, as a mentorship profile copies them. A field
-   * the card has no usable value for is left out, so sending this never blanks a stored one.
+   * The name and picture the card shows, with any just-saved values, as a mentorship profile copies
+   * them. A field the card has no usable value for is left out, so sending this never blanks a
+   * stored one. The email is not here: the BFF reads the verified primary email itself.
    */
   public readonly lfxProfileFields: Signal<MentorshipLfxProfileFields> = this.initLfxProfileFields();
 
@@ -268,11 +276,13 @@ export class ProfileCardComponent implements OnInit {
    * `ProfileLayoutComponent.onProfileSaved`.
    */
   protected onProfileSaved(metadata: Partial<UserMetadata>): void {
+    const definedMetadata = Object.fromEntries(Object.entries(metadata).filter(([, value]) => value !== undefined)) as Partial<UserMetadata>;
+    this.savedMetadata.update((saved) => ({ ...saved, ...definedMetadata }));
     this.applyOptimisticProfileUpdate(metadata);
     if (metadata.picture) {
       this.userService.uploadedAvatarUrl.set(metadata.picture);
     }
-    this.syncMentorshipProfileFields(metadata);
+    this.syncMentorshipProfileFields();
   }
 
   /**
@@ -358,47 +368,41 @@ export class ProfileCardComponent implements OnInit {
   private initLfxProfileFields(): Signal<MentorshipLfxProfileFields> {
     return computed(() => {
       const user = this.combinedProfile()?.user;
+      const saved = this.savedMetadata();
       return buildMentorshipLfxProfileFields({
-        firstName: user?.first_name,
-        lastName: user?.last_name,
-        email: this.summary()?.emails.find((email) => email.isPrimary)?.email,
-        logoUrl: this.avatarUrl(),
+        firstName: saved.given_name ?? user?.first_name,
+        lastName: saved.family_name ?? user?.last_name,
+        logoUrl: saved.picture || this.avatarUrl(),
       });
     });
   }
 
   /**
-   * Copies the just-saved name and picture, with the primary email, onto the user's mentor and
-   * mentee profiles. The saved values are laid over `lfxProfileFields` because the optimistic
-   * update is stashed rather than applied while the profile has not loaded. Skipped while
-   * impersonating: the save itself is blocked then, and the BFF refuses this write too. Every save
-   * sends all the fields, so saving again repairs a failed copy; the failure is logged and toasted,
-   * since the LFX profile itself did save.
+   * Copies the just-saved name and picture onto the user's mentor and mentee profiles; the BFF adds
+   * the verified primary email. Skipped while impersonating: the save itself is blocked then, and
+   * the BFF refuses this write too. Every save sends all the fields, so saving again repairs a
+   * failed copy; the failure is logged and toasted, since the LFX profile itself did save.
+   *
+   * Not tied to the card's lifetime: the request completes on its own, and the toast service lives
+   * at the app root, so a user who saves and then leaves the page still gets the copy, or the
+   * warning that it failed.
    */
-  private syncMentorshipProfileFields(metadata: Partial<UserMetadata>): void {
+  private syncMentorshipProfileFields(): void {
     if (!this.syncMentorshipProfiles() || this.impersonating()) return;
 
-    const fields = buildMentorshipLfxProfileFields({
-      ...this.lfxProfileFields(),
-      ...(metadata.given_name !== undefined ? { firstName: metadata.given_name } : {}),
-      ...(metadata.family_name !== undefined ? { lastName: metadata.family_name } : {}),
-      ...(metadata.picture ? { logoUrl: metadata.picture } : {}),
-    });
+    const fields = this.lfxProfileFields();
     if (Object.keys(fields).length === 0) return;
 
-    this.mentorshipService
-      .syncLfxProfileFields(fields)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        error: (error: unknown) => {
-          console.error('mentorship-profile-card: copying the LFX profile onto the mentorship profiles failed', error);
-          this.messageService.add({
-            severity: 'warn',
-            summary: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
-            detail: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
-          });
-        },
-      });
+    this.mentorshipService.syncLfxProfileFields(fields).subscribe({
+      error: (error: unknown) => {
+        console.error('mentorship-profile-card: copying the LFX profile onto the mentorship profiles failed', error);
+        this.messageService.add({
+          severity: 'warn',
+          summary: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
+          detail: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
+        });
+      },
+    });
   }
 
   /**

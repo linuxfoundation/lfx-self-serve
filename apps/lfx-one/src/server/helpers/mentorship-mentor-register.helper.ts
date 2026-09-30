@@ -29,7 +29,7 @@ const withoutDuplicateSkills = (skills: string[]): string[] => {
  * browser and the BFF cannot drift. Both confirmations must be `true`. Repeated skills are dropped
  * before those rules run. Only known keys are copied. The introduction HTML is stored as sent,
  * capped but not sanitised: every render path sanitises it. The optional `lfxProfile` is read by
- * `readMentorshipLfxProfileFields`, so a bad name, email or logo URL is a 400 too.
+ * `readMentorshipLfxProfileFields`, so a bad name or logo URL is a 400 too.
  */
 export const parseMentorshipMentorRegisterRequest = (body: unknown): MentorshipMentorRegisterRequest => {
   if (!isRecord(body)) {
@@ -69,12 +69,13 @@ export const parseMentorshipMentorRegisterRequest = (body: unknown): MentorshipM
 /**
  * The `PUT /mentorship/v1/me/profiles/mentor` body. `skill_set` carries the skills under the same
  * key the mentee register writes. Upstream has no compliance column, so that confirmation is
- * checked by `parseMentorshipMentorRegisterRequest` and goes no further. The name, email and logo
- * are the LFX profile's, each sent only when the card had it. Phone and slug are not sent: an unset
- * slug cannot collide with another profile's. The resume is not sent either, since there is no upload yet.
+ * checked by `parseMentorshipMentorRegisterRequest` and goes no further. The name and logo are the
+ * LFX profile's, each sent only when the card had it; `email` is the resolved primary email, sent
+ * only when there is one. Phone and slug are not sent: an unset slug cannot collide with another
+ * profile's. The resume is not sent either, since there is no upload yet.
  */
-export const buildMentorshipUpstreamMentorProfile = (request: MentorshipMentorRegisterRequest): MentorshipUpstreamMentorProfileInput => ({
-  ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile),
+export const buildMentorshipUpstreamMentorProfile = (request: MentorshipMentorRegisterRequest, email?: string): MentorshipUpstreamMentorProfileInput => ({
+  ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
   introduction: request.introduction,
   terms_and_conditions: request.termsAccepted,
   skill_set: { skills: request.skills },

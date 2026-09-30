@@ -406,8 +406,26 @@ describe('ProfileCardComponent', () => {
     const save = (metadata: Record<string, string>): void =>
       (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved(metadata);
 
-    it('holds the name, primary email and picture the card shows, leaving out one it has no value for', () => {
-      expect(fixture.componentInstance.lfxProfileFields()).toEqual({ firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.org' });
+    it('holds the name and picture the card shows, leaving out one it has no value for, and never the email', () => {
+      expect(fixture.componentInstance.lfxProfileFields()).toEqual({ firstName: 'Ada', lastName: 'Lovelace' });
+    });
+
+    it('holds a just-saved name even while the save is stashed because no profile record exists yet', () => {
+      render({
+        getCurrentUserProfile: () => of({ ...combined, profile: null } as unknown as CombinedProfile),
+        getUserEmails: () => of(emails),
+        getIdentities: () => of(identities),
+        effectiveAvatarUrl: () => '',
+      });
+
+      save({ given_name: 'Updated', picture: 'https://cdn.example.org/new.png' });
+
+      // A register page submitting before the refetch lands sends the new values, not the old ones.
+      expect(fixture.componentInstance.lfxProfileFields()).toEqual({
+        firstName: 'Updated',
+        lastName: 'Lovelace',
+        logoUrl: 'https://cdn.example.org/new.png',
+      });
     });
 
     it('copies nothing on a save by default, as on the register pages, where there is no profile yet', () => {
@@ -416,7 +434,7 @@ describe('ProfileCardComponent', () => {
       expect(syncLfxProfileFields).not.toHaveBeenCalled();
     });
 
-    it('copies the saved name and picture, with the primary email, when the page asks it to', () => {
+    it('copies the saved name and picture, and no email, when the page asks it to', () => {
       fixture.componentRef.setInput('syncMentorshipProfiles', true);
 
       save({ given_name: 'Updated', picture: 'https://cdn.example.org/new.png' });
@@ -424,9 +442,22 @@ describe('ProfileCardComponent', () => {
       expect(syncLfxProfileFields).toHaveBeenCalledWith({
         firstName: 'Updated',
         lastName: 'Lovelace',
-        email: 'ada@example.org',
         logoUrl: 'https://cdn.example.org/new.png',
       });
+    });
+
+    it('lets the copy finish, and still warns if it fails, after the user leaves the page', () => {
+      fixture.componentRef.setInput('syncMentorshipProfiles', true);
+      const pending = new Subject<void>();
+      syncLfxProfileFields.mockReturnValue(pending.asObservable());
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      save({ given_name: 'Updated' });
+      fixture.destroy();
+      pending.error(new Error('upstream down'));
+
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY }));
+      consoleError.mockRestore();
     });
 
     it('does not copy while impersonating, since the write would be refused', () => {

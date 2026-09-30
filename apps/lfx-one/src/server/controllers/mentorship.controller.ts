@@ -5,7 +5,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { buildMentorshipUpstreamLfxProfileFields, readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
+import { readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { isMentorshipProgramReviewDecision, isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
@@ -187,9 +187,10 @@ export class MentorshipController {
 
   // PATCH /api/mentorship/me/lfx-profile
   // Auth: logged-in user required (401 otherwise); refused while impersonating by the route. The
-  // body is the name, email and logo the profile card shows after an Edit LFX Profile save, checked
-  // with the rules the browser applies (400 with per-field errors). Copies them onto every mentor
-  // and mentee profile the caller holds; 204 whether or not there were any.
+  // body is the name and logo the profile card shows after an Edit LFX Profile save, checked with
+  // the rules the browser applies (400 with per-field errors); any email in it is ignored. Copies
+  // them, with the caller's verified primary email, onto every mentor and mentee profile the
+  // caller holds; 204 whether or not there were any.
   public async syncLfxProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'sync_mentorship_lfx_profile');
 
@@ -203,7 +204,7 @@ export class MentorshipController {
         throw ServiceValidationError.fromFieldErrors(errors, 'Validation failed', { operation: 'sync_mentorship_lfx_profile' });
       }
 
-      const syncedCount = await this.mentorshipService.syncLfxProfileFields(req, buildMentorshipUpstreamLfxProfileFields(fields));
+      const syncedCount = await this.mentorshipService.syncLfxProfileFields(req, fields);
       logger.success(req, 'sync_mentorship_lfx_profile', startTime, { synced_count: syncedCount, field_count: Object.keys(fields).length });
       res.status(204).send();
     } catch (error) {

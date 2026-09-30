@@ -57,8 +57,9 @@ export const LFX_PROFILE_CARD_LABELS = {
 } as const;
 
 /**
- * Caps on the LFX profile fields a mentorship profile copies. The browser drops a value past its
- * cap rather than send it, and the BFF refuses one with a 400, so neither can store an oversize value.
+ * Caps on the LFX profile fields a mentorship profile copies. The browser drops a name or logo URL
+ * past its cap rather than send it, and the BFF refuses one with a 400, so neither can store an
+ * oversize value. The BFF leaves out a resolved primary email past its cap.
  */
 export const MENTORSHIP_LFX_PROFILE_NAME_MAX = 100;
 export const MENTORSHIP_LFX_PROFILE_EMAIL_MAX = 254;

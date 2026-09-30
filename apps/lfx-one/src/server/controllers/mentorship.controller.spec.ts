@@ -111,7 +111,7 @@ describe('MentorshipController program review', () => {
 });
 
 describe('MentorshipController LFX profile sync', () => {
-  const fields = { firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' };
+  const fields = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
   let controller: InstanceType<typeof MentorshipController>;
   let res: Response;
   let next: NextFunction;
@@ -128,32 +128,33 @@ describe('MentorshipController LFX profile sync', () => {
     vi.restoreAllMocks();
   });
 
-  it('copies the fields onto the mentorship profiles in the upstream column names and answers 204', async () => {
+  it('hands the checked fields to the sync and answers 204', async () => {
     const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields').mockResolvedValue(2);
 
     await controller.syncLfxProfile(buildReq(fields), res, next);
 
-    expect(sync).toHaveBeenCalledWith(expect.anything(), {
-      first_name: 'Test',
-      last_name: 'User',
-      email: 'test.user@example.com',
-      logo_url: 'https://example.com/avatar.png',
-    });
+    expect(sync).toHaveBeenCalledWith(expect.anything(), fields);
     expect(res.status).toHaveBeenCalledWith(204);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, 'text', { email: 'not-an-email' }, { logoUrl: 'http://example.com/avatar.png' }, { firstName: '' }])(
-    'rejects the body %j before calling upstream',
-    async (body) => {
-      const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields');
+  it('ignores an email in the body, since the sync reads the verified primary email itself', async () => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields').mockResolvedValue(1);
 
-      await controller.syncLfxProfile(buildReq(body), res, next);
+    await controller.syncLfxProfile(buildReq({ ...fields, email: 'not-an-email' }), res, next);
 
-      expect(sync).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-    }
-  );
+    expect(sync).toHaveBeenCalledWith(expect.anything(), fields);
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it.each([undefined, 'text', { logoUrl: 'http://example.com/avatar.png' }, { firstName: '' }])('rejects the body %j before calling upstream', async (body) => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields');
+
+    await controller.syncLfxProfile(buildReq(body), res, next);
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
 
   it('refuses a caller with no session', async () => {
     vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);

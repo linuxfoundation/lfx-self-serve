@@ -17,7 +17,7 @@ const VALID_BODY = {
   termsAccepted: true,
 };
 
-const LFX_PROFILE = { firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' };
+const LFX_PROFILE = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
 
 /** The per-field error keys a rejected body reports. */
 const rejectedFields = (body: unknown): string[] => {
@@ -47,15 +47,17 @@ describe('parseMentorshipMentorRegisterRequest', () => {
     expect(Object.keys(request).sort()).toEqual(Object.keys(VALID_BODY).sort());
   });
 
-  it('keeps the LFX profile fields, trimmed, and drops an empty LFX profile', () => {
-    expect(parseMentorshipMentorRegisterRequest({ ...VALID_BODY, lfxProfile: { ...LFX_PROFILE, firstName: '  Test ' } }).lfxProfile).toEqual(LFX_PROFILE);
+  it('keeps the LFX profile fields, trimmed, drops any email the browser sent, and drops an empty LFX profile', () => {
+    expect(
+      parseMentorshipMentorRegisterRequest({ ...VALID_BODY, lfxProfile: { ...LFX_PROFILE, firstName: '  Test ', email: 'someone.else@example.com' } })
+        .lfxProfile
+    ).toEqual(LFX_PROFILE);
     expect(parseMentorshipMentorRegisterRequest({ ...VALID_BODY, lfxProfile: {} })).not.toHaveProperty('lfxProfile');
   });
 
   it('rejects a bad LFX profile by field', () => {
     expect(rejectedFields({ ...VALID_BODY, lfxProfile: 'text' })).toEqual(['lfxProfile']);
-    expect(rejectedFields({ ...VALID_BODY, lfxProfile: { firstName: 1, email: 'not-an-email', logoUrl: 'http://example.com/avatar.png' } }).sort()).toEqual([
-      'lfxProfile.email',
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: { firstName: 1, logoUrl: 'http://example.com/avatar.png' } }).sort()).toEqual([
       'lfxProfile.firstName',
       'lfxProfile.logoUrl',
     ]);
@@ -117,12 +119,16 @@ describe('buildMentorshipUpstreamMentorProfile', () => {
     expect(Object.keys(buildMentorshipUpstreamMentorProfile(request)).sort()).toEqual(['introduction', 'skill_set', 'terms_and_conditions']);
   });
 
-  it('sends the LFX profile fields in the upstream column names', () => {
-    expect(buildMentorshipUpstreamMentorProfile({ ...request, lfxProfile: LFX_PROFILE })).toMatchObject({
+  it('sends the LFX profile fields and the resolved email in the upstream column names', () => {
+    expect(buildMentorshipUpstreamMentorProfile({ ...request, lfxProfile: LFX_PROFILE }, 'test.user@example.com')).toMatchObject({
       first_name: 'Test',
       last_name: 'User',
       email: 'test.user@example.com',
       logo_url: 'https://example.com/avatar.png',
     });
+  });
+
+  it('sends no email when none was resolved', () => {
+    expect(buildMentorshipUpstreamMentorProfile({ ...request, lfxProfile: LFX_PROFILE })).not.toHaveProperty('email');
   });
 });

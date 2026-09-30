@@ -55,7 +55,8 @@ export interface MentorshipMentorRegisterFieldErrors {
 /**
  * Body of `POST /api/mentorship/mentor/profile`. Program requests and the resume are not part of
  * it: requests are sent separately, and there is no upload endpoint yet. `lfxProfile` carries the
- * name, email and avatar the profile card shows; it is omitted when the card had none to give.
+ * name and avatar the profile card shows; it is omitted when the card had none to give. The BFF
+ * adds the primary email itself.
  */
 export interface MentorshipMentorRegisterRequest {
   introduction: string;

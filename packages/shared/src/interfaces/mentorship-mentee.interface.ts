@@ -64,8 +64,8 @@ export interface MentorshipMenteeRegisterFieldErrors {
  * `buildMentorshipMenteeRegisterRequest`. `resumeFileName` is deliberately absent: resume upload is
  * coming soon and no file metadata is sent. `demographics` carries only answers whose consent box was
  * checked; it is omitted when there are none. The five flags are the real checkbox values, validated
- * `true` by both the client and the BFF. `lfxProfile` carries the name, email and avatar the profile
- * card shows; it is omitted when the card had none to give.
+ * `true` by both the client and the BFF. `lfxProfile` carries the name and avatar the profile card
+ * shows; it is omitted when the card had none to give. The BFF adds the primary email itself.
  */
 export interface MentorshipMenteeRegisterRequest {
   introduction: string;

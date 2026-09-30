@@ -57,7 +57,7 @@ const parseDemographics = (value: unknown): { demographics?: MentorshipMenteeDem
  * browser and the BFF cannot drift. Repeated skills are dropped before those rules run, so the
  * skills cap counts what is stored. Only known keys are copied. The introduction HTML is stored as
  * sent, capped but not sanitised: every render path sanitises it. The optional `lfxProfile` is read
- * by `readMentorshipLfxProfileFields`, so a bad name, email or logo URL is a 400 too.
+ * by `readMentorshipLfxProfileFields`, so a bad name or logo URL is a 400 too.
  */
 export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipMenteeRegisterRequest => {
   if (!isRecord(body)) {
@@ -111,15 +111,16 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
  * The `PUT /mentorship/v1/me/profiles/mentee` body. The JSON columns mirror what
  * `mapMentorshipMenteeProfile` reads back: `skill_set` carries both skill lists and the notes,
  * `demographics` the age band, gender and race, `socioeconomics` the income and education.
- * The name, email and logo are the LFX profile's, each sent only when the card had it. Phone and
- * slug are not sent: an unset slug cannot collide with another profile's.
+ * The name and logo are the LFX profile's, each sent only when the card had it; `email` is the
+ * resolved primary email, sent only when there is one. Phone and slug are not sent: an unset slug
+ * cannot collide with another profile's.
  */
-export const buildMentorshipUpstreamMenteeProfile = (request: MentorshipMenteeRegisterRequest): MentorshipUpstreamMenteeProfileInput => {
+export const buildMentorshipUpstreamMenteeProfile = (request: MentorshipMenteeRegisterRequest, email?: string): MentorshipUpstreamMenteeProfileInput => {
   const demographics = withoutBlanks({ age: request.demographics?.age, gender: request.demographics?.gender, race: request.demographics?.raceEthnicity });
   const socioeconomics = withoutBlanks({ income: request.demographics?.income, educationLevel: request.demographics?.education });
 
   return {
-    ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile),
+    ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
     introduction: request.introduction,
     terms_and_conditions: request.termsAccepted,
     age_eligible: request.ageEligible,

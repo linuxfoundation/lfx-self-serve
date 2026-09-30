@@ -28,6 +28,7 @@ vi.mock('./logger.service', () => ({
 
 const { MentorshipMentorService } = await import('./mentorship-mentor.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { EmailVerificationService } = await import('./email-verification.service');
 const { logger } = await import('./logger.service');
 const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
 
@@ -36,6 +37,11 @@ const MENTOR_PROFILE_PATH = `${PROFILES_PATH}/mentor`;
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
+}
+
+/** A signed-in caller, so the service looks up their primary email by sub. */
+function signedInReq(): Request {
+  return { path: '/api/mentorship/mentor/profile', impersonationActive: false, oidc: { user: { sub: 'auth0|test-user-1' } } } as unknown as Request;
 }
 
 function upstreamError(status: number, body: unknown) {
@@ -86,10 +92,15 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
   };
   let service: InstanceType<typeof MentorshipMentorService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+  let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
     proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    getUserEmails = vi.spyOn(EmailVerificationService.prototype, 'getUserEmails').mockResolvedValue({
+      primary_email: 'test.user@example.com',
+      alternate_emails: [],
+    });
     service = new MentorshipMentorService();
   });
 
@@ -107,14 +118,41 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
     });
   });
 
+  it("adds the caller's verified primary email, looked up by their sub, to the profile it puts", async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await service.registerMentorProfile(signedInReq(), { ...request, lfxProfile: { firstName: 'Test' } });
+
+    expect(getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      MENTOR_PROFILE_PATH,
+      'PUT',
+      undefined,
+      expect.objectContaining({ first_name: 'Test', email: 'test.user@example.com' })
+    );
+  });
+
+  it('leaves the email out when the lookup fails, and still registers', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await expect(service.registerMentorProfile(signedInReq(), request)).resolves.toBeUndefined();
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('email');
+  });
+
   it('refuses with a 409 profile-exists conflict, without writing, when a mentor profile exists', async () => {
     proxyRequest.mockResolvedValueOnce(listOf([{ id: 'profile-1', profile_type: 'mentor' }]));
 
-    await expect(service.registerMentorProfile(buildReq(), request)).rejects.toMatchObject({
+    await expect(service.registerMentorProfile(signedInReq(), request)).rejects.toMatchObject({
       statusCode: 409,
       code: MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
     });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(getUserEmails).not.toHaveBeenCalled();
   });
 
   it('fails closed when the existing-profile check fails', async () => {
@@ -136,13 +174,15 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
     await expect(service.registerMentorProfile(buildReq(), request)).rejects.toBe(error);
   });
 
-  it('does not log the profile answers', async () => {
+  it('does not log the profile answers or the email', async () => {
     proxyRequest.mockResolvedValueOnce(listOf([]));
     proxyRequest.mockResolvedValueOnce({});
 
-    await service.registerMentorProfile(buildReq(), request);
+    await service.registerMentorProfile(signedInReq(), request);
 
-    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('Test intro');
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logged).not.toContain('Test intro');
+    expect(logged).not.toContain('test.user@example.com');
   });
 });
 

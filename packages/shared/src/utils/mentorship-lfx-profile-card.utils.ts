@@ -1,15 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  MENTORSHIP_LFX_PROFILE_EMAIL_MAX,
-  MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX,
-  MENTORSHIP_LFX_PROFILE_NAME_MAX,
-} from '../constants/mentorship-lfx-profile-card.constants';
+import { MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX, MENTORSHIP_LFX_PROFILE_NAME_MAX } from '../constants/mentorship-lfx-profile-card.constants';
 import type { LfxProfileEmail, LfxProfileSummary, MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type { EnrichedIdentity } from '../interfaces/profile.interface';
 import type { CombinedProfile, EmailManagementData, UserMetadata } from '../interfaces/user-profile.interface';
-import { isValidEmail } from './email.utils';
 
 /**
  * The user's handle on `provider`, rendered verbatim as `identity.value`.
@@ -116,9 +111,8 @@ function isHttpsUrl(value: string): boolean {
 /**
  * Why each set LFX profile field cannot be copied onto a mentorship profile, keyed by field. The
  * browser drops those values before sending (`buildMentorshipLfxProfileFields`) and the BFF refuses
- * them with a 400, so both apply the same rules: a name that is not blank and within its cap, an
- * email-shaped email within its cap, and an `https` logo URL within its cap. Values are checked as
- * given; the callers trim first.
+ * them with a 400, so both apply the same rules: a name that is not blank and within its cap, and
+ * an `https` logo URL within its cap. Values are checked as given; the callers trim first.
  */
 export function getMentorshipLfxProfileFieldErrors(fields: MentorshipLfxProfileFields): Partial<Record<keyof MentorshipLfxProfileFields, string>> {
   const errors: Partial<Record<keyof MentorshipLfxProfileFields, string>> = {};
@@ -127,9 +121,6 @@ export function getMentorshipLfxProfileFieldErrors(fields: MentorshipLfxProfileF
   }
   if (fields.lastName !== undefined && (!fields.lastName || fields.lastName.length > MENTORSHIP_LFX_PROFILE_NAME_MAX)) {
     errors.lastName = `Last name must be 1 to ${MENTORSHIP_LFX_PROFILE_NAME_MAX} characters.`;
-  }
-  if (fields.email !== undefined && (fields.email.length > MENTORSHIP_LFX_PROFILE_EMAIL_MAX || !isValidEmail(fields.email))) {
-    errors.email = 'Email must be a valid email address.';
   }
   if (fields.logoUrl !== undefined && (fields.logoUrl.length > MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX || !isHttpsUrl(fields.logoUrl))) {
     errors.logoUrl = `Logo URL must be an https URL of ${MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX} characters or fewer.`;
@@ -144,7 +135,7 @@ export function getMentorshipLfxProfileFieldErrors(fields: MentorshipLfxProfileF
  */
 export function buildMentorshipLfxProfileFields(source: { [K in keyof MentorshipLfxProfileFields]?: string | null }): MentorshipLfxProfileFields {
   const fields: MentorshipLfxProfileFields = {};
-  for (const key of ['firstName', 'lastName', 'email', 'logoUrl'] as const) {
+  for (const key of ['firstName', 'lastName', 'logoUrl'] as const) {
     const value = source[key]?.trim();
     if (value) fields[key] = value;
   }

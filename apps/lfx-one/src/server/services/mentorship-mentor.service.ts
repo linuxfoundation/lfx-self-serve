@@ -26,9 +26,11 @@ import { Request } from 'express';
 import { MENTORSHIP_ME_MENTOR_PROFILE_PATH, MENTORSHIP_ME_PROFILES_PATH } from '../constants';
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -39,6 +41,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
 
   /**
    * Whether the signed-in user has a mentor profile. A user has at most one, so the check
@@ -59,7 +62,8 @@ export class MentorshipMentorService {
    * rows are listed first and an existing profile is refused with a 409 the register page reads.
    * A failed check propagates rather than falling through to the write. Upstream's own 400 and 403
    * also pass through. The check and the write are two requests, so two simultaneous
-   * registrations by the same user can both pass the check; the later write wins.
+   * registrations by the same user can both pass the check; the later write wins. The email is
+   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
    */
   public async registerMentorProfile(req: Request, request: MentorshipMentorRegisterRequest): Promise<void> {
     logger.debug(req, 'mentorship_register_mentor_profile', 'Checking for an existing mentor profile');
@@ -69,8 +73,12 @@ export class MentorshipMentorService {
       });
     }
 
-    const body = buildMentorshipUpstreamMentorProfile(request);
-    logger.debug(req, 'mentorship_register_mentor_profile', 'Creating mentor profile', { skills_count: body.skill_set.skills.length });
+    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
+    const body = buildMentorshipUpstreamMentorProfile(request, email);
+    logger.debug(req, 'mentorship_register_mentor_profile', 'Creating mentor profile', {
+      skills_count: body.skill_set.skills.length,
+      has_email: body.email !== undefined,
+    });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentor_profile', 'Mentor profile created');
   }
