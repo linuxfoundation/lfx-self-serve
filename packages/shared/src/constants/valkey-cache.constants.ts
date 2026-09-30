@@ -31,11 +31,14 @@ export const VALKEY_CACHE = {
    * is kept for 15 minutes with explicit invalidation on seat reassignment, which is what makes this
    * page cacheable across callers. The value carries no PII, and it is served only to callers holding a resolved
    * per-org grant — see `assertOrgLensRead`'s returned qualification. Because every such caller gets
-   * the same value, it names only public foundations (`project_name` is omitted for a private one).
+   * the same value, it names only foundations confirmed public at fill time (`project_name` is
+   * omitted otherwise).
    * `v2` (#3109): `v1` entries could carry a private foundation name read under whichever caller's
    * token filled them, so none of them may be read back.
+   * `v3`: `v2` fills took visibility from the per-pod public-name cache (up to 5 min stale), so a
+   * `v2` entry may name a project that had already turned private; `v3` fills confirm it fresh.
    */
-  ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v2',
+  ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v3',
 
   /** Domain + schema-version segment for the per-user org People key-contacts cache. */
   ORG_PEOPLE_KC_NAMESPACE: 'org-people-kc:v1',

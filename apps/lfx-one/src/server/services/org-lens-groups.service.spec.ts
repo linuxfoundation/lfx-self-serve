@@ -66,7 +66,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
 // store in `cacheWrites`, so these tests exercise the aggregation logic and can inspect exactly
 // what is shared across callers.
 vi.mock('./valkey.service', () => ({
-  buildOrgGroupsCacheKey: (orgUid: string) => `test:org-lens-groups:v2:${orgUid}`,
+  buildOrgGroupsCacheKey: (orgUid: string) => `test:org-lens-groups:v3:${orgUid}`,
   withOrgGroupsCache: async (_orgUid: string, _ttl: number, fetcher: () => Promise<unknown>) => {
     const value = await fetcher();
     cacheWrites.push(value);
