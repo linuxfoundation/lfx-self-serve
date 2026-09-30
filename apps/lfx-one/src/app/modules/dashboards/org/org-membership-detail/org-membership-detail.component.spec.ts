@@ -9,6 +9,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { of } from 'rxjs';
@@ -66,7 +67,8 @@ async function render() {
       },
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
-      { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null), editorSet: signal(new Set<string>()) } },
+      { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+      { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
       {
         provide: OrgLensEmptyStateService,
         useValue: {

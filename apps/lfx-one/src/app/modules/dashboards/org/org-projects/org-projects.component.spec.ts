@@ -8,6 +8,7 @@ import type { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensProjectsService } from '@services/org-lens-projects.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -34,7 +35,8 @@ describe('OrgProjectsComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: '001Dn00000ExAmPleA', accountName: 'Acme' }) } },
-        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null), editorSet: signal(new Set<string>()) } },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
         // The org list never finishes loading, as for an admitted contractor with no switcher access (#2961).
         { provide: OrgNavigationService, useValue: { loaded: signal(false) } },
         { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn(() => []) } },

@@ -99,7 +99,7 @@ export interface CascadingRoleGrant {
 
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate — edit capability is `writers` ∪ `cascadingWriters`, read through `editorSet` on the client and `OrgRoleGrantsService.hasEditorAccess` on the server. */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate. `writers` ∪ `cascadingWriters` is the caller's roster-editor set (`editorSet` / `hasEditorAccess`); Org Lens edit gates follow `writer` on the org (#3136) via `OrgEditAccessService` on the client and `resolveOrgLensEdit` on the server. */
   writers: string[];
   /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
