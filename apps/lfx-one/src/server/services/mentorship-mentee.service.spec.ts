@@ -717,8 +717,14 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
 describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
   const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
   const TASKS_PATH = '/mentorship/v1/tasks';
+  const TASK_PATH = `${TASKS_PATH}/${taskId}`;
+  const SUBMISSION_PATH = `${TASK_PATH}/submission`;
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  /** The caller's applications: `app-1`, whose term takes applications until 2026-09-30. */
+  const applicationsClosingSeptember30 = () =>
+    listOf([upstreamApplication({ term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-09-30' } })]);
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -761,10 +767,84 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     });
   });
 
-  it('submits a task with no due date', async () => {
-    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockResolvedValueOnce(upstreamTask({ id: taskId }));
+  it('submits a non-prerequisite task with no due date, without reading the applications', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, application_id: 'app-1', category: 'non_prerequisite', status: 'in_progress' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId }));
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[1][3]).toBe('PATCH');
+  });
+
+  it('refuses a prerequisite with no due date once its term application close has ended in UTC, without patching', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: applicationsClosingSeptember30,
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits a prerequisite with no due date until its term application close has ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: applicationsClosingSeptember30,
+      [SUBMISSION_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'submitted' }),
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      ME_APPLICATIONS_PATH,
+      'GET',
+      { role: 'mentee', limit: 100, offset: 0 },
+      undefined
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', SUBMISSION_PATH, 'PATCH', undefined, { status: 'submitted' });
+  });
+
+  it('checks a prerequisite with a due date of its own against that date, without reading the applications', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress', due_date: '2026-10-01' }),
+      [SUBMISSION_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'submitted' }),
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("submits a prerequisite with no due date whose application is not among the caller's", async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-2', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: applicationsClosingSeptember30,
+      [SUBMISSION_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-2', status: 'submitted' }),
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('propagates a failed applications read without patching', async () => {
+    const error = upstreamError(500, { error: 'internal error' });
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: () => {
+        throw error;
+      },
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
     expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 
@@ -788,8 +868,11 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     expect(proxyRequest.mock.calls[0][3]).toBe('PATCH');
   });
 
-  it('propagates a failed task read without patching', async () => {
-    const error = upstreamError(404, { error: 'not found' });
+  it.each([
+    [403, 'forbidden'],
+    [404, 'not found'],
+  ])('propagates a failed task read (%i) without patching', async (status, message) => {
+    const error = upstreamError(status, { error: message });
     proxyRequest.mockRejectedValueOnce(error);
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);

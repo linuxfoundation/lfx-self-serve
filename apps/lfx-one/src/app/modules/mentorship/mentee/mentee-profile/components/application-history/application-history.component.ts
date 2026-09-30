@@ -14,6 +14,7 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationHistoryEntry } from '@lfx-one/shared/interfaces';
+import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 
 /**
  * Application History for the mentee profile page. Each row is an `applications`
@@ -73,7 +74,7 @@ export class ApplicationHistoryComponent {
         // accepted/graduated/hold/withdrawn are not self-withdrawable.
         canWithdraw: entry.status === 'pending',
         // No program id means there is no page to open, so the row shows no View link.
-        programUrl: entry.programId ? `${environment.urls.mentorship}/programs/${encodeURIComponent(entry.programId)}` : null,
+        programUrl: entry.programId ? buildMentorshipProgramsUrl(environment.urls.mentorship, entry.programId) : null,
       }))
     );
   }

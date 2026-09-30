@@ -8,7 +8,7 @@ import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL, MENTORSHIP_MENTEE_SHELL_TITLE, MENTORSHIP_MENTEE_TABS } from '@lfx-one/shared/constants';
 import { MentorshipMenteeOverview, MentorshipMenteePageTab } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMenteeOverview } from '@lfx-one/shared/utils';
+import { buildMentorshipMenteeOverview, buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, filter, map, of, switchMap } from 'rxjs';
 
@@ -37,7 +37,7 @@ export class MenteePageComponent {
 
   protected readonly title = MENTORSHIP_MENTEE_SHELL_TITLE;
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
-  protected readonly findProgramUrl = `${environment.urls.mentorship}/programs`;
+  protected readonly findProgramUrl = buildMentorshipProgramsUrl(environment.urls.mentorship);
   protected readonly tabs = MENTORSHIP_MENTEE_TABS;
 
   /** The overview derived from the mentee's applications, or null while loading or after a failed read. */

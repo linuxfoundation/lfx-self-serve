@@ -21,9 +21,10 @@ const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status =
 /**
  * A task's own due date, else the term's application close for a prerequisite task, as its UTC
  * midnight instant. Upstream stores both as bare dates, which `DatePipe` would read as local
- * midnight and show a day early east of UTC.
+ * midnight and show a day early east of UTC. The task view and the submit check both resolve it
+ * here, so the page and the BFF lock a task on the same day.
  */
-const resolveTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
+export const resolveMentorshipMenteeTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
   if (task.due_date) return toMentorshipUtcInstant(task.due_date);
   if (task.category === 'prerequisite' && applicationEndDate) return toMentorshipUtcInstant(applicationEndDate);
   return undefined;
@@ -42,7 +43,7 @@ export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask,
   status: task.status,
   submitFile: task.submit_file || null,
   fileUrl: task.file || undefined,
-  dueDate: resolveTaskDueDate(task, applicationEndDate),
+  dueDate: resolveMentorshipMenteeTaskDueDate(task, applicationEndDate),
   submittedOn: isSubmittedTask(task) ? task.updated_on : undefined,
   updatedOn: task.updated_on,
 });

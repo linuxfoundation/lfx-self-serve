@@ -46,6 +46,7 @@ import {
   mapMentorshipMenteeApplication,
   mapMentorshipMenteeApplicationHistory,
   mapMentorshipMenteeApplyTarget,
+  resolveMentorshipMenteeTaskDueDate,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
 import { buildMentorshipUpstreamMenteeProfile } from '../helpers/mentorship-mentee-register.helper';
@@ -153,16 +154,18 @@ export class MentorshipMenteeService {
    * re-read their applications instead.
    *
    * Upstream enforces no deadline, so a `submitted` request reads the task first and is refused with a 400
-   * (`TASK_PAST_DUE`) once the end of its `due_date`'s UTC day has passed. Only the task's own due date is
-   * checked here; the prerequisite fallback to the term's application close is applied by the page alone.
-   * A failed read propagates rather than skip the check.
+   * (`TASK_PAST_DUE`) once the end of its due date's UTC day has passed. The due date resolves as it does on
+   * the page: the task's own `due_date`, else, for a prerequisite, its term's application close, read from the
+   * caller's applications because a task carries no term dates. A failed read propagates rather than skip the
+   * check.
    */
   public async updateMenteeTaskStatus(req: Request, taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Promise<void> {
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
     const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
     if (status === 'submitted') {
       const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
-      if (isMentorshipTaskPastDue(task.due_date, Date.now())) {
+      const applicationEndDate = await this.getTaskApplicationEndDate(req, task);
+      if (isMentorshipTaskPastDue(resolveMentorshipMenteeTaskDueDate(task, applicationEndDate), Date.now())) {
         throw new InvalidRequestError(MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, {
           operation: 'mentorship_update_mentee_task_status',
         });
@@ -303,6 +306,17 @@ export class MentorshipMenteeService {
   /** The caller's own mentee applications, every page. */
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
     return this.listAllPages<MentorshipUpstreamApplication>(req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+  }
+
+  /**
+   * The term's application close for a prerequisite task with no due date of its own, from the caller's
+   * applications, since a task carries no term dates. Nothing is read for any other task, and a task whose
+   * application is not among the caller's gets no fallback date.
+   */
+  private async getTaskApplicationEndDate(req: Request, task: MentorshipUpstreamTask): Promise<string | undefined> {
+    if (task.due_date || task.category !== 'prerequisite' || !task.application_id) return undefined;
+    const applications = await this.listMenteeApplications(req);
+    return applications.find((application) => application.id === task.application_id)?.term?.application_end_date ?? undefined;
   }
 
   /** Every task on one of the caller's applications; upstream lets an applicant list their own. */

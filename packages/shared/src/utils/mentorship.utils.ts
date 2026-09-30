@@ -170,6 +170,15 @@ export function isMentorshipHttpUrl(value: string): boolean {
   return normalizeToUrl(value.trim()) !== null;
 }
 
+/**
+ * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * A trailing `/` on `base` is dropped, so the join never doubles it.
+ */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  const programs = `${base.replace(/\/+$/, '')}/programs`;
+  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
+}
+
 export function isMentorshipLogoFileName(fileName: string): boolean {
   const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
   return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);

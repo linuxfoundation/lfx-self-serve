@@ -50,6 +50,7 @@ import {
   buildMentorshipMenteeRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
+  buildMentorshipProgramsUrl,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -291,6 +292,19 @@ describe('mentorship URL and logo helpers', () => {
     expect(isMentorshipHttpUrl('ftp://example.com')).toBe(false);
     expect(isMentorshipLogoFileName('logo.PNG')).toBe(true);
     expect(isMentorshipLogoFileName('notes.pdf')).toBe(false);
+  });
+});
+
+describe('buildMentorshipProgramsUrl', () => {
+  it('links the program listing, with or without a trailing slash on the base', () => {
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org')).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org/')).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org//')).toBe('https://mentorship.example.org/programs');
+  });
+
+  it("links one program's page, URL-encoding its id", () => {
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
   });
 });
 
