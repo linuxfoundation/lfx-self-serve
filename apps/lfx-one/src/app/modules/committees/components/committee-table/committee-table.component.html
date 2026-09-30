@@ -192,10 +192,7 @@
               @if (hasRoleColumn()) {
                 <td>
                   @if (committee.roleChip) {
-                    <span
-                      class="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap"
-                      [class]="committee.roleChip.bgColor + ' ' + committee.roleChip.color"
-                      [attr.data-testid]="'role-chip-' + committee.uid">
+                    <span class="text-sm text-gray-700" [attr.data-testid]="'role-chip-' + committee.uid">
                       {{ committee.my_role }}
                     </span>
                   } @else {

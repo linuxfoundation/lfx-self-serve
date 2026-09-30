@@ -413,6 +413,9 @@ export class CommitteeViewComponent {
 
   // -- Public methods --
   public goBack(): void {
+    if (this.fromMeLens) {
+      this.lensService.setLens('me');
+    }
     this.router.navigate(['/', 'groups']);
   }
 
