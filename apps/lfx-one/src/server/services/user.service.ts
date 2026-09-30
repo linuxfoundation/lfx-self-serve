@@ -1441,7 +1441,7 @@ export class UserService {
     // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
     // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
     // Agenda appears only on project/foundation lenses and is informational, so it still goes last
-    // there — with the 5-item display cap, plentiful meetings shouldn't crowd out real responses.
+    // there — with the card's display cap, plentiful meetings shouldn't crowd out real responses.
     return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 

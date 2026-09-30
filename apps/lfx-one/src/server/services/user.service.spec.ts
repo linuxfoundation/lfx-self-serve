@@ -611,6 +611,7 @@ describe('UserService.getPendingActions Review Agenda lens scoping (GH-2991)', (
 
     expect(agendaActions).toHaveLength(1);
     expect(agendaActions[0].buttonText).toBe('Review Agenda');
+    expect(agendaActions[0].text).toBe('Review Board Agenda and Materials');
   });
 });
 
