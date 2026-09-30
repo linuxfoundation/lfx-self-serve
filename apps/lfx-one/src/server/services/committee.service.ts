@@ -42,6 +42,7 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
@@ -2245,6 +2246,37 @@ export class CommitteeService {
       if (options.throwOnError) {
         throw error;
       }
+
+      // The upstream settings endpoint requires committee#writer; viewers get 403.
+      // member_visibility is a public-facing property of the committee (controls whether
+      // the Members tab is visible to non-members) that must be readable by viewers.
+      // Use M2M as a privileged upstream fallback — the committee#viewer FGA check on the
+      // base resource has already been passed, so this read does not widen authorization.
+      // Only member_visibility is surfaced from the M2M result; write-sensitive settings
+      // (writers, auditors) are never forwarded to non-writer callers.
+      if ((error as MicroserviceError).statusCode === 403) {
+        try {
+          const m2mToken = await generateM2MToken(req);
+          const m2mSettings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+            req,
+            'LFX_V2_SERVICE',
+            `/committees/${committeeId}/settings`,
+            'GET',
+            undefined,
+            undefined,
+            undefined,
+            { bearerToken: m2mToken }
+          );
+          // Return only the display-relevant field — write-sensitive settings must not be
+          // forwarded to viewers even if the M2M response includes them.
+          return m2mSettings?.member_visibility !== undefined ? { member_visibility: m2mSettings.member_visibility } : {};
+        } catch {
+          logger.warning(req, 'get_committee_settings', 'M2M fallback for member_visibility also failed', {
+            committee_uid: committeeId,
+          });
+        }
+      }
+
       logger.warning(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
         committee_uid: committeeId,
       });
