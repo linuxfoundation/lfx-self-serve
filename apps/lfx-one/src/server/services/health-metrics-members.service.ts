@@ -7,6 +7,10 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
@@ -24,7 +28,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
+import { healthMetricsL2PeriodPredicate, isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -36,6 +40,11 @@ import type {
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskMember,
   HealthMetricsMembersAtRiskQuery,
+  HealthMetricsMembersBoardAttendance,
+  HealthMetricsMembersBoardAttendanceQuery,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersBridgeStep,
@@ -67,6 +76,8 @@ const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_M
 const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
 const MEMBERSHIP_AT_RISK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_AT_RISK';
 const MEMBERSHIP_RENEWALS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_RENEWALS';
+const MEMBERSHIP_BOARD_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE';
+const MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING';
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -157,6 +168,30 @@ interface RenewalRow {
   RENEWAL_DATE: Date | string | null;
   DUES_USD: number | null;
   HAS_OUTSTANDING_BALANCE: boolean | null;
+}
+
+interface BoardCohortRow {
+  ATTENDANCE_COHORT: string | null;
+  LATEST_ATTENDANCE_PCT: number | null;
+  LATEST_ATTENDED_COUNT: number | null;
+  LATEST_INVITED_COUNT: number | null;
+  MEETINGS_IN_RANGE_COUNT: number | null;
+  NEVER_ATTENDED_COUNT: number | null;
+  IS_BELOW_EXPECTED_LEVEL: boolean | null;
+}
+
+interface BoardMeetingRow {
+  MEETING_AND_OCCURRENCE_ID: string | null;
+  COMMITTEE_NAME: string | null;
+  MEETING_DATE: Date | string | null;
+  ATTENDED_COUNT: number | null;
+  INVITED_COUNT: number | null;
+  ATTENDANCE_PCT: number | null;
+}
+
+interface BoardMeetingPageRow extends BoardMeetingRow {
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
 }
 
 interface DirectoryTierRow {
@@ -564,6 +599,15 @@ export class HealthMetricsMembersService {
     };
   }
 
+  /**
+   * Board attendance for the period: both cohorts' figures, one page of the selected cohort's meetings,
+   * newest first, and its latest meetings oldest first for the chart. The three reads run in parallel.
+   */
+  public async getBoardAttendance(req: Request, query: HealthMetricsMembersBoardAttendanceQuery): Promise<HealthMetricsMembersBoardAttendance> {
+    const [cohorts, page, trend] = await Promise.all([this.getBoardCohorts(req, query), this.getBoardMeetingsPage(req, query), this.getBoardTrend(req, query)]);
+    return { cohorts, trend, ...page };
+  }
+
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
     const sql = `
       SELECT
@@ -632,6 +676,117 @@ export class HealthMetricsMembersService {
       return totalUsd === null ? [] : [{ range, totalUsd }];
     });
   }
+  private async getBoardCohorts(
+    req: Request,
+    query: HealthMetricsMembersBoardAttendanceQuery
+  ): Promise<Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>> {
+    // The suffix comes from constants, never from the request, so interpolating it is safe.
+    const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
+    const sql = `
+      SELECT
+        attendance_cohort,
+        latest_meeting_attendance_pct_${suffix} AS latest_attendance_pct,
+        latest_meeting_attended_count_${suffix} AS latest_attended_count,
+        latest_meeting_invited_count_${suffix} AS latest_invited_count,
+        meetings_in_range_count_${suffix} AS meetings_in_range_count,
+        never_attended_count_${suffix} AS never_attended_count,
+        is_below_expected_level_${suffix} AS is_below_expected_level
+      FROM ${MEMBERSHIP_BOARD_ATTENDANCE_VIEW}
+      WHERE foundation_slug = ?
+        AND attendance_cohort IN (${HEALTH_METRICS_MEMBERS_BOARD_COHORTS.map(() => '?').join(', ')})
+    `;
+
+    const result = await executeSnowflakeViewRead<BoardCohortRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, ...HEALTH_METRICS_MEMBERS_BOARD_COHORTS],
+      {
+        view: MEMBERSHIP_BOARD_ATTENDANCE_VIEW,
+        operation: 'get_members_board_attendance',
+        clientMessage: 'Board attendance is unavailable right now.',
+      }
+    );
+
+    const byCohort = new Map(result.rows.map((row) => [row.ATTENDANCE_COHORT, row]));
+    return {
+      board: mapBoardCohort(byCohort.get('board')),
+      voting_members: mapBoardCohort(byCohort.get('voting_members')),
+    };
+  }
+
+  private async getBoardMeetingsPage(
+    req: Request,
+    query: HealthMetricsMembersBoardAttendanceQuery
+  ): Promise<Pick<HealthMetricsMembersBoardAttendance, 'rows' | 'totalRecords'>> {
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const sql = `
+      WITH scoped AS (${boardMeetingsSql(query.range)}),
+      totals AS (
+        SELECT COUNT(*) AS total_records FROM scoped
+      ),
+      page AS (
+        SELECT scoped.*, TRUE AS is_page_row
+        FROM scoped
+        ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.meeting_date DESC NULLS LAST, page.meeting_and_occurrence_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<BoardMeetingPageRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.cohort], {
+      view: MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW,
+      operation: 'get_members_board_attendance',
+      clientMessage: 'Board attendance is unavailable right now.',
+    });
+
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapBoardMeeting),
+      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
+    };
+  }
+
+  private async getBoardTrend(req: Request, query: HealthMetricsMembersBoardAttendanceQuery): Promise<HealthMetricsMembersBoardMeeting[]> {
+    const sql = `
+      ${boardMeetingsSql(query.range)}
+      ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC
+      LIMIT ${HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS}
+    `;
+
+    const result = await executeSnowflakeViewRead<BoardMeetingRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.cohort], {
+      view: MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW,
+      operation: 'get_members_board_attendance',
+      clientMessage: 'Board attendance is unavailable right now.',
+    });
+
+    // Read newest first so the cap keeps the latest meetings, then plot them oldest first.
+    return result.rows.flatMap(mapBoardMeeting).reverse();
+  }
+}
+
+/** The cohort's meetings in the period; binds the foundation slug, then the cohort. */
+function boardMeetingsSql(range: HealthMetricsL2Range): string {
+  return `
+    SELECT
+      meeting_and_occurrence_id,
+      NULLIF(TRIM(committee_name), '') AS committee_name,
+      meeting_date,
+      attended_count,
+      invited_count,
+      attendance_pct
+    FROM ${MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW}
+    WHERE foundation_slug = ?
+      AND attendance_cohort = ?
+      AND meeting_and_occurrence_id IS NOT NULL
+      -- The view has no per-row period flags, so the period is read off the meeting date.
+      AND ${healthMetricsL2PeriodPredicate('meeting_date', range)}
+  `;
 }
 
 function mapTierYear(row: TierYearRow): HealthMetricsMembersTierYear | null {
@@ -742,6 +897,34 @@ function mapRenewal(row: RenewalRow): HealthMetricsMembersRenewal[] {
       renewalDate: toIsoDate(row.RENEWAL_DATE),
       duesUsd: toNullableNumber(row.DUES_USD),
       hasOutstandingBalance: row.HAS_OUTSTANDING_BALANCE === true,
+    },
+  ];
+}
+
+function mapBoardCohort(row: BoardCohortRow | undefined): HealthMetricsMembersBoardCohortSummary | null {
+  if (!row) return null;
+
+  return {
+    latestAttendancePct: toNullableNumber(row.LATEST_ATTENDANCE_PCT),
+    latestAttendedCount: toNullableNumber(row.LATEST_ATTENDED_COUNT),
+    latestInvitedCount: toNullableNumber(row.LATEST_INVITED_COUNT),
+    meetingsInRangeCount: toNullableNumber(row.MEETINGS_IN_RANGE_COUNT),
+    neverAttendedCount: toNullableNumber(row.NEVER_ATTENDED_COUNT),
+    isBelowExpectedLevel: row.IS_BELOW_EXPECTED_LEVEL ?? null,
+  };
+}
+
+function mapBoardMeeting(row: BoardMeetingRow): HealthMetricsMembersBoardMeeting[] {
+  if (!row.MEETING_AND_OCCURRENCE_ID) return [];
+
+  return [
+    {
+      meetingId: row.MEETING_AND_OCCURRENCE_ID,
+      committeeName: row.COMMITTEE_NAME || null,
+      meetingDate: toIsoDate(row.MEETING_DATE),
+      attendedCount: toNullableNumber(row.ATTENDED_COUNT),
+      invitedCount: toNullableNumber(row.INVITED_COUNT),
+      attendancePct: toNullableNumber(row.ATTENDANCE_PCT),
     },
   ];
 }

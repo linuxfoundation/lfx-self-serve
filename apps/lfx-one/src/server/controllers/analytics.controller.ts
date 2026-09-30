@@ -11,6 +11,9 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
@@ -27,6 +30,7 @@ import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEventsOrganizationsSegment,
   HealthMetricsMembersAtRiskFilter,
+  HealthMetricsMembersBoardCohort,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
 } from '@lfx-one/shared/interfaces';
@@ -72,6 +76,9 @@ const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_MET
 
 /** Aging buckets the Members at-risk filter accepts, `all` included. */
 const MEMBERS_AT_RISK_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS.map((option) => option.id));
+
+/** Cohorts the Members board-attendance read accepts. */
+const MEMBERS_BOARD_COHORTS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_BOARD_COHORTS);
 
 /** A four-digit calendar year, the only shape the movements list's `year` accepts. */
 const YEAR_PATTERN = /^\d{4}$/;
@@ -3917,6 +3924,51 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         total_records: response.totalRecords,
         without_dues_count: response.summary.withoutDuesCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-board-attendance` — both cohorts' figures for a period, and one page of a cohort's meetings. */
+  public async getMembersBoardAttendance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_board_attendance');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_board_attendance');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_members_board_attendance');
+      if (!isSupportedMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Board attendance has no data for this range', { operation: 'get_members_board_attendance' });
+      }
+
+      const cohort = getStringQueryParam(req, 'cohort') || HEALTH_METRICS_MEMBERS_BOARD_COHORTS[0];
+      if (!MEMBERS_BOARD_COHORTS.has(cohort)) {
+        throw ServiceValidationError.forField('cohort', `Invalid cohort value. Allowed: ${[...MEMBERS_BOARD_COHORTS].join(', ')}`, {
+          operation: 'get_members_board_attendance',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getBoardAttendance(req, {
+        foundationSlug,
+        range,
+        cohort: cohort as HealthMetricsMembersBoardCohort,
+        offset,
+        pageSize,
+      });
+
+      logger.success(req, 'get_members_board_attendance', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        cohort,
+        total_records: response.totalRecords,
       });
 
       res.json(response);

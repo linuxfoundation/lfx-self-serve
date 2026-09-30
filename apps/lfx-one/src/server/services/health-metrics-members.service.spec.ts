@@ -22,6 +22,7 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
@@ -804,5 +805,154 @@ describe('HealthMetricsMembersService.getRenewals', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getRenewals(req, query)).rejects.toBe(failure);
+  });
+});
+
+describe('HealthMetricsMembersService.getBoardAttendance', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, cohort: 'board' as const, offset: 0, pageSize: 10 };
+
+  function cohortRow(cohort: string, overrides: Record<string, unknown> = {}) {
+    return {
+      ATTENDANCE_COHORT: cohort,
+      LATEST_ATTENDANCE_PCT: 0.82,
+      LATEST_ATTENDED_COUNT: 9,
+      LATEST_INVITED_COUNT: 11,
+      MEETINGS_IN_RANGE_COUNT: 7,
+      NEVER_ATTENDED_COUNT: 2,
+      IS_BELOW_EXPECTED_LEVEL: true,
+      ...overrides,
+    };
+  }
+
+  function meetingRow(id: string, day: number, overrides: Record<string, unknown> = {}) {
+    return {
+      MEETING_AND_OCCURRENCE_ID: id,
+      COMMITTEE_NAME: 'Acme Board',
+      MEETING_DATE: new Date(Date.UTC(2026, 8, day)),
+      ATTENDED_COUNT: 9,
+      INVITED_COUNT: 11,
+      ATTENDANCE_PCT: 0.8182,
+      ...overrides,
+    };
+  }
+
+  type BoardRead = 'cohorts' | 'page' | 'trend';
+
+  function kindOf(sql: string): BoardRead {
+    if (sql.includes('WITH scoped AS')) return 'page';
+    return sql.includes('MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING') ? 'trend' : 'cohorts';
+  }
+
+  /** Routes each read by its shape, since the three run in parallel. */
+  function respond(rows: Record<BoardRead, unknown[]>) {
+    execute.mockImplementation(async (sql: string) => ({ rows: rows[kindOf(sql)] }));
+  }
+
+  function boardRead(kind: BoardRead): [string, unknown[]] {
+    const call = execute.mock.calls.find(([sql]) => kindOf(String(sql)) === kind);
+    if (!call) throw new Error(`No ${kind} read`);
+    return call as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond({
+      cohorts: [cohortRow('board'), cohortRow('voting_members', { LATEST_ATTENDANCE_PCT: 0.646, IS_BELOW_EXPECTED_LEVEL: false })],
+      page: [{ TOTAL_RECORDS: 7, IS_PAGE_ROW: true, ...meetingRow('m-2', 18) }],
+      trend: [meetingRow('m-2', 18), meetingRow('m-1', 4)],
+    });
+  });
+
+  it("reads both cohorts' figures from the period's columns, binding every placeholder", async () => {
+    for (const range of HEALTH_METRICS_L2_RANGES) {
+      execute.mockClear();
+      await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, range });
+
+      const [sql, binds] = boardRead('cohorts');
+      const suffix = {
+        YTD: 'ytd',
+        COMPLETED_YEAR: 'last_completed_year',
+        COMPLETED_YEAR_2: 'prev_completed_year',
+        COMPLETED_YEAR_3: '3rd_last_completed_year',
+      }[range];
+      expect(binds).toEqual(['acme', 'board', 'voting_members']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE\n');
+      expect(sql).toContain(`latest_meeting_attendance_pct_${suffix} AS latest_attendance_pct`);
+      expect(sql).toContain(`is_below_expected_level_${suffix} AS is_below_expected_level`);
+    }
+  });
+
+  it("scopes the meetings to the cohort and the period's dates, binding every placeholder", async () => {
+    await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, range: 'COMPLETED_YEAR', cohort: 'voting_members' });
+
+    for (const kind of ['page', 'trend'] as const) {
+      const [sql, binds] = boardRead(kind);
+      expect(binds).toEqual(['acme', 'voting_members']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('AND attendance_cohort = ?');
+      expect(sql).toContain("AND meeting_date >= DATEADD(YEAR, -1, DATE_TRUNC('YEAR', CURRENT_DATE())) AND meeting_date < DATE_TRUNC('YEAR', CURRENT_DATE())");
+    }
+  });
+
+  it('pages newest first behind a totals join, and clamps an oversized page and offset', async () => {
+    await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = boardRead('page');
+    const size = HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE;
+    expect(sql).toContain(
+      `ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n        LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`
+    );
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('caps the trend at the latest twelve meetings and plots them oldest first', async () => {
+    const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
+
+    expect(boardRead('trend')[0]).toContain('ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n      LIMIT 12');
+    expect(result.trend.map((meeting) => meeting.meetingId)).toEqual(['m-1', 'm-2']);
+  });
+
+  it('maps both cohorts, the page and its total', async () => {
+    const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
+
+    expect(result.cohorts.board).toEqual({
+      latestAttendancePct: 0.82,
+      latestAttendedCount: 9,
+      latestInvitedCount: 11,
+      meetingsInRangeCount: 7,
+      neverAttendedCount: 2,
+      isBelowExpectedLevel: true,
+    });
+    expect(result.cohorts.voting_members).toMatchObject({ latestAttendancePct: 0.646, isBelowExpectedLevel: false });
+    expect(result.totalRecords).toBe(7);
+    expect(result.rows).toEqual([
+      { meetingId: 'm-2', committeeName: 'Acme Board', meetingDate: '2026-09-18', attendedCount: 9, invitedCount: 11, attendancePct: 0.8182 },
+    ]);
+  });
+
+  it('reads a missing cohort as null, keeps the total past the end, and maps missing fields to null', async () => {
+    respond({
+      cohorts: [cohortRow('board', { LATEST_ATTENDANCE_PCT: null, IS_BELOW_EXPECTED_LEVEL: null })],
+      page: [{ TOTAL_RECORDS: 7, IS_PAGE_ROW: null, MEETING_AND_OCCURRENCE_ID: null }],
+      trend: [meetingRow('m-3', 2, { COMMITTEE_NAME: '', MEETING_DATE: null, ATTENDED_COUNT: null, ATTENDANCE_PCT: null })],
+    });
+
+    const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
+
+    expect(result.cohorts).toMatchObject({ board: { latestAttendancePct: null, isBelowExpectedLevel: null }, voting_members: null });
+    expect(result).toMatchObject({ rows: [], totalRecords: 7 });
+    expect(result.trend[0]).toMatchObject({ committeeName: null, meetingDate: null, attendedCount: null, attendancePct: null });
+  });
+
+  it('reads a foundation with no board rows as unmeasured cohorts and no meetings', async () => {
+    respond({ cohorts: [], page: [], trend: [] });
+
+    expect(await new HealthMetricsMembersService().getBoardAttendance(req, query)).toEqual({
+      cohorts: { board: null, voting_members: null },
+      trend: [],
+      rows: [],
+      totalRecords: 0,
+    });
   });
 });

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
+import { HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS } from './health-metrics-engagement.constants';
 
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
@@ -10,6 +11,9 @@ import type {
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskFilterOption,
   HealthMetricsMembersBridge,
+  HealthMetricsMembersBoardAttendance,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortOption,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
@@ -106,6 +110,7 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
   'list',
   'risk',
   'renewals',
+  'board',
 ] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
@@ -214,6 +219,8 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   atRiskBucket: 'riskBucket',
   atRiskPage: 'riskPage',
   renewalsPage: 'renewalsPage',
+  boardCohort: 'boardCohort',
+  boardPage: 'boardPage',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
 /** `MEMBERSHIP_DIRECTORY`'s NPS categories, and the allowlist the directory read validates against. */
@@ -337,4 +344,43 @@ export const HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER = {
   label: 'Balance outstanding',
   icon: 'fa-light fa-circle-exclamation',
   textClass: 'text-red-600',
+} as const;
+
+/** `MEMBERSHIP_BOARD_ATTENDANCE`'s cohorts; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORTS = ['board', 'voting_members'] as const;
+
+/** The cohort toggle over the hero. */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS: readonly HealthMetricsMembersBoardCohortOption[] = [
+  { id: 'board', label: 'Board' },
+  { id: 'voting_members', label: 'Voting members' },
+];
+
+/** The meeting noun in each cohort's hero caption. */
+export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'board meeting',
+  voting_members: 'voting meeting',
+};
+
+/** Read-failed / no-foundation value: no cohorts measured, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED: HealthMetricsMembersBoardAttendance = {
+  cohorts: { board: null, voting_members: null },
+  trend: [],
+  rows: [],
+  totalRecords: 0,
+};
+
+/** Rows per page of the meetings table. */
+export const HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE = 10;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE = 100;
+
+/** Meetings the attendance chart plots: the latest twelve in the period, oldest first. */
+export const HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS = 12;
+
+/** Where "see who" lands: Engagement's representatives, cut to those who never attended. */
+export const HEALTH_METRICS_MEMBERS_BOARD_NEVER_ATTENDED_LINK = {
+  route: 'engagement',
+  fragment: 'reps',
+  queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: 'never' },
 } as const;

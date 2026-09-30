@@ -14,6 +14,10 @@ import {
   buildHealthMetricsMembersAtRiskNote,
   buildHealthMetricsMembersAtRiskRows,
   buildHealthMetricsMembersAtRiskSummary,
+  buildHealthMetricsMembersBoardCountLabel,
+  buildHealthMetricsMembersBoardMeetingRows,
+  buildHealthMetricsMembersBoardNote,
+  buildHealthMetricsMembersBoardSummary,
   buildHealthMetricsMembersBridgeView,
   buildHealthMetricsMembersDirectoryRows,
   buildHealthMetricsMembersDirectorySearchPlaceholder,
@@ -31,6 +35,7 @@ import {
 import type {
   HealthMetricsMembersAtRiskMember,
   HealthMetricsMembersAtRiskSummary,
+  HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBridge,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersBridgeStep,
@@ -597,5 +602,111 @@ describe('buildHealthMetricsMembersRenewalsCountLabel', () => {
   it('pluralizes the renewal count', () => {
     expect(buildHealthMetricsMembersRenewalsCountLabel(1)).toBe('1 renewal');
     expect(buildHealthMetricsMembersRenewalsCountLabel(61)).toBe('61 renewals');
+  });
+});
+
+function boardCohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> = {}): HealthMetricsMembersBoardCohortSummary {
+  return {
+    latestAttendancePct: 0.82,
+    latestAttendedCount: 9,
+    latestInvitedCount: 11,
+    meetingsInRangeCount: 7,
+    neverAttendedCount: 2,
+    isBelowExpectedLevel: true,
+    ...overrides,
+  };
+}
+
+describe('buildHealthMetricsMembersBoardSummary', () => {
+  it('renders the selected cohort with the other cohort beside it, flagging a level below expected', () => {
+    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort(), boardCohort({ latestAttendancePct: 0.646 }))).toEqual({
+      meetingsLabel: '7 meetings in range',
+      latestPctLabel: '82%',
+      latestCaption: 'Last board meeting · below the ~100% this should be',
+      isBelowExpectedLevel: true,
+      otherCohortLabel: 'Voting members',
+      otherCohortPctLabel: '65%',
+      attendedInvitedLabel: '9 / 11',
+      neverAttendedLabel: '2',
+      neverAttendedCount: 2,
+    });
+  });
+
+  it('drops the caution at the expected level and names the board as the other cohort', () => {
+    const view = buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ isBelowExpectedLevel: false, neverAttendedCount: 0 }), null);
+    expect(view).toMatchObject({
+      latestCaption: 'Last voting meeting',
+      isBelowExpectedLevel: false,
+      otherCohortLabel: 'Board',
+      otherCohortPctLabel: '—',
+      neverAttendedCount: 0,
+    });
+  });
+
+  it('dashes every figure for a cohort with no meeting in the period', () => {
+    const empty = boardCohort({
+      latestAttendancePct: null,
+      latestAttendedCount: null,
+      latestInvitedCount: null,
+      meetingsInRangeCount: null,
+      neverAttendedCount: null,
+      isBelowExpectedLevel: null,
+    });
+    expect(buildHealthMetricsMembersBoardSummary('board', empty, null)).toMatchObject({
+      meetingsLabel: '—',
+      latestPctLabel: '—',
+      latestCaption: 'Last board meeting',
+      isBelowExpectedLevel: false,
+      attendedInvitedLabel: '—',
+      neverAttendedLabel: '—',
+      neverAttendedCount: 0,
+    });
+  });
+});
+
+describe('buildHealthMetricsMembersBoardMeetingRows', () => {
+  it('renders a meeting with its rate bar tone', () => {
+    expect(
+      buildHealthMetricsMembersBoardMeetingRows([
+        { meetingId: 'm-1', committeeName: 'Acme Board', meetingDate: '2026-09-18', attendedCount: 4, invitedCount: 11, attendancePct: 0.3636 },
+      ])
+    ).toEqual([
+      {
+        meetingId: 'm-1',
+        committeeName: 'Acme Board',
+        dateLabel: 'Sep 18, 2026',
+        attendedLabel: '4 / 11',
+        ratePct: 36,
+        rateLabel: '36%',
+        rateFillClass: 'bg-amber-500',
+      },
+    ]);
+  });
+
+  it('dashes missing figures and greys an unmeasured rate', () => {
+    const [row] = buildHealthMetricsMembersBoardMeetingRows([
+      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null },
+    ]);
+    expect(row).toMatchObject({ committeeName: '—', dateLabel: '—', attendedLabel: '—', ratePct: null, rateLabel: '—', rateFillClass: 'bg-gray-300' });
+  });
+});
+
+describe('buildHealthMetricsMembersBoardNote', () => {
+  it('counts unused seats first', () => {
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 1 }))).toBe('1 seat unused');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 3 }))).toBe('3 seats unused');
+  });
+
+  it('falls back to the latest share only when below the expected level', () => {
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0 }))).toBe('82% attended');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0, isBelowExpectedLevel: false }))).toBe('');
+    expect(buildHealthMetricsMembersBoardNote(null)).toBe('');
+  });
+});
+
+describe('buildHealthMetricsMembersBoardCountLabel', () => {
+  it('pluralizes the meeting count', () => {
+    expect(buildHealthMetricsMembersBoardCountLabel(1)).toBe('1 meeting');
+    expect(buildHealthMetricsMembersBoardCountLabel(12)).toBe('12 meetings');
   });
 });

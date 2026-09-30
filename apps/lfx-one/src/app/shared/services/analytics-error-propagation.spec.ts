@@ -168,6 +168,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no renewals due.
       call: () => service.getMembersRenewals({ foundationSlug: 'aaif', offset: 0, pageSize: 10 }),
     },
+    {
+      name: 'getMembersBoardAttendance',
+      url: '/api/analytics/members-board-attendance',
+      // A swallowed failure would read as a board that met with no one attending.
+      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

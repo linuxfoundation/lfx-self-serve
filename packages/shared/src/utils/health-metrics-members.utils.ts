@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
@@ -14,6 +17,7 @@ import {
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
@@ -24,6 +28,11 @@ import type {
   HealthMetricsMembersAtRiskRowView,
   HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersAtRiskSummaryView,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
+  HealthMetricsMembersBoardMeetingRowView,
+  HealthMetricsMembersBoardSummaryView,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeBarView,
   HealthMetricsMembersBridgeStep,
@@ -310,6 +319,61 @@ export function buildHealthMetricsMembersRenewalsCountLabel(totalRecords: number
   return pluralize(totalRecords, 'renewal');
 }
 
+/** The board hero for the selected cohort, with the other cohort's latest share beside it. */
+export function buildHealthMetricsMembersBoardSummary(
+  cohort: HealthMetricsMembersBoardCohort,
+  selected: HealthMetricsMembersBoardCohortSummary | null,
+  other: HealthMetricsMembersBoardCohortSummary | null
+): HealthMetricsMembersBoardSummaryView {
+  const isBelowExpectedLevel = selected?.isBelowExpectedLevel === true;
+  const neverAttendedCount = Math.max(0, selected?.neverAttendedCount ?? 0);
+  const noun = HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort];
+  const attended = selected?.latestAttendedCount ?? null;
+  const invited = selected?.latestInvitedCount ?? null;
+  const meetings = selected?.meetingsInRangeCount ?? null;
+  return {
+    meetingsLabel: meetings === null ? '—' : `${pluralize(meetings, 'meeting')} in range`,
+    latestPctLabel: formatPct(selected?.latestAttendancePct ?? null),
+    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ' · below the ~100% this should be' : ''}`,
+    isBelowExpectedLevel,
+    otherCohortLabel: HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS.find((option) => option.id !== cohort)?.label ?? '',
+    otherCohortPctLabel: formatPct(other?.latestAttendancePct ?? null),
+    attendedInvitedLabel: attended === null || invited === null ? '—' : `${formatCount(attended)} / ${formatCount(invited)}`,
+    neverAttendedLabel: formatCount(selected?.neverAttendedCount ?? null),
+    neverAttendedCount,
+  };
+}
+
+/** Meeting rows; the rate bar takes the Engagement attendance tones. */
+export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardMeetingRowView[] {
+  return rows.map((row) => {
+    const ratePct = row.attendancePct === null ? null : Math.min(100, Math.max(0, Math.round(row.attendancePct * 100)));
+    return {
+      meetingId: row.meetingId,
+      committeeName: row.committeeName ?? '—',
+      dateLabel: formatIsoDate(row.meetingDate),
+      attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct)],
+    };
+  });
+}
+
+/** The sub-nav note, from the board cohort: unused seats first, else the latest share when below its level. */
+export function buildHealthMetricsMembersBoardNote(board: HealthMetricsMembersBoardCohortSummary | null): string {
+  if (!board) return '';
+  const never = board.neverAttendedCount ?? 0;
+  if (never > 0) return `${pluralize(never, 'seat')} unused`;
+  if (board.isBelowExpectedLevel === true && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
+  return '';
+}
+
+/** The "N meetings" line over the table. */
+export function buildHealthMetricsMembersBoardCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'meeting');
+}
+
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
   return { key, label: format(value), tracked: value !== null };
 }
@@ -461,6 +525,10 @@ function formatCount(value: number | null): string {
 
 function formatUsd(value: number | null): string {
   return value === null ? '—' : formatCurrency(value);
+}
+
+function formatPct(fraction: number | null): string {
+  return fraction === null ? '—' : `${Math.round(fraction * 100)}%`;
 }
 
 function pluralize(count: number, noun: string): string {

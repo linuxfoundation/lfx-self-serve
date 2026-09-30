@@ -4,10 +4,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk, getRenewals } = vi.hoisted(() => ({
+const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance } = vi.hoisted(() => ({
   getTiers: vi.fn(),
   getAtRisk: vi.fn(),
   getRenewals: vi.fn(),
+  getBoardAttendance: vi.fn(),
   getBridge: vi.fn(),
   getMovements: vi.fn(),
   getDirectory: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('../services/health-metrics-members.service', () => ({
     public getDirectoryTiers = getDirectoryTiers;
     public getAtRisk = getAtRisk;
     public getRenewals = getRenewals;
+    public getBoardAttendance = getBoardAttendance;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
@@ -44,6 +46,9 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
@@ -69,7 +74,8 @@ type Handler =
   | 'getMembersDirectory'
   | 'getMembersDirectoryTiers'
   | 'getMembersAtRisk'
-  | 'getMembersRenewals';
+  | 'getMembersRenewals'
+  | 'getMembersBoardAttendance';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -420,6 +426,73 @@ describe('AnalyticsController.getMembersRenewals', () => {
     getRenewals.mockRejectedValue(failure);
 
     const { next, promise } = call(valid, 'getMembersRenewals');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersBoardAttendance', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getBoardAttendance.mockReset();
+    getBoardAttendance.mockResolvedValue(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
+  });
+
+  it('defaults to this year, the board cohort and the first page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getBoardAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      cohort: 'board',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
+  });
+
+  it('passes the range, cohort and page', async () => {
+    await call({ ...valid, range: 'COMPLETED_YEAR', cohort: 'voting_members', offset: '10', pageSize: '10' }, 'getMembersBoardAttendance').promise;
+
+    expect(getBoardAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      cohort: 'voting_members',
+      offset: 10,
+      pageSize: 10,
+    });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE + 1) }, 'getMembersBoardAttendance').promise;
+
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ ...valid, cohort: 'committee' }, 'cohort'],
+    [{ ...valid, cohort: 'toString' }, 'cohort'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getBoardAttendance).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getBoardAttendance.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersBoardAttendance');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);
