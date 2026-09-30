@@ -17,6 +17,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { UserService } from '@services/user.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 
 import {
   orgClaAddManagerDialogConfig,
@@ -36,6 +37,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly userService = inject(UserService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly orgUid = input.required<string>();
@@ -44,7 +46,6 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public readonly claGroup = input.required<OrgClaGroup>();
 
   public readonly managerCountChanged = output<number>();
-  public readonly viewerRemoved = output<void>();
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
 
@@ -273,11 +274,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
       )
       .subscribe({
         next: () => {
+          if (this.isSelf(manager)) this.selfRemovals.record(target.orgUid, target.signatureId);
           if (this.destroyed || !this.stillOn(target)) return;
           if (this.isSelf(manager)) {
             this.addGrant.set(false);
             this.removeGrant.set(false);
-            this.viewerRemoved.emit();
           }
           this.messageService.add({
             severity: 'success',

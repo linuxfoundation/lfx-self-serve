@@ -3478,15 +3478,36 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]')).not.toBeNull();
   });
 
-  it('withdraws the roster-gated controls once the viewer removes themselves from the Managers tab', async () => {
+  it('withdraws the roster-gated controls when a self-removal lands after the Managers tab was left', async () => {
     const fixture = await render();
     const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
-    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+    const claService = TestBed.inject(OrgLensClaService) as unknown as { getManagers: ReturnType<typeof vi.fn>; removeManager: ReturnType<typeof vi.fn> };
+    const self = { lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' };
+    claService.getManagers.mockReturnValue(
+      of({
+        signatureId: 'signature-uuid-1',
+        managers: [{ lfUsername: 'kmensah', name: 'Kwame Mensah', email: 'kwame.mensah@example.org', addedOn: '2024-05-02T11:00:00Z' }, self],
+      })
+    );
+    const removal = new Subject<void>();
+    claService.removeManager.mockReturnValue(removal);
 
     component.selectTab('managers');
     fixture.detectChanges();
-    fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent)).componentInstance.viewerRemoved.emit();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const panel = fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent));
+    const confirm = vi.spyOn(panel.injector.get(ConfirmationService), 'confirm');
+    panel.componentInstance['confirmRemove'](self);
+    confirm.mock.calls.at(-1)?.[0]?.accept?.();
+
     component.selectTab('overview');
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent))).toBeNull();
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+
+    removal.next();
+    removal.complete();
     fixture.detectChanges();
 
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);

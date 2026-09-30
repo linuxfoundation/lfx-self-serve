@@ -367,8 +367,7 @@
           [signatureId]="group.id"
           [signed]="group.signed"
           [claGroup]="group"
-          (managerCountChanged)="onManagerCountChanged($event)"
-          (viewerRemoved)="onViewerRemovedFromRoster()" />
+          (managerCountChanged)="onManagerCountChanged($event)" />
       </div>
     } @else if (activeTab() === 'approval' && claGroup()?.signed) {
       <section

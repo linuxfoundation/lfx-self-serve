@@ -10,6 +10,7 @@ import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANA
 import type { OrgClaGroup, OrgClaManager } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { UserService } from '@services/user.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
@@ -366,22 +367,37 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(component['canRemove']()).toBe(false);
     });
 
-    it('tells the page when the viewer removes themselves, and only then', async () => {
+    it('records the removal for the page when the viewer removes themselves, and only then', async () => {
       await render();
       component.loadIfNeeded();
       await fixture.whenStable();
-      const removals: unknown[] = [];
-      component.viewerRemoved.subscribe(() => removals.push(true));
+      const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
 
       component['confirmRemove'](manager());
       acceptConfirmation();
       await fixture.whenStable();
-      expect(removals).toHaveLength(0);
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(false);
 
       component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
       acceptConfirmation();
       await fixture.whenStable();
-      expect(removals).toHaveLength(1);
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
+    });
+
+    it('records the self-removal even when the panel is gone before the removal lands', async () => {
+      const answer = new Subject<void>();
+      removeManager.mockReturnValue(answer);
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      acceptConfirmation();
+      fixture.destroy();
+      answer.next();
+      answer.complete();
+
+      expect(TestBed.inject(OrgClaSelfRemovalsService).removed(ORG_UID, SIGNATURE_ID)).toBe(true);
     });
 
     it('drops an open confirm when the agreement changes', async () => {

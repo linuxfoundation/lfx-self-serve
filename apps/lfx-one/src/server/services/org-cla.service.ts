@@ -1392,8 +1392,8 @@ export class OrgClaService {
    *   1. `blockDuringImpersonation`, declared *before* `requireOrgLensAccess` — a write, and the
    *      producer stamps the acting user on the signature as `invalidatedBy`.
    *   2. `requireOrgLensAccess` — the Org Lens grant on the organization.
-   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Fails open only
-   *      when the producer sent no roster, matching the sibling approval-list posture.
+   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Refused when the
+   *      producer sent no roster, because the producer does not check the roster on invalidate.
    *   4. The id verify below, which refuses an acknowledgment id that is not on this company's
    *      roster for this CLA Group.
    *
@@ -1814,10 +1814,15 @@ export class OrgClaService {
    *
    * Fails OPEN when the producer sent no roster at all. That is the deliberate direction: the
    * producer is the authority and rejects the write regardless, so failing open costs a CLA
-   * manager one clear error message.
+   * manager one clear error message. Invalidate is the exception and fails closed: the producer
+   * checks only ACS scope on it, never the roster, so this is the one roster check it gets.
    */
   private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string): Promise<boolean> {
     if (!Array.isArray(entry.claManagers)) {
+      if (operation === 'org_cla_invalidate_acknowledgment') {
+        logger.warning(req, operation, 'upstream sent no CLA manager roster, so the invalidate was refused', { signature_id: entry.signatureID });
+        return false;
+      }
       logger.warning(req, operation, 'upstream sent no CLA manager roster, so write access was not narrowed', { signature_id: entry.signatureID });
       return true;
     }

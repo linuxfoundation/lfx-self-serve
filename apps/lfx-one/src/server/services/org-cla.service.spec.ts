@@ -3218,21 +3218,13 @@ describe('OrgClaService.invalidateAcknowledgment — the gates', () => {
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
-  /**
-   * Fails OPEN on a missing roster, and only on a missing roster.
-   *
-   * This is the sibling approval-list posture, restated for the write that shares its gate: the
-   * producer is the authority and refuses the write regardless, so failing open costs an entitled
-   * CLA manager one clear error message where failing closed would hide the control from them.
-   * An EMPTY roster is a real answer — nobody manages this agreement — and must not fail open.
-   */
-  it('fails open when the producer sent no roster at all', async () => {
-    getUsernameFromAuth.mockResolvedValue('someone-else');
+  it('refuses when the producer sent no roster at all, without calling the producer', async () => {
     stageInvalidate(undefined, [upstreamEntry({ claManagers: undefined })]);
 
     const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
 
-    expect(result).toMatchObject({ outcome: 'invalidated' });
+    expect(result).toEqual({ outcome: 'forbidden' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
   it('does not fail open on an empty roster, which is a real answer rather than a missing one', async () => {

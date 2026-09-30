@@ -92,6 +92,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
@@ -173,6 +174,7 @@ export class OrgEasyclaDetailComponent {
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -191,8 +193,6 @@ export class OrgEasyclaDetailComponent {
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
-  private readonly viewerRemovedFrom = signal<{ list: OrgClaGroupList; signatureId: string } | null>(null);
-
   /**
    * Lists fetched by the flagged wait, fed back into the page's own `claData`.
    *
@@ -765,14 +765,6 @@ export class OrgEasyclaDetailComponent {
     if (!signatureId) return;
     this.loadedManagerCount.set({ signatureId, count });
   }
-
-  protected onViewerRemovedFromRoster(): void {
-    const list = this.claData();
-    const signatureId = this.claGroup()?.id;
-    if (!list || !signatureId) return;
-    this.viewerRemovedFrom.set({ list, signatureId });
-  }
-
   protected onTabKeydown(event: KeyboardEvent): void {
     const ids = ORG_CLA_DETAIL_TABS.map((tab) => tab.id);
     const current = ids.indexOf(this.activeTab());
@@ -1308,8 +1300,7 @@ export class OrgEasyclaDetailComponent {
     // selection carries only two names.
     const listed = this.listedGroupForAddress();
     if (listed) {
-      const removed = this.viewerRemovedFrom();
-      return removed && removed.list === this.claData() && removed.signatureId === listed.id ? { ...listed, viewerIsClaManager: false } : listed;
+      return this.selfRemovals.removed(this.selectedOrgUid(), listed.id) ? { ...listed, viewerIsClaManager: false } : listed;
     }
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
@@ -1585,6 +1576,7 @@ export class OrgEasyclaDetailComponent {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
         this.autoEclaWrites.forgetSettled();
+        this.selfRemovals.forgetAll();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(
