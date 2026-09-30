@@ -304,13 +304,21 @@ describe('OrgClaService.listClaGroups — whether the viewer is a CLA manager', 
     expect(row.viewerIsClaManager).toBe(true);
   });
 
-  it('matches the LF username ignoring case and surrounding whitespace', async () => {
-    getUsernameFromAuth.mockResolvedValue('  APorter ');
-    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: 'aporter ' }] })));
+  it('does not mark a row whose roster spells the caller in a different case', async () => {
+    getUsernameFromAuth.mockResolvedValue('APorter');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
 
     const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
 
-    expect(row.viewerIsClaManager).toBe(true);
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('does not mark a row whose roster entry differs from the caller only by surrounding whitespace', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: ' aporter ' }] })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
   });
 
   it('marks a row whose roster does not name the caller as not theirs', async () => {
@@ -1639,11 +1647,18 @@ describe('OrgClaService.getApprovalList — who may write', () => {
     expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
   });
 
-  it('matches the roster case-insensitively, since the two sources spell usernames differently', async () => {
+  it('withholds write access from a caller whose username differs from the roster only in case', async () => {
     getUsernameFromAuth.mockResolvedValue('APorter');
     stageApprovalRead(corporateSignature());
 
-    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(true);
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
+  });
+
+  it('withholds write access from a caller whose username differs from the roster only by surrounding whitespace', async () => {
+    getUsernameFromAuth.mockResolvedValue(' aporter ');
+    stageApprovalRead(corporateSignature());
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
   });
 
   it('withholds write access when the caller has no resolvable username', async () => {
@@ -2134,6 +2149,19 @@ describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failu
     expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'forbidden' });
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());
+  });
+
+  it('forwards the write to the producer when upstream sent no roster at all', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: undefined }))).mockResolvedValueOnce(null);
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'updated', autoCreateEcla: true });
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining('/ecla-auto-create'),
+      expect.objectContaining({ method: 'PUT' })
+    );
   });
 
   it('refuses the write when two signatures share the company and CLA group, without calling the producer', async () => {

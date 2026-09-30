@@ -3598,6 +3598,29 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     );
   });
 
+  it('rolls back and toasts with the server sentence when the roster refusal carries only a message', async () => {
+    const error = new HttpErrorResponse({
+      status: 403,
+      error: { message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' },
+    });
+    setAutoCreateEcla.mockReturnValue(throwError(() => error));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(false);
+    expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        detail: 'Only a CLA manager named on this CLA can change its Auto ECLA setting',
+      })
+    );
+  });
+
   it('falls back to generic copy when the refusal carries no producer sentence', async () => {
     setAutoCreateEcla.mockReturnValue(throwError(() => ({ status: 500, error: null })));
     const fixture = await render(row({ autoCreateEcla: false }));

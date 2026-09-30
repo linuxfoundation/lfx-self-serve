@@ -267,7 +267,7 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
 
 function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
   if (!username) return false;
-  return claManagers.some((manager) => typeof manager?.lfUsername === 'string' && manager.lfUsername.trim().toLowerCase() === username);
+  return claManagers.some((manager) => manager?.lfUsername === username);
 }
 
 /**
@@ -473,7 +473,7 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
-    const viewerUsername = (await getUsernameFromAuth(req))?.trim().toLowerCase() ?? '';
+    const viewerUsername = (await getUsernameFromAuth(req)) ?? '';
 
     return {
       orgUid,
@@ -1822,7 +1822,7 @@ export class OrgClaService {
       return true;
     }
 
-    const username = (await getUsernameFromAuth(req))?.trim().toLowerCase() ?? '';
+    const username = (await getUsernameFromAuth(req)) ?? '';
     return rosterNamesUsername(entry.claManagers, username);
   }
 
