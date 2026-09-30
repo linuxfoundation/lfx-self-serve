@@ -41,7 +41,7 @@ export class PublicProfileContributionsComponent {
     });
   }
 
-  // "Last 5 years" keeps the BFF-summed totals; a specific year swaps in that year's row (0s when absent).
+  // "All years" keeps the BFF-summed totals; a specific year swaps in that year's row (0s when absent).
   private initProjects(): Signal<PublicProfileProject[]> {
     return computed(() => {
       const year = this.selectedYear();
