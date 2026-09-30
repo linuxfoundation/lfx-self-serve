@@ -53,8 +53,7 @@
       @if (loading()) {
         &mdash;
       } @else if (filtered()) {
-        <strong class="font-semibold text-gray-900">{{ totalRecords().toLocaleString('en-US') }}</strong> of {{ scopeTotal().toLocaleString('en-US') }} members
-        match &middot;
+        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ scopeTotalLabel() }} members match &middot;
         <button type="button" class="text-blue-600 hover:underline" (click)="clearFilters()" data-testid="members-directory-clear">clear</button>
       } @else {
         {{ summary() }}
@@ -161,9 +160,15 @@
                 [class.text-gray-800]="cell.tracked"
                 [class.text-gray-400]="!cell.tracked"
                 [attr.title]="cell.tracked ? null : notTracked"
-                [attr.data-testid]="'members-directory-row-' + view.accountId + '-' + cell.key"
-                >{{ cell.label }}</span
-              >
+                [attr.data-testid]="'members-directory-row-' + view.accountId + '-' + cell.key">
+                @if (cell.tracked) {
+                  {{ cell.label }}
+                } @else {
+                  <!-- The hover title is mouse-only, so screen readers get the reason as text instead of a bare dash. -->
+                  <span aria-hidden="true">{{ cell.label }}</span>
+                  <span class="sr-only">{{ notTracked }}</span>
+                }
+              </span>
             </td>
           }
           <td>

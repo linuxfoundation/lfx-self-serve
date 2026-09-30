@@ -32,7 +32,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, map, of, skip, startWith, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, merge, of, skip, startWith, Subject, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -86,11 +86,17 @@ export class MembersDirectoryComponent {
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
+  /** Clears the search past the debounce, so "clear" lands in the same read as the tier and NPS reset. */
+  private readonly searchReset = new Subject<string>();
+
   // Debounced so a keystroke does not fire a warehouse read; trimmed so padding cannot re-read the same cut.
   protected readonly search: Signal<string> = toSignal(
-    this.filterForm.controls.search.valueChanges.pipe(
-      debounceTime(HEALTH_METRICS_MEMBERS_DIRECTORY_SEARCH_DEBOUNCE_MS),
-      map((value) => this.normalizeSearch(value))
+    merge(
+      this.filterForm.controls.search.valueChanges.pipe(
+        debounceTime(HEALTH_METRICS_MEMBERS_DIRECTORY_SEARCH_DEBOUNCE_MS),
+        map((value) => this.normalizeSearch(value))
+      ),
+      this.searchReset
     ),
     { initialValue: this.parseInitialSearch() }
   );
@@ -119,7 +125,12 @@ export class MembersDirectoryComponent {
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly filtered = computed(() => this.tier() !== '' || this.nps() !== '' || this.search() !== '');
   protected readonly summary = computed(() => buildHealthMetricsMembersDirectorySummary(this.scopeTotal(), this.response().atRiskCount));
-  protected readonly searchPlaceholder = computed(() => buildHealthMetricsMembersDirectorySearchPlaceholder(this.scopeTotal()));
+  protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
+  protected readonly scopeTotalLabel = computed(() => this.scopeTotal().toLocaleString('en-US'));
+  // Count-free until a read lands, so the box never offers to search "0 members".
+  protected readonly searchPlaceholder = computed(() =>
+    this.response() === HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED ? 'Search members…' : buildHealthMetricsMembersDirectorySearchPlaceholder(this.scopeTotal())
+  );
   protected readonly noMatchLabel = computed(() => (this.search() ? `No member matches “${this.search()}”.` : 'No member matches these filters.'));
   // Keeps a URL-seeded tier selectable before (or without) the read listing it.
   protected readonly tierOptions: Signal<FilterOption<string>[]> = this.initTierOptions();
@@ -145,6 +156,7 @@ export class MembersDirectoryComponent {
 
   protected clearFilters(): void {
     this.filterForm.setValue({ search: '', tier: '', nps: '' });
+    this.searchReset.next('');
   }
 
   private initQuery(): Signal<HealthMetricsMembersDirectoryQuery> {
@@ -167,6 +179,8 @@ export class MembersDirectoryComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
+    // The badge counts the whole foundation, so only a new foundation or period blanks it; paging and filters keep it.
+    let countScope: string | null = null;
 
     return toSignal(
       toObservable(this.query).pipe(
@@ -175,7 +189,11 @@ export class MembersDirectoryComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
+          const scope = `${query.foundationSlug}|${query.range}`;
+          if (scope !== countScope) {
+            countScope = scope;
+            this.countChange.emit(null);
+          }
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.

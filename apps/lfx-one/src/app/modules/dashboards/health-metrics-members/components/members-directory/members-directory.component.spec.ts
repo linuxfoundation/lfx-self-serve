@@ -141,7 +141,8 @@ describe('MembersDirectoryComponent', () => {
     await render();
     const sponsorship = query(`members-directory-row-${ACCOUNT_ID}-sponsorship`);
 
-    expect(sponsorship?.textContent?.trim()).toBe('—');
+    expect(sponsorship?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('—');
+    expect(sponsorship?.querySelector('.sr-only')?.textContent?.trim()).toBe('Not tracked yet for this foundation');
     expect(sponsorship?.getAttribute('title')).toBe('Not tracked yet for this foundation');
     expect(query(`members-directory-row-${ACCOUNT_ID}-training`)?.getAttribute('title')).toBeNull();
   });
@@ -214,7 +215,48 @@ describe('MembersDirectoryComponent', () => {
     query('members-directory-clear')?.click();
     await settle();
 
+    expect(getMembersDirectory).toHaveBeenCalledTimes(1);
     expect(getMembersDirectory).toHaveBeenLastCalledWith(expect.objectContaining({ tier: '', nps: '', search: '' }));
+  });
+
+  it('clears a search in the same read as the other filters, not a debounce later', async () => {
+    await render(response({ totalRecords: 3, scopeTotal: 725 }), { memTier: 'Gold Membership', memSearch: 'acme' });
+    getMembersDirectory.mockClear();
+
+    query('members-directory-clear')?.click();
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await settle();
+
+    expect(getMembersDirectory).toHaveBeenCalledTimes(1);
+    expect(getMembersDirectory).toHaveBeenCalledWith(expect.objectContaining({ tier: '', nps: '', search: '' }));
+  });
+
+  it('keeps the sub-nav count through page turns and filters, blanking it only for a new period', async () => {
+    await render(response({ totalRecords: 80, scopeTotal: 80 }));
+    counts.length = 0;
+
+    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
+    fixture.componentInstance['filterForm'].controls.nps.setValue('Promoter');
+    await settle();
+    expect(counts.every((count) => count === 80)).toBe(true);
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    await settle();
+    expect(counts.at(-2)).toBeNull();
+    expect(counts.at(-1)).toBe(80);
+  });
+
+  it('offers a count-free search placeholder until the first read lands', async () => {
+    selectedFoundation.set(null);
+    await render();
+    const search = () => (fixture.nativeElement.querySelector('#members-directory-search') as HTMLInputElement).placeholder;
+
+    expect(search()).toBe('Search members…');
+
+    selectedFoundation.set({ slug: 'acme' });
+    await settle();
+    expect(search()).toBe('Search 1 member…');
   });
 
   it('pages through the table, including a new page size, and writes the page to the URL', async () => {
@@ -270,7 +312,7 @@ describe('MembersDirectoryComponent', () => {
     expect(getMembersDirectory).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getMembersDirectory).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(counts).toEqual([null, null, 34]);
+    expect(counts).toEqual([null, 34]);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { memTier: null, memNps: null, memSearch: null, memPage: 4 } }));
   });
 
@@ -306,7 +348,7 @@ describe('MembersDirectoryComponent', () => {
 
     expect(query('members-directory-error')).not.toBeNull();
     expect(query('members-directory-empty')).toBeNull();
-    expect(counts).toEqual([null, null]);
+    expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
