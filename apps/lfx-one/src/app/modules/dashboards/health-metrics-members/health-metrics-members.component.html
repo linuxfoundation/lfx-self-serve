@@ -31,4 +31,7 @@
   <ng-template lfxHealthMetricsL2Section="risk">
     <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk')" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="renewals">
+    <lfx-members-renewals (countChange)="renewalsCount.set($event)" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals')" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>

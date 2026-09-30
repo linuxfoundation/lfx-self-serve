@@ -63,8 +63,9 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'Renewals',
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
-    footnote: '',
-    footnoteCaution: false,
+    footnote:
+      'Organization, tier, dues and renewal date come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
+    footnoteCaution: true,
   },
   {
     key: 'board',
@@ -99,7 +100,13 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
 /** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
-export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge', 'list', 'risk'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
+export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
+  'tiers',
+  'bridge',
+  'list',
+  'risk',
+  'renewals',
+] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
 export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
