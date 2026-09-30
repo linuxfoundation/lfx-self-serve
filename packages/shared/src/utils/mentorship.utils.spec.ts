@@ -25,6 +25,7 @@ import {
   MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
@@ -49,6 +50,7 @@ import {
   buildMentorshipMenteeRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
+  buildMentorshipProgramsUrl,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -57,6 +59,7 @@ import {
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
   mentorshipMenteeTaskStatusFields,
+  mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
@@ -84,6 +87,7 @@ import {
   isMentorshipLogoFileName,
   isMentorshipResumeFileName,
   isMentorshipRichTextOverRawMax,
+  isMentorshipTaskPastDue,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mapMentorshipMenteeRegisterFailure,
@@ -289,6 +293,24 @@ describe('mentorship URL and logo helpers', () => {
     expect(isMentorshipHttpUrl('ftp://example.com')).toBe(false);
     expect(isMentorshipLogoFileName('logo.PNG')).toBe(true);
     expect(isMentorshipLogoFileName('notes.pdf')).toBe(false);
+  });
+});
+
+describe('buildMentorshipProgramsUrl', () => {
+  it('links the program listing, with or without a trailing slash on the base', () => {
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org')).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org/')).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org//')).toBe('https://mentorship.example.org/programs');
+  });
+
+  it('trims a long run of trailing slashes', () => {
+    expect(buildMentorshipProgramsUrl(`https://mentorship.example.org${'/'.repeat(10_000)}`)).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('/'.repeat(10_000))).toBe('/programs');
+  });
+
+  it("links one program's page, URL-encoding its id", () => {
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
   });
 });
 
@@ -1220,14 +1242,18 @@ describe('buildMentorshipMenteeTaskView', () => {
   });
 
   it('flags a task that still needs an upload', () => {
-    const view = buildMentorshipMenteeTaskView({
-      id: 't2',
-      title: 'Coding challenge',
-      description: 'Complete the challenge',
-      status: 'in_progress',
-      submitFile: 'required',
-      dueDate: '2026-09-30T00:00:00Z',
-    });
+    const view = buildMentorshipMenteeTaskView(
+      {
+        id: 't2',
+        title: 'Coding challenge',
+        description: 'Complete the challenge',
+        status: 'in_progress',
+        submitFile: 'required',
+        dueDate: '2026-09-30T00:00:00Z',
+      },
+      Date.parse('2026-09-30T23:59:59Z')
+    );
+    expect(view.pastDue).toBe(false);
     expect(view.inProgress).toBe(true);
     expect(view.submitted).toBe(false);
     expect(view.hasUploadedFile).toBe(false);
@@ -1276,6 +1302,56 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.submitted).toBe(false);
     expect(view.inProgress).toBe(false);
     expect(view.statusClass).not.toBe('');
+  });
+
+  it('marks a task past due once its due date has ended, and never one without a due date', () => {
+    const input = { id: 't6', title: 'Late task', description: 'Synthetic task', status: 'in_progress' as const, submitFile: null };
+    const now = Date.parse('2026-10-01T00:00:00Z');
+    expect(buildMentorshipMenteeTaskView({ ...input, dueDate: '2026-09-30T00:00:00Z' }, now).pastDue).toBe(true);
+    expect(buildMentorshipMenteeTaskView({ ...input, dueDate: '2026-10-01T00:00:00Z' }, now).pastDue).toBe(false);
+    expect(buildMentorshipMenteeTaskView(input, now).pastDue).toBe(false);
+  });
+});
+
+describe('isMentorshipTaskPastDue', () => {
+  it('is false without a usable due date', () => {
+    const now = Date.parse('2026-10-01T00:00:00Z');
+    expect(isMentorshipTaskPastDue(undefined, now)).toBe(false);
+    expect(isMentorshipTaskPastDue(null, now)).toBe(false);
+    expect(isMentorshipTaskPastDue('', now)).toBe(false);
+    expect(isMentorshipTaskPastDue('not-a-date', now)).toBe(false);
+  });
+
+  it('stays open through the last millisecond of the due date in UTC', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30T00:00:00Z', Date.parse('2026-09-30T23:59:59.999Z'))).toBe(false);
+  });
+
+  it('closes at midnight UTC after the due date', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30T00:00:00Z', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+
+  it('reads a date-only value as that UTC day', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30', Date.parse('2026-09-30T12:00:00Z'))).toBe(false);
+    expect(isMentorshipTaskPastDue('2026-09-30', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+
+  it('uses the UTC day of a timestamp that carries a time of day', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30T18:00:00Z', Date.parse('2026-09-30T20:00:00Z'))).toBe(false);
+    expect(isMentorshipTaskPastDue('2026-09-30T18:00:00Z', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('mentorshipTaskDueCutoffMs', () => {
+  it('is the midnight UTC after the due date', () => {
+    expect(mentorshipTaskDueCutoffMs('2026-09-30')).toBe(Date.parse('2026-10-01T00:00:00Z'));
+    expect(mentorshipTaskDueCutoffMs('2026-09-30T18:00:00Z')).toBe(Date.parse('2026-10-01T00:00:00Z'));
+  });
+
+  it('is null without a usable due date', () => {
+    expect(mentorshipTaskDueCutoffMs(undefined)).toBeNull();
+    expect(mentorshipTaskDueCutoffMs(null)).toBeNull();
+    expect(mentorshipTaskDueCutoffMs('')).toBeNull();
+    expect(mentorshipTaskDueCutoffMs('not-a-date')).toBeNull();
   });
 });
 
@@ -1361,6 +1437,34 @@ describe('getMentorshipMenteeTaskStatusOptions', () => {
     const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), status: 'complete' });
     expect(state.locked).toBe(true);
     expect(state.options.every((option) => option.disabled)).toBe(true);
+  });
+
+  it('lets a past-due pending task start but not be submitted, with a visible hint', () => {
+    const view = { ...taskView('pending'), pastDue: true };
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(disabledByValue(view)).toEqual({ pending: false, in_progress: false, submitted: true });
+    expect(state.locked).toBe(false);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
+    expect(state.hintVisible).toBe(true);
+  });
+
+  it('disables submitted on a past-due in-progress task, with a visible hint', () => {
+    const view = { ...taskView('in_progress'), pastDue: true };
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
+    expect(state.hintVisible).toBe(true);
+  });
+
+  it('shows the past-due hint over the file-required one', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('in_progress', 'required'), pastDue: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
+  });
+
+  it('keeps a past-due submitted task locked rather than past due', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), pastDue: true });
+    expect(state.locked).toBe(true);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_LOCKED);
   });
 });
 
@@ -1472,6 +1576,30 @@ describe('buildMentorshipMenteeApplicationView', () => {
     expect(view.progressPercent).toBe(33);
     expect(view.tasks.map((task) => task.id)).toEqual(['a', 'b', 'c']);
     expect(view.tasks[0].submittedDate).toBe('2026-07-02T10:00:00Z');
+  });
+
+  it('orders the tasks by name A to Z, ignoring case and reading numbers as numbers', () => {
+    const app = menteeApplication({
+      tasks: [
+        menteeTask({ id: 'step-10', name: 'Step 10' }),
+        menteeTask({ id: 'write', name: 'write a cover letter' }),
+        menteeTask({ id: 'step-2', name: 'Step 2' }),
+        menteeTask({ id: 'about', name: 'About you' }),
+      ],
+    });
+    const ids = buildMentorshipMenteeApplicationView(app, 'in-progress').tasks.map((task) => task.id);
+    expect(ids).toEqual(['about', 'step-2', 'step-10', 'write']);
+  });
+
+  it('marks each task past due against the time it is given', () => {
+    const app = menteeApplication({
+      tasks: [menteeTask({ id: 'late', name: 'A', dueDate: '2026-09-29' }), menteeTask({ id: 'open', name: 'B', dueDate: '2026-09-30' })],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'in-progress', Date.parse('2026-09-30T12:00:00Z'));
+    expect(view.tasks.map((task) => [task.id, task.pastDue])).toEqual([
+      ['late', true],
+      ['open', false],
+    ]);
   });
 
   it('uses the latest application or task change as the last update', () => {

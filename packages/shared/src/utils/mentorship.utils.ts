@@ -46,6 +46,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
@@ -136,6 +137,24 @@ export function toMentorshipUtcInstant(value: string): string {
   return MENTORSHIP_ISO_DATE.test(value) ? `${value}T00:00:00Z` : value;
 }
 
+/**
+ * The instant (ms) a task closes: the end of its due date's UTC day, so a task due `2026-09-30` closes at
+ * `2026-10-01T00:00:00Z`. Takes a date-only value or an ISO instant (only its UTC calendar day counts);
+ * a missing or unparseable due date never closes, so it returns `null`.
+ */
+export function mentorshipTaskDueCutoffMs(dueDate: string | null | undefined): number | null {
+  if (!dueDate) return null;
+  const due = new Date(toMentorshipUtcInstant(dueDate));
+  if (Number.isNaN(due.getTime())) return null;
+  return Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate() + 1);
+}
+
+/** Whether a task's due date has passed at `nowMs`, per `mentorshipTaskDueCutoffMs`; a task with no usable due date is never past due. */
+export function isMentorshipTaskPastDue(dueDate: string | null | undefined, nowMs: number): boolean {
+  const cutoff = mentorshipTaskDueCutoffMs(dueDate);
+  return cutoff !== null && nowMs >= cutoff;
+}
+
 /** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
 export function isMentorshipIsoDate(value: string): boolean {
   const match = MENTORSHIP_ISO_DATE.exec(value);
@@ -155,6 +174,18 @@ export function isMentorshipCiiProjectId(value: string): boolean {
 /** Optional-or-required HTTP(S) URL, matching the old maintainer `CustomValidators.url`. */
 export function isMentorshipHttpUrl(value: string): boolean {
   return normalizeToUrl(value.trim()) !== null;
+}
+
+/**
+ * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * A trailing `/` on `base` is dropped, so the join never doubles it.
+ */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
+  let end = base.length;
+  while (end > 0 && base[end - 1] === '/') end--;
+  const programs = `${base.slice(0, end)}/programs`;
+  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
 }
 
 export function isMentorshipLogoFileName(fileName: string): boolean {
@@ -1109,18 +1140,21 @@ export function mentorshipMenteeTaskStatusFields(
  * Build a display-ready task row from the fields both mentee phases share, so the
  * template reads flat fields instead of recomputing presentation logic in bindings.
  * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
- * (file already uploaded).
+ * (file already uploaded). `nowMs` decides `pastDue`.
  */
-export function buildMentorshipMenteeTaskView(input: {
-  id: string;
-  title: string;
-  description: string;
-  status: MentorshipMenteeTaskStatus;
-  submitFile: string | null;
-  fileUrl?: string;
-  dueDate?: string;
-  submittedDate?: string;
-}): MentorshipMenteeTaskView {
+export function buildMentorshipMenteeTaskView(
+  input: {
+    id: string;
+    title: string;
+    description: string;
+    status: MentorshipMenteeTaskStatus;
+    submitFile: string | null;
+    fileUrl?: string;
+    dueDate?: string;
+    submittedDate?: string;
+  },
+  nowMs: number = Date.now()
+): MentorshipMenteeTaskView {
   // Normalise once so an unrecognised runtime status resolves to a real option
   // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
   // it would read as `pending` in the dropdown yet render unstyled and vanish
@@ -1142,6 +1176,7 @@ export function buildMentorshipMenteeTaskView(input: {
     requiresFile: !!input.submitFile && !input.fileUrl,
     fileUrl: input.fileUrl ?? submitFileUrl,
     dueDate: input.dueDate ?? null,
+    pastDue: isMentorshipTaskPastDue(input.dueDate, nowMs),
     submittedDate: input.submittedDate ?? null,
   };
 }
@@ -1155,8 +1190,10 @@ export function isMentorshipMenteeUpdatableTaskStatus(value: unknown): value is 
  * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
  * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
  * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
- * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`.
- * The hint explains a disabled forward move or a locked row; only the file-required hint shows on screen.
+ * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`,
+ * and once the task is past due, when a pending task can still be started. The hint explains a
+ * disabled forward move or a locked row; only the past-due and file-required hints show on screen,
+ * and past due wins over file required.
  */
 export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskView): MentorshipMenteeTaskStatusOptionsState {
   const status = normalizeMentorshipMenteeTaskStatus(task.status);
@@ -1165,6 +1202,10 @@ export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskV
 
   if (status === 'submitted') {
     return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_LOCKED, hintVisible: false };
+  }
+  if (task.pastDue) {
+    const blocked = (value: MentorshipMenteeTaskStatus): boolean => value === 'submitted' || (status === 'in_progress' && value === 'pending');
+    return { options: withDisabled(blocked), locked: false, hint: MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE, hintVisible: true };
   }
   if (status === 'in_progress') {
     const fileBlocked = task.requiresFile;
@@ -1203,10 +1244,14 @@ export function mentorshipMenteeProgressTasks(app: MentorshipMenteeApplication):
   return (app.tasks ?? []).filter((task) => (task.category === 'prerequisite') === wantPrerequisite);
 }
 
-/** Build the card for a pending, accepted or graduated application with its display status. */
+/**
+ * Build the card for a pending, accepted or graduated application with its display status. Its task
+ * rows are ordered by name, A to Z; `nowMs` decides which of them are past due.
+ */
 export function buildMentorshipMenteeApplicationView(
   app: MentorshipMenteeApplication,
-  status: MentorshipMenteeApplicationStatus
+  status: MentorshipMenteeApplicationStatus,
+  nowMs: number = Date.now()
 ): MentorshipMenteeApplicationView {
   const tasks = mentorshipMenteeProgressTasks(app);
   const submittedCount = countSubmittedMentorshipMenteeTasks(tasks);
@@ -1227,33 +1272,39 @@ export function buildMentorshipMenteeApplicationView(
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
     decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
-    tasks: tasks.map((task) =>
-      buildMentorshipMenteeTaskView({
-        id: task.id,
-        title: task.name,
-        description: task.description,
-        status: task.status,
-        submitFile: task.submitFile,
-        fileUrl: task.fileUrl,
-        dueDate: task.dueDate,
-        submittedDate: task.submittedOn,
-      })
-    ),
+    tasks: tasks
+      .map((task) =>
+        buildMentorshipMenteeTaskView(
+          {
+            id: task.id,
+            title: task.name,
+            description: task.description,
+            status: task.status,
+            submitFile: task.submitFile,
+            fileUrl: task.fileUrl,
+            dueDate: task.dueDate,
+            submittedDate: task.submittedOn,
+          },
+          nowMs
+        )
+      )
+      // Pinned to 'en' so the server render and the browser sort titles the same way.
+      .sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base', numeric: true })),
   };
 }
 
 /**
  * Derive the mentee overview from the mentee's applications. Pending, accepted and graduated
  * applications become cards ordered active → graduated → awaiting review → in progress; declined, withdrawn
- * and held applications become Past Applications rows, newest first.
+ * and held applications become Past Applications rows, newest first. `nowMs` decides which tasks are past due.
  */
-export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[]): MentorshipMenteeOverview {
+export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[], nowMs: number = Date.now()): MentorshipMenteeOverview {
   const cards: MentorshipMenteeApplicationView[] = [];
   const past: MentorshipMenteePastApplication[] = [];
   for (const app of applications) {
     const status = mentorshipMenteeDisplayStatus(app);
     if (status) {
-      cards.push(buildMentorshipMenteeApplicationView(app, status));
+      cards.push(buildMentorshipMenteeApplicationView(app, status, nowMs));
       continue;
     }
     const outcome = MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS[app.upstreamStatus];
