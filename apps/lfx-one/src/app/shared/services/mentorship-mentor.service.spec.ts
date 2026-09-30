@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { MentorshipMentorRegisterRequest } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorshipMentorService } from './mentorship-mentor.service';
@@ -86,5 +87,69 @@ describe('MentorshipMentorService — read error mapping', () => {
     });
     http.expectOne('/api/mentorship/mentor/programs/missing').flush('missing', { status: 404, statusText: 'Not Found' });
     expect(failed).toBe(true);
+  });
+
+  it('reads the has-profile check', () => {
+    let result: unknown = 'unset';
+    service.hasMentorProfile().subscribe((response) => {
+      result = response;
+    });
+
+    http.expectOne('/api/mentorship/mentor/has-profile').flush({ hasProfile: true });
+    expect(result).toEqual({ hasProfile: true });
+  });
+
+  it('reads a failed has-profile check as "no profile" so the guard opens the register page', () => {
+    let result: unknown = 'unset';
+    service.hasMentorProfile().subscribe((response) => {
+      result = response;
+    });
+
+    http.expectOne('/api/mentorship/mentor/has-profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(result).toEqual({ hasProfile: false });
+  });
+
+  describe('registerMentorProfile', () => {
+    const request: MentorshipMentorRegisterRequest = {
+      introduction: '<p>Test intro</p>',
+      skills: ['Kubernetes'],
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+
+    it('posts the request to the mentor profile endpoint and completes after one emission', () => {
+      let emissions = 0;
+      let completed = false;
+      service.registerMentorProfile(request).subscribe({
+        next: () => {
+          emissions += 1;
+        },
+        complete: () => {
+          completed = true;
+        },
+      });
+
+      const req = http.expectOne('/api/mentorship/mentor/profile');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(emissions).toBe(1);
+      expect(completed).toBe(true);
+    });
+
+    it('propagates the raw HttpErrorResponse so the page can read the status and code', () => {
+      let error: unknown;
+      service.registerMentorProfile(request).subscribe({
+        error: (err: unknown) => {
+          error = err;
+        },
+      });
+
+      http.expectOne('/api/mentorship/mentor/profile').flush({ code: 'MENTOR_PROFILE_EXISTS' }, { status: 409, statusText: 'Conflict' });
+
+      expect(error).toBeInstanceOf(HttpErrorResponse);
+      expect(error).toMatchObject({ status: 409, error: { code: 'MENTOR_PROFILE_EXISTS' } });
+    });
   });
 });

@@ -5,6 +5,7 @@ import { Routes } from '@angular/router';
 
 import { menteeApplyGuard } from '@shared/guards/mentee-apply.guard';
 import { menteeRegisterGuard } from '@shared/guards/mentee-profile.guard';
+import { mentorRegisterGuard } from '@shared/guards/mentor-profile.guard';
 
 export const MENTORSHIP_ROUTES: Routes = [
   {
@@ -40,12 +41,13 @@ export const MENTORSHIP_ROUTES: Routes = [
     // children below — `path: 'mentor'` with the default `prefix` match would otherwise
     // capture `/mentorship/mentor/programs` and `/mentorship/mentor/profile` too.
     //
-    // Serves the Become a Mentor form until the profiles API can tell us the signed-in
-    // user already has a mentor profile, at which point this path serves the shell
-    // instead, falling back to this form when they have none.
+    // `canActivate` checks whether the user already has a mentor profile and, if so,
+    // redirects to the shell's My Programs tab. No profile, or a failed check, renders
+    // the form.
     path: 'mentor',
     pathMatch: 'full',
     title: 'Become a Mentor',
+    canActivate: [mentorRegisterGuard],
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
   {

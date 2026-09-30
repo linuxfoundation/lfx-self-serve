@@ -46,7 +46,7 @@
         <p class="text-sm text-gray-500" data-testid="mentorship-mentee-apply-subtitle">{{ subtitle() }}</p>
       </header>
 
-      <lfx-mentorship-profile-card />
+      <lfx-mentorship-profile-card [syncMentorshipProfiles]="true" />
 
       <lfx-mentorship-mentee-profile-details
         [profile]="view.profile.profile"

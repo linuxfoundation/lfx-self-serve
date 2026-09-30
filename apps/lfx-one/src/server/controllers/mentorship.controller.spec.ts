@@ -25,7 +25,8 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipController } = await import('./mentorship.controller');
 const { MentorshipService } = await import('../services/mentorship.service');
-const { MicroserviceError, ServiceValidationError } = await import('../errors');
+const { AuthenticationError, MicroserviceError, ServiceValidationError } = await import('../errors');
+const { getUsernameFromAuth } = await import('../utils/auth-helper');
 
 describe('MentorshipController program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
@@ -106,5 +107,62 @@ describe('MentorshipController program review', () => {
     expect(next).toHaveBeenCalledWith(error);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: status }));
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('MentorshipController LFX profile sync', () => {
+  const fields = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
+  let controller: InstanceType<typeof MentorshipController>;
+  let res: Response;
+  let next: NextFunction;
+
+  const buildReq = (body?: unknown): Request => ({ params: {}, body }) as unknown as Request;
+
+  beforeEach(() => {
+    controller = new MentorshipController();
+    res = { status: vi.fn().mockReturnThis(), send: vi.fn() } as unknown as Response;
+    next = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hands the checked fields to the sync and answers 204', async () => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields').mockResolvedValue(2);
+
+    await controller.syncLfxProfile(buildReq(fields), res, next);
+
+    expect(sync).toHaveBeenCalledWith(expect.anything(), fields);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('ignores an email in the body, since the sync reads the verified primary email itself', async () => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields').mockResolvedValue(1);
+
+    await controller.syncLfxProfile(buildReq({ ...fields, email: 'not-an-email' }), res, next);
+
+    expect(sync).toHaveBeenCalledWith(expect.anything(), fields);
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it.each([undefined, 'text', { logoUrl: 'http://example.com/avatar.png' }, { firstName: '' }])('rejects the body %j before calling upstream', async (body) => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields');
+
+    await controller.syncLfxProfile(buildReq(body), res, next);
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('refuses a caller with no session', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields');
+
+    await controller.syncLfxProfile(buildReq(fields), res, next);
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
   });
 });

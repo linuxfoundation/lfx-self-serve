@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMenteeStatus, MentorshipMentorStatus } from '../interfaces/mentorship.interface';
+import type { MentorshipMenteeStatus, MentorshipMentorStatus, MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
 import type {
   MentorshipMentorTaskReviewStatus,
   MentorshipMentoringHistoryEntry,
@@ -11,6 +11,7 @@ import type {
   MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
+  MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
 import {
@@ -282,13 +283,48 @@ export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';
 
 /**
- * Both strings stop short of promising that anything was sent: selections live on this page
- * until the registration endpoint exists, so copy claiming an administrator had been notified
- * would be a false confirmation. Reword them once the POST lands.
+ * Both strings stop short of promising that anything was sent: submit saves the profile, but
+ * the program picks stay on this page until the request endpoint exists, so copy claiming an
+ * administrator had been notified would be a false confirmation. Reword them once requests land.
  */
 export const MENTORSHIP_MENTOR_PROGRAMS_INTRO = 'Choose the LFX mentorships you would like to join as a mentor. Your choices are listed below.';
 export const MENTORSHIP_MENTOR_PROGRAMS_HELPER =
-  'You can choose more than one. Nothing is sent to a program administrator yet — requesting to join is not available in this release.';
+  'You can choose more than one. Submitting saves your mentor profile, but nothing is sent to a program administrator yet — requesting to join is not available in this release.';
+
+/** Coming-soon toast summary shown after a save when the mentor picked programs, which are not sent yet. */
+export const MENTORSHIP_MENTOR_PROGRAM_REQUESTS_COMING_SOON_SUMMARY = 'Request to join programs';
+
+/** Success-toast copy shown once the mentor profile has been saved to the mentorship platform. */
+export const MENTORSHIP_MENTOR_SUBMIT_SUCCESS_SUMMARY = 'Profile created';
+export const MENTORSHIP_MENTOR_SUBMIT_SUCCESS_DETAIL = 'Your mentor profile has been saved.';
+
+/** Error code the BFF puts on the 409 returned when a mentor profile already exists. */
+export const MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE = 'MENTOR_PROFILE_EXISTS';
+
+/**
+ * Mentor-specific failure-banner copy for a rejected registration submit. The conflict, read-only and
+ * fallback copy both register forms share is `MENTORSHIP_REGISTER_ERROR_*` in `mentorship.constants.ts`.
+ */
+export const MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS = 'You already have a mentor profile, so we did not overwrite it.';
+export const MENTORSHIP_MENTOR_REGISTER_PROFILE_EXISTS_CONTINUE = 'Go to My Programs';
+
+/** The form fields a server 400 can name; anything else in `errors[]` is ignored rather than shown against a field that does not exist. */
+export const MENTORSHIP_MENTOR_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMentorRegisterFieldErrors)[] = [
+  'introduction',
+  'skills',
+  'complianceAccepted',
+  'termsAccepted',
+];
+
+/**
+ * How `mapMentorshipRegisterFailure` classifies a rejected Become a Mentor submit. There is no
+ * `ineligibleMessage`: mentors have no eligibility statements, so a 422 gets the fallback copy.
+ */
+export const MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS: MentorshipRegisterFailureOptions<MentorshipMentorRegisterFieldErrors> = {
+  profileExistsCode: MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
+  profileExistsMessage: MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
+  fieldKeys: MENTORSHIP_MENTOR_REGISTER_FIELD_KEYS,
+};
 
 export const MENTORSHIP_MENTOR_INTRODUCTION_INTRO =
   'This information is displayed on your mentor profile page. Your name, email and avatar come from your LFX account.';

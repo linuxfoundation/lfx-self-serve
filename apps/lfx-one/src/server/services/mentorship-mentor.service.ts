@@ -5,25 +5,84 @@ import {
   EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   getMockMentorshipMentorProgramLists,
   getMockMentorshipMentorPrograms,
+  MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
 } from '@lfx-one/shared/constants';
 import {
+  MentorshipMentorHasProfileResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
+  MentorshipMentorRegisterRequest,
+  MentorshipUpstreamListResponse,
+  MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMentorProgramDetail } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { MENTORSHIP_ME_MENTOR_PROFILE_PATH, MENTORSHIP_ME_PROFILES_PATH } from '../constants';
+import { ConflictError, ResourceNotFoundError } from '../errors';
+import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
+import { MicroserviceProxyService } from './microservice-proxy.service';
 
-/** BFF for the mentor pages at `/mentorship/mentor/*`. Every read still serves the shared mock seed data. */
+/**
+ * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check and the register write
+ * call the mentorship service with the caller's token; the program and profile reads still serve
+ * the shared mock seed data.
+ */
 export class MentorshipMentorService {
+  private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
+
+  /**
+   * Whether the signed-in user has a mentor profile. A user has at most one, so the check
+   * lists the caller's own mentor rows with `limit: 1` and reports whether one came back.
+   * A failure propagates so it is logged and reported with its real status; the frontend
+   * treats any failed check as "no profile" and shows the register page.
+   */
+  public async hasMentorProfile(req: Request): Promise<MentorshipMentorHasProfileResponse> {
+    logger.debug(req, 'mentorship_has_mentor_profile', 'Checking mentor profile existence');
+    const hasProfile = (await this.listMentorProfiles(req)).length > 0;
+    logger.debug(req, 'mentorship_has_mentor_profile', 'Mentor profile existence checked', { hasProfile });
+    return { hasProfile };
+  }
+
+  /**
+   * Creates the signed-in user's mentor profile. Upstream's `PUT` is an upsert that replaces every
+   * column, so a second registration would wipe the first one's answers; the caller's own mentor
+   * rows are listed first and an existing profile is refused with a 409 the register page reads.
+   * A failed check propagates rather than falling through to the write. Upstream's own 400 and 403
+   * also pass through. The check and the write are two requests, so two simultaneous
+   * registrations by the same user can both pass the check; the later write wins. The email is
+   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
+   */
+  public async registerMentorProfile(req: Request, request: MentorshipMentorRegisterRequest): Promise<void> {
+    logger.debug(req, 'mentorship_register_mentor_profile', 'Checking for an existing mentor profile');
+    if ((await this.listMentorProfiles(req)).length > 0) {
+      throw new ConflictError(MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS, MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE, {
+        operation: 'mentorship_register_mentor_profile',
+      });
+    }
+
+    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
+    const body = buildMentorshipUpstreamMentorProfile(request, email);
+    logger.debug(req, 'mentorship_register_mentor_profile', 'Creating mentor profile', {
+      skills_count: body.skill_set.skills.length,
+      has_email: body.email !== undefined,
+    });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH, 'PUT', undefined, body);
+    logger.debug(req, 'mentorship_register_mentor_profile', 'Mentor profile created');
+  }
+
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
     logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
     const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
@@ -55,6 +114,18 @@ export class MentorshipMentorService {
     const detail = buildMentorshipMentorProgramDetail(program, lists);
     logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
     return detail;
+  }
+
+  /** The caller's own mentor profile rows. A user has at most one, so `limit: 1` is enough. */
+  private async listMentorProfiles(req: Request): Promise<MentorshipUpstreamUserProfile[]> {
+    const { data } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamUserProfile>>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_ME_PROFILES_PATH,
+      'GET',
+      { profile_type: 'mentor', limit: 1 }
+    );
+    return data;
   }
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */

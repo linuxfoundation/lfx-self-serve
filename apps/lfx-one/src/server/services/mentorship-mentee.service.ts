@@ -47,15 +47,18 @@ import {
   resolveMentorshipMenteeTaskDueDate,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
+import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { buildMentorshipUpstreamMenteeProfile } from '../helpers/mentorship-mentee-register.helper';
 import { buildMentorshipUpstreamMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /** BFF for the mentee pages at `/mentorship/mentee/*`. Every read and write calls the mentorship service with the caller's token. */
 export class MentorshipMenteeService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
 
   /**
    * Whether the signed-in user has a mentee profile. A user has at most one, so the check
@@ -76,7 +79,8 @@ export class MentorshipMenteeService {
    * rows are listed first and an existing profile is refused with a 409 the register page reads.
    * A failed check propagates rather than falling through to the write. Upstream's own 400, 403
    * and 422 also pass through. The check and the write are two requests, so two simultaneous
-   * registrations by the same user can both pass the check; the later write wins.
+   * registrations by the same user can both pass the check; the later write wins. The email is
+   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
    */
   public async registerMenteeProfile(req: Request, request: MentorshipMenteeRegisterRequest): Promise<void> {
     logger.debug(req, 'mentorship_register_mentee_profile', 'Checking for an existing mentee profile');
@@ -86,8 +90,12 @@ export class MentorshipMenteeService {
       });
     }
 
-    const body = buildMentorshipUpstreamMenteeProfile(request);
-    logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', { has_demographics: body.demographics !== undefined });
+    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
+    const body = buildMentorshipUpstreamMenteeProfile(request, email);
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', {
+      has_demographics: body.demographics !== undefined,
+      has_email: body.email !== undefined,
+    });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentee_profile', 'Mentee profile created');
   }

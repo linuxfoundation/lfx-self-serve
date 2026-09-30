@@ -33,16 +33,8 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
-  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
-  MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
@@ -62,6 +54,10 @@ import {
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_PAST_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
 import type { FilterOption } from '../interfaces/filter.interface';
 import type {
@@ -84,6 +80,8 @@ import type {
   MentorshipProgramTabCounts,
   MentorshipProgramTerm,
   MentorshipProgramTermRow,
+  MentorshipRegisterFailureOptions,
+  MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
@@ -95,7 +93,9 @@ import type {
   MentorshipMentorReviewTask,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
+  MentorshipMentorRegisterRequest,
 } from '../interfaces/mentorship-mentor.interface';
+import type { MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationStatus,
@@ -113,7 +113,6 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeRegisterRequest,
-  MentorshipMenteeRegisterSubmitFailure,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusOptionsState,
   MentorshipMenteeTaskView,
@@ -513,15 +512,20 @@ export function isMentorshipResumeFileName(fileName: string): boolean {
 }
 
 /**
- * Validates the Become a Mentor form.
+ * Validates the Become a Mentor form, and the `POST /api/mentorship/mentor/profile` body the BFF
+ * receives, so the two are held to one rule set.
  *
  * Two things a mentor supplies are deliberately unvalidated. Program requests are
  * optional: a mentor may register a profile now and apply to programs later, so the
  * request list is not checked here and does not reach this function at all. The resume
  * is optional too, and its picker rejects a bad type or an oversized file at selection
- * time rather than letting either reach submit.
+ * time rather than letting either reach submit. A skill outside `MENTORSHIP_SKILL_OPTIONS`
+ * can only come from a tampered request (the picker offers nothing else), so it gets its
+ * own message after the required check.
  */
-export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
+export function getMentorshipMentorRegisterErrors(
+  form: Pick<MentorshipMentorRegisterForm, 'introduction' | 'skills' | 'complianceAccepted' | 'termsAccepted'>
+): MentorshipMentorRegisterFieldErrors {
   const errors: MentorshipMentorRegisterFieldErrors = {};
 
   const introductionError = mentorshipRichTextError(
@@ -532,10 +536,28 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
   );
   if (introductionError) errors.introduction = introductionError;
   if (!form.skills.length) errors.skills = 'Add at least one skill.';
+  else if (hasUnknownMentorshipSkill(form.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
   return errors;
+}
+
+/**
+ * Builds the `POST /api/mentorship/mentor/profile` body from the register form. `resumeFileName` is
+ * never read: resume upload is coming soon and no file metadata is sent.
+ */
+export function buildMentorshipMentorRegisterRequest(
+  form: MentorshipMentorRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMentorRegisterRequest {
+  return {
+    introduction: form.introduction,
+    skills: [...form.skills],
+    complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
+    termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
+  };
 }
 
 function trimmedParam(params: { get(name: string): string | null }, name: string): string {
@@ -640,10 +662,10 @@ export function getMentorshipMenteeRegisterRequestErrors(
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
   else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
@@ -661,9 +683,13 @@ function hasUnknownMentorshipSkill(skills: string[]): boolean {
  * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
  * sent only when its consent box is checked and it is not blank, so declining a question never leaves
  * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
- * file metadata is sent.
+ * file metadata is sent. `lfxProfile` is the profile card's name and avatar, sent only when it has
+ * at least one of them; the BFF adds the primary email itself.
  */
-export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterRequest {
+export function buildMentorshipMenteeRegisterRequest(
+  form: MentorshipMenteeRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMenteeRegisterRequest {
   const demographics: MentorshipMenteeDemographics = {};
   for (const row of MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS) {
     const answer = form[row.answerControl];
@@ -683,39 +709,47 @@ export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegis
     noDuplicateProfile: isMentorshipTermsAccepted(form.noDuplicateProfile),
     complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
     termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
   };
 }
 
 /**
- * Classifies a failed `POST /api/mentorship/mentee/profile` by status and error code, never by message
- * text (upstream wording is not a contract). A 422 has two upstream causes (the eligibility flags, or
- * the user row missing), so it gets one fixed message and the checkboxes are not re-highlighted.
+ * Classifies a failed `POST /api/mentorship/{mentor,mentee}/profile` by status and error code, never by
+ * message text (upstream wording is not a contract). `options` carries what differs by role: the
+ * profile-exists code and copy, the fields a 400 may name, and the 422 copy. The mentee 422 has two
+ * upstream causes (the eligibility flags, or the user row missing), so it gets one fixed message and the
+ * checkboxes are not re-highlighted. The mentor form has no eligibility statements, so without
+ * `ineligibleMessage` a 422 falls through to the fallback.
  */
-export function mapMentorshipMenteeRegisterFailure(status: number, body: unknown): MentorshipMenteeRegisterSubmitFailure {
+export function mapMentorshipRegisterFailure<TFieldErrors extends object>(
+  status: number,
+  body: unknown,
+  options: MentorshipRegisterFailureOptions<TFieldErrors>
+): MentorshipRegisterSubmitFailure<TFieldErrors> {
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
   const code = record['code'];
 
-  if (status === 409 && code === MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE) {
-    return { kind: 'profile-exists', message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS };
+  if (status === 409 && code === options.profileExistsCode) {
+    return { kind: 'profile-exists', message: options.profileExistsMessage };
   }
-  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT };
+  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_REGISTER_ERROR_CONFLICT };
   if (status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
-    return { kind: 'read-only', message: MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY };
+    return { kind: 'read-only', message: MENTORSHIP_REGISTER_ERROR_READ_ONLY };
   }
   if (status === 400 && Array.isArray(record['errors'])) {
-    const fieldErrors: MentorshipMenteeRegisterFieldErrors = {};
+    const fieldErrors: Partial<Record<keyof TFieldErrors, string>> = {};
     for (const entry of record['errors'] as unknown[]) {
       const item = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
-      const field = MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS.find((key) => key === item['field']);
+      const field = options.fieldKeys.find((key) => key === item['field']);
       const message = item['message'];
       if (field && typeof message === 'string' && message.trim() && !fieldErrors[field]) fieldErrors[field] = message;
     }
     const firstMessage = Object.values(fieldErrors)[0];
-    if (firstMessage) return { kind: 'field-errors', message: firstMessage, fieldErrors };
+    if (typeof firstMessage === 'string') return { kind: 'field-errors', message: firstMessage, fieldErrors: fieldErrors as TFieldErrors };
   }
-  if (status === 422) return { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
+  if (status === 422 && options.ineligibleMessage) return { kind: 'ineligible', message: options.ineligibleMessage };
 
-  return { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+  return { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
 }
 
 /**

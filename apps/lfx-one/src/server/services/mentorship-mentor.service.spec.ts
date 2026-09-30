@@ -3,9 +3,15 @@
 
 import '@angular/compiler';
 
-import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms, MOCK_MENTORSHIP_MENTOR_PROFILE } from '@lfx-one/shared/constants';
+import {
+  getMockMentorshipMentorProgramLists,
+  getMockMentorshipMentorPrograms,
+  MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
+  MOCK_MENTORSHIP_MENTOR_PROFILE,
+} from '@lfx-one/shared/constants';
+import type { MentorshipMentorRegisterRequest } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -21,11 +27,164 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { MentorshipMentorService } = await import('./mentorship-mentor.service');
-const { ResourceNotFoundError } = await import('../errors');
+const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { EmailVerificationService } = await import('./email-verification.service');
+const { logger } = await import('./logger.service');
+const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
+
+const PROFILES_PATH = '/mentorship/v1/me/profiles';
+const MENTOR_PROFILE_PATH = `${PROFILES_PATH}/mentor`;
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
 }
+
+/** A signed-in caller, so the service looks up their primary email by sub. */
+function signedInReq(): Request {
+  return { path: '/api/mentorship/mentor/profile', impersonationActive: false, oidc: { user: { sub: 'auth0|test-user-1' } } } as unknown as Request;
+}
+
+function upstreamError(status: number, body: unknown) {
+  return MicroserviceError.fromMicroserviceResponse(status, 'Upstream error', body, 'LFX_V2_SERVICE', PROFILES_PATH);
+}
+
+function listOf<T>(data: T[]) {
+  return { data, meta: { total: data.length, limit: 1, offset: 0 } };
+}
+
+describe('MentorshipMentorService.hasMentorProfile', () => {
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it("reports a profile when the caller's mentor list has a row", async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([{ id: 'profile-1', profile_type: 'mentor' }]));
+
+    await expect(service.hasMentorProfile(buildReq())).resolves.toEqual({ hasProfile: true });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentor', limit: 1 }, undefined);
+  });
+
+  it("reports no profile when the caller's mentor list is empty", async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+
+    await expect(service.hasMentorProfile(buildReq())).resolves.toEqual({ hasProfile: false });
+  });
+
+  it('propagates a failed check instead of reporting no profile', async () => {
+    const error = upstreamError(500, { error: 'internal server error' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.hasMentorProfile(buildReq())).rejects.toBe(error);
+  });
+});
+
+describe('MentorshipMentorService.registerMentorProfile', () => {
+  const request: MentorshipMentorRegisterRequest = {
+    introduction: '<p>Test intro</p>',
+    skills: ['Kubernetes'],
+    complianceAccepted: true,
+    termsAccepted: true,
+  };
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+  let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    getUserEmails = vi.spyOn(EmailVerificationService.prototype, 'getUserEmails').mockResolvedValue({
+      primary_email: 'test.user@example.com',
+      alternate_emails: [],
+    });
+    service = new MentorshipMentorService();
+  });
+
+  it('lists the caller mentor rows, then puts the mapped profile when none exists', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await expect(service.registerMentorProfile(buildReq(), request)).resolves.toBeUndefined();
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentor', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'PUT', undefined, {
+      introduction: '<p>Test intro</p>',
+      terms_and_conditions: true,
+      skill_set: { skills: ['Kubernetes'] },
+    });
+  });
+
+  it("adds the caller's verified primary email, looked up by their sub, to the profile it puts", async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await service.registerMentorProfile(signedInReq(), { ...request, lfxProfile: { firstName: 'Test' } });
+
+    expect(getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      MENTOR_PROFILE_PATH,
+      'PUT',
+      undefined,
+      expect.objectContaining({ first_name: 'Test', email: 'test.user@example.com' })
+    );
+  });
+
+  it('leaves the email out when the lookup fails, and still registers', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await expect(service.registerMentorProfile(signedInReq(), request)).resolves.toBeUndefined();
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('email');
+  });
+
+  it('refuses with a 409 profile-exists conflict, without writing, when a mentor profile exists', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([{ id: 'profile-1', profile_type: 'mentor' }]));
+
+    await expect(service.registerMentorProfile(signedInReq(), request)).rejects.toMatchObject({
+      statusCode: 409,
+      code: MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(getUserEmails).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the existing-profile check fails', async () => {
+    const error = upstreamError(500, { error: 'boom' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.registerMentorProfile(buildReq(), request)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [400, 'bad request'],
+    [403, 'forbidden'],
+  ])('propagates an upstream %i from the write', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.registerMentorProfile(buildReq(), request)).rejects.toBe(error);
+  });
+
+  it('does not log the profile answers or the email', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await service.registerMentorProfile(signedInReq(), request);
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logged).not.toContain('Test intro');
+    expect(logged).not.toContain('test.user@example.com');
+  });
+});
 
 describe('MentorshipMentorService.getMentorPrograms', () => {
   it('returns every mentor program with its total, as copies of the seed rows', async () => {

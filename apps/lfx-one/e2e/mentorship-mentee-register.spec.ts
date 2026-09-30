@@ -120,6 +120,8 @@ test.describe('Mentee registration — save', () => {
     expect(String(body['introduction'])).toContain('Test introduction from Test User 1.');
     // Resume upload is coming soon, so no file name or file leaves the browser.
     expect(Object.keys(body).filter((key) => key.toLowerCase().includes('resume'))).toEqual([]);
+    // The BFF reads the email itself, so the card's fields never carry it.
+    expect(body['lfxProfile'] ?? {}).not.toHaveProperty('email');
   });
 
   test('a profile that already exists shows the profile-exists banner and keeps Submit usable', async ({ page }) => {

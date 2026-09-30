@@ -46,6 +46,98 @@ describe('MentorshipMentorController', () => {
     vi.restoreAllMocks();
   });
 
+  describe('hasMentorProfile', () => {
+    it('answers with the has-profile result', async () => {
+      const check = vi.spyOn(MentorshipMentorService.prototype, 'hasMentorProfile').mockResolvedValue({ hasProfile: true });
+
+      await controller.hasMentorProfile(buildReq(), res, next);
+
+      expect(check).toHaveBeenCalledWith(expect.anything());
+      expect(res.json).toHaveBeenCalledWith({ hasProfile: true });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'hasMentorProfile').mockRejectedValue(error);
+
+      await controller.hasMentorProfile(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const check = vi.spyOn(MentorshipMentorService.prototype, 'hasMentorProfile');
+
+      await controller.hasMentorProfile(buildReq(), res, next);
+
+      expect(check).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('registerMentorProfile', () => {
+    const body = {
+      introduction: '<p>Test intro</p>',
+      skills: ['Kubernetes'],
+      complianceAccepted: true,
+      termsAccepted: true,
+    };
+    const buildRegisterReq = (requestBody: unknown): Request => ({ body: requestBody, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('registers the parsed request and answers 204 with no body', async () => {
+      const register = vi.spyOn(MentorshipMentorService.prototype, 'registerMentorProfile').mockResolvedValue(undefined);
+
+      await controller.registerMentorProfile(buildRegisterReq({ ...body, resumeFileName: 'resume.pdf' }), res, next);
+
+      expect(register).toHaveBeenCalledWith(expect.anything(), body);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(res.send).toHaveBeenCalledWith();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, null, 'text', [], { ...body, termsAccepted: 'yes' }, { ...body, skills: [] }])(
+      'rejects the body %j with a validation error before calling the service',
+      async (requestBody) => {
+        const register = vi.spyOn(MentorshipMentorService.prototype, 'registerMentorProfile');
+
+        await controller.registerMentorProfile(buildRegisterReq(requestBody), res, next);
+
+        expect(register).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+        expect(res.status).not.toHaveBeenCalled();
+      }
+    );
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'registerMentorProfile').mockRejectedValue(error);
+
+      await controller.registerMentorProfile(buildRegisterReq(body), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('requires an authenticated user', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const register = vi.spyOn(MentorshipMentorService.prototype, 'registerMentorProfile');
+
+      await controller.registerMentorProfile(buildRegisterReq(body), res, next);
+
+      expect(register).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
   describe('getMentorPrograms', () => {
     it('answers with the mentor programs', async () => {
       const programs: MentorshipMentorProgramsResponse = { data: [], total: 0 };

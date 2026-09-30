@@ -23,6 +23,7 @@ vi.mock('./logger.service', () => ({
 
 const { MentorshipMenteeService } = await import('./mentorship-mentee.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { EmailVerificationService } = await import('./email-verification.service');
 const { logger } = await import('./logger.service');
 const { MicroserviceError } = await import('../errors');
 
@@ -37,6 +38,11 @@ function upstreamError(status: number, body: unknown) {
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentee/apply-target' } as Request;
+}
+
+/** A signed-in caller, so the service looks up their primary email by sub. */
+function signedInReq(): Request {
+  return { path: '/api/mentorship/mentee/profile', impersonationActive: false, oidc: { user: { sub: 'auth0|test-user-1' } } } as unknown as Request;
 }
 
 function listOf<T>(data: T[]) {
@@ -104,10 +110,15 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
   };
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+  let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
     proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    getUserEmails = vi.spyOn(EmailVerificationService.prototype, 'getUserEmails').mockResolvedValue({
+      primary_email: 'test.user@example.com',
+      alternate_emails: [],
+    });
     service = new MentorshipMenteeService();
   });
 
@@ -131,16 +142,47 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
     });
   });
 
+  it("adds the caller's verified primary email, looked up by their sub, to the profile it puts", async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await service.registerMenteeProfile(signedInReq(), { ...request, lfxProfile: { firstName: 'Test' } });
+
+    expect(getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      MENTEE_PROFILE_PATH,
+      'PUT',
+      undefined,
+      expect.objectContaining({ first_name: 'Test', email: 'test.user@example.com' })
+    );
+  });
+
+  it('leaves the email out when the lookup fails, and still registers', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await expect(service.registerMenteeProfile(signedInReq(), request)).resolves.toBeUndefined();
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('email');
+  });
+
   it('refuses with a 409 profile-exists conflict, without writing, when a mentee profile exists', async () => {
     routeProxy(proxyRequest, {
       [PROFILES_PATH]: () => listOf([{ id: 'profile-1', profile_type: 'mentee' }]),
     });
 
-    await expect(service.registerMenteeProfile(buildReq(), request)).rejects.toMatchObject({
+    await expect(service.registerMenteeProfile(signedInReq(), request)).rejects.toMatchObject({
       statusCode: 409,
       code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
     });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(getUserEmails).not.toHaveBeenCalled();
   });
 
   it('fails closed when the existing-profile check fails', async () => {
@@ -169,12 +211,13 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
       [MENTEE_PROFILE_PATH]: () => ({}),
     });
 
-    await service.registerMenteeProfile(buildReq(), request);
+    await service.registerMenteeProfile(signedInReq(), request);
 
     const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
     expect(logged).not.toContain('Test intro');
     expect(logged).not.toContain('Test notes');
     expect(logged).not.toContain('college');
+    expect(logged).not.toContain('test.user@example.com');
   });
 });
 
