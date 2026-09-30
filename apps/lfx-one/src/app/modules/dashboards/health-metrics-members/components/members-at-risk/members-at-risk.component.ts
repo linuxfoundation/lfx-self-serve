@@ -55,7 +55,7 @@ export class MembersAtRiskComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav note, "12 overdue · $480K"; empty while a read is pending, failed or finds no one at risk. */
+  /** The sub-nav note, "12 overdue · $480K"; blank for a new foundation, empty when a read fails or finds no one at risk. */
   public readonly noteChange = output<string>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
@@ -72,6 +72,8 @@ export class MembersAtRiskComponent {
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation with no one at risk, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
+  /** The foundation the shown response belongs to, so a new foundation's read holds the skeleton, not the old figures. */
+  private readonly responseSlug = signal<string | null>(null);
 
   /** A new foundation or bucket restarts paging, since a page from a wider cut can sit past the end of a narrower one. */
   protected readonly page = linkedSignal<string, number>({
@@ -88,8 +90,12 @@ export class MembersAtRiskComponent {
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly countLabel = computed(() => buildHealthMetricsMembersAtRiskCountLabel(this.totalRecords()));
   protected readonly first = computed(() => (this.page() - 1) * this.size);
-  /** Holds the skeleton until the first read lands; later reads keep the figures and load in the table. */
-  protected readonly firstRead = computed(() => this.loading() && this.response() === HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
+  /** Holds the skeleton until a foundation's first read lands; later reads keep the figures and load in the table. */
+  protected readonly firstRead = computed(
+    () =>
+      this.loading() &&
+      (this.response() === HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED || this.responseSlug() !== (this.projectContextService.selectedFoundation()?.slug ?? ''))
+  );
   /** The hero counts the whole foundation whatever the pill, so only it can say no one is at risk. */
   protected readonly noneAtRisk = computed(() => this.response().summary.memberCount <= 0);
 
@@ -156,8 +162,9 @@ export class MembersAtRiskComponent {
               return of(HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
             }),
             tap((response) => {
+              this.responseSlug.set(query.foundationSlug);
               // A clamped page fires a follow-up read, so this one neither settles nor reports a note.
-              if (this.clampPage(response.totalRecords)) return;
+              if (this.clampPage(response)) return;
 
               this.loading.set(!foundationSeen);
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersAtRiskNote(response.summary) : '');
@@ -190,9 +197,10 @@ export class MembersAtRiskComponent {
    * A `?riskPage=` past the end selects no rows while the totals still report the real count. Lands on
    * the last page with rows, writing it back since the clamp can precede the sync's first emission.
    */
-  private clampPage(totalRecords: number): boolean {
-    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size));
-    if (totalRecords === 0 || this.page() <= lastPage) return false;
+  private clampPage(response: HealthMetricsMembersAtRisk): boolean {
+    const lastPage = Math.max(1, Math.ceil(response.totalRecords / this.size));
+    // The sentinel's zero is no count, so a failed read keeps the page; an empty bucket moves to page 1.
+    if (response === HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
     this.syncUrl();

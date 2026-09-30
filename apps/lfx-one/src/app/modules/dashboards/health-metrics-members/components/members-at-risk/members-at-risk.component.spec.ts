@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MembersAtRiskComponent } from './members-at-risk.component';
@@ -200,6 +200,27 @@ describe('MembersAtRiskComponent', () => {
 
     expect(getMembersAtRisk).toHaveBeenCalledWith(expect.objectContaining({ foundationSlug: 'beta', offset: 0 }));
     expect(notes).toEqual(['', '3 overdue · $120K']);
+  });
+
+  it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {
+    await render();
+    getMembersAtRisk.mockReturnValue(new Subject<HealthMetricsMembersAtRisk>());
+
+    selectedFoundation.set({ slug: 'beta' });
+    await settle();
+
+    expect(query('members-at-risk-loading')).not.toBeNull();
+    expect(query('members-at-risk-outstanding')).toBeNull();
+  });
+
+  it('moves a URL page back to page 1 when the bucket it names holds no one', async () => {
+    const empty = response({ rows: [], totalRecords: 0 });
+    await render(empty, { riskBucket: '60_89_days', riskPage: '3' }, empty);
+
+    expect(getMembersAtRisk).toHaveBeenNthCalledWith(1, expect.objectContaining({ offset: 20 }));
+    expect(getMembersAtRisk).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 0 }));
+    expect(getMembersAtRisk).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { riskBucket: '60_89_days', riskPage: null } }));
   });
 
   it('shows the empty state and no note when no member is at risk', async () => {
