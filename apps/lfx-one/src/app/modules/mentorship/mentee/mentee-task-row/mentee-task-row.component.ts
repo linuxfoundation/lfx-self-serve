@@ -34,6 +34,7 @@ import { MentorshipComingSoonService } from '@modules/mentorship/services/mentor
  *
  * File upload, view and download are not implemented yet, so those actions only fire the Coming Soon
  * toast. The BFF never sends a file, so a task that requires one cannot be submitted from here.
+ * Once a task is past due (the end of its due date's UTC day), Submitted and Upload are disabled.
  */
 @Component({
   selector: 'lfx-mentee-task-row',
@@ -70,6 +71,8 @@ export class MenteeTaskRowComponent {
   protected readonly statusState: Signal<MentorshipMenteeTaskStatusOptionsState> = computed(() => getMentorshipMenteeTaskStatusOptions(this.effectiveTask()));
   protected readonly statusLabelId: Signal<string> = computed(() => `mentee-task-status-label-${this.task().id}`);
   protected readonly statusHintId: Signal<string> = computed(() => `mentee-task-status-hint-${this.task().id}`);
+  /** Upload is closed once an unsubmitted task is past due; the status hint, which then shows, says why. */
+  protected readonly uploadBlocked: Signal<boolean> = computed(() => this.effectiveTask().pastDue && !this.effectiveTask().submitted);
   /** Ids the combobox is labelled by: the sr-only name, plus the hint when there is one. */
   protected readonly statusLabelledBy: Signal<string> = computed(() =>
     this.statusState().hint === null ? this.statusLabelId() : `${this.statusLabelId()} ${this.statusHintId()}`

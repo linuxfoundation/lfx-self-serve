@@ -208,6 +208,11 @@ export interface MentorshipMenteeTaskView {
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
   /**
+   * True once the due date's UTC day has ended, when the task was built. A past-due task that is not
+   * submitted can no longer be submitted or have a file uploaded; `false` when there is no due date.
+   */
+  pastDue: boolean;
+  /**
    * ISO 8601 UTC date string, or `null`. Named for its value (like `dueDate`/`submittedDate`),
    * not "label" — the template formats it via `DatePipe` with `'UTC'` (same contract as `dueDate`).
    */

@@ -5,6 +5,8 @@ import {
   EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
@@ -23,6 +25,7 @@ import {
   MentorshipUpstreamTaskSubmissionUpdate,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
+import { isMentorshipTaskPastDue } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -37,7 +40,7 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
   MENTORSHIP_TASKS_PATH,
 } from '../constants';
-import { ConflictError } from '../errors';
+import { ConflictError, InvalidRequestError } from '../errors';
 import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
   mapMentorshipMenteeApplication,
@@ -148,18 +151,26 @@ export class MentorshipMenteeService {
    * is written asynchronously, so a fresh task can briefly answer 403), 404 and 409 (not a legal move
    * from the task's status) propagate so the row can say why. The returned task is dropped and the pages
    * re-read their applications instead.
+   *
+   * Upstream enforces no deadline, so a `submitted` request reads the task first and is refused with a 400
+   * (`TASK_PAST_DUE`) once the end of its `due_date`'s UTC day has passed. Only the task's own due date is
+   * checked here; the prerequisite fallback to the term's application close is applied by the page alone.
+   * A failed read propagates rather than skip the check.
    */
   public async updateMenteeTaskStatus(req: Request, taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Promise<void> {
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    if (status === 'submitted') {
+      const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
+      if (isMentorshipTaskPastDue(task.due_date, Date.now())) {
+        throw new InvalidRequestError(MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, {
+          operation: 'mentorship_update_mentee_task_status',
+        });
+      }
+    }
+
     const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
-    await proxyMentorshipRequest<MentorshipUpstreamTask>(
-      this.microserviceProxy,
-      req,
-      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}/submission`,
-      'PATCH',
-      undefined,
-      body
-    );
+    await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/submission`, 'PATCH', undefined, body);
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Mentee task status updated', { taskId, status });
   }
 

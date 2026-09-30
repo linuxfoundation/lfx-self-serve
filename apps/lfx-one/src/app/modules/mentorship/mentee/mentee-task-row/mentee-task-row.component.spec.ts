@@ -73,15 +73,22 @@ describe('MenteeTaskRowComponent', () => {
       submittedDate: '2026-09-12T00:00:00Z',
     });
 
-  const uploadNeededTask = (): MentorshipMenteeTaskView =>
-    buildMentorshipMenteeTaskView({
-      id: 'row_upload',
-      title: 'Upload task',
-      description: 'Needs a file',
-      status: 'pending',
-      submitFile: 'required',
-      dueDate: '2026-09-30T00:00:00Z',
-    });
+  // Fixed clocks either side of the fixtures' due date (Sep 30, 2026), so a fixture never turns past due with the calendar.
+  const beforeDue = Date.parse('2026-09-15T00:00:00Z');
+  const afterDue = Date.parse('2026-10-01T00:00:00Z');
+
+  const uploadNeededTask = (nowMs: number = beforeDue): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView(
+      {
+        id: 'row_upload',
+        title: 'Upload task',
+        description: 'Needs a file',
+        status: 'pending',
+        submitFile: 'required',
+        dueDate: '2026-09-30T00:00:00Z',
+      },
+      nowMs
+    );
 
   beforeEach(() => {
     notify = vi.fn();
@@ -139,15 +146,18 @@ describe('MenteeTaskRowComponent', () => {
 
     it('hides the due date of a task just submitted until the refresh brings its submission date', async () => {
       const dueTask = (status: 'in_progress' | 'submitted', submittedDate?: string): MentorshipMenteeTaskView =>
-        buildMentorshipMenteeTaskView({
-          id: 'row_due',
-          title: 'Due task',
-          description: 'Under way',
-          status,
-          submitFile: null,
-          dueDate: '2026-09-30T00:00:00Z',
-          submittedDate,
-        });
+        buildMentorshipMenteeTaskView(
+          {
+            id: 'row_due',
+            title: 'Due task',
+            description: 'Under way',
+            status,
+            submitFile: null,
+            dueDate: '2026-09-30T00:00:00Z',
+            submittedDate,
+          },
+          beforeDue
+        );
       const task = dueTask('in_progress');
       const form = await buildRow(task);
       expect(byTestId('mentee-tasks-date-row_due')?.textContent).toContain('Due Sep 30, 2026');
@@ -384,6 +394,54 @@ describe('MenteeTaskRowComponent', () => {
     expect(notify).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenCalledWith('View submission for Uploaded task');
     expect(notify).toHaveBeenCalledWith('Download submission for Uploaded task');
+  });
+
+  describe('past due', () => {
+    const pastDueInProgress = (): MentorshipMenteeTaskView =>
+      buildMentorshipMenteeTaskView(
+        {
+          id: 'row_late',
+          title: 'Late task',
+          description: 'Under way',
+          status: 'in_progress',
+          submitFile: null,
+          dueDate: '2026-09-30T00:00:00Z',
+        },
+        afterDue
+      );
+
+    it('disables Submitted and shows the past-due hint', async () => {
+      await buildRow(pastDueInProgress());
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+      const hint = byTestId('mentee-tasks-status-hint-row_late');
+      expect(hint?.classList.contains('sr-only')).toBe(false);
+      expect(hint?.textContent).toContain('due date has passed');
+    });
+
+    it('lets a past-due pending task still be started', async () => {
+      await buildRow(uploadNeededTask(afterDue));
+
+      expect(optionState()).toEqual({ pending: false, in_progress: false, submitted: true });
+    });
+
+    it('disables Upload, describes it by the hint, and fires no toast', async () => {
+      await buildRow(uploadNeededTask(afterDue));
+      const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
+
+      expect(uploadBtn?.disabled).toBe(true);
+      expect(uploadBtn?.getAttribute('aria-describedby')).toBe('mentee-task-status-hint-row_upload');
+      uploadBtn?.click();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('keeps Upload enabled before the due date has ended', async () => {
+      await buildRow(uploadNeededTask());
+      const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
+
+      expect(uploadBtn?.disabled).toBe(false);
+      expect(uploadBtn?.getAttribute('aria-describedby')).toBeNull();
+    });
   });
 
   it('renders the upload button when an upload is required', async () => {

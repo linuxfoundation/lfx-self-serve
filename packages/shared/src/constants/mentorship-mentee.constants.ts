@@ -392,7 +392,8 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [
 
 /**
  * Status-change failures with their own copy, keyed by status. A 400 is either the BFF rejecting the
- * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both.
+ * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both;
+ * the BFF's past-due 400 carries `MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE` and shows its own message.
  * A 403 can come from the gateway's assignee check or the service's; the OpenFGA assignee tuple is written
  * asynchronously, so a valid assignee may see one just after the task is created. The stale statuses
  * (400, 403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
@@ -404,8 +405,19 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<numbe
   409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',
 };
 
-/** Reasons a status option is unavailable. They are read by assistive tech; only the file-required one shows on screen. */
+/**
+ * Error code on the BFF's 400 when a mentee submits a task after its due date. Upstream enforces no
+ * deadline, so the BFF checks the task's own `due_date` (the end of that UTC day) before forwarding.
+ */
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE = 'TASK_PAST_DUE';
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted.';
+
+/**
+ * Reasons a status option is unavailable. They are read by assistive tech; the file-required and past-due
+ * ones also show on screen. The past-due hint also describes the disabled Upload button.
+ */
 export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. File upload is coming soon.';
+export const MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE = 'The due date has passed, so this task can no longer be submitted.';
 export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
 export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
 
