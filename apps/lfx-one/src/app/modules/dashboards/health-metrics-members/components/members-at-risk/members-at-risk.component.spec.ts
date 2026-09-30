@@ -240,6 +240,24 @@ describe('MembersAtRiskComponent', () => {
     expect(notes.at(-1)).toBe('');
   });
 
+  it('shows the rows with a dashed hero, not the empty state, when the model leaves the totals unset', async () => {
+    await render(
+      response({
+        summary: { outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: null, memberCount: null },
+        aging: [
+          { bucket: '60_89_days', memberCount: null, balanceUsd: null },
+          { bucket: '90_plus_days', memberCount: null, balanceUsd: null },
+        ],
+      })
+    );
+
+    expect(query('members-at-risk-empty')).toBeNull();
+    expect(query(`members-at-risk-row-${ACCOUNT_ID}`)).not.toBeNull();
+    expect(text('members-at-risk-outstanding')).toBe('—');
+    expect(text('members-at-risk-members')).toBe('—');
+    expect(notes.at(-1)).toBe('');
+  });
+
   it('keeps the hero and says so when the picked bucket holds no one', async () => {
     await render(response(), {}, response({ rows: [], totalRecords: 0 }));
 

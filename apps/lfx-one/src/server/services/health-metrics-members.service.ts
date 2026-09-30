@@ -126,6 +126,7 @@ type AtRiskBucketTotals = Record<`FOUNDATION_${Uppercase<HealthMetricsMembersAtR
 
 interface AtRiskRow extends AtRiskBucketTotals {
   TOTAL_RECORDS: number | null;
+  SCOPED_RECORDS: number | null;
   FOUNDATION_HIGH_RISK_BALANCE_USD: number | null;
   FOUNDATION_MEDIUM_RISK_BALANCE_USD: number | null;
   IS_PAGE_ROW: boolean | null;
@@ -425,6 +426,7 @@ export class HealthMetricsMembersService {
       totals AS (
         SELECT
           (SELECT COUNT(*) FROM matched) AS total_records,
+          COUNT(*) AS scoped_records,
           ANY_VALUE(foundation_high_risk_balance_usd) AS foundation_high_risk_balance_usd,
           ANY_VALUE(foundation_medium_risk_balance_usd) AS foundation_medium_risk_balance_usd,
           ${bucketColumns.map((column) => `ANY_VALUE(${column}) AS ${column}`).join(',\n          ')}
@@ -450,12 +452,14 @@ export class HealthMetricsMembersService {
     });
 
     const first = result.rows[0];
+    // No member 60+ days overdue is a measured zero; an unset total on a foundation with some stays null.
+    const total = (value: number | null | undefined): number | null => (Number(first?.SCOPED_RECORDS ?? 0) > 0 ? toNullableNumber(value) : 0);
     const aging = HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => {
       const column = bucket.toUpperCase() as Uppercase<HealthMetricsMembersAtRiskBucket>;
       return {
         bucket,
-        memberCount: Number(first?.[`FOUNDATION_${column}_MEMBERS_COUNT`] ?? 0),
-        balanceUsd: Number(first?.[`FOUNDATION_${column}_OUTSTANDING_BALANCE_USD`] ?? 0),
+        memberCount: total(first?.[`FOUNDATION_${column}_MEMBERS_COUNT`]),
+        balanceUsd: total(first?.[`FOUNDATION_${column}_OUTSTANDING_BALANCE_USD`]),
       };
     });
     return {
@@ -463,10 +467,10 @@ export class HealthMetricsMembersService {
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       // The model's foundation-wide total counts balances under 60 days too, so the hero adds up the buckets shown.
       summary: {
-        outstandingBalanceUsd: aging.reduce((sum, bucket) => sum + bucket.balanceUsd, 0),
-        highRiskBalanceUsd: Number(first?.FOUNDATION_HIGH_RISK_BALANCE_USD ?? 0),
-        mediumRiskBalanceUsd: Number(first?.FOUNDATION_MEDIUM_RISK_BALANCE_USD ?? 0),
-        memberCount: aging.reduce((sum, bucket) => sum + bucket.memberCount, 0),
+        outstandingBalanceUsd: sumMeasured(aging.map((bucket) => bucket.balanceUsd)),
+        highRiskBalanceUsd: total(first?.FOUNDATION_HIGH_RISK_BALANCE_USD),
+        mediumRiskBalanceUsd: total(first?.FOUNDATION_MEDIUM_RISK_BALANCE_USD),
+        memberCount: sumMeasured(aging.map((bucket) => bucket.memberCount)),
       },
       aging,
     };
@@ -641,4 +645,9 @@ function mapAtRiskMember(row: AtRiskRow): HealthMetricsMembersAtRiskMember[] {
 
 function toNullableNumber(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
+}
+
+/** A sum with any unset part is itself unset, so a partial total never reads as the whole. */
+function sumMeasured(values: (number | null)[]): number | null {
+  return values.some((value) => value === null) ? null : values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }

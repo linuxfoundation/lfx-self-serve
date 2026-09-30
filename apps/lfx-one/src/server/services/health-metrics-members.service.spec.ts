@@ -540,6 +540,7 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
   const query = { foundationSlug: 'acme', bucket: 'all' as const, offset: 0, pageSize: 10 };
   const totals = {
     TOTAL_RECORDS: 3,
+    SCOPED_RECORDS: 3,
     FOUNDATION_HIGH_RISK_BALANCE_USD: 90000,
     FOUNDATION_MEDIUM_RISK_BALANCE_USD: 30000,
     FOUNDATION_60_89_DAYS_MEMBERS_COUNT: 2,
@@ -597,6 +598,7 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     expect(totalsCte).toContain('ANY_VALUE(foundation_high_risk_balance_usd) AS foundation_high_risk_balance_usd');
     expect(totalsCte).toContain('ANY_VALUE(foundation_60_89_days_members_count) AS foundation_60_89_days_members_count');
     expect(totalsCte).toContain('ANY_VALUE(foundation_90_plus_days_outstanding_balance_usd) AS foundation_90_plus_days_outstanding_balance_usd');
+    expect(totalsCte).toContain('COUNT(*) AS scoped_records');
     expect(totalsCte).toContain('FROM scoped');
     expect(totalsCte).not.toMatch(/SUM\(|COUNT_IF\(/);
   });
@@ -645,13 +647,33 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     });
   });
 
-  it('reads zeros when the foundation has no member at risk', async () => {
-    execute.mockResolvedValue({ rows: [] });
+  it('reads measured zeros when the foundation has no member at risk', async () => {
+    const empty = { TOTAL_RECORDS: 0, SCOPED_RECORDS: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null };
+    for (const rows of [[], [empty]]) {
+      execute.mockResolvedValue({ rows });
+
+      expect(await new HealthMetricsMembersService().getAtRisk(req, query)).toMatchObject({
+        rows: [],
+        totalRecords: 0,
+        summary: { outstandingBalanceUsd: 0, highRiskBalanceUsd: 0, mediumRiskBalanceUsd: 0, memberCount: 0 },
+        aging: [
+          { bucket: '60_89_days', memberCount: 0, balanceUsd: 0 },
+          { bucket: '90_plus_days', memberCount: 0, balanceUsd: 0 },
+        ],
+      });
+    }
+  });
+
+  // An unset model total is not a zero: the hero sum and the bar it feeds stay unset.
+  it('keeps an unset model total null for a foundation with members at risk', async () => {
+    execute.mockResolvedValue({ rows: [atRiskRow({ FOUNDATION_90_PLUS_DAYS_OUTSTANDING_BALANCE_USD: null, FOUNDATION_HIGH_RISK_BALANCE_USD: null })] });
 
     expect(await new HealthMetricsMembersService().getAtRisk(req, query)).toMatchObject({
-      rows: [],
-      totalRecords: 0,
-      summary: { outstandingBalanceUsd: 0, memberCount: 0 },
+      summary: { outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: 30000, memberCount: 3 },
+      aging: [
+        { bucket: '60_89_days', memberCount: 2, balanceUsd: 50000 },
+        { bucket: '90_plus_days', memberCount: 1, balanceUsd: null },
+      ],
     });
   });
 

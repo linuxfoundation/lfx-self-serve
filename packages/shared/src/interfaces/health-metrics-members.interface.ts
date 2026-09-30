@@ -352,19 +352,22 @@ export interface HealthMetricsMembersAtRiskMember {
   lastEngagedDate: string | null;
 }
 
-/** The hero, summed over every member 60+ days overdue whatever the bucket pill; with a bucket picked it exceeds the table's total. */
+/**
+ * The hero, summed over every member 60+ days overdue whatever the bucket pill; with a bucket picked it exceeds the
+ * table's total. `null` is a total the model left unset for a foundation with members at risk, never a zero.
+ */
 export interface HealthMetricsMembersAtRiskSummary {
-  outstandingBalanceUsd: number;
-  highRiskBalanceUsd: number;
-  mediumRiskBalanceUsd: number;
-  memberCount: number;
+  outstandingBalanceUsd: number | null;
+  highRiskBalanceUsd: number | null;
+  mediumRiskBalanceUsd: number | null;
+  memberCount: number | null;
 }
 
-/** One aging bar; always both buckets, whatever the selected pill. */
+/** One aging bar; always both buckets, whatever the selected pill. `null` is an unset model total, as in the summary. */
 export interface HealthMetricsMembersAtRiskAging {
   bucket: HealthMetricsMembersAtRiskBucket;
-  memberCount: number;
-  balanceUsd: number;
+  memberCount: number | null;
+  balanceUsd: number | null;
 }
 
 export interface HealthMetricsMembersAtRisk {

@@ -234,25 +234,25 @@ export function buildHealthMetricsMembersDirectorySearchPlaceholder(scopeTotal: 
   return `Search ${pluralize(scopeTotal, 'member')}…`;
 }
 
-/** The at-risk hero: the outstanding balance, its High / Medium split, and the member count. */
+/** The at-risk hero: the outstanding balance, its High / Medium split, and the member count; an unset total is a dash. */
 export function buildHealthMetricsMembersAtRiskSummary(summary: HealthMetricsMembersAtRiskSummary): HealthMetricsMembersAtRiskSummaryView {
   return {
-    outstandingLabel: formatCurrency(summary.outstandingBalanceUsd),
-    highRiskLabel: formatCurrency(summary.highRiskBalanceUsd),
-    mediumRiskLabel: formatCurrency(summary.mediumRiskBalanceUsd),
-    memberCountLabel: summary.memberCount.toLocaleString('en-US'),
+    outstandingLabel: formatUsd(summary.outstandingBalanceUsd),
+    highRiskLabel: formatUsd(summary.highRiskBalanceUsd),
+    mediumRiskLabel: formatUsd(summary.mediumRiskBalanceUsd),
+    memberCountLabel: formatCount(summary.memberCount),
   };
 }
 
-/** Aging bars, each sized against the largest bucket balance; a bucket with no members is left out. */
+/** Aging bars, each sized against the largest bucket balance; a bucket with no members is left out, an unset one kept. */
 export function buildHealthMetricsMembersAtRiskAging(aging: HealthMetricsMembersAtRiskAging[]): HealthMetricsMembersAtRiskAgingView[] {
-  const measured = aging.filter((bucket) => bucket.memberCount > 0);
-  const max = Math.max(0, ...measured.map((bucket) => bucket.balanceUsd));
-  return measured.map((bucket) => ({
+  const shown = aging.filter((bucket) => bucket.memberCount === null || bucket.memberCount > 0);
+  const max = Math.max(0, ...shown.map((bucket) => bucket.balanceUsd ?? 0));
+  return shown.map((bucket) => ({
     bucket: bucket.bucket,
-    label: `${HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket.bucket]} · ${pluralize(bucket.memberCount, 'member')}`,
-    balanceLabel: formatCurrency(bucket.balanceUsd),
-    widthPct: max > 0 ? Math.min(100, Math.max(0, (bucket.balanceUsd / max) * 100)) : 0,
+    label: `${HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket.bucket]} · ${bucket.memberCount === null ? '—' : pluralize(bucket.memberCount, 'member')}`,
+    balanceLabel: formatUsd(bucket.balanceUsd),
+    widthPct: max > 0 && bucket.balanceUsd !== null ? Math.min(100, Math.max(0, (bucket.balanceUsd / max) * 100)) : 0,
   }));
 }
 
@@ -268,10 +268,10 @@ export function buildHealthMetricsMembersAtRiskRows(rows: HealthMetricsMembersAt
   }));
 }
 
-/** The sub-nav note, "12 overdue · $480K"; empty while no member is at risk. */
+/** The sub-nav note, "12 overdue · $480K"; empty while no member is at risk or the count is unset. */
 export function buildHealthMetricsMembersAtRiskNote(summary: HealthMetricsMembersAtRiskSummary): string {
-  if (summary.memberCount <= 0) return '';
-  return `${summary.memberCount.toLocaleString('en-US')} overdue · ${formatCurrency(summary.outstandingBalanceUsd)}`;
+  if (summary.memberCount === null || summary.memberCount <= 0) return '';
+  return `${summary.memberCount.toLocaleString('en-US')} overdue · ${formatUsd(summary.outstandingBalanceUsd)}`;
 }
 
 /** The "N members" line beside the bucket pills. */

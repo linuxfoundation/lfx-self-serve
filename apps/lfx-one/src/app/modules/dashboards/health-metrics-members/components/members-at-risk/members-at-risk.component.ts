@@ -96,8 +96,8 @@ export class MembersAtRiskComponent {
       this.loading() &&
       (this.response() === HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED || this.responseSlug() !== (this.projectContextService.selectedFoundation()?.slug ?? ''))
   );
-  /** The hero counts the whole foundation whatever the pill, so only it can say no one is at risk. */
-  protected readonly noneAtRisk = computed(() => this.response().summary.memberCount <= 0);
+  /** The hero counts the whole foundation whatever the pill, so only its measured zero can say no one is at risk. */
+  protected readonly noneAtRisk = computed(() => this.response().summary.memberCount === 0);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {

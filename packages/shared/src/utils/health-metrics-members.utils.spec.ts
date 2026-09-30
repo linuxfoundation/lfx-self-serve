@@ -468,6 +468,14 @@ describe('members at risk', () => {
       mediumRiskLabel: '$30K',
       memberCountLabel: '3',
     });
+    expect(
+      buildHealthMetricsMembersAtRiskSummary({ outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: 0, memberCount: null })
+    ).toEqual({
+      outstandingLabel: '—',
+      highRiskLabel: '—',
+      mediumRiskLabel: '$0',
+      memberCountLabel: '—',
+    });
   });
 
   it('sizes the aging bars against the largest bucket and leaves out an empty bucket', () => {
@@ -481,6 +489,18 @@ describe('members at risk', () => {
       { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
     ]);
     expect(buildHealthMetricsMembersAtRiskAging([{ bucket: '60_89_days', memberCount: 0, balanceUsd: 0 }])).toEqual([]);
+  });
+
+  it('keeps an aging bar whose totals are unset, drawn empty with dashes', () => {
+    expect(
+      buildHealthMetricsMembersAtRiskAging([
+        { bucket: '60_89_days', memberCount: null, balanceUsd: null },
+        { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
+      ])
+    ).toEqual([
+      { bucket: '60_89_days', label: '60–89 days · —', balanceLabel: '—', widthPct: 0 },
+      { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
+    ]);
   });
 
   it('renders a row with its age in days, and dashes for missing values', () => {
@@ -498,6 +518,7 @@ describe('members at risk', () => {
   it('notes the overdue count and balance, and nothing while no member is at risk', () => {
     expect(buildHealthMetricsMembersAtRiskNote(summary)).toBe('3 overdue · $120K');
     expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: 0 })).toBe('');
+    expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: null })).toBe('');
   });
 
   it('pluralizes the member count', () => {
