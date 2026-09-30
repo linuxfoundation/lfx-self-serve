@@ -265,8 +265,6 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
   };
 }
 
-const ROSTER_REQUIRED_OPERATIONS: ReadonlySet<string> = new Set(['org_cla_invalidate_acknowledgment', 'org_cla_get_acknowledgments']);
-
 /**
  * The username EasyCLA compares against a CCLA roster: the Auth0 username, which the ID token
  * carries on the LF username claim. `nickname`, which the general username getter prefers, is not
@@ -1360,7 +1358,7 @@ export class OrgClaService {
     signatureId: string,
     query: ContributorAcknowledgmentQuery
   ): Promise<OrgClaContributorAcknowledgmentList | null> {
-    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments', { rosterRequired: true });
     if (!context) return null;
 
     if (!context.signed) {
@@ -1428,7 +1426,7 @@ export class OrgClaService {
     acknowledgmentSignatureId: string,
     input: OrgClaInvalidateAcknowledgmentRequest
   ): Promise<OrgClaInvalidateAcknowledgmentOutcome> {
-    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment', { rosterRequired: true });
     if (!context) return { outcome: 'not-found' };
 
     if (!context.signed) {
@@ -1756,7 +1754,13 @@ export class OrgClaService {
     throw new MicroserviceError(message, 409, code, { operation, service: SERVICE });
   }
 
-  private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
+  private async resolveClaGroupContext(
+    req: Request,
+    orgUid: string,
+    signatureId: string,
+    operation: string,
+    { rosterRequired = false }: { rosterRequired?: boolean } = {}
+  ): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
     const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
     if (!entry) {
@@ -1813,7 +1817,7 @@ export class OrgClaService {
       companySfid: orgUid,
       projectSfid,
       signed: entry.signed === true,
-      canEdit: await this.callerCanEdit(req, entry, operation),
+      canEdit: await this.callerCanEdit(req, entry, operation, rosterRequired),
     };
   }
 
@@ -1829,15 +1833,16 @@ export class OrgClaService {
    * identities do not leave the server: the row mapper drops them, and what crosses to the
    * browser is this boolean.
    *
-   * Fails OPEN when the producer sent no roster at all. That is the deliberate direction: the
-   * producer is the authority and rejects the write regardless, so failing open costs a CLA
-   * manager one clear error message. Invalidate is the exception and fails closed, on the write
-   * and on the acknowledgment read that offers it: the producer checks only ACS scope on it, never
-   * the roster, so this is the one roster check it gets.
+   * On a row with no roster at all, the UI already hides these controls (the row's
+   * `viewerIsClaManager` is false), but this check still passes the Approval List and Auto ECLA
+   * writes through: EasyCLA re-checks the roster on them and is the authority. `rosterRequired`
+   * callers — Invalidate and the acknowledgment read that offers it — fail closed instead, because
+   * EasyCLA checks only ACS scope on Invalidate, never the roster, so this is the one roster check
+   * it gets.
    */
-  private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string): Promise<boolean> {
+  private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string, rosterRequired: boolean): Promise<boolean> {
     if (!Array.isArray(entry.claManagers)) {
-      if (ROSTER_REQUIRED_OPERATIONS.has(operation)) {
+      if (rosterRequired) {
         logger.warning(req, operation, 'upstream sent no CLA manager roster, so invalidate access was refused', { signature_id: entry.signatureID });
         return false;
       }

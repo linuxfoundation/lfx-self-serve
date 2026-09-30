@@ -685,7 +685,8 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe((refreshed) => {
         if (!refreshed || this.selectedOrgUid() !== refreshed.uid) return;
-        this.selfRemovals.forgetAll();
+        const stillListed = new Set((refreshed.list?.claGroups ?? []).filter((group) => group.viewerIsClaManager === true).map((group) => group.id));
+        this.selfRemovals.keepOnly(refreshed.uid, stillListed);
         this.retriedList$.next(refreshed.list);
       });
 
@@ -1416,6 +1417,7 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
   }
 
+  /** Signed row, viewer on its CLA manager list, ACS grants the write, and not the pre-sign preview. */
   private initShowAutoEclaToggle(): boolean {
     const group = this.claGroup();
     return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;

@@ -3,13 +3,11 @@
 
 import '@angular/compiler';
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { UserService } from '@services/user.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -31,7 +29,6 @@ describe('OrgEasyclaManagersComponent', () => {
   const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
-  const viewerUsername = signal<string | null>('aporter');
 
   // The real service, spied on rather than stubbed: `p-confirmdialog` in the template subscribes
   // to its `requireConfirmation$`, which a bare object does not have.
@@ -79,7 +76,6 @@ describe('OrgEasyclaManagersComponent', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    viewerUsername.set('aporter');
     confirmationService = new ConfirmationService();
     confirm = vi.spyOn(confirmationService, 'confirm');
     getManagers.mockReturnValue(
@@ -97,7 +93,6 @@ describe('OrgEasyclaManagersComponent', () => {
         set: {
           providers: [
             { provide: OrgLensClaService, useValue: { getManagers, addManager, removeManager, checkPermission } },
-            { provide: UserService, useValue: { viewerUsername } },
             { provide: DialogService, useValue: { open: openDialog } },
             { provide: ConfirmationService, useValue: confirmationService },
           ],
@@ -386,8 +381,7 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
     });
 
-    it('takes the viewer’s own row from the server, not from the browser’s username', async () => {
-      viewerUsername.set('aporter');
+    it('treats only the row the server flags as the viewer’s own', async () => {
       await render();
       component.loadIfNeeded();
       await fixture.whenStable();

@@ -28,7 +28,6 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { UserService } from '@services/user.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import type { Confirmation } from 'primeng/api';
@@ -168,7 +167,6 @@ describe('OrgEasyclaDetailComponent', () => {
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
-        { provide: UserService, useValue: { viewerUsername: signal(null) } },
         ConfirmationService,
       ],
     }).compileComponents();
@@ -3432,7 +3430,6 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
-        { provide: UserService, useValue: { viewerUsername: signal('aporter') } },
         DialogService,
         ConfirmationService,
       ],
@@ -3570,6 +3567,26 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
 
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+  });
+
+  it('keeps a self-removal hidden while a re-read still lists the viewer, and drops it once one does not', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void; claGroup: () => OrgClaGroup | undefined };
+    const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+    selfRemovals.record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] }));
+    component.onRosterChanged();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: false })] }));
+    component.onRosterChanged();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(selfRemovals.removed(SELECTED_ACCOUNT.uid, 'signature-uuid-1')).toBe(false);
   });
 
   it('ignores a re-read started before the viewer left the organization and came back', async () => {

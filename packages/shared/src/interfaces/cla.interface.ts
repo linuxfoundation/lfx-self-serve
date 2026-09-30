@@ -728,6 +728,12 @@ export interface OrgClaGroup {
    * `false` at the mapper, matching the producer's own default.
    */
   autoCreateEcla?: boolean;
+  /**
+   * Whether the signed-in viewer is on this agreement's CLA manager list. Server-decided by an
+   * exact LF username match, so the browser MUST NOT work it out itself. False when there is no
+   * list or no username, so visibility fails closed. The Approval List and Acknowledgments
+   * controls also need the loaded list's own `canEdit`.
+   */
   viewerIsClaManager: boolean;
 }
 
