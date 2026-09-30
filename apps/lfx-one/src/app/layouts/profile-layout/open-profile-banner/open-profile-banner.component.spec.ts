@@ -31,9 +31,14 @@ describe('OpenProfileBannerComponent', () => {
   });
 
   it('renders the help copy with the launcher-contract testids', () => {
-    expect(fixture.nativeElement.textContent).toContain('Can’t find what you need?');
-    expect(link().textContent).toContain('Chat with us');
+    expect(fixture.nativeElement.textContent).toContain('Can’t find what you need here?');
+    expect(link().textContent).toContain('Open Profile');
     expect(fixture.nativeElement.querySelector('[data-testid="open-profile-banner-slot"]')).not.toBeNull();
+  });
+
+  it('shows the Individual Dashboard tooltip on the link and an accessible name containing the visible text', () => {
+    expect(link().getAttribute('pTooltip')).toBe('Individual Dashboard');
+    expect(link().getAttribute('aria-label')).toContain('Open Profile');
   });
 
   it('clicking the link emits linkClick', () => {
