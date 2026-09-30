@@ -641,6 +641,11 @@ export interface CommitteeTableRowVm extends Committee {
    * every other class shows the behavioral-class label (e.g. "Working Groups", "Boards").
    */
   typeDisplay: string;
+  /**
+   * Pre-computed Tailwind color pair for the My Role pill chip. `null` when the row has no role
+   * or the role is `'None'` so the template can `@if (committee.roleChip)` without a method call.
+   */
+  roleChip: { bgColor: string; color: string } | null;
 }
 
 /**

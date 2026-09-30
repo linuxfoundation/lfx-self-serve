@@ -52,7 +52,9 @@
               <th>Members</th>
               <th>Channels</th>
               <th>Voting</th>
-              <th>Join Mode</th>
+              @if (!isMeLens()) {
+                <th>Join Mode</th>
+              }
               @if (hasRoleColumn()) {
                 <th>My Role</th>
               }
@@ -173,22 +175,29 @@
                   <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
                 }
               </td>
-              <td>
-                @if (committee.join_mode) {
-                  <lfx-tag
-                    [value]="committee.join_mode | joinModeLabel"
-                    [severity]="committee.joinModeSeverity"
-                    [tooltip]="committee.joinModeTooltip"
-                    tooltipPosition="top"
-                    [attr.data-testid]="'join-mode-tag-' + committee.uid" />
-                } @else {
-                  <span class="text-gray-400 text-xs">—</span>
-                }
-              </td>
+              @if (!isMeLens()) {
+                <td>
+                  @if (committee.join_mode) {
+                    <lfx-tag
+                      [value]="committee.join_mode | joinModeLabel"
+                      [severity]="committee.joinModeSeverity"
+                      [tooltip]="committee.joinModeTooltip"
+                      tooltipPosition="top"
+                      [attr.data-testid]="'join-mode-tag-' + committee.uid" />
+                  } @else {
+                    <span class="text-gray-400 text-xs">—</span>
+                  }
+                </td>
+              }
               @if (hasRoleColumn()) {
                 <td>
-                  @if (committee.my_role) {
-                    <lfx-badge [value]="committee.my_role" [severity]="resolveRoleSeverity(committee.my_role)" />
+                  @if (committee.roleChip) {
+                    <span
+                      class="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap"
+                      [class]="committee.roleChip.bgColor + ' ' + committee.roleChip.color"
+                      [attr.data-testid]="'role-chip-' + committee.uid">
+                      {{ committee.my_role }}
+                    </span>
                   } @else {
                     <span class="text-gray-400 text-xs">—</span>
                   }

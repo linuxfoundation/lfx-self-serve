@@ -249,6 +249,40 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
 }
 
 /**
+ * Maps a committee member role to a Tailwind `bgColor`/`color` pair for the inline role chip —
+ * styled the same way as the behavioral-class chip (rounded-full pill with coloured background).
+ *
+ * Returns `null` when the role is absent, `'None'`, or an empty string so the template can use
+ * `@if (committee.roleChip)` to hide the chip cleanly.
+ */
+export function resolveRoleChip(
+  role: CommitteeMemberRole | 'Member' | null | undefined,
+): { bgColor: string; color: string } | null {
+  if (!role || role === CommitteeMemberRole.NONE) return null;
+  switch (role) {
+    case CommitteeMemberRole.CHAIR:
+      return { bgColor: 'bg-purple-100', color: 'text-purple-700' };
+    case CommitteeMemberRole.VICE_CHAIR:
+      return { bgColor: 'bg-indigo-100', color: 'text-indigo-700' };
+    case CommitteeMemberRole.LF_STAFF:
+      return { bgColor: 'bg-sky-100', color: 'text-sky-700' };
+    case CommitteeMemberRole.DIRECTOR:
+    case CommitteeMemberRole.TAC_TOC_REPRESENTATIVE:
+      return { bgColor: 'bg-blue-100', color: 'text-blue-700' };
+    case CommitteeMemberRole.LEAD:
+      return { bgColor: 'bg-teal-100', color: 'text-teal-700' };
+    case CommitteeMemberRole.SECRETARY:
+    case CommitteeMemberRole.TREASURER:
+      return { bgColor: 'bg-amber-100', color: 'text-amber-700' };
+    case CommitteeMemberRole.DEVELOPER_SEAT:
+      return { bgColor: 'bg-cyan-100', color: 'text-cyan-700' };
+    default:
+      // 'Member' and any unrecognised value
+      return { bgColor: 'bg-gray-100', color: 'text-gray-600' };
+  }
+}
+
+/**
  * Computes the merged "Type" display label for a committee row/card chip — collapses the former
  * separate "Type" (raw category) and "Class" (behavioral class) columns into one:
  *   - SIGs: `"SIG | {raw category}"` to expose the sub-type (e.g. "SIG | Marketing Mailing List")

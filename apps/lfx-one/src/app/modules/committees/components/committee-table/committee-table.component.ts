@@ -5,7 +5,6 @@ import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -14,7 +13,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
 import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
-import { getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
@@ -30,7 +29,6 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     DatePipe,
     DecimalPipe,
     RouterLink,
-    BadgeComponent,
     CardComponent,
     ButtonComponent,
     TableComponent,
@@ -99,12 +97,13 @@ export class CommitteeTableComponent {
       joinModeSeverity: resolveJoinModeSeverity(committee.join_mode),
       joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
       typeDisplay: resolveTypeDisplay(committee),
+      roleChip: resolveRoleChip(committee.my_role),
     }))
   );
 
   /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
+  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
   protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
-  protected readonly resolveRoleSeverity = resolveGroupsCardRoleSeverity;
 
   protected onRowSelect(event: { data: CommitteeTableRowVm }): void {
     this.rowClick.emit(event.data);
