@@ -300,4 +300,16 @@ describe('MembersNpsComponent', () => {
     expect(query('members-nps-loading')).not.toBeNull();
     expect(query('members-nps-empty')).toBeNull();
   });
+
+  it('keeps a deep-linked audience while the foundation resolves', async () => {
+    selectedFoundation.set(null);
+    await render(response({ selectedAudience: 'Committers' }), { npsAudience: 'Committers' });
+
+    selectedFoundation.set({ slug: 'acme' });
+    await settle();
+
+    expect(getMembersNps).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', audience: 'Committers' });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(text('members-nps-score')).toBe('+40');
+  });
 });

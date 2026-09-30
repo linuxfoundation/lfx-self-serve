@@ -180,6 +180,8 @@ export class MembersNpsComponent {
         ),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
+          // A read that got past the comparator has absorbed or superseded any earlier reset.
+          droppedAudience = null;
           this.loading.set(true);
           this.loadFailed.set(false);
           this.reading.emit();
@@ -193,8 +195,8 @@ export class MembersNpsComponent {
               return of(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
             }),
             tap((response) => {
-              // An audience the period did not survey falls back, so the URL must not keep naming it.
-              if (!this.loadFailed() && query.audience !== null && response.selectedAudience !== query.audience) {
+              // An audience the period did not survey falls back, so the URL must not keep naming it; an unread foundation proves nothing.
+              if (query.foundationSlug && !this.loadFailed() && query.audience !== null && response.selectedAudience !== query.audience) {
                 droppedAudience = query.audience;
                 this.audience.set(null);
               }
