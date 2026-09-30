@@ -78,6 +78,9 @@ export const MENTORSHIP_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict w
 export const MENTORSHIP_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
 export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
 
+/** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
+export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
+
 /** Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot. */
 export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
   { value: 'mentees', label: 'Current Mentees' },

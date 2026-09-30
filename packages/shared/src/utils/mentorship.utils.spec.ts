@@ -19,7 +19,6 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
   MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
@@ -39,6 +38,7 @@ import {
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
 import { htmlClipboardToText } from './html-utils';
 import type {
@@ -579,7 +579,7 @@ describe('program detail helpers', () => {
   it('refuses a mentor skill the picker does not offer, since only a tampered request can carry one', () => {
     const form = { ...createEmptyMentorshipMentorForm(), introduction: '<p>Hi</p>', complianceAccepted: true, termsAccepted: true };
 
-    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Not A Skill'] }).skills).toBe(MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL);
+    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Not A Skill'] }).skills).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
     expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
   });
 
@@ -1102,11 +1102,9 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
     const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
 
     expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: ['Java', 'Not A Skill'] }).skillsHave).toBe(
-      MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL
+      MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL
     );
-    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(
-      MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL
-    );
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
   });
 
   it('accepts every skill in MENTORSHIP_SKILL_OPTIONS', () => {

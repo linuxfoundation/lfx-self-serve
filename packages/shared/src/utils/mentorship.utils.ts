@@ -35,7 +35,6 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
@@ -58,6 +57,7 @@ import {
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
 import type { FilterOption } from '../interfaces/filter.interface';
 import type {
@@ -535,7 +535,7 @@ export function getMentorshipMentorRegisterErrors(
   );
   if (introductionError) errors.introduction = introductionError;
   if (!form.skills.length) errors.skills = 'Add at least one skill.';
-  else if (hasUnknownMentorshipSkill(form.skills)) errors.skills = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(form.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
@@ -657,10 +657,10 @@ export function getMentorshipMenteeRegisterRequestErrors(
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
   else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';

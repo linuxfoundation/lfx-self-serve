@@ -159,7 +159,6 @@ export const MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE = 'MENTEE_PROFILE_EXIST
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS = 'You already have a mentee profile, so we did not overwrite it.';
 export const MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE = 'Go to my mentee dashboard';
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE = 'We could not accept your registration. Please confirm the eligibility statements and try again.';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
 /** The form fields a server 400 can name; anything else in `errors[]` is ignored rather than shown against a field that does not exist. */
 export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMenteeRegisterFieldErrors)[] = [
