@@ -202,7 +202,7 @@ export class MailingListService {
     // the foundation/project-lens table would render empty tags (same fix as Me lens).
     await this.enrichCommitteeNames(req, mailingLists);
 
-    // Enrich with service data
+    // The table still uses the parent service URL; addresses use the list's indexed domain.
     mailingLists = await this.enrichWithServices(req, mailingLists);
 
     // Enrich with project metadata — the index never emits is_foundation, and the table's
@@ -254,6 +254,7 @@ export class MailingListService {
 
     const data = resources[0].data;
 
+    // The detail page still uses the parent service URL; its address uses the list domain.
     // Service-data and project enrichment both depend only on the query-service payload —
     // run them in parallel so the project lookup adds no sequential latency.
     const [enriched, project] = await Promise.all([
@@ -469,7 +470,8 @@ export class MailingListService {
     // was rendering empty tags. One batched committee-service query fills in the names.
     await this.enrichCommitteeNames(req, result);
 
-    // Enrich with service data for correct email display in UI
+    // The Me Lens table still uses the parent service URL when available.
+    // Addresses use the list's indexed domain, even when this lookup fails.
     const enrichedWithServices = (await this.enrichWithServices(req, result)) as MyMailingList[];
 
     // Enrich with project data (name, slug, logo, etc.)
