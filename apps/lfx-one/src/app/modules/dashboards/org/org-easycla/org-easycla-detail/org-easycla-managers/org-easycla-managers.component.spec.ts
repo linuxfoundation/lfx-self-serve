@@ -398,7 +398,7 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
     });
 
-    it('tells the page the roster changed after a successful add or removal, and not after a refused one', async () => {
+    it('tells the page the roster changed after a successful add or self-removal, and not after removing someone else or a refused add', async () => {
       await render();
       component.loadIfNeeded();
       await fixture.whenStable();
@@ -411,6 +411,12 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(changes).toBe(1);
 
       component['confirmRemove'](manager());
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(removeManager).toHaveBeenCalledWith(ORG_UID, SIGNATURE_ID, 'kmensah');
+      expect(changes).toBe(1);
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
       acceptConfirmation();
       await fixture.whenStable();
       expect(changes).toBe(2);

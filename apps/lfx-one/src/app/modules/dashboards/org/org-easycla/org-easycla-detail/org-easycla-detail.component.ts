@@ -793,8 +793,8 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * Re-reads the organization's CLA list after a manager was added or removed, so the roster flag
-   * is recomputed by the server. Fed through `retriedList$` rather than `orgUid$`, which would put
+   * Re-reads the organization's CLA list after a manager was added or the viewer removed themselves,
+   * so the roster flag is recomputed by the server. Fed through `retriedList$` rather than `orgUid$`, which would put
    * the skeleton over the Managers panel that just reported the change.
    */
   protected onRosterChanged(): void {
