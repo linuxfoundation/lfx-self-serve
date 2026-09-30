@@ -8,8 +8,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_LABELS, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
-import { JoinMode, MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
+import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -40,25 +40,8 @@ export class MyGroupsCardGridComponent {
   protected readonly cards: Signal<MyGroupsCardVm[]> = this.initCards();
   protected readonly visibleCards = computed(() => this.cards().slice(0, this.expandedPages() * GROUPS_CARD_GRID_PAGE_SIZE));
   protected readonly hasMore = computed(() => this.visibleCards().length < this.cards().length);
-
   protected showMore(): void {
     this.expandedPages.update((pages) => pages + 1);
-  }
-
-  protected readonly joinModeTooltips = JOIN_MODE_TOOLTIPS;
-
-  /** Maps join_mode to a tag severity so joinability is scannable at a glance. Mirrors committee-table. */
-  protected resolveJoinModeSeverity(mode: JoinMode | undefined): 'success' | 'info' | 'secondary' | 'warn' {
-    switch (mode) {
-      case 'open':
-        return 'success';
-      case 'application':
-        return 'info';
-      case 'invite_only':
-        return 'warn';
-      default:
-        return 'secondary';
-    }
   }
 
   /**
@@ -95,6 +78,9 @@ export class MyGroupsCardGridComponent {
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
           ariaLabel: parts.join(', '),
+          // Pre-computed so the template stays binding-only (frontend-checklist §63-65).
+          joinModeSeverity: resolveJoinModeSeverity(committee.join_mode),
+          joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
         };
       })
     );

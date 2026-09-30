@@ -70,7 +70,11 @@
                   @if (isBoardMember()) {
                     <span class="text-sm font-medium">{{ committee.name || '-' }}</span>
                   } @else {
-                    <a [routerLink]="committee.viewCommands" [queryParams]="committee.linkQueryParams" class="lfx-table-name-link text-sm">
+                    <a
+                      [routerLink]="committee.viewCommands"
+                      [queryParams]="committee.linkQueryParams"
+                      [state]="{ backLabel: isMeLens() ? 'My Groups' : 'Groups', fromMeLens: isMeLens() }"
+                      class="lfx-table-name-link text-sm">
                       {{ committee.name || '-' }}
                     </a>
                   }
@@ -176,8 +180,8 @@
                 @if (committee.join_mode) {
                   <lfx-tag
                     [value]="committee.join_mode | joinModeLabel"
-                    [severity]="resolveJoinModeSeverity(committee.join_mode)"
-                    [pTooltip]="joinModeTooltips[committee.join_mode]"
+                    [severity]="committee.joinModeSeverity"
+                    [tooltip]="committee.joinModeTooltip"
                     tooltipPosition="top"
                     [attr.data-testid]="'join-mode-tag-' + committee.uid" />
                 } @else {

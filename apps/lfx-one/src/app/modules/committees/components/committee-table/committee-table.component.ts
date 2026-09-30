@@ -14,7 +14,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
 import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
-import { getGroupCommands, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
@@ -67,6 +67,8 @@ export class CommitteeTableComponent {
   public showFilterBar = input<boolean>(true);
   /** `data-testid` for the internal `<lfx-table>`. Defaults to the pre-existing fixed id — every caller that renders a single instance is unaffected. The foundation-grouped view renders one `<lfx-committee-table>` per group, so it must pass a per-group value to keep each table's testid unique (a fixed id would repeat once per group and turn `getByTestId` into a Playwright strict-mode violation). */
   public tableTestId = input<string>('committee-dashboard-table');
+  /** True when this table is rendered inside the Me Lens (My Groups). Used to attach router navigation state so `CommitteeViewComponent` can detect the transition. */
+  public isMeLens = input<boolean>(false);
 
   // Outputs
   public readonly refresh = output<void>();
@@ -78,25 +80,6 @@ export class CommitteeTableComponent {
   protected readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.committees().length > 10 ? [10, 25, 50] : undefined));
 
-  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
-  protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
-  protected readonly resolveRoleSeverity = resolveGroupsCardRoleSeverity;
-  protected readonly joinModeTooltips = JOIN_MODE_TOOLTIPS;
-
-  /** Maps join_mode to a tag severity so joinability is scannable at a glance. */
-  protected resolveJoinModeSeverity(mode: string | undefined): 'success' | 'info' | 'secondary' | 'warn' {
-    switch (mode) {
-      case 'open':
-        return 'success';
-      case 'application':
-        return 'info';
-      case 'invite_only':
-        return 'warn';
-      default:
-        return 'secondary';
-    }
-  }
-
   /**
    * Rows decorated with their canonical view/edit link state (GH-1566): `getGroupCommands`
    * prefixes the path with the row's OWN project tier (`is_foundation`) instead of the viewer's
@@ -104,6 +87,8 @@ export class CommitteeTableComponent {
    * Rows without tier data keep the flat `/groups/:uid` fallback (the `??` inside the mapping),
    * which `lensRedirectGuard` handles as before. Pre-computed once per input change rather than
    * per change-detection cycle (angular-reactive-data §3.5).
+   * `joinModeSeverity` and `joinModeTooltip` are also pre-computed here so the template stays
+   * binding-only with no per-render method calls (frontend-checklist §63-65).
    */
   protected readonly tableRows = computed<CommitteeTableRowVm[]>(() =>
     this.committees().map((committee) => ({
@@ -111,8 +96,14 @@ export class CommitteeTableComponent {
       viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
       editCommands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'],
       linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
+      joinModeSeverity: resolveJoinModeSeverity(committee.join_mode),
+      joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
     }))
   );
+
+  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
+  protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
+  protected readonly resolveRoleSeverity = resolveGroupsCardRoleSeverity;
 
   protected onRowSelect(event: { data: CommitteeTableRowVm }): void {
     this.rowClick.emit(event.data);

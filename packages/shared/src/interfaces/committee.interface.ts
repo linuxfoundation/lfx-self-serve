@@ -3,7 +3,7 @@
 
 import type { CommitteeMemberVisibility } from '../enums/committee.enum';
 import type { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BadgeSeverity } from './components.interface';
+import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
@@ -607,6 +607,10 @@ export interface MyGroupsCardVm {
    * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
    */
   ariaLabel: string;
+  /** Pre-computed tag severity for the join-mode chip. Avoids per-render method calls. */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip; `undefined` when `join_mode` is absent. */
+  joinModeTooltip: string | undefined;
 }
 
 /**
@@ -622,6 +626,10 @@ export interface CommitteeTableRowVm extends Committee {
   editCommands: string[];
   /** `?project=` for the view/edit links — present only when the committee carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
+  /** Pre-computed tag severity for the join-mode chip. Avoids per-render method calls. */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip; `undefined` when `join_mode` is absent. */
+  joinModeTooltip: string | undefined;
 }
 
 /**

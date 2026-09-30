@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
-import type { BadgeSeverity } from '../interfaces/components.interface';
+import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import {
   CATEGORY_BEHAVIORAL_CLASS,
@@ -243,6 +243,24 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
       return 'success';
     case CommitteeMemberRole.LF_STAFF:
       return 'contrast';
+    default:
+      return 'secondary';
+  }
+}
+
+/**
+ * Maps a group's `join_mode` to a tag severity so joinability is scannable at a glance.
+ * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent` — extracted here
+ * so the two views can't drift and so the 4-branch mapping is unit-tested in this package.
+ */
+export function resolveJoinModeSeverity(mode?: JoinMode): TagSeverity {
+  switch (mode) {
+    case 'open':
+      return 'success';
+    case 'application':
+      return 'info';
+    case 'invite_only':
+      return 'warn';
     default:
       return 'secondary';
   }

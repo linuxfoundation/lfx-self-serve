@@ -168,8 +168,13 @@ export class CommitteeViewComponent {
   private readonly transferState = inject(TransferState);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
-  /** True when the user arrived from the Me Lens My Groups page — used to show a context-transition notice. */
-  protected readonly fromMeLens: boolean = this.navBackLabel === 'My Groups';
+  /**
+   * True when the user arrived from the Me Lens My Groups page — used to show a context-transition notice.
+   * Reads an explicit `fromMeLens` boolean from navigation state (set by both the table anchor and
+   * the card grid link) rather than inferring it from the display label, so renaming the label
+   * can never silently suppress the notice (addresses GH review on coupling to a label literal).
+   */
+  protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.

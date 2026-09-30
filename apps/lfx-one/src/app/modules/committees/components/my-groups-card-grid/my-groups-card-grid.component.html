@@ -30,7 +30,7 @@
       <a
         [routerLink]="item.viewCommands"
         [queryParams]="item.viewQueryParams"
-        [state]="{ backLabel: 'My Groups' }"
+        [state]="{ backLabel: 'My Groups', fromMeLens: true }"
         class="no-underline bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-6 h-full flex flex-col gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         [attr.aria-label]="item.ariaLabel"
         [attr.data-testid]="'groups-card-grid-item-' + item.committee.uid">
@@ -74,8 +74,8 @@
           @if (item.committee.join_mode) {
             <lfx-tag
               [value]="item.committee.join_mode | joinModeLabel"
-              [severity]="resolveJoinModeSeverity(item.committee.join_mode)"
-              [pTooltip]="joinModeTooltips[item.committee.join_mode]"
+              [severity]="item.joinModeSeverity"
+              [tooltip]="item.joinModeTooltip"
               tooltipPosition="top"
               [attr.data-testid]="'card-join-mode-' + item.committee.uid" />
           }

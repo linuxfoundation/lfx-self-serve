@@ -317,7 +317,7 @@ export class CommitteeDashboardComponent {
     // any row that still resolves no tier.
     this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
       queryParams: committee.project_slug ? { project: committee.project_slug } : undefined,
-      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups' },
+      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups', fromMeLens: this.isMeLens() },
     });
   }
 
