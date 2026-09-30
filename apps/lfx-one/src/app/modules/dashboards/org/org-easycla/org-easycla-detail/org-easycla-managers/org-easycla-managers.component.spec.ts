@@ -366,6 +366,24 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(component['canRemove']()).toBe(false);
     });
 
+    it('tells the page when the viewer removes themselves, and only then', async () => {
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      const removals: unknown[] = [];
+      component.viewerRemoved.subscribe(() => removals.push(true));
+
+      component['confirmRemove'](manager());
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(removals).toHaveLength(0);
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(removals).toHaveLength(1);
+    });
+
     it('drops an open confirm when the agreement changes', async () => {
       const close = vi.spyOn(confirmationService, 'close');
       await render();

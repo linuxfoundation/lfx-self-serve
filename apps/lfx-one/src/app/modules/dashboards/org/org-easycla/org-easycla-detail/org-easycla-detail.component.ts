@@ -191,6 +191,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
+  private readonly viewerRemovedFrom = signal<{ list: OrgClaGroupList; signatureId: string } | null>(null);
 
   /**
    * Lists fetched by the flagged wait, fed back into the page's own `claData`.
@@ -765,6 +766,13 @@ export class OrgEasyclaDetailComponent {
     this.loadedManagerCount.set({ signatureId, count });
   }
 
+  protected onViewerRemovedFromRoster(): void {
+    const list = this.claData();
+    const signatureId = this.claGroup()?.id;
+    if (!list || !signatureId) return;
+    this.viewerRemovedFrom.set({ list, signatureId });
+  }
+
   protected onTabKeydown(event: KeyboardEvent): void {
     const ids = ORG_CLA_DETAIL_TABS.map((tab) => tab.id);
     const current = ids.indexOf(this.activeTab());
@@ -1299,7 +1307,10 @@ export class OrgEasyclaDetailComponent {
     // for an unsigned row, which carries the organization's own coverage and counts where the
     // selection carries only two names.
     const listed = this.listedGroupForAddress();
-    if (listed) return listed;
+    if (listed) {
+      const removed = this.viewerRemovedFrom();
+      return removed && removed.list === this.claData() && removed.signatureId === listed.id ? { ...listed, viewerIsClaManager: false } : listed;
+    }
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.

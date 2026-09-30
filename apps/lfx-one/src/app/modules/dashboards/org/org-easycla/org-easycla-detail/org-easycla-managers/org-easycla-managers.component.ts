@@ -44,6 +44,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public readonly claGroup = input.required<OrgClaGroup>();
 
   public readonly managerCountChanged = output<number>();
+  public readonly viewerRemoved = output<void>();
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
 
@@ -276,6 +277,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
           if (this.isSelf(manager)) {
             this.addGrant.set(false);
             this.removeGrant.set(false);
+            this.viewerRemoved.emit();
           }
           this.messageService.add({
             severity: 'success',

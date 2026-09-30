@@ -7,6 +7,7 @@ import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
 import {
@@ -42,6 +43,7 @@ import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaDetailComponent } from './org-easycla-detail.component';
+import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
 
 // CLA-Group-shaped, because both the signed-row lookup and the preview-selection gate match
 // canonically — the producer emits one id hyphenated or compact, in either case. A readable
@@ -3429,6 +3431,8 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
+        { provide: UserService, useValue: { viewerUsername: signal('aporter') } },
+        DialogService,
         ConfirmationService,
       ],
     }).compileComponents();
@@ -3472,6 +3476,21 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]')).not.toBeNull();
+  });
+
+  it('withdraws the roster-gated controls once the viewer removes themselves from the Managers tab', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+
+    component.selectTab('managers');
+    fixture.detectChanges();
+    fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent)).componentInstance.viewerRemoved.emit();
+    component.selectTab('overview');
+    fixture.detectChanges();
+
+    expect(component.claGroup()?.viewerIsClaManager).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
   });
 
   it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
