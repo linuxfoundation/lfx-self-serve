@@ -94,12 +94,15 @@
     }
   </div>
 
-  <!-- Date — min-w-[90px] reserves room so the date column stays right-aligned when text is short -->
-  <div class="shrink-0 text-right text-xs text-gray-500 min-w-[90px]">
-    @if (task().submitted && task().submittedDate) {
-      Submitted on {{ task().submittedDate | date: 'MMM d, yyyy' : 'UTC' }}
-    } @else if (task().dueDate) {
-      Due {{ task().dueDate | date: 'MMM d, yyyy' : 'UTC' }}
+  <!-- Date — min-w-[90px] reserves room so the date column stays right-aligned when text is short.
+       A submitted task never falls back to its due date: until the refresh brings the submission date, it shows none. -->
+  <div class="shrink-0 text-right text-xs text-gray-500 min-w-[90px]" [attr.data-testid]="'mentee-tasks-date-' + task().id">
+    @if (effectiveTask().submitted) {
+      @if (effectiveTask().submittedDate; as submittedDate) {
+        Submitted on {{ submittedDate | date: 'MMM d, yyyy' : 'UTC' }}
+      }
+    } @else if (effectiveTask().dueDate; as dueDate) {
+      Due {{ dueDate | date: 'MMM d, yyyy' : 'UTC' }}
     }
   </div>
 </div>

@@ -137,6 +137,36 @@ describe('MenteeTaskRowComponent', () => {
       expect(select().styleClass()).toBe(`mentee-task-status-dropdown ${inProgressTask().statusClass}`);
     });
 
+    it('hides the due date of a task just submitted until the refresh brings its submission date', async () => {
+      const dueTask = (status: 'in_progress' | 'submitted', submittedDate?: string): MentorshipMenteeTaskView =>
+        buildMentorshipMenteeTaskView({
+          id: 'row_due',
+          title: 'Due task',
+          description: 'Under way',
+          status,
+          submitFile: null,
+          dueDate: '2026-09-30T00:00:00Z',
+          submittedDate,
+        });
+      const task = dueTask('in_progress');
+      const form = await buildRow(task);
+      expect(byTestId('mentee-tasks-date-row_due')?.textContent).toContain('Due Sep 30, 2026');
+
+      form.controls[task.id].setValue('submitted');
+      component['onStatusChange']();
+      inFlight.next(true);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      expect(byTestId('mentee-tasks-task-row-row_due')?.querySelector('.fa-circle-check')).toBeTruthy();
+      expect(byTestId('mentee-tasks-date-row_due')?.textContent?.trim()).toBe('');
+
+      // The refresh brings the server-authored submission date.
+      fixture.componentRef.setInput('task', dueTask('submitted', '2026-09-12T00:00:00Z'));
+      fixture.detectChanges();
+      expect(byTestId('mentee-tasks-date-row_due')?.textContent).toContain('Submitted on Sep 12, 2026');
+    });
+
     it('drops the confirmed status once the refresh lands, so a later reset to the old status is read as it is', async () => {
       const task = pendingTask();
       const form = await buildRow(task);
