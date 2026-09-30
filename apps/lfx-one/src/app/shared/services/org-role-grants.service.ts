@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ORG_ROLE_GRANTS_REFRESH_PARAM } from '@lfx-one/shared/constants';
-import { CascadingRoleGrant, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import { CascadingRoleGrant, OrgLensEditCheckResponse, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
 import { classifySectionError } from '../utils/org-lens-empty-state.utils';
@@ -154,6 +154,21 @@ export class OrgRoleGrantsService {
         // Not a refusal: keep the page (its sections report the outage), but leave a trace.
         console.warn('[org-lens] read-check did not answer; treating the organization as readable', error);
         return of(true);
+      })
+    );
+  }
+
+  /**
+   * #3136 — asks the server whether the caller may edit `orgUid` (roster editor, else authorizer `writer`),
+   * so a company-wide writer the roster never lists still gets the edit affordances. Fail-closed: any error
+   * answers `false` — the answer only shows or hides controls, and every write is authorized again server-side.
+   */
+  public editCheck(orgUid: string): Observable<boolean> {
+    return this.http.get<OrgLensEditCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/edit-check`).pipe(
+      map((response) => response?.canEdit === true),
+      catchError((error: unknown) => {
+        console.warn('[org-lens] edit-check did not answer; hiding edit affordances', error);
+        return of(false);
       })
     );
   }

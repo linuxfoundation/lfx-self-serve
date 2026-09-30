@@ -70,8 +70,19 @@ export interface OrgAccessListResponse {
   /** All listed rows; the client paginates/filters client-side. */
   users: OrgAccessUser[];
   summary: OrgAccessSummary;
-  /** Caller is a direct writer of this org (UX-only gate; backend enforces). */
+  /** Caller may edit this org: a direct or inherited admin, or `writer` from the authorizer (#3136). UX-only gate; backend enforces. */
   canManage: boolean;
+}
+
+/** GET /api/orgs/:orgUid/lens/edit-check — #3136: whether the caller may edit this organization. UX-only; every write is authorized again. */
+export interface OrgLensEditCheckResponse {
+  canEdit: boolean;
+}
+
+/** #3136 — the edit check's answer, keyed by the organization it was asked for so it never applies to another selection. */
+export interface OrgLensEditProbe {
+  uid: string;
+  canEdit: boolean;
 }
 
 /** PUT /api/orgs/:orgUid/lens/access/users/:email — change role. */

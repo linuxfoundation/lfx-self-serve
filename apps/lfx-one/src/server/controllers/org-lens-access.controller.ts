@@ -4,11 +4,12 @@
 // Generated with [Cursor](https://cursor.com)
 
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
-import { OrgAccessInviteRequest, OrgAccessRole, OrgAccessRoleChangeRequest } from '@lfx-one/shared/interfaces';
+import { OrgAccessInviteRequest, OrgAccessRole, OrgAccessRoleChangeRequest, OrgLensEditCheckResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { mapAccessUpstreamError } from '../helpers/access-error.helper';
+import { resolveOrgLensEdit } from '../helpers/org-lens-edit-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensAccessService } from '../services/org-lens-access.service';
@@ -36,6 +37,29 @@ export class OrgLensAccessController {
     // A per-user verdict: never reuse a cached admission after a grant changes.
     res.setHeader('Cache-Control', 'no-store');
     res.status(204).end();
+  }
+
+  // GET /api/orgs/:orgUid/lens/edit-check
+  /**
+   * #3136 — answers "may this caller edit this organization?" for the Org Lens edit affordances, with
+   * the same decision the write gates use (`resolveOrgLensEdit`: roster editor, else authorizer
+   * `writer`). UX-only and fail-closed: an unverifiable answer reads `false` (the helper logs why),
+   * and every write is authorized again on its own path. The `/lens` read gate has already run.
+   */
+  public async editCheck(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'check_org_lens_edit', { org_uid: orgUid });
+    try {
+      assertOrgUid(orgUid, 'check_org_lens_edit');
+      const decision = await resolveOrgLensEdit(req, orgUid, 'check_org_lens_edit');
+      const body: OrgLensEditCheckResponse = { canEdit: decision.kind === 'allowed' };
+      logger.success(req, 'check_org_lens_edit', startTime, { org_uid: orgUid, can_edit: body.canEdit, decision: decision.kind });
+      // A per-user verdict: never reuse a cached answer after a grant changes.
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(body);
+    } catch (error) {
+      next(error);
+    }
   }
 
   // GET /api/orgs/:orgUid/lens/access/users
