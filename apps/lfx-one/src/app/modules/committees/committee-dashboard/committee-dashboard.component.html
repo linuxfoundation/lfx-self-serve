@@ -201,7 +201,12 @@
               </lfx-empty-state>
             } @else if (project()?.uid && showFoundationGrouping()) {
               <div class="mb-3">
-                <lfx-committee-filter-bar [searchForm]="searchForm" [votingStatusOptions]="votingStatusOptions()"> </lfx-committee-filter-bar>
+                <lfx-committee-filter-bar
+                  [searchForm]="searchForm"
+                  [votingStatusOptions]="votingStatusOptions()"
+                  [joinModeOptions]="joinModeOptions()"
+                  [showJoinModeFilter]="true">
+                </lfx-committee-filter-bar>
               </div>
 
               @if (foundationGroups().length === 0) {
@@ -214,6 +219,8 @@
                   [myCommitteeUids]="myCommitteeUids()"
                   [searchForm]="searchForm"
                   [votingStatusOptions]="votingStatusOptions()"
+                  [joinModeOptions]="joinModeOptions()"
+                  [showJoinModeFilter]="true"
                   (resetRequested)="selectBehavioralClass(null)"
                   (refresh)="refreshCommittees()"
                   (rowClick)="onCommitteeClick($event)">
@@ -247,6 +254,8 @@
                         [myCommitteeUids]="myCommitteeUids()"
                         [searchForm]="searchForm"
                         [votingStatusOptions]="votingStatusOptions()"
+                        [joinModeOptions]="joinModeOptions()"
+                        [showJoinModeFilter]="true"
                         (resetRequested)="selectBehavioralClass(null)"
                         (refresh)="refreshCommittees()"
                         (rowClick)="onCommitteeClick($event)">
@@ -264,6 +273,8 @@
                 [myCommitteeUids]="myCommitteeUids()"
                 [searchForm]="searchForm"
                 [votingStatusOptions]="votingStatusOptions()"
+                [joinModeOptions]="joinModeOptions()"
+                [showJoinModeFilter]="true"
                 (resetRequested)="selectBehavioralClass(null)"
                 (refresh)="refreshCommittees()"
                 (rowClick)="onCommitteeClick($event)">

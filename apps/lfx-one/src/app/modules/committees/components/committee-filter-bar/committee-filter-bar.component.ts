@@ -23,6 +23,8 @@ export class CommitteeFilterBarComponent {
 
   public readonly searchForm = input.required<FormGroup>();
   public readonly votingStatusOptions = input.required<FilterOption[]>();
+  public readonly joinModeOptions = input<FilterOption[]>([]);
+  public readonly showJoinModeFilter = input<boolean>(false);
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly foundationOptions = input<FilterOption[]>([]);

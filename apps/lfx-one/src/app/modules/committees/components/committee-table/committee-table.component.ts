@@ -57,6 +57,8 @@ export class CommitteeTableComponent {
   public readonly committeeLabel = COMMITTEE_LABEL;
   public searchForm = input.required<FormGroup>();
   public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
+  public joinModeOptions = input<{ label: string; value: string | null }[]>([]);
+  public showJoinModeFilter = input<boolean>(false);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
@@ -110,7 +112,7 @@ export class CommitteeTableComponent {
   }
 
   protected resetFilters(): void {
-    this.searchForm().patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    this.searchForm().patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
     this.resetRequested.emit();
