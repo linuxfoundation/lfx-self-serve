@@ -308,18 +308,31 @@ export interface CommitteeServiceOrgSeat {
   username?: string | null;
 }
 
-/** Foundation-name lookup for a set of seats: uid → display name, plus counts for the timing logs. */
+/**
+ * Foundation-name lookup for a set of seats: uid → display name, which of those projects are
+ * confirmed public, plus counts for the timing and enrichment logs. A result shared across callers
+ * may carry only the names of uids in `publicUids` — only names confirmed public at fill time.
+ */
 export interface FoundationNameEnrichment {
   /** Names readable by the caller who ran the lookup — private projects included, so never share them across callers as-is. */
   names: Map<string, string>;
-  /** Uids confirmed public (answered by the public-name cache, or returned with `public: true`), whose names every caller may read. A uid the lookup did not return is absent: its visibility is unknown. */
+  /**
+   * Uids confirmed public, whose names every caller may read. By default a public-name cache hit
+   * (up to `PUBLIC_PROJECT_NAME_CACHE_TTL_MS` old) counts; with `freshVisibility` only this lookup's
+   * project-index result (`public: true`) or a direct project read (`public: true`) does. A uid in
+   * neither `publicUids` nor `privateUids` is unknown: not indexed, unreadable, or its lookup failed.
+   */
   publicUids: Set<string>;
-  /** Uids answered by the per-pod public-name cache. */
+  /** Uids the project index (or, with `freshVisibility`, a direct project read) returned without `public: true`. */
+  privateUids: Set<string>;
+  /** Uids answered by the per-pod public-name cache (always 0 with `freshVisibility`). */
   cachedHits: number;
   /** Uids asked of the project lookup (the cache misses). */
   requested: number;
-  /** Names the project lookup actually returned for those uids. A query-service outage shows up as this falling far below `requested` (failed batches are swallowed upstream, not thrown). */
+  /** Names the project lookup (and any direct reads) actually returned for those uids. A query-service outage shows up as this falling far below `requested` (failed batches are swallowed upstream, not thrown). */
   resolved: number;
+  /** Uids a direct project read confirmed public after the project index did not return them (`freshVisibility` only; 0 otherwise). */
+  confirmedByDirectRead: number;
 }
 
 /** Spec 026 (LFXV2-1865): paginated committee-service seats page; `page_token` is an opaque cursor (absent when no further pages), drained by the BFF to build the full roster for the grouped view + CSV export. */

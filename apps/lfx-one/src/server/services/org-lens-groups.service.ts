@@ -16,6 +16,9 @@ import { buildOrgGroupsCacheKey, withOrgGroupsCache } from './valkey.service';
 /** Where a served Groups response came from — reported per request so the cold-load rate per org is measurable. */
 type GroupsResultSource = 'fresh' | 'reused' | 'coalesced' | 'uncached';
 
+/** Bounds the project uids listed in one `org_lens_groups_enrich` line, so an outage (every project missing) can't bloat it. */
+const MAX_LOGGED_MISSING_PROJECT_UIDS = 50;
+
 /** Aggregates org seats (non-board) by committee, producing the Groups page roster. */
 export class OrgLensGroupsService {
   /**
@@ -54,8 +57,9 @@ export class OrgLensGroupsService {
    * Only a caller with a grant resolved on this org is served the shared entry.
    *
    * Because every such caller receives the same entry, it carries only foundation names every
-   * caller may read: `project_name` is set for public projects only (see `resolveGroups`). A group
-   * under a private foundation shows its slug to everyone, including callers who could read the name.
+   * caller may read: `project_name` is set only for projects confirmed public at fill time (see
+   * `resolveGroups`). A group under a private foundation, or one whose visibility could not be
+   * confirmed, shows its slug to everyone, including callers who could read the name.
    */
   public async getGroups(req: Request, orgUid: string, qualification: OrgLensReadQualification): Promise<OrgLensGroupsResponse> {
     const startedAt = Date.now();
@@ -146,38 +150,67 @@ export class OrgLensGroupsService {
     // Foundation names: this aggregate is shared by every org-grant caller of the org, but both name
     // sources below read under the token of whichever caller fills it. A private project's name must
     // not reach callers without `viewer` on that project, so `project_name` is set only for projects
-    // confirmed public (`publicUids`: every caller holds `viewer` on them). A project that is private,
-    // missing from the project index, or whose lookup failed gets no name from either source and falls
-    // back to its slug in the UI.
+    // confirmed public at fill time (`publicUids`: every caller holds `viewer` on them).
+    // `freshVisibility` makes that confirmation come from this fill's own lookups — the project
+    // index, then a capped direct project read for projects the index did not return — never from
+    // the per-pod public-name cache, whose entries can be up to 5 min old. A project that is private,
+    // or whose visibility could not be confirmed, gets no name from either source and falls back to
+    // its slug in the UI.
     //
-    // Two sources, for public projects only: the project-service index (live, keyed by project_uid)
-    // is primary — the committee-service index only fills the names it misses. committee_service.
-    // ProjectName is a write-time snapshot resolved once at committee create/update with no rename
-    // subscriber, so it goes stale on a project rename — it must stay secondary, not primary. Both
-    // sources fail soft to an empty map. Resolved sequentially (not in parallel): the committee-index
-    // fan-out only targets committees of public projects the project index left unnamed, so on the
-    // common path the second upstream call is skipped entirely rather than firing — and discarding
-    // its result — on every single request.
-    const { names: foundationNames, publicUids } = await enrichFoundationNames(req, nonBoardSeats, this.projectService);
-    const unresolvedCommitteeUids = Array.from(committeeMap.entries())
-      .filter(([, groupSeats]) => {
-        const projectUid = groupSeats[0]?.project_uid ?? '';
-        return publicUids.has(projectUid) && !foundationNames.get(projectUid);
-      })
+    // Two sources, for public projects only: project-service (the index, or the direct read; live,
+    // keyed by project_uid) is primary — the committee-service index only fills the names it misses.
+    // committee_service.ProjectName is a write-time snapshot resolved once at committee create/update
+    // with no rename subscriber, so it goes stale on a project rename — it must stay secondary, not
+    // primary. Both sources fail soft to an empty map. Resolved sequentially (not in parallel): the
+    // committee-index fan-out only targets committees of public projects project-service left
+    // unnamed, so on the common path the second upstream call is skipped entirely rather than firing
+    // — and discarding its result — on every single request.
+    const {
+      names: foundationNames,
+      publicUids,
+      privateUids,
+      confirmedByDirectRead,
+    } = await enrichFoundationNames(req, nonBoardSeats, this.projectService, { freshVisibility: true });
+    const committeeProjectUids = Array.from(committeeMap.entries()).map(([uid, groupSeats]) => [uid, groupSeats[0]?.project_uid ?? ''] as const);
+    const unresolvedCommitteeUids = committeeProjectUids
+      .filter(([, projectUid]) => publicUids.has(projectUid) && !foundationNames.get(projectUid))
       .map(([uid]) => uid);
     const committeesByUid = await this.getCommitteesByUid(req, unresolvedCommitteeUids);
 
-    // Only worth an INFO line when the committee-index gap-filler actually had gaps to fill —
-    // per .claude/rules/logging-patterns.md's worked example, which gates its enrichment INFO log
-    // the same way, rather than firing one on every single request regardless of whether anything
-    // happened.
-    if (unresolvedCommitteeUids.length > 0) {
+    // Committees left without a name, by why: the project is private; its visibility is unknown (the
+    // project index did not return it and no direct read confirmed it); or the seat carries no project.
+    let withheldPrivate = 0;
+    let missingFromProjectIndex = 0;
+    let noProjectUid = 0;
+    const missingProjectUids = new Set<string>();
+    for (const [, projectUid] of committeeProjectUids) {
+      if (!projectUid) {
+        noProjectUid++;
+      } else if (privateUids.has(projectUid)) {
+        withheldPrivate++;
+      } else if (!publicUids.has(projectUid)) {
+        missingFromProjectIndex++;
+        missingProjectUids.add(projectUid);
+      }
+    }
+
+    // Only worth an INFO line when something was left unnamed or withheld — per
+    // .claude/rules/logging-patterns.md's worked example, which gates its enrichment INFO log the same
+    // way, rather than firing one on every single request regardless of whether anything happened.
+    // `confirmed_by_direct_read` counts projects; the other counts are committees. Project uids are
+    // not personal data; they are listed so a missing project can be checked in the index.
+    if (unresolvedCommitteeUids.length > 0 || withheldPrivate > 0 || missingFromProjectIndex > 0 || noProjectUid > 0) {
       const resolvedFromCommitteeIndex = unresolvedCommitteeUids.filter((uid) => committeesByUid.get(uid)?.project_name).length;
       logger.info(req, 'org_lens_groups_enrich', 'Enriched groups with project/committee names', {
         total_committees: committeeMap.size,
         gaps_from_project_index: unresolvedCommitteeUids.length,
         resolved_from_committee_index: resolvedFromCommitteeIndex,
         unresolved_after_both_sources: unresolvedCommitteeUids.length - resolvedFromCommitteeIndex,
+        withheld_private: withheldPrivate,
+        missing_from_project_index: missingFromProjectIndex,
+        missing_from_project_index_uids: Array.from(missingProjectUids).slice(0, MAX_LOGGED_MISSING_PROJECT_UIDS),
+        no_project_uid: noProjectUid,
+        confirmed_by_direct_read: confirmedByDirectRead,
       });
     }
 
@@ -245,11 +278,13 @@ export class OrgLensGroupsService {
 
     // Only set project_name when enrichment actually resolved one — the slug fallback belongs to
     // the view model (OrgLensGroupVm.projectLabel), not this field, or project_name would silently
-    // hold a slug and no longer mean what its name says. Only a project confirmed public is named:
-    // this summary is stored in the org-shared aggregate, and either source may hold a private
-    // project's name read under the filling caller's token. Precedence: the project-service index
-    // (live) beats the committee-service index (a write-time snapshot that goes stale on rename —
-    // see the comment in resolveGroups) — the committee index only fills gaps the project index misses.
+    // hold a slug and no longer mean what its name says. Only a project confirmed public at fill time
+    // is named: this summary is stored in the org-shared aggregate, and either source may hold a
+    // private project's name read under the filling caller's token. Precedence: project-service
+    // (index or direct read; live) beats the committee-service index (a write-time snapshot that goes
+    // stale on rename — see the comment in resolveGroups) — the committee index only fills its gaps.
+    // A seat with no project_uid stays unnamed even when the committee index carries a project_name:
+    // with no project there is no visibility to confirm, so that snapshot name could be a private one.
     const projectUid = first.project_uid ?? '';
     const projectName = publicUids.has(projectUid) ? foundationNames.get(projectUid) || committeesByUid.get(uid)?.project_name : undefined;
 

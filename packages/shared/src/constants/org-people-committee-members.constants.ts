@@ -34,6 +34,12 @@ export const PUBLIC_PROJECT_NAME_CACHE_TTL_MS = 5 * 60 * 1000;
 /** Hard cap on cached public project names per process; the oldest entry is evicted once reached. */
 export const PUBLIC_PROJECT_NAME_CACHE_MAX_ENTRIES = 5000;
 
+/**
+ * Most direct project reads one fresh-visibility lookup (the Groups aggregate fill) runs, in parallel,
+ * to confirm projects the project index did not return. The rest stay unconfirmed: slug only.
+ */
+export const PROJECT_VISIBILITY_DIRECT_READ_CAP = 20;
+
 /** Zero-valued envelope — `toSignal` initialValue + the no-account / no-seats fallback. */
 export const EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE: OrgPeopleCommitteeMembersResponse = {
   orgUid: '',
