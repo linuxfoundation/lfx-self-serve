@@ -8,7 +8,7 @@ import type {
   ApiResponse,
   BriefMetrics,
   BuildAudienceResult,
-  CampaignAudienceStatus,
+  CampaignAudience,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -39,6 +39,7 @@ import type {
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   LinkedInBriefCopy,
+  ListAudiencesResult,
   LinkedInCreativeVariant,
   MetaAdVariant,
   MetaBriefCopy,
@@ -49,6 +50,7 @@ import type {
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { toAudienceStatus } from '../helpers/campaign-audience.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from './logger.service';
@@ -135,18 +137,6 @@ interface CampaignServiceEmailCopy {
   subject: string;
   preheader: string;
   sections: { type: string; html?: string; text?: string; url?: string }[];
-}
-
-/**
- * Narrow the upstream status string onto the closed union.
- *
- * Upstream declares `Enum("building", "built", "failed")`, but a wire string is only ever a claim.
- * Anything unrecognised becomes `failed` rather than being passed through: `canStageEmail` admits
- * only `built`, so an unknown value must not be able to masquerade as a usable audience, and
- * `failed` is the arm that offers the operator a rebuild.
- */
-function toAudienceStatus(status: string): CampaignAudienceStatus {
-  return status === 'built' || status === 'building' ? status : 'failed';
 }
 
 /**
@@ -1072,15 +1062,7 @@ export class CampaignServiceClient {
       return {
         enabled: true,
         audience: {
-          id: built.id,
-          projectId: built.project_id,
-          briefId: built.brief_id,
-          platform: built.platform,
-          platformMasterListId: built.platform_master_list_id,
-          suppressionListIds: built.suppression_list_ids,
-          inclusionSummary: built.inclusion_summary,
-          status: toAudienceStatus(built.status),
-          version: built.version,
+          ...this.toCampaignAudience(built),
           // Off the HEADER, not the body: the design maps it as `Header("etag:ETag")` on the 202,
           // so `built.etag` would read `undefined` forever -- the exact trap the brief wire-type
           // comment above records. `readEtag` is the established way to take it.
@@ -1090,6 +1072,46 @@ export class CampaignServiceClient {
     } catch (error) {
       logger.warning(req, 'build_audience', 'Audience build failed, returning an error result', { err: error });
       return { enabled: true, error: upstreamMessageOr(error, 'The audience could not be built. Check the HubSpot connection and try again.') };
+    }
+  }
+
+  /**
+   * Read back the audiences campaign-service already holds for a brief.
+   *
+   * This exists because `emailAudience` was in-memory only: a page reload lost a built audience
+   * and pushed the operator into a rebuild, which mints a DUPLICATE HubSpot contact list. The
+   * upstream list has always been there; nothing consumed it.
+   *
+   * Returns rows newest-first, exactly as upstream orders them — the caller's "current audience"
+   * is the first row for the platform it cares about, and re-sorting here would hide a change in
+   * that upstream ordering behind a local one.
+   *
+   * No etag, on ANY row: `list-audiences` declares no `Header("etag:ETag")`, so there is no
+   * concurrency token to take. A caller that means to PATCH must re-read the single audience
+   * first. Leaving the field undefined is deliberate — a fabricated token would be rejected
+   * upstream at best, and at worst would make a stale write look safe.
+   */
+  public async listAudiences(req: Request, projectSlug: string, briefId: string): Promise<ListAudiencesResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Same steady state as buildAudience: the flag being off is not a failure.
+      return { enabled: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences`;
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList[]>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
+
+      // An absent array is an empty one, not an error: a brief with no audience yet is the
+      // ordinary first-visit state, and reporting it as a failure would put an error banner on
+      // every new campaign.
+      const rows = Array.isArray(response.data) ? response.data : [];
+      return {
+        enabled: true,
+        audiences: rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id)).map((row) => this.toCampaignAudience(row)),
+      };
+    } catch (error) {
+      logger.warning(req, 'list_audiences', 'Audience read-back failed, returning an error result', { err: error });
+      return { enabled: true, error: upstreamMessageOr(error, 'The saved audience for this brief could not be read. Reload to try again.') };
     }
   }
 
@@ -1763,6 +1785,27 @@ export class CampaignServiceClient {
       'GET',
       window ? { window } : undefined
     );
+  }
+
+  /**
+   * Map one upstream audience row onto the shared shape.
+   *
+   * `etag` is NOT set here. The two callers get it from different places — `buildAudience` takes
+   * it off the 202's header, `listAudiences` has none to take — so a mapper that guessed would be
+   * wrong for one of them. The build path assigns it after mapping instead.
+   */
+  private toCampaignAudience(row: CampaignServiceAudienceList): CampaignAudience {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      briefId: row.brief_id,
+      platform: row.platform,
+      platformMasterListId: row.platform_master_list_id,
+      suppressionListIds: row.suppression_list_ids,
+      inclusionSummary: row.inclusion_summary,
+      status: toAudienceStatus(row.status),
+      version: row.version,
+    };
   }
 
   /**

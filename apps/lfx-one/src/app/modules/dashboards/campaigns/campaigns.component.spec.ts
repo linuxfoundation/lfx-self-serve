@@ -10,6 +10,7 @@ import { computed, signal } from '@angular/core';
 import type {
   BriefMetrics,
   BriefMetricsRow,
+  AudienceComposedList,
   CampaignAudience,
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
@@ -1860,7 +1861,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void;
     onTabKeydown(event: KeyboardEvent, index: number, owner: CampaignDeliveryType): void;
     onProceedToImplementation(brief: CampaignBriefOutput): void;
-    onEmailProceedToImplementation(brief: CampaignBriefOutput): void;
+    onEmailProceedFromPlanning(brief: CampaignBriefOutput): void;
     selectedEmailTemplateId: WritableSignal<string>;
     selectedEmailTypeId: WritableSignal<string>;
     emailCopy: WritableSignal<EmailBriefCopy | null>;
@@ -1870,10 +1871,16 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCtaUnlinkedLabel: Signal<string>;
     emailHeroImageHost: Signal<string>;
     emailAudience: WritableSignal<CampaignAudience | null>;
-    emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
-    emailAudienceMessage: WritableSignal<string>;
     emailBriefId: WritableSignal<string>;
-    onBuildAudience(): Promise<void>;
+    emailAudienceOrigin: WritableSignal<'composed' | 'restored' | null>;
+    emailAudienceUnattached: WritableSignal<AudienceComposedList | null>;
+    emailAudienceSkipped: WritableSignal<boolean>;
+    onSkipAudienceStep(): void;
+    onContinueToEmailStep(): void;
+    onGoToAudienceStep(): void;
+    onAudienceComposed(audience: CampaignAudience): void;
+    onAudienceComposeUnattached(master: AudienceComposedList): void;
+    restoreEmailAudience(projectSlug: string, briefId: string): Promise<void>;
     emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
     emailCopyError: WritableSignal<string>;
     canGenerateEmailCopy: Signal<boolean>;
@@ -2069,7 +2076,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   it('clears both delivery types when the program changes', () => {
     const emailBrief = { eventDetails: { name: 'KubeCon', slug: 'kubecon' } } as CampaignBriefOutput;
     internals().onProceedToImplementation(exampleBrief);
-    internals().onEmailProceedToImplementation(emailBrief);
+    internals().onEmailProceedFromPlanning(emailBrief);
     expect(internals().briefOutput()).not.toBeNull();
     expect(internals().emailBriefOutput()).not.toBeNull();
 
@@ -2263,7 +2270,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(internals().emailBriefOutput()).toBeNull();
 
     const emailBrief = { eventDetails: { name: 'Open Source Summit', slug: 'oss' } } as CampaignBriefOutput;
-    internals().onEmailProceedToImplementation(emailBrief);
+    internals().onEmailProceedFromPlanning(emailBrief);
 
     expect(internals().emailBriefOutput()).toEqual(emailBrief);
     // Still the paid brief: a shared signal here would show an email brief under Paid
@@ -2792,12 +2799,15 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
 
-      const late = new Subject<{ enabled: boolean; audience: CampaignAudience }>();
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(late.asObservable() as never);
+      // The read-back is the only path that can now land an audience asynchronously -- the derived
+      // build this test used to drive is gone -- and it is the one that matters: a row for the
+      // PREVIOUS brief re-enables staging, because `canStageEmail` gates on the audience status.
+      const late = new Subject<{ enabled: boolean; audiences: CampaignAudience[] }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(late.asObservable() as never);
 
-      const pending = internals().onBuildAudience();
+      const pending = internals().restoreEmailAudience('tlf', 'brief-77');
       (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
-      late.next({ enabled: true, audience: builtAudience });
+      late.next({ enabled: true, audiences: [builtAudience] });
       late.complete();
       await pending;
 
@@ -2871,13 +2881,18 @@ describe('CampaignsComponent — email delivery channel', () => {
     it('issues one persist when two email actions start concurrently', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-1');
+      // Staging is the second brief-scoped action now that the derived build is gone. It needs an
+      // audience to get past its entry guard, and the composed handoff is the only way to set one.
+      internals().onAudienceComposed(builtAudience);
       fixture.detectChanges();
 
       vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience: builtAudience }));
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+      vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(of(null));
       persist.mockClear();
 
-      await Promise.all([internals().onGenerateEmailCopy(), internals().onBuildAudience()]);
+      await Promise.all([internals().onGenerateEmailCopy(), internals().onStageEmailSend()]);
 
       expect(persist).toHaveBeenCalledTimes(1);
     });
@@ -3151,34 +3166,6 @@ describe('CampaignsComponent — email delivery channel', () => {
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
     });
 
-    it('persists the brief once and builds against that id', async () => {
-      selectEmail();
-      internals().emailBriefOutput.set(emailBrief);
-      fixture.detectChanges();
-
-      const build = vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
-      await internals().onBuildAudience();
-
-      expect(build.mock.calls[0]).toEqual(['tlf', 'brief-77']);
-      expect(internals().emailAudience()?.inclusionSummary).toBe('Past registrants of 3 prior editions');
-    });
-
-    it('does NOT persist a second brief when staging follows an audience build', async () => {
-      selectEmail();
-      internals().emailBriefOutput.set(emailBrief);
-      internals().selectedEmailTemplateId.set('hs-1');
-      fixture.detectChanges();
-
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
-      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
-
-      await internals().onBuildAudience();
-      await internals().onStageEmailSend();
-
-      // Two writes for one event is the bug this guards: the id is cached after the first.
-      expect(persist).toHaveBeenCalledTimes(1);
-    });
-
     /**
      * A failed HubSpot row must not be announced as a created draft.
      *
@@ -3193,7 +3180,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      internals().onAudienceComposed(audience);
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
         of({
@@ -3203,7 +3190,6 @@ describe('CampaignsComponent — email delivery channel', () => {
         } as unknown as CampaignJobOutcome)
       );
 
-      await internals().onBuildAudience();
       await internals().onStageEmailSend();
       fixture.detectChanges();
 
@@ -3218,13 +3204,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      internals().onAudienceComposed(audience);
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
         of({ campaigns: [{ id: 'c1' }], errors: [] } as unknown as CampaignJobOutcome)
       );
 
-      await internals().onBuildAudience();
       await internals().onStageEmailSend();
       fixture.detectChanges();
 
@@ -3250,8 +3235,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
-      await internals().onBuildAudience();
+      internals().onAudienceComposed(audience);
 
       // The create hangs, so the reset lands squarely inside its await -- past the entry check.
       const slowCreate = new Subject<{ jobId: string }>();
@@ -3290,11 +3274,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       fixture.detectChanges();
 
       const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
 
-      // The audience build runs FIRST, on the fast persist -- it also awaits `ensureEmailBriefId`,
-      // so slowing the persist before this point hangs the setup rather than the staging call.
-      await internals().onBuildAudience();
+      // The audience is attached synchronously by the compose handoff, so nothing here depends on
+      // the persist -- which is what lets the persist be slowed below without hanging the setup.
+      internals().onAudienceComposed(audience);
       create.mockClear();
 
       // NOW slow the persist, and clear the cached id so staging actually awaits it.
@@ -3329,11 +3312,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       fixture.detectChanges();
 
       const late = new Subject<CampaignJobOutcome | null>();
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: true, audience }));
+      internals().onAudienceComposed(audience);
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(late.asObservable());
 
-      await internals().onBuildAudience();
       await internals().onStageEmailSend();
 
       (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
@@ -3345,16 +3327,412 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('idle');
       expect(internals().emailStagingMessage()).toBe('');
     });
+  });
 
-    it('reports a disabled cutover as a steady state, not an error', async () => {
+  /**
+   * The composed master reaching the send.
+   *
+   * The Audience tab used to be a dead end -- it created real HubSpot lists and nothing carried
+   * them here, so the send still went to an audience the service derived on its own. What is only
+   * decidable in this component is what happens to the row once it arrives: that it unblocks
+   * staging, that it cannot be silently overwritten by a read-back already in flight, and that a
+   * master nothing is attached to is reported rather than dropped.
+   */
+  describe('composed audience handoff', () => {
+    const emailBrief = {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
+    } as unknown as CampaignBriefOutput;
+
+    const composed: CampaignAudience = {
+      id: 'aud-9',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      platformMasterListId: '900',
+      inclusionSummary: '4 signal lists, 1 suppression list',
+      status: 'built',
+      version: 1,
+    };
+
+    const looseMaster: AudienceComposedList = {
+      listId: '900',
+      name: '27Q2 - KubeCon EU 2026 - Master',
+      hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/900',
+    };
+
+    function onImplementTab(): void {
       selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-1');
+      fixture.detectChanges();
+    }
+
+    it('unblocks staging on a composed audience', () => {
+      onImplementTab();
+      expect(internals().canStageEmail(), 'fixture precondition: staging must be blocked before an audience exists').toBe(false);
+
+      internals().onAudienceComposed(composed);
+      fixture.detectChanges();
+
+      expect(internals().canStageEmail()).toBe(true);
+      expect(internals().emailAudience()).toEqual(composed);
+    });
+
+    /**
+     * The generation bump has to happen BEFORE the signal write, not after. A restore read-back may
+     * be in flight when the operator composes, and its reply arm checks the counter before setting
+     * `emailAudience` -- so bumping late leaves a window in which a STALE row lands on top of the
+     * list just assembled, and dispatch then sends to the stale one.
+     */
+    it('discards a read-back that resolves after a compose attached its own audience', async () => {
+      onImplementTab();
+      const late = new Subject<{ enabled: boolean; audiences: CampaignAudience[] }>();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(late.asObservable() as never);
+
+      const pending = internals().restoreEmailAudience('tlf', 'brief-77');
+      internals().onAudienceComposed(composed);
+
+      late.next({ enabled: true, audiences: [{ ...composed, id: 'aud-stale', platformMasterListId: '111' }] });
+      late.complete();
+      await pending;
+      fixture.detectChanges();
+
+      expect(internals().emailAudience()?.id, 'a stale read-back overwrote the composed audience').toBe('aud-9');
+    });
+
+    it('names the composed origin rather than claiming the audience came from the event details', () => {
+      onImplementTab();
+      internals().onAudienceComposed(composed);
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.textContent).toContain('Audience attached');
+      // Recorded on the row all along and rendered nowhere until now: it is what the operator
+      // searches HubSpot for when checking what a send will actually go to.
+      expect(host.querySelector('[data-testid="campaigns-email-audience-master-list"]')?.textContent).toContain('900');
+    });
+
+    /**
+     * The list is real, it consumed contact quota, and NO other screen in this app will ever
+     * mention it again -- so dropping this would leave an orphaned HubSpot list the operator has
+     * no route back to. No retry is offered, for the reason the template already records: compose
+     * is not idempotent, and a second attempt mints a second list for the same send.
+     */
+    it('warns about a master list that attached to nothing, and links to it', () => {
+      onImplementTab();
+      internals().onAudienceComposeUnattached(looseMaster);
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      const warning = host.querySelector('[data-testid="campaigns-email-audience-unattached"]');
+      expect(warning, 'a list was created in HubSpot with nothing on screen naming it').not.toBeNull();
+      expect(warning?.textContent).toContain('27Q2 - KubeCon EU 2026 - Master');
+      expect(host.querySelector<HTMLAnchorElement>('[data-testid="campaigns-email-audience-unattached-link"]')?.getAttribute('href')).toBe(
+        looseMaster.hubspotUrl
+      );
+      // Staging stays blocked: nothing was attached, so a send here would have no recipients.
+      expect(internals().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * The derived build that used to live in this block is gone, and must stay gone.
+     *
+     * It wrote a NEW audience row while dispatch resolves the newest, so one click silently
+     * switched the send away from the hand-assembled list -- which stayed in HubSpot, paid for and
+     * unmentioned. An acknowledgement gate was the previous answer and was not enough: nothing on
+     * this screen could report the switch after it happened. The Audience tab is now the only
+     * producer, so the Implement tab must offer no audience control in ANY state.
+     */
+    it.each([
+      ['nothing yet', (): void => undefined],
+      ['a loose master list', (): void => internals().onAudienceComposeUnattached(looseMaster)],
+      ['a failed audience', (): void => internals().emailAudience.set({ ...composed, status: 'failed' })],
+    ])('offers no way to produce an audience from the Implement tab with %s', (_label, arrange) => {
+      onImplementTab();
+      arrange();
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.querySelector('[data-testid="campaigns-email-audience-btn"]'), 'a build control came back to the Implement tab').toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-email-audience-supersede-btn"]')).toBeNull();
+    });
+
+    /** With no control offered, the empty state has to say where an audience comes from. */
+    it('points at the Audience tab when there is no audience yet', () => {
+      onImplementTab();
+
+      const empty = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-empty"]');
+      expect(empty?.textContent, 'the block was a dead end: no audience, no control, no instruction').toContain('Audience');
+    });
+
+    it('drops the reconcile warning once an audience actually attaches', () => {
+      onImplementTab();
+      internals().onAudienceComposeUnattached(looseMaster);
+      fixture.detectChanges();
+
+      internals().onAudienceComposed(composed);
+      fixture.detectChanges();
+
+      expect(internals().emailAudienceUnattached(), 'a stale warning survived the attach it was waiting for').toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-audience-unattached"]')).toBeNull();
+    });
+
+    it('clears the warning when the brief-derived state resets', () => {
+      onImplementTab();
+      internals().onAudienceComposeUnattached(looseMaster);
+      fixture.detectChanges();
+
+      // A handoff into Implement for another brief. The HubSpot list still exists, but the
+      // warning is scoped to ONE campaign's send -- carrying it over would accuse a send that
+      // composed nothing.
+      internals().onEmailProceedFromPlanning({ eventDetails: { name: 'Other', slug: 'other' } } as unknown as CampaignBriefOutput);
+      fixture.detectChanges();
+
+      expect(internals().emailAudienceUnattached()).toBeNull();
+      expect(internals().emailAudienceOrigin()).toBeNull();
+    });
+  });
+
+  /**
+   * The step order off the Plan tab.
+   *
+   * Plan used to hand off straight to Implement, which put the one action Implement cannot
+   * finish -- staging, which campaign-service refuses without a built audience -- in front of the
+   * operator, with the step that unblocks it behind a tab nothing pointed at. These pin the
+   * order and BOTH exits from the audience step, because the audience is optional to writing the
+   * email and mandatory only to staging it.
+   */
+  describe('email flow: plan -> audience -> implement', () => {
+    const emailBrief = {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
+    } as unknown as CampaignBriefOutput;
+
+    const composed: CampaignAudience = {
+      id: 'aud-9',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      platformMasterListId: '900',
+      status: 'built',
+      version: 1,
+    };
+
+    it('lands on the audience step, not on implement', () => {
+      selectEmail();
+
+      internals().onEmailProceedFromPlanning(emailBrief);
+      fixture.detectChanges();
+
+      expect(internals().selectedEmailTab()).toBe('audience');
+      expect(internals().emailBriefOutput()).toEqual(emailBrief);
+    });
+
+    /**
+     * The handoff sets the tab signal DIRECTLY rather than going through `selectTab`, so the work
+     * that tab's entry does has to be repeated here. Saving the plan is the one that matters: a
+     * compose with no brief id creates a real HubSpot list and attaches it to nothing, which is a
+     * state this app cannot then fix on the operator's behalf.
+     */
+    it('saves the plan on arrival, so a compose there can attach what it creates', () => {
+      selectEmail();
+      const persist = vi
+        .spyOn(TestBed.inject(CampaignService), 'persistBrief')
+        .mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }) as never);
+
+      internals().onEmailProceedFromPlanning(emailBrief);
+
+      expect(persist).toHaveBeenCalled();
+    });
+
+    it('offers a skip on the audience step and leaves for the email', () => {
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      fixture.detectChanges();
+
+      const skip = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="campaigns-email-audience-skip-btn"] button');
+      expect(skip, 'the audience step had no way out for an operator who wants to write the email first').not.toBeNull();
+
+      skip?.click();
+      fixture.detectChanges();
+
+      expect(internals().selectedEmailTab()).toBe('implementation');
+      expect(internals().emailAudienceSkipped()).toBe(true);
+    });
+
+    /**
+     * Skipping re-orders the work; it does not bypass the gate. `resolveBuiltAudience` upstream
+     * refuses a brief whose newest HubSpot audience is missing, so a skip that left staging
+     * enabled would hand the operator a button whose only outcome is an upstream error.
+     */
+    it('does not make a send stageable, and says what is missing', () => {
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      internals().onSkipAudienceStep();
+      internals().selectedEmailTemplateId.set('hs-123');
+      fixture.detectChanges();
+
+      expect(internals().canStageEmail()).toBe(false);
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      expect(hint?.textContent).toContain('Audience tab');
+    });
+
+    it('reports a skip as a choice and offers the way back', () => {
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      internals().onSkipAudienceStep();
+      fixture.detectChanges();
+
+      const empty = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-empty"]');
+      // Not an error: the operator was invited to skip, so an amber "missing audience" warning
+      // would call their own decision a fault.
+      expect(empty?.textContent).toContain('You skipped the audience step');
+
+      const back = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[data-testid="campaigns-email-audience-goto-btn"] button');
+      expect(back, 'the blocked send named a tab and left the operator to find it').not.toBeNull();
+
+      back?.click();
+      fixture.detectChanges();
+
+      expect(internals().selectedEmailTab()).toBe('audience');
+    });
+
+    /** The way back exists whether or not the step was skipped -- being stuck is the same state. */
+    it('offers the way back even when the step was never skipped', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
       internals().emailBriefOutput.set(emailBrief);
       fixture.detectChanges();
 
-      vi.spyOn(TestBed.inject(CampaignService), 'buildAudience').mockReturnValue(of({ enabled: false }));
-      await internals().onBuildAudience();
+      const empty = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-empty"]');
+      expect(empty?.textContent).not.toContain('You skipped');
+      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-goto-btn"]')).not.toBeNull();
+    });
 
-      expect(internals().emailAudienceState()).toBe('idle');
+    /**
+     * Continue is a SEPARATE handler from skip, not the same call with another label: recording a
+     * skip here would print "You skipped the audience step" directly above the card naming the
+     * list that was attached.
+     */
+    it('swaps skip for continue once an audience is attached, and records no skip', () => {
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      internals().onAudienceComposed(composed);
+      fixture.detectChanges();
+
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.querySelector('[data-testid="campaigns-email-audience-skip-btn"]')).toBeNull();
+      host.querySelector<HTMLElement>('[data-testid="campaigns-email-audience-continue-btn"] button')?.click();
+      fixture.detectChanges();
+
+      expect(internals().selectedEmailTab()).toBe('implementation');
+      expect(internals().emailAudienceSkipped()).toBe(false);
+      expect(internals().canStageEmail()).toBe(false); // no template yet -- the audience is not the blocker
+    });
+
+    it('drops the skip when an audience arrives after one', () => {
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      internals().onSkipAudienceStep();
+      expect(internals().emailAudienceSkipped(), 'fixture precondition').toBe(true);
+
+      internals().onAudienceComposed(composed);
+      fixture.detectChanges();
+
+      // Otherwise the Implement tab reports a skipped step beside the attached list.
+      expect(internals().emailAudienceSkipped()).toBe(false);
+    });
+
+    it('drops the skip when a new brief arrives', () => {
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      internals().onSkipAudienceStep();
+
+      // A handoff for a DIFFERENT send: the skip belongs to the brief that was skipped.
+      internals().onEmailProceedFromPlanning({ eventDetails: { name: 'Other', slug: 'other' } } as unknown as CampaignBriefOutput);
+
+      expect(internals().emailAudienceSkipped()).toBe(false);
+    });
+  });
+
+  /**
+   * The audience read-back on restore.
+   *
+   * Without it a reload was destructive in a way nothing admitted: `emailAudience` is in-memory
+   * only, so a brief that already had a master list came back looking like it had none, and the
+   * operator composed a second one -- which newest-row-wins then made the dispatched one.
+   */
+  describe('email audience restore', () => {
+    const stored: CampaignAudience = {
+      id: 'aud-stored',
+      briefId: 'brief-77',
+      platform: 'hubspot',
+      platformMasterListId: '900',
+      status: 'built',
+      version: 2,
+    };
+
+    it('repopulates the audience from the stored row', async () => {
+      selectEmail();
+      const list = vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [stored] }));
+
+      await internals().restoreEmailAudience('tlf', 'brief-77');
+
+      expect(list).toHaveBeenCalledWith('tlf', 'brief-77');
+      expect(internals().emailAudience()).toEqual(stored);
+      // The point of the read: the reload cannot push the operator into composing a duplicate
+      // master list, because the one already attached is on screen.
+      expect(internals().emailAudienceOrigin()).toBe('restored');
+    });
+
+    /**
+     * Matched on `hubspot` rather than taken as "the first row". A brief can carry rows for other
+     * platforms, and dispatching an email send against a non-HubSpot audience is not a degraded
+     * result -- it is the wrong list entirely.
+     */
+    it('takes the HubSpot row, not merely the first one', async () => {
+      selectEmail();
+      const other = { ...stored, id: 'aud-other', platform: 'linkedin' } as unknown as CampaignAudience;
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [other, stored] }));
+
+      await internals().restoreEmailAudience('tlf', 'brief-77');
+
+      expect(internals().emailAudience()?.id).toBe('aud-stored');
+    });
+
+    it.each([
+      ['the cutover flag is off', { enabled: false }],
+      ['the read failed', { enabled: true, error: 'The saved audience could not be read.' }],
+      ['the brief has no audience yet', { enabled: true, audiences: [] }],
+    ])('stays silent when %s', async (_label, result) => {
+      selectEmail();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of(result) as never);
+
+      await internals().restoreEmailAudience('tlf', 'brief-77');
+
+      expect(internals().emailAudience()).toBeNull();
+      expect(internals().emailAudienceOrigin()).toBeNull();
+    });
+
+    /**
+     * Refused before the call, not defaulted. The BFF answers an empty `project` or `brief_id`
+     * with a 400, and this path is silent by design -- so there is nowhere to report that 400.
+     */
+    it.each([
+      ['no project', '', 'brief-77'],
+      ['no brief id', 'tlf', ''],
+    ])('does not provoke a 400 with %s', async (_label, projectSlug, briefId) => {
+      selectEmail();
+      const list = vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [stored] }));
+
+      await internals().restoreEmailAudience(projectSlug, briefId);
+
+      expect(list).not.toHaveBeenCalled();
+    });
+
+    it('swallows a thrown read rather than banner-ing a page nobody asked anything of', async () => {
+      selectEmail();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(throwError(() => new Error('network')) as never);
+
+      await expect(internals().restoreEmailAudience('tlf', 'brief-77')).resolves.toBeUndefined();
       expect(internals().emailAudience()).toBeNull();
     });
   });
@@ -3517,7 +3895,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const panel = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-built"]');
       // A green check beside the word "failed" tells the operator the opposite of what happened.
-      expect(panel?.textContent).toContain('Audience build failed');
+      expect(panel?.textContent).toContain('Audience failed');
       expect(panel?.textContent).not.toContain('Audience built');
     });
 
@@ -3860,7 +4238,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCopy()).toBeNull();
     });
 
-    it('does not call an unconfirmed build "building"', () => {
+    it('does not call an unconfirmed audience "building"', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
       internals().emailBriefOutput.set(emailBrief);
@@ -3872,7 +4250,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       // the row is not in flight, it is a finished build whose outcome upstream could not
       // confirm, and the ids in the summary may need reconciling.
       expect(card?.textContent).toContain('unconfirmed');
-      expect(card?.textContent).not.toContain('Audience built');
+      expect(card?.textContent).not.toContain('Audience attached');
     });
 
     it('does NOT offer a rebuild while the outcome is unconfirmed', () => {
@@ -3884,9 +4262,11 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // Upstream keeps a row BUILDING when a HubSpot list may already exist, and records the ids
       // to reconcile. Observed live: "HubSpot lists ALREADY CREATED (reconcile these before
-      // retrying): 30779". A rebuild here creates the duplicate contact list that state exists
-      // to prevent -- so the control must be absent, not merely disabled.
-      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-btn"]')).toBeNull();
+      // retrying): 30779". Any retry here creates the duplicate contact list that state exists to
+      // prevent -- and the empty-state pointer must not appear either, because there IS a row.
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-email-audience-btn"]')).toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-email-audience-empty"]')).toBeNull();
     });
 
     it('says why staging is blocked while the outcome is unconfirmed', () => {
@@ -3902,18 +4282,24 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint?.textContent).toContain('reconcile');
     });
 
-    it('keeps a rebuild control when the audience build failed', () => {
+    /**
+     * A failed row must not be a DEAD END, and the escape is no longer a button here.
+     *
+     * The panel used to offer a rebuild so the operator was not stranded. That control is gone
+     * with the derived build, so the stage hint carries the whole escape: it has to name the
+     * Audience tab, because nothing else on this screen does.
+     */
+    it('names the escape route when the audience failed', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
       internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'failed' } as never);
       fixture.detectChanges();
 
-      // Without this the panel is a DEAD END: the status card replaces the button, canStageEmail
-      // refuses anything but `built`, and there is no poll and no re-read route -- so the only
-      // escape was re-running the Plan-tab scrape.
-      const btn = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-audience-btn"]');
-      expect(btn).not.toBeNull();
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-email-audience-btn"]')).toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent).toContain('Audience tab');
     });
 
     it('explains a disabled Stage button when the audience is present but not built', () => {
@@ -3943,8 +4329,9 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
       // A disabled button with no reason reads as a broken panel -- the same standard the
-      // no-brief case above is held to.
-      expect(hint?.textContent?.trim()).toContain('Build the send audience');
+      // no-brief case above is held to. The Implement tab produces no audience of its own any
+      // more, so the hint has to name the tab that does.
+      expect(hint?.textContent?.trim()).toContain('Compose the send audience on the Audience tab');
     });
 
     it('drops the previous brief id when a new brief arrives', () => {
@@ -3952,7 +4339,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefId.set('brief-old');
       internals().emailAudience.set({ id: 'aud-old', status: 'built' } as never);
 
-      internals().onEmailProceedToImplementation(emailBrief);
+      internals().onEmailProceedFromPlanning(emailBrief);
 
       // `ensureEmailBriefId` returns the cached id when it is set, so a stale one silently points
       // the audience build, the copy generation and the staged draft at the PREVIOUS event's row.
@@ -6942,7 +7329,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
   });
 
   it('loads templates when the implementation tab is entered, not only on proceed', () => {
-    // The only other searchEmailTemplates call site is onEmailProceedToImplementation, so
+    // The only other searchEmailTemplates call site is onEmailProceedFromPlanning, so
     // arriving at this tab any other way — clicking it directly, or returning after a
     // foundation switch cleared the list — used to leave an empty box. This file's own
     // comment calls that state "a broken channel".
@@ -7664,7 +8051,7 @@ describe('CampaignsComponent email monitor', () => {
     canRefreshEmailMetrics(): boolean;
     activeFoundationSlug(): string;
     emailBriefOutput: { set(v: unknown): void };
-    onEmailProceedToImplementation(brief: unknown): void;
+    onEmailProceedFromPlanning(brief: unknown): void;
     rememberBriefId(key: string, value: { id: string; etag: string | null }): void;
     ownershipKey(projectSlug: string, brief: unknown): string | null;
   }
@@ -8157,7 +8544,7 @@ describe('CampaignsComponent email monitor', () => {
     expect(key).not.toBeNull();
     internals().rememberBriefId(key as string, { id: 'b-owned', etag: '"1"' });
 
-    internals().onEmailProceedToImplementation(brief);
+    internals().onEmailProceedFromPlanning(brief);
     internals().emailMetricsState.set('idle');
     fixture.detectChanges();
 
@@ -8214,7 +8601,7 @@ describe('CampaignsComponent email monitor', () => {
     // the recoverable case it was widened for -- while a test that writes before the first read
     // passes either way.
     const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
-    internals().onEmailProceedToImplementation(brief);
+    internals().onEmailProceedFromPlanning(brief);
     internals().emailMetricsState.set('idle');
     fixture.detectChanges();
 
@@ -8232,7 +8619,7 @@ describe('CampaignsComponent email monitor', () => {
     // Same shape, cache deliberately empty: proves the previous test passes BECAUSE of the entry
     // rather than because the reset happens to leave something else enabled.
     const brief = { eventDetails: { name: 'KubeCon Europe 2026', slug: 'kubecon-eu-2026' } };
-    internals().onEmailProceedToImplementation(brief);
+    internals().onEmailProceedFromPlanning(brief);
     internals().emailMetricsState.set('idle');
     fixture.detectChanges();
 

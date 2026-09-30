@@ -32,78 +32,75 @@
   }
 
   <!-- === 1. Discover === -->
-  <section class="flex flex-col gap-3" aria-labelledby="audience-discover-heading">
+  <lfx-audience-step-card
+    [step]="1"
+    heading="Discover qualifying lists"
+    subheading="Point us at the event page and we will search HubSpot for the lists that map to each audience signal."
+    icon="fa-light fa-magnifying-glass-chart"
+    testId="campaigns-audience-step-discover">
     <div class="flex flex-col gap-1">
-      <h4 id="audience-discover-heading" class="text-base font-semibold text-gray-900">Discover qualifying lists</h4>
-      <p class="text-sm text-gray-500">Point us at the event page and we will search HubSpot for the lists that map to each audience signal.</p>
+      <label for="audience-event-url" class="text-xs font-medium text-gray-700">Event URL</label>
+      <input
+        id="audience-event-url"
+        type="url"
+        [formControl]="eventUrlControl"
+        placeholder="https://events.linuxfoundation.org/..."
+        class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
+        data-testid="campaigns-audience-event-url" />
     </div>
-
-    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4">
-      <div class="flex flex-col gap-1">
-        <label for="audience-event-url" class="text-xs font-medium text-gray-700">Event URL</label>
-        <input
-          id="audience-event-url"
-          type="url"
-          [formControl]="eventUrlControl"
-          placeholder="https://events.linuxfoundation.org/..."
-          class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
-          data-testid="campaigns-audience-event-url" />
-      </div>
-      <div>
-        <button
-          type="button"
-          (click)="onDiscover()"
-          [disabled]="
-            degraded() ||
-            discovering() ||
-            composing() ||
-            eventUrlControl.value.trim().length === 0 ||
-            (composeAttempted() && eventUrlControl.value.trim() === composedFor())
-          "
-          class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          data-testid="campaigns-audience-discover">
-          @if (discovering()) {
-            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-            Discovering...
-          } @else {
-            <i class="fa-light fa-magnifying-glass-chart" aria-hidden="true"></i>
-            Discover lists
-          }
-        </button>
-      </div>
-
-      @if (progressMessage(); as message) {
-        <div class="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600" aria-live="polite" data-testid="campaigns-audience-progress">
+    <div>
+      <button
+        type="button"
+        (click)="onDiscover()"
+        [disabled]="
+          degraded() ||
+          discovering() ||
+          composing() ||
+          eventUrlControl.value.trim().length === 0 ||
+          (composeAttempted() && eventUrlControl.value.trim() === composedFor())
+        "
+        class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        data-testid="campaigns-audience-discover">
+        @if (discovering()) {
           <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-          <span>{{ message }}</span>
-          @if (inspected() !== null) {
-            <span class="text-gray-400">· {{ inspected() }} lists inspected</span>
-          }
-        </div>
-      }
-
-      @if (identity(); as event) {
-        <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600" data-testid="campaigns-audience-identity">
-          <span class="rounded bg-blue-50 px-2 py-0.5 font-medium text-blue-700">{{ event.eventName }}</span>
-          <span class="rounded bg-gray-100 px-2 py-0.5">{{ event.brandShort }}</span>
-          <!-- `eventDates` is a string[], so it is truthy when empty and renders comma-joined when
-               not. Both are checked here rather than in the template's `@if` alone. -->
-          @if (event.eventDates.length > 0) {
-            <span class="text-gray-500">{{ event.eventDates.join(' – ') }}</span>
-          }
-        </div>
-      }
-
-      @if (discoveryError(); as message) {
-        <div class="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3" role="alert" data-testid="campaigns-audience-discover-error">
-          <i class="fa-light fa-circle-exclamation mt-0.5 text-red-600" aria-hidden="true"></i>
-          <p class="text-xs text-red-700">{{ message }}</p>
-        </div>
-      }
+          Discovering...
+        } @else {
+          <i class="fa-light fa-magnifying-glass-chart" aria-hidden="true"></i>
+          Discover lists
+        }
+      </button>
     </div>
-  </section>
 
-  <!-- === 2. Review & build === -->
+    @if (progressMessage(); as message) {
+      <div class="flex items-center gap-2 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600" aria-live="polite" data-testid="campaigns-audience-progress">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        <span>{{ message }}</span>
+        @if (inspected() !== null) {
+          <span class="text-gray-400">· {{ inspected() }} lists inspected</span>
+        }
+      </div>
+    }
+
+    @if (identity(); as event) {
+      <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600" data-testid="campaigns-audience-identity">
+        <span class="rounded bg-blue-50 px-2 py-0.5 font-medium text-blue-700">{{ event.eventName }}</span>
+        <span class="rounded bg-gray-100 px-2 py-0.5">{{ event.brandShort }}</span>
+        <!-- `eventDates` is a string[], so it is truthy when empty and renders comma-joined when
+             not. Both are checked here rather than in the template's `@if` alone. -->
+        @if (event.eventDates.length > 0) {
+          <span class="text-gray-500">{{ event.eventDates.join(' – ') }}</span>
+        }
+      </div>
+    }
+
+    @if (discoveryError(); as message) {
+      <div class="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3" role="alert" data-testid="campaigns-audience-discover-error">
+        <i class="fa-light fa-circle-exclamation mt-0.5 text-red-600" aria-hidden="true"></i>
+        <p class="text-xs text-red-700">{{ message }}</p>
+      </div>
+    }
+  </lfx-audience-step-card>
+
   <!--
     A project switch abandoned a compose that was already running. The HubSpot create is
     not cancelled by the reset, so lists may exist with nothing on screen naming them —
@@ -136,14 +133,111 @@
   }
 
   @if (hasDiscovered()) {
-    <section class="flex flex-col gap-3" aria-labelledby="audience-review-heading">
-      <div class="flex flex-col gap-1">
-        <h4 id="audience-review-heading" class="text-base font-semibold text-gray-900">Review and build the master list</h4>
-        <p class="text-sm text-gray-500">Tick the lists this send should reach, then the suppression lists it should exclude.</p>
+    <!-- Always-visible answer to "what will this email go to?". Sizes are upper bounds: the
+         overlap between lists is only known after "Preview audience size" or a compose. -->
+    <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" aria-label="Audience summary" data-testid="campaigns-audience-summary">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h4 class="text-sm font-semibold text-gray-900">Audience summary</h4>
+        @if (attachedListId()) {
+          <span
+            class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
+            data-testid="campaigns-audience-summary-attached">
+            <i class="fa-light fa-circle-check" aria-hidden="true"></i>
+            Attached to this email
+          </span>
+        } @else if (briefId() === '') {
+          <span class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700" data-testid="campaigns-audience-summary-no-plan"
+            >No saved plan to attach to</span
+          >
+        } @else {
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600" data-testid="campaigns-audience-summary-unattached"
+            >Not attached yet</span
+          >
+        }
       </div>
+      <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-xs text-gray-500">Event</dt>
+          <dd class="truncate text-sm font-medium text-gray-900" [attr.title]="identity()?.eventName ?? ''">{{ identity()?.eventName ?? '—' }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-xs text-gray-500">Lists included</dt>
+          <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-included">{{ summary().included }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-xs text-gray-500">Suppression lists</dt>
+          <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-excluded">{{ summary().excluded }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-xs text-gray-500">Reach before suppression</dt>
+          <dd class="text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-reach">
+            {{ summary().reachText }}
+            @if (summary().reachPartial) {
+              <span class="text-xs font-normal text-gray-500">(some sizes unknown)</span>
+            }
+          </dd>
+        </div>
+      </dl>
 
+      @if (attachResult(); as attached) {
+        <div class="flex flex-col gap-1 rounded-md border border-emerald-200 bg-emerald-50 p-3" role="status" data-testid="campaigns-audience-attach-result">
+          <p class="text-xs font-medium text-gray-900">
+            This email will send to
+            @if (attached.master.hubspotUrl) {
+              <a [href]="attached.master.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{
+                attached.master.name
+              }}</a>
+            } @else {
+              <span>{{ attached.master.name }}</span>
+            }
+          </p>
+          <p class="text-xs text-gray-700" data-testid="campaigns-audience-attach-suppression">
+            @if (attached.suppressionListIds.length > 0) {
+              Excluding {{ attached.suppressionListIds.length }} suppression list(s).
+            } @else {
+              No suppression list is applied.
+            }
+          </p>
+          <p class="text-xs text-gray-600">
+            No new list was created in HubSpot. It appears on the Implement tab's send-audience step; run QA below before scheduling.
+          </p>
+          <button
+            type="button"
+            (click)="continueToEmail.emit()"
+            class="mt-1 inline-flex w-fit items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+            data-testid="campaigns-audience-attach-continue">
+            Continue to the email
+            <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+          </button>
+        </div>
+      }
+      @if (attachError(); as message) {
+        <p class="text-xs text-red-700" role="alert" data-testid="campaigns-audience-attach-error">{{ message }}</p>
+      }
+    </section>
+
+    <!-- Steps 2-5 each ADD to the selection, so compose (6) comes after all of them: composing
+         before Reuse and Fill gaps built a master list that the next two steps then changed. -->
+    <!-- === 2. Include === -->
+    <lfx-audience-step-card
+      [step]="2"
+      heading="Include lists"
+      subheading="Tick the lists this send should reach. Each card is one audience signal."
+      icon="fa-light fa-user-plus"
+      [count]="inclusionEntries().length"
+      testId="campaigns-audience-step-include">
       <lfx-audience-card-grid [buckets]="buckets()" [selectedIds]="inclusionIds()" [disabled]="selectionLocked()" (toggleList)="onToggleDiscovered($event)" />
+    </lfx-audience-step-card>
 
+    <!-- === 3. Exclude === -->
+    <lfx-audience-step-card
+      [step]="3"
+      heading="Exclude suppression lists"
+      subheading="Standard hygiene lists every send should exclude. Rows not found in this portal cannot be applied."
+      icon="fa-light fa-user-slash"
+      [count]="excludeIds().length"
+      countLabel="excluded"
+      testId="campaigns-audience-step-exclude">
       <lfx-audience-suppression-grid
         [lists]="suppressionLists()"
         [selectedKeys]="suppressionKeys()"
@@ -151,16 +245,84 @@
         [failed]="suppressionFailed()"
         [disabled]="selectionLocked()"
         (toggleList)="onToggleSuppression($event)" />
+    </lfx-audience-step-card>
 
-      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-audience-selection">
+    <!-- === 4. Reuse === -->
+    <lfx-audience-step-card
+      [step]="4"
+      heading="Reuse a previous audience"
+      subheading="Master lists already built for this event, and the lists earlier sends for this event used."
+      icon="fa-light fa-clock-rotate-left"
+      testId="campaigns-audience-step-reuse">
+      <lfx-audience-last-sent
+        [emails]="lastSentEmails()"
+        [masterLists]="existingMasterLists()"
+        [selectedIds]="selectedIds()"
+        [loading]="reuseLoading()"
+        [mastersLoading]="mastersLoading()"
+        [mastersFailed]="mastersFailed()"
+        [emailsFailed]="emailsFailed()"
+        [disabled]="selectionLocked()"
+        [canAttach]="canAttach()"
+        [attachingId]="attachingId()"
+        [attachedListId]="attachedListId()"
+        (addList)="onAddListBrief($event)"
+        (addMasterList)="onAddMasterList($event)"
+        (copySelection)="onCopySelection($event)"
+        (useSendLists)="onUseSendLists($event)"
+        (useMasterList)="onUseMasterList($event)" />
+    </lfx-audience-step-card>
+
+    <!-- === 5. Fill gaps === -->
+    <lfx-audience-step-card
+      [step]="5"
+      heading="Fill the gaps"
+      subheading="Signals discovery found no list for, and a search for anything else the send should reach."
+      icon="fa-light fa-puzzle-piece"
+      [count]="missingSignals().length"
+      countLabel="missing"
+      testId="campaigns-audience-step-gaps">
+      <lfx-audience-missing-signals
+        [missingSignals]="missingSignals()"
+        [searchResults]="searchResults()"
+        [searching]="searching()"
+        [selectedIds]="selectedIds()"
+        [disabled]="selectionLocked()"
+        (search)="onSearch($event)"
+        (addList)="onAddSearchResult($event)" />
+    </lfx-audience-step-card>
+
+    <!-- === 6. Review & compose === -->
+    <lfx-audience-step-card
+      [step]="6"
+      heading="Review and compose the master list"
+      subheading="Everything ticked in steps 2-5, combined into one HubSpot master list."
+      icon="fa-light fa-layer-plus"
+      [count]="inclusionEntries().length"
+      testId="campaigns-audience-step-compose">
+      <div class="flex flex-col gap-3" data-testid="campaigns-audience-selection">
         <h5 class="text-sm font-semibold text-gray-900">Selected for inclusion ({{ inclusionEntries().length }})</h5>
         @if (inclusionEntries().length === 0) {
           <p class="text-sm text-gray-500">Nothing selected yet.</p>
         } @else {
           <div class="flex flex-wrap gap-2">
-            @for (entry of inclusionEntries(); track entry.listId) {
+            @for (entry of inclusionChips(); track entry.listId) {
               <span class="inline-flex items-center gap-2 rounded-full bg-blue-50 py-1 pr-1 pl-3 text-xs text-blue-800">
-                {{ entry.name }}
+                @if (entry.hubspotUrl) {
+                  <a
+                    [href]="entry.hubspotUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="hover:underline"
+                    [attr.data-testid]="'campaigns-audience-include-link-' + entry.listId"
+                    >{{ entry.name }}</a
+                  >
+                } @else {
+                  {{ entry.name }}
+                }
+                @if (entry.sizeText) {
+                  <span class="text-blue-600">· {{ entry.sizeText }}</span>
+                }
                 <button
                   type="button"
                   (click)="onRemoveInclusion(entry.listId)"
@@ -173,11 +335,35 @@
               </span>
             }
           </div>
-          @if (excludeIds().length > 0) {
-            <p class="text-xs text-gray-500" data-testid="campaigns-audience-exclude-summary">
-              {{ excludeIds().length }} suppression list(s) will be excluded.
-            </p>
-          }
+        }
+
+        <h5 class="text-sm font-semibold text-gray-900">Excluded ({{ suppressionEntries().length }})</h5>
+        @if (suppressionEntries().length === 0) {
+          <p class="text-xs text-amber-700" data-testid="campaigns-audience-exclude-none">
+            No suppression list is ticked. Tick the standard hygiene lists in step 3.
+          </p>
+        } @else {
+          <p class="text-xs text-gray-500" data-testid="campaigns-audience-exclude-summary">{{ excludeIds().length }} suppression list(s) will be excluded.</p>
+          <div class="flex flex-wrap gap-2">
+            @for (entry of suppressionEntries(); track entry.key) {
+              <span class="inline-flex items-center gap-2 rounded-full bg-gray-100 py-1 pr-1 pl-3 text-xs text-gray-700">
+                @if (entry.hubspotUrl) {
+                  <a [href]="entry.hubspotUrl" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ entry.name }}</a>
+                } @else {
+                  {{ entry.name }}
+                }
+                <button
+                  type="button"
+                  (click)="onRemoveSuppression(entry.key)"
+                  [disabled]="selectionLocked()"
+                  class="rounded-full p-1 hover:bg-gray-200 disabled:opacity-50"
+                  [attr.aria-label]="'Stop excluding ' + entry.name"
+                  [attr.data-testid]="'campaigns-audience-remove-exclude-' + entry.key">
+                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+          </div>
         }
 
         <div class="flex flex-wrap items-center gap-2">
@@ -241,6 +427,27 @@
             }
           </button>
           <p class="mt-2 text-xs text-gray-500">This creates real contact lists in HubSpot. Review the selection above before continuing.</p>
+          <!-- One included list needs no master: the email can send to it directly, with the
+               ticked suppression lists, and nothing new is created in HubSpot. -->
+          @if (inclusionEntries().length === 1 && briefId() !== '') {
+            <div class="mt-3 flex flex-col gap-1">
+              <button
+                type="button"
+                (click)="onUseSelectionDirectly()"
+                [disabled]="!canUseSelectionDirectly()"
+                class="inline-flex w-fit items-center gap-2 rounded-md border border-blue-600 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                data-testid="campaigns-audience-use-direct">
+                @if (attachingId() !== null && attachingId() === inclusionEntries()[0].listId) {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  Attaching...
+                } @else {
+                  <i class="fa-light fa-link" aria-hidden="true"></i>
+                  Use this list directly (no new list)
+                }
+              </button>
+              <p class="text-xs text-gray-500">Only one list is selected, so composing a master list is optional.</p>
+            </div>
+          }
         </div>
 
         @if (composeResult(); as result) {
@@ -258,7 +465,31 @@
               </a>
             }
             <p class="text-xs text-gray-600">Built from {{ result.sourceListIds.length }} list(s). Run QA below before scheduling the send.</p>
+            <!-- Says whether the email will actually use it. "Master list created" alone read as done
+                 even when no plan was saved and nothing was attached. -->
+            @if (result.recorded) {
+              <p class="text-xs font-medium text-emerald-700" data-testid="campaigns-audience-compose-attached">Attached to this email as its send list.</p>
+            } @else {
+              <p class="text-xs font-medium text-amber-700" data-testid="campaigns-audience-compose-not-attached">
+                Not attached to this email — no campaign plan was saved. Save the plan on the Plan tab, then use this list from "Recent sends &amp; master
+                lists" above; that creates nothing new.
+              </p>
+            }
           </div>
+        }
+
+        <!-- The way forward after a compose or an attach. The parent's step bar is at the top of a
+             long panel, out of sight from here, so without this the operator is left at the bottom
+             with a finished list and no visible next step. -->
+        @if (composeResult() || attachResult()) {
+          <button
+            type="button"
+            (click)="continueToEmail.emit()"
+            class="inline-flex w-fit items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            data-testid="campaigns-audience-continue">
+            Continue to the email
+            <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+          </button>
         }
 
         <!-- Partial state, and deliberately no Retry: compose is not idempotent, so a second click
@@ -309,49 +540,40 @@
           <p class="text-xs text-red-700" role="alert" data-testid="campaigns-audience-compose-error">{{ message }}</p>
         }
       </div>
-    </section>
-
-    <!-- === 3. Reuse === -->
-    <section class="flex flex-col gap-3" aria-labelledby="audience-reuse-heading">
-      <h4 id="audience-reuse-heading" class="text-base font-semibold text-gray-900">Reuse a previous audience</h4>
-      <lfx-audience-last-sent
-        [emails]="lastSentEmails()"
-        [masterLists]="existingMasterLists()"
-        [selectedIds]="selectedIds()"
-        [loading]="reuseLoading()"
-        [mastersLoading]="mastersLoading()"
-        [mastersFailed]="mastersFailed()"
-        [emailsFailed]="emailsFailed()"
-        [disabled]="selectionLocked()"
-        (addList)="onAddListBrief($event)"
-        (addMasterList)="onAddMasterList($event)" />
-    </section>
-
-    <!-- === 4. Gaps === -->
-    <section class="flex flex-col gap-3" aria-labelledby="audience-gaps-heading">
-      <h4 id="audience-gaps-heading" class="text-base font-semibold text-gray-900">Fill the gaps</h4>
-      <lfx-audience-missing-signals
-        [missingSignals]="missingSignals()"
-        [searchResults]="searchResults()"
-        [searching]="searching()"
-        [selectedIds]="selectedIds()"
-        [disabled]="selectionLocked()"
-        (search)="onSearch($event)"
-        (addList)="onAddSearchResult($event)" />
-    </section>
+    </lfx-audience-step-card>
   }
 
-  <!-- === 5. QA === -->
-  <section class="flex flex-col gap-3" aria-labelledby="audience-qa-heading">
-    <h4 id="audience-qa-heading" class="text-base font-semibold text-gray-900">Quality check</h4>
+  <!-- === 7. QA === -->
+  <!-- Numbered by what is on screen: before discovery the only other step is Discover. -->
+  <lfx-audience-step-card
+    [step]="hasDiscovered() ? 7 : 2"
+    heading="Quality check"
+    subheading="Run the checks against the built list before scheduling the send."
+    icon="fa-light fa-clipboard-check"
+    testId="campaigns-audience-step-qa">
     <!-- `degraded()`, not `selectionLocked()`: QA is exactly what you run AFTER composing. -->
-    <lfx-audience-qa-panel [projectSlug]="projectSlug()" [disabled]="degraded()" />
-  </section>
+    <lfx-audience-qa-panel [projectSlug]="projectSlug()" [disabled]="degraded()" [suggestedListRef]="composedMasterListId()" />
+  </lfx-audience-step-card>
 
-  <!-- The upstream campaign service resolves an email's audience by brief id and knows nothing
-       about a list this builder creates, so the two paths are cross-linked, never wired together. -->
-  <p class="rounded-md bg-gray-50 p-3 text-xs text-gray-500" data-testid="campaigns-audience-crosslink">
-    Lists created here live in HubSpot. Attaching an audience to the campaign itself is still done from the <span class="font-medium">Implement</span> tab's
-    send-audience step.
-  </p>
+  <!-- Was a cross-link telling the operator to go and attach the list by hand, because nothing
+       carried it across. The compose now sends the brief id and campaign-service records the
+       master as that brief's send audience inside the same call, so the note says what happens
+       rather than what to do next. The testid is UNCHANGED on purpose: existing selectors resolve
+       to this element, and renaming it would silently pass tests that no longer check anything.
+
+       Two states, because an empty brief id genuinely means something different rather than being
+       a not-ready version of the same thing -- the builder is usable with no campaign at all, and
+       a compose there creates real lists that no send points at. Saying so BEFORE the compose is
+       the only point at which it is still free to act on. -->
+  @if (briefId() === '') {
+    <p class="rounded-md bg-amber-50 p-3 text-xs text-amber-800" data-testid="campaigns-audience-crosslink">
+      No campaign plan is saved yet, so a master list composed now will be created in HubSpot but <span class="font-medium">not attached</span> to the send.
+      Save the plan on the <span class="font-medium">Plan</span> tab first to have it attached automatically.
+    </p>
+  } @else {
+    <p class="rounded-md bg-gray-50 p-3 text-xs text-gray-500" data-testid="campaigns-audience-crosslink">
+      Lists created here live in HubSpot. Composing the master list also attaches it to this campaign as its send audience — it appears on the
+      <span class="font-medium">Implement</span> tab's send-audience step.
+    </p>
+  }
 </div>

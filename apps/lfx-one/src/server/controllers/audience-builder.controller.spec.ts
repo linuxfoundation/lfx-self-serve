@@ -26,6 +26,7 @@ const proxyMethods = {
   getExistingMasterLists: vi.fn(),
   previewCount: vi.fn(),
   composeMaster: vi.fn(),
+  attachExisting: vi.fn(),
   runQa: vi.fn(),
 };
 
@@ -470,6 +471,45 @@ describe('composeMaster', () => {
     );
   });
 
+  it('refuses a mistyped briefId without composing anything', async () => {
+    // The guard that matters most on this handler. A dropped `briefId` composes two real HubSpot
+    // lists and leaves them attached to NOTHING while the operator reads a success banner — and
+    // compose is not idempotent, so correcting it costs a second master list.
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: { id: 'b1' } }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'briefId' }]);
+  });
+
+  it('forwards a briefId but never a blank one', async () => {
+    // A blank string passes the type guard and would be sent as an attach naming no brief, which
+    // upstream answers with a 404 after refusing to create anything — worse than the exploratory
+    // compose the caller plainly meant.
+    proxyMethods.composeMaster.mockResolvedValue({ master: created, sourceListIds: ['10'], recorded: false });
+
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: '' }), buildRes(), next);
+    expect(proxyMethods.composeMaster.mock.calls[0]?.[2]).not.toHaveProperty('briefId');
+
+    proxyMethods.composeMaster.mockClear();
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1' }), buildRes(), next);
+    expect(proxyMethods.composeMaster.mock.calls[0]?.[2]).toMatchObject({ briefId: 'brief-1' });
+  });
+
+  it('carries the confirmed master through the 502 so a loose list can be reconciled', async () => {
+    // The fifth partial shape: both lists exist, only the attach failed. It is the one partial
+    // whose master is usable as it stands, so dropping it here would leave a real list in HubSpot
+    // that no screen in the app can name.
+    const master = { listId: '100', name: '26Q3 - CNCF - KubeCon NA - Master', size: 0, hubspotUrl: 'https://app.hubspot.com/x/100' };
+    proxyMethods.composeMaster.mockRejectedValue(new AudienceComposePartialError('Lists created but not attached.', undefined, undefined, undefined, master));
+    const res = buildRes();
+
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1' }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ master, error: 'Lists created but not attached.' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('surfaces the orphaned suppression list as a 502 partial rather than a bare error', async () => {
     const suppression = { listId: '99', name: '26Q3 - KubeCon NA - Combined Suppression', size: 0, hubspotUrl: 'https://app.hubspot.com/x/99' };
     proxyMethods.composeMaster.mockRejectedValue(new AudienceComposePartialError('Master list create failed', suppression));
@@ -539,5 +579,50 @@ describe('composeMaster payload', () => {
 
     expect(proxyMethods.composeMaster, 'a mistyped name was dropped and the create proceeded').not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
+  });
+});
+
+describe('attachExisting', () => {
+  const attached = {
+    master: { listId: '501', name: 'Prospects', hubspotUrl: 'u' },
+    suppressionListIds: ['201'],
+    audience: { id: 'aud-2', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '501', status: 'built', version: 1 },
+  };
+
+  it('requires a brief and a master list id', async () => {
+    await controller.attachExisting(buildReq({ masterListId: '501' }), buildRes(), next);
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'briefId' }]);
+
+    const next2 = vi.fn();
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '  ' }), buildRes(), next2);
+    expect(nextError(next2).toResponse()['errors']).toMatchObject([{ field: 'masterListId' }]);
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+  });
+
+  it('refuses a blank suppression id rather than attaching with less suppression', async () => {
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201', ' '] }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'suppressionListIds' }]);
+  });
+
+  it('forwards the trimmed request and answers 201', async () => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+    const res = buildRes();
+
+    await controller.attachExisting(
+      buildReq({ briefId: ' brief-1 ', masterListId: ' 501 ', suppressionListIds: ['201'], inclusionSummary: 'Same lists as X' }),
+      res,
+      next
+    );
+
+    expect(proxyMethods.attachExisting).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      briefId: 'brief-1',
+      masterListId: '501',
+      suppressionListIds: ['201'],
+      inclusionSummary: 'Same lists as X',
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(attached);
   });
 });

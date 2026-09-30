@@ -1212,6 +1212,21 @@ export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Re
 // ---------------------------------------------------------------------------
 
 /**
+ * How long the BFF waits on an audience-builder call to the campaign service.
+ *
+ * Far above the 30s default (`api-client.service.ts`) because these endpoints are not
+ * database reads — each one walks the HubSpot Marketing API. `last-sent` alone pages up to
+ * 2000 emails (20 sequential requests) to rule out a false absence, then fans out one GET per
+ * shortlisted send plus one per referenced list. Measured against the live TLF portal on
+ * 2026-09-24: 32s at `limit=3` (what the panel asks for) and 58s at the design's `limit=10`.
+ *
+ * At 30s the call was aborted mid-flight and "Recent sends for this event" rendered as a
+ * failure on every load, even though upstream went on to answer 200. The ceiling is a
+ * giving-up point, not a budget: raising it costs nothing on the calls that return quickly.
+ */
+export const AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
  * The Audience Builder tab.
  *
  * Declared on its own rather than added to `CAMPAIGN_TABS` because it is email-only: the paid

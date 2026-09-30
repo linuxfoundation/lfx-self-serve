@@ -548,6 +548,37 @@ export class CampaignController {
   }
 
   /**
+   * Read back the audiences campaign-service already holds for this brief.
+   *
+   * Mirrors buildAudience's parameter handling exactly: `project` and `brief_id` are PATH
+   * segments upstream and travel here as query params.
+   */
+  public async listAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'list_audiences',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'list_audiences', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.listAudiences(req, projectSlug, briefId);
+      logger.success(req, 'list_audiences', startTime, { enabled: result.enabled, count: result.audiences?.length ?? 0 });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Generate email copy for a brief.
    *
    * A thin proxy to campaign-service, which owns generation (LFXV2-2775). `project` and

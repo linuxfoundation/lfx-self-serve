@@ -54,6 +54,7 @@ describe('AudienceLastSentComponent', () => {
       disabled?: boolean;
       mastersFailed?: boolean;
       emailsFailed?: boolean;
+      canAttach?: boolean;
     } = {}
   ): void {
     fixture.componentRef.setInput('emails', inputs.emails ?? []);
@@ -63,6 +64,7 @@ describe('AudienceLastSentComponent', () => {
     fixture.componentRef.setInput('mastersFailed', inputs.mastersFailed ?? false);
     fixture.componentRef.setInput('emailsFailed', inputs.emailsFailed ?? false);
     fixture.componentRef.setInput('disabled', inputs.disabled ?? false);
+    fixture.componentRef.setInput('canAttach', inputs.canAttach ?? false);
     fixture.detectChanges();
   }
 
@@ -182,5 +184,77 @@ describe('AudienceLastSentComponent', () => {
     const text = host().textContent ?? '';
     expect(text).toContain('size unknown');
     expect(text).not.toContain('0 contacts');
+  });
+
+  describe('reusing lists without composing', () => {
+    function click(testId: string): void {
+      host().querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.click();
+      fixture.detectChanges();
+    }
+
+    it('emits useSendLists for a single-include send', () => {
+      const seen: AudienceLastSentEmail[] = [];
+      fixture.componentInstance.useSendLists.subscribe((e) => seen.push(e));
+      render({ emails: [email()], canAttach: true });
+
+      click('audience-last-sent-use-em-1');
+
+      expect(seen.map((e) => e.emailId)).toEqual(['em-1']);
+    });
+
+    it('blocks a send that included several lists — an email has one include list', () => {
+      const seen: AudienceLastSentEmail[] = [];
+      fixture.componentInstance.useSendLists.subscribe((e) => seen.push(e));
+      render({ emails: [email({ includedLists: [brief(), brief({ listId: '302', name: 'Other' })] })], canAttach: true });
+
+      click('audience-last-sent-use-em-1');
+
+      expect(seen).toEqual([]);
+      expect(host().querySelector('[data-testid="audience-last-sent-use-blocked-em-1"]')).not.toBeNull();
+    });
+
+    it('blocks a send whose suppression list no longer resolves', () => {
+      render({ emails: [email({ suppressionLists: [brief({ listId: '902', missing: true })] })], canAttach: true });
+
+      expect(host().querySelector('[data-testid="audience-last-sent-use-blocked-em-1"]')).not.toBeNull();
+    });
+
+    it('still lets a multi-list send be copied into the selection', () => {
+      const seen: AudienceLastSentEmail[] = [];
+      fixture.componentInstance.copySelection.subscribe((e) => seen.push(e));
+      render({ emails: [email({ includedLists: [brief(), brief({ listId: '302', name: 'Other' })] })], canAttach: true });
+
+      click('audience-last-sent-copy-em-1');
+
+      expect(seen).toHaveLength(1);
+    });
+
+    it('emits useMasterList for an existing master', () => {
+      const seen: AudienceMasterListBrief[] = [];
+      fixture.componentInstance.useMasterList.subscribe((l) => seen.push(l));
+      render({ masterLists: [master()], canAttach: true });
+
+      click('audience-last-sent-master-use-401');
+
+      expect(seen.map((l) => l.listId)).toEqual(['401']);
+    });
+
+    it('explains why nothing can be attached when there is no brief', () => {
+      const seen: AudienceMasterListBrief[] = [];
+      fixture.componentInstance.useMasterList.subscribe((l) => seen.push(l));
+      render({ masterLists: [master()], canAttach: false });
+
+      click('audience-last-sent-master-use-401');
+
+      expect(seen).toEqual([]);
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-unavailable"]')).not.toBeNull();
+    });
+
+    it('links list names to HubSpot when a link is known', () => {
+      render({ emails: [email({ includedLists: [brief({ hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/301/filters' })] })] });
+
+      const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-last-sent-list-link-301"]');
+      expect(link?.href).toContain('/objectLists/301');
+    });
   });
 });

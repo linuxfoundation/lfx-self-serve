@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  AudienceAttachExistingRequest,
+  AudienceAttachExistingResult,
   AudienceBuilderCapabilities,
   AudienceComposeMasterRequest,
   AudienceComposeMasterResult,
@@ -25,10 +27,13 @@ import type {
   AudienceSpeakerScope,
   AudienceSuppressionCategory,
   AudienceSuppressionList,
+  CampaignAudience,
 } from '@lfx-one/shared/interfaces';
+import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { toAudienceStatus } from '../helpers/campaign-audience.helper';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -90,6 +95,7 @@ interface WireListBrief {
   size?: number;
   missing: boolean;
   resolved_from_legacy_id?: string;
+  hubspot_url?: string;
 }
 
 interface WireLastSentEmail {
@@ -127,6 +133,28 @@ interface WireComposeMasterResult {
   master: WireComposedList;
   suppression?: WireComposedList;
   source_list_ids: string[];
+  recorded?: boolean;
+  audience?: WireRecordedAudience;
+}
+
+interface WireAttachExistingResult {
+  master: WireComposedList;
+  suppression_list_ids: string[];
+  audience: WireRecordedAudience;
+}
+
+/**
+ * The slim audience row a recording compose returns.
+ *
+ * Slim by design upstream: it deliberately omits `built_in_portal_id`, because provenance a
+ * client can send back is provenance that proves nothing. It also omits the project id, which is
+ * why {@link toRecordedAudience} leaves that field unset rather than inventing one.
+ */
+interface WireRecordedAudience {
+  id: string;
+  status: string;
+  version: number;
+  platform_master_list_id: string;
 }
 
 interface WireQaFinding {
@@ -184,6 +212,7 @@ interface WireComposePartialError {
   suppression?: WireComposedList;
   suppression_name?: string;
   master_name?: string;
+  master?: WireComposedList;
 }
 
 /**
@@ -199,13 +228,22 @@ export class AudienceComposePartialError extends Error {
   public readonly suppressionName?: string;
   /** Set when the master create is unconfirmed. */
   public readonly masterName?: string;
+  /**
+   * Set when BOTH lists exist and only the attach to the brief failed.
+   *
+   * Never set alongside `masterName`: one asserts the master is confirmed, the other that it is
+   * not. This is the shape whose lists are usable, so the UI it drives points the operator at
+   * this list rather than at a retry.
+   */
+  public readonly master?: AudienceComposedList;
 
-  public constructor(message: string, suppression?: AudienceComposedList, suppressionName?: string, masterName?: string) {
+  public constructor(message: string, suppression?: AudienceComposedList, suppressionName?: string, masterName?: string, master?: AudienceComposedList) {
     super(message);
     this.name = 'AudienceComposePartialError';
     this.suppression = suppression;
     this.suppressionName = suppressionName;
     this.masterName = masterName;
+    this.master = master;
   }
 }
 
@@ -251,6 +289,7 @@ function toListBrief(wire: WireListBrief): AudienceListBrief {
     size: wire.size,
     missing: wire.missing,
     resolvedFromLegacyId: wire.resolved_from_legacy_id,
+    hubspotUrl: wire.hubspot_url || undefined,
   };
 }
 
@@ -281,6 +320,34 @@ function toCreatedList(wire: WireComposedList, label: string): AudienceComposedL
     name: required(wire.name, `${label}.name`),
     hubspotUrl: required(wire.hubspot_url, `${label}.hubspot_url`),
     size: wire.size,
+  };
+}
+
+/**
+ * The recorded audience row, widened to the shape the rest of the app already speaks.
+ *
+ * Three fields are supplied here rather than read off the wire, and each is knowable with
+ * certainty at this point:
+ *
+ *  - `briefId` is the id this request SENT. Upstream records the row under exactly that brief or
+ *    refuses the compose outright, so echoing it states a fact rather than a guess.
+ *  - `platform` is `hubspot` because the audience builder has no other backend — every route in
+ *    it composes HubSpot lists — and upstream stamps the row the same way.
+ *  - `projectId` is left UNSET, on purpose. Upstream does not return it and this layer holds the
+ *    project slug, not its id; writing the slug into an id field would be a value that looks
+ *    usable and is not.
+ *
+ * `status` goes through the shared coercion so an unrecognised wire string cannot masquerade as
+ * a usable audience — though a recording compose only ever reports `built`.
+ */
+function toRecordedAudience(wire: WireRecordedAudience, briefId: string): CampaignAudience {
+  return {
+    id: required(wire.id, 'audience.id'),
+    briefId,
+    platform: 'hubspot',
+    platformMasterListId: required(wire.platform_master_list_id, 'audience.platform_master_list_id'),
+    status: toAudienceStatus(required(wire.status, 'audience.status')),
+    version: required(wire.version, 'audience.version'),
   };
 }
 
@@ -507,6 +574,11 @@ export class AudienceBuilderProxyService {
       ...(request.brandShort ? { brand_short: request.brandShort } : {}),
       ...(request.eventName ? { event_name: request.eventName } : {}),
       ...(request.eventDates?.length ? { event_dates: request.eventDates } : {}),
+      // Forwarded only when set. Sending `brief_id: ''` is NOT the same request: upstream reads a
+      // present-but-empty id as an attach that then fails its own brief lookup, turning the
+      // exploratory compose the builder is designed for into a 404 — after refusing to create
+      // anything.
+      ...(request.briefId ? { brief_id: request.briefId } : {}),
     };
 
     try {
@@ -516,29 +588,42 @@ export class AudienceBuilderProxyService {
       // a list id the operator cannot act on.
       // toComposedList validates every identifying field of BOTH lists — the suppression object
       // was previously passed through unchecked beside a validated master.
+      // `recorded` defaults to FALSE, and the default is the whole point of reading it separately
+      // from `audience`. Goa's decoder ignores unknown body fields, so an upstream deployed before
+      // this feature accepts the request, composes normally and returns neither field — which must
+      // degrade to today's unattached behaviour, not to a UI claiming the send is wired up.
+      const recorded = wire.recorded === true;
       return {
         master: toCreatedList(required(wire.master, 'master'), 'master'),
         suppression: wire.suppression ? toCreatedList(wire.suppression, 'suppression') : undefined,
         sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
+        recorded,
+        // Validated with `required` exactly as `master` is, and for the same reason: this is the
+        // object the UI reads to say "attached". A rewritten `audience: {}` beside `recorded: true`
+        // would render an attachment over a row the operator cannot address.
+        audience: recorded ? toRecordedAudience(required(wire.audience, 'audience'), request.briefId ?? '') : undefined,
       };
     } catch (error) {
       const partial = asComposePartial(error);
       if (partial) {
         throw new AudienceComposePartialError(
           // The old default described only the one shape that carries a confirmed suppression
-          // list; three of the four reachable shapes do not, so it stated the wrong thing for
-          // most of them. The generic default is correct for all four and upstream's own
+          // list; four of the five reachable shapes do not, so it stated the wrong thing for
+          // most of them. The generic default is correct for all five and upstream's own
           // message is preferred whenever it sends one.
           partial.message?.trim() || 'The compose did not complete. Some lists may already exist in HubSpot.',
           // Truthiness is not enough now that the discriminator admits bodies without a
           // confirmed suppression: forwarding an object whose `list_id` is missing or blank
           // makes the banner render a HubSpot link for a create that was never confirmed —
           // reintroducing, one layer up, exactly the false certainty this widening removed.
-          partial.suppression && typeof partial.suppression.list_id === 'string' && partial.suppression.list_id.length > 0
-            ? toComposedList(partial.suppression)
-            : undefined,
+          confirmedWireList(partial.suppression) ? toComposedList(partial.suppression) : undefined,
           partial.suppression_name?.trim() || undefined,
-          partial.master_name?.trim() || undefined
+          partial.master_name?.trim() || undefined,
+          // Same id check as the suppression above, for the same reason — and it matters more
+          // here: this is the shape whose whole message is "the master EXISTS, attach it by
+          // hand", so a blank id would send the operator looking for a list that was never
+          // confirmed to exist.
+          confirmedWireList(partial.master) ? toComposedList(partial.master) : undefined
         );
       }
       throw error;
@@ -568,15 +653,63 @@ export class AudienceBuilderProxyService {
     return `/projects/${encodeURIComponent(projectSlug)}/audience-builder/${suffix}`;
   }
 
+  /**
+   * Records EXISTING lists as the brief's send audience. Creates nothing in HubSpot, so unlike
+   * compose it has no partial state and every failure is safe to retry.
+   */
+  public async attachExisting(req: Request, projectSlug: string, request: AudienceAttachExistingRequest): Promise<AudienceAttachExistingResult> {
+    const attach = {
+      brief_id: request.briefId,
+      master_list_id: request.masterListId,
+      ...(request.suppressionListIds?.length ? { suppression_list_ids: request.suppressionListIds } : {}),
+      ...(request.inclusionSummary ? { inclusion_summary: request.inclusionSummary } : {}),
+    };
+    const wire = await this.post<WireAttachExistingResult>(req, projectSlug, 'attach-existing', { attach });
+    return {
+      master: toCreatedList(required(wire.master, 'master'), 'master'),
+      suppressionListIds: required(wire.suppression_list_ids, 'suppression_list_ids'),
+      audience: toRecordedAudience(required(wire.audience, 'audience'), request.briefId),
+    };
+  }
+
   private get<T>(req: Request, projectSlug: string, suffix: string, query?: Record<string, unknown>): Promise<T> {
     // Query params go in the FIFTH argument. `proxyRequest(req, service, path, method, query,
-    // data)` — passing them sixth would send them as a body, which a GET discards.
-    return this.microserviceProxy.proxyRequest<T>(req, 'LFX_V2_CAMPAIGN_SERVICE', this.path(projectSlug, suffix), 'GET', query);
+    // data)` — passing them sixth would send them as a body, which a GET discards. The eighth
+    // carries the raised timeout every audience-builder call needs — see `timeout()` below.
+    return this.microserviceProxy.proxyRequest<T>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      this.path(projectSlug, suffix),
+      'GET',
+      query,
+      undefined,
+      undefined,
+      timeout()
+    );
   }
 
   private post<T>(req: Request, projectSlug: string, suffix: string, body: unknown): Promise<T> {
-    return this.microserviceProxy.proxyRequest<T>(req, 'LFX_V2_CAMPAIGN_SERVICE', this.path(projectSlug, suffix), 'POST', undefined, body);
+    return this.microserviceProxy.proxyRequest<T>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      this.path(projectSlug, suffix),
+      'POST',
+      undefined,
+      body,
+      undefined,
+      timeout()
+    );
   }
+}
+
+/**
+ * The per-request options every audience-builder call carries.
+ *
+ * A function rather than a shared const so no caller can mutate the options object out from
+ * under the others. See AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS for why 30s was not enough.
+ */
+function timeout(): { timeoutMs: number } {
+  return { timeoutMs: AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS };
 }
 
 /**
@@ -588,6 +721,18 @@ export class AudienceBuilderProxyService {
  * unconditionally (`partial.Suppression` is a value, not a pointer), so its presence is a sound
  * discriminator. A 500 without it is an ordinary failure and is rethrown.
  */
+/**
+ * Does this wire object describe a list whose creation was CONFIRMED?
+ *
+ * Trimmed, not merely non-empty. A `list_id` of `'  '` survives a length check and then reaches
+ * the operator as a HubSpot link to nothing — the same unconfirmed-create-rendered-as-real bug the
+ * length check was added to close, through a narrower door. One predicate rather than a copy per
+ * arm, because two copies of this rule is how one of them ends up admitting a blank id.
+ */
+function confirmedWireList(list: WireComposedList | undefined): list is WireComposedList {
+  return list !== undefined && list !== null && typeof list.list_id === 'string' && list.list_id.trim().length > 0;
+}
+
 function asComposePartial(error: unknown): WireComposePartialError | null {
   if (!(error instanceof MicroserviceError) || error.statusCode !== 500) return null;
 
@@ -602,7 +747,12 @@ function asComposePartial(error: unknown): WireComposePartialError | null {
   const hasSuppression = !!body.suppression && typeof body.suppression.list_id === 'string';
   const hasSuppressionName = typeof body.suppression_name === 'string' && body.suppression_name.length > 0;
   const hasMasterName = typeof body.master_name === 'string' && body.master_name.length > 0;
-  if (!hasSuppression && !hasSuppressionName && !hasMasterName) return null;
+  // The fifth shape: both lists created, the attach to the brief failed. It carries a confirmed
+  // `master` and no `master_name`, so without this arm it fell through to an ordinary 500 — and
+  // a 500 on a non-idempotent create is exactly the prompt to retry that would mint a second
+  // master list for one send.
+  const hasMaster = !!body.master && typeof body.master.list_id === 'string' && body.master.list_id.length > 0;
+  if (!hasSuppression && !hasSuppressionName && !hasMasterName && !hasMaster) return null;
 
   return body;
 }

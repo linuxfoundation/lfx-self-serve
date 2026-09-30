@@ -1,0 +1,34 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section
+  class="flex flex-col rounded-lg border border-gray-200 bg-white shadow-sm"
+  [attr.aria-labelledby]="testId() + '-heading'"
+  [attr.data-testid]="testId()">
+  <header class="flex items-start gap-3 border-b border-gray-100 px-4 py-3">
+    <span
+      class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-700"
+      aria-hidden="true"
+      [attr.data-testid]="testId() + '-step'"
+      >{{ step() }}</span
+    >
+    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div class="flex flex-wrap items-center gap-2">
+        <i [class]="icon() + ' text-gray-500'" aria-hidden="true"></i>
+        <h4 [attr.id]="testId() + '-heading'" class="text-sm font-semibold text-gray-900">{{ heading() }}</h4>
+        @if (count() !== null) {
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700" [attr.data-testid]="testId() + '-count'"
+            >{{ count() }} {{ countLabel() }}</span
+          >
+        }
+      </div>
+      @if (subheading()) {
+        <p class="text-xs text-gray-500">{{ subheading() }}</p>
+      }
+    </div>
+    <ng-content select="[stepActions]" />
+  </header>
+  <div class="flex flex-col gap-3 p-4">
+    <ng-content />
+  </div>
+</section>

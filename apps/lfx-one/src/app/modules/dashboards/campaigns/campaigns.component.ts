@@ -26,6 +26,7 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
+  AudienceComposedList,
   BriefMetrics,
   BriefMetricsRow,
   CampaignAudience,
@@ -1059,37 +1060,49 @@ export class CampaignsComponent {
   /**
    * The brief's built send audience — the prerequisite email dispatch cannot run without.
    *
-   * Held separately from the copy because they are independent: an operator can build the
-   * audience before writing the email or after, and regenerating copy must not discard a built
-   * audience (rebuilding calls Snowflake and several HubSpot creates).
+   * Held separately from the copy because they are independent: an operator can compose the
+   * audience on the Audience tab before writing the email or after, and regenerating copy must
+   * not discard an attached audience (composing again mints a second HubSpot contact list).
    */
   protected readonly emailAudience = signal<CampaignAudience | null>(null);
 
   /**
-   * Build lifecycle for the REQUEST, not the upstream job.
+   * Where the audience on screen came from. PRESENTATION ONLY.
    *
-   * `building` covers the in-flight call only; it returns to `idle` when the 202 lands.
+   * Nothing branches on it and nothing may start to: both origins produce the same
+   * `CampaignAudience` row, dispatch treats them identically, and a behavioural branch here would
+   * be a second, weaker copy of `status`. It exists so the card can distinguish a list composed
+   * in this session from one read back on load — the one thing the row itself cannot tell us.
    *
-   * There is no poll and no status re-read route, so the audience's `status` is only ever the one
-   * the 202 carried. `canStageEmail` reads that rather than this signal because it is the closest
-   * thing to an authority available.
-   *
-   * A row that comes back `building` is therefore TERMINAL in this UI, by design: upstream keeps
-   * that state when the outcome is UNCONFIRMED -- a HubSpot list may already exist -- so offering
-   * a rebuild would create the duplicate contact list that state exists to prevent. The operator's
-   * route out is reconciling the ids in `inclusionSummary`, which is why that summary is rendered
-   * verbatim. A status re-read is the real fix and is not in this change.
-   *
-   * This rests on the build being SYNCHRONOUS from the client's side: `onBuildAudience` awaits the
-   * call and sets `emailAudience` only after it resolves, so every `building` row on screen came
-   * back on a completed 202 and is genuinely unconfirmed rather than merely in flight. If upstream
-   * ever answers `building` for an ordinary async build, the two stop being the same thing and
-   * this copy would mislabel one as the other.
+   * Not recovered by parsing `inclusionSummary`. That string is operator-facing prose whose
+   * wording upstream is free to change, so reading provenance out of it would turn a copy edit
+   * into a UI defect.
    */
-  protected readonly emailAudienceState = signal<'idle' | 'building' | 'error'>('idle');
+  protected readonly emailAudienceOrigin = signal<'composed' | 'restored' | null>(null);
 
-  /** Message for a failed or disabled build — empty while idle or in flight. */
-  protected readonly emailAudienceMessage = signal<string>('');
+  /**
+   * A master list that exists in HubSpot and is attached to NOTHING.
+   *
+   * Set by the two compose outcomes that leave the operator in that position — no brief id was
+   * available, or the attach itself failed — and it is the only state in this component that
+   * describes platform state the app cannot fix on the operator's behalf. Held as the list itself
+   * so the warning can name it and link to it; cleared only when an audience actually attaches.
+   */
+  protected readonly emailAudienceUnattached = signal<AudienceComposedList | null>(null);
+
+  /**
+   * The operator chose to write the email WITHOUT an audience.
+   *
+   * Presentation only, and deliberately not a permission: nothing reads it to decide whether
+   * anything may run. Skipping is already possible by clicking the Implement tab, so a flag
+   * that gated behaviour would invent a restriction the tablist does not have. What it buys is
+   * honesty on the other side: the Implement tab can say "you skipped this" and offer the way
+   * back, instead of reporting a missing audience as though something had gone wrong.
+   *
+   * Cleared the moment an audience attaches -- the skip is then a fact about a decision that
+   * was reversed, and repeating it would contradict the card sitting right above it.
+   */
+  protected readonly emailAudienceSkipped = signal<boolean>(false);
 
   /** Shared so the three email blocks that need a brief cannot drift apart. */
   protected readonly briefRequiredHint = EMAIL_BRIEF_REQUIRED_HINT;
@@ -2152,7 +2165,7 @@ export class CampaignsComponent {
       if (tab !== 'optimization') {
         this.selectedEmailTab.set(tab);
         // Load on ENTRY, not only on proceed. The only other call site is
-        // `onEmailProceedToImplementation`, so arriving at this tab any other way — clicking
+        // the planning handoff, so arriving at this tab any other way — clicking
         // it directly, or returning after a foundation switch cleared the list — left an
         // empty box, which this file's own comment calls out as reading like a broken
         // channel. Guarded on `null` so it fires once and does not re-run over a list the
@@ -2165,6 +2178,12 @@ export class CampaignsComponent {
         // human presses send there, which is precisely why an operator opens this tab.
         if (tab === 'insights') {
           this.loadEmailMetrics();
+        }
+        // On ENTRY rather than on compose. The id has to exist BEFORE the compose request is
+        // built -- the tab reads it at dispatch -- so resolving it when the operator presses the
+        // button would race the very call that needs it, and lose.
+        if (tab === 'audience') {
+          this.warmEmailBriefId();
         }
       }
       return;
@@ -2298,7 +2317,8 @@ export class CampaignsComponent {
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
   /**
-   * The Email side's handoff, deliberately NOT routed through `onProceedToImplementation`.
+   * The Email side's handoff off the Plan tab, deliberately NOT routed through
+   * `onProceedToImplementation`.
    *
    * It sets the email tab and the email brief, which are separate signals — see the
    * delivery-type effect. It also does not persist, but no longer for the reason this comment
@@ -2307,19 +2327,74 @@ export class CampaignsComponent {
    * stored as an email brief and `loadBrief` hands it back only to the email surface.
    *
    * What remains is a sequencing choice. The handoff must not block on a write, and every email
-   * action that genuinely needs a brief id already routes through `ensureEmailBriefId` — building
-   * an audience, generating copy, and staging a draft all await it, and it caches the id after
-   * the first persist resolves. So the save happens on demand, once, rather than on every trip
-   * through this handoff; persisting here as well would write the same row twice for one action.
+   * action that genuinely needs a brief id already routes through `ensureEmailBriefId` —
+   * composing an audience, generating copy, and staging a draft all await it, and it caches the
+   * id after the first persist resolves. So the save happens on demand, once, rather than on
+   * every trip through this handoff; persisting here as well would write the same row twice for
+   * one action.
+   *
+   * It lands on AUDIENCE, not Implement. The audience is a hard prerequisite of the only thing
+   * Implement can finish -- campaign-service's `resolveBuiltAudience` refuses to stage a send for
+   * a brief with no built audience -- so dropping the operator straight into Implement put the
+   * blocked step first and the step that unblocks it behind a tab they had no reason to open. The
+   * name of this method says "from planning" rather than naming a destination, because which tab
+   * comes next is a flow decision and the previous name went stale the moment it changed.
    */
-  protected onEmailProceedToImplementation(brief: CampaignBriefOutput): void {
+  protected onEmailProceedFromPlanning(brief: CampaignBriefOutput): void {
     this.emailBriefOutput.set(brief);
     this.resetEmailBriefDerivedState();
-    this.selectedEmailTab.set('implementation');
-    // Load the picker's options on ARRIVAL rather than on first keystroke, so the tab opens with
-    // the portal's most recently updated templates already listed. Someone staging a send usually
-    // wants a recent one, and an empty box with no options reads as a broken channel.
+    this.selectedEmailTab.set('audience');
+    // Set directly rather than through `selectTab`, so the two things that tab's entry does have
+    // to be done here as well. Saving the plan is the one that matters: a compose with no brief
+    // id creates a real HubSpot list and attaches it to nothing.
+    this.warmEmailBriefId();
+    // Load the picker's options on ARRIVAL rather than on first keystroke, so Implement opens
+    // with the portal's most recently updated templates already listed. Someone staging a send
+    // usually wants a recent one, and an empty box with no options reads as a broken channel.
+    // Started here rather than on Implement's entry precisely BECAUSE the audience step now sits
+    // in between: the round trip finishes while the operator is composing.
     this.searchEmailTemplates('');
+  }
+
+  /**
+   * Skip the audience step and go and write the email.
+   *
+   * The audience is genuinely optional for everything on the Implement tab except the last
+   * action. Generating copy, previewing it and choosing a template all work with no audience, and
+   * an operator who wants to draft first and assemble recipients later was previously told to do
+   * it in the other order for no reason the flow could state.
+   *
+   * What it does NOT do is make a send stageable. `resolveBuiltAudience` upstream refuses a brief
+   * whose newest HubSpot audience is missing, still building or failed, so a draft cannot be
+   * cloned without one -- this is a re-ordering of the work, not a way around that gate, and the
+   * Implement tab says so where the blocked button is rather than only here.
+   */
+  protected onSkipAudienceStep(): void {
+    this.emailAudienceSkipped.set(true);
+    this.selectTab('implementation', 'email');
+  }
+
+  /**
+   * Forward to the email, with an audience composed.
+   *
+   * Separate from `onSkipAudienceStep` and not merely the same call with a different label:
+   * that one records a skip, and recording one here would put "you skipped the audience" on
+   * the Implement tab directly above the card naming the list that was attached.
+   */
+  protected onContinueToEmailStep(): void {
+    this.selectTab('implementation', 'email');
+  }
+
+  /**
+   * Back to the audience step, from the Implement tab's blocked-send hint.
+   *
+   * Routed through `selectTab` rather than setting the signal, so the tab's entry work -- saving
+   * the plan so a compose can attach -- still happens. An operator arriving here has already been
+   * told the send is blocked on an audience; making them find the tab themselves is the dead end
+   * this whole flow change exists to remove.
+   */
+  protected onGoToAudienceStep(): void {
+    this.selectTab('audience', 'email');
   }
 
   /**
@@ -2375,7 +2450,7 @@ export class CampaignsComponent {
     // wiped by the very call meant to carry it, and the next save would arrive with an empty id
     // and mint a SECOND row for an event that already has one. Restoring the id after the reset
     // is what makes the following save a PUT against the row just opened.
-    this.onEmailProceedToImplementation(brief);
+    this.onEmailProceedFromPlanning(brief);
     // The id is cached ONLY for an approved brief, which is the same rule `persistEmailBrief`
     // applies at its own call site. `ensureEmailBriefId` short-circuits on a non-empty
     // `emailBriefId`, so caching an unapproved one means the persist -- which is what approves --
@@ -2386,69 +2461,50 @@ export class CampaignsComponent {
     if (approved) {
       this.emailBriefId.set(briefId);
     }
+
+    // Read back the saved audience with the id this restore was HANDED, not with `emailBriefId`.
+    // The signal is left empty for an unapproved brief on purpose (see just above), so reading it
+    // here would skip exactly the briefs whose audience is most easily lost -- and the audience row
+    // is keyed by the brief id either way, since approval governs creating FROM the brief, not
+    // whether it has one.
+    void this.restoreEmailAudience(this.activeFoundationSlug(), briefId);
   }
 
   /**
-   * Build the brief's send audience.
+   * The Audience tab composed a master list and upstream recorded it as this brief's send audience.
    *
-   * Separate action rather than folded into staging because it is EXPENSIVE — it calls Snowflake
-   * and several HubSpot creates — and because an operator wants to inspect the provenance
-   * (`inclusionSummary`) before sending to a list they did not assemble by hand.
+   * Takes the row as given rather than re-reading it. The attach happened inside the compose, in
+   * the same call that created the lists, so a read-back here could only disagree with it by being
+   * newer -- and there is nothing newer to find.
    */
-  protected async onBuildAudience(): Promise<void> {
-    const brief = this.emailBriefOutput();
-    const projectSlug = this.activeFoundationSlug();
-    if (brief === null || projectSlug === '') {
-      return;
-    }
+  protected onAudienceComposed(audience: CampaignAudience): void {
+    // Bumped FIRST, before the signal is written. A read-back may be in flight, and its reply arm
+    // checks this counter before setting `emailAudience` -- so bumping here is what stops an older
+    // row from landing ON TOP of the list the operator just assembled. Doing it after the set
+    // would leave a window in which the read-back still wins.
+    this.emailAudienceGeneration++;
+    this.emailAudience.set(audience);
+    this.emailAudienceOrigin.set('composed');
+    // The list IS attached now, so a warning about an unattached one is stale -- and a previous
+    // failed compose is exactly how the operator arrives here.
+    this.emailAudienceUnattached.set(null);
+    // Skipping is a decision about an audience that does not exist. One does now, so the note
+    // saying the step was skipped would sit directly above the card proving otherwise.
+    this.emailAudienceSkipped.set(false);
+  }
 
-    // Bumped BEFORE any await, like the copy path: every write below runs after one.
-    const generation = ++this.emailAudienceGeneration;
-    const isCurrent = (): boolean => generation === this.emailAudienceGeneration;
-
-    this.emailAudienceState.set('building');
-    this.emailAudienceMessage.set('');
-
-    try {
-      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
-      if (!isCurrent()) {
-        return;
-      }
-      if (briefId === '') {
-        this.emailAudienceState.set('error');
-        this.emailAudienceMessage.set(this.emailSaveFailureMessage('so no audience was built.'));
-        return;
-      }
-
-      const result = await firstValueFrom(this.campaignService.buildAudience(projectSlug, briefId));
-      // A BUILT audience for the previous brief would re-enable staging against the wrong one:
-      // `canStageEmail` gates on `emailAudience()?.status === 'built'`.
-      if (!isCurrent()) {
-        return;
-      }
-
-      // `enabled: false` is the cutover flag being off — a steady state, not a failure.
-      if (!result.enabled) {
-        this.emailAudienceState.set('idle');
-        this.emailAudienceMessage.set('Audience building is not enabled for this deployment yet.');
-        return;
-      }
-
-      if (result.error || !result.audience) {
-        this.emailAudienceState.set('error');
-        this.emailAudienceMessage.set(result.error ?? 'The audience could not be built.');
-        return;
-      }
-
-      this.emailAudience.set(result.audience);
-      this.emailAudienceState.set('idle');
-    } catch {
-      if (!isCurrent()) {
-        return;
-      }
-      this.emailAudienceState.set('error');
-      this.emailAudienceMessage.set('The audience could not be built. Try again.');
-    }
+  /**
+   * A master list was created in HubSpot and attached to nothing.
+   *
+   * Recorded rather than reported and forgotten: the list is real, it costs money and contact
+   * quota, and no later action in this app will find it. The send-audience block turns this into a
+   * warning naming the list, which is the operator's only route to reconciling it.
+   *
+   * `emailAudience` is deliberately NOT touched. Nothing was attached, so claiming an audience
+   * here would unblock staging for a send that still has no recipients.
+   */
+  protected onAudienceComposeUnattached(master: AudienceComposedList): void {
+    this.emailAudienceUnattached.set(master);
   }
 
   /**
@@ -2548,8 +2604,6 @@ export class CampaignsComponent {
       // addressed stage's brief, or with nothing if that send has none yet.
       this.emailBriefOutput.set(null);
       this.emailAudience.set(null);
-      this.emailAudienceState.set('idle');
-      this.emailAudienceMessage.set('');
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
@@ -3345,6 +3399,81 @@ export class CampaignsComponent {
     this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');
     this.abTestCopyError.set('');
+  }
+
+  /**
+   * Save the plan when the Audience tab opens, so a compose there can attach what it creates.
+   *
+   * A WARM-UP, not new state: `ensureEmailBriefId` already caches the id and joins a persist in
+   * flight, so this only moves a save the operator's next action would have triggered anyway to a
+   * point where its result is still useful. Composing is what needs the id, and by the time the
+   * operator presses that button the round trip has long finished.
+   *
+   * Silent on failure on purpose. The tab is usable with no brief -- that is the documented
+   * exploratory path -- and it states inline that a compose without one attaches nothing, so there
+   * is nothing to report here that the operator is not already told at the point of action.
+   */
+  private warmEmailBriefId(): void {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '' || this.emailBriefId() !== '') {
+      return;
+    }
+    void this.ensureEmailBriefId(brief, projectSlug).catch(() => undefined);
+  }
+
+  /**
+   * Re-read the audience campaign-service already holds for a brief being restored.
+   *
+   * Without this a reload is destructive in a way nothing on screen admits. `emailAudience` is
+   * in-memory only, so a built audience vanishes on restore and the Send-audience block offers
+   * Build again -- which mints a SECOND HubSpot master list for a send that already had one, and
+   * newest-row-wins upstream means that duplicate then becomes the one dispatched to. The stored
+   * row is the authority; this asks for it rather than inferring anything from the brief.
+   *
+   * SILENT on every failure, `enabled: false` included. Nothing here is actionable: the outcome of
+   * staying quiet is this screen with no audience, which is precisely the behaviour that existed
+   * before this read, and the Audience tab still reports its own errors at the moment one actually
+   * blocks something. A banner would announce a degradation on a page the operator has not yet
+   * asked to do anything with.
+   */
+  private async restoreEmailAudience(projectSlug: string, briefId: string): Promise<void> {
+    // Both are preconditions of the route rather than defaults to paper over -- the BFF refuses an
+    // empty `project` or `brief_id` with a 400 -- and on a silent path there is nowhere to report
+    // that 400, so it must not be provoked.
+    if (projectSlug === '' || briefId === '') {
+      return;
+    }
+
+    // Bumped BEFORE the await, like every other write to this signal: a restore of one brief must
+    // not be overwritten by this read landing late for the previous one, and `canStageEmail` gates
+    // on exactly the status it sets.
+    const generation = ++this.emailAudienceGeneration;
+    const isCurrent = (): boolean => generation === this.emailAudienceGeneration;
+
+    try {
+      const result = await firstValueFrom(this.campaignService.listAudiences(projectSlug, briefId));
+      if (!isCurrent() || !result.enabled || result.error) {
+        return;
+      }
+
+      // Matched on `hubspot` rather than taken as "the first row": a brief can carry rows for other
+      // platforms, and only the HubSpot one is what an email send dispatches against. Upstream
+      // returns newest-first, so the first match is the current one.
+      const restored = (result.audiences ?? []).find((audience) => audience.platform === 'hubspot');
+      if (restored === undefined) {
+        return;
+      }
+
+      this.emailAudience.set(restored);
+      // `restored`, not the origin it was CREATED with. The row does not record how it was made
+      // and this read cannot know, so the card says where the value came from -- a reload -- and
+      // claims nothing about the compose or build behind it.
+      this.emailAudienceOrigin.set('restored');
+    } catch {
+      // Deliberately empty -- see the doc comment. A failed read leaves the screen where it already
+      // was, and there is no action to offer for an audience the operator has not asked about.
+    }
   }
 
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
@@ -4694,8 +4823,14 @@ export class CampaignsComponent {
     // it: the generated copy IS cleared here, so the next generation runs against the new brief.
     this.emailBriefId.set('');
     this.emailAudience.set(null);
-    this.emailAudienceState.set('idle');
-    this.emailAudienceMessage.set('');
+    this.emailAudienceOrigin.set(null);
+    // Cleared with the rest, even though the HubSpot list it names still exists. The warning is
+    // scoped to ONE brief's send -- it says "this campaign's audience is not attached" -- and
+    // carrying it onto the next brief would accuse a send that never composed anything.
+    this.emailAudienceUnattached.set(null);
+    // Scoped to one brief like everything around it: the operator skipped THIS send's
+    // audience, and carrying that onto the next brief would claim a decision never made.
+    this.emailAudienceSkipped.set(false);
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');

@@ -10,7 +10,8 @@ import type { AudienceLastSentEmail, AudienceListBrief, AudienceMasterListBrief 
  * "Who did we send this to last time" — past sends for this event, plus master lists already built.
  *
  * The fastest correct answer to the question the legacy tool was built around, and the reason a
- * rebuild is often unnecessary: an existing master list can be reused outright.
+ * rebuild is often unnecessary: an existing master list, or an earlier send's exact list selection,
+ * can be attached to this email outright with no new list created in HubSpot.
  */
 @Component({
   selector: 'lfx-audience-last-sent',
@@ -38,12 +39,27 @@ export class AudienceLastSentComponent {
   public readonly mastersLoading = input(false);
   public readonly mastersFailed = input(false);
   public readonly emailsFailed = input(false);
+  /**
+   * Whether lists can be attached to the current email directly. False with no saved plan (there
+   * is no brief to attach to) or while HubSpot is unusable; the attach buttons then explain why.
+   */
+  public readonly canAttach = input(false);
+  /** The id of the send or master list an attach is in flight for, so only its button spins. */
+  public readonly attachingId = input<string | null>(null);
+  /** The master list id currently recorded as this email's send list, if any. */
+  public readonly attachedListId = input<string | null>(null);
 
   // === Outputs ===
   /** Add one of a past send's lists to the inclusion set. */
   public readonly addList = output<AudienceListBrief>();
   /** Add an already-built master list to the inclusion set. */
   public readonly addMasterList = output<AudienceMasterListBrief>();
+  /** Copy a past send's whole selection — its inclusions AND suppressions — into steps 2-3. */
+  public readonly copySelection = output<AudienceLastSentEmail>();
+  /** Attach a past send's include list and suppressions to this email, composing nothing. */
+  public readonly useSendLists = output<AudienceLastSentEmail>();
+  /** Attach an already-built master list to this email as its send list, composing nothing. */
+  public readonly useMasterList = output<AudienceMasterListBrief>();
 
   // === Protected Methods ===
   /**
@@ -53,11 +69,18 @@ export class AudienceLastSentComponent {
    */
   protected readonly masterRows = computed(() => {
     const selected = this.selectedIds();
-    return this.masterLists().map((list) => ({ ...list, selected: selected.has(list.listId), sizeText: this.sizeLabel(list.size) }));
+    const attached = this.attachedListId();
+    return this.masterLists().map((list) => ({
+      ...list,
+      selected: selected.has(list.listId),
+      attached: attached === list.listId,
+      sizeText: this.sizeLabel(list.size),
+    }));
   });
 
   protected readonly emailRows = computed(() => {
     const selected = this.selectedIds();
+    const attached = this.attachedListId();
     // Generic so the decorated row keeps every field of the original — narrowing the parameter
     // type here silently drops `name`, `missing` and anything else the template reads.
     const decorate = <T extends { listId: string; size?: number }>(list: T) => ({
@@ -65,11 +88,20 @@ export class AudienceLastSentComponent {
       selected: selected.has(list.listId),
       sizeText: this.sizeLabel(list.size),
     });
-    return this.emails().map((email) => ({
-      ...email,
-      includedLists: email.includedLists.map(decorate),
-      suppressionLists: email.suppressionLists.map(decorate),
-    }));
+    return this.emails().map((email) => {
+      const usable = email.includedLists.filter((list) => !list.missing);
+      const knownReach = usable.reduce((sum, list) => sum + (list.size ?? 0), 0);
+      const blocked = this.attachBlockedReason(email);
+      return {
+        ...email,
+        includedLists: email.includedLists.map(decorate),
+        suppressionLists: email.suppressionLists.map(decorate),
+        copyable: !email.listsUnavailable && usable.length > 0,
+        attachBlocked: blocked,
+        attached: blocked === null && attached !== null && usable[0]?.listId === attached,
+        reachText: usable.some((list) => list.size !== undefined) ? `${knownReach.toLocaleString('en-US')} contacts before suppression` : '',
+      };
+    });
   });
 
   protected isSelected(listId: string): boolean {
@@ -92,5 +124,48 @@ export class AudienceLastSentComponent {
     if (!this.disabled()) {
       this.addMasterList.emit(list);
     }
+  }
+
+  protected onCopySelection(email: AudienceLastSentEmail): void {
+    if (!this.disabled() && !email.listsUnavailable) {
+      this.copySelection.emit(email);
+    }
+  }
+
+  protected onUseSendLists(email: AudienceLastSentEmail): void {
+    if (this.canAttach() && this.attachingId() === null && this.attachBlockedReason(email) === null) {
+      this.useSendLists.emit(email);
+    }
+  }
+
+  protected onUseMasterList(list: AudienceMasterListBrief): void {
+    if (this.canAttach() && this.attachingId() === null) {
+      this.useMasterList.emit(list);
+    }
+  }
+
+  /**
+   * Why a past send's lists cannot be attached as-is, or null when they can.
+   *
+   * An email sends to ONE include list (dispatch sets a single send list plus suppressions), so a
+   * send that included several lists cannot be replayed without combining them — that is what
+   * "Copy selection" and a compose are for. A missing suppression is refused rather than skipped:
+   * attaching with less suppression than the earlier send used is a compliance regression.
+   */
+  private attachBlockedReason(email: AudienceLastSentEmail): string | null {
+    if (email.listsUnavailable) {
+      return 'The list selection of this send could not be read.';
+    }
+    const usable = email.includedLists.filter((list) => !list.missing);
+    if (usable.length === 0) {
+      return 'None of the lists this send included still exist.';
+    }
+    if (email.includedLists.length > 1) {
+      return 'This send included several lists. Copy the selection, then compose one master list below.';
+    }
+    if (email.suppressionLists.some((list) => list.missing)) {
+      return 'A suppression list this send used no longer resolves. Copy the selection and review suppression instead.';
+    }
+    return null;
   }
 }

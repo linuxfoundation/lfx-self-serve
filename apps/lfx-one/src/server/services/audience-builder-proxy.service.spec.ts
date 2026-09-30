@@ -114,6 +114,106 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(AudienceComposePartialError);
   });
 
+  it('forwards brief_id only when the caller supplied one', async () => {
+    // A present-but-empty `brief_id` is a DIFFERENT request upstream: it reads it as an attach,
+    // fails the brief lookup and 404s — refusing to create anything for an exploratory compose
+    // that never asked to be attached to anything.
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'u' }, source_list_ids: [] });
+
+    await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] });
+    const [, , , , , withoutBrief] = proxyRequest.mock.calls[0];
+    expect(withoutBrief.compose, 'an absent brief id must not become an empty one').not.toHaveProperty('brief_id');
+
+    proxyRequest.mockClear();
+    await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' });
+    const [, , , , , withBrief] = proxyRequest.mock.calls[0];
+    expect(withBrief.compose.brief_id).toBe('brief-1');
+  });
+
+  it('reports a compose as unattached when upstream never mentions recording', async () => {
+    // THE OLD-UPSTREAM CASE, and the reason `recorded` is read rather than inferred from
+    // `audience`. Goa ignores unknown body fields, so a campaign-service deployed before this
+    // feature accepts `brief_id`, composes normally and answers without either field. Defaulting
+    // to attached there would tell the operator a send is wired up to a list nothing points at.
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'u' }, source_list_ids: ['1'] });
+
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' });
+
+    expect(result.recorded).toBe(false);
+    expect(result.audience).toBeUndefined();
+  });
+
+  it('maps the recorded audience onto the row the UI gates staging on', async () => {
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      source_list_ids: ['1'],
+      recorded: true,
+      audience: { id: 'aud-1', status: 'built', version: 3, platform_master_list_id: '900' },
+    });
+
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' });
+
+    expect(result.recorded).toBe(true);
+    // `briefId` comes from the REQUEST, not the response: upstream's recorded-audience object is
+    // deliberately slim and carries no brief id, and the id sent is the one it attached to.
+    expect(result.audience).toEqual({ id: 'aud-1', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '900', status: 'built', version: 3 });
+  });
+
+  it('refuses a recorded compose whose audience object is unusable', async () => {
+    // `recorded: true` beside a rewritten `audience: {}` is the one combination that would render
+    // "Audience attached" over a row with no id — an attachment the operator cannot verify or
+    // undo, on a create that cannot be retried.
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      source_list_ids: ['1'],
+      recorded: true,
+      audience: {},
+    });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' })).rejects.toThrow(/audience/);
+  });
+
+  it('coerces an unrecognised recorded status to failed rather than trusting it', async () => {
+    // `canStageEmail` admits only `built`. A status upstream never declared must not be able to
+    // reach that gate by arriving as a string nobody checked.
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      source_list_ids: ['1'],
+      recorded: true,
+      audience: { id: 'aud-1', status: 'enqueued', version: 1, platform_master_list_id: '900' },
+    });
+
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' });
+
+    expect(result.audience?.status).toBe('failed');
+  });
+
+  it('carries a CONFIRMED master through the partial path', async () => {
+    // The fifth shape: both lists exist and only the attach failed. Before it was recognised this
+    // body fell through to a generic error, losing the link to a master list that is real and
+    // usable — on the one partial where the operator's route out is that exact list.
+    const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
+      errorBody: { master: { list_id: '900', name: 'Master', hubspot_url: 'u' }, message: 'Lists created but not attached.' },
+    });
+    proxyRequest.mockRejectedValue(err);
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' })).rejects.toMatchObject({
+      master: { listId: '900', name: 'Master' },
+    });
+  });
+
+  it('drops a partial master whose id is blank rather than linking to it', async () => {
+    // Same rule the suppression arm follows, and it matters more here: this shape's whole message
+    // is "the master EXISTS, attach it by hand", so a blank id sends the operator hunting for a
+    // list that was never confirmed to exist.
+    const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
+      errorBody: { master: { list_id: '  ', name: 'Master', hubspot_url: 'u' }, master_name: 'Master' },
+    });
+    proxyRequest.mockRejectedValue(err);
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toMatchObject({ master: undefined });
+  });
+
   it('carries lists_unavailable so an unread selection is not an empty one', async () => {
     // Both list arrays arrive empty whether the send targeted nobody or the read failed. Without
     // this flag the UI renders "None recorded." for an outage — an unknown audience presented as
@@ -153,5 +253,43 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     const [email] = await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 5);
 
     expect(email.listsUnavailable, 'a genuinely empty selection was marked unreadable').toBeUndefined();
+  });
+
+  it('posts an attach with the wire field names and maps the recorded audience', async () => {
+    const req = {} as Request;
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '501', name: 'Prospects', hubspot_url: 'u' },
+      suppression_list_ids: ['201'],
+      audience: { id: 'aud-2', status: 'built', version: 1, platform_master_list_id: '501' },
+    });
+
+    const result = await service.attachExisting(req, 'tlf', { briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'] });
+
+    const [, , path, method, , body] = proxyRequest.mock.calls[0];
+    expect(path).toContain('/audience-builder/attach-existing');
+    expect(method).toBe('POST');
+    expect(body).toEqual({ attach: { brief_id: 'brief-1', master_list_id: '501', suppression_list_ids: ['201'] } });
+    expect(result.audience.briefId).toBe('brief-1');
+    expect(result.suppressionListIds).toEqual(['201']);
+  });
+
+  it('maps a list brief HubSpot link when upstream sends one', async () => {
+    const req = {} as Request;
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: 'e1',
+          email_name: 'Send',
+          sent_at: '2026-01-01T00:00:00Z',
+          hubspot_url: 'h',
+          included_lists: [{ list_id: '1', name: 'L', missing: false, hubspot_url: 'https://app.hubspot.com/contacts/1/objectLists/1/filters' }],
+          suppression_lists: [],
+        },
+      ],
+    });
+
+    const [sent] = await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 5);
+
+    expect(sent?.includedLists[0]?.hubspotUrl).toContain('/objectLists/1/');
   });
 });

@@ -195,7 +195,7 @@
             [programTypeConfig]="activeProgramTypeConfig()"
             deliveryType="email"
             [emailStage]="selectedEmailStage() ?? ''"
-            (proceedToImplementation)="onEmailProceedToImplementation($event)"
+            (proceedToImplementation)="onEmailProceedFromPlanning($event)"
             (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-email-planning-tab" />
         }
@@ -206,7 +206,7 @@
 
       An aria-live element inserted with its text already present is not reliably announced — the
       region has to exist first and then have its CONTENTS change. Inside the @case this region
-      could never satisfy that rule: BOTH entry paths (`onEmailProceedToImplementation` and
+      could never satisfy that rule: BOTH entry paths (`onEmailProceedFromPlanning` and
       `selectTab`) call `searchEmailTemplates` synchronously BEFORE the case renders, so the node
       was created with "Searching templates" already in it and the first search — the main path —
       announced nothing at all. Kept here it survives every tab transition, so only its text
@@ -246,10 +246,61 @@
              doc comment) because both containers stay mounted. Binding the paid brief here left an
              email-only panel blank when only an email brief existed, and seeded discovery from the
              WRONG event when a paid brief was present. -->
+        <!-- `emailBriefId`, which is EMPTY until the plan is saved. That is passed through
+             rather than suppressed: the tab tells the operator inline that a compose without it
+             attaches nothing, and refusing to compose would remove the brief-less exploratory use
+             these project-scoped routes exist for. `selectTab` warms the id when this tab opens,
+             so in the ordinary flow it is already set by the time anything is composed. -->
+        <!--
+          The step bar. Plan hands off to THIS tab, so this is where the flow has to say what the
+          step is for and how to leave it -- in both directions, because the audience is optional
+          to the work on the Implement tab and mandatory only to its final action.
+
+          Two exits rather than one control that changes meaning: skipping records that the
+          operator chose to write the email first, and continuing after a compose must not, or
+          the Implement tab would report a skip directly above the card naming the attached list.
+        -->
+        <div
+          class="mb-4 flex flex-wrap items-start justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4"
+          data-testid="campaigns-email-audience-step">
+          <div class="flex flex-col gap-1">
+            <h2 class="text-base font-semibold text-gray-900">Choose who this email goes to</h2>
+            <!-- Says required-for-WHAT, not just "required". The audience blocks exactly one
+                 action -- staging the HubSpot draft -- and calling it required outright would
+                 read as a gate on writing the email, which is the misreading that put this step
+                 after Implement in the first place. -->
+            <p class="max-w-2xl text-sm text-gray-500">
+              Compose the send list here and it attaches to this campaign automatically. You can write the email first and come back &mdash; the audience is
+              only needed to stage the draft in HubSpot.
+            </p>
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            @if (emailAudience()?.status === 'built') {
+              <lfx-button
+                label="Continue to the email"
+                icon="fa-light fa-arrow-right"
+                severity="primary"
+                (onClick)="onContinueToEmailStep()"
+                data-testid="campaigns-email-audience-continue-btn" />
+            } @else {
+              <lfx-button
+                label="Skip for now — write the email"
+                icon="fa-light fa-arrow-right"
+                severity="secondary"
+                (onClick)="onSkipAudienceStep()"
+                data-testid="campaigns-email-audience-skip-btn" />
+            }
+          </div>
+        </div>
+
         <lfx-audience-builder-tab
           [projectSlug]="activeFoundationSlug()"
           [active]="selectedEmailTab() === 'audience'"
-          [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''" />
+          [briefId]="emailBriefId()"
+          [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
+          (audienceAttached)="onAudienceComposed($event)"
+          (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
+          (continueToEmail)="onContinueToEmailStep()" />
       </div>
 
       @switch (selectedEmailTab()) {
@@ -527,14 +578,25 @@
               -->
 
               <!--
-                Audience. A SEPARATE action from staging, not folded into it, for two reasons: the
-                build is expensive (Snowflake plus several HubSpot creates), and the operator needs
-                to read the provenance before sending to a list they did not assemble by hand.
+                Audience. READ-ONLY here. The audience is assembled on the Audience tab and this
+                block only reports what is attached, so the operator can read the provenance
+                before staging a send to it.
               -->
               <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-send-audience">
                 <div class="flex flex-col gap-1">
                   <h2 class="text-base font-semibold text-gray-900">Send audience</h2>
-                  <p class="text-sm text-gray-500">Built from the brief's event details. Required before an email can be staged.</p>
+                  <!-- ONE source, and the copy says so. The derived "build audience" action that
+                       used to live in this block is gone: it wrote a second audience row, dispatch
+                       resolves the newest, and so a build silently superseded a list the operator
+                       had assembled by hand. Every audience now comes from the Audience tab, which
+                       is the only surface that shows what is in the list before it is sent to. -->
+                  @if (emailAudienceOrigin() === 'composed') {
+                    <p class="text-sm text-gray-500">Composed on the Audience tab and attached to this campaign.</p>
+                  } @else {
+                    <p class="text-sm text-gray-500">
+                      Composed on the Audience tab. Needed before the draft can be staged in HubSpot, not before the email is written.
+                    </p>
+                  }
                 </div>
 
                 @if (emailAudience(); as audience) {
@@ -547,18 +609,18 @@
                     <div class="flex items-center gap-2">
                       @if (audience.status === 'built') {
                         <i class="fa-light fa-check text-green-600"></i>
-                        <span class="text-sm font-medium text-gray-900">Audience built</span>
+                        <span class="text-sm font-medium text-gray-900">Audience attached</span>
                       } @else if (audience.status === 'failed') {
                         <i class="fa-light fa-circle-exclamation text-red-600"></i>
-                        <span class="text-sm font-medium text-gray-900">Audience build failed</span>
+                        <span class="text-sm font-medium text-gray-900">Audience failed</span>
                       } @else {
                         <!--
-                          `building` is also where an UNCONFIRMED build lands, not just an
-                          in-flight one, and the two are indistinguishable from here. The copy has
-                          to hold for both, and the summary below carries the ids to reconcile.
+                          `building` is where an UNCONFIRMED compose lands: upstream created lists
+                          but could not confirm the outcome, and records the ids so the row can be
+                          reconciled. The summary below carries them.
                         -->
                         <i class="fa-light fa-spinner text-gray-500"></i>
-                        <span class="text-sm font-medium text-gray-900">Audience build unconfirmed</span>
+                        <span class="text-sm font-medium text-gray-900">Audience unconfirmed</span>
                       }
                       <span class="font-mono text-xs text-gray-500">{{ audience.status }}</span>
                     </div>
@@ -568,50 +630,88 @@
                     @if (audience.suppressionListIds?.length) {
                       <p class="text-xs text-gray-500">{{ audience.suppressionListIds?.length }} suppression list(s) applied</p>
                     }
-                  </div>
-                }
-
-                <!--
-                  Offered on `failed` and on absence, but NOT on `building`.
-                
-                  Gating on presence alone made a non-built row terminal: the status card replaced
-                  the button, `canStageEmail` refuses anything but `built`, and there is no poll,
-                  so a failed build stranded the operator with no way back but re-running the
-                  Plan-tab scrape.
-                
-                  `building` is deliberately excluded, and it is not merely "in flight". Upstream
-                  keeps a row BUILDING when the outcome is UNCONFIRMED -- a HubSpot list may
-                  already exist -- and records the ids it created so the row can be reconciled.
-                  Observed live: a build left `HubSpot lists ALREADY CREATED (reconcile these
-                  before retrying): 30779`. Offering Retry there invites the duplicate contact
-                  list that state exists to prevent.
-                -->
-                @if (emailAudience() === null || emailAudience()?.status === 'failed') {
-                  <div class="flex items-center gap-3">
-                    <lfx-button
-                      [label]="emailAudience() === null ? 'Build audience' : 'Retry build'"
-                      icon="fa-light fa-users"
-                      severity="secondary"
-                      [disabled]="emailBriefOutput() === null || emailAudienceState() === 'building'"
-                      [loading]="emailAudienceState() === 'building'"
-                      (onClick)="onBuildAudience()"
-                      data-testid="campaigns-email-audience-btn" />
-                    @if (emailBriefOutput() === null) {
-                      <span class="text-sm text-gray-500">{{ briefRequiredHint }}</span>
+                    <!-- The master list id, shown rather than linked. Every HubSpot link in this
+                         app is built SERVER-side, where the portal id lives; assembling one here
+                         would guess a portal and hand the operator a URL that resolves to the
+                         wrong account's list -- worse than an id they can paste into search. The
+                         id was recorded in the row and rendered nowhere until now. -->
+                    @if (audience.platformMasterListId; as masterListId) {
+                      <p class="text-xs text-gray-500" data-testid="campaigns-email-audience-master-list">
+                        Master list <span class="font-mono">{{ masterListId }}</span>
+                      </p>
                     }
                   </div>
                 }
 
-                @if (emailAudienceMessage(); as message) {
-                  <p
-                    class="text-sm"
-                    [class.text-red-700]="emailAudienceState() === 'error'"
-                    [class.text-gray-500]="emailAudienceState() !== 'error'"
-                    [attr.role]="emailAudienceState() === 'error' ? 'alert' : 'status'"
-                    data-testid="campaigns-email-audience-message">
-                    {{ message }}
-                  </p>
+                <!--
+                  No audience yet. The button NAVIGATES; it does not compose. Composing is not
+                  idempotent -- every attempt mints a real HubSpot contact list -- so it can only
+                  be started from the tab that shows the signals, the suppression set and the
+                  preview count first. There is still no way to produce an audience from here.
+
+                  A link rather than prose alone because this is the one state the operator is
+                  actually stuck in: the send is blocked, and telling them the name of a tab and
+                  leaving them to find it is the dead end this flow change exists to remove.
+                -->
+                @if (emailAudience() === null && emailAudienceUnattached() === null) {
+                  <div class="flex flex-col items-start gap-2" data-testid="campaigns-email-audience-empty">
+                    @if (emailAudienceSkipped()) {
+                      <!-- Reports a CHOICE, not a fault. The operator skipped this deliberately,
+                           and an amber "missing audience" warning for a step they were invited to
+                           skip would call their own decision an error. -->
+                      <p class="text-sm text-gray-500">
+                        You skipped the audience step. Write and preview the email here; the send needs a list before it can be staged.
+                      </p>
+                    } @else {
+                      <p class="text-sm text-gray-500">No audience yet. Compose one on the Audience tab and it attaches to this campaign automatically.</p>
+                    }
+                    <lfx-button
+                      label="Go to the Audience tab"
+                      icon="fa-light fa-users"
+                      severity="secondary"
+                      (onClick)="onGoToAudienceStep()"
+                      data-testid="campaigns-email-audience-goto-btn" />
+                  </div>
                 }
+
+                <!--
+                  A master list exists in HubSpot that no send points at. Rendered as a warning
+                  rather than an error because nothing here is broken -- the list is real and
+                  usable -- but it is invisible to every other screen in this app, so this is the
+                  only place the operator can be told it is there.
+
+                  No compose retry is offered here: the operation is not idempotent and a second
+                  attempt mints a second contact list for the same send.
+                -->
+                @if (emailAudienceUnattached(); as loose) {
+                  <div class="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4" data-testid="campaigns-email-audience-unattached">
+                    <div class="flex items-center gap-2">
+                      <i class="fa-light fa-triangle-exclamation text-amber-600"></i>
+                      <span class="text-sm font-medium text-amber-900">Master list created but not attached</span>
+                    </div>
+                    <p class="text-sm text-amber-800">
+                      <span class="font-medium">{{ loose.name }}</span> exists in HubSpot and this campaign does not point at it. Attach it to the send in
+                      HubSpot, then save the plan again so the Audience tab can re-attach it.
+                    </p>
+                    <a
+                      class="text-sm text-amber-900 underline"
+                      [href]="loose.hubspotUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="campaigns-email-audience-unattached-link">
+                      Open {{ loose.name }} in HubSpot
+                    </a>
+                  </div>
+                }
+
+                <!--
+                  Nothing here produces an audience. The derived build that used to sit in this
+                  spot -- and the acknowledgement that gated it beside a loose master list -- are
+                  both gone: a build wrote a NEW row and dispatch resolves the newest, so it
+                  silently replaced a hand-composed list that stayed behind in HubSpot. Nothing on
+                  this screen reported that. Removing the action is the fix; do not reintroduce it
+                  here, even behind a confirmation.
+                -->
               </div>
 
               <!--
@@ -890,11 +990,11 @@
                       } @else if (selectedEmailTemplateId() === '') {
                         Choose a template to clone.
                       } @else if (emailAudience() === null) {
-                        Build the send audience first.
+                        Compose the send audience on the Audience tab first.
                       } @else if (emailAudience()?.status === 'building') {
-                        The audience build is unconfirmed — reconcile the lists it created before staging.
+                        The audience is unconfirmed — reconcile the lists it created before staging.
                       } @else if (emailAudience()?.status !== 'built') {
-                        The audience build failed — rebuild it before staging.
+                        The audience failed — compose it again on the Audience tab before staging.
                       }
                     </span>
                   }

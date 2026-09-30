@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
@@ -11,10 +11,12 @@ import { catchError, combineLatest, distinctUntilChanged, filter, map, of, pairw
 
 import { AUDIENCE_SIGNAL_INFO, AUDIENCE_SIGNAL_ORDER, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
+  AudienceAttachExistingResult,
   AudienceBuilderCapabilities,
   AudienceCardBucket,
   AudienceComposeMasterPartial,
   AudienceComposeMasterResult,
+  AudienceComposedList,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
   AudienceDiscoveryProgress,
@@ -27,6 +29,7 @@ import type {
   AudiencePreviewCount,
   AudienceSignal,
   AudienceSuppressionList,
+  CampaignAudience,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
 
@@ -34,6 +37,7 @@ import { AudienceCardGridComponent } from '../audience-card-grid/audience-card-g
 import { AudienceLastSentComponent } from '../audience-last-sent/audience-last-sent.component';
 import { AudienceMissingSignalsComponent } from '../audience-missing-signals/audience-missing-signals.component';
 import { AudienceQaPanelComponent } from '../audience-qa-panel/audience-qa-panel.component';
+import { AudienceStepCardComponent } from '../audience-step-card/audience-step-card.component';
 import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/audience-suppression-grid.component';
 
 /**
@@ -56,6 +60,7 @@ import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/a
     AudienceLastSentComponent,
     AudienceMissingSignalsComponent,
     AudienceQaPanelComponent,
+    AudienceStepCardComponent,
   ],
   templateUrl: './audience-builder-tab.component.html',
   styleUrl: './audience-builder-tab.component.scss',
@@ -71,6 +76,41 @@ export class AudienceBuilderTabComponent {
   public readonly active = input(false);
   /** Seeded from the brief's event details when it has them, so the field is rarely empty. */
   public readonly initialEventUrl = input('');
+  /**
+   * The brief a composed master should be attached to, empty when there is none yet.
+   *
+   * Empty does NOT disable compose, and that is deliberate rather than an omission. These routes
+   * are project-scoped precisely so the builder can be used before any campaign exists -- the
+   * exploratory path -- so refusing to compose without a brief would remove a supported use. What
+   * an empty id changes is the OUTCOME, which the template states inline: the lists are created
+   * but attached to nothing.
+   */
+  public readonly briefId = input('');
+
+  // === Outputs ===
+  /**
+   * The composed master was recorded upstream as the brief's built send audience.
+   *
+   * Emitted with the audience row rather than a list id, so the parent can put it straight on the
+   * signal that gates staging. The parent is not asked to re-read anything: the attach happened
+   * inside the compose, and this row is the service's own record of it.
+   */
+  public readonly audienceAttached = output<CampaignAudience>();
+  /**
+   * The master list was created and NOT attached to a brief.
+   *
+   * Two different situations reach it -- no brief id was available, and a brief id was sent but
+   * the recording failed -- and the parent renders the same reconcile warning for both, because
+   * the operator's position is identical: a real HubSpot list exists that the send does not know
+   * about. Carries the composed list itself rather than a flattened copy of three of its fields --
+   * the parent renders the same name and HubSpot link this tab does, off the same shape.
+   */
+  public readonly audienceComposeUnattached = output<AudienceComposedList>();
+  /**
+   * The operator is done here and wants the Implement tab. Emitted from beside the compose / attach
+   * result, which sits at the bottom of a long panel — the parent's step bar is a screen away.
+   */
+  public readonly continueToEmail = output<void>();
 
   // === Forms ===
   protected readonly eventUrlControl = new FormControl('', { nonNullable: true });
@@ -177,8 +217,22 @@ export class AudienceBuilderTabComponent {
   protected readonly previewError = signal<string | null>(null);
   protected readonly composing = signal(false);
   protected readonly composeResult = signal<AudienceComposeMasterResult | null>(null);
+  /** The composed master's id, handed to QA as its suggested target. Empty until a compose succeeds. */
+  protected readonly composedMasterListId = computed(() => this.composeResult()?.master.listId ?? '');
   protected readonly composePartial = signal<AudienceComposeMasterPartial | null>(null);
   protected readonly composeError = signal<string | null>(null);
+
+  // === Attach existing lists (no compose) ===
+  /** The send / master list id an attach is in flight for; null when idle. */
+  protected readonly attachingId = signal<string | null>(null);
+  protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
+  protected readonly attachError = signal<string | null>(null);
+  /**
+   * Names for suppression lists added by "Copy selection" that are not rows of the standard
+   * suppression grid. The suppression map stores key -> list id only, and the grid supplies names
+   * for its own keys; these keys (`copied:<id>`) have no row there.
+   */
+  private readonly copiedSuppressionNames = signal<ReadonlyMap<string, string>>(new Map());
   /**
    * Set when a project switch abandoned a compose that was already running. The lists may exist
    * in the portal with nothing on screen naming them, so the next compose could duplicate them —
@@ -368,6 +422,102 @@ export class AudienceBuilderTabComponent {
    * selection composing twice creates a duplicate master list, and the partial case is
    * explicitly the one the operator must reconcile by hand rather than retry.
    */
+  /** Direct attach needs a brief to attach to and a usable HubSpot connection. */
+  protected readonly canAttach = computed(() => this.briefId() !== '' && !this.degraded());
+
+  /** The list currently recorded as this email's send list by THIS panel, if any. */
+  protected readonly attachedListId = computed(() => {
+    const attached = this.attachResult();
+    if (attached) {
+      return attached.master.listId;
+    }
+    const composed = this.composeResult();
+    return composed?.recorded ? composed.master.listId : null;
+  });
+
+  /** Every list size this panel has seen, so the summary can total the selection's known reach. */
+  private readonly sizeIndex = computed(() => {
+    const sizes = new Map<string, number>();
+    const note = (listId: string, size?: number) => {
+      if (size !== undefined) {
+        sizes.set(listId, size);
+      }
+    };
+    this.discoveredLists().forEach((list) => note(list.listId, list.size));
+    this.existingMasterLists().forEach((list) => note(list.listId, list.size));
+    this.suppressionLists().forEach((list) => note(list.listId, list.size));
+    this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.size)));
+    this.searchResults().forEach((list) => note(list.listId, list.size));
+    return sizes;
+  });
+
+  /** Every HubSpot link this panel has seen, so selection chips can open the list they name. */
+  private readonly urlIndex = computed(() => {
+    const urls = new Map<string, string>();
+    const note = (listId: string, url?: string) => {
+      if (url) {
+        urls.set(listId, url);
+      }
+    };
+    this.discoveredLists().forEach((list) => note(list.listId, list.hubspotUrl));
+    this.existingMasterLists().forEach((list) => note(list.listId, list.hubspotUrl));
+    this.suppressionLists().forEach((list) => note(list.listId, list.hubspotUrl));
+    this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.hubspotUrl)));
+    this.searchResults().forEach((list) => note(list.listId, list.hubspotUrl));
+    return urls;
+  });
+
+  /** Inclusion chips decorated with a link and size where one is known. */
+  protected readonly inclusionChips = computed(() => {
+    const urls = this.urlIndex();
+    const sizes = this.sizeIndex();
+    return this.inclusionEntries().map((entry) => {
+      const size = sizes.get(entry.listId);
+      return {
+        ...entry,
+        hubspotUrl: urls.get(entry.listId) ?? '',
+        sizeText: size === undefined ? '' : size.toLocaleString('en-US'),
+      };
+    });
+  });
+
+  /** Excluded lists with display names, for the review step — the grid alone cannot name copied ones. */
+  protected readonly suppressionEntries = computed(() => {
+    const gridNames = new Map(this.suppressionLists().map((row) => [row.key, row.name || row.label]));
+    const copied = this.copiedSuppressionNames();
+    return [...this.suppression()]
+      .filter(([, listId]) => !this.inclusion().has(listId))
+      .map(([key, listId]) => ({
+        key,
+        listId,
+        name: gridNames.get(key) ?? copied.get(listId) ?? `List ${listId}`,
+        hubspotUrl: this.urlIndex().get(listId) ?? '',
+      }));
+  });
+
+  /** Headline numbers for the summary strip. Sizes are upper bounds: overlap is only known after a preview. */
+  protected readonly summary = computed(() => {
+    const sizes = this.sizeIndex();
+    const included = [...this.inclusion().keys()];
+    const known = included.filter((id) => sizes.has(id));
+    const reach = known.reduce((sum, id) => sum + (sizes.get(id) ?? 0), 0);
+    let reachText = '—';
+    if (known.length > 0) {
+      reachText = `≤ ${reach.toLocaleString('en-US')}`;
+    }
+    return {
+      included: included.length,
+      excluded: this.excludeIds().length,
+      reachText,
+      reachPartial: known.length > 0 && known.length < included.length,
+    };
+  });
+
+  /** A single included list can be sent to as-is; only several lists need combining into a master. */
+  protected readonly canUseSelectionDirectly = computed(
+    () => this.canAttach() && this.inclusion().size === 1 && this.conflictingIds().length === 0 && !this.composing() && this.attachingId() === null
+  );
+
   protected readonly canCompose = computed(
     () =>
       !this.degraded() &&
@@ -528,6 +678,74 @@ export class AudienceBuilderTabComponent {
     this.add(list.listId, list.name);
   }
 
+  /**
+   * Ticks a past send's whole selection: every resolvable included list, and every suppression
+   * list. A suppression list that is also a standard grid row is ticked THROUGH its grid key so
+   * the grid shows it ticked; any other is stored under a `copied:` key with its name kept here.
+   */
+  protected onCopySelection(email: AudienceLastSentEmail): void {
+    if (this.selectionLocked()) {
+      return;
+    }
+    const inclusion = new Map(this.inclusion());
+    email.includedLists.filter((list) => !list.missing).forEach((list) => inclusion.set(list.listId, list.name));
+    const suppression = new Map(this.suppression());
+    const copiedNames = new Map(this.copiedSuppressionNames());
+    const alreadyExcluded = new Set(suppression.values());
+    email.suppressionLists
+      .filter((list) => !list.missing && !alreadyExcluded.has(list.listId))
+      .forEach((list) => {
+        const gridRow = this.suppressionLists().find((row) => row.listId === list.listId);
+        if (gridRow) {
+          suppression.set(gridRow.key, list.listId);
+        } else {
+          suppression.set(`copied:${list.listId}`, list.listId);
+          copiedNames.set(list.listId, list.name);
+        }
+      });
+    this.inclusion.set(inclusion);
+    this.suppression.set(suppression);
+    this.copiedSuppressionNames.set(copiedNames);
+    this.invalidatePreview();
+  }
+
+  /** Attaches a past send's single include list and its suppression lists as they are. */
+  protected onUseSendLists(email: AudienceLastSentEmail): void {
+    const include = email.includedLists.find((list) => !list.missing);
+    if (!include) {
+      return;
+    }
+    this.attachExisting(
+      email.emailId,
+      include.listId,
+      email.suppressionLists.map((list) => list.listId),
+      `Same lists as the earlier send "${email.emailName}"`
+    );
+  }
+
+  /** Attaches an existing master list, with whatever suppression is ticked in step 3. */
+  protected onUseMasterList(list: AudienceMasterListBrief): void {
+    this.attachExisting(list.listId, list.listId, this.excludeIds(), '');
+  }
+
+  /** Sends to the ONE selected list directly, with the ticked suppression — no master list needed. */
+  protected onUseSelectionDirectly(): void {
+    const [listId] = [...this.inclusion().keys()];
+    if (listId && this.canUseSelectionDirectly()) {
+      this.attachExisting(listId, listId, this.excludeIds(), '');
+    }
+  }
+
+  protected onRemoveSuppression(key: string): void {
+    if (this.selectionLocked()) {
+      return;
+    }
+    const next = new Map(this.suppression());
+    next.delete(key);
+    this.suppression.set(next);
+    this.invalidatePreview();
+  }
+
   protected onAddSearchResult(list: AudienceListSearchResult): void {
     this.add(list.listId, list.name);
   }
@@ -642,6 +860,11 @@ export class AudienceBuilderTabComponent {
         brandShort: event?.brandShort,
         eventName: event?.eventName,
         eventDates: event?.eventDates,
+        // Read at DISPATCH, not in the reply arm. The reply arm runs after a network round trip,
+        // by which point the parent may have moved to another brief -- and the attach upstream was
+        // made against whatever was sent here, so this is the only value that describes what
+        // actually happened.
+        briefId: this.briefId() || undefined,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -651,6 +874,18 @@ export class AudienceBuilderTabComponent {
           }
           this.composeResult.set(result);
           this.composing.set(false);
+
+          // Emitted INSIDE the staleness guard above, and it has to be: an emission after the run
+          // advanced would attach this project's master list to whatever brief the parent holds
+          // now, which on a project switch is a different project's send entirely.
+          if (result.recorded && result.audience) {
+            this.audienceAttached.emit(result.audience);
+          } else {
+            // Covers both the no-brief compose and an upstream too old to record one. Either way a
+            // real list exists that no send points at, which is the thing the parent warns about --
+            // so the absence of `recorded` is reported rather than passed over.
+            this.audienceComposeUnattached.emit(result.master);
+          }
         },
         error: (httpErr: HttpErrorResponse) => {
           if (run !== this.runGeneration) {
@@ -664,6 +899,13 @@ export class AudienceBuilderTabComponent {
           const partial = httpErr.status === 502 ? this.asComposePartialBody(httpErr.error) : null;
           if (partial) {
             this.composePartial.set(partial);
+            // The fifth partial shape: both lists exist and only the attach failed. It is the one
+            // partial whose master is CONFIRMED, so the parent can offer the same reconcile
+            // warning it shows for an unattached compose -- pointing at a list that is real --
+            // rather than a generic failure the operator cannot act on.
+            if (partial.master) {
+              this.audienceComposeUnattached.emit(partial.master);
+            }
           } else {
             this.composeError.set(serverAuthoredMessage(httpErr, 'Failed to compose the master list'));
           }
@@ -860,6 +1102,45 @@ export class AudienceBuilderTabComponent {
       });
   }
 
+  /**
+   * Records existing lists as this brief's send audience. Nothing is created in HubSpot, so a
+   * failure is safe to retry and there is no partial state to reconcile.
+   */
+  private attachExisting(busyId: string, masterListId: string, suppressionListIds: string[], summary: string): void {
+    const briefId = this.briefId();
+    if (!this.canAttach() || briefId === '' || this.attachingId() !== null) {
+      return;
+    }
+    const run = this.runGeneration;
+    this.attachingId.set(busyId);
+    this.attachError.set(null);
+    this.campaignService
+      .attachExistingAudience(this.projectSlug(), {
+        briefId,
+        masterListId,
+        suppressionListIds: [...new Set(suppressionListIds)].filter((id) => id !== masterListId),
+        ...(summary ? { inclusionSummary: summary } : {}),
+      })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
+          this.attachingId.set(null);
+          this.attachResult.set(result);
+          this.audienceAttached.emit(result.audience);
+        },
+        error: (httpErr: HttpErrorResponse) => {
+          if (run !== this.runGeneration) {
+            return;
+          }
+          this.attachingId.set(null);
+          this.attachError.set(serverAuthoredMessage(httpErr, 'Failed to attach the lists to this email'));
+        },
+      });
+  }
+
   private add(listId: string, name: string): void {
     if (this.inclusion().has(listId)) {
       return;
@@ -900,33 +1181,34 @@ export class AudienceBuilderTabComponent {
    * showing the previous event's cards, suppression rows and compose banner labelled as current.
    */
   /**
-   * Narrows an error body to a compose-partial when it carries ANY of the three states that make
-   * one actionable: a confirmed suppression list, or the deterministic name of a suppression or
-   * master list whose create could not be confirmed.
+   * Narrows an error body to a compose-partial when it carries ANY of the four states that make
+   * one actionable: a confirmed suppression list, a confirmed master list whose attach failed, or
+   * the deterministic name of a suppression or master list whose create could not be confirmed.
    *
-   * Keying on `suppression.listId` alone was wrong — four shapes are reachable and only one has
-   * it (`docs/api-catalog.md` in campaign-service). The other three were rendered as ordinary
-   * failures, losing the names the operator needs to find lists that may already exist. That is
+   * Keying on `suppression.listId` alone was wrong — five shapes are reachable and only two
+   * carry a confirmed list (`docs/api-catalog.md` in campaign-service). The others were rendered
+   * as ordinary failures, losing the names the operator needs to find lists that may exist. That is
    * the worst possible loss on this path: compose is not idempotent, so composing again after an
    * unconfirmed create either collides on a duplicate name or leaves a second list behind.
    *
-   * A body with none of the three is an ordinary failure, however it was framed.
+   * A body with none of the four is an ordinary failure, however it was framed.
    */
   private asComposePartialBody(body: unknown): AudienceComposeMasterPartial | null {
     if (body === null || typeof body !== 'object') {
       return null;
     }
-    const candidate = body as { suppression?: { listId?: unknown }; suppressionName?: unknown; masterName?: unknown };
-    const suppression = candidate.suppression;
-    const hasSuppression =
-      suppression !== undefined &&
-      suppression !== null &&
-      typeof suppression === 'object' &&
-      typeof suppression.listId === 'string' &&
-      suppression.listId.length > 0;
+    const candidate = body as { suppression?: { listId?: unknown }; suppressionName?: unknown; masterName?: unknown; master?: { listId?: unknown } };
+    const confirmedList = (list: { listId?: unknown } | undefined): boolean =>
+      list !== undefined && list !== null && typeof list === 'object' && typeof list.listId === 'string' && list.listId.length > 0;
+    const hasSuppression = confirmedList(candidate.suppression);
+    // The FIFTH shape, added with the recording compose: both lists confirmed, the attach failed.
+    // Without it that body fell through to `composeError` and the operator lost the link to a
+    // master list that genuinely exists -- on the one partial where the list is usable as it
+    // stands.
+    const hasMaster = confirmedList(candidate.master);
     const nonEmpty = (v: unknown): boolean => typeof v === 'string' && v.length > 0;
 
-    return hasSuppression || nonEmpty(candidate.suppressionName) || nonEmpty(candidate.masterName) ? (body as AudienceComposeMasterPartial) : null;
+    return hasSuppression || hasMaster || nonEmpty(candidate.suppressionName) || nonEmpty(candidate.masterName) ? (body as AudienceComposeMasterPartial) : null;
   }
 
   /**
@@ -977,6 +1259,10 @@ export class AudienceBuilderTabComponent {
     // on screen after a project switch and reads as foundation B's.
     this.discoveryError.set(null);
     this.composeAttempted.set(false);
+    this.attachingId.set(null);
+    this.attachResult.set(null);
+    this.attachError.set(null);
+    this.copiedSuppressionNames.set(new Map());
     this.invalidatePreview();
   }
 

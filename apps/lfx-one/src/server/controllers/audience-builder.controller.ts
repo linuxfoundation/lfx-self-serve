@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import type {
+  AudienceAttachExistingRequest,
   AudienceComposeMasterPartial,
   AudienceComposeMasterRequest,
   AudienceDiscoverRequest,
@@ -391,7 +392,11 @@ export class AudienceBuilderController {
     // A PROVIDED optional field that is mistyped is a client bug, not an absent field. Dropping
     // it silently changed what the request means on a non-idempotent create — `{ name: {} }`
     // proceeded under an auto-derived name and created a real HubSpot list nobody asked for.
-    const mistyped = (['name', 'brandShort', 'eventName'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
+    // `briefId` belongs in this guard more than any other field here. Dropping a mistyped one
+    // silently would compose two real HubSpot lists and leave them ATTACHED TO NOTHING, while the
+    // operator watches a success banner — and compose is not idempotent, so the correction costs
+    // a second master list.
+    const mistyped = (['name', 'brandShort', 'eventName', 'briefId'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
     if (mistyped) {
       next(invalid(req, 'audience_compose_master', mistyped, `${mistyped} must be a string when provided`));
       return;
@@ -423,9 +428,14 @@ export class AudienceBuilderController {
         ...(typeof body.brandShort === 'string' ? { brandShort: body.brandShort } : {}),
         ...(typeof body.eventName === 'string' ? { eventName: body.eventName } : {}),
         ...(eventDates ? { eventDates } : {}),
+        // Forwarded only when NON-EMPTY. A blank string passes the string check above and would
+        // be sent as an attach request naming no brief, which upstream answers with a 404 after
+        // refusing to create anything — a worse outcome than the exploratory compose the caller
+        // plainly meant.
+        ...(typeof body.briefId === 'string' && body.briefId !== '' ? { briefId: body.briefId } : {}),
       });
 
-      logger.success(req, 'audience_compose_master', startTime, { masterListId: result.master.listId });
+      logger.success(req, 'audience_compose_master', startTime, { masterListId: result.master.listId, recorded: result.recorded });
       // 201, matching the upstream contract and the repo's other create controllers: this
       // creates real HubSpot lists, and a 200 describes it as an ordinary read.
       res.status(201).json(result);
@@ -435,16 +445,71 @@ export class AudienceBuilderController {
           suppressionListId: error.suppression?.listId,
           suppressionName: error.suppressionName,
           masterName: error.masterName,
+          masterListId: error.master?.listId,
         });
         const partial: AudienceComposeMasterPartial = {
           suppression: error.suppression,
           suppressionName: error.suppressionName,
           masterName: error.masterName,
+          master: error.master,
           error: error.message,
         };
         res.status(502).json(partial);
         return;
       }
+      next(error);
+    }
+  }
+
+  /**
+   * Records lists that already exist — typically an earlier send's include list and its
+   * suppressions — as the brief's send audience, so no new master list has to be composed.
+   */
+  public async attachExisting(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = this.projectSlug(req);
+
+    if (!projectSlug) {
+      next(invalid(req, 'audience_attach_existing', 'project', 'project is required'));
+      return;
+    }
+
+    const body = (req.body ?? {}) as AudienceAttachExistingRequest;
+    const briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
+    const masterListId = typeof body.masterListId === 'string' ? body.masterListId.trim() : '';
+
+    if (!briefId) {
+      next(invalid(req, 'audience_attach_existing', 'briefId', 'briefId is required'));
+      return;
+    }
+    if (!masterListId) {
+      next(invalid(req, 'audience_attach_existing', 'masterListId', 'masterListId is required'));
+      return;
+    }
+
+    // Strict for the same reason compose is: a blank suppression id silently dropped would send
+    // to a list with LESS suppression than the operator chose.
+    const suppressionListIds = strictStringArray(body.suppressionListIds ?? []);
+    if (!suppressionListIds) {
+      next(invalid(req, 'audience_attach_existing', 'suppressionListIds', 'suppressionListIds must be an array of non-blank strings'));
+      return;
+    }
+    if (body.inclusionSummary !== undefined && typeof body.inclusionSummary !== 'string') {
+      next(invalid(req, 'audience_attach_existing', 'inclusionSummary', 'inclusionSummary must be a string when provided'));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'audience_attach_existing', { suppressions: suppressionListIds.length });
+
+    try {
+      const result = await this.audienceBuilder.attachExisting(req, projectSlug, {
+        briefId,
+        masterListId,
+        suppressionListIds,
+        ...(body.inclusionSummary ? { inclusionSummary: body.inclusionSummary } : {}),
+      });
+      logger.success(req, 'audience_attach_existing', startTime, { masterListId: result.master.listId });
+      res.status(201).json(result);
+    } catch (error) {
       next(error);
     }
   }

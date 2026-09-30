@@ -5,6 +5,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CAMPAIGN_JOB_POLL_INTERVAL_MS, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import {
+  AudienceAttachExistingRequest,
+  AudienceAttachExistingResult,
   AudienceBuilderCapabilities,
   AudienceComposeMasterRequest,
   AudienceComposeMasterResult,
@@ -20,7 +22,6 @@ import {
   AudienceQaRunRequest,
   AudienceSuppressionList,
   BriefMetrics,
-  BuildAudienceResult,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
   CampaignBriefLoadResult,
@@ -48,6 +49,7 @@ import {
   KeywordMetricsResponse,
   LinkedInAccount,
   LinkedInMonitorResponse,
+  ListAudiencesResult,
   MetaAccountOption,
   MetaMonitorResponse,
   RedditAccountOption,
@@ -165,14 +167,17 @@ export class CampaignService {
   }
 
   /**
-   * Build the brief's send audience. No body — campaign-service derives it from the brief itself.
+   * Read back the audiences campaign-service already holds for this brief, newest first.
+   *
+   * A GET, and idempotent: this is what lets a page reload recover an attached audience instead
+   * of sending the operator back to the Audience tab to compose a second HubSpot list. It is the
+   * ONLY audience call this client makes -- audiences are produced on the Audience tab and never
+   * derived from here.
    */
-  public buildAudience(projectSlug: string, briefId: string): Observable<BuildAudienceResult> {
-    return this.http.post<BuildAudienceResult>(
-      '/api/campaigns/audience/build',
-      {},
-      { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) }
-    );
+  public listAudiences(projectSlug: string, briefId: string): Observable<ListAudiencesResult> {
+    return this.http.get<ListAudiencesResult>('/api/campaigns/audiences', {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
   }
 
   /**
@@ -514,6 +519,14 @@ export class CampaignService {
    */
   public composeAudienceMaster(projectSlug: string, request: AudienceComposeMasterRequest): Observable<AudienceComposeMasterResult> {
     return this.http.post<AudienceComposeMasterResult>('/api/campaigns/audience-builder/compose-master', request, { params: { project: projectSlug } });
+  }
+
+  /**
+   * Records lists that already exist as the brief's send audience, composing nothing. Safe to
+   * retry: no HubSpot list is created on any path.
+   */
+  public attachExistingAudience(projectSlug: string, request: AudienceAttachExistingRequest): Observable<AudienceAttachExistingResult> {
+    return this.http.post<AudienceAttachExistingResult>('/api/campaigns/audience-builder/attach-existing', request, { params: { project: projectSlug } });
   }
 
   /**
