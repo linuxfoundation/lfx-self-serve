@@ -317,7 +317,10 @@ export class CommitteeViewComponent {
 
   public hasChannels: Signal<boolean> = computed(() => {
     const c = this.committee();
-    return this.associatedMailingLists().length > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
+    // Visitors only see public mailing lists — don't show the card wrapper when a visitor
+    // would land on an empty card (private-only lists, no chat channel, no website).
+    const visibleListCount = this.isVisitor() ? this.associatedMailingLists().filter((ml) => ml.public).length : this.associatedMailingLists().length;
+    return visibleListCount > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
   });
 
   // -- Associated mailing lists (rich objects filtered by ml.committees[]) --
