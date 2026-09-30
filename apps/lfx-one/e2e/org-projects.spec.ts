@@ -489,10 +489,14 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('35/40');
     await expect(page.getByTestId('org-health-popup-row-security')).toContainText('30/35');
     await expect(page.getByTestId('org-health-popup-row-development')).toContainText('23/25');
-    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/kubernetes/);
+    await expect(page.getByTestId('org-health-popup-link')).toHaveCount(0);
+    // A full score (out of 100) has no unavailable remainder, asterisk, divider or footnote.
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-partial-divider')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-partial-note')).toHaveCount(0);
   });
 
-  test('opens the health popup on focus with badge, popup, and aria in agreement', async ({ page }) => {
+  test('opens the health popup on focus with the asterisk headline and footnote, in agreement with the badge and aria label', async ({ page }) => {
     await stubOrgContext(page);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
@@ -509,13 +513,18 @@ test.describe('Org Projects', () => {
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(badge).toHaveText('Healthy - Partial');
     await badge.focus();
-    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
-    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('-/35');
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(badge).toHaveAttribute(
       'aria-label',
       'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
-    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/seapath/);
+    // Dotted remainder for the 35 unearnable points, plus a divider and a footnote naming the category.
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveAttribute('style', /width:\s*35%/);
+    await expect(page.getByTestId('org-health-popup-partial-divider')).toBeVisible();
+    await expect(page.getByTestId('org-health-popup-partial-note')).toHaveText(
+      '*The Health score is partial because the Security & Supply Chain category is missing data for this project.'
+    );
   });
 
   test('renders the unavailable popup block for projects without a v2 score', async ({ page }) => {

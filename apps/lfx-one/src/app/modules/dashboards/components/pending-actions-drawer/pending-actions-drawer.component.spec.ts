@@ -10,7 +10,7 @@ import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsDrawerComponent } from './pending-actions-drawer.component';
 
@@ -100,5 +100,86 @@ describe('PendingActionsDrawerComponent — FormationItem row (#2732)', () => {
     expect(byTestId('pending-actions-drawer-formation-due')).toBeNull();
     expect(byTestId('pending-actions-drawer-formation-gating')).toBeNull();
     expect(byTestId('pending-actions-drawer-formation-status')).toBeNull();
+  });
+});
+
+// GH-2987: same contract as the dashboard list — a Survey click opens an external SurveyMonkey tab and
+// must not write the 24h hide cookie; the row stays until the server drops it (`response_datetime`).
+describe('PendingActionsDrawerComponent — Survey row click (GH-2987)', () => {
+  const hiddenActions = { isActionHidden: () => false, hideAction: vi.fn(), dismissAction: vi.fn() };
+  let fixture: ComponentFixture<PendingActionsDrawerComponent>;
+
+  const surveyRow = (): PendingActionItem => ({
+    type: 'Survey',
+    badge: 'Acme Project',
+    text: 'Acme Project survey is due Oct 1, 2026',
+    icon: 'fa-regular fa-clipboard-list',
+    severity: 'accent',
+    buttonText: 'Submit Survey',
+    buttonLink: 'https://www.surveymonkey.com/r/abc123',
+    date: 'Due Thu, Oct 1',
+  });
+
+  const agendaRow = (): PendingActionItem => ({
+    type: 'Agenda',
+    badge: 'Oct 6',
+    text: 'Review agenda for Board Meeting',
+    icon: 'fa-regular fa-file-lines',
+    severity: 'accent',
+    buttonText: 'Review Agenda',
+    buttonLink: '/meetings/meeting-1',
+    date: 'Mon, Oct 6, 10:00 AM',
+  });
+
+  // p-drawer renders into document.body — query the global document like the formation block above.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+    hiddenActions.hideAction.mockClear();
+  });
+
+  const renderRow = async (actions: PendingActionItem[]): Promise<void> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [PendingActionsDrawerComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: HiddenActionsService, useValue: hiddenActions },
+        { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
+        { provide: MeetingService, useValue: {} },
+        MessageService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(PendingActionsDrawerComponent);
+    fixture.componentRef.setInput('pendingActions', actions);
+    fixture.detectChanges();
+    fixture.componentInstance.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  it('keeps the Survey row and writes no hide cookie when Submit Survey is clicked', async () => {
+    await renderRow([surveyRow()]);
+
+    const anchor = document.body.querySelector('[data-testid="pending-actions-drawer-item-Survey"] lfx-button a');
+    expect(anchor).not.toBeNull();
+    (anchor as HTMLAnchorElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(document.body.querySelector('[data-testid="pending-actions-drawer-item-Survey"]')).not.toBeNull();
+  });
+
+  it('still writes the hide cookie for a non-survey link row (Agenda) on click', async () => {
+    await renderRow([agendaRow()]);
+
+    const anchor = document.body.querySelector('[data-testid="pending-actions-drawer-item-Agenda"] lfx-button a');
+    expect(anchor).not.toBeNull();
+    (anchor as HTMLAnchorElement).click();
+
+    expect(hiddenActions.hideAction).toHaveBeenCalledTimes(1);
   });
 });

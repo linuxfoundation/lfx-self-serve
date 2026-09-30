@@ -25,6 +25,16 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
+  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
   lfxColors,
@@ -39,7 +49,6 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
-  MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES,
   MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES,
@@ -81,13 +90,12 @@ export default {
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentee tasks tab — status dropdown/badge tints selected at runtime from MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.
     ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
-    // Mentee overview: application status, past-outcome, and up-next task status badges come
+    // Mentee overview and My Tasks: application status and past-outcome badges come
     // from @lfx-one/shared constants and are applied via ngClass at runtime.
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS.split(' '),
     ...Object.values(MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES).flatMap((classes) => classes.split(' ')),
-    ...Object.values(MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
@@ -167,6 +175,22 @@ export default {
     // @lfx-one/shared, not scanned here) plus the UNKNOWN_REVENUE_STREAM_META fallback's bg-gray-400.
     ...Object.values(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS).flatMap((s) => s.dotClass.split(' ')),
     'bg-gray-400',
+    // Events speaker-proposal status badges and status/organization bar fills (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS +
+    // HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS in @lfx-one/shared, not scanned here) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => [...g.badgeClass.split(' '), g.barClass]),
+    HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+    ...HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS.split(' '),
+    // Events organizations membership pills and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).flatMap((m) => m.badgeClass.split(' ')),
+    HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
+    // Events sponsorship tier and progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+    // Events top-countries bar fill (HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+    // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES).flatMap((c) => c.split(' ')),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

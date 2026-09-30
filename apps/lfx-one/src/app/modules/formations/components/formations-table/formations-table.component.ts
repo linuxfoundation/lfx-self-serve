@@ -37,6 +37,7 @@ import {
   formatFormationProgressSummary,
   getFormationAnnouncementTiming,
   getFormationQueueStageDisplay,
+  resolveFormationBlockingItem,
   sumFormationProgress,
 } from '@lfx-one/shared/utils';
 import type { TablePageEvent } from 'primeng/table';
@@ -225,7 +226,7 @@ export class FormationsTableComponent {
   private toDisplayRow(row: FormationQueueRow): FormationTableRow {
     const stageDisplay = getFormationQueueStageDisplay(row.sub_stage, row.sub_stage_raw);
     const announcementTiming = getFormationAnnouncementTiming(row.announcement_date, row.gates_cleared);
-    const blockedCount = row.blocked_item_titles.length;
+    const blocking = resolveFormationBlockingItem(row);
     return {
       ...row,
       stageLabel: stageDisplay.label,
@@ -243,10 +244,9 @@ export class FormationsTableComponent {
       totalCount: sumFormationProgress(row.progress),
       progressSegments: buildFormationProgressSegments(row.progress),
       progressSummary: formatFormationProgressSummary(row.progress),
-      blockedCount,
-      blockedLabel: blockedCount > 0 ? `${blockedCount} blocked` : '',
-      blockedTitlesLabel: row.blocked_item_titles.join(' · '),
-      firstBlockedTitle: row.blocked_item_titles[0] ?? null,
+      blockingTitle: blocking?.title ?? null,
+      blockingIsBlocked: blocking?.blocked === true,
+      blockingClass: blocking?.blocked ? 'text-red-600' : 'text-amber-600',
     };
   }
 

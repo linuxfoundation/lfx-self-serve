@@ -8,14 +8,24 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
+  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET,
 } from '../constants/health-metrics-events.constants';
+import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
@@ -30,6 +40,10 @@ import type {
   HealthMetricsEventsForecastRowView,
   HealthMetricsEventsForecastStatus,
   HealthMetricsEventsForecastVerdict,
+  HealthMetricsEventsGeography,
+  HealthMetricsEventsGeographyView,
+  HealthMetricsEventsOrganization,
+  HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
   HealthMetricsEventsPastRowView,
@@ -45,6 +59,18 @@ import type {
   HealthMetricsEventsRevenueView,
   HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
+  HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersBarInput,
+  HealthMetricsEventsSpeakersBarView,
+  HealthMetricsEventsSpeakersProposal,
+  HealthMetricsEventsSpeakersProposalRowView,
+  HealthMetricsEventsSpeakersStatusGroup,
+  HealthMetricsEventsSpeakersTab,
+  HealthMetricsEventsSpeakersView,
+  HealthMetricsEventsSpeakersYearView,
+  HealthMetricsEventsSponsorship,
+  HealthMetricsEventsSponsorshipProgressView,
+  HealthMetricsEventsSponsorshipView,
   HealthMetricsEventsSubNavItem,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
@@ -62,9 +88,41 @@ export function buildHealthMetricsEventsSubNavItems(
   }));
 }
 
+/** One organizations row. A zero sponsorship or proposal count reads as `—`: the view cannot tell it from not tracked. */
+export function buildHealthMetricsEventsOrganizationRowView(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationRowView {
+  const membership = organization.isMember ? HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.member : HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP.nonMember;
+  const share = organization.registrationsShare ?? 0;
+
+  return {
+    accountId: organization.accountId,
+    accountName: organization.accountName,
+    logoUrl: organization.logoUrl ?? '',
+    memberLabel: membership.label,
+    memberClass: membership.badgeClass,
+    registrationsLabel: formatHealthMetricsEventsCount(organization.registrations),
+    barWidthPct: Math.min(Math.max(share * 100, 0), 100),
+    sponsorshipLabel: organization.sponsorshipUsd ? formatCurrency(organization.sponsorshipUsd) : '—',
+    proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : '—',
+    speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
+    eventsLabel: formatHealthMetricsEventsCount(organization.events),
+  };
+}
+
+/** The control line, e.g. `1,204 organizations`; `—` while the count is unknown. */
+export function formatHealthMetricsEventsOrganizationsCountLabel(total: number | null): string {
+  if (total === null) return '—';
+
+  return `${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'organization' : 'organizations'}`;
+}
+
+/** A registration goal of zero or less is no goal set; every registration-goal check reads it through here. */
+export function hasHealthMetricsEventsGoal(goal: number | null): goal is number {
+  return goal !== null && goal > 0;
+}
+
 /** True when goal and forecast differ by an order of magnitude or more — a data-entry problem, not a pace. */
 export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEventsForecastEvent): boolean {
-  if (event.goal === null || event.goal <= 0 || event.forecastAvg === null) return false;
+  if (!hasHealthMetricsEventsGoal(event.goal) || event.forecastAvg === null) return false;
 
   const ratio = event.forecastAvg / event.goal;
   return ratio >= HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO || ratio <= 1 / HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO;
@@ -77,7 +135,7 @@ export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEve
 export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastStatus {
   // No forecast outranks no goal: there is nothing to show either way, and the contract says No data.
   if (event.forecastAvg === null) return 'no-data';
-  if (event.goal === null || event.goal <= 0) return 'no-goal';
+  if (!hasHealthMetricsEventsGoal(event.goal)) return 'no-goal';
   if (isHealthMetricsEventsForecastGoalSuspect(event)) return 'no-data';
   if (event.forecastHigh !== null && event.forecastHigh < event.goal) return 'action';
   if (event.forecastAvg < event.goal) return 'at-risk';
@@ -90,7 +148,7 @@ export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEv
   const base = { forecast: event.forecastAvg, goal: event.goal, gap: 0, ratio: null, daysLeft: event.daysLeft };
 
   if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'none' };
-  if (event.goal === null || event.goal <= 0) return { ...base, kind: 'no-goal', tone: 'none' };
+  if (!hasHealthMetricsEventsGoal(event.goal)) return { ...base, kind: 'no-goal', tone: 'none' };
 
   // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
   const ratio = event.forecastAvg / event.goal;
@@ -141,7 +199,7 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
       statusClass: HEALTH_METRICS_EVENTS_FORECAST_STATUSES[status].badgeClass,
       dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
       registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
-      goalLabel: formatHealthMetricsEventsCount(event.goal),
+      goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
       progressPct: pct === null ? null : Math.min(pct, 100),
       progressClass: resolveProgressClass(pct),
     };
@@ -172,7 +230,7 @@ export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEven
 
 /** A closed event's outcome. A miss the model banded as needing attention finished within reach. */
 export function resolveHealthMetricsEventsPastStatus(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastStatus {
-  if (event.goal === null) return 'no-goal';
+  if (!hasHealthMetricsEventsGoal(event.goal)) return 'no-goal';
   // An unflagged outcome falls back to final registrations against the goal; with neither, it is unmeasured.
   let met = event.goalMet;
   if (met === null) {
@@ -332,6 +390,177 @@ function formatRegistrationsGrowthPandemicNote(
   return `${label} ${metric} were mostly virtual during the pandemic, so the years since read as a return to in-person rather than a collapse.`;
 }
 
+/** One period's speakers section; the tab picks the count beside the tabs and the proposals listed. */
+export function buildHealthMetricsEventsSpeakersView(
+  speakers: HealthMetricsEventsSpeakers,
+  range: HealthMetricsRange,
+  tab: HealthMetricsEventsSpeakersTab
+): HealthMetricsEventsSpeakersView {
+  const period = speakers.periods.find((candidate) => candidate.range === range) ?? null;
+  const changes = period?.changes ?? null;
+  const stat = (
+    key: string,
+    label: string,
+    value: string,
+    change: HealthMetricsEventsAtAGlanceDelta = { delta: null, deltaDirection: 'neutral' }
+  ): HealthMetricsEventsAtAGlanceStatView => ({
+    key,
+    label,
+    value,
+    ...change,
+    warn: false,
+  });
+  const tabCounts: Record<HealthMetricsEventsSpeakersTab, number | null> = {
+    all: period?.submitted ?? null,
+    accepted: period?.accepted ?? null,
+    'in-review': period?.inReview ?? null,
+  };
+  const statusCounts: Record<HealthMetricsEventsSpeakersStatusGroup, number | null> = {
+    accepted: period?.accepted ?? null,
+    'in-review': period?.inReview ?? null,
+    declined: period?.declined ?? null,
+  };
+  const organizations = speakers.organizations
+    .flatMap((organization) => {
+      const entry = organization.periods.find((candidate) => candidate.range === range);
+      return entry
+        ? [
+            {
+              key: organization.accountId,
+              label: organization.accountName,
+              rank: entry.rank,
+              value: entry.submitted,
+              barClass: HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+            },
+          ]
+        : [];
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS);
+  const individual = speakers.unaffiliated.find((candidate) => candidate.range === range)?.submitted ?? null;
+
+  return {
+    foundationMeasured: speakers.periods.length > 0,
+    measured: period !== null && period.submitted !== null,
+    countLabel: formatProposalCount(tabCounts[tab]),
+    headline: stat('accepted', 'Accepted proposals', formatAtAGlanceCount(period?.accepted)),
+    side: [
+      stat('total', 'Total proposals', formatAtAGlanceCount(period?.submitted)),
+      stat('acceptance-rate', 'Acceptance rate', formatWholePercent(period?.acceptanceRate ?? null)),
+      stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), changes ? formatAtAGlanceDelta(changes.speakers, 'pct') : undefined),
+    ],
+    statusBars: buildSpeakersBars(
+      (Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS) as HealthMetricsEventsSpeakersStatusGroup[])
+        .map((group) => ({
+          key: group,
+          label: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].label,
+          value: statusCounts[group],
+          barClass: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].barClass,
+        }))
+        .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+    ),
+    organizations: buildSpeakersBars(organizations),
+    individualLabel: individual ? `${formatProposalCount(individual)} submitted` : null,
+    proposals: speakers.proposals
+      .filter((proposal) => proposal.range === range && (tab === 'all' || proposal.statusGroup === tab))
+      .sort(compareProposalsByRecency)
+      .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS)
+      .map(buildSpeakersProposalRowView),
+  };
+}
+
+/** Proposals per year, oldest first; independent of the period and tab, so the chart survives both. */
+export function buildHealthMetricsEventsSpeakersYears(speakers: HealthMetricsEventsSpeakers): HealthMetricsEventsSpeakersYearView[] {
+  return HEALTH_METRICS_L2_RANGES.map((yearRange) => {
+    const year = getYearForRange(yearRange);
+    const submitted = speakers.periods.find((candidate) => candidate.range === yearRange)?.submitted ?? null;
+    const isPartialYear = yearRange === 'YTD';
+
+    return { year, submitted, isPartialYear, yearLabel: isPartialYear ? `${year} (partial year)` : `${year}`, submittedLabel: formatAtAGlanceCount(submitted) };
+  });
+}
+
+/** The sub-nav note, set only when speakers fell steeply against the year before. */
+export function buildHealthMetricsEventsSpeakersNote(speakers: HealthMetricsEventsSpeakers, range: HealthMetricsRange): string {
+  const change = speakers.periods.find((candidate) => candidate.range === range)?.changes?.speakers ?? null;
+  if (change === null || change >= HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE) return '';
+
+  return `down ${Math.round(Math.abs(change) * 100)}% YoY`;
+}
+
+/** One period's sponsorship section. Progress shows only against a goal that is set, so no goal never reads as a full bar. */
+export function buildHealthMetricsEventsSponsorshipView(
+  sponsorship: HealthMetricsEventsSponsorship,
+  range: HealthMetricsRange
+): HealthMetricsEventsSponsorshipView {
+  const period = sponsorship.periods.find((candidate) => candidate.range === range) ?? null;
+  const changes = period?.changes ?? null;
+  const stat = (key: string, label: string, value: string, change?: HealthMetricsEventsAtAGlanceDelta): HealthMetricsEventsAtAGlanceStatView => ({
+    key,
+    label,
+    value,
+    ...(change ?? { delta: null, deltaDirection: 'neutral' }),
+    warn: false,
+  });
+  const tierPackages = period?.tierPackages ?? null;
+  const addOns = period?.addOns ?? null;
+
+  return {
+    foundationMeasured: sponsorship.periods.length > 0,
+    measured: period !== null && period.revenueUsd !== null,
+    packagesLabel: formatSponsorshipPackagesLabel(tierPackages),
+    headline: stat(
+      'revenue',
+      'Sponsorship revenue',
+      formatHealthMetricsEventsRevenue(period?.revenueUsd ?? null),
+      changes ? formatAtAGlanceDelta(changes.revenue, 'pct') : undefined
+    ),
+    side: [
+      stat('goal', 'Goal', period?.goalUsd ? formatCurrency(period.goalUsd) : HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET),
+      stat('tier-packages', 'Tier packages', formatAtAGlanceCount(tierPackages)),
+      stat('add-ons', 'Add-ons', formatAtAGlanceCount(addOns)),
+    ],
+    goalSet: !!period?.goalUsd,
+    progress: period?.goalUsd ? resolveSponsorshipProgress(period.progressToGoal) : null,
+    tiers: buildSpeakersBars(
+      (period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages, barClass: HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS }))
+    ),
+  };
+}
+
+/** The section for one period; a period with no country registrations reads as not available, never as zero countries. */
+export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEventsGeography, range: HealthMetricsRange): HealthMetricsEventsGeographyView {
+  const period = geography.periods.find((candidate) => candidate.range === range) ?? null;
+  const topCountries = period?.topCountries ?? [];
+  const measured = topCountries.length > 0;
+  const countries = measured ? (period?.countries ?? null) : null;
+  const changes = measured ? (period?.changes ?? null) : null;
+  const hidden = measured ? Math.max((period?.rankedCountries ?? 0) - topCountries.length, 0) : 0;
+
+  return {
+    foundationMeasured: geography.periods.length > 0,
+    measured,
+    countries,
+    countriesLabel: formatGeographyCountriesLabel(countries),
+    headline: {
+      key: 'countries',
+      label: 'Countries represented',
+      value: formatAtAGlanceCount(countries),
+      ...(changes ? formatAtAGlanceDelta(changes.countries, 'pct') : { delta: null, deltaDirection: 'neutral' }),
+      warn: false,
+    },
+    bars: buildSpeakersBars(
+      topCountries.map((country) => ({
+        key: country.country,
+        label: country.country,
+        value: country.registrations,
+        barClass: HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+      }))
+    ),
+    moreLabel: hidden > 0 ? `+${hidden.toLocaleString('en-US')} more` : '',
+  };
+}
+
 function formatAtAGlanceCount(value: number | null | undefined): string {
   return value === null || value === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : value.toLocaleString('en-US');
 }
@@ -404,7 +633,7 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     statusClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].badgeClass,
     dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
     registrationsLabel: formatHealthMetricsEventsCount(event.registrations),
-    goalLabel: formatHealthMetricsEventsCount(event.goal),
+    goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
     revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
     progressPct: resolvePastProgressPct(event),
     progressClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].progressClass,
@@ -413,14 +642,14 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
 
 /** Final registrations against goal, capped at 100; null when either is unmeasured, since null is not zero. */
 function resolvePastProgressPct(event: HealthMetricsEventsPastEvent): number | null {
-  if (event.goal === null || event.goal <= 0 || event.registrations === null) return null;
+  if (!hasHealthMetricsEventsGoal(event.goal) || event.registrations === null) return null;
 
   return Math.min(100, Math.round((event.registrations / event.goal) * 100));
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */
 function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number | null {
-  if (event.goal === null || event.goal <= 0 || event.registrationsNow === null) return null;
+  if (!hasHealthMetricsEventsGoal(event.goal) || event.registrationsNow === null) return null;
 
   return event.registrationsNow / event.goal;
 }
@@ -457,5 +686,71 @@ function buildRegistrationsGrowthRowView(
     inPersonLabel: formatHealthMetricsEventsCount(inPerson),
     // The design dashes a year with no virtual count, since most in-person-only years record zero.
     virtualLabel: virtual === 0 ? '—' : formatHealthMetricsEventsCount(virtual),
+  };
+}
+
+/** Empty when unmeasured, since the section then renders no pill. */
+function formatSponsorshipPackagesLabel(value: number | null): string {
+  if (value === null) return '';
+
+  return `${value.toLocaleString('en-US')} ${value === 1 ? 'package' : 'packages'} sold`;
+}
+
+/** Empty when unmeasured, since the section then renders no pill. */
+function formatGeographyCountriesLabel(value: number | null): string {
+  if (value === null) return '';
+
+  return `${value.toLocaleString('en-US')} ${value === 1 ? 'country' : 'countries'}`;
+}
+
+/** Empty when unmeasured, since the section then renders no figures at all. */
+function formatProposalCount(value: number | null): string {
+  if (value === null) return '';
+
+  return `${value.toLocaleString('en-US')} ${value === 1 ? 'proposal' : 'proposals'}`;
+}
+
+function formatWholePercent(fraction: number | null): string {
+  return fraction === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : `${Math.round(fraction * 100)}%`;
+}
+
+/** Bars scaled against the longest; an unmeasured value draws no bar and reads as not available. */
+function buildSpeakersBars(items: HealthMetricsEventsSpeakersBarInput[]): HealthMetricsEventsSpeakersBarView[] {
+  const max = Math.max(0, ...items.map((item) => item.value ?? 0));
+
+  return items.map((item) => ({
+    key: item.key,
+    label: item.label,
+    valueLabel: formatAtAGlanceCount(item.value),
+    widthPct: max > 0 && item.value !== null ? (item.value / max) * 100 : 0,
+    barClass: item.barClass,
+  }));
+}
+
+/** `null` without a modelled progress; the width stops at full while the label keeps the real percent. */
+function resolveSponsorshipProgress(progress: number | null): HealthMetricsEventsSponsorshipProgressView | null {
+  if (progress === null) return null;
+
+  const pct = Math.round(progress * 100);
+  return { pctLabel: `${pct}%`, widthPct: Math.min(Math.max(pct, 0), 100) };
+}
+
+/** Most recent first; the proposal key breaks ties so the order is stable. */
+function compareProposalsByRecency(a: HealthMetricsEventsSpeakersProposal, b: HealthMetricsEventsSpeakersProposal): number {
+  const byDate = (b.submissionDate ?? '').localeCompare(a.submissionDate ?? '');
+  return byDate !== 0 ? byDate : a.proposalKey.localeCompare(b.proposalKey);
+}
+
+function buildSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersProposal): HealthMetricsEventsSpeakersProposalRowView {
+  let organizationLabel = proposal.organizationName ?? '—';
+  if (proposal.unaffiliated) organizationLabel = 'Individual';
+
+  return {
+    proposal,
+    organizationLabel,
+    dateLabel: proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : '—',
+    statusClass: proposal.statusGroup
+      ? HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[proposal.statusGroup].badgeClass
+      : HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
   };
 }

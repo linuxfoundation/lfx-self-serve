@@ -81,9 +81,9 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
   }
 }
 
-// Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
-// wire is `LF_TEAM_IDS` membership — `lf-staff` only since the rollback of lfx-self-serve#2157; the
-// field name is kept for wire compatibility.
+// Skip a company-wide-team scenario when the bootstrap identity is not in one. `isStaff` on the wire is
+// membership of a team that reads every company (server `ORG_WIDE_READ_TEAM_IDS`; never `lf-contractor`
+// since the rollback of lfx-self-serve#2157); the field name is kept for wire compatibility.
 async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
@@ -91,7 +91,7 @@ async function skipWhenNotLfTeam(page: Page): Promise<void> {
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (!body.isStaff) {
-    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff member');
+    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not in a company-wide team');
   }
 }
 
@@ -765,7 +765,7 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
   });
 });
 
-// S20 — LF-team global auditor. `lf-staff` holds `auditor` on every b2b_org, so a team member
+// S20 — company-wide-team caller. `lf-staff` holds `auditor` on every b2b_org, so a team member
 // reaches the switcher + catalogue search and may open any org read-only; team membership never
 // confers edit (FR-010), so the access write is refused. `lf-contractor` held the same grant under
 // spec 044 and was rolled back (lfx-self-serve#2157). What guards that is the unit spec

@@ -54,8 +54,8 @@
   (onHide)="onPopoverHide()"
   data-testid="org-selector-panel">
   <div data-testid="org-selector-panel-body">
-    <!-- Catalogue search is a staff affordance; an administrator's list is
-         short enough to read, so the input is not rendered for them. -->
+    <!-- Catalogue search is for callers in a company-wide team (`isStaff`); a roster-only
+         caller's list is short enough to read, so the input is not rendered for them. -->
     @if (isStaff()) {
       <div class="relative mb-2">
         <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>

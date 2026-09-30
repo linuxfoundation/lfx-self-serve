@@ -304,11 +304,9 @@
                     [score]="project.healthOverallScore"
                     [label]="project.health === 'unavailable' ? null : project.health"
                     [maxScore]="project.healthMaxScore"
-                    [coveredCount]="project.healthCoveredCategoryCount"
                     [maintainer]="project.healthMaintainer"
                     [security]="project.healthSecurity"
-                    [development]="project.healthDevelopment"
-                    [insightsUrl]="project.insightsUrl" />
+                    [development]="project.healthDevelopment" />
                 </td>
                 <td>
                   <span class="inline-flex items-center gap-2">

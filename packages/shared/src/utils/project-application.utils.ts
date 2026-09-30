@@ -4,12 +4,15 @@
 import {
   PROJECT_APPLICATION_BOOLEAN_KEYS,
   PROJECT_APPLICATION_CANONICAL_KEYS,
+  PROJECT_APPLICATION_CREATED_LEGAL_ENTITY_TYPE,
+  PROJECT_APPLICATION_CREATED_STAGE,
   PROJECT_APPLICATION_EMAIL_KEYS,
   PROJECT_APPLICATION_EMAIL_LIST_KEYS,
   PROJECT_APPLICATION_FIELD_LABELS,
   PROJECT_APPLICATION_LONG_TEXT_KEYS,
   PROJECT_APPLICATION_MAILTO_FORBIDDEN_CHARS_REGEX,
   PROJECT_APPLICATION_SECTIONS,
+  PROJECT_APPLICATION_SPEC_CATEGORY,
   PROJECT_APPLICATION_STATE_META,
   PROJECT_APPLICATION_STATUS_CALLOUTS,
   PROJECT_APPLICATION_UNKNOWN_STATE_META,
@@ -31,6 +34,8 @@ import type {
   UpstreamProjectApplication,
   UpstreamProjectApplicationDoc,
 } from '../interfaces/project-application.interface';
+import type { CreateProjectRequest } from '../interfaces/project.interface';
+import { slugify } from './string.utils';
 
 /** Normalizes a query-service `project_application` document onto the browser shape. */
 export function normalizeProjectApplicationDoc(doc: UpstreamProjectApplicationDoc): ProjectApplication {
@@ -397,4 +402,46 @@ function containsNul(value: unknown): boolean {
     return Object.entries(value).some(([key, entry]) => key.includes('\u0000') || containsNul(entry));
   }
   return false;
+}
+
+/**
+ * Maps an accepted application onto project-service's create body (#1995). Blank optional answers are left out
+ * rather than sent empty — the URL fields are `format: uri` upstream. Answers project-service has no field for
+ * (trademark, contributing organization, contacts, license, chat, CLA/DCO) stay on the application only.
+ */
+export function buildCreateProjectRequest(answers: ProjectApplicationAnswers, parentProjectUid: string, slug: string): CreateProjectRequest {
+  const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+  const request: CreateProjectRequest = {
+    name: text(answers.project_name),
+    slug,
+    description: text(answers.description),
+    parent_uid: parentProjectUid,
+    stage: PROJECT_APPLICATION_CREATED_STAGE,
+    legal_entity_type: PROJECT_APPLICATION_CREATED_LEGAL_ENTITY_TYPE,
+  };
+
+  const missionStatement = text(answers.mission_statement);
+  const repositoryUrl = text(answers.project_repository_url);
+  const websiteUrl = text(answers.project_website);
+  if (missionStatement) {
+    request.mission_statement = missionStatement;
+  }
+  if (repositoryUrl) {
+    request.repository_url = repositoryUrl;
+  }
+  if (websiteUrl) {
+    request.website_url = websiteUrl;
+  }
+  if (answers.is_spec_project === true) {
+    request.category = PROJECT_APPLICATION_SPEC_CATEGORY;
+  }
+  return request;
+}
+
+/**
+ * Suggested project slug for a proposed project name: `slugify`, with any leading digits or separators dropped
+ * because project-service slugs must start with a letter. Returns `''` when nothing usable remains.
+ */
+export function projectSlugFromName(name: string | null | undefined): string {
+  return slugify(name ?? '').replace(/^[^a-z]+/, '');
 }

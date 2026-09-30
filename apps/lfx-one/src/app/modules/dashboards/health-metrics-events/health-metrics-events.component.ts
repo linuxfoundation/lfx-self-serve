@@ -9,7 +9,7 @@ import {
   HEALTH_METRICS_EVENTS_DATA_SECTIONS,
   HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
   HEALTH_METRICS_EVENTS_SECTIONS,
-  HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE,
+  HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -20,16 +20,19 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events-at-a-glance.component';
+import { EventsGeographyComponent } from './components/events-geography/events-geography.component';
+import { EventsOrganizationsComponent } from './components/events-organizations/events-organizations.component';
 import { EventsPastEventsComponent } from './components/events-past-events/events-past-events.component';
 import { EventsRegistrationForecastComponent } from './components/events-registration-forecast/events-registration-forecast.component';
 import { EventsRegistrationsGrowthComponent } from './components/events-registrations-growth/events-registrations-growth.component';
 import { EventsRevenueComponent } from './components/events-revenue/events-revenue.component';
+import { EventsSpeakersComponent } from './components/events-speakers/events-speakers.component';
+import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Events (Level 2) — nine anchored sections in the shared Level 2 shell; a section without a body
- * renders as an "Awaiting data" placeholder. A foundation with no event held, none upcoming and no
+ * Events (Level 2) — nine anchored sections in the shared Level 2 shell. A foundation with no event held, none upcoming and no
  * event revenue gets one "No events yet" state in place of the shell. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
@@ -37,10 +40,14 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
   imports: [
     EmptyStateComponent,
     EventsAtAGlanceComponent,
+    EventsGeographyComponent,
+    EventsOrganizationsComponent,
     EventsPastEventsComponent,
     EventsRegistrationForecastComponent,
     EventsRegistrationsGrowthComponent,
     EventsRevenueComponent,
+    EventsSpeakersComponent,
+    EventsSponsorshipComponent,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
   ],
@@ -54,17 +61,23 @@ export class HealthMetricsEventsComponent {
   protected readonly sections = HEALTH_METRICS_EVENTS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_EVENTS_DATA_SECTIONS;
-  protected readonly crossReferenceNote = HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE;
+  protected readonly crossReference = HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE;
 
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');
+  protected readonly speakersNote = signal<string>('');
   // `null` until Past events reports, so the badge never shows a count the section has not read.
   protected readonly pastCount = signal<number | null>(null);
+  protected readonly orgsCount = signal<number | null>(null);
+  protected readonly geoCount = signal<number | null>(null);
   // Owned here rather than by the section, since the same read decides whether the tab has any events.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
-    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }, { past: this.pastCount() })
+    buildHealthMetricsEventsSubNavItems(
+      { forecast: this.forecastNote(), spk: this.speakersNote() },
+      { past: this.pastCount(), orgs: this.orgsCount(), geo: this.geoCount() }
+    )
   );
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();

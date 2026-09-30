@@ -1,0 +1,184 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-speakers">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Speakers and proposals unavailable"
+      subtitle="We could not load speaker proposals for this foundation. Refresh the page to try again."
+      data-testid="events-speakers-error" />
+  } @else if (loading()) {
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-speakers-loading" aria-hidden="true" />
+  } @else if (!view().foundationMeasured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="No speaker proposals yet"
+      subtitle="Once this foundation's events open a call for proposals, submissions and speakers appear here."
+      data-testid="events-speakers-foundation-unmeasured" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Speakers and proposals unavailable for this period"
+      subtitle="Proposals for the selected period have not been measured yet. Pick another period to see them."
+      data-testid="events-speakers-unmeasured" />
+  } @else {
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="events-speakers-controls">
+      <lfx-filter-pills [options]="tabOptions" [selectedFilter]="tab()" (filterChange)="onTabChange($event)" data-testid="events-speakers-tab-pills" />
+      <span class="text-[13px] text-gray-500" data-testid="events-speakers-count">{{ view().countLabel }}</span>
+    </div>
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-speakers-hero">
+      <div class="flex flex-col gap-2" data-testid="events-speakers-headline">
+        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-speakers-headline-value">{{ view().headline.value }}</span>
+        <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-speakers-side">
+        @for (stat of view().side; track stat.key) {
+          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-speakers-side-' + stat.key">
+            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
+              <span [attr.data-testid]="'events-speakers-side-' + stat.key + '-value'">{{ stat.value }}</span>
+              @if (stat.delta !== null) {
+                <span
+                  class="text-[12px] font-medium"
+                  [class.text-emerald-600]="stat.deltaDirection === 'up'"
+                  [class.text-red-600]="stat.deltaDirection === 'down'"
+                  [class.text-gray-400]="stat.deltaDirection === 'neutral'"
+                  [attr.data-testid]="'events-speakers-side-' + stat.key + '-delta'">
+                  {{ stat.delta }}
+                </span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div class="flex flex-col gap-3" data-testid="events-speakers-status">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">By status</h4>
+        <ul class="flex flex-col gap-2.5">
+          @for (bar of view().statusBars; track bar.key) {
+            <li class="flex flex-col gap-1" [attr.data-testid]="'events-speakers-status-' + bar.key">
+              <div class="flex items-baseline justify-between gap-2 text-[13px]">
+                <span class="text-gray-700">{{ bar.label }}</span>
+                <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-status-' + bar.key + '-value'">{{ bar.valueLabel }}</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full" [class]="bar.barClass" [style.width.%]="bar.widthPct"></div>
+              </div>
+            </li>
+          }
+        </ul>
+      </div>
+
+      <div class="flex flex-col gap-3" data-testid="events-speakers-by-year">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Proposals per year</h4>
+        <div class="h-40" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="events-speakers-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+        </div>
+        <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+        <table class="sr-only" data-testid="events-speakers-chart-table">
+          <thead>
+            <tr>
+              <th scope="col">Year</th>
+              <th scope="col">Proposals</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (year of years(); track year.year) {
+              <tr>
+                <th scope="row">{{ year.yearLabel }}</th>
+                <td>{{ year.submittedLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-3" data-testid="events-speakers-organizations">
+      <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Top organizations by proposals</h4>
+      @if (view().organizations.length === 0) {
+        <p class="text-sm text-gray-500" data-testid="events-speakers-organizations-empty">No organization submitted a proposal in the selected period.</p>
+      } @else {
+        <ul class="flex flex-col gap-2.5">
+          @for (bar of view().organizations; track bar.key) {
+            <li class="flex flex-col gap-1" [attr.data-testid]="'events-speakers-organization-' + bar.key">
+              <div class="flex items-baseline justify-between gap-2 text-[13px]">
+                <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
+                <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-organization-' + bar.key + '-value'">{{ bar.valueLabel }}</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full" [class]="bar.barClass" [style.width.%]="bar.widthPct"></div>
+              </div>
+            </li>
+          }
+        </ul>
+      }
+      @if (view().individualLabel; as individualLabel) {
+        <p class="flex items-baseline justify-between gap-2 border-t border-gray-100 pt-2 text-[13px]" data-testid="events-speakers-individual">
+          <span class="text-gray-500">Individual speakers</span>
+          <span class="tabular-nums text-gray-700" data-testid="events-speakers-individual-value">{{ individualLabel }}</span>
+        </p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-2" data-testid="events-speakers-proposals">
+      <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Recent proposals</h4>
+      @if (view().proposals.length === 0) {
+        <p class="text-sm text-gray-500" data-testid="events-speakers-proposals-empty">No proposal in the selected period.</p>
+      } @else {
+        <lfx-table [value]="view().proposals" data-testid="events-speakers-table">
+          <ng-template #header>
+            <tr>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Speaker</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Submitted</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Status</span></th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-row>
+            <tr [attr.data-testid]="'events-speakers-row-' + row.proposal.proposalKey">
+              <!-- The speaker is shown by role, never by name -->
+              <td>
+                <div class="flex flex-col gap-0.5">
+                  @if (row.proposal.jobTitle) {
+                    <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'events-speakers-job-title-' + row.proposal.proposalKey">{{
+                      row.proposal.jobTitle
+                    }}</span>
+                  }
+                  <span class="text-xs text-gray-500">{{ row.proposal.sessionTitle }}</span>
+                </div>
+              </td>
+              <td>
+                <span class="text-sm text-gray-800" [attr.data-testid]="'events-speakers-organization-label-' + row.proposal.proposalKey">{{
+                  row.organizationLabel
+                }}</span>
+              </td>
+              <td>
+                <span class="text-sm text-gray-800">{{ row.proposal.eventName }}</span>
+              </td>
+              <td>
+                <span class="text-sm tabular-nums text-gray-800">{{ row.dateLabel }}</span>
+              </td>
+              <td>
+                <span
+                  class="rounded-full px-2 py-0.5 text-xs font-medium"
+                  [class]="row.statusClass"
+                  [attr.data-testid]="'events-speakers-status-badge-' + row.proposal.proposalKey"
+                  >{{ row.proposal.status }}</span
+                >
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+      }
+    </div>
+  }
+</div>

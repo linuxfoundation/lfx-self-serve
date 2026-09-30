@@ -31,6 +31,8 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
   gating_done: 0,
   gating_total: 1,
   blocking_item_title: null,
+  blocking_item_blocked: false,
+  gates_cleared: false,
   ...overrides,
 });
 
@@ -117,6 +119,29 @@ describe('MyFormationsComponent (#2753)', () => {
 
     expect(byTestId(fixture, 'my-formations-announcement-formation-1')?.textContent).toContain('Not set');
     expect(byTestId(fixture, 'my-formations-blocking-formation-1')?.textContent?.trim()).toBe('—');
+  });
+
+  it('styles the blocking item as danger with a screen-reader label only when it is itself blocked (#3066)', async () => {
+    const { fixture } = await render(
+      complete([
+        formation({ formation_uid: 'pending', blocking_item_title: 'Charter agreed' }),
+        formation({ formation_uid: 'blocked', blocking_item_title: 'Contribution agreement', blocking_item_blocked: true }),
+      ])
+    );
+
+    const pending = byTestId(fixture, 'my-formations-blocking-pending')?.querySelector('[data-blocked="false"]');
+    expect(pending?.classList).toContain('text-amber-600');
+    expect(pending?.textContent).not.toContain('Blocked:');
+    const blocked = byTestId(fixture, 'my-formations-blocking-blocked')?.querySelector('[data-blocked="true"]');
+    expect(blocked?.classList).toContain('text-red-600');
+    expect(blocked?.textContent).toContain('Blocked:');
+    expect(blocked?.textContent).toContain('Contribution agreement');
+  });
+
+  it('reads "Formation to set Active" when every gate is cleared and no item blocks (#3066)', async () => {
+    const { fixture } = await render(complete([formation({ gates_cleared: true })]));
+
+    expect(byTestId(fixture, 'my-formations-blocking-formation-1')?.textContent?.trim()).toBe('Formation to set Active');
   });
 
   it('renders the raw upstream stage verbatim when sub_stage has no queue-taxonomy equivalent', async () => {

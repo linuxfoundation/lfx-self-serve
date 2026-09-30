@@ -3,219 +3,116 @@
 
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, output, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
+import { AvatarComponent } from '@components/avatar/avatar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { TableComponent } from '@components/table/table.component';
-import { InitialsPipe } from '@pipes/initials.pipe';
 import {
-  EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE,
-  MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL,
-  MENTORSHIP_MENTEE_ALL_TASKS_LABEL,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY,
+  MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR,
-  MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX,
   MENTORSHIP_MENTEE_APPLICATION_LIMIT,
-  MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
-  MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
-  MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL,
-  MENTORSHIP_MENTEE_DEV_VIEW_APPLICANT_LABEL,
-  MENTORSHIP_MENTEE_DEV_VIEW_EMPTY_LABEL,
   MENTORSHIP_MENTEE_EMPTY_SUBTITLE,
   MENTORSHIP_MENTEE_EMPTY_TITLE,
   MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL,
   MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
+  MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR,
   MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE,
-  MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
-  MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
-  MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES,
-  MENTORSHIP_MENTEE_UP_NEXT_STATUS_LABELS,
-  MENTORSHIP_MENTEE_UP_NEXT_TITLE,
+  MENTORSHIP_MENTEE_TASKS_URL,
   MENTORSHIP_MENTEE_VIEW_TASKS_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_LABEL,
-  MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY,
-  MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY,
-  MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL,
-  MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY,
 } from '@lfx-one/shared/constants';
-import {
-  MentorshipMenteeApplication,
-  MentorshipMenteeApplicationStatus,
-  MentorshipMenteeOverviewAccepted,
-  MentorshipMenteeOverviewApplicant,
-  MentorshipMenteeOverviewResponse,
-  MentorshipMenteePastOutcome,
-  MentorshipMenteePhase,
-  MentorshipMenteeUpNextTaskStatus,
-} from '@lfx-one/shared/interfaces';
-import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeOverview } from '@lfx-one/shared/interfaces';
+import { buildMentorshipMenteeOverview } from '@lfx-one/shared/utils';
+import { MenteeApplicationWithdrawService } from '@modules/mentorship/services/mentee-application-withdraw.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 /**
- * Overview child of the mentee shell — displays one of three phases:
- *
- * 1. **Empty** — no applications; CTA to browse programs
- * 2. **Applicant** — active application cards + past applications table
- * 3. **Accepted** — active program card with mentors + "Up Next" tasks
- *
- * Emits `phaseChange` and `openTaskCountChange` so the parent shell can
- * update its tab bar.
+ * Overview child of the mentee shell. With no applications it shows the empty state and a
+ * link to browse programs; otherwise a banner counting the pending applications, one card
+ * per pending, accepted or graduated application, and a Past Applications table for the rest.
+ * A pending card's Withdraw confirms first; a successful withdraw re-reads the applications.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, InitialsPipe],
+  imports: [AvatarComponent, EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, ConfirmDialogModule],
+  providers: [ConfirmationService, MenteeApplicationWithdrawService],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeOverviewComponent {
-  private readonly mentorshipService = inject(MentorshipService);
-  private readonly comingSoonService = inject(MentorshipComingSoonService);
-
-  /** Emitted when the API response phase is known. */
-  readonly phaseChange = output<MentorshipMenteePhase>();
-  /** Emitted when the open task count is known. */
-  readonly openTaskCountChange = output<number>();
-
-  protected readonly hasLoaded = signal(false);
-  protected readonly loadError = signal<string | null>(null);
-
-  /** Dev shortcut: override the phase requested from the BFF. */
-  private readonly overridePhase = signal<MentorshipMenteePhase | null>(null);
-  private readonly reloadTrigger = signal(0);
-
-  private readonly overviewState: Signal<MentorshipMenteeOverviewResponse> = this.initOverview();
-
-  protected readonly phase = computed<MentorshipMenteePhase>(() => this.overviewState().phase);
-
-  /** Cast helpers for template type narrowing. */
-  protected readonly applicantData = computed(() => (this.phase() === 'applicant' ? (this.overviewState() as MentorshipMenteeOverviewApplicant) : null));
-  protected readonly acceptedData = computed(() => (this.phase() === 'accepted' ? (this.overviewState() as MentorshipMenteeOverviewAccepted) : null));
-
-  // -- Label constants exposed to template ------------------------------------
+  private readonly menteeService = inject(MentorshipMenteeService);
+  private readonly withdrawService = inject(MenteeApplicationWithdrawService);
+  private readonly router = inject(Router);
 
   protected readonly emptyTitle = MENTORSHIP_MENTEE_EMPTY_TITLE;
   protected readonly emptySubtitle = MENTORSHIP_MENTEE_EMPTY_SUBTITLE;
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
   protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
-  /** "N application(s) under review" — switches between singular and plural. */
-  protected readonly bannerTitleSuffix = computed(() =>
-    this.applicationCount() === 1 ? MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR : MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL
-  );
-
-  /** Conditionally appends the application-limit sentence when the user has reached the limit. */
-  protected readonly bannerBody = computed(() => {
-    const base = MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY;
-    return this.applicationCount() >= MENTORSHIP_MENTEE_APPLICATION_LIMIT ? base + MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX : base;
-  });
   protected readonly viewTasksLabel = MENTORSHIP_MENTEE_VIEW_TASKS_LABEL;
   protected readonly withdrawLabel = MENTORSHIP_MENTEE_WITHDRAW_LABEL;
   protected readonly pastApplicationsTitle = MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE;
-  protected readonly activeBadgeLabel = MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL;
-  protected readonly yourMentorsLabel = MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL;
-  protected readonly upNextTitle = MENTORSHIP_MENTEE_UP_NEXT_TITLE;
-  protected readonly allTasksLabel = MENTORSHIP_MENTEE_ALL_TASKS_LABEL;
 
-  // -- Mock shortcuts (will be removed when integrating with real data) --------
+  protected readonly hasLoaded = signal(false);
+  protected readonly loadError = signal<string | null>(null);
+  protected readonly withdrawingId = this.withdrawService.withdrawingId;
 
-  protected readonly devViewEmptyLabel = MENTORSHIP_MENTEE_DEV_VIEW_EMPTY_LABEL;
-  protected readonly devViewApplicantLabel = MENTORSHIP_MENTEE_DEV_VIEW_APPLICANT_LABEL;
-  protected readonly devViewAcceptedLabel = MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL;
+  protected readonly overview: Signal<MentorshipMenteeOverview | null> = this.initOverview();
 
-  /** The banner shows "N applications under review". */
-  protected readonly applicationCount = computed(() => this.applicantData()?.applications?.length ?? 0);
+  protected readonly pendingCount = computed(() => this.overview()?.pendingCount ?? 0);
 
-  // -- Status helpers ---------------------------------------------------------
+  /** "N application(s) under review" — switches between singular and plural. */
+  protected readonly bannerTitleSuffix = computed(() =>
+    this.pendingCount() === 1 ? MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR : MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL
+  );
 
-  protected applicationStatusLabel(status: MentorshipMenteeApplicationStatus): string {
-    return MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[status];
+  /** Appends the application-limit sentence once the mentee holds the maximum number of pending applications. */
+  protected readonly bannerBody = computed(() =>
+    this.pendingCount() >= MENTORSHIP_MENTEE_APPLICATION_LIMIT
+      ? MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY + MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX
+      : MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY
+  );
+
+  protected onViewTasks(): void {
+    void this.router.navigate([MENTORSHIP_MENTEE_TASKS_URL]);
   }
 
-  protected applicationStatusClass(status: MentorshipMenteeApplicationStatus): string {
-    return MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[status];
-  }
-
-  protected pastOutcomeLabel(outcome: MentorshipMenteePastOutcome): string {
-    return MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS[outcome];
-  }
-
-  protected pastOutcomeClass(outcome: MentorshipMenteePastOutcome): string {
-    return MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES[outcome];
-  }
-
-  protected upNextStatusLabel(status: MentorshipMenteeUpNextTaskStatus): string {
-    return MENTORSHIP_MENTEE_UP_NEXT_STATUS_LABELS[status];
-  }
-
-  protected upNextStatusClass(status: MentorshipMenteeUpNextTaskStatus): string {
-    return MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES[status];
-  }
-
-  protected taskProgress(completed: number, total: number): number {
-    if (!total || total <= 0) return 0;
-    const pct = Math.round((completed / total) * 100);
-    return Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0;
-  }
-
-  // -- Actions ----------------------------------------------------------------
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- app param reserved for real task navigation
-  protected onViewTasks(_app: MentorshipMenteeApplication): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- app param reserved for real withdraw API
-  protected onWithdraw(_app: MentorshipMenteeApplication): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY);
-  }
-
-  protected onAllTasks(): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY);
-  }
-
-  /** Dev shortcut: switch to a different phase. */
-  protected switchPhase(phase: MentorshipMenteePhase): void {
-    this.overridePhase.set(phase);
-    this.reloadTrigger.update((v) => v + 1);
+  protected onWithdraw(applicationId: string): void {
+    this.withdrawService.confirmWithdraw(applicationId);
   }
 
   protected retry(): void {
-    this.reloadTrigger.update((v) => v + 1);
+    this.menteeService.clearMenteeCaches();
   }
 
-  // -- Data loading -----------------------------------------------------------
-
-  private initOverview(): Signal<MentorshipMenteeOverviewResponse> {
+  private initOverview(): Signal<MentorshipMenteeOverview | null> {
     return toSignal(
-      toObservable(this.reloadTrigger).pipe(
+      toObservable(this.menteeService.menteeApplicationsRevision).pipe(
         tap(() => {
           this.hasLoaded.set(false);
           this.loadError.set(null);
         }),
         switchMap(() =>
-          this.mentorshipService.getMenteeOverview(this.overridePhase() ?? undefined).pipe(
-            map((response) => {
-              this.hasLoaded.set(true);
-              this.phaseChange.emit(response.phase);
-              if ('openTaskCount' in response) {
-                this.openTaskCountChange.emit(response.openTaskCount);
-              } else {
-                this.openTaskCountChange.emit(0);
-              }
-              return response;
-            }),
+          this.menteeService.getMenteeApplications().pipe(
+            map((response) => buildMentorshipMenteeOverview(response.data)),
+            tap(() => this.hasLoaded.set(true)),
             catchError((error: HttpErrorResponse) => {
               this.hasLoaded.set(true);
-              this.loadError.set(serverAuthoredMessage(error, 'We could not load your mentee overview. Please retry.'));
-              return of(EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE);
+              this.loadError.set(serverAuthoredMessage(error, MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR));
+              return of(null);
             })
           )
         )
       ),
-      { initialValue: EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE }
+      { initialValue: null }
     );
   }
 }

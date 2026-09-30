@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 export * from './gateway.constants';
+export * from './mentorship.constants';
 export * from './meta.constants';
 export * from './public-profile.constants';
 export * from './query-service.constants';

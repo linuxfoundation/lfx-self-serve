@@ -541,10 +541,25 @@ export class OrgClaService {
       throw error;
     }
 
-    const url = result?.signed_cla_url?.trim() || result?.signedClaUrl?.trim() || '';
-    if (!url) {
+    // Typed as strings, but `gatewayFetch` only casts the parsed body, so a present non-string is
+    // malformed upstream data to refuse, not a value to call `.trim()` on.
+    const fields: unknown[] = [result?.signed_cla_url, result?.signedClaUrl];
+    const malformed = fields.some((field) => field != null && typeof field !== 'string');
+    const url = malformed ? '' : (fields.map((field) => (field as string | undefined)?.trim()).find(Boolean) ?? '');
+    if (!url && !malformed) {
       logger.warning(req, 'org_cla_get_pdf_url', 'signed document carries no url', { signature_id: signatureId });
       return null;
+    }
+
+    if (malformed || !isHttpsUrl(url)) {
+      logger.warning(req, 'org_cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
+        signature_id: signatureId,
+        pdf_url_scheme: malformed ? 'non-string' : urlSchemeForLog(url),
+      });
+      throw new MicroserviceError('Upstream returned an unusable signed document address', 502, 'CLA_PDF_URL_INVALID', {
+        operation: 'org_cla_get_pdf_url',
+        service: SERVICE,
+      });
     }
 
     logger.debug(req, 'org_cla_get_pdf_url', 'resolved a signed document url', { signature_id: signatureId });

@@ -11,10 +11,12 @@ import {
   getEffectiveEmail,
   getEffectiveSub,
   getEffectiveUsername,
+  getRawEffectiveEmail,
   getRealEmail,
   isImpersonating,
   resolveAuditUserDisplayName,
   resolveRealAccessToken,
+  resolveUserIdentity,
 } from './auth-helper';
 
 interface TargetUser {
@@ -65,6 +67,28 @@ describe('getEffectiveEmail', () => {
   it('returns the OIDC email lowercased when not impersonating', () => {
     const req = buildReq({ oidc: { email: 'User@Example.com' } });
     expect(getEffectiveEmail(req)).toBe('user@example.com');
+  });
+});
+
+describe('getRawEffectiveEmail', () => {
+  it('returns the target email as stored (no lowercasing) when impersonating', () => {
+    const req = buildReq({ impersonating: true, target: { email: 'Target@Example.com' }, oidc: OPERATOR_OIDC });
+    expect(getRawEffectiveEmail(req)).toBe('Target@Example.com');
+  });
+
+  it('returns null (never the impersonator) when the target has no stored email', () => {
+    const req = buildReq({ impersonating: true, target: { email: '' }, oidc: OPERATOR_OIDC });
+    expect(getRawEffectiveEmail(req)).toBeNull();
+  });
+
+  it('returns the OIDC email as stored (no lowercasing) when not impersonating', () => {
+    const req = buildReq({ oidc: { email: 'User@Example.com' } });
+    expect(getRawEffectiveEmail(req)).toBe('User@Example.com');
+  });
+
+  it('returns null when there is no OIDC email at all', () => {
+    const req = buildReq({ oidc: { nickname: 'usernick' } });
+    expect(getRawEffectiveEmail(req)).toBeNull();
   });
 });
 
@@ -334,5 +358,22 @@ describe('buildImpersonationIdentityOverride', () => {
       .sort();
     const keys = Object.keys(buildImpersonationIdentityOverride(TARGET_CLAIMS, TARGET_SESSION_USER)).sort();
     expect(keys).toEqual(expected);
+  });
+});
+
+describe('resolveUserIdentity', () => {
+  it('resolves the lowercased effective email and the prefix-stripped username together', async () => {
+    const req = buildReq({ oidc: { email: 'User@Example.com', username: 'auth0|someuser' } });
+    await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'user@example.com', username: 'someuser' });
+  });
+
+  it('returns null for whichever side the auth context lacks', async () => {
+    await expect(resolveUserIdentity(buildReq({ oidc: { username: 'auth0|someuser' } }))).resolves.toEqual({ email: null, username: 'someuser' });
+    await expect(resolveUserIdentity(buildReq({ oidc: { email: 'user@example.com' } }))).resolves.toEqual({ email: 'user@example.com', username: null });
+  });
+
+  it('resolves the impersonation target, never the operator, when impersonating', async () => {
+    const req = buildReq({ impersonating: true, target: { email: 'Target@Example.com', username: 'targetuser' }, oidc: OPERATOR_OIDC });
+    await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'target@example.com', username: 'targetuser' });
   });
 });

@@ -28,6 +28,12 @@ vi.mock('./access-check.service', () => ({
     public checkSingleAccessStrict = (...args: unknown[]) => checkSingleAccessStrict(...args);
   },
 }));
+const getProjectIdBySlug = vi.fn();
+vi.mock('./project.service', () => ({
+  ProjectService: class {
+    public getProjectIdBySlug = (...args: unknown[]) => getProjectIdBySlug(...args);
+  },
+}));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: (...args: unknown[]) => generateM2MToken(...args) }));
 vi.mock('./logger.service', () => ({
   logger: {
@@ -224,65 +230,188 @@ describe('ProjectApplicationService', () => {
   });
 
   describe('accept', () => {
-    it('revises with the chosen parent, then accepts at the revision revise returned', async () => {
+    const SLUG = 'example-project';
+    const PROJECT_UID = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
+    const answers = {
+      project_name: 'Example Project',
+      description: 'About it',
+      mission_statement: 'Mission',
+      project_repository_url: 'https://github.com/example/project',
+      project_website: '',
+      is_spec_project: true,
+      future_key: 'kept',
+    };
+    const recorded = { ...answers, parent_project_uid: PARENT_UID, project_slug: SLUG };
+
+    beforeEach(() => {
+      getProjectIdBySlug.mockReset().mockResolvedValue({ uid: '', slug: SLUG, exists: false });
+    });
+
+    it('records the choices, creates the project with the user token, records its uid, then accepts', async () => {
       checkSingleAccessStrict.mockResolvedValueOnce(true);
       proxyRequestWithResponse
-        .mockResolvedValueOnce({
-          data: upstreamApp({ revision: 6, application: { project_name: 'X', parent_project_uid: PARENT_UID } }),
-          headers: { etag: '6' },
-        })
-        .mockResolvedValueOnce({ data: upstreamApp({ revision: 7, state: 'accepted' }), headers: { etag: '7' } });
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: recorded }), headers: { etag: '6' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 7, application: { ...recorded, project_uid: PROJECT_UID } }), headers: { etag: '7' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 8, state: 'accepted' }), headers: { etag: '8' } });
+      proxyRequest.mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG });
 
-      const result = await service.accept(req, UID, '5', { project_name: 'X', future_key: 'kept' }, PARENT_UID);
+      const result = await service.accept(req, UID, '5', answers, PARENT_UID, SLUG);
 
       expect(proxyRequestWithResponse.mock.calls[0].slice(2)).toEqual([
         `/project-applications/${UID}`,
         'PUT',
         undefined,
-        { application: { project_name: 'X', future_key: 'kept', parent_project_uid: PARENT_UID } },
+        { application: recorded },
         { 'If-Match': '5' },
       ]);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest.mock.calls[0]).toEqual([
+        req,
+        'LFX_V2_SERVICE',
+        '/projects',
+        'POST',
+        undefined,
+        {
+          name: 'Example Project',
+          slug: SLUG,
+          description: 'About it',
+          parent_uid: PARENT_UID,
+          mission_statement: 'Mission',
+          repository_url: 'https://github.com/example/project',
+          stage: 'Formation - Exploratory',
+          legal_entity_type: 'Subproject',
+          category: 'Standards',
+        },
+        { 'X-Sync': 'true' },
+      ]);
+      // No token override: project-service authorizes the caller's own token.
+      expect(generateM2MToken).not.toHaveBeenCalled();
       expect(proxyRequestWithResponse.mock.calls[1].slice(2)).toEqual([
+        `/project-applications/${UID}`,
+        'PUT',
+        undefined,
+        { application: { ...recorded, project_uid: PROJECT_UID } },
+        { 'If-Match': '6' },
+      ]);
+      expect(proxyRequestWithResponse.mock.calls[2].slice(2)).toEqual([
         `/project-applications/${UID}/accept`,
         'POST',
         undefined,
         undefined,
-        { 'If-Match': '6' },
+        { 'If-Match': '7' },
       ]);
-      expect(result).toMatchObject({ etag: '7', application: { state: 'accepted', revision: 7 } });
+      expect(result).toMatchObject({ etag: '8', application: { state: 'accepted', revision: 8 } });
+    });
+
+    it('skips the create on a retry once the project uid is recorded', async () => {
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+      proxyRequestWithResponse
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: { ...recorded, project_uid: PROJECT_UID } }), headers: { etag: '6' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 7, state: 'accepted' }), headers: { etag: '7' } });
+
+      await service.accept(req, UID, '5', { ...answers, project_uid: PROJECT_UID }, PARENT_UID, SLUG);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
+      expect(proxyRequestWithResponse.mock.calls[1].slice(2, 4)).toEqual([`/project-applications/${UID}/accept`, 'POST']);
+      expect(proxyRequestWithResponse.mock.calls[1][6]).toEqual({ 'If-Match': '6' });
+    });
+
+    it.each([
+      [409, 'PROJECT_SLUG_CONFLICT'],
+      [403, 'PROJECT_CREATE_FORBIDDEN'],
+      [400, 'INVALID_PROJECT'],
+    ])('maps a project create refused with %i to %s and never accepts', async (status, code) => {
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+      proxyRequestWithResponse.mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: recorded }), headers: { etag: '6' } });
+      proxyRequest.mockRejectedValueOnce(new MicroserviceError('refused', status, 'X', { errorBody: { message: 'upstream says no' } }));
+
+      await expect(service.accept(req, UID, '5', answers, PARENT_UID, SLUG)).rejects.toMatchObject({ statusCode: status, code });
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('adopts the project an earlier accept created but never recorded, when the slug conflict is under the same parent and name', async () => {
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+      proxyRequestWithResponse
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: recorded }), headers: { etag: '6' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 7, application: { ...recorded, project_uid: PROJECT_UID } }), headers: { etag: '7' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 8, state: 'accepted' }), headers: { etag: '8' } });
+      proxyRequest
+        .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT', { errorBody: {} }))
+        .mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG, name: 'Example Project', parent_uid: PARENT_UID });
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG, exists: true });
+
+      const result = await service.accept(req, UID, '5', answers, PARENT_UID, SLUG);
+
+      expect(proxyRequest.mock.calls[1].slice(1, 4)).toEqual(['LFX_V2_SERVICE', `/projects/${PROJECT_UID}`, 'GET']);
+      expect(proxyRequestWithResponse.mock.calls[1][5]).toEqual({ application: { ...recorded, project_uid: PROJECT_UID } });
+      expect(result.application.state).toBe('accepted');
+    });
+
+    it.each([
+      ['another parent', { parent_uid: 'other-parent', name: 'Example Project' }],
+      ['another name', { parent_uid: PARENT_UID, name: 'Someone Else' }],
+    ])('treats a slug conflict with a project under %s as a genuine conflict', async (_label, found) => {
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+      proxyRequestWithResponse.mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: recorded }), headers: { etag: '6' } });
+      proxyRequest
+        .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT', { errorBody: {} }))
+        .mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG, ...found });
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG, exists: true });
+
+      await expect(service.accept(req, UID, '5', answers, PARENT_UID, SLUG)).rejects.toMatchObject({ statusCode: 409, code: 'PROJECT_SLUG_CONFLICT' });
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the recorded parent and slug on a retry once the project exists, ignoring new dialog choices', async () => {
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+      const withProject = { ...recorded, project_uid: PROJECT_UID };
+      proxyRequestWithResponse
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: withProject }), headers: { etag: '6' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 7, state: 'accepted' }), headers: { etag: '7' } });
+
+      await service.accept(req, UID, '5', withProject, 'another-parent', 'another-slug');
+
+      expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ application: withProject });
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
 
     it('aborts without writing when membership cannot be verified (access-check outage)', async () => {
       checkSingleAccessStrict.mockRejectedValueOnce(new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE', { errorBody: {} }));
 
-      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 503 });
+      await expect(service.accept(req, UID, '5', {}, PARENT_UID, SLUG)).rejects.toMatchObject({ statusCode: 503 });
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
 
     it('refuses a caller outside the formation team before writing anything', async () => {
       checkSingleAccessStrict.mockResolvedValueOnce(false);
 
-      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 403, code: 'PROJECT_APPLICATION_FORBIDDEN' });
+      await expect(service.accept(req, UID, '5', {}, PARENT_UID, SLUG)).rejects.toMatchObject({ statusCode: 403, code: 'PROJECT_APPLICATION_FORBIDDEN' });
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
 
-    it('propagates a failed accept after the revise landed, without retrying, using the revised If-Match', async () => {
+    it('propagates a failed accept after the project was recorded, without retrying, using the latest If-Match', async () => {
       checkSingleAccessStrict.mockResolvedValueOnce(true);
       proxyRequestWithResponse
-        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6 }), headers: { etag: '6' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 6, application: recorded }), headers: { etag: '6' } })
+        .mockResolvedValueOnce({ data: upstreamApp({ revision: 7, application: { ...recorded, project_uid: PROJECT_UID } }), headers: { etag: '7' } })
         .mockRejectedValueOnce(new MicroserviceError('conflict', 409, 'CONFLICT', { errorBody: { reason: 'invalid_transition', message: 'Not open' } }));
+      proxyRequest.mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG });
 
-      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 409, code: 'INVALID_TRANSITION' });
-      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(2);
-      expect(proxyRequestWithResponse.mock.calls[1][6]).toEqual({ 'If-Match': '6' });
+      await expect(service.accept(req, UID, '5', answers, PARENT_UID, SLUG)).rejects.toMatchObject({ statusCode: 409, code: 'INVALID_TRANSITION' });
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(3);
+      expect(proxyRequestWithResponse.mock.calls[2][6]).toEqual({ 'If-Match': '7' });
     });
 
-    it('does not accept when the revise is refused', async () => {
+    it('creates nothing when the first revise is refused', async () => {
       checkSingleAccessStrict.mockResolvedValueOnce(true);
       proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('stale', 412, 'PRECONDITION_FAILED', { errorBody: {} }));
 
-      await expect(service.accept(req, UID, '5', {}, PARENT_UID)).rejects.toMatchObject({ statusCode: 412 });
+      await expect(service.accept(req, UID, '5', {}, PARENT_UID, SLUG)).rejects.toMatchObject({ statusCode: 412 });
       expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
   });
 });

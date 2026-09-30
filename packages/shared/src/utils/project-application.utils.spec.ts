@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProjectApplication, UpstreamProjectApplicationDoc } from '../interfaces/project-application.interface';
 import {
+  buildCreateProjectRequest,
   buildProjectApplicationAnswerSections,
   formatProjectApplicationAnswer,
   getProjectApplicationStateMeta,
@@ -12,6 +13,7 @@ import {
   isLegalContactEmail,
   isProjectApplicationOpen,
   normalizeProjectApplicationDoc,
+  projectSlugFromName,
   reconcileProjectApplications,
   toProjectApplicationEmailLink,
   toProjectApplicationUrlLink,
@@ -278,5 +280,66 @@ describe('validateProjectApplicationAnswers', () => {
     expect(validateProjectApplicationAnswers({ formation_list: ['ok@example.org', 'nope'] })).toEqual([
       { field: 'formation_list', message: 'formation_list must be a list of email addresses' },
     ]);
+  });
+});
+
+describe('buildCreateProjectRequest (#1995)', () => {
+  const PARENT = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+  it('maps the proposal onto the project-service create body', () => {
+    const request = buildCreateProjectRequest(
+      {
+        project_name: '  Example Project ',
+        description: 'About it',
+        mission_statement: 'Mission',
+        project_repository_url: 'https://github.com/example/project',
+        project_website: 'https://example.org',
+        is_spec_project: true,
+        license: 'MIT',
+        contributing_organization: 'Acme',
+      },
+      PARENT,
+      'example-project'
+    );
+    expect(request).toEqual({
+      name: 'Example Project',
+      slug: 'example-project',
+      description: 'About it',
+      parent_uid: PARENT,
+      mission_statement: 'Mission',
+      repository_url: 'https://github.com/example/project',
+      website_url: 'https://example.org',
+      stage: 'Formation - Exploratory',
+      legal_entity_type: 'Subproject',
+      category: 'Standards',
+    });
+  });
+
+  it('leaves out blank optional answers and the category when the project is not a spec project', () => {
+    const request = buildCreateProjectRequest(
+      { project_name: 'X', description: 'D', project_website: '  ', mission_statement: '', is_spec_project: false },
+      PARENT,
+      'x1'
+    );
+    expect(request).toEqual({
+      name: 'X',
+      slug: 'x1',
+      description: 'D',
+      parent_uid: PARENT,
+      stage: 'Formation - Exploratory',
+      legal_entity_type: 'Subproject',
+    });
+  });
+});
+
+describe('projectSlugFromName (#1995)', () => {
+  it.each([
+    ['LFX One', 'lfx-one'],
+    ['  Shared AI: Findings Exchange! ', 'shared-ai-findings-exchange'],
+    ['3D Printing Group', 'd-printing-group'],
+    ['123', ''],
+    [null, ''],
+  ])('%j -> %j', (name, slug) => {
+    expect(projectSlugFromName(name)).toBe(slug);
   });
 });

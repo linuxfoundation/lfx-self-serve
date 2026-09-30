@@ -624,10 +624,9 @@ export class ProjectService {
     if (idArray.length === 0) return new Map();
 
     // URL-length guard: ~36-char UUIDs × 100 keeps query strings under ~5KB.
-    const BATCH_SIZE = 100;
     const batches: string[][] = [];
-    for (let i = 0; i < idArray.length; i += BATCH_SIZE) {
-      batches.push(idArray.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < idArray.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(idArray.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
     }
 
     const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
@@ -1516,6 +1515,8 @@ export class ProjectService {
    * Get pending survey actions for a user.
    * Queries for non-responded surveys and transforms them into PendingActionItem format.
    * When `projectSlug` is omitted, returns surveys across all of the user's projects (Me-lens).
+   * @deprecated Orphaned: user pending actions read the `survey_response` index since #2987; this
+   *   Snowflake path only serves /api/projects/pending-action-surveys — removal tracked in #3057.
    * @param email - User's email from OIDC authentication
    * @param projectSlug - Optional project slug; omit for unscoped (all-projects) results
    * @returns Array of pending action items with survey links
@@ -8320,6 +8321,11 @@ export class ProjectService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'project',
             filters_or: batch.map((uid) => `uid:${uid}`),
+            // One call per batch. Without a page_size, the query service's default of 50
+            // (docs/architecture/backend/pagination.md) splits a 100-uid batch into two sequential
+            // calls; and page_size must exceed the batch, because query-service emits a page_token
+            // whenever hits == page_size, which would cost a second, empty call on a full batch.
+            page_size: String(batch.length + 1),
             ...(pageToken && { page_token: pageToken }),
           }),
         { failOnPartial: true }

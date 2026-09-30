@@ -705,6 +705,36 @@ describe('OrgClaService.getPdfUrl', () => {
       expect.objectContaining({ bearerToken: 'target-token' })
     );
   });
+
+  it.each([
+    [{ signed_cla_url: 'javascript:alert(1)' }],
+    [{ signed_cla_url: '  javascript:alert(1)' }],
+    [{ signed_cla_url: 'JaVaScRiPt:alert(1)' }],
+    [{ signed_cla_url: 'data:text/html,<p>x</p>' }],
+    [{ signed_cla_url: 'http://s3.example.org/ccla.pdf' }],
+    [{ signed_cla_url: '/ccla.pdf' }],
+    [{ signedClaUrl: 'javascript:alert(1)' }],
+    [{ signed_cla_url: {} }],
+    [{ signed_cla_url: ['https://s3.example.org/ccla.pdf'] }],
+    [{ signedClaUrl: 42 }],
+  ])('refuses a signed document address of %j with a 502', async (document) => {
+    stageDocument(document);
+
+    await expect(new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CLA_PDF_URL_INVALID',
+    });
+  });
+
+  it('keeps a refused document address out of the logs, recording only its scheme', async () => {
+    stageDocument({ signed_cla_url: 'javascript:alert(document.cookie)' });
+
+    await expect(new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow();
+
+    const logged = JSON.stringify(loggerWarning.mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('"pdf_url_scheme":"javascript"');
+  });
 });
 
 // The org grant proves which organization the caller may view as, not which signatures belong to

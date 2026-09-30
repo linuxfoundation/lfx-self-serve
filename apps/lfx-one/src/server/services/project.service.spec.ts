@@ -1986,6 +1986,44 @@ describe('ProjectService — getProjectsByIds', () => {
       error: 'query failed',
     });
   });
+
+  /**
+   * Models query-service paging: it answers each `uid:` filter (up to `page_size` hits) and emits a
+   * `page_token` whenever the page is full (hits == page_size), even if nothing is left.
+   */
+  function queryServicePage(params: { filters_or: string[]; page_size: string; page_token?: string }): QueryServiceResponse<Project> {
+    if (params.page_token) return pageOf([]);
+    const hits = params.filters_or.slice(0, Number(params.page_size)).map((f) => ({ uid: f.slice('uid:'.length), slug: f }));
+    return pageOf(hits, hits.length === Number(params.page_size) ? 'next' : undefined);
+  }
+
+  it('fetches each batch in one call, with page_size one above the batch size', async () => {
+    const uids = Array.from({ length: 150 }, (_, i) => `uid-${i}`);
+    proxyRequest.mockImplementation(async (_req, _svc, _path, _method, params) => queryServicePage(params));
+
+    const result = await service.getProjectsByIds(req, uids);
+
+    expect(result.size).toBe(150);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    const sent = proxyRequest.mock.calls.map((call) => call[4] as { filters_or: string[]; page_size: string });
+    expect(sent.map((p) => p.filters_or.length)).toEqual([100, 50]);
+    expect(sent.map((p) => p.page_size)).toEqual(['101', '51']);
+  });
+
+  it('makes exactly one call for a full 100-uid batch, where page_size = batch size would make two', async () => {
+    const filters = Array.from({ length: 100 }, (_, i) => `uid:uid-${i}`);
+    proxyRequest.mockImplementation(async (_req, _svc, _path, _method, params) => queryServicePage(params));
+
+    await service.getProjectsByIds(
+      req,
+      filters.map((f) => f.slice('uid:'.length))
+    );
+
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({ page_size: '101' });
+    // The old page_size = 100 gets a cursor back on the full page, forcing a second (empty) call.
+    expect(queryServicePage({ filters_or: filters, page_size: '100' }).page_token).toBe('next');
+  });
 });
 
 describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/meeting_coordinator gating)', () => {

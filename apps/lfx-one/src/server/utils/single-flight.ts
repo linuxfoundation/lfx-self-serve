@@ -26,8 +26,12 @@ const inFlight = new Map<string, Promise<unknown>>();
  * here are `{namespace}:{username}:{orgUid}` — reusing it would write usernames to the logs. Its
  * stale-lock sweep is also sized from Snowflake query timeouts rather than these upstreams. The
  * per-principal fail-closed rule lives in {@link coalescePerUserOrgFetch}, not in this primitive.
+ *
+ * The factory receives `isCurrent`, true while this flight is still the one registered for `key`.
+ * {@link evictPerUserOrgFetch} unregisters a flight, so a fill can check `isCurrent` before
+ * persisting its result and skip writing a value that was superseded while it ran.
  */
-export function singleFlight<T>(key: string, factory: () => Promise<T>): Promise<T> {
+export function singleFlight<T>(key: string, factory: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
   const joined = inFlight.get(key) as Promise<T> | undefined;
   if (joined) {
     return joined;
@@ -35,10 +39,16 @@ export function singleFlight<T>(key: string, factory: () => Promise<T>): Promise
 
   // The factory runs inside an async wrapper so a synchronous throw becomes a rejection of the
   // registered promise — otherwise it would escape before `finally` could clear the entry, wedging
-  // the key on a promise no caller holds.
-  const started = (async () => factory())().finally(() => {
-    inFlight.delete(key);
+  // the key on a promise no caller holds. Identity is compared everywhere rather than the key alone:
+  // an evicted flight settling must neither report itself current nor remove its successor's entry.
+  // Before the promise is assigned, `inFlight.get(key)` is also undefined, so a synchronous
+  // `isCurrent()` inside the factory still answers true.
+  const flight: { promise?: Promise<T> } = {};
+  const isCurrent = (): boolean => inFlight.get(key) === flight.promise;
+  const started = (async () => factory(isCurrent))().finally(() => {
+    if (inFlight.get(key) === started) inFlight.delete(key);
   });
+  flight.promise = started;
   inFlight.set(key, started);
   return started;
 }
@@ -51,13 +61,24 @@ export function singleFlight<T>(key: string, factory: () => Promise<T>): Promise
  * Fails closed exactly as `buildPerUserOrgKey` does: an empty or non-filter-safe username (or org
  * uid) means the fetch is run directly and NOT coalesced. Coalescing on a blank principal would
  * bucket every such caller onto one key and hand the first caller's permission-filtered result to
- * all of them — a cross-principal leak, and a far worse outcome than doing the work twice.
+ * all of them — a cross-principal leak, and a far worse outcome than doing the work twice. Such a
+ * fetch has no cache key either, so its `isCurrent` is always true.
  */
-export function coalescePerUserOrgFetch<T>(namespace: string, username: string, orgUid: string, factory: () => Promise<T>): Promise<T> {
+export function coalescePerUserOrgFetch<T>(namespace: string, username: string, orgUid: string, factory: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
   if (!isFilterSafeUsername(username) || !isFilterSafeIdentifier(orgUid)) {
-    return factory();
+    return factory(() => true);
   }
   return singleFlight(`${namespace}:${username}:${orgUid}`, factory);
+}
+
+/**
+ * Unregisters the in-process flight for one (namespace, principal, org), after a write that makes
+ * its result stale. A later read then starts a fresh fetch instead of joining the old one, and the
+ * old flight's `isCurrent` turns false so its fill skips the cache write. Callers already joined to
+ * the old flight still receive its result.
+ */
+export function evictPerUserOrgFetch(namespace: string, username: string, orgUid: string): void {
+  inFlight.delete(`${namespace}:${username}:${orgUid}`);
 }
 
 /**

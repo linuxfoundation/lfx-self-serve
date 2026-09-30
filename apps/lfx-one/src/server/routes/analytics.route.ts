@@ -264,6 +264,23 @@ router.get('/events-registrations-growth', requireDashboardAccess, (req, res, ne
 // Health Metrics Events "Revenue" section (#2968)
 router.get('/events-revenue', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRevenue(req, res, next));
 
+// Health Metrics Events "Speakers & proposals" section (#2969)
+router.get('/events-speakers', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSpeakers(req, res, next));
+router.get('/events-organizations', requireDashboardAccess, (req, res, next) => analyticsController.getEventsOrganizations(req, res, next));
+router.get('/events-sponsorship', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSponsorship(req, res, next));
+router.get('/events-geography', requireDashboardAccess, (req, res, next) => analyticsController.getEventsGeography(req, res, next));
+
+// Health Metrics Members "Membership & revenue by tier" section (#3100)
+router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
+
+// Health Metrics Members "Membership bridge" and its movement lists (#3101)
+router.get('/members-bridge', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBridge(req, res, next));
+router.get('/members-movements', requireDashboardAccess, (req, res, next) => analyticsController.getMembersMovements(req, res, next));
+
+// Health Metrics Members "All members" (#3102)
+router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));
+router.get('/members-directory-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectoryTiers(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

@@ -84,9 +84,9 @@ export class ProjectApplicationService {
     return this.http.post<ProjectApplicationWriteResult>(`${this.applicationPath(application.uid)}/deny`, {}, this.ifMatch(application)).pipe(take(1));
   }
 
-  /** Records the chosen parent and accepts; the backend then creates the project. */
-  public accept(application: ProjectApplication, parentProjectUid: string): Observable<ProjectApplicationWriteResult> {
-    const body: AcceptProjectApplicationRequest = { parent_project_uid: parentProjectUid, application: application.application };
+  /** Creates the project under the chosen parent with the chosen slug, then accepts (#1995). */
+  public accept(application: ProjectApplication, parentProjectUid: string, projectSlug: string): Observable<ProjectApplicationWriteResult> {
+    const body: AcceptProjectApplicationRequest = { parent_project_uid: parentProjectUid, project_slug: projectSlug, application: application.application };
     return this.http.post<ProjectApplicationWriteResult>(`${this.applicationPath(application.uid)}/accept`, body, this.ifMatch(application)).pipe(take(1));
   }
 

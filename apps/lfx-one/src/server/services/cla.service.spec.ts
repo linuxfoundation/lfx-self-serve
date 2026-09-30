@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The service's URL checks come from `validation.helper`, whose shared utils barrel pulls in
+// Angular-dependent siblings. Without the compiler the suite fails to collect at all.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Runtime collaborators are mocked (the `@lfx-one/shared/*` alias isn't wired into this app's
-// vitest config; cla.service imports only type-only symbols from it, which esbuild elides).
+// Runtime collaborators are mocked; the `@lfx-one/shared/*` alias resolves to the real sources via
+// this app's vitest config.
 const { gatewayFetch } = vi.hoisted(() => ({ gatewayFetch: vi.fn() }));
 const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn<() => string | null>(() => null),
@@ -35,6 +39,7 @@ import type { Request } from 'express';
 
 import type { EasyClaMyCla, EasyClaSearchResult, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
+import { logger } from './logger.service';
 import {
   ClaService,
   claReturnUrl,
@@ -950,6 +955,33 @@ describe('ClaService.getPdfUrl', () => {
       expect.stringContaining('/v4/my-clas/sig-1/pdf?'),
       expect.objectContaining({ bearerToken: 'target-token' })
     );
+  });
+
+  it.each([
+    ['javascript:alert(1)'],
+    ['  javascript:alert(1)'],
+    ['JaVaScRiPt:alert(1)'],
+    ['data:text/html,<p>x</p>'],
+    ['http://s3.example.org/signed.pdf'],
+    ['/signed.pdf'],
+    [['https://s3.example.org/signed.pdf']],
+    [{ href: 'https://s3.example.org/signed.pdf' }],
+    [0],
+    [false],
+  ])('refuses a signed document address of %p with a 502', async (url) => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url, expiresInSeconds: 900 });
+
+    await expect(new ClaService().getPdfUrl(req, 'sig-1', identity)).rejects.toMatchObject({ statusCode: 502, code: 'CLA_PDF_URL_INVALID' });
+  });
+
+  it('keeps a refused document address out of the logs, recording only its scheme', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url: 'javascript:alert(document.cookie)', expiresInSeconds: 900 });
+
+    await expect(new ClaService().getPdfUrl(req, 'sig-1', identity)).rejects.toThrow();
+
+    const logged = JSON.stringify(vi.mocked(logger.warning).mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('"pdf_url_scheme":"javascript"');
   });
 });
 

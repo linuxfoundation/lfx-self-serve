@@ -77,11 +77,11 @@
               }
               @case ('goal-suspect') {
                 @if (goalSuspectAbove()) {
-                  Forecast of <b>{{ forecastLabel() }}</b> is over ten times the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
+                  Forecast of <b>{{ forecastLabel() }}</b> is ten or more times the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
                   event over-performing. Worth checking before it is reported as success.
                 } @else {
-                  Forecast of <b>{{ forecastLabel() }}</b> is under a tenth of the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
-                  event falling short. Worth checking before it is reported as a miss.
+                  Forecast of <b>{{ forecastLabel() }}</b> is a tenth or less of the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than
+                  the event falling short. Worth checking before it is reported as a miss.
                 }
               }
               @case ('on-track') {
@@ -98,7 +98,7 @@
                   Projected to finish about <b>{{ gapLabel() }}</b> short of the {{ goalLabel() }} goal.
                 }
                 @if (v.daysLeft !== null) {
-                  There are {{ daysLeftLabel() }} days left to close the gap &mdash; after that the opportunity is gone.
+                  {{ daysLeftGapLead() }} to close the gap &mdash; after that the opportunity is gone.
                 }
               }
             }
@@ -117,7 +117,7 @@
             <span class="text-xs text-gray-500" data-testid="events-registration-forecast-today">
               today
               @if (selectedEvent()?.daysLeft !== null) {
-                &middot; {{ daysLeftLabel() }} days left
+                &middot; {{ daysLeftPhrase() }}
               }
               @if (selectedEvent()?.isNewEvent) {
                 &middot; No last-year curve &mdash; first edition

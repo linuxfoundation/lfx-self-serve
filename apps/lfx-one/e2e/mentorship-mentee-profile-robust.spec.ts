@@ -38,6 +38,7 @@ const POPULATED_PROFILE = {
   history: [
     {
       id: PENDING_APPLICATION_ID,
+      programId: 'prog-a',
       programName: 'Program A',
       termName: 'Fall 2026',
       submittedOn: 'Jul 2, 2026',
@@ -45,6 +46,7 @@ const POPULATED_PROFILE = {
     },
     {
       id: ACCEPTED_APPLICATION_ID,
+      programId: 'prog-b',
       programName: 'Program B',
       termName: 'Fall 2026',
       submittedOn: 'Jun 28, 2026',
@@ -118,6 +120,10 @@ test.describe('Mentee Profile — Robust Tests', () => {
     test('scopes withdraw to the pending row only', async ({ page }) => {
       await expect(page.getByTestId(`mentorship-application-history-withdraw-${PENDING_APPLICATION_ID}`)).toBeAttached();
       await expect(page.getByTestId(`mentorship-application-history-withdraw-${ACCEPTED_APPLICATION_ID}`)).toHaveCount(0);
+    });
+
+    test('attaches the withdraw confirm dialog', async ({ page }) => {
+      await expect(page.getByTestId('mentorship-mentee-profile-withdraw-confirm-dialog')).toBeAttached();
     });
   });
 

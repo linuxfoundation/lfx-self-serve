@@ -53,6 +53,7 @@ vi.mock('./logger.service', () => ({
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, buildOrgCacheKey, buildPerUserOrgKey, ValkeyService } from './valkey.service';
 
 import { logger } from './logger.service';
@@ -287,7 +288,7 @@ describe('buildMeetingInviteLockCacheKey (LFXV2 #2241)', () => {
 });
 
 describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1906)', () => {
-  const ACCOUNT_ID = '0014100000Te2ovAAB';
+  const ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
   const ORG_UID = 'a092M00001abcdEQAQ';
   const oversized = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES) };
   // `projects:v7` deliberately has no entry in `MAX_VALUE_BYTES_BY_SUBRESOURCE`, so the tests below
@@ -337,13 +338,70 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
   });
 
   it('reports no sub-resource for a namespace whose post-principal segment is an identifier rather than a label', async () => {
-    // `org-seats:v1` puts the org uid where the Org Lens namespaces put a code-defined label.
+    // `org-seats:v2` puts the org uid where the Org Lens namespaces put a code-defined label.
     // Reporting it would put an identifier into a field whose whole point is that it is safe to log.
-    await ValkeyService.getInstance().setJson(buildPerUserOrgKey(VALKEY_CACHE.ORG_SEATS_NAMESPACE, 'alice', ORG_UID)!, oversized, 60);
+    // Sized past the namespace's own cap so the write is actually refused and logged.
+    const overNamespaceCap = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE[VALKEY_CACHE.ORG_SEATS_NAMESPACE]) };
+    await ValkeyService.getInstance().setJson(buildPerUserOrgKey(VALKEY_CACHE.ORG_SEATS_NAMESPACE, 'alice', ORG_UID)!, overNamespaceCap, 60);
 
     const payload = warningPayload();
     expect(payload['cache_subresource']).toBeNull();
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
+  });
+
+  const cappedNamespaces = Object.keys(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE);
+
+  it.each(cappedNamespaces)('writes AND reads back a value over the global cap but under the %s namespace cap', async (namespace) => {
+    // Per-user keys carry an org uid after the principal, so no sub-resource cap can address them;
+    // the namespace cap must apply on both the write and the read, or the entry is stored and then
+    // rejected by every read.
+    const key = buildPerUserOrgKey(namespace, 'alice', ORG_UID)!;
+    const serialized = JSON.stringify(oversized);
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(serialized);
+
+    await expect(ValkeyService.getInstance().setJson(key, oversized, 60)).resolves.toBe(true);
+    await expect(ValkeyService.getInstance().getJson(key)).resolves.toEqual(oversized);
+  });
+
+  it.each(cappedNamespaces)('refuses a value over the %s namespace cap on both the write and the read', async (namespace) => {
+    const key = buildPerUserOrgKey(namespace, 'alice', ORG_UID)!;
+    const cap = VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE[namespace];
+    const overCap = { padding: 'x'.repeat(cap) };
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(JSON.stringify(overCap));
+
+    await expect(ValkeyService.getInstance().setJson(key, overCap, 60)).resolves.toBe(false);
+    expect(setMock).not.toHaveBeenCalled();
+    await expect(ValkeyService.getInstance().getJson(key)).resolves.toBeNull();
+    expect(warningPayload()).toMatchObject({ cache_namespace: namespace, max_bytes: cap });
+  });
+
+  it('applies the global cap to a per-user namespace with no configured cap', async () => {
+    setMock.mockResolvedValue('OK');
+
+    const key = buildPerUserOrgKey(VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE, 'alice', ORG_UID)!;
+    await expect(ValkeyService.getInstance().setJson(key, oversized, 60)).resolves.toBe(false);
+    expect(setMock).not.toHaveBeenCalled();
+  });
+
+  it('lets a per-sub-resource cap take precedence over a per-namespace cap for the same family', async () => {
+    // No shipped namespace has both kinds of entry, so this installs a namespace cap for the
+    // Snowflake family for this test only (restored in `finally`) — precedence can't be driven
+    // through the real tables. `people-all:v2` keeps its 3 MiB sub-resource cap; `projects:v7` has
+    // none and falls through to the 4 MiB namespace cap.
+    const tables = VALKEY_CACHE as { MAX_VALUE_BYTES_BY_NAMESPACE: Readonly<Record<string, number>> };
+    const original = tables.MAX_VALUE_BYTES_BY_NAMESPACE;
+    tables.MAX_VALUE_BYTES_BY_NAMESPACE = { ...original, [VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE]: 4 * 1_048_576 };
+    try {
+      const between = { padding: 'x'.repeat(3.5 * 1_048_576) };
+      setMock.mockResolvedValue('OK');
+
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v2')!, between, 60)).resolves.toBe(false);
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, between, 60)).resolves.toBe(true);
+    } finally {
+      tables.MAX_VALUE_BYTES_BY_NAMESPACE = original;
+    }
   });
 
   it('writes AND reads back a value over the global cap but under a configured per-sub-resource cap', async () => {
@@ -381,9 +439,9 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
   });
 
   it('applies a configured cap to every cache measured to need one, and to no other', async () => {
-    // Guards the table itself, not the mechanism: each entry exists because that cache's largest
+    // Guards the tables themselves, not the mechanism: each entry exists because that cache's largest
     // measured value does not fit under the 1 MiB default, so a value just over the default must be
-    // storable for exactly these sub-resources and refused for their siblings.
+    // storable for exactly these caches and refused for their siblings.
     setMock.mockResolvedValue('OK');
 
     for (const subResource of ['people-all:v2', 'people-event-attendees:v2', 'people-trainees:v2']) {
@@ -392,5 +450,11 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-contributors:v2:all']) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
+    for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE]) {
+      await expect(ValkeyService.getInstance().setJson(buildPerUserOrgKey(namespace, 'alice', ORG_UID)!, oversized, 60)).resolves.toBe(true);
+    }
+    await expect(ValkeyService.getInstance().setJson(buildPerUserOrgKey(VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE, 'alice', ORG_UID)!, oversized, 60)).resolves.toBe(
+      false
+    );
   });
 });

@@ -2,13 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsL2SubNavComponent } from './health-metrics-l2-sub-nav.component';
 
-import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsL2CrossReference, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
-const NOTE = 'Board & voting-member attendance is reported per member in Members';
+const CROSS_REFERENCE: HealthMetricsL2CrossReference = {
+  text: 'Board & voting-member attendance is reported per member in',
+  linkLabel: 'Members',
+  route: 'members',
+  fragment: 'board',
+};
 const ITEMS: HealthMetricsL2SubNavItem[] = [
   { key: 'participation', label: 'Meeting participation', count: null, note: '' },
   { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant' },
@@ -19,7 +25,7 @@ describe('HealthMetricsL2SubNavComponent', () => {
   let fixture: ComponentFixture<HealthMetricsL2SubNavComponent>;
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [HealthMetricsL2SubNavComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [HealthMetricsL2SubNavComponent], providers: [provideRouter([])] }).compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsL2SubNavComponent);
     fixture.componentRef.setInput('items', ITEMS);
@@ -27,18 +33,27 @@ describe('HealthMetricsL2SubNavComponent', () => {
     fixture.componentRef.setInput('topPx', 96);
     fixture.componentRef.setInput('ariaLabel', 'Engagement sections');
     fixture.componentRef.setInput('testIdPrefix', 'engagement');
-    fixture.componentRef.setInput('crossReferenceNote', NOTE);
+    fixture.componentRef.setInput('crossReference', CROSS_REFERENCE);
     fixture.detectChanges();
   });
 
   it('renders one button per item plus the cross-reference note', () => {
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-sub-nav-"]:not([data-testid$="cross-reference-note"])')).toHaveLength(3);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]').textContent.trim()).toBe(NOTE);
+    expect(fixture.nativeElement.querySelectorAll('button[data-testid^="engagement-sub-nav-"]')).toHaveLength(3);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]').textContent.trim()).toBe(
+      'Board & voting-member attendance is reported per member in Members'
+    );
     expect(fixture.nativeElement.querySelector('nav').getAttribute('aria-label')).toBe('Engagement sections');
   });
 
+  it('links the note to the target tab section, keeping the current query params', async () => {
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-link"]');
+
+    expect(link.textContent?.trim()).toBe('Members');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
+  });
+
   it('omits the cross-reference note when the tab has none', () => {
-    fixture.componentRef.setInput('crossReferenceNote', '');
+    fixture.componentRef.setInput('crossReference', null);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]')).toBeNull();

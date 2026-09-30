@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Formation-only project sidebar (#2754) — content-based. Lands on a project the way a user does
- * (the Project lens overview) and reads what they see in the sidebar: for a project still in a
- * Formation stage, the Formation checklist is the one place the nav offers, and the checklist page
- * is where they arrive; an active project keeps its usual links. See formation-sidebar-robust.spec.ts
- * for the data-testid contract.
+ * Formation-stage project sidebar (#2754, #3059) — content-based. Lands on a project the way a user
+ * does (the Project lens overview) and reads what they see in the sidebar: for a project still in a
+ * Formation stage, the nav offers the Formation checklist plus Meetings, Mailing Lists and Groups,
+ * and the checklist page is where they arrive; an active project keeps its usual links. See
+ * formation-sidebar-robust.spec.ts for the data-testid contract.
  */
 
 import { expect, Page, test } from '@playwright/test';
@@ -30,8 +30,14 @@ const SIDEBAR_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;
 const ACTIVE_PROJECT_SLUG = 'cascade-active-project';
 
+/** The standard Project lens links a forming project keeps next to Formation (#3059), by their visible labels. */
+const FORMATION_STAGE_LINKS = ['Meetings', 'Mailing Lists', 'Groups'] as const;
+
+/** The standard Project lens links withheld while a project is forming. */
+const HIDDEN_WHILE_FORMING_LINKS = ['Dashboard', 'Documents', 'Votes', 'Surveys', 'Permissions'] as const;
+
 /** The links a project user normally sees in the Project lens, by their visible labels. */
-const STANDARD_LINKS = ['Dashboard', 'Meetings', 'Mailing Lists', 'Groups', 'Documents', 'Votes', 'Surveys', 'Permissions'] as const;
+const STANDARD_LINKS = [...FORMATION_STAGE_LINKS, ...HIDDEN_WHILE_FORMING_LINKS] as const;
 
 const sidebarLink = (page: Page, label: string) => page.getByTestId('sidebar').getByRole('link', { name: new RegExp(`^${label}$`) });
 
@@ -42,7 +48,7 @@ test.describe('Project lens sidebar for a formation-stage project (#2754)', () =
     await setPersonaCookie(page);
   });
 
-  test('offers only the Formation link and opens the checklist for a project that is still forming', async ({ page }) => {
+  test('offers Formation, Meetings, Mailing Lists and Groups and opens the checklist for a project that is still forming', async ({ page }) => {
     const project = buildBaseProject(FORMATION_PROJECT_SLUG, { stage: 'Formation - Engaged', category: 'project' });
     await stubProjectLensItems(page, project);
     await mockFormationChecklistApis(page, { project });
@@ -54,7 +60,10 @@ test.describe('Project lens sidebar for a formation-stage project (#2754)', () =
     });
     await waitForSidebar(page);
     await expect(sidebarLink(page, 'Formation')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    for (const label of STANDARD_LINKS) {
+    for (const label of FORMATION_STAGE_LINKS) {
+      await expect(sidebarLink(page, label), `the ${label} link should be offered while the project is forming`).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    }
+    for (const label of HIDDEN_WHILE_FORMING_LINKS) {
       await expect(sidebarLink(page, label), `the ${label} link should not be offered while the project is forming`).toHaveCount(0);
     }
   });
@@ -84,7 +93,7 @@ test.describe('Project lens sidebar for a formation-stage project (#2754)', () =
       await page.getByTestId(`lens-item-${slug}`).click();
     };
 
-    test('from an active project to a forming one lands on the checklist with only the Formation link', async ({ page }) => {
+    test('from an active project to a forming one lands on the checklist with the formation-stage links', async ({ page }) => {
       await stubProjectLensItems(page, activeProject, formationProject);
       await mockFormationChecklistApis(page, { project: activeProject });
       await mockFormationChecklistApis(page, { project: formationProject });
@@ -98,6 +107,7 @@ test.describe('Project lens sidebar for a formation-stage project (#2754)', () =
       await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}`), { timeout: SIDEBAR_LOAD_TIMEOUT });
       await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
       await expect(sidebarLink(page, 'Formation')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+      await expect(sidebarLink(page, 'Meetings')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       await expect(sidebarLink(page, 'Dashboard')).toHaveCount(0);
 
       // The page the user came from must survive as its own history entry (Bugbot on #2757): Back

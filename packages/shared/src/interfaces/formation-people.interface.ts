@@ -1,12 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FORMATION_INVITE_ROLE_OPTIONS, FORMATION_PEOPLE_GROUP_LABELS, FORMATION_PERSON_STATUS_LABELS } from '../constants/formation-people.constants';
+import type { FORMATION_INVITE_ROLE_OPTIONS, FORMATION_PERSON_STATUS_LABELS } from '../constants/formation-people.constants';
 
 /** Mirrors `AddUserToProjectRequest['role']` — `manage` = settings `writers`, `view` = settings `auditors`. */
 export type FormationPersonRole = 'view' | 'manage';
 
-export type FormationPeopleGroup = keyof typeof FORMATION_PEOPLE_GROUP_LABELS;
+/**
+ * How a settings entry is classified — `staff` by the LF email domain, else `invited`. Drives the
+ * card's grouping (staff heading vs. per-organization) and whether a row carries a status chip.
+ */
+export type FormationPeopleGroup = 'staff' | 'invited';
 
 export type FormationPersonStatus = keyof typeof FORMATION_PERSON_STATUS_LABELS;
 
@@ -61,9 +65,6 @@ export interface FormationPeopleResponse {
   people: FormationPerson[];
 }
 
-/** Every group in `FORMATION_PEOPLE_GROUP_LABELS`, in that constant's declaration order — the card's render order. */
-export type FormationPeopleGroups = Record<FormationPeopleGroup, FormationPerson[]>;
-
 /**
  * The people card's row view-model — a {@link FormationPerson} plus what the card derives from the
  * checklist it already holds (the assigned-item count, from `FormationItem.owner.username`) and
@@ -109,9 +110,13 @@ export type FormationInviteOutcome = 'added' | 'invite_sent';
  */
 export type FormationInviteMode = 'search' | 'manual';
 
-/** One rendered group on the people card — only non-empty groups are emitted, so the template loops once with no per-group branching. */
+/**
+ * One rendered group on the people card — LF Staff, then one group per invited organization, then
+ * Other. Only non-empty groups are emitted, so the template loops once with no per-group branching.
+ */
 export interface FormationPeopleRowGroup {
-  key: FormationPeopleGroup;
+  /** `staff`, `org-<slug>` (the organization name slugged, so case variants merge), or `other` — the `@for` track key and `data-testid` suffix. */
+  key: string;
   label: string;
   rows: FormationPersonRow[];
 }

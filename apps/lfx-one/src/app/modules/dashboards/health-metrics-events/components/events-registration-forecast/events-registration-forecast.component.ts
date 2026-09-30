@@ -22,6 +22,7 @@ import {
   buildHealthMetricsEventsForecastRowViews,
   filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsCount,
+  hasHealthMetricsEventsGoal,
   formatIsoDateLabel,
   formatNumber,
   hexToRgba,
@@ -149,9 +150,21 @@ export class EventsRegistrationForecastComponent {
   });
   protected readonly goalLabel = computed(() => {
     const goal = this.selectedEvent()?.goal ?? null;
-    return goal === null || goal <= 0 ? 'not set' : formatHealthMetricsEventsCount(goal);
+    return hasHealthMetricsEventsGoal(goal) ? formatHealthMetricsEventsCount(goal) : 'not set';
   });
   protected readonly daysLeftLabel = computed(() => formatHealthMetricsEventsCount(this.selectedEvent()?.daysLeft ?? null));
+  // 0 means the event starts today, so it reads as the last day rather than "0 days left".
+  protected readonly daysLeftPhrase = computed(() => {
+    const daysLeft = this.selectedEvent()?.daysLeft ?? null;
+    if (daysLeft === null) return '';
+    if (daysLeft === 0) return 'last day';
+    return daysLeft === 1 ? '1 day left' : `${this.daysLeftLabel()} days left`;
+  });
+  protected readonly daysLeftGapLead = computed(() => {
+    const daysLeft = this.selectedEvent()?.daysLeft ?? null;
+    if (daysLeft === 0) return 'Today is the last day';
+    return daysLeft === 1 ? 'There is 1 day left' : `There are ${this.daysLeftPhrase()}`;
+  });
   protected readonly gapLabel = computed(() => formatHealthMetricsEventsCount(this.verdict()?.gap ?? null));
   protected readonly ratioLabel = computed(() => (this.verdict()?.ratio ?? 0).toFixed(1));
   /** A mis-entered goal can sit far above the forecast or far below it; the copy names which. */
@@ -308,7 +321,7 @@ export class EventsRegistrationForecastComponent {
   private buildChart(): ChartData<'line'> {
     const points = this.series()?.points ?? [];
     const event = this.selectedEvent();
-    const goal = event && event.goal !== null && event.goal > 0 && !isHealthMetricsEventsForecastGoalSuspect(event) ? event.goal : null;
+    const goal = event && hasHealthMetricsEventsGoal(event.goal) && !isHealthMetricsEventsForecastGoalSuspect(event) ? event.goal : null;
     // Today is the last measured day; the model's `pred_type` draws that line, not the days-left count.
     const todayIndex = points.map((point) => point.actual !== null).lastIndexOf(true);
     const showLastYear = !event?.isNewEvent && points.some((point) => point.priorYear !== null);

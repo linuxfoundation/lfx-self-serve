@@ -24,6 +24,16 @@ export interface HealthMetricsL2SectionView extends HealthMetricsL2Section {
   headingId: string;
 }
 
+/** Note under the sub-nav whose trailing tab name links to a section of that tab. */
+export interface HealthMetricsL2CrossReference {
+  text: string;
+  linkLabel: string;
+  /** Tab path segment under `HEALTH_METRICS_BASE_PATH`. */
+  route: string;
+  /** Section key on the target tab, so the link lands on it. */
+  fragment: string;
+}
+
 /** Sub-nav badge for one section: a count plus an optional qualifier note. */
 export interface HealthMetricsL2SubNavItem {
   key: string;
