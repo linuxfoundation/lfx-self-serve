@@ -10,6 +10,7 @@ import {
   PublicProfileTraining,
   PublicProfileYearContribution,
 } from '@lfx-one/shared/interfaces';
+// Deep import: the `utils` barrel pulls in @angular/forms, which fails to load under plain-Node vitest.
 import { mapYearLabelToNumber } from '@lfx-one/shared/utils/public-profile.utils';
 import { Request } from 'express';
 
@@ -134,6 +135,8 @@ function projectTechnicalContribution(value: unknown): PublicProfileTechnicalCon
   if (!contribution) {
     return undefined;
   }
+  // The artifact has no generation timestamp, so relative labels resolve against the request year;
+  // right after New Year they can be off by one until upstream regenerates it.
   const currentYear = new Date().getUTCFullYear();
   const projects = asRecordArray(contribution['projects']).map((project) => {
     const years = projectYearContributions(asRecordArray(project['contributions']), currentYear);

@@ -178,6 +178,43 @@ describe('projectPublicProfile', () => {
     expect(wire).not.toContain('Status'); // neither certification nor training Status is projected
   });
 
+  it('falls back to top-level project counts when there are no recognised yearly rows', () => {
+    const projectWith = (contributions: unknown[]) =>
+      projectPublicProfile({
+        isPublic: true,
+        technical_contribution: { projects: [{ Name: 'Legacy', Slug: 'legacy', commits: 7, prs: 2, issues: 1, added: 5, deleted: 3, contributions }] },
+      }).technical_contribution?.projects[0];
+
+    const expected = { Name: 'Legacy', Slug: 'legacy', commits: 7, deleted: 3, added: 5, prs: 2, issues: 1, years: [] };
+    expect(projectWith([])).toEqual(expected);
+    expect(projectWith([{ date: 'not_a_year', commits: 99 }])).toEqual(expected);
+  });
+
+  it('merges yearly rows that resolve to the same calendar year', () => {
+    const year = new Date().getUTCFullYear();
+    const projected = projectPublicProfile({
+      isPublic: true,
+      technical_contribution: {
+        projects: [
+          {
+            Name: 'Dup',
+            contributions: [
+              { date: 'current_year', commits: 2, prs: 1 },
+              { date: String(year), commits: 3, issues: 4 },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(projected.technical_contribution?.projects[0]).toMatchObject({
+      commits: 5,
+      prs: 1,
+      issues: 4,
+      years: [{ year, commits: 5, deleted: 0, added: 0, prs: 1, issues: 4 }],
+    });
+  });
+
   it('fails closed to isPublic false and omits absent optional sections', () => {
     const projected = projectPublicProfile({ basic: { Name: 'Jane' } });
     expect(projected.isPublic).toBe(false);
