@@ -448,40 +448,6 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
     );
   });
 
-  it('stops paging on an empty page even when the total says there are more', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: (query) =>
-        query?.['offset'] === 0
-          ? { data: [upstreamApplication()], meta: { total: 5, limit: 100, offset: 0 } }
-          : { data: [], meta: { total: 5, limit: 100, offset: 1 } },
-    });
-
-    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
-  });
-
-  it('stops after one page when the page carries no total', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: () => ({ data: [upstreamApplication()] }),
-    });
-
-    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
-    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_APPLICATIONS_PATH)).toHaveLength(1);
-  });
-
-  it('stops at the page cap when upstream keeps returning rows', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: () => ({ data: [upstreamApplication()], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } }),
-    });
-
-    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 50 });
-    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_APPLICATIONS_PATH)).toHaveLength(50);
-    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_list_all_pages', expect.any(String), {
-      path: ME_APPLICATIONS_PATH,
-      max_pages: 50,
-      count: 50,
-    });
-  });
-
   it('reads tasks a few applications at a time', async () => {
     const applications = Array.from({ length: 7 }, (_, index) => upstreamApplication({ id: `app-${index}` }));
     let inFlight = 0;

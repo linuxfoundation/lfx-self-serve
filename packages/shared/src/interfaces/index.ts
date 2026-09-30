@@ -319,6 +319,7 @@ export * from './crowdfunding.interface';
 // Mentorship interfaces
 export * from './mentorship.interface';
 export * from './mentorship-mentee.interface';
+export * from './mentorship-mentor.interface';
 export * from './mentorship-lfx-profile-card.interface';
 
 // EasyCLA "CLAs" interfaces (Me lens)

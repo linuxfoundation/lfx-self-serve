@@ -41,7 +41,8 @@ import type {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
-import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
 import {
   buildMentorshipMenteeApplicationView,
   buildMentorshipMenteeDemographicsUpdate,

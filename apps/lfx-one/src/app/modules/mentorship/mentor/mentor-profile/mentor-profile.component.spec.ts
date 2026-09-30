@@ -8,7 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipMentorProfileResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,7 +77,7 @@ describe('MentorProfileComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipService, useValue: { getMentorProfile } },
+        { provide: MentorshipMentorService, useValue: { getMentorProfile } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });

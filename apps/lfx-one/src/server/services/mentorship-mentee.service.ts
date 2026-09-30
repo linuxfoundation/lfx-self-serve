@@ -30,8 +30,6 @@ import { Request } from 'express';
 
 import {
   MENTORSHIP_APPLICATIONS_PATH,
-  MENTORSHIP_LIST_MAX_PAGES,
-  MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
   MENTORSHIP_ME_MENTEE_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
@@ -41,7 +39,7 @@ import {
   MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { ConflictError, InvalidRequestError } from '../errors';
-import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
   mapMentorshipMenteeApplication,
   mapMentorshipMenteeApplicationHistory,
@@ -305,7 +303,7 @@ export class MentorshipMenteeService {
 
   /** The caller's own mentee applications, every page. */
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
-    return this.listAllPages<MentorshipUpstreamApplication>(req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+    return listAllMentorshipPages<MentorshipUpstreamApplication>(this.microserviceProxy, req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
   }
 
   /**
@@ -321,34 +319,10 @@ export class MentorshipMenteeService {
 
   /** Every task on one of the caller's applications; upstream lets an applicant list their own. */
   private listApplicationTasks(req: Request, applicationId: string): Promise<MentorshipUpstreamTask[]> {
-    return this.listAllPages<MentorshipUpstreamTask>(req, `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`);
-  }
-
-  /**
-   * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
-   * the reported total, a page comes back empty, or the page carries no usable total. A list still
-   * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
-   */
-  private async listAllPages<T>(req: Request, path: string, query: Record<string, unknown> = {}): Promise<T[]> {
-    const items: T[] = [];
-    for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
-      const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(this.microserviceProxy, req, path, 'GET', {
-        ...query,
-        limit: MENTORSHIP_LIST_PAGE_SIZE,
-        offset: items.length,
-      });
-      const rows = data ?? [];
-      items.push(...rows);
-      const total = meta?.total;
-      if (rows.length === 0 || typeof total !== 'number' || !Number.isFinite(total) || items.length >= total) {
-        return items;
-      }
-    }
-    logger.warning(req, 'mentorship_list_all_pages', 'Upstream list exceeded the page cap, returning the rows read so far', {
-      path,
-      max_pages: MENTORSHIP_LIST_MAX_PAGES,
-      count: items.length,
-    });
-    return items;
+    return listAllMentorshipPages<MentorshipUpstreamTask>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`
+    );
   }
 }

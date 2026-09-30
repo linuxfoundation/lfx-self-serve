@@ -238,3 +238,18 @@ describe('mentorship router — mentee profile update', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('mentorship router — mentor endpoints', () => {
+  it.each(['/mentor/programs', '/mentor/programs/mp_test', '/mentor/profile'])('rejects unauthenticated GET /api/mentorship%s with 401', async (path) => {
+    const res = await fetch(`${baseUrl}/api/mentorship${path}`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('still allows reading the mentor programs while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/programs`, { headers: { 'x-test-impersonating': 'true' } });
+
+    // 401 rather than 403: reads skip the impersonation guard and reach the controller's auth check.
+    expect(res.status).toBe(401);
+  });
+});

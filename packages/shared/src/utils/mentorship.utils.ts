@@ -75,13 +75,6 @@ import type {
   MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramDetail,
-  MentorshipMentorProgramLists,
-  MentorshipMentorProgramTabCounts,
-  MentorshipMentorReviewTask,
-  MentorshipMentorRegisterFieldErrors,
-  MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -94,6 +87,15 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
+  MentorshipMentorProgramTabCounts,
+  MentorshipMentorReviewTask,
+  MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorRegisterForm,
+} from '../interfaces/mentorship-mentor.interface';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationStatus,
