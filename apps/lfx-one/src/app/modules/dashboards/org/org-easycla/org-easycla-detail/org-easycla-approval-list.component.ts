@@ -105,7 +105,7 @@ export class OrgEasyclaApprovalListComponent {
 
   protected readonly loading = computed(() => !this.locked() && this.loadingState() && !this.fetchError());
 
-  protected readonly canMutate = computed(() => this.mutateGrant() === true && this.claGroup().viewerIsClaManager === true);
+  protected readonly canMutate = computed(() => this.mutateGrant() === true && this.claGroup().viewerIsClaManager === true && this.list()?.canEdit === true);
 
   protected readonly entries = computed(() => this.list()?.entries ?? []);
 

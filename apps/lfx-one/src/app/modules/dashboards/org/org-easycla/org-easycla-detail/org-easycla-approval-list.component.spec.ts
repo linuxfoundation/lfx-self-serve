@@ -319,8 +319,8 @@ describe('OrgEasyclaApprovalListComponent', () => {
   });
 
   /**
-   * ACS denies the update. Roster `canEdit` is PUT defence-in-depth and does not drive
-   * Add/Edit/Remove — so a stale ACL that still says the viewer can edit cannot un-hide them.
+   * ACS denies the update. Roster `canEdit` alone cannot show Add/Edit/Remove, so a stale ACL
+   * that still says the viewer can edit cannot un-hide them.
    */
   describe('a caller who may only read', () => {
     it('offers no add, edit or delete control', async () => {
@@ -357,6 +357,17 @@ describe('OrgEasyclaApprovalListComponent', () => {
       ['has no roster answer', undefined],
     ])('offers no add, edit or delete control when the viewer %s', async (_case, viewerIsClaManager) => {
       const fixture = await render(claGroup({ viewerIsClaManager }));
+
+      expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-edit')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-delete')).toBeNull();
+      expect(allByTestId(fixture, 'org-easycla-approval-row')).toHaveLength(1);
+    });
+
+    it('offers no add, edit or delete control when the row names the viewer but the fresh list says they cannot edit', async () => {
+      getApprovalList.mockReturnValue(of(list([{ kind: 'domain', value: 'example.com' }], false)));
+
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
 
       expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-approval-edit')).toBeNull();

@@ -1142,8 +1142,9 @@ export interface OrgClaContributorAcknowledgmentList {
   /**
    * Whether the caller may invalidate rows on this agreement.
    *
-   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
-   * producer sent no roster at all — matching the sibling approval-list posture.
+   * Server-decided from the CCLA's manager roster (LF-username match). False when the producer
+   * sent no roster at all, matching the invalidate write, which the producer does not check
+   * against the roster itself.
    */
   canEdit: boolean;
   resultCount: number;

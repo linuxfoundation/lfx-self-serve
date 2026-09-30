@@ -265,6 +265,8 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
   };
 }
 
+const ROSTER_REQUIRED_OPERATIONS: ReadonlySet<string> = new Set(['org_cla_invalidate_acknowledgment', 'org_cla_get_acknowledgments']);
+
 /**
  * The username EasyCLA compares against a CCLA roster: the Auth0 username, which the ID token
  * carries on the LF username claim. `nickname`, which the general username getter prefers, is not
@@ -1828,13 +1830,14 @@ export class OrgClaService {
    *
    * Fails OPEN when the producer sent no roster at all. That is the deliberate direction: the
    * producer is the authority and rejects the write regardless, so failing open costs a CLA
-   * manager one clear error message. Invalidate is the exception and fails closed: the producer
-   * checks only ACS scope on it, never the roster, so this is the one roster check it gets.
+   * manager one clear error message. Invalidate is the exception and fails closed, on the write
+   * and on the acknowledgment read that offers it: the producer checks only ACS scope on it, never
+   * the roster, so this is the one roster check it gets.
    */
   private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string): Promise<boolean> {
     if (!Array.isArray(entry.claManagers)) {
-      if (operation === 'org_cla_invalidate_acknowledgment') {
-        logger.warning(req, operation, 'upstream sent no CLA manager roster, so the invalidate was refused', { signature_id: entry.signatureID });
+      if (ROSTER_REQUIRED_OPERATIONS.has(operation)) {
+        logger.warning(req, operation, 'upstream sent no CLA manager roster, so invalidate access was refused', { signature_id: entry.signatureID });
         return false;
       }
       logger.warning(req, operation, 'upstream sent no CLA manager roster, so write access was not narrowed', { signature_id: entry.signatureID });

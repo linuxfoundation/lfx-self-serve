@@ -233,12 +233,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
-  private readonly viewerIsClaManager = computed(() => this.claGroup().viewerIsClaManager === true);
-  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.viewerIsClaManager());
+  private readonly rosterAllows = computed(() => this.claGroup().viewerIsClaManager === true && this.loadedList()?.canEdit === true);
+  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.rosterAllows());
   // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
   // `approval-list-update` grant the tab itself needs, so a read-only reader isn't offered a
   // dead-end link into a list they can't edit. Fails closed while the grant is still checking.
-  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true && this.viewerIsClaManager());
+  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true && this.rosterAllows());
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly showEmptyState = computed(

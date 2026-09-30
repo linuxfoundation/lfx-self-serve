@@ -202,6 +202,7 @@ export class OrgEasyclaDetailComponent {
    * the one the page must then render — so they arrive here instead.
    */
   private readonly retriedList$ = new Subject<OrgClaGroupList | null>();
+  private readonly rosterChanged$ = new Subject<string>();
 
   /**
    * A signing trip is in flight: this address carries the flag EasyCLA was told to return with.
@@ -664,6 +665,27 @@ export class OrgEasyclaDetailComponent {
       }
     });
 
+    // Only the latest re-read may land: an older one can still name a viewer who has since
+    // removed themselves, and it would clear that hide.
+    this.rosterChanged$
+      .pipe(
+        switchMap((uid) =>
+          this.claService.getClaGroups(uid).pipe(
+            map((list) => ({ uid, list })),
+            catchError((error: unknown) => {
+              console.warn('Failed to refresh organization CLA groups after a manager change:', error);
+              return of(null);
+            })
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((refreshed) => {
+        if (!refreshed || this.selectedOrgUid() !== refreshed.uid) return;
+        this.selfRemovals.forgetAll();
+        this.retriedList$.next(refreshed.list);
+      });
+
     // Drop a remembered value once the list row carries it. Until then it survives a project
     // change, because that change does not refetch the list.
     toObservable(computed(() => this.initAutoEclaSettledRow()))
@@ -773,22 +795,9 @@ export class OrgEasyclaDetailComponent {
    */
   protected onRosterChanged(): void {
     const uid = this.selectedOrgUid();
-    if (!uid) return;
-    this.claService
-      .getClaGroups(uid)
-      .pipe(
-        catchError((error: unknown) => {
-          console.warn('Failed to refresh organization CLA groups after a manager change:', error);
-          return of(null);
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((list) => {
-        if (!list || this.selectedOrgUid() !== uid) return;
-        this.selfRemovals.forgetAll();
-        this.retriedList$.next(list);
-      });
+    if (uid) this.rosterChanged$.next(uid);
   }
+
   protected onTabKeydown(event: KeyboardEvent): void {
     const ids = ORG_CLA_DETAIL_TABS.map((tab) => tab.id);
     const current = ids.indexOf(this.activeTab());

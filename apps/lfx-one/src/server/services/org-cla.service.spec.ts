@@ -3210,6 +3210,15 @@ describe('OrgClaService.getContributorAcknowledgments — malformed producer row
     expect(list?.canEdit).toBe(false);
   });
 
+  it('withholds `canEdit` when the producer sent no roster at all, matching the invalidate write', async () => {
+    getUsernameFromAuth.mockResolvedValue('aporter');
+    stageAckRead(contributorPage(), [upstreamEntry({ claManagers: undefined })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.canEdit).toBe(false);
+  });
+
   it('carries no manager identity or username into the acknowledgment response', async () => {
     stageAckRead();
 

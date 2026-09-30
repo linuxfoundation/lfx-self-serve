@@ -477,6 +477,17 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
     });
 
+    it('offers no remedy links or Invalidate when the row names the viewer but the fresh list says they cannot edit', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()], { canEdit: false })));
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
+
     it('offers no remedy links to a read-only reader who can neither invalidate nor edit the list', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
       checkPermission.mockReturnValue(of(false));
