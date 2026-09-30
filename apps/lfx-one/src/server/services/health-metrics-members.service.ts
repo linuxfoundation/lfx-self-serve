@@ -238,8 +238,8 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * One page of the foundation's members, highest annual dues first and, within equal dues, least
-   * engaged first, with the activity counts for the period.
+   * One page of the foundation's members in the view's own `sort_rank` order (highest dues first, then
+   * least engaged), with the activity counts for the period.
    */
   public async getDirectory(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<HealthMetricsMembersDirectory> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
@@ -248,7 +248,7 @@ export class HealthMetricsMembersService {
 
     const predicates: string[] = [];
     if (query.tier) {
-      predicates.push('membership_tier = ?');
+      predicates.push('TRIM(membership_tier) = ?');
       binds.push(query.tier);
     }
     if (query.nps) {
@@ -278,6 +278,7 @@ export class HealthMetricsMembersService {
           renewal_date,
           renewal_dues_usd,
           last_engaged_date,
+          sort_rank,
           contribution_count_${suffix} AS contribution_count,
           sponsorship_usd_${suffix} AS sponsorship_usd,
           training_enrollment_count_${suffix} AS training_enrollment_count,
@@ -302,14 +303,14 @@ export class HealthMetricsMembersService {
         SELECT *, TRUE AS is_page_row
         FROM matched
         -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
-        ORDER BY annual_dues_usd DESC NULLS LAST, engagement_score ASC NULLS LAST, account_id ASC
+        ORDER BY sort_rank ASC NULLS LAST, account_id ASC
         LIMIT ${pageSize} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.annual_dues_usd DESC NULLS LAST, page.engagement_score ASC NULLS LAST, page.account_id ASC
+      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC
     `;
 
     const result = await executeSnowflakeViewRead<DirectoryRow>(this.snowflakeService, req, sql, binds, {
@@ -330,14 +331,14 @@ export class HealthMetricsMembersService {
   /** The foundation's tiers, highest-paying first, for the directory's tier filter. */
   public async getDirectoryTiers(req: Request, query: HealthMetricsMembersDirectoryTiersQuery): Promise<HealthMetricsMembersDirectoryTiers> {
     const sql = `
-      SELECT membership_tier
+      -- Trimmed so a padded value neither splits into its own option nor misses the trimmed filter.
+      SELECT NULLIF(TRIM(membership_tier), '') AS membership_tier
       FROM ${MEMBERSHIP_DIRECTORY_VIEW}
       WHERE foundation_slug = ?
         AND account_id IS NOT NULL
         AND account_id <> ''
-        AND membership_tier IS NOT NULL
-        AND membership_tier <> ''
-      GROUP BY membership_tier
+        AND NULLIF(TRIM(membership_tier), '') IS NOT NULL
+      GROUP BY NULLIF(TRIM(membership_tier), '')
       ORDER BY MAX(annual_dues_usd) DESC NULLS LAST, membership_tier ASC
       LIMIT ${HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP}
     `;

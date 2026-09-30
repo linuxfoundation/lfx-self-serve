@@ -10,6 +10,7 @@ import type {
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
+  HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersMovementDrawerCopy,
   HealthMetricsMembersMovementListType,
@@ -214,6 +215,13 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_OPTIONS: readonly FilterOption
 
 /** The tier filter's match-all option; the tiers themselves come from the read. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_ALL_TIERS_OPTION: FilterOption<string> = { label: 'All tiers', value: '' };
+
+/** Shown, unselectable, under "All tiers" when the tier read failed, so the short list is not mistaken for none. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_TIERS_UNAVAILABLE_OPTION: HealthMetricsMembersDirectoryTierOption = {
+  label: 'Tier list unavailable',
+  value: '__tiers_unavailable__',
+  disabled: true,
+};
 
 /** Read-failed / no-foundation value: no members, so the section renders no rows. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED: HealthMetricsMembersDirectory = {

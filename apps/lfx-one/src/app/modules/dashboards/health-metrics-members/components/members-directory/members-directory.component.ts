@@ -21,6 +21,7 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE_OPTIONS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_SEARCH_DEBOUNCE_MS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_TIERS_UNAVAILABLE_OPTION,
   HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED,
   HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
   HEALTH_METRICS_L2_RANGES,
@@ -42,6 +43,7 @@ import type {
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryRowView,
+  HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersNpsCategory,
 } from '@lfx-one/shared/interfaces';
 
@@ -133,7 +135,7 @@ export class MembersDirectoryComponent {
   );
   protected readonly noMatchLabel = computed(() => (this.search() ? `No member matches “${this.search()}”.` : 'No member matches these filters.'));
   // Keeps a URL-seeded tier selectable before (or without) the read listing it.
-  protected readonly tierOptions: Signal<FilterOption<string>[]> = this.initTierOptions();
+  protected readonly tierOptions: Signal<HealthMetricsMembersDirectoryTierOption[]> = this.initTierOptions();
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -220,17 +222,18 @@ export class MembersDirectoryComponent {
     );
   }
 
-  /** Read once per foundation, not per page; a failed read leaves only "All tiers" and the selected tier. */
-  private initTierOptions(): Signal<FilterOption<string>[]> {
-    const tiers: Signal<string[]> = isPlatformBrowser(this.platformId)
+  /** Read once per foundation, not per page; a failed read leaves "All tiers", a notice and the selected tier. */
+  private initTierOptions(): Signal<HealthMetricsMembersDirectoryTierOption[]> {
+    // `null` is a failed read, kept apart from a foundation with no tiers.
+    const tiers: Signal<string[] | null> = isPlatformBrowser(this.platformId)
       ? toSignal(
           toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
             distinctUntilChanged(),
             switchMap((slug) =>
               slug
                 ? this.analyticsService.getMembersDirectoryTiers(slug).pipe(
-                    map((response) => response.tiers),
-                    catchError(() => of([] as string[]))
+                    map((response): string[] | null => response.tiers),
+                    catchError(() => of(null))
                   )
                 : of([] as string[])
             )
@@ -240,10 +243,12 @@ export class MembersDirectoryComponent {
       : signal<string[]>([]);
 
     return computed(() => {
-      const listed = tiers();
+      const read = tiers();
+      const listed = read ?? [];
       const selected = this.tier();
       const options = selected && !listed.includes(selected) ? [...listed, selected] : listed;
-      return [HEALTH_METRICS_MEMBERS_DIRECTORY_ALL_TIERS_OPTION, ...options.map((tier) => ({ label: tier, value: tier }))];
+      const notice = read === null ? [HEALTH_METRICS_MEMBERS_DIRECTORY_TIERS_UNAVAILABLE_OPTION] : [];
+      return [HEALTH_METRICS_MEMBERS_DIRECTORY_ALL_TIERS_OPTION, ...notice, ...options.map((tier) => ({ label: tier, value: tier }))];
     });
   }
 

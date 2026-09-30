@@ -8,6 +8,7 @@ import type {
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
+import type { FilterOption } from './filter.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -283,6 +284,11 @@ export interface HealthMetricsMembersDirectoryTiersQuery {
 export interface HealthMetricsMembersDirectoryTiers {
   /** Tiers present in the foundation, highest-paying first, for the tier filter. */
   tiers: string[];
+}
+
+/** A tier filter option; `disabled` marks the notice shown when the tier read failed. */
+export interface HealthMetricsMembersDirectoryTierOption extends FilterOption<string> {
+  disabled?: boolean;
 }
 
 /** One member row as the directory table renders it. */

@@ -166,12 +166,21 @@ describe('MembersDirectoryComponent', () => {
     expect(tierLabels()).toEqual(['All tiers', 'Platinum Membership', 'Gold Membership', 'Associate Membership']);
   });
 
-  it('falls back to "All tiers" alone when the tier read fails, and still reads the page', async () => {
+  it('shows an unselectable "Tier list unavailable" notice when the tier read fails, and still reads the page', async () => {
     getMembersDirectoryTiers.mockReturnValue(throwError(() => new Error('gateway timeout')));
+    await render(undefined, { memTier: 'Gold Membership' });
+
+    expect(tierLabels()).toEqual(['All tiers', 'Tier list unavailable', 'Gold Membership']);
+    expect(fixture.componentInstance['tierOptions']()[1].disabled).toBe(true);
+    expect(getMembersDirectory).toHaveBeenLastCalledWith(expect.objectContaining({ tier: 'Gold Membership' }));
+    expect(query(`members-directory-row-${ACCOUNT_ID}`)).not.toBeNull();
+  });
+
+  it('shows no notice for a foundation whose tier read returns no tiers', async () => {
+    getMembersDirectoryTiers.mockReturnValue(of({ tiers: [] }));
     await render();
 
     expect(tierLabels()).toEqual(['All tiers']);
-    expect(query(`members-directory-row-${ACCOUNT_ID}`)).not.toBeNull();
   });
 
   it('re-reads from page 1 when the tier or NPS filter changes, and writes it to the URL with the fragment kept', async () => {
