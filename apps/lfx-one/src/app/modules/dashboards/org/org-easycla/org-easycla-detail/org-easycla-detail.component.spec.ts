@@ -3483,7 +3483,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     const fixture = await render();
     const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
     const claService = TestBed.inject(OrgLensClaService) as unknown as { getManagers: ReturnType<typeof vi.fn>; removeManager: ReturnType<typeof vi.fn> };
-    const self = { lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' };
+    const self = { lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z', isViewer: true as const };
     claService.getManagers.mockReturnValue(
       of({
         signatureId: 'signature-uuid-1',

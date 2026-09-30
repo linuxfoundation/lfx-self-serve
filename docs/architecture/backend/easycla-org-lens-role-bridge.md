@@ -49,6 +49,8 @@ As with the approval list, the button needs both ACS `ecla_invalidate:update` an
 
 The Overview's Auto ECLA toggle shows on a signed CCLA when ACS grants `auto-ecla-update` for the pair **and** the viewer is on that CCLA's roster (`viewerIsClaManager`). The BFF route refuses a caller off the roster with a 403 before calling EasyCLA (`Only a CLA manager named on this CLA can change its Auto ECLA setting`); EasyCLA itself refuses one too, and also 403s a sanctioned organization with its own sentence.
 
+On a row with no CLA Manager list at all, the BFF cannot check the roster, so the Auto ECLA and approval-list writes are passed through to EasyCLA, which re-checks them. Invalidate is the exception and is refused, because EasyCLA does not check the roster on it.
+
 ## Grain
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.

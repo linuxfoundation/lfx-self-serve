@@ -1352,6 +1352,11 @@ export interface OrgClaManager {
   name?: string;
   email?: string;
   addedOn?: string;
+  /**
+   * Present, and true, on the manager list's row for the signed-in viewer. Server-decided with the
+   * same identity the roster check uses, so the browser MUST NOT work it out from its own username.
+   */
+  isViewer?: true;
 }
 
 export interface OrgClaManagerList {

@@ -16,7 +16,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { UserService } from '@services/user.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 
 import {
@@ -36,7 +35,6 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
-  private readonly userService = inject(UserService);
   private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -58,8 +56,6 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private addDialog: DynamicDialogRef | null = null;
 
   private readonly contextChanged$ = combineLatest([toObservable(this.orgUid), toObservable(this.signatureId), toObservable(this.signed)]).pipe(skip(1));
-
-  protected readonly viewerUsername = computed(() => this.userService.viewerUsername()?.trim().toLowerCase() ?? '');
 
   protected readonly empty = computed(() => this.managers()?.length === 0);
 
@@ -178,8 +174,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected isSelf(manager: OrgClaManager): boolean {
-    const viewer = this.viewerUsername();
-    return !!viewer && manager.lfUsername.trim().toLowerCase() === viewer;
+    return manager.isViewer === true;
   }
 
   private initRows(): OrgClaManagerRow[] | null {

@@ -82,7 +82,9 @@ describe('OrgEasyclaManagersComponent', () => {
     viewerUsername.set('aporter');
     confirmationService = new ConfirmationService();
     confirm = vi.spyOn(confirmationService, 'confirm');
-    getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager(), manager({ lfUsername: 'aporter', name: 'Ada Porter' })] }));
+    getManagers.mockReturnValue(
+      of({ signatureId: SIGNATURE_ID, managers: [manager(), manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true })] })
+    );
     addManager.mockReturnValue(of(manager()));
     removeManager.mockReturnValue(of(undefined));
     checkPermission.mockReturnValue(of(true));
@@ -308,7 +310,7 @@ describe('OrgEasyclaManagersComponent', () => {
       component.loadIfNeeded();
       await fixture.whenStable();
 
-      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
 
       expect(confirm.mock.calls.at(-1)?.[0].message).toBe(ORG_CLA_MANAGER_REMOVE_COPY.self);
     });
@@ -359,7 +361,7 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(component['canAdd']()).toBe(true);
       expect(component['canRemove']()).toBe(true);
 
-      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
       acceptConfirmation();
       await fixture.whenStable();
 
@@ -378,7 +380,25 @@ describe('OrgEasyclaManagersComponent', () => {
       await fixture.whenStable();
       expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(false);
 
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
+    });
+
+    it('takes the viewer’s own row from the server, not from the browser’s username', async () => {
+      viewerUsername.set('aporter');
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      const selfRemovals = TestBed.inject(OrgClaSelfRemovalsService);
+
       component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(false);
+
+      component['confirmRemove'](manager({ lfUsername: 'ada-lf', name: 'Ada Porter', isViewer: true }));
       acceptConfirmation();
       await fixture.whenStable();
       expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
@@ -414,7 +434,7 @@ describe('OrgEasyclaManagersComponent', () => {
       component.loadIfNeeded();
       await fixture.whenStable();
 
-      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter', isViewer: true }));
       acceptConfirmation();
       fixture.destroy();
       answer.next();

@@ -2380,11 +2380,52 @@ function mockAddManagerUpstream(entry: ReturnType<typeof upstreamEntry> = upstre
 
 describe('OrgClaService.getManagers', () => {
   it('maps only the four fields the tab renders, and drops the Salesforce user id', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
 
     const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
 
     expect(result?.managers).toEqual([{ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' }]);
+  });
+
+  it('marks the viewer’s own row from the LF username claim, the identity the roster check uses', async () => {
+    getUsernameFromAuth.mockResolvedValue('ada-nickname');
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ lf_username: 'ada-nickname' }), upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(result?.managers.map((manager) => manager.isViewer)).toEqual([undefined, true]);
+  });
+
+  it('marks the impersonated user’s row, not the impersonator’s', async () => {
+    isImpersonating.mockReturnValue(true);
+    getUsernameFromAuth.mockResolvedValue('ada-target');
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager(), upstreamManager({ lf_username: 'ada-target' })] });
+
+    const result = await new OrgClaService().getManagers(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(result?.managers.map((manager) => manager.isViewer)).toEqual([undefined, true]);
+  });
+
+  it('marks no row when the session carries no username', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers[0]).not.toHaveProperty('isViewer');
   });
 
   it('omits addedOn when only approved_on is present, because that is signature time not manager add time', async () => {
@@ -2663,6 +2704,7 @@ describe('OrgClaService.addManager', () => {
   });
 
   it('re-reads the roster when POST returns a Signature without a top-level lf_username', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
     mockAddManagerUpstream();
 
     const manager = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);

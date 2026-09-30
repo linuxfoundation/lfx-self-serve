@@ -1172,11 +1172,12 @@ export class OrgClaService {
       });
     }
 
+    const viewerUsername = await rosterUsername(req);
     return {
       signatureId,
       managers: upstream.list
         .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
-        .map((entry) => toOrgClaManager(entry)),
+        .map((entry) => ({ ...toOrgClaManager(entry), ...(viewerUsername && entry.lf_username === viewerUsername ? { isViewer: true as const } : {}) })),
     };
   }
 
