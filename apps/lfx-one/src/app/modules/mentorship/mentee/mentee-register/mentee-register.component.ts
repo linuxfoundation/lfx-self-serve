@@ -210,8 +210,8 @@ export class MenteeRegisterComponent {
     const body = error instanceof HttpErrorResponse ? error.error : null;
     const failure = mapMentorshipRegisterFailure(status, body, MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS);
 
-    // Keyed to the form as it stands now, not as it was sent: the form stays editable while the save is
-    // in flight, and a failure keyed to the sent form would never match and would vanish unseen.
+    // Keyed to the form as it stands now, not as it was sent. The fields are inert while the save is in flight,
+    // but a write made in that window from code would leave a sent-form key unmatched and the failure unseen.
     this.submitFailure.set({ failure, formKey: this.formKey() });
     this.submitting.set(false);
     if (failure.kind === 'field-errors') {

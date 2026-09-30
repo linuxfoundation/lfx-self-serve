@@ -296,13 +296,36 @@ describe('MenteeRegisterComponent', () => {
     });
   });
 
-  it('re-enables Submit when the navigation after a save is cancelled', async () => {
+  it('makes the form fields inert while the save is in flight, and lifts it when the save fails', async () => {
+    const pending = new Subject<void>();
+    registerMenteeProfile.mockReturnValueOnce(pending);
+    fillValidForm();
+    const fields = (): HTMLElement | null => byTestId('mentorship-mentee-register-fields');
+    expect(fields()?.hasAttribute('inert')).toBe(false);
+
+    component['onSubmit']();
+    fixture.detectChanges();
+
+    expect(fields()?.hasAttribute('inert')).toBe(true);
+    expect(fields()?.querySelector('[data-testid="mentorship-mentee-introduction"]')).not.toBeNull();
+    // Submit stays outside the inert region, so its loading state is still reachable.
+    expect(byTestId('mentorship-mentee-submit')?.closest('[inert]')).toBeNull();
+
+    pending.error(new HttpErrorResponse({ status: 500, error: null }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fields()?.hasAttribute('inert')).toBe(false);
+  });
+
+  it('re-enables Submit and the form fields when the navigation after a save is cancelled', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
     fillValidForm();
 
     await submit();
 
     expect(component['submitting']()).toBe(false);
+    expect(byTestId('mentorship-mentee-register-fields')?.hasAttribute('inert')).toBe(false);
   });
 
   it('treats the demographic answers as optional — leaving them blank still submits', async () => {

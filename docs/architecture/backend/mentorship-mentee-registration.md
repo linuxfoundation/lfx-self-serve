@@ -56,7 +56,7 @@ The frontend maps a failure by status and error code only (`mapMentorshipRegiste
 | `422`                                  | `ineligible`     | One generic banner (upstream uses 422 for two different causes)      |
 | anything else, or a network failure    | `error`          | Generic retry banner                                                 |
 
-A failed save is stored together with the form snapshot as it stands when the failure arrives (the form stays editable while the save is in flight), and the field errors and non-sticky banners are **derived** from that pair: they show only while the form still equals the snapshot. Any real edit dismisses them, while an identical `valueChanges` re-emit (the rich editor emits one when it initialises) does not, which an effect that cleared on every emit would get wrong. The `profile-exists` and `read-only` banners stay until the next submit, because editing the form cannot fix either.
+A failed save is stored together with the form snapshot as it stands when the failure arrives (the form fields are `inert` while the save is in flight, so a user cannot edit them and have the success navigation drop the edit), and the field errors and non-sticky banners are **derived** from that pair: they show only while the form still equals the snapshot. Any real edit dismisses them, while an identical `valueChanges` re-emit (the rich editor emits one when it initialises) does not, which an effect that cleared on every emit would get wrong. The `profile-exists` and `read-only` banners stay until the next submit, because editing the form cannot fix either.
 
 ## After a successful save
 

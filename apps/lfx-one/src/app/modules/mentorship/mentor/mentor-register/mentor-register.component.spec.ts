@@ -262,13 +262,36 @@ describe('MentorRegisterComponent', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
-  it('re-enables Submit when the navigation after a save is cancelled', async () => {
+  it('makes the form fields inert while the save is in flight, and lifts it when the save fails', async () => {
+    const pending = new Subject<void>();
+    registerMentorProfile.mockReturnValueOnce(pending);
+    fillValidForm();
+    const fields = (): HTMLElement | null => byTestId('mentorship-mentor-register-fields');
+    expect(fields()?.hasAttribute('inert')).toBe(false);
+
+    component['onSubmit']();
+    fixture.detectChanges();
+
+    expect(fields()?.hasAttribute('inert')).toBe(true);
+    expect(fields()?.querySelector('[data-testid="mentorship-mentor-introduction"]')).not.toBeNull();
+    // Submit stays outside the inert region, so its loading state is still reachable.
+    expect(byTestId('mentorship-mentor-submit')?.closest('[inert]')).toBeNull();
+
+    pending.error(new HttpErrorResponse({ status: 500, error: null }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fields()?.hasAttribute('inert')).toBe(false);
+  });
+
+  it('re-enables Submit and the form fields when the navigation after a save is cancelled', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
     fillValidForm();
 
     await submit();
 
     expect(component['submitting']()).toBe(false);
+    expect(byTestId('mentorship-mentor-register-fields')?.hasAttribute('inert')).toBe(false);
   });
 
   it('raises a pending request for a picked program', () => {
