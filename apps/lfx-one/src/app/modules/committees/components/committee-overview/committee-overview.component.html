@@ -129,6 +129,17 @@
 
     <!-- RIGHT: Meetings + Pending Actions stacked -->
     <div class="flex flex-col gap-5 min-w-0">
+      <!-- Visitor interest CTA — shown before meetings so the first thing a visitor sees is a
+           clear call to action, then meeting history gives them context for what they'd be joining -->
+      @if (isVisitor()) {
+        <lfx-group-join-cta
+          [committee]="committee()"
+          [isVisitor]="isVisitor()"
+          [hasPendingInvite]="hasPendingInvite()"
+          [hasPendingApplication]="hasPendingApplication()"
+          (joinRequested)="joinRequested.emit()" />
+      }
+
       <!-- Next Meeting — shown to visitors too so they can see what the group does before joining -->
       <div class="flex flex-col gap-2">
         <div class="flex items-center justify-between">
@@ -330,15 +341,6 @@
           </lfx-card>
         }
       </div>
-
-      @if (isVisitor()) {
-        <lfx-group-join-cta
-          [committee]="committee()"
-          [isVisitor]="isVisitor()"
-          [hasPendingInvite]="hasPendingInvite()"
-          [hasPendingApplication]="hasPendingApplication()"
-          (joinRequested)="joinRequested.emit()" />
-      }
     </div>
   </div>
 </div>

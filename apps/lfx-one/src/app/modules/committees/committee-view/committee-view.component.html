@@ -363,12 +363,18 @@
                     </div>
                   }
                 </div>
-                <div class="flex items-center gap-1">
-                  <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
-                  @if (committee()?.updated_at) {
-                    <span class="text-xs text-gray-400">&middot; Updated {{ committee()?.updated_at | date: 'MMM d, y' }}</span>
-                  }
-                </div>
+                @if (committee()?.created_at || committee()?.updated_at) {
+                  <div class="flex items-center gap-1">
+                    @if (committee()?.created_at) {
+                      <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
+                    }
+                    @if (committee()?.updated_at) {
+                      <span class="text-xs text-gray-400"
+                        >{{ committee()?.created_at ? '·' : 'Updated' }} {{ committee()?.updated_at | date: 'MMM d, y' }}</span
+                      >
+                    }
+                  </div>
+                }
               </div>
               <!-- Right: Channels card -->
               @if (hasChannels()) {
