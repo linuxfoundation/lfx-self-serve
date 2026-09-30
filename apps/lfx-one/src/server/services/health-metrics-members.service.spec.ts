@@ -26,6 +26,7 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
@@ -682,5 +683,126 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getAtRisk(req, query)).rejects.toBe(failure);
+  });
+});
+
+describe('HealthMetricsMembersService.getRenewals', () => {
+  const query = { foundationSlug: 'acme', offset: 0, pageSize: 10 };
+  const totals = { TOTAL_RECORDS: 3, VALUE_USD: 185000, WITHOUT_DUES_COUNT: 1 };
+
+  function renewalRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ...totals,
+      IS_PAGE_ROW: true,
+      ACCOUNT_ID: '0014100000AcmeRnw1',
+      ACCOUNT_NAME: 'Acme Studios',
+      MEMBERSHIP_TIER: 'General',
+      RENEWAL_DATE: new Date(Date.UTC(2026, 10, 18)),
+      DUES_USD: 20000,
+      HAS_OUTSTANDING_BALANCE: true,
+      ...overrides,
+    };
+  }
+
+  function renewalsRead(): [string, unknown[]] {
+    return execute.mock.calls[0] as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [renewalRow()] });
+  });
+
+  it('scopes to unrenewed renewals in the next 90 days and never reads renewal_status', async () => {
+    await new HealthMetricsMembersService().getRenewals(req, query);
+
+    const [sql, binds] = renewalsRead();
+    expect(binds).toEqual(['acme', 90]);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_RENEWALS');
+    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
+    expect(scoped).toContain("AND account_id <> ''");
+    expect(scoped).toContain('AND days_until_renewal BETWEEN 0 AND ?');
+    expect(scoped).toContain('AND COALESCE(has_renewed, FALSE) = FALSE');
+    expect(sql).not.toMatch(/renewal_status/i);
+  });
+
+  it('totals the whole window, counting the renewals without dues', async () => {
+    await new HealthMetricsMembersService().getRenewals(req, query);
+
+    const [sql] = renewalsRead();
+    const totalsCte = sql.slice(sql.indexOf('totals AS'), sql.indexOf('page AS'));
+    expect(totalsCte).toContain('COUNT(*) AS total_records');
+    expect(totalsCte).toContain('SUM(dues_usd) AS value_usd');
+    expect(totalsCte).toContain('COUNT_IF(dues_usd IS NULL) AS without_dues_count');
+  });
+
+  it('pages soonest first, largest dues first on a date, and clamps an oversized page and offset', async () => {
+    await new HealthMetricsMembersService().getRenewals(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = renewalsRead();
+    const size = HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE;
+    expect(sql).toContain(
+      `ORDER BY renewal_date ASC NULLS LAST, dues_usd DESC NULLS LAST, account_id ASC\n        LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`
+    );
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('maps the totals and a renewal with an ISO date', async () => {
+    expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({
+      totalRecords: 3,
+      summary: { renewalCount: 3, valueUsd: 185000, withoutDuesCount: 1 },
+      rows: [
+        {
+          accountId: '0014100000AcmeRnw1',
+          accountName: 'Acme Studios',
+          membershipTier: 'General',
+          renewalDate: '2026-11-18',
+          duesUsd: 20000,
+          hasOutstandingBalance: true,
+        },
+      ],
+    });
+  });
+
+  it('keeps the totals when the page is past the end, and maps missing fields to null, not zero', async () => {
+    execute.mockResolvedValue({ rows: [{ ...totals, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+    expect(await new HealthMetricsMembersService().getRenewals(req, query)).toMatchObject({ rows: [], totalRecords: 3 });
+
+    execute.mockResolvedValue({
+      rows: [renewalRow({ ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', RENEWAL_DATE: null, DUES_USD: null, HAS_OUTSTANDING_BALANCE: null })],
+    });
+    expect((await new HealthMetricsMembersService().getRenewals(req, query)).rows[0]).toMatchObject({
+      accountName: '0014100000AcmeRnw1',
+      membershipTier: null,
+      renewalDate: null,
+      duesUsd: null,
+      hasOutstandingBalance: false,
+    });
+  });
+
+  it('reads measured zeros when no renewal falls in the window', async () => {
+    for (const rows of [[], [{ TOTAL_RECORDS: 0, VALUE_USD: null, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }]]) {
+      execute.mockResolvedValue({ rows });
+
+      expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({
+        rows: [],
+        totalRecords: 0,
+        summary: { renewalCount: 0, valueUsd: 0, withoutDuesCount: 0 },
+      });
+    }
+  });
+
+  it('keeps the value null when no renewal in the window has dues on record', async () => {
+    execute.mockResolvedValue({ rows: [renewalRow({ VALUE_USD: null, WITHOUT_DUES_COUNT: 3, DUES_USD: null })] });
+
+    expect((await new HealthMetricsMembersService().getRenewals(req, query)).summary).toEqual({ renewalCount: 3, valueUsd: null, withoutDuesCount: 3 });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getRenewals(req, query)).rejects.toBe(failure);
   });
 });

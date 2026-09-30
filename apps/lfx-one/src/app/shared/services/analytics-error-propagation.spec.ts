@@ -162,6 +162,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no members at risk.
       call: () => service.getMembersAtRisk({ foundationSlug: 'aaif', bucket: 'all', offset: 0, pageSize: 10 }),
     },
+    {
+      name: 'getMembersRenewals',
+      url: '/api/analytics/members-renewals',
+      // A swallowed failure would read as a foundation with no renewals due.
+      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', offset: 0, pageSize: 10 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

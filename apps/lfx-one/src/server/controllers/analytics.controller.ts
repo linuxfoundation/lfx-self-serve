@@ -11,6 +11,8 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
@@ -3889,6 +3891,32 @@ export class AnalyticsController {
         bucket,
         total_records: response.totalRecords,
         member_count: response.summary.memberCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-renewals` — the foundation's renewals in the next 90 days, one page at a time, with the window's totals. */
+  public async getMembersRenewals(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_renewals');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_renewals');
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getRenewals(req, { foundationSlug, offset, pageSize });
+
+      logger.success(req, 'get_members_renewals', startTime, {
+        foundation_slug: foundationSlug,
+        total_records: response.totalRecords,
+        without_dues_count: response.summary.withoutDuesCount,
       });
 
       res.json(response);
