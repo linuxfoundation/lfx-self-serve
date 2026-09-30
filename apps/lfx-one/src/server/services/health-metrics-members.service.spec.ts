@@ -380,15 +380,12 @@ describe('HealthMetricsMembersService.getDirectory', () => {
     };
   }
 
-  /** The page read and the tier read hit the same view in parallel; the tier read is the grouped one. */
-  function directoryRead(kind: 'page' | 'tiers'): [string, unknown[]] {
-    const call = execute.mock.calls.find(([sql]) => String(sql).includes('GROUP BY membership_tier') === (kind === 'tiers'));
-    if (!call) throw new Error(`No ${kind} read`);
-    return call as [string, unknown[]];
+  function directoryRead(): [string, unknown[]] {
+    return execute.mock.calls[0] as [string, unknown[]];
   }
 
-  function respondDirectory(pageRows: unknown[], tierRows: unknown[] = [{ MEMBERSHIP_TIER: 'Gold Membership' }, { MEMBERSHIP_TIER: 'Silver Membership' }]) {
-    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('GROUP BY membership_tier') ? tierRows : pageRows }));
+  function respondDirectory(rows: unknown[]) {
+    execute.mockResolvedValue({ rows });
   }
 
   beforeEach(() => {
@@ -406,7 +403,7 @@ describe('HealthMetricsMembersService.getDirectory', () => {
       execute.mockClear();
       await new HealthMetricsMembersService().getDirectory(req, { ...query, range });
 
-      const [sql, binds] = directoryRead('page');
+      const [sql, binds] = directoryRead();
       expect(binds).toEqual(['acme']);
       expect(sql.match(/\?/g)).toHaveLength(binds.length);
       expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
@@ -420,7 +417,7 @@ describe('HealthMetricsMembersService.getDirectory', () => {
   it('binds tier, NPS and an escaped search in placeholder order', async () => {
     await new HealthMetricsMembersService().getDirectory(req, { ...query, tier: 'Gold Membership', nps: 'Promoter', search: '50%_off!' });
 
-    const [sql, binds] = directoryRead('page');
+    const [sql, binds] = directoryRead();
     expect(binds).toEqual(['acme', 'Gold Membership', 'Promoter', '%50!%!_off!!%']);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     expect(sql).toContain("WHERE membership_tier = ? AND nps_category = ? AND account_name ILIKE ? ESCAPE '!'");
@@ -429,7 +426,7 @@ describe('HealthMetricsMembersService.getDirectory', () => {
   it('counts the foundation and its at-risk members before the filters, and pages highest dues first', async () => {
     await new HealthMetricsMembersService().getDirectory(req, query);
 
-    const [sql] = directoryRead('page');
+    const [sql] = directoryRead();
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain('AND account_id IS NOT NULL');
     expect(scoped).toContain("AND account_id <> ''");
@@ -444,19 +441,9 @@ describe('HealthMetricsMembersService.getDirectory', () => {
   it('clamps an oversized page and offset before interpolating them', async () => {
     await new HealthMetricsMembersService().getDirectory(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
 
-    const [sql] = directoryRead('page');
+    const [sql] = directoryRead();
     const size = HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE;
     expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
-  });
-
-  it('reads the tier options highest-paying first, bound only to the foundation', async () => {
-    await new HealthMetricsMembersService().getDirectory(req, { ...query, tier: 'Gold Membership', search: 'acme' });
-
-    const [sql, binds] = directoryRead('tiers');
-    expect(binds).toEqual(['acme']);
-    expect(sql).toContain("AND membership_tier <> ''");
-    expect(sql).toContain('ORDER BY MAX(annual_dues_usd) DESC NULLS LAST, membership_tier ASC');
-    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP}`);
   });
 
   it('maps a member with ISO dates, and keeps untracked values null', async () => {
@@ -466,7 +453,6 @@ describe('HealthMetricsMembersService.getDirectory', () => {
       totalRecords: 16,
       scopeTotal: 725,
       atRiskCount: 27,
-      tierOptions: ['Gold Membership', 'Silver Membership'],
       rows: [
         {
           accountId: '0014100000AcmeAAAA',
@@ -490,10 +476,7 @@ describe('HealthMetricsMembersService.getDirectory', () => {
   });
 
   it('drops an unknown engagement band or NPS category, and a blank tier or name', async () => {
-    respondDirectory(
-      [directoryRow({ ENGAGEMENT_LEVEL: 'Extreme', NPS_CATEGORY: 'Neutral', MEMBERSHIP_TIER: '', ACCOUNT_NAME: '', IS_AT_RISK: null })],
-      [{ MEMBERSHIP_TIER: null }, { MEMBERSHIP_TIER: 'Gold Membership' }]
-    );
+    respondDirectory([directoryRow({ ENGAGEMENT_LEVEL: 'Extreme', NPS_CATEGORY: 'Neutral', MEMBERSHIP_TIER: '', ACCOUNT_NAME: '', IS_AT_RISK: null })]);
 
     const response = await new HealthMetricsMembersService().getDirectory(req, query);
 
@@ -504,7 +487,6 @@ describe('HealthMetricsMembersService.getDirectory', () => {
       npsCategory: null,
       isAtRisk: false,
     });
-    expect(response.tierOptions).toEqual(['Gold Membership']);
   });
 
   it('keeps the totals when the page is past the end', async () => {
@@ -520,5 +502,31 @@ describe('HealthMetricsMembersService.getDirectory', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getDirectory(req, query)).rejects.toBe(failure);
+  });
+});
+
+describe('HealthMetricsMembersService.getDirectoryTiers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [{ MEMBERSHIP_TIER: null }, { MEMBERSHIP_TIER: 'Gold Membership' }, { MEMBERSHIP_TIER: 'Silver Membership' }] });
+  });
+
+  it('reads the tiers highest-paying first, bound only to the foundation', async () => {
+    const response = await new HealthMetricsMembersService().getDirectoryTiers(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[0] as [string, unknown[]];
+    expect(binds).toEqual(['acme']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain("AND membership_tier <> ''");
+    expect(sql).toContain('ORDER BY MAX(annual_dues_usd) DESC NULLS LAST, membership_tier ASC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP}`);
+    expect(response).toEqual({ tiers: ['Gold Membership', 'Silver Membership'] });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getDirectoryTiers(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
   });
 });

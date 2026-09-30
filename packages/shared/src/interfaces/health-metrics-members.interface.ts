@@ -3,6 +3,7 @@
 
 import type {
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_SECTIONS,
@@ -230,7 +231,7 @@ export interface HealthMetricsMembersMovementRowView {
 export type HealthMetricsMembersNpsCategory = (typeof HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES)[number];
 
 /** The model's own engagement band; the page never re-bands the score. */
-export type HealthMetricsMembersEngagementLevel = 'High' | 'Medium' | 'Low';
+export type HealthMetricsMembersEngagementLevel = (typeof HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS)[number];
 
 /** `GET /api/analytics/members-directory` — one page of the foundation's members. Empty filters match all. */
 export interface HealthMetricsMembersDirectoryQuery {
@@ -272,8 +273,16 @@ export interface HealthMetricsMembersDirectory {
   scopeTotal: number;
   /** At-risk members across the whole foundation, whatever the filters. */
   atRiskCount: number;
+}
+
+/** `GET /api/analytics/members-directory-tiers` — read once per foundation, not per page. */
+export interface HealthMetricsMembersDirectoryTiersQuery {
+  foundationSlug: string;
+}
+
+export interface HealthMetricsMembersDirectoryTiers {
   /** Tiers present in the foundation, highest-paying first, for the tier filter. */
-  tierOptions: string[];
+  tiers: string[];
 }
 
 /** One member row as the directory table renders it. */

@@ -150,6 +150,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no members.
       call: () => service.getMembersDirectory({ foundationSlug: 'aaif', range: 'YTD', tier: '', nps: '', search: '', offset: 0, pageSize: 10 }),
     },
+    {
+      name: 'getMembersDirectoryTiers',
+      url: '/api/analytics/members-directory-tiers',
+      // A swallowed failure would read as a foundation with no tiers.
+      call: () => service.getMembersDirectoryTiers('aaif'),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
@@ -186,7 +192,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     expect(req.request.urlWithParams).toContain('tier=Gold%2B');
     expect(req.request.params.has('nps')).toBe(false);
-    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0, tierOptions: [] });
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0 });
   });
 
   afterEach(() => {

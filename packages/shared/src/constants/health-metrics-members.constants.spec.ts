@@ -23,7 +23,7 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
   });
 
   it('holds a deep link for every section that reads data', () => {
-    expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['tiers', 'bridge']);
+    expect(HEALTH_METRICS_MEMBERS_DATA_SECTIONS).toEqual(['tiers', 'bridge', 'list']);
   });
 });
 

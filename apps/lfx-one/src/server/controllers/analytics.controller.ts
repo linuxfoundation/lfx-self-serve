@@ -3835,6 +3835,22 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/members-directory-tiers` — the foundation's tiers for the directory's tier filter. */
+  public async getMembersDirectoryTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_directory_tiers');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_directory_tiers');
+      const response = await this.healthMetricsMembersService.getDirectoryTiers(req, { foundationSlug });
+
+      logger.success(req, 'get_members_directory_tiers', startTime, { foundation_slug: foundationSlug, tier_count: response.tiers.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** `GET /api/analytics/events-organizations` — one page of the organizations active at the foundation's events in a period. */
   public async getEventsOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_events_organizations');

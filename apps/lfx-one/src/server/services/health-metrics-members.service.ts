@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
@@ -32,6 +33,8 @@ import type {
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryQuery,
+  HealthMetricsMembersDirectoryTiers,
+  HealthMetricsMembersDirectoryTiersQuery,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersFoundationRevenue,
   HealthMetricsMembersMovement,
@@ -52,7 +55,7 @@ const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTO
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
-const ENGAGEMENT_LEVELS: ReadonlySet<string> = new Set<HealthMetricsMembersEngagementLevel>(['High', 'Medium', 'Low']);
+const ENGAGEMENT_LEVELS: ReadonlySet<string> = new Set<HealthMetricsMembersEngagementLevel>(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS);
 
 interface TierYearRow {
   YEAR: number;
@@ -236,51 +239,9 @@ export class HealthMetricsMembersService {
 
   /**
    * One page of the foundation's members, highest annual dues first and, within equal dues, least
-   * engaged first, with the activity counts for the period. The tier options are read alongside.
+   * engaged first, with the activity counts for the period.
    */
   public async getDirectory(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<HealthMetricsMembersDirectory> {
-    const [page, tierOptions] = await Promise.all([this.getDirectoryPage(req, query), this.getDirectoryTiers(req, query)]);
-    return { ...page, tierOptions };
-  }
-
-  private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
-    const sql = `
-      SELECT
-        year,
-        membership_tier,
-        tier_sort_rank,
-        member_count,
-        new_member_count,
-        tier_revenue_usd,
-        is_partial_year
-      FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
-      WHERE foundation_slug = ?
-        AND year IS NOT NULL
-        AND membership_tier IS NOT NULL
-      ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC
-      LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}
-    `;
-
-    const result = await executeSnowflakeViewRead<TierYearRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
-      view: MEMBERSHIP_TIER_YEAR_VIEW,
-      operation: 'get_members_tiers',
-      clientMessage: 'Membership by tier is unavailable right now.',
-    });
-
-    let rows = result.rows;
-    if (rows.length > HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP) {
-      logger.warning(req, 'get_members_tiers', 'Membership tier rows hit the read cap', {
-        foundation_slug: query.foundationSlug,
-        row_cap: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
-      });
-      rows = capWholeYears(rows, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
-    }
-
-    return rows.map(mapTierYear).filter((row): row is HealthMetricsMembersTierYear => row !== null);
-  }
-
-  /** The foundation's total revenue per period, off the Memberships row whose tier revenue reconciles with it. */
-  private async getDirectoryPage(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<Omit<HealthMetricsMembersDirectory, 'tierOptions'>> {
     // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
     const binds: string[] = [query.foundationSlug];
@@ -333,6 +294,7 @@ export class HealthMetricsMembersService {
       totals AS (
         SELECT
           (SELECT COUNT(*) FROM scoped) AS scope_total,
+          -- Counts rows on the model's own at-risk flag; the page never derives the risk itself.
           (SELECT COUNT_IF(is_at_risk) FROM scoped) AS at_risk_count,
           (SELECT COUNT(*) FROM matched) AS total_records
       ),
@@ -365,8 +327,8 @@ export class HealthMetricsMembersService {
     };
   }
 
-  /** The foundation's tiers, highest-paying first, for the tier filter. */
-  private async getDirectoryTiers(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<string[]> {
+  /** The foundation's tiers, highest-paying first, for the directory's tier filter. */
+  public async getDirectoryTiers(req: Request, query: HealthMetricsMembersDirectoryTiersQuery): Promise<HealthMetricsMembersDirectoryTiers> {
     const sql = `
       SELECT membership_tier
       FROM ${MEMBERSHIP_DIRECTORY_VIEW}
@@ -386,9 +348,46 @@ export class HealthMetricsMembersService {
       clientMessage: 'The members directory is unavailable right now.',
     });
 
-    return result.rows.flatMap((row) => (row.MEMBERSHIP_TIER ? [row.MEMBERSHIP_TIER] : []));
+    return { tiers: result.rows.flatMap((row) => (row.MEMBERSHIP_TIER ? [row.MEMBERSHIP_TIER] : [])) };
   }
 
+  private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
+    const sql = `
+      SELECT
+        year,
+        membership_tier,
+        tier_sort_rank,
+        member_count,
+        new_member_count,
+        tier_revenue_usd,
+        is_partial_year
+      FROM ${MEMBERSHIP_TIER_YEAR_VIEW}
+      WHERE foundation_slug = ?
+        AND year IS NOT NULL
+        AND membership_tier IS NOT NULL
+      ORDER BY year DESC, tier_sort_rank ASC NULLS LAST, membership_tier ASC
+      LIMIT ${HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<TierYearRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: MEMBERSHIP_TIER_YEAR_VIEW,
+      operation: 'get_members_tiers',
+      clientMessage: 'Membership by tier is unavailable right now.',
+    });
+
+    let rows = result.rows;
+    if (rows.length > HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP) {
+      logger.warning(req, 'get_members_tiers', 'Membership tier rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
+      });
+      rows = capWholeYears(rows, HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP);
+    }
+
+    return rows.map(mapTierYear).filter((row): row is HealthMetricsMembersTierYear => row !== null);
+  }
+
+  /** The foundation's total revenue per period, off the Memberships row whose tier revenue reconciles with it. */
   private async getFoundationRevenue(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersFoundationRevenue[]> {
     // The suffixes come from constants, never from the request, so interpolating them is safe.
     // The view holds one row per foundation and revenue domain, so `LIMIT 1` needs no ORDER BY.

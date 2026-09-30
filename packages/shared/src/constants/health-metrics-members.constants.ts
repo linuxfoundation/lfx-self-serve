@@ -39,8 +39,9 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'All members',
     heading: 'All members',
     description:
-      'The full directory, with the engagement touchpoints alongside membership and dues. Sorted by annual dues, highest first, so the accounts that carry the revenue lead.',
-    footnote: '',
+      "The full directory — PCC's most-used table, carried over with its columns intact and the engagement touchpoints added. Sorted by annual dues, highest first, so the accounts that carry the revenue lead; within a tier, least engaged first.",
+    footnote:
+      'This is the whole table at Level 2, not behind a drill-in — it is the most-used view in PCC, so it stays one click from the tab. PCC\'s Period column is replaced by Renews: the term start is rarely acted on, the end date always is. Contribution, Sponsorship, Training and Events show — where not yet tracked — a data gap reads as "not tracked", never as zero.',
     footnoteCaution: false,
   },
   {
@@ -92,7 +93,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
 /** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
-export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
+export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge', 'list'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
 export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
@@ -202,6 +203,9 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
 /** `MEMBERSHIP_DIRECTORY`'s NPS categories, and the allowlist the directory read validates against. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES = ['Promoter', 'Passive', 'Detractor'] as const;
 
+/** `MEMBERSHIP_DIRECTORY`'s own engagement bands; the page never re-bands the score. */
+export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS = ['High', 'Medium', 'Low'] as const;
+
 /** The NPS filter; the empty value matches every member, with or without a response. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_OPTIONS: readonly FilterOption<string>[] = [
   { label: 'All NPS', value: '' },
@@ -217,7 +221,6 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED: HealthMetricsMembersDi
   totalRecords: 0,
   scopeTotal: 0,
   atRiskCount: 0,
-  tierOptions: [],
 };
 
 /** Rows per page, and the design's rows-per-page choices; the largest foundation has several hundred members. */

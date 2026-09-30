@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
+import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
@@ -30,6 +31,14 @@ class BridgeStubComponent {
   public readonly sectionPicked = output<string>();
 }
 
+/** Stands in for the members directory; the test drives its count and settle. */
+@Component({ selector: 'lfx-members-directory', template: '<div data-testid="members-directory-stub"></div>' })
+class DirectoryStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
 // Covers only what Members wires into the shell: its copy, section bodies and sub-nav. The scroll-spy
 // and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsMembersComponent', () => {
@@ -46,8 +55,8 @@ describe('HealthMetricsMembersComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsMembersComponent, {
-        remove: { imports: [MembersBridgeComponent, MembersTiersComponent] },
-        add: { imports: [BridgeStubComponent, TiersStubComponent] },
+        remove: { imports: [MembersBridgeComponent, MembersDirectoryComponent, MembersTiersComponent] },
+        add: { imports: [BridgeStubComponent, DirectoryStubComponent, TiersStubComponent] },
       })
       .compileComponents();
 
@@ -77,6 +86,9 @@ describe('HealthMetricsMembersComponent', () => {
       if (key === 'tiers') {
         expect(element.querySelector('[data-testid="members-tiers-stub"]')).not.toBeNull();
         expect(element.querySelector('[data-testid="members-bridge-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
+      } else if (key === 'list') {
+        expect(element.querySelector('[data-testid="members-directory-stub"]')).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
       } else {
         expect(element.textContent).toContain('Awaiting data');
@@ -117,7 +129,7 @@ describe('HealthMetricsMembersComponent', () => {
     fixture.detectChanges();
   }
 
-  it('holds a deep link until both reads under the tiers settle', async () => {
+  it('holds a deep link until the tiers, bridge and directory reads settle', async () => {
     await setup('renewals');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // Each settle re-lands the held link; it is released only once every data section has settled.
@@ -130,6 +142,7 @@ describe('HealthMetricsMembersComponent', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
     stub(BridgeStubComponent).settled.emit();
+    stub(DirectoryStubComponent).settled.emit();
     await flush();
     scrollIntoView.mockClear();
     stub(TiersStubComponent).settled.emit();
@@ -137,6 +150,19 @@ describe('HealthMetricsMembersComponent', () => {
 
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-renewals');
+  });
+
+  it('badges All members with the directory count once it reports one', async () => {
+    await setup();
+    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-list"]').textContent;
+
+    stub(DirectoryStubComponent).countChange.emit(725);
+    await flush();
+    expect(item()).toContain('725');
+
+    stub(DirectoryStubComponent).countChange.emit(null);
+    await flush();
+    expect(item()).not.toMatch(/\d/);
   });
 
   it('scrolls to churn when the bridge picks it', async () => {

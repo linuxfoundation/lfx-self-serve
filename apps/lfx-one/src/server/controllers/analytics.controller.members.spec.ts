@@ -4,11 +4,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements, getDirectory } = vi.hoisted(() => ({
+const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers } = vi.hoisted(() => ({
   getTiers: vi.fn(),
   getBridge: vi.fn(),
   getMovements: vi.fn(),
   getDirectory: vi.fn(),
+  getDirectoryTiers: vi.fn(),
 }));
 
 vi.mock('../services/health-metrics-members.service', () => ({
@@ -17,6 +18,7 @@ vi.mock('../services/health-metrics-members.service', () => ({
     public getBridge = getBridge;
     public getMovements = getMovements;
     public getDirectory = getDirectory;
+    public getDirectoryTiers = getDirectoryTiers;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
@@ -50,7 +52,7 @@ import {
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements' | 'getMembersDirectory';
+type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements' | 'getMembersDirectory' | 'getMembersDirectoryTiers';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -261,6 +263,40 @@ describe('AnalyticsController.getMembersDirectory', () => {
     getDirectory.mockRejectedValue(failure);
 
     const { next, promise } = call(valid, 'getMembersDirectory');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersDirectoryTiers', () => {
+  beforeEach(() => {
+    getDirectoryTiers.mockReset();
+    getDirectoryTiers.mockResolvedValue({ tiers: ['Gold Membership'] });
+  });
+
+  it('reads the tiers for the foundation and returns them', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getMembersDirectoryTiers');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getDirectoryTiers).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith({ tiers: ['Gold Membership'] });
+  });
+
+  it('rejects a bad slug before reading', async () => {
+    const { next, promise } = call({ foundationSlug: 'Acme Corp' }, 'getMembersDirectoryTiers');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getDirectoryTiers).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getDirectoryTiers.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersDirectoryTiers');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

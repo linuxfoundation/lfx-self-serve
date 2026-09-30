@@ -115,6 +115,7 @@ import {
   HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
+  HealthMetricsMembersDirectoryTiers,
   HealthMetricsMembersMovements,
   HealthMetricsMembersMovementsQuery,
   HealthMetricsMembersTiers,
@@ -1416,6 +1417,16 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] members-directory failed', { foundationSlug: query.foundationSlug, range: query.range, nps: query.nps, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersDirectoryTiers(foundationSlug: string): Observable<HealthMetricsMembersDirectoryTiers> {
+    // Errors propagate so the component can tell a failed read from a foundation with no tiers.
+    return this.http.get<HealthMetricsMembersDirectoryTiers>('/api/analytics/members-directory-tiers', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-directory-tiers failed', { foundationSlug, error });
         return throwError(() => error);
       })
     );
