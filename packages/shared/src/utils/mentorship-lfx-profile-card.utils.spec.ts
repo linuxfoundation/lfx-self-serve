@@ -80,8 +80,12 @@ describe('buildLfxProfileSummary', () => {
     });
   });
 
-  it('prefers the name the user typed into their profile over the account first/last', () => {
-    expect(buildLfxProfileSummary(combinedProfile({}, { name: 'A. Lovelace' }), null).name).toBe('A. Lovelace');
+  it('shows the account first/last, the name copied onto mentorship profiles, over the profile name', () => {
+    expect(buildLfxProfileSummary(combinedProfile({}, { name: 'A. Lovelace' }), null).name).toBe('Ada Lovelace');
+  });
+
+  it('falls back to the profile name when the account has no first/last', () => {
+    expect(buildLfxProfileSummary(combinedProfile({ first_name: null, last_name: null }, { name: 'A. Lovelace' }), null).name).toBe('A. Lovelace');
   });
 
   it('falls back through username and then the email local part so the name is never blank', () => {

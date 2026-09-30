@@ -410,6 +410,21 @@ describe('ProfileCardComponent', () => {
       expect(fixture.componentInstance.lfxProfileFields()).toEqual({ firstName: 'Ada', lastName: 'Lovelace' });
     });
 
+    it('shows the first and last name it copies, not a separate profile name', () => {
+      render({
+        getCurrentUserProfile: () => of({ ...combined, profile: { ...combined.profile, name: 'A. Lovelace' } } as CombinedProfile),
+        getUserEmails: () => of(emails),
+        getIdentities: () => of(identities),
+        effectiveAvatarUrl: () => '',
+      });
+
+      save({ given_name: 'Updated' });
+      fixture.detectChanges();
+
+      expect(text('mentorship-profile-card-name')).toBe('Updated Lovelace');
+      expect(fixture.componentInstance.lfxProfileFields()).toMatchObject({ firstName: 'Updated', lastName: 'Lovelace' });
+    });
+
     it('holds a just-saved name even while the save is stashed because no profile record exists yet', () => {
       render({
         getCurrentUserProfile: () => of({ ...combined, profile: null } as unknown as CombinedProfile),

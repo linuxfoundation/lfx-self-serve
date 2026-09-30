@@ -20,19 +20,20 @@ function resolveSocialHandleLabel(identities: EnrichedIdentity[], provider: 'git
 }
 
 /**
- * Display name, preferring the `name` the user typed into their profile over one
- * assembled from the account's first/last, then falling back to the username and
- * finally the email's local part — the card should never render a blank name.
+ * Display name, preferring the account's first/last — the pair Edit LFX Profile
+ * edits and the one copied onto mentorship profiles — over the profile's `name`,
+ * then falling back to the username and finally the email's local part, so the
+ * card never renders a blank name.
  */
 function resolveDisplayName(combined: CombinedProfile | null): string {
-  const typed = combined?.profile?.name?.trim();
-  if (typed) return typed;
-
   const assembled = [combined?.user?.first_name, combined?.user?.last_name]
     .map((part) => part?.trim() ?? '')
     .filter(Boolean)
     .join(' ');
   if (assembled) return assembled;
+
+  const typed = combined?.profile?.name?.trim();
+  if (typed) return typed;
 
   return combined?.user?.username?.trim() || (combined?.user?.email?.split('@')[0].trim() ?? '');
 }
