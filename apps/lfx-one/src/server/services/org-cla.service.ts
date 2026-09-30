@@ -82,7 +82,7 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
-import { getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
+import { getEffectiveLfUsername, isImpersonating } from '../utils/auth-helper';
 
 const SERVICE = 'org_cla_service';
 
@@ -266,22 +266,15 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
 }
 
 /**
- * The username EasyCLA compares against a CCLA roster: the Auth0 username, which the ID token
- * carries on the LF username claim. `nickname`, which the general username getter prefers, is not
- * tied to it. While impersonating, the session's own claims are the impersonator's, so the
- * target's stored username is used instead.
+ * The one comparison for "this CLA manager entry is the viewer": exact, like EasyCLA's
+ * `CurrentUserInACL`, and never true without a username.
  */
-async function rosterUsername(req: Request): Promise<string> {
-  if (!isImpersonating(req)) {
-    const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
-    if (typeof claim === 'string' && claim) return claim;
-  }
-  return (await getUsernameFromAuth(req)) ?? '';
+function isViewerUsername(lfUsername: unknown, viewerUsername: string): boolean {
+  return !!viewerUsername && lfUsername === viewerUsername;
 }
 
 function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
-  if (!username) return false;
-  return claManagers.some((manager) => manager?.lfUsername === username);
+  return claManagers.some((manager) => isViewerUsername(manager?.lfUsername, username));
 }
 
 /**
@@ -487,7 +480,7 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
-    const viewerUsername = await rosterUsername(req);
+    const viewerUsername = getEffectiveLfUsername(req);
 
     return {
       orgUid,
@@ -1170,12 +1163,12 @@ export class OrgClaService {
       });
     }
 
-    const viewerUsername = await rosterUsername(req);
+    const viewerUsername = getEffectiveLfUsername(req);
     return {
       signatureId,
       managers: upstream.list
         .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
-        .map((entry) => ({ ...toOrgClaManager(entry), ...(viewerUsername && entry.lf_username === viewerUsername ? { isViewer: true as const } : {}) })),
+        .map((entry) => ({ ...toOrgClaManager(entry), ...(isViewerUsername(entry.lf_username, viewerUsername) ? { isViewer: true as const } : {}) })),
     };
   }
 
@@ -1850,7 +1843,7 @@ export class OrgClaService {
       return true;
     }
 
-    return rosterNamesUsername(entry.claManagers, await rosterUsername(req));
+    return rosterNamesUsername(entry.claManagers, getEffectiveLfUsername(req));
   }
 
   private requireApprovalListProject(context: ApprovalContext, operation: string): void {

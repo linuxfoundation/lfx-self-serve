@@ -9,6 +9,7 @@ import type { LfxAccessTokenClaims, User } from '@lfx-one/shared/interfaces';
 import {
   buildImpersonationIdentityOverride,
   getEffectiveEmail,
+  getEffectiveLfUsername,
   getEffectiveSub,
   getEffectiveUsername,
   getRawEffectiveEmail,
@@ -106,6 +107,30 @@ describe('getEffectiveUsername', () => {
   it('falls back to the OIDC nickname when not impersonating', () => {
     const req = buildReq({ oidc: { nickname: 'usernick', username: 'username' } });
     expect(getEffectiveUsername(req)).toBe('usernick');
+  });
+});
+
+describe('getEffectiveLfUsername', () => {
+  const LF_CLAIM = 'https://sso.linuxfoundation.org/claims/username';
+
+  it('returns the LF username claim, not the nickname the general username getter prefers', () => {
+    const req = buildReq({ oidc: { nickname: 'usernick', username: 'username', [LF_CLAIM]: 'lfuser' } });
+    expect(getEffectiveLfUsername(req)).toBe('lfuser');
+  });
+
+  it('returns an empty string, with no nickname fallback, when the session has no LF username claim', () => {
+    const req = buildReq({ oidc: { nickname: 'usernick', username: 'username', preferred_username: 'preferred' } });
+    expect(getEffectiveLfUsername(req)).toBe('');
+  });
+
+  it('returns the impersonated user’s username, not the impersonator’s claim', () => {
+    const req = buildReq({ impersonating: true, target: { username: 'targetuser' }, oidc: { ...OPERATOR_OIDC, [LF_CLAIM]: 'operatorlf' } });
+    expect(getEffectiveLfUsername(req)).toBe('targetuser');
+  });
+
+  it('returns an empty string (never the impersonator) when the target has no stored username', () => {
+    const req = buildReq({ impersonating: true, target: { username: '' }, oidc: { ...OPERATOR_OIDC, [LF_CLAIM]: 'operatorlf' } });
+    expect(getEffectiveLfUsername(req)).toBe('');
   });
 });
 
