@@ -61,15 +61,12 @@ export class IntercomService {
 
   // Re-scan the DOM so the widget (re)binds custom launchers that entered the page after boot —
   // e.g. the profile help link, which is router-mounted on client-side navigation into /profile/*.
-  // `reattach_activator` is the (re)bind command — `update` alone only refreshes user/page data —
-  // and the pair mirrors the official snippet order already used in initializeIntercomFunction().
   // Fire-and-forget: pre-load, the stub queues the calls and replays them once the script boots.
   public update(): void {
     if (typeof window === 'undefined' || !window.Intercom || !this.isBootRequested) {
       return;
     }
-    window.Intercom('reattach_activator');
-    window.Intercom('update', window.intercomSettings!);
+    this.reattachAndUpdate(window.Intercom);
   }
 
   // Records who a later on-demand boot should identify as, without loading the widget.
@@ -161,6 +158,14 @@ export class IntercomService {
     }
   }
 
+  // `reattach_activator` is the (re)bind command — `update` alone only refreshes user/page data —
+  // and the pair order mirrors the official Intercom snippet. Shared by the boot-time rebind in
+  // initializeIntercomFunction() and the post-boot rebind in update() so the two can never desync.
+  private reattachAndUpdate(ic: IntercomFunction): void {
+    ic('reattach_activator');
+    ic('update', window.intercomSettings!);
+  }
+
   private initializeIntercomFunction(): void {
     if (typeof window === 'undefined') {
       return;
@@ -169,8 +174,7 @@ export class IntercomService {
     const ic = window.Intercom;
 
     if (typeof ic === 'function') {
-      ic('reattach_activator');
-      ic('update', window.intercomSettings!);
+      this.reattachAndUpdate(ic);
     } else {
       const stub: IntercomFunction = Object.assign(
         (...args: unknown[]) => {
