@@ -15,6 +15,8 @@ import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
@@ -1057,13 +1059,21 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
 
   it('accepts every skill in MENTORSHIP_SKILL_OPTIONS', () => {
     const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
-    const errors = getMentorshipMenteeRegisterRequestErrors({
-      ...request,
-      skillsHave: [...MENTORSHIP_SKILL_OPTIONS],
-      skillsWant: [...MENTORSHIP_SKILL_OPTIONS],
-    });
+    const firstHalf = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const secondHalf = MENTORSHIP_SKILL_OPTIONS.slice(MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
 
-    expect(errors).toEqual({});
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: firstHalf, skillsWant: secondHalf })).toEqual({});
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: secondHalf, skillsWant: firstHalf })).toEqual({});
+  });
+
+  it('holds each list to the profile edit skills cap, so a registered profile stays editable', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1);
+
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: atCap, skillsWant: atCap })).toEqual({});
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: overCap }).skillsHave).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: overCap }).skillsWant).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
   });
 
   it('gives the form validator the same result for the same values', () => {

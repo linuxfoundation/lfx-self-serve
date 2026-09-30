@@ -3,7 +3,12 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX, MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILL_OPTIONS,
+} from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
@@ -118,6 +123,26 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
 
   it('rejects an introduction over the cap', () => {
     expect(rejectedFields({ ...VALID_BODY, introduction: `<p>${'a'.repeat(MENTORSHIP_MENTEE_INTRODUCTION_MAX + 1)}</p>` })).toEqual(['introduction']);
+  });
+
+  it('drops case-insensitive repeats of a skill, keeping the first', () => {
+    const request = parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: ['Java', 'java', 'Rust', 'Java'], skillsWant: ['Python', 'PYTHON'] });
+
+    expect(request.skillsHave).toEqual(['Java', 'Rust']);
+    expect(request.skillsWant).toEqual(['Python']);
+  });
+
+  it('rejects either skills list over the profile edit cap', () => {
+    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1);
+
+    expect(rejectedFields({ ...VALID_BODY, skillsHave: overCap })).toEqual(['skillsHave']);
+    expect(rejectedFields({ ...VALID_BODY, skillsWant: overCap })).toEqual(['skillsWant']);
+  });
+
+  it('counts the cap after repeats are dropped', () => {
+    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+
+    expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: [...atCap, atCap[0]] }).skillsHave).toEqual(atCap);
   });
 });
 

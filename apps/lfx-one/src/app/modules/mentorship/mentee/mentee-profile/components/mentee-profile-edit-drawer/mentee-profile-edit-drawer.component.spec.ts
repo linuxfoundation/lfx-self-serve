@@ -474,6 +474,21 @@ describe('MenteeProfileEditDrawerComponent', () => {
       expect(drawerStub.closeOnEscape()).toBe(false);
     });
 
+    it('makes the fields inert but leaves the actions reachable, so an edit cannot diverge from the submitted snapshot', () => {
+      const fields = element().querySelector('[data-testid="mentee-profile-edit-drawer-fields"]');
+
+      expect(fields?.hasAttribute('inert')).toBe(true);
+      expect(fields?.querySelector('[data-testid="mentee-profile-edit-about"]')).not.toBeNull();
+      expect(element().querySelector('[data-testid="mentee-profile-edit-drawer-actions"]')?.closest('[inert]')).toBeNull();
+    });
+
+    it('lifts inert once the request fails', () => {
+      pending.error(httpError(500));
+      fixture.detectChanges();
+
+      expect(element().querySelector('[data-testid="mentee-profile-edit-drawer-fields"]')?.hasAttribute('inert')).toBe(false);
+    });
+
     it('ignores close requests', () => {
       comp['onVisibleChange'](false);
       comp['onCancel']();

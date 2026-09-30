@@ -27,9 +27,14 @@
   </ng-template>
 
   <div class="flex flex-col gap-6 h-full">
-    @if (visible()) {
-      <lfx-mentorship-mentee-demographics-section [form]="form" [isDrawer]="true" />
-    }
+    <!-- `inert` for the length of the save, and only over the answers: onSave() builds the request before it goes out
+         and closes on that response, so a selection changed mid-save would be silently dropped. `inert` leaves each
+         control's own disabled state alone, so the consent gating is unchanged. The actions stay outside it. -->
+    <div data-testid="mentorship-mentee-demographics-edit-drawer-fields" [attr.inert]="saving() ? '' : null">
+      @if (visible()) {
+        <lfx-mentorship-mentee-demographics-section [form]="form" [isDrawer]="true" />
+      }
+    </div>
 
     <!-- Kept next to the actions, not at the top of the body: Save sits below the scrolling form, so an error at the top would render off-screen. -->
     @if (errorMessage(); as message) {

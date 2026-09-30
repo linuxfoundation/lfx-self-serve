@@ -307,6 +307,26 @@ describe('MenteeDemographicsEditDrawerComponent', () => {
       expect(comp.visible()).toBe(true);
       expect(updateMenteeProfile).toHaveBeenCalledTimes(1);
     });
+
+    it('makes the answers inert without disabling any control, and leaves the actions reachable', () => {
+      const root = fixture.nativeElement as HTMLElement;
+      const fields = root.querySelector('[data-testid="mentorship-mentee-demographics-edit-drawer-fields"]');
+
+      expect(fields?.hasAttribute('inert')).toBe(true);
+      expect(fields?.querySelector('lfx-mentorship-mentee-demographics-section')).not.toBeNull();
+      expect(root.querySelector('[data-testid="mentorship-mentee-demographics-edit-drawer-save"]')?.closest('[inert]')).toBeNull();
+      // The consent gating owns each answer's disabled state; the save must not touch it.
+      expect(comp['form'].controls.ageConsent.enabled).toBe(true);
+      expect(comp['form'].controls.age.enabled).toBe(true);
+    });
+  });
+
+  it('keeps the answers interactive while no save is in flight', () => {
+    comp.visible.set(true);
+    fixture.detectChanges();
+
+    const fields = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-mentee-demographics-edit-drawer-fields"]');
+    expect(fields?.hasAttribute('inert')).toBe(false);
   });
 
   it('closes without a toast on cancel', () => {

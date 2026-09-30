@@ -34,6 +34,8 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
@@ -584,7 +586,9 @@ export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegister
  * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
  * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
  * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
- * so it gets its own message after the required check.
+ * so it gets its own message after the required check. Each list is held to the profile edit's
+ * `MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS`: the picker offers more options than that, and a profile
+ * registered over the cap could never be saved from the profile drawer again.
  */
 export function getMentorshipMenteeRegisterRequestErrors(
   input: Pick<
@@ -602,8 +606,10 @@ export function getMentorshipMenteeRegisterRequestErrors(
   );
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
+  else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
   else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
+  else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
   else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';

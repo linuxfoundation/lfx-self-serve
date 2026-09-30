@@ -11,6 +11,17 @@ const isRecord = (value: unknown): value is Record<string, unknown> => value !==
 
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
 
+/** Keeps the first of each case-insensitive repeat, as the skills picker and the profile update do, so a repeat is never stored. */
+const withoutDuplicateSkills = (skills: string[]): string[] => {
+  const seen = new Set<string>();
+  return skills.filter((skill) => {
+    const key = skill.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 /** Drops unset and blank answers; `undefined` when nothing is left, so the upstream column stays unset. */
 const withoutBlanks = <T extends Record<string, string | undefined>>(value: T): Partial<T> | undefined => {
   const entries = Object.entries(value).filter(([, answer]) => answer !== undefined && answer !== '');
@@ -42,7 +53,8 @@ const parseDemographics = (value: unknown): { demographics?: MentorshipMenteeDem
  * Turns the `POST /api/mentorship/mentee/profile` body into a normalised request, or throws a 400
  * naming each bad field. Wrong types are reported first; once the shape is right the same rules
  * the register form applies (`getMentorshipMenteeRegisterRequestErrors`) run on the values, so the
- * browser and the BFF cannot drift. Only known keys are copied. The introduction HTML is stored as
+ * browser and the BFF cannot drift. Repeated skills are dropped before those rules run, so the
+ * skills cap counts what is stored. Only known keys are copied. The introduction HTML is stored as
  * sent, capped but not sanitised: every render path sanitises it.
  */
 export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipMenteeRegisterRequest => {
@@ -72,8 +84,8 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
 
   const request: MentorshipMenteeRegisterRequest = {
     introduction: introduction as string,
-    skillsHave: skillsHave as string[],
-    skillsWant: skillsWant as string[],
+    skillsHave: withoutDuplicateSkills(skillsHave as string[]),
+    skillsWant: withoutDuplicateSkills(skillsWant as string[]),
     additionalNotes: (additionalNotes as string).trim(),
     ...(demographics ? { demographics } : {}),
     ageEligible: body['ageEligible'] as boolean,
