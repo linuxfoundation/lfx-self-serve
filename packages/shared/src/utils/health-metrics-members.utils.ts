@@ -13,6 +13,9 @@ import {
   HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+  HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
@@ -46,6 +49,13 @@ import type {
   HealthMetricsMembersMovement,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovementRowView,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsAudienceOption,
+  HealthMetricsMembersNpsQuarter,
+  HealthMetricsMembersNpsSegmentView,
+  HealthMetricsMembersNpsSummaryView,
+  HealthMetricsMembersNpsTrendNote,
+  HealthMetricsMembersNpsTrendPointView,
   HealthMetricsMembersRenewal,
   HealthMetricsMembersRenewalRowView,
   HealthMetricsMembersRenewalsSummary,
@@ -391,6 +401,114 @@ export function buildHealthMetricsMembersBoardCountLabel(totalRecords: number): 
   return pluralize(totalRecords, 'meeting');
 }
 
+/** The audience toggle, in the read's order. */
+export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMetricsMembersNpsAudience[]): HealthMetricsMembersNpsAudienceOption[] {
+  return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
+}
+
+/** The NPS hero, banner and footer for one audience; a flagged sample withholds the score rather than showing it as precise. */
+export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
+  const isWithheld = !audience || audience.isSampleTooSmall || audience.npsScore === null;
+  const recipients = audience?.recipientsCount ?? null;
+  const responses = audience?.responsesCount ?? null;
+  const ratePct = toWholePct(audience?.responseRatePct ?? null);
+  const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+  const change = isWithheld ? null : (audience?.scoreChangePp ?? null);
+  const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
+  const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
+
+  return {
+    isWithheld,
+    scoreLabel: isWithheld ? '—' : formatSignedScore(audience?.npsScore ?? null),
+    changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
+    changeDirection: directionOf(change),
+    caption: isWithheld ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
+    respondedLabel,
+    rateLabel,
+    isRateBelowFloor,
+    lowSampleNote: audience?.isSampleTooSmall
+      ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold — the score is suppressed rather than shown as precise.`
+      : null,
+    lastUpdatedLabel: audience?.lastUpdatedQuarter ? `Last updated ${audience.lastUpdatedQuarter}` : '',
+    surveyedLabel: `out of ${formatCount(recipients)} surveyed`,
+    footer: isRateBelowFloor
+      ? {
+          isBelowFloor: true,
+          lead: `${formatCount(audience?.noResponseCount ?? null)} of ${formatCount(recipients)} did not respond.`,
+          text: `A score computed on ${pluralize(Math.max(0, responses ?? 0), 'reply', 'replies')} is not a foundation-wide signal.`,
+        }
+      : {
+          isBelowFloor: false,
+          lead: null,
+          text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
+        },
+  };
+}
+
+/** Promoters, passives, detractors and non-responses as shares of everyone surveyed. */
+export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSegmentView[] {
+  const counts: Record<(typeof HEALTH_METRICS_MEMBERS_NPS_SEGMENTS)[number]['key'], number | null> = {
+    promoters: audience?.promotersCount ?? null,
+    passives: audience?.passivesCount ?? null,
+    detractors: audience?.detractorsCount ?? null,
+    noResponse: audience?.noResponseCount ?? null,
+  };
+  const recipients = audience?.recipientsCount ?? 0;
+  return HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => {
+    const count = counts[segment.key];
+    return {
+      key: segment.key,
+      label: segment.label,
+      countLabel: formatCount(count),
+      widthPct: recipients > 0 && count !== null ? Math.min(100, Math.max(0, (count / recipients) * 100)) : 0,
+      colorClass: segment.colorClass,
+    };
+  });
+}
+
+/** Trend points, oldest first; a flagged wave keeps its response rate but withholds its score. */
+export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
+  return trend.map((quarter) => {
+    const score = quarter.isSampleTooSmall ? null : quarter.npsScore;
+    const ratePct = toWholePct(quarter.responseRatePct);
+    return {
+      quarterStartDate: quarter.quarterStartDate,
+      label: quarter.quarterLabel ?? '—',
+      score,
+      scoreLabel: score === null ? 'Withheld' : formatSignedScore(score),
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      isRateBelowFloor: ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+    };
+  });
+}
+
+/**
+ * The sentence under the trend: a rising score on a falling rate that fell materially or ended below the floor
+ * is flagged; else a below-floor rate, or a rate that moved under the drop threshold. `null` when neither applies.
+ */
+export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembersNpsTrendPointView[]): HealthMetricsMembersNpsTrendNote | null {
+  const rated = points.filter((point) => point.ratePct !== null);
+  const latest = rated.at(-1);
+  if (points.length < 2 || !latest) return null;
+
+  const scored = rated.filter((point) => point.score !== null);
+  const first = scored[0];
+  const last = scored.at(-1);
+  if (first && last && first !== last) {
+    const scoreUp = (last.score ?? 0) - (first.score ?? 0);
+    const rateDrop = (first.ratePct ?? 0) - (last.ratePct ?? 0);
+    if (scoreUp > 0 && rateDrop > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
+      return { kind: 'diverging', scoreChangeLabel: pluralize(scoreUp, 'point'), fromRateLabel: first.rateLabel, toRateLabel: last.rateLabel };
+    }
+  }
+
+  if (latest.isRateBelowFloor) return { kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
+  if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
+  return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+}
+
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
   return { key, label: format(value), tracked: value !== null };
 }
@@ -553,6 +671,19 @@ function formatPct(fraction: number | null): string {
   return pct === null ? '—' : `${pct}%`;
 }
 
-function pluralize(count: number, noun: string): string {
-  return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
+function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
+}
+
+/** A score or change with its sign; zero carries none. */
+function formatSignedScore(value: number | null): string {
+  if (value === null) return '—';
+  const rounded = Math.round(value);
+  if (rounded === 0) return '0';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}`;
+}
+
+function directionOf(value: number | null): 'up' | 'down' | 'neutral' {
+  if (value === null || Math.round(value) === 0) return 'neutral';
+  return value > 0 ? 'up' : 'down';
 }

@@ -26,6 +26,11 @@ import {
   buildHealthMetricsMembersMovementCountNote,
   buildHealthMetricsMembersMovementDrawerTitle,
   buildHealthMetricsMembersMovementRows,
+  buildHealthMetricsMembersNpsAudienceOptions,
+  buildHealthMetricsMembersNpsSegments,
+  buildHealthMetricsMembersNpsSummary,
+  buildHealthMetricsMembersNpsTrend,
+  buildHealthMetricsMembersNpsTrendNote,
   buildHealthMetricsMembersRenewalRows,
   buildHealthMetricsMembersRenewalsCountLabel,
   buildHealthMetricsMembersRenewalsSummary,
@@ -39,6 +44,8 @@ import type {
   HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBridge,
   HealthMetricsMembersDirectoryMember,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsQuarter,
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersTiers,
@@ -757,5 +764,173 @@ describe('buildHealthMetricsMembersBoardCountLabel', () => {
   it('pluralizes the meeting count', () => {
     expect(buildHealthMetricsMembersBoardCountLabel(1)).toBe('1 meeting');
     expect(buildHealthMetricsMembersBoardCountLabel(12)).toBe('12 meetings');
+  });
+});
+
+describe('members nps', () => {
+  const audience = (overrides: Partial<HealthMetricsMembersNpsAudience> = {}): HealthMetricsMembersNpsAudience => ({
+    audience: 'Board',
+    npsScore: 62,
+    scoreChangePp: 4,
+    recipientsCount: 26,
+    responsesCount: 18,
+    responseRatePct: 0.692,
+    promotersCount: 11,
+    passivesCount: 5,
+    detractorsCount: 2,
+    noResponseCount: 8,
+    isSampleTooSmall: false,
+    lastUpdatedQuarter: 'Q2 2026',
+    ...overrides,
+  });
+  const quarter = (
+    quarterStartDate: string,
+    npsScore: number | null,
+    responseRatePct: number | null,
+    isSampleTooSmall = false
+  ): HealthMetricsMembersNpsQuarter => ({
+    quarterStartDate,
+    quarterLabel: `Q${Math.floor(Number(quarterStartDate.slice(5, 7)) / 3) + 1} ${quarterStartDate.slice(2, 4)}`,
+    npsScore,
+    responseRatePct,
+    isSampleTooSmall,
+  });
+
+  it('builds the audience toggle in the read order', () => {
+    expect(buildHealthMetricsMembersNpsAudienceOptions([audience(), audience({ audience: 'Committers' })])).toEqual([
+      { id: 'Board', label: 'Board' },
+      { id: 'Committers', label: 'Committers' },
+    ]);
+  });
+
+  it('reports a sample it can trust with its change and the non-response footer', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience())).toEqual({
+      isWithheld: false,
+      scoreLabel: '+62',
+      changeLabel: '+4pp',
+      changeDirection: 'up',
+      caption: 'Net Promoter Score · board audience',
+      respondedLabel: '18 of 26',
+      rateLabel: '69%',
+      isRateBelowFloor: false,
+      lowSampleNote: null,
+      lastUpdatedLabel: 'Last updated Q2 2026',
+      surveyedLabel: 'out of 26 surveyed',
+      footer: {
+        isBelowFloor: false,
+        lead: null,
+        text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
+      },
+    });
+  });
+
+  it('signs negative scores and changes, and leaves zero unsigned', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: -12, scoreChangePp: -3 }))).toMatchObject({
+      scoreLabel: '−12',
+      changeLabel: '−3pp',
+      changeDirection: 'down',
+    });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: 0, scoreChangePp: 0 }))).toMatchObject({
+      scoreLabel: '0',
+      changeLabel: '0pp',
+      changeDirection: 'neutral',
+    });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ scoreChangePp: null }))).toMatchObject({ changeLabel: null, changeDirection: 'neutral' });
+  });
+
+  it('withholds a flagged sample and explains why', () => {
+    expect(
+      buildHealthMetricsMembersNpsSummary(
+        audience({ npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19, isSampleTooSmall: true })
+      )
+    ).toMatchObject({
+      isWithheld: true,
+      scoreLabel: '—',
+      changeLabel: null,
+      caption: 'Not enough responses to report a score',
+      lowSampleNote: 'Only 5 of 24 responded (21%). Below the confidence threshold — the score is suppressed rather than shown as precise.',
+      isRateBelowFloor: true,
+      footer: { isBelowFloor: true, lead: '19 of 24 did not respond.', text: 'A score computed on 5 replies is not a foundation-wide signal.' },
+    });
+  });
+
+  it('keeps the singular reply and dashes a missing audience', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience({ responsesCount: 1, responseRatePct: 0.1 })).footer.text).toBe(
+      'A score computed on 1 reply is not a foundation-wide signal.'
+    );
+    expect(buildHealthMetricsMembersNpsSummary(null)).toMatchObject({
+      isWithheld: true,
+      scoreLabel: '—',
+      respondedLabel: '—',
+      rateLabel: '—',
+      lowSampleNote: null,
+      lastUpdatedLabel: '',
+      surveyedLabel: 'out of — surveyed',
+    });
+  });
+
+  it('sizes each segment against everyone surveyed', () => {
+    expect(
+      buildHealthMetricsMembersNpsSegments(audience({ recipientsCount: 20, promotersCount: 10, passivesCount: 4, detractorsCount: 2, noResponseCount: 4 }))
+    ).toEqual([
+      { key: 'promoters', label: 'Promoters', countLabel: '10', widthPct: 50, colorClass: 'bg-emerald-600' },
+      { key: 'passives', label: 'Passives', countLabel: '4', widthPct: 20, colorClass: 'bg-amber-600' },
+      { key: 'detractors', label: 'Detractors', countLabel: '2', widthPct: 10, colorClass: 'bg-red-600' },
+      { key: 'noResponse', label: 'No response', countLabel: '4', widthPct: 20, colorClass: 'bg-gray-200' },
+    ]);
+    expect(buildHealthMetricsMembersNpsSegments(null).map((segment) => [segment.countLabel, segment.widthPct])).toEqual([
+      ['—', 0],
+      ['—', 0],
+      ['—', 0],
+      ['—', 0],
+    ]);
+  });
+
+  it('withholds a flagged wave score but keeps its rate', () => {
+    expect(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-04-01', 80, 0.21, true)])).toEqual([
+      { quarterStartDate: '2025-07-01', label: 'Q3 25', score: 54, scoreLabel: '+54', ratePct: 71, rateLabel: '71%', isRateBelowFloor: false },
+      { quarterStartDate: '2026-04-01', label: 'Q2 26', score: null, scoreLabel: 'Withheld', ratePct: 21, rateLabel: '21%', isRateBelowFloor: true },
+    ]);
+  });
+
+  it('flags a rising score on a materially falling rate', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2024-10-01', 45, 0.55), quarter('2025-07-01', 54, 0.5), quarter('2026-01-01', 60, 0.45)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
+      kind: 'diverging',
+      scoreChangeLabel: '15 points',
+      fromRateLabel: '55%',
+      toRateLabel: '45%',
+    });
+  });
+
+  it('flags a rising score whose last reportable rate is below the floor', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.41), quarter('2025-07-01', 51, 0.39)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
+  });
+
+  it('never says a rising rate fell, sending one still below the floor to the floor note', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.2), quarter('2025-07-01', 58, 0.3)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
+  });
+
+  it('says nothing about a rate that moved materially without a rising score', () => {
+    const falling = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 60, 0.8), quarter('2025-07-01', 50, 0.5)]);
+    const rising = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.45), quarter('2025-07-01', 58, 0.7)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(falling)).toBeNull();
+    expect(buildHealthMetricsMembersNpsTrendNote(rising)).toBeNull();
+  });
+
+  it('compares reportable scores only, then judges the latest rate', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.7), quarter('2025-07-01', 55, 0.68), quarter('2026-01-01', 90, 0.3, true)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
+  });
+
+  it('calls a steady rate meaningful, and says nothing without two waves or a rate', () => {
+    const steady = buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-01-01', 62, 0.69)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(steady)).toEqual({ kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '69%' });
+    expect(buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2026-01-01', 62, 0.69)]))).toBeNull();
+    expect(
+      buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, null), quarter('2026-01-01', 62, null)]))
+    ).toBeNull();
   });
 });

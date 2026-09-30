@@ -971,3 +971,163 @@ describe('HealthMetricsMembersService.getBoardAttendance', () => {
     });
   });
 });
+
+describe('HealthMetricsMembersService.getNps', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, audience: null };
+
+  function audienceRow(audience: string | null, overrides: Record<string, unknown> = {}) {
+    return {
+      AUDIENCE_TYPE: audience,
+      NPS_SCORE: 62,
+      NPS_SCORE_CHANGE_PP: 4,
+      RECIPIENTS_COUNT: 26,
+      RESPONSES_COUNT: 18,
+      RESPONSE_RATE_PCT: 0.692,
+      PROMOTERS_COUNT: 11,
+      PASSIVES_COUNT: 5,
+      DETRACTORS_COUNT: 2,
+      NO_RESPONSE_COUNT: 8,
+      IS_SAMPLE_TOO_SMALL: false,
+      LAST_UPDATED_QUARTER: 'Q2 2026',
+      ...overrides,
+    };
+  }
+
+  function quarterRow(month: number, overrides: Record<string, unknown> = {}) {
+    return {
+      QUARTER_START_DATE: new Date(Date.UTC(2025, month - 1, 1)),
+      QUARTER_LABEL: `Q${Math.ceil(month / 3)} 25`,
+      NPS_SCORE: 54,
+      RESPONSE_RATE_PCT: 0.71,
+      IS_SAMPLE_TOO_SMALL: false,
+      ...overrides,
+    };
+  }
+
+  type NpsRead = 'audiences' | 'trend';
+
+  function kindOf(sql: string): NpsRead {
+    return sql.includes('MEMBERSHIP_NPS_QUARTERLY_TREND') ? 'trend' : 'audiences';
+  }
+
+  /** Routes each read by its shape, since the two run in parallel. */
+  function respond(rows: Record<NpsRead, unknown[]>) {
+    execute.mockImplementation(async (sql: string) => ({ rows: rows[kindOf(sql)] }));
+  }
+
+  function npsRead(kind: NpsRead): [string, unknown[]] {
+    const call = execute.mock.calls.find(([sql]) => kindOf(String(sql)) === kind);
+    if (!call) throw new Error(`No ${kind} read`);
+    return call as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond({ audiences: [audienceRow('Board'), audienceRow('Committers')], trend: [quarterRow(7), quarterRow(10)] });
+  });
+
+  it('reads the audiences surveyed in the period from its columns, binding every placeholder', async () => {
+    for (const range of HEALTH_METRICS_L2_RANGES) {
+      execute.mockClear();
+      await new HealthMetricsMembersService().getNps(req, { ...query, range });
+
+      const [sql, binds] = npsRead('audiences');
+      const suffix = {
+        YTD: 'ytd',
+        COMPLETED_YEAR: 'last_completed_year',
+        COMPLETED_YEAR_2: 'prev_completed_year',
+        COMPLETED_YEAR_3: '3rd_last_completed_year',
+      }[range];
+      expect(binds).toEqual(['acme']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_NPS_BY_AUDIENCE\n');
+      expect(sql).toContain('TRIM(audience_type) AS audience_type,');
+      expect(sql).toContain(`nps_score_change_pp_${suffix} AS nps_score_change_pp`);
+      expect(sql).toContain(`AND recipients_count_${suffix} > 0`);
+      expect(sql).toContain("AND NULLIF(TRIM(audience_type), '') IS NOT NULL");
+      expect(sql).toContain("ORDER BY CASE TRIM(audience_type) WHEN 'Board' THEN 0 WHEN 'Maintainers' THEN 1 ELSE 2 END, TRIM(audience_type) ASC");
+    }
+  });
+
+  it("resolves the trend's audience in the same read and bounds its waves by the period's end", async () => {
+    await new HealthMetricsMembersService().getNps(req, { ...query, range: 'COMPLETED_YEAR', audience: 'Committers' });
+
+    const [sql, binds] = npsRead('trend');
+    expect(binds).toEqual(['acme', 'Committers', 'acme']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('AND recipients_count_last_completed_year > 0');
+    expect(sql).toContain("ORDER BY IFF(TRIM(audience_type) = ?, 0, 1), CASE TRIM(audience_type) WHEN 'Board'");
+    expect(sql).toContain('JOIN chosen ON chosen.audience_type = TRIM(trend.audience_type)');
+    expect(sql).toContain('AND trend.recipients_count > 0');
+    expect(sql).toContain("AND trend.quarter_start_date < DATE_TRUNC('YEAR', CURRENT_DATE())");
+    expect(sql).not.toContain('trend.quarter_start_date >=');
+    expect(sql).toContain('ORDER BY trend.quarter_start_date ASC');
+  });
+
+  it('binds an empty audience when none is requested, so the first in read order wins', async () => {
+    await new HealthMetricsMembersService().getNps(req, query);
+
+    expect(npsRead('trend')[1]).toEqual(['acme', '', 'acme']);
+  });
+
+  it('maps every audience and wave, selecting the first audience by default', async () => {
+    expect(await new HealthMetricsMembersService().getNps(req, query)).toEqual({
+      audiences: [
+        {
+          audience: 'Board',
+          npsScore: 62,
+          scoreChangePp: 4,
+          recipientsCount: 26,
+          responsesCount: 18,
+          responseRatePct: 0.692,
+          promotersCount: 11,
+          passivesCount: 5,
+          detractorsCount: 2,
+          noResponseCount: 8,
+          isSampleTooSmall: false,
+          lastUpdatedQuarter: 'Q2 2026',
+        },
+        expect.objectContaining({ audience: 'Committers' }),
+      ],
+      selectedAudience: 'Board',
+      trend: [
+        { quarterStartDate: '2025-07-01', quarterLabel: 'Q3 25', npsScore: 54, responseRatePct: 0.71, isSampleTooSmall: false },
+        { quarterStartDate: '2025-10-01', quarterLabel: 'Q4 25', npsScore: 54, responseRatePct: 0.71, isSampleTooSmall: false },
+      ],
+    });
+  });
+
+  it('selects a requested audience only when it was surveyed in the period', async () => {
+    const service = new HealthMetricsMembersService();
+
+    expect((await service.getNps(req, { ...query, audience: 'Committers' })).selectedAudience).toBe('Committers');
+    expect((await service.getNps(req, { ...query, audience: 'Ambassador' })).selectedAudience).toBe('Board');
+  });
+
+  it('withholds a flagged score and change, and drops blank audiences and undated waves', async () => {
+    respond({
+      audiences: [
+        audienceRow('Board', { IS_SAMPLE_TOO_SMALL: true, NPS_SCORE: 80, NPS_SCORE_CHANGE_PP: 12, LAST_UPDATED_QUARTER: null }),
+        audienceRow('  '),
+        audienceRow(null),
+      ],
+      trend: [
+        quarterRow(4, { IS_SAMPLE_TOO_SMALL: true, NPS_SCORE: 90, QUARTER_LABEL: null, RESPONSE_RATE_PCT: null }),
+        quarterRow(7, { QUARTER_START_DATE: null }),
+      ],
+    });
+
+    const result = await new HealthMetricsMembersService().getNps(req, query);
+
+    expect(result.audiences).toEqual([
+      expect.objectContaining({ audience: 'Board', npsScore: null, scoreChangePp: null, isSampleTooSmall: true, lastUpdatedQuarter: null, responsesCount: 18 }),
+    ]);
+    expect(result.trend).toEqual([{ quarterStartDate: '2025-04-01', quarterLabel: null, npsScore: null, responseRatePct: null, isSampleTooSmall: true }]);
+  });
+
+  it('reads a foundation never surveyed as no audiences, no selection and no trend', async () => {
+    respond({ audiences: [], trend: [] });
+
+    expect(await new HealthMetricsMembersService().getNps(req, query)).toEqual({ audiences: [], selectedAudience: null, trend: [] });
+  });
+});

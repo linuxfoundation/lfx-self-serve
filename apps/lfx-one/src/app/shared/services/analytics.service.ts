@@ -122,6 +122,8 @@ import {
   HealthMetricsMembersMovementsQuery,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
+  HealthMetricsMembersNps,
+  HealthMetricsMembersNpsQuery,
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersTiers,
@@ -1475,6 +1477,19 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersBoardAttendance>('/api/analytics/members-board-attendance', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] members-board-attendance failed', { foundationSlug: query.foundationSlug, cohort: query.cohort, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersNps(query: HealthMetricsMembersNpsQuery): Observable<HealthMetricsMembersNps> {
+    let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('range', query.range);
+    if (query.audience) params = params.set('audience', query.audience);
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersNps>('/api/analytics/members-nps', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-nps failed', { foundationSlug: query.foundationSlug, error });
         return throwError(() => error);
       })
     );

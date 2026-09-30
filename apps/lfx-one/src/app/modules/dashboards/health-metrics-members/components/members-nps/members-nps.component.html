@@ -1,0 +1,197 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="members-nps">
+  @if (audienceOptions().length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-nps-controls">
+      <lfx-filter-pills
+        [options]="audienceOptions()"
+        [selectedFilter]="selectedAudience()?.audience ?? ''"
+        (filterChange)="onAudienceChange($event)"
+        data-testid="members-nps-audience-pills" />
+      <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-nps-updated">
+        @if (loading() || loadFailed()) {
+          &mdash;
+        } @else {
+          {{ summary().lastUpdatedLabel }}
+        }
+      </span>
+    </div>
+  }
+
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Satisfaction unavailable"
+      subtitle="We could not load this foundation's survey results. Refresh the page to try again."
+      data-testid="members-nps-error" />
+  } @else if (loading()) {
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-nps-loading" aria-hidden="true" />
+  } @else if (noSurvey()) {
+    <lfx-empty-state
+      icon="fa-light fa-square-poll-horizontal"
+      title="No survey in this period"
+      subtitle="The score appears here once a survey of this foundation's audiences is sent in the selected period."
+      data-testid="members-nps-empty" />
+  } @else {
+    @if (summary().lowSampleNote) {
+      <p class="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700" data-testid="members-nps-low-sample">
+        <i class="fa-light fa-circle-half-stroke mr-1" aria-hidden="true"></i>
+        {{ summary().lowSampleNote }}
+      </p>
+    }
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-nps-hero">
+      <div class="flex flex-col gap-2">
+        <span class="flex items-baseline gap-2">
+          <span
+            class="text-3xl font-semibold tabular-nums"
+            [class.text-gray-400]="summary().isWithheld"
+            [class.text-gray-900]="!summary().isWithheld"
+            data-testid="members-nps-score"
+            >{{ summary().scoreLabel }}</span
+          >
+          @if (summary().changeLabel) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-emerald-600]="summary().changeDirection === 'up'"
+              [class.text-red-600]="summary().changeDirection === 'down'"
+              [class.text-gray-400]="summary().changeDirection === 'neutral'"
+              data-testid="members-nps-change"
+              >{{ summary().changeLabel }}</span
+            >
+          }
+        </span>
+        <span class="text-[12.5px] text-gray-500" data-testid="members-nps-caption">{{ summary().caption }}</span>
+      </div>
+
+      @if (!summary().isWithheld) {
+        <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-nps-side">
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-[11.5px] text-gray-400">Responded</dt>
+            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-nps-responded">{{ summary().respondedLabel }}</dd>
+          </div>
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-[11.5px] text-gray-400">Response rate</dt>
+            <dd
+              class="text-[17px] font-semibold tabular-nums"
+              [class.text-amber-600]="summary().isRateBelowFloor"
+              [class.text-gray-900]="!summary().isRateBelowFloor"
+              data-testid="members-nps-rate">
+              {{ summary().rateLabel }}
+            </dd>
+          </div>
+        </dl>
+      }
+    </div>
+
+    <div class="flex flex-col gap-2" data-testid="members-nps-distribution">
+      <div class="flex items-baseline justify-between gap-2">
+        <h4 class="text-sm font-medium text-gray-900">Response distribution</h4>
+        <span class="text-[11px] tabular-nums text-gray-400" data-testid="members-nps-surveyed">{{ summary().surveyedLabel }}</span>
+      </div>
+      <div
+        class="flex h-[34px] overflow-hidden rounded-md border border-gray-100"
+        role="img"
+        [attr.aria-label]="distributionLabel()"
+        data-testid="members-nps-bar">
+        @for (segment of segments(); track segment.key) {
+          @if (segment.widthPct > 0) {
+            <div class="h-full" [class]="segment.colorClass" [style.width.%]="segment.widthPct" [attr.data-testid]="'members-nps-segment-' + segment.key"></div>
+          }
+        }
+      </div>
+      <ul class="flex flex-wrap gap-4 text-[11.5px] text-gray-600" data-testid="members-nps-legend">
+        @for (segment of segments(); track segment.key) {
+          <li class="inline-flex items-center gap-1.5" [attr.data-testid]="'members-nps-legend-' + segment.key">
+            <span class="h-2 w-2 rounded-full" [class]="segment.colorClass" aria-hidden="true"></span>
+            {{ segment.label }} <strong class="font-semibold tabular-nums text-gray-900">{{ segment.countLabel }}</strong>
+          </li>
+        }
+      </ul>
+    </div>
+
+    @if (trend().length > 1) {
+      <div class="flex flex-col gap-2" data-testid="members-nps-trend">
+        <div class="flex items-baseline justify-between gap-2">
+          <h4 class="text-sm font-medium text-gray-900">Score and response rate over time</h4>
+          <span class="text-[11px] text-gray-400">a score is only as good as the sample under it</span>
+        </div>
+        <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="members-nps-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+        </div>
+        <div class="flex flex-wrap gap-4 text-[10px] text-gray-500" aria-hidden="true" data-testid="members-nps-chart-legend">
+          <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-blue-300"></span>NPS score (left)</span>
+          <span class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3.5 bg-amber-600"></span>Response rate (right)</span>
+          <span class="inline-flex items-center gap-1.5 text-red-600"
+            ><span class="h-2 w-2 rounded-full bg-red-600"></span>below {{ rateFloorPct }}% — too few replies to trust</span
+          >
+        </div>
+        <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+        <table class="sr-only" data-testid="members-nps-chart-table">
+          <caption>
+            NPS score and response rate by survey wave, oldest first
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Quarter</th>
+              <th scope="col">NPS score</th>
+              <th scope="col">Response rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (point of trend(); track point.quarterStartDate) {
+              <tr>
+                <th scope="row">{{ point.label }}</th>
+                <td>{{ point.scoreLabel }}</td>
+                <td>{{ point.rateLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        @if (trendNote(); as note) {
+          <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-nps-trend-note">
+            @switch (note.kind) {
+              @case ('diverging') {
+                <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+                <span
+                  >The score is up <strong class="font-semibold text-gray-700">{{ note.scoreChangeLabel }}</strong> while the response rate fell from
+                  <strong class="font-semibold text-gray-700">{{ note.fromRateLabel }} to {{ note.toRateLabel }}</strong
+                  >. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.</span
+                >
+              }
+              @case ('below-floor') {
+                <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+                <span
+                  >Response rate is <strong class="font-semibold text-gray-700">{{ note.toRateLabel }}</strong> — below the {{ rateFloorPct }}% floor, so
+                  neither the score nor its trend is a foundation-wide signal.</span
+                >
+              }
+              @default {
+                <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+                <span
+                  >Response rate is holding around <strong class="font-semibold text-gray-700">{{ note.toRateLabel }}</strong
+                  >, so the movement in the score is meaningful.</span
+                >
+              }
+            }
+          </p>
+        }
+      </div>
+    }
+
+    <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-nps-footer">
+      @if (summary().footer.isBelowFloor) {
+        <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+        <span
+          ><strong class="font-semibold text-gray-700">{{ summary().footer.lead }}</strong> {{ summary().footer.text }}</span
+        >
+      } @else {
+        <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+        <span>{{ summary().footer.text }}</span>
+      }
+    </p>
+  }
+</div>

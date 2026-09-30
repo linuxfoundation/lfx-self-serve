@@ -330,6 +330,7 @@ export interface HealthMetricsMembersQueryParams {
   renewalsPage: string;
   boardCohort: string;
   boardPage: string;
+  npsAudience: string;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
@@ -545,4 +546,104 @@ export interface HealthMetricsMembersBoardTrendBarView {
   pct: number | null;
   pctLabel: string;
   isLatest: boolean;
+}
+
+/** `GET /api/analytics/members-nps` — one audience's survey figures for a period; `null` picks the first audience. */
+export interface HealthMetricsMembersNpsQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  audience: string | null;
+}
+
+/** One audience surveyed in the period. Scores are `null` when the view flags the sample too small to report. */
+export interface HealthMetricsMembersNpsAudience {
+  audience: string;
+  npsScore: number | null;
+  /** Points since the audience's previous survey wave. */
+  scoreChangePp: number | null;
+  recipientsCount: number | null;
+  responsesCount: number | null;
+  /** 0–1 share of recipients who responded. */
+  responseRatePct: number | null;
+  promotersCount: number | null;
+  passivesCount: number | null;
+  detractorsCount: number | null;
+  noResponseCount: number | null;
+  isSampleTooSmall: boolean;
+  /** The survey wave the figures come from, e.g. `Q2 2026`. */
+  lastUpdatedQuarter: string | null;
+}
+
+/** One survey wave of the selected audience; `quarterStartDate` is ISO `YYYY-MM-DD`, `responseRatePct` 0–1. */
+export interface HealthMetricsMembersNpsQuarter {
+  quarterStartDate: string;
+  quarterLabel: string | null;
+  npsScore: number | null;
+  responseRatePct: number | null;
+  isSampleTooSmall: boolean;
+}
+
+/** Audiences in toggle order, the one the figures belong to, and its waves up to the period's end, oldest first. */
+export interface HealthMetricsMembersNps {
+  audiences: HealthMetricsMembersNpsAudience[];
+  selectedAudience: string | null;
+  trend: HealthMetricsMembersNpsQuarter[];
+}
+
+/** The audience toggle over the hero; the id is the view's audience name. */
+export interface HealthMetricsMembersNpsAudienceOption extends FilterPillOption {
+  id: string;
+}
+
+/** The note under the response distribution; `lead` is the bolded opening, when there is one. */
+export interface HealthMetricsMembersNpsFooterView {
+  isBelowFloor: boolean;
+  lead: string | null;
+  text: string;
+}
+
+/** The NPS hero as the section renders it; a withheld score renders the dash and the not-enough caption. */
+export interface HealthMetricsMembersNpsSummaryView {
+  isWithheld: boolean;
+  scoreLabel: string;
+  /** `null` renders no change. */
+  changeLabel: string | null;
+  changeDirection: 'up' | 'down' | 'neutral';
+  caption: string;
+  respondedLabel: string;
+  rateLabel: string;
+  isRateBelowFloor: boolean;
+  /** The low-confidence banner, when the view flags the sample too small. */
+  lowSampleNote: string | null;
+  lastUpdatedLabel: string;
+  surveyedLabel: string;
+  footer: HealthMetricsMembersNpsFooterView;
+}
+
+/** One segment of the response distribution; `widthPct` is its share of everyone surveyed. */
+export interface HealthMetricsMembersNpsSegmentView {
+  key: string;
+  label: string;
+  countLabel: string;
+  widthPct: number;
+  colorClass: string;
+}
+
+/** One wave of the trend chart; `ratePct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersNpsTrendPointView {
+  quarterStartDate: string;
+  label: string;
+  score: number | null;
+  scoreLabel: string;
+  ratePct: number | null;
+  rateLabel: string;
+  isRateBelowFloor: boolean;
+}
+
+/** The sentence under the trend: a score rising on a falling rate, a rate below the floor, or a rate holding. */
+export interface HealthMetricsMembersNpsTrendNote {
+  kind: 'diverging' | 'below-floor' | 'holding';
+  scoreChangeLabel: string;
+  fromRateLabel: string;
+  toRateLabel: string;
 }
