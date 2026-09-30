@@ -471,7 +471,9 @@ export class MailingListManageComponent {
       audience_access: mailingList.audience_access || MailingListAudienceAccess.PUBLIC,
       type: mailingList.type || MailingListType.DISCUSSION_OPEN,
       public: mailingList.public ?? true,
-      committees: mailingList.committees || [],
+      // Single-select: patch with the first committee object (or null) so the control
+      // shape matches what CommitteeSelectorComponent writes on user interaction.
+      committees: mailingList.committees?.[0] ?? null,
     });
 
     // The name is immutable after creation — clear its validators so existing names
@@ -526,11 +528,14 @@ export class MailingListManageComponent {
     const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
     // The upstream API associates a group via `committee_uid` (singular UID string).
-    // The `committees` array field on the request interface describes the form state but
-    // is not a valid upstream wire field — sending it has no effect and the link is never
-    // stored. Read the first selected committee and send it as committee_uid instead.
-    const selectedCommittees: CommitteeReference[] = formValue.committees ?? [];
-    const committeeUid = selectedCommittees[0]?.uid ?? null;
+    // The `committees` control holds different shapes depending on the code path:
+    //   - Edit-mode initial patch writes the backend array (CommitteeReference[]).
+    //   - After the user picks in single-select mode, CommitteeSelectorComponent writes
+    //     a single CommitteeReference object (not an array).
+    // Normalize both shapes before reading the UID so either path produces the correct value.
+    const raw = formValue.committees as CommitteeReference | CommitteeReference[] | null | undefined;
+    const selected = Array.isArray(raw) ? raw[0] : raw;
+    const committeeUid = selected?.uid ?? null;
 
     return {
       name: groupName,
