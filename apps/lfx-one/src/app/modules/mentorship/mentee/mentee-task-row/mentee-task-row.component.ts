@@ -92,7 +92,7 @@ export class MenteeTaskRowComponent {
 
     this.saving.set(true);
     // No takeUntilDestroyed: the toast and cache invalidation must run even if the row is destroyed mid-flight.
-    this.taskStatusService.changeStatus(current.id, requested).subscribe((changed) => this.onStatusSettled(current.id, saved, requested, changed));
+    this.taskStatusService.changeStatus(current.id, requested).subscribe((changed) => this.onStatusSettled(current.id, requested, changed));
   }
 
   protected onUpload(): void {
@@ -132,12 +132,16 @@ export class MenteeTaskRowComponent {
 
   // ---- 7. Private helpers ---------------------------------------------------
 
-  private onStatusSettled(taskId: string, from: MentorshipMenteeTaskStatus, to: MentorshipMenteeUpdatableTaskStatus, changed: boolean): void {
+  private onStatusSettled(taskId: string, to: MentorshipMenteeUpdatableTaskStatus, changed: boolean): void {
     if (changed) {
-      this.confirmed.set({ from, to });
+      // Keyed on the status the task input carries now, not the one this change started from: after a
+      // chained change (In Progress, then Submitted before the first refresh lands) the input still holds
+      // the original status, and a refresh that landed mid-flight has already moved it on.
+      this.confirmed.set({ from: normalizeMentorshipMenteeTaskStatus(this.task().status), to });
     }
-    // Read the control fresh: the phase component may have rebuilt the FormGroup while the request was in flight.
-    this.setControl(taskId, changed ? to : from);
+    // Read the control and the shown status fresh: the phase component may have rebuilt the FormGroup,
+    // and a refresh may have moved the task, while the request was in flight.
+    this.setControl(taskId, changed ? to : normalizeMentorshipMenteeTaskStatus(this.effectiveTask().status));
     this.saving.set(false);
   }
 

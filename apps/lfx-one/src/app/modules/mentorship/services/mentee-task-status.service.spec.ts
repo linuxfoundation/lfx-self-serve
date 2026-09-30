@@ -67,7 +67,7 @@ describe('MenteeTaskStatusService', () => {
     expect(clearMenteeCaches).not.toHaveBeenCalled();
   });
 
-  it('emits false and shows the neutral copy for a 400 without re-reading the applications', () => {
+  it('emits false, shows the file-aware copy for a 400 and re-reads the applications', () => {
     updateMenteeTaskStatus.mockReturnValueOnce(throwError(() => httpError(400, { error: 'invalid input' })));
 
     expect(change('submitted')).toEqual([false]);
@@ -78,7 +78,8 @@ describe('MenteeTaskStatusService', () => {
       detail: MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES[400],
       life: MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE,
     });
-    expect(clearMenteeCaches).not.toHaveBeenCalled();
+    // A 400 means the cached task no longer says whether a file is needed, so the tasks are re-read.
+    expect(clearMenteeCaches).toHaveBeenCalledTimes(1);
   });
 
   it('shows the server message for the impersonation 403 and keeps the applications', () => {

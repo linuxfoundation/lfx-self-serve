@@ -362,18 +362,22 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_DETAIL = 'Your task status ha
 export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_SUMMARY = 'Could not update task';
 export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK = 'We could not update this task right now. Please try again.';
 
-/** Statuses where the local view is stale, so the applications are re-read after the toast. */
-export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [403, 404, 409];
+/**
+ * Statuses where the local view is stale, so the applications are re-read after the toast. A 400 counts:
+ * the row only sends a task id and a status it has already validated, so in practice it is upstream's
+ * file-required check, which means the cached task no longer says whether a file is needed.
+ */
+export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [400, 403, 404, 409];
 
 /**
  * Status-change failures with their own copy, keyed by status. A 400 is either the BFF rejecting the
  * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both.
  * A 403 can come from the gateway's assignee check or the service's; the OpenFGA assignee tuple is written
  * asynchronously, so a valid assignee may see one just after the task is created. The stale statuses
- * (403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
+ * (400, 403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
  */
 export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<number, string>> = {
-  400: 'This task could not be updated. If it needs a file, file upload is coming soon.',
+  400: 'This task could not be updated. If it needs a file, file upload is coming soon. Your tasks have been refreshed.',
   403: 'You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed.',
   404: 'This task no longer exists. Your tasks have been refreshed.',
   409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',

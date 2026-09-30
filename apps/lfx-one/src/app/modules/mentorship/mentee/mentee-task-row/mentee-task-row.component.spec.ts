@@ -164,6 +164,67 @@ describe('MenteeTaskRowComponent', () => {
       expect(changeStatus).toHaveBeenCalledWith('row_pending', 'in_progress');
     });
 
+    it('keeps showing a chained change saved before the first refresh lands', async () => {
+      const second = new Subject<boolean>();
+      changeStatus.mockReturnValueOnce(inFlight.asObservable()).mockReturnValueOnce(second.asObservable());
+      const task = pendingTask();
+      const form = await buildRow(task);
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+      inFlight.next(true);
+      inFlight.complete();
+
+      form.controls[task.id].setValue('submitted');
+      component['onStatusChange']();
+      second.next(true);
+      second.complete();
+      fixture.detectChanges();
+
+      // The task input is still pending, yet the row and the control both read Submitted.
+      expect(changeStatus).toHaveBeenLastCalledWith('row_pending', 'submitted');
+      expect(form.controls[task.id].value).toBe('submitted');
+      expect(select().styleClass()).toBe(`mentee-task-status-dropdown ${uploadedTask().statusClass}`);
+      expect(optionState()).toEqual({ pending: true, in_progress: true, submitted: true });
+    });
+
+    it('keeps showing a chained change when the first refresh lands while it is in flight', async () => {
+      const second = new Subject<boolean>();
+      changeStatus.mockReturnValueOnce(inFlight.asObservable()).mockReturnValueOnce(second.asObservable());
+      const task = pendingTask();
+      const form = await buildRow(task);
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+      inFlight.next(true);
+      inFlight.complete();
+
+      form.controls[task.id].setValue('submitted');
+      component['onStatusChange']();
+      fixture.componentRef.setInput('task', { ...task, status: 'in_progress' });
+      fixture.detectChanges();
+      second.next(true);
+      second.complete();
+      fixture.detectChanges();
+
+      expect(form.controls[task.id].value).toBe('submitted');
+      expect(select().styleClass()).toBe(`mentee-task-status-dropdown ${uploadedTask().statusClass}`);
+      expect(optionState()).toEqual({ pending: true, in_progress: true, submitted: true });
+    });
+
+    it('reverts a failed change to the status a mid-flight refresh brought in', async () => {
+      const task = pendingTask();
+      const form = await buildRow(task);
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+
+      fixture.componentRef.setInput('task', { ...task, status: 'in_progress' });
+      fixture.detectChanges();
+      inFlight.next(false);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      expect(form.controls[task.id].value).toBe('in_progress');
+    });
+
     it('reverts the control to the saved status when the save fails', async () => {
       const task = pendingTask();
       const form = await buildRow(task);
