@@ -1105,6 +1105,16 @@ describe('OrgClasController.updateEclaAutoCreate — applying the write', () => 
     expect(res.json).toHaveBeenCalledWith({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
   });
 
+  it('answers 403 with its own copy for a caller off the roster', async () => {
+    updateEclaAutoCreate.mockResolvedValue({ outcome: 'forbidden' });
+    const res = buildRes();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' });
+  });
+
   it('hands an upstream failure to the error handler rather than answering it', async () => {
     updateEclaAutoCreate.mockRejectedValue(new Error('upstream exploded'));
     const res = buildRes();

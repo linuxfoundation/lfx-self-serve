@@ -724,11 +724,17 @@ export interface OrgClaGroup {
    *
    * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
    * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
-   * the status slot and do not hide the toggle; the Overview shows it for a signed row that is
-   * not a preview, when the caller holds the grant. Absent from an upstream field maps to
+   * the status slot and do not hide the toggle. Absent from an upstream field maps to
    * `false` at the mapper, matching the producer's own default.
    */
   autoCreateEcla?: boolean;
+  /**
+   * Whether the signed-in viewer is on this agreement's CLA manager list. Server-decided by an
+   * exact LF username match, so the browser MUST NOT work it out itself. False when there is no
+   * list or no username, so visibility fails closed. The Approval List and Acknowledgments
+   * controls also need the loaded list's own `canEdit`.
+   */
+  viewerIsClaManager: boolean;
 }
 
 /**
@@ -1142,8 +1148,9 @@ export interface OrgClaContributorAcknowledgmentList {
   /**
    * Whether the caller may invalidate rows on this agreement.
    *
-   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
-   * producer sent no roster at all — matching the sibling approval-list posture.
+   * Server-decided from the CCLA's manager roster (LF-username match). False when the producer
+   * sent no roster at all, matching the invalidate write, which the producer does not check
+   * against the roster itself.
    */
   canEdit: boolean;
   resultCount: number;
@@ -1351,6 +1358,11 @@ export interface OrgClaManager {
   name?: string;
   email?: string;
   addedOn?: string;
+  /**
+   * Present, and true, on the manager list's row for the signed-in viewer. Server-decided with the
+   * same identity the roster check uses, so the browser MUST NOT work it out from its own username.
+   */
+  isViewer?: true;
 }
 
 export interface OrgClaManagerList {

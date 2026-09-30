@@ -30,6 +30,7 @@ describe('OrgEasyclaRecentActivityComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: false,
       ...overrides,
     };
   }
