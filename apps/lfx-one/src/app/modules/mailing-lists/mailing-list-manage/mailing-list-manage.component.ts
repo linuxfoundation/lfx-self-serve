@@ -525,6 +525,13 @@ export class MailingListManageComponent {
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
     const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
+    // The upstream API associates a group via `committee_uid` (singular UID string).
+    // The `committees` array field on the request interface describes the form state but
+    // is not a valid upstream wire field — sending it has no effect and the link is never
+    // stored. Read the first selected committee and send it as committee_uid instead.
+    const selectedCommittees: CommitteeReference[] = formValue.committees ?? [];
+    const committeeUid = selectedCommittees[0]?.uid ?? null;
+
     return {
       name: groupName,
       public: formValue.public,
@@ -532,7 +539,7 @@ export class MailingListManageComponent {
       audience_access: formValue.audience_access,
       description: formValue.description || '',
       service_id: service.uid,
-      committees: formValue.committees?.length > 0 ? formValue.committees : undefined,
+      committee_uid: committeeUid,
       title: formValue.group_name,
     };
   }
