@@ -86,6 +86,6 @@
     }
   </div>
 
-  <lfx-mentorship-mentee-profile-edit-drawer />
-  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" />
+  <lfx-mentorship-mentee-profile-edit-drawer (saved)="onProfileSaved($event)" />
+  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" (saved)="onProfileSaved($event)" />
 </div>

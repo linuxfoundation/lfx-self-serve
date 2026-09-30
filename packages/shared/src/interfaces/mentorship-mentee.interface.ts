@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorship-mentee.constants';
+
 // ---------------------------------------------------------------------------
 // Become a Mentee form types
 // ---------------------------------------------------------------------------
@@ -195,6 +197,13 @@ export interface MentorshipMenteeTaskView {
   hasUploadedFile: boolean;
   /** An upload is required but no file exists yet (renders Upload). */
   needsUpload: boolean;
+  /**
+   * True when upstream requires a file to submit (`submit_file` non-empty: `'required'` or a URL) and none is
+   * stored yet. Computed from the raw stored file, not the display-fallback `fileUrl`. Gates the `submitted`
+   * option. Note a URL-valued `submit_file` with no stored file also has `hasUploadedFile = true`; upstream
+   * still treats it as file-required, and no upstream path writes a URL there today.
+   */
+  requiresFile: boolean;
   fileUrl: string | null;
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
@@ -203,6 +212,38 @@ export interface MentorshipMenteeTaskView {
    * not "label" — the template formats it via `DatePipe` with `'UTC'` (same contract as `dueDate`).
    */
   submittedDate: string | null;
+}
+
+/** Task statuses a mentee may request. Upstream `incomplete` and `complete` are reviewer-only. */
+export type MentorshipMenteeUpdatableTaskStatus = 'in_progress' | 'submitted';
+
+/** BFF request body for `PATCH /api/mentorship/mentee/tasks/:taskId`. Any other key (e.g. `file`) is ignored and never forwarded. */
+export interface MentorshipMenteeTaskStatusUpdateRequest {
+  status: MentorshipMenteeUpdatableTaskStatus;
+}
+
+/** One status option in the mentee task row dropdown (`lfx-select` reads `disabled` through `optionDisabled`). */
+export interface MentorshipMenteeTaskStatusOption {
+  value: string;
+  label: string;
+  disabled: boolean;
+}
+
+/** A task status change the mentee just saved: the status it was saved from and the one it moved to. */
+export interface MentorshipMenteeTaskStatusChange {
+  from: MentorshipMenteeTaskStatus;
+  to: MentorshipMenteeTaskStatus;
+}
+
+/** Derived dropdown state for one task row. */
+export interface MentorshipMenteeTaskStatusOptionsState {
+  options: MentorshipMenteeTaskStatusOption[];
+  /** True when the mentee cannot change this task at all (submitted or complete). */
+  locked: boolean;
+  /** Reason text for a disabled forward move or a locked row; always rendered (sr-only unless `hintVisible`); `null` when none. */
+  hint: string | null;
+  /** True only for the actionable file-required case, where the hint is also shown visibly. */
+  hintVisible: boolean;
 }
 
 /**
@@ -309,6 +350,56 @@ export interface MentorshipMenteeProfileResponse {
   /** Absent until the mentee has saved demographics. The apply page treats that as all "Not provided". */
   demographics?: MentorshipMenteeDemographics;
 }
+
+/** Skills group of a profile update. Sent whole: upstream replaces the whole `skill_set` column. */
+export interface MentorshipMenteeSkillSetUpdate {
+  skillsHave: string[];
+  skillsWant: string[];
+  /** Blank or omitted means no notes (the upstream key is left out, which clears them). */
+  additionalNotes?: string;
+}
+
+/** Age, gender and race answers. Sent whole when any row changed; an omitted row has no stored answer. */
+export interface MentorshipMenteeDemographicsGroupUpdate {
+  age?: string;
+  gender?: string;
+  raceEthnicity?: string;
+}
+
+/** Income and education answers. Sent whole when any row changed; an omitted row has no stored answer. */
+export interface MentorshipMenteeSocioeconomicsGroupUpdate {
+  income?: string;
+  education?: string;
+}
+
+/** Body of `PATCH /api/mentorship/mentee/profile`. Only changed groups are present; at least one is required. */
+export interface MentorshipMenteeProfileUpdateRequest {
+  /** PLAIN TEXT. The BFF converts it to HTML. `''` clears the introduction. Omitted means unchanged. */
+  introduction?: string;
+  skillSet?: MentorshipMenteeSkillSetUpdate;
+  demographics?: MentorshipMenteeDemographicsGroupUpdate;
+  socioeconomics?: MentorshipMenteeSocioeconomicsGroupUpdate;
+}
+
+/** 200 body of `PATCH /api/mentorship/mentee/profile`: the saved profile, re-mapped. History is not returned. */
+export interface MentorshipMenteeProfileUpdateResponse {
+  profile: MentorshipMenteeProfileDetails;
+  demographics?: MentorshipMenteeDemographics;
+}
+
+/** Values the profile edit drawer hands the diff builder (`form.getRawValue()` is assignable). */
+export interface MentorshipMenteeProfileFormValue {
+  introduction: string;
+  skillsHave: string[];
+  skillsWant: string[];
+  additionalNotes: string;
+}
+
+/** `form.getRawValue()` of the demographics drawer: `${key}Consent` booleans and `${key}` answers per `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS`. */
+export type MentorshipMenteeDemographicsFormValue = Record<string, string | boolean>;
+
+/** A demographics column the profile update writes: a key of `MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS`. */
+export type MentorshipMenteeDemographicGroupName = keyof typeof MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS;
 
 /** Both ids required to open `/mentorship/mentee/apply` and to return there after registration. */
 export interface MentorshipMenteeApplyIds {
@@ -577,6 +668,10 @@ export interface MentorshipUpstreamMenteeProfileInput {
   demographics?: MentorshipUpstreamMenteeDemographicsInput;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomicsInput;
 }
+/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. `file` is intentionally omitted: upload is not in scope. */
+export interface MentorshipUpstreamTaskSubmissionUpdate {
+  status: MentorshipMenteeUpdatableTaskStatus;
+}
 
 /**
  * Body of `GET /mentorship/v1/me/profiles/{profileType}`. The JSON columns (`address`,
@@ -603,4 +698,42 @@ export interface MentorshipUpstreamUserProfile {
   profile_links?: unknown;
   created_on: string;
   updated_on: string;
+}
+
+/**
+ * The `skill_set` column as the mentee profile update writes it. The index signature carries stored keys
+ * the BFF does not model, which the update keeps because upstream replaces the column whole.
+ */
+export interface MentorshipUpstreamMenteeSkillSet {
+  skills: string[];
+  improvementSkills: string[];
+  comments?: string;
+  [key: string]: unknown;
+}
+
+/** The `demographics` column as the mentee profile update writes it, with any stored keys the BFF does not model. */
+export interface MentorshipUpstreamMenteeDemographics {
+  age?: string;
+  gender?: string;
+  race?: string;
+  [key: string]: unknown;
+}
+
+/** The `socioeconomics` column as the mentee profile update writes it, with any stored keys the BFF does not model. */
+export interface MentorshipUpstreamMenteeSocioeconomics {
+  income?: string;
+  educationLevel?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Body of `PATCH /mentorship/v1/me/profiles/mentee`. Every key is optional and an omitted key keeps
+ * the stored value; a present JSON column replaces the stored one whole. Never `{}` or `null`.
+ */
+export interface MentorshipUpstreamMenteeProfileUpdate {
+  /** HTML built by the BFF. `''` clears. */
+  introduction?: string;
+  skill_set?: MentorshipUpstreamMenteeSkillSet;
+  demographics?: MentorshipUpstreamMenteeDemographics;
+  socioeconomics?: MentorshipUpstreamMenteeSocioeconomics;
 }

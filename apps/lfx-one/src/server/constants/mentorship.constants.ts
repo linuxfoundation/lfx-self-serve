@@ -27,6 +27,9 @@ export const MENTORSHIP_ME_APPLICATIONS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/app
 /** Upstream applications collection; an application's tasks live at `/{id}/tasks`. */
 export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 
+/** Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`. */
+export const MENTORSHIP_TASKS_PATH = '/mentorship/v1/tasks';
+
 /**
  * Upstream programs collection. A program's terms live at `/{id}/terms/{termId}` and a term takes
  * applications at `.../applications`; each needs the program's UUID, since the gateway denies a slug.

@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { MentorshipMenteeApplyIds } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isMentorshipMenteeUpdatableTaskStatus, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { parseMentorshipMenteeRegisterRequest } from '../helpers/mentorship-mentee-register.helper';
+import { parseMentorshipMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMenteeService } from '../services/mentorship-mentee.service';
@@ -103,6 +104,41 @@ export class MentorshipMenteeController {
     }
   }
 
+  // PATCH /api/mentorship/mentee/tasks/:taskId  { status: 'in_progress' | 'submitted' } -> 204
+  // Auth: logged-in user required (401 otherwise). A mentee can only start a task or submit one; the
+  // reviewer statuses are refused here. Any other body key, notably `file`, is ignored and never
+  // forwarded: upload is not wired, so upstream checks a required file against the one already stored.
+  // Upstream's 400 (a required file is missing), 403 (not the assignee), 404 and 409 (not a legal
+  // move from the task's status) pass through.
+  public async updateMenteeTaskStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentee_task_status');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentee_task_status' });
+      }
+
+      // Upstream checks access on `mentorship_task:<id>`, so only a UUID can match.
+      const taskId = parseTrimmedString(req.params['taskId']);
+      if (!taskId || !isUuid(taskId)) {
+        throw ServiceValidationError.forField('taskId', 'taskId must be a valid UUID', { operation: 'update_mentorship_mentee_task_status' });
+      }
+
+      const status = req.body?.status;
+      if (!isMentorshipMenteeUpdatableTaskStatus(status)) {
+        throw ServiceValidationError.forField('status', 'status must be one of: in_progress, submitted', {
+          operation: 'update_mentorship_mentee_task_status',
+        });
+      }
+
+      await this.menteeService.updateMenteeTaskStatus(req, taskId, status);
+      logger.success(req, 'update_mentorship_mentee_task_status', startTime, { taskId, status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/mentee/profile
   // Auth: logged-in user required (401 otherwise). Upstream scopes the read to the caller's token.
   public async getMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -116,6 +152,28 @@ export class MentorshipMenteeController {
       const profile = await this.menteeService.getMenteeProfile(req);
       logger.success(req, 'get_mentorship_mentee_profile', startTime, { history_count: profile.history.length });
       res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentee/profile  { introduction?, skillSet?, demographics?, socioeconomics? } -> 200 { profile, demographics? }
+  // Auth: logged-in user required (401 otherwise); refused while impersonating (403, route middleware).
+  // The body is validated strictly here because upstream ignores unknown fields and validates nothing (400).
+  // Upstream's 404 (no mentee profile) and 409 (more than one) pass through.
+  public async updateMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentee_profile' });
+      }
+
+      const request = parseMentorshipMenteeProfileUpdate(req.body, 'update_mentorship_mentee_profile');
+      const result = await this.menteeService.updateMenteeProfile(req, request);
+      // Group names only: the values are personal data.
+      logger.success(req, 'update_mentorship_mentee_profile', startTime, { changed_groups: Object.keys(request) });
+      res.json(result);
     } catch (error) {
       next(error);
     }

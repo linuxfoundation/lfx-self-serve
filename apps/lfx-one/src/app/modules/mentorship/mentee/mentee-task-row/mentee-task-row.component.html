@@ -4,9 +4,9 @@
 <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" [ngClass]="paddingClass()" [attr.data-testid]="'mentee-tasks-task-row-' + task().id">
   <!-- Check icon -->
   <div class="flex items-center gap-3">
-    @if (task().submitted) {
+    @if (effectiveTask().submitted) {
       <i class="fa-solid fa-circle-check text-lg text-emerald-500" aria-hidden="true"></i>
-    } @else if (task().inProgress) {
+    } @else if (effectiveTask().inProgress) {
       <i class="fa-light fa-clock text-lg text-blue-500" aria-hidden="true"></i>
     } @else {
       <i class="fa-light fa-circle text-lg text-gray-300" aria-hidden="true"></i>
@@ -55,28 +55,54 @@
     }
   </div>
 
-  <!-- Status dropdown -->
-  <div class="shrink-0">
-    <lfx-select
-      [form]="form()"
-      [control]="task().id"
-      [options]="taskStatusOptions"
-      optionLabel="label"
-      optionValue="value"
-      size="small"
-      variant="filled"
-      [ariaLabel]="'Status of ' + task().title"
-      [styleClass]="'mentee-task-status-dropdown ' + task().statusClass"
-      [dataTest]="'mentee-tasks-status-dropdown-' + task().id"
-      (onChange)="onStatusChange()" />
+  <!-- Status dropdown — read-only while saving or locked; the sr-only label and the hint name it for assistive tech -->
+  <div
+    class="flex shrink-0 flex-col gap-1 md:items-end"
+    [ngClass]="{ 'opacity-60 cursor-wait': saving() }"
+    [attr.aria-busy]="saving()"
+    [attr.data-testid]="'mentee-tasks-status-cell-' + task().id">
+    <div class="flex items-center gap-2">
+      @if (saving()) {
+        <i
+          class="fa-light fa-spinner-third fa-spin text-sm text-gray-500"
+          aria-hidden="true"
+          [attr.data-testid]="'mentee-tasks-status-saving-' + task().id"></i>
+      }
+      <span class="sr-only" [id]="statusLabelId()">Status of {{ task().title }}</span>
+      <lfx-select
+        [form]="form()"
+        [control]="task().id"
+        [options]="statusState().options"
+        optionLabel="label"
+        optionValue="value"
+        size="small"
+        variant="filled"
+        [readonly]="statusState().locked || saving()"
+        [ariaLabelledBy]="statusLabelledBy()"
+        [styleClass]="'mentee-task-status-dropdown ' + effectiveTask().statusClass"
+        [dataTest]="'mentee-tasks-status-dropdown-' + task().id"
+        (onChange)="onStatusChange()" />
+    </div>
+    @if (statusState().hint; as hint) {
+      <p
+        class="text-xs text-gray-500 md:max-w-56 md:text-right"
+        [id]="statusHintId()"
+        [class.sr-only]="!statusState().hintVisible"
+        [attr.data-testid]="'mentee-tasks-status-hint-' + task().id">
+        {{ hint }}
+      </p>
+    }
   </div>
 
-  <!-- Date — min-w-[90px] reserves room so the date column stays right-aligned when text is short -->
-  <div class="shrink-0 text-right text-xs text-gray-500 min-w-[90px]">
-    @if (task().submitted && task().submittedDate) {
-      Submitted on {{ task().submittedDate | date: 'MMM d, yyyy' : 'UTC' }}
-    } @else if (task().dueDate) {
-      Due {{ task().dueDate | date: 'MMM d, yyyy' : 'UTC' }}
+  <!-- Date — min-w-[90px] reserves room so the date column stays right-aligned when text is short.
+       A submitted task never falls back to its due date: until the refresh brings the submission date, it shows none. -->
+  <div class="shrink-0 text-right text-xs text-gray-500 min-w-[90px]" [attr.data-testid]="'mentee-tasks-date-' + task().id">
+    @if (effectiveTask().submitted) {
+      @if (effectiveTask().submittedDate; as submittedDate) {
+        Submitted on {{ submittedDate | date: 'MMM d, yyyy' : 'UTC' }}
+      }
+    } @else if (effectiveTask().dueDate; as dueDate) {
+      Due {{ dueDate | date: 'MMM d, yyyy' : 'UTC' }}
     }
   </div>
 </div>

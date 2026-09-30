@@ -51,7 +51,11 @@ export class MenteeApplicationTasksComponent {
     return toSignal(
       toObservable(this.menteeService.menteeApplicationsRevision).pipe(
         tap(() => {
-          this.hasLoaded.set(false);
+          // The first load and a Retry after an error show the loader. Any other refresh (a saved task
+          // status, say) keeps the tree mounted, so the filter chip and scroll position survive.
+          if (this.loadError() !== null) {
+            this.hasLoaded.set(false);
+          }
           this.loadError.set(null);
         }),
         switchMap(() =>

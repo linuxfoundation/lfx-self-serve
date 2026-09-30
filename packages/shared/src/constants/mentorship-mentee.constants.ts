@@ -182,6 +182,7 @@ import type {
   MentorshipMenteePastOutcome,
   MentorshipMenteeProfileResponse,
   MentorshipMenteeTaskStatus,
+  MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplicationStatus,
 } from '../interfaces/mentorship-mentee.interface';
 
@@ -368,6 +369,48 @@ export const MENTORSHIP_MENTEE_TASKS_LOAD_ERROR = 'Could not load your tasks. Pl
 export const MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY = 'No tasks for this application yet.';
 
 // ---------------------------------------------------------------------------
+// Tasks tab — status change (PATCH /mentorship/v1/tasks/{id}/submission)
+// ---------------------------------------------------------------------------
+
+/**
+ * The only statuses a mentee can request: `pending → in_progress` and `in_progress → submitted`.
+ * `incomplete` and `complete` are reviewer-only, and anything else is a 409 upstream. The BFF never
+ * sends `file` (upload is a coming-soon toast), so the stored file satisfies upstream's file check.
+ */
+export const MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES: readonly MentorshipMenteeUpdatableTaskStatus[] = ['in_progress', 'submitted'];
+export const MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE = 5000;
+export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_SUMMARY = 'Task updated';
+export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_DETAIL = 'Your task status has been saved.';
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_SUMMARY = 'Could not update task';
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK = 'We could not update this task right now. Please try again.';
+
+/**
+ * Statuses where the local view is stale, so the applications are re-read after the toast. A 400 counts:
+ * the row only sends a task id and a status it has already validated, so in practice it is upstream's
+ * file-required check, which means the cached task no longer says whether a file is needed.
+ */
+export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [400, 403, 404, 409];
+
+/**
+ * Status-change failures with their own copy, keyed by status. A 400 is either the BFF rejecting the
+ * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both.
+ * A 403 can come from the gateway's assignee check or the service's; the OpenFGA assignee tuple is written
+ * asynchronously, so a valid assignee may see one just after the task is created. The stale statuses
+ * (400, 403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This task could not be updated. If it needs a file, file upload is coming soon. Your tasks have been refreshed.',
+  403: 'You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed.',
+  404: 'This task no longer exists. Your tasks have been refreshed.',
+  409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',
+};
+
+/** Reasons a status option is unavailable. They are read by assistive tech; only the file-required one shows on screen. */
+export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. File upload is coming soon.';
+export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
+export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
+
+// ---------------------------------------------------------------------------
 // Profile tab constants and mock data
 // ---------------------------------------------------------------------------
 
@@ -475,8 +518,7 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<n
 
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
- * "Edit Mentee Profile" button. Save fires the coming-soon toast until the update
- * endpoint is wired. Drawer-only labels: the Become a Mentee register form keeps its
+ * "Edit Mentee Profile" button. Drawer-only labels: the Become a Mentee register form keeps its
  * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
@@ -494,6 +536,40 @@ export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL = 'What skills are
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL = 'What areas do you want to improve in?';
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL = 'Save Changes';
 export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
+
+/** Ceilings the profile drawer validators and the BFF share. Above anything the skills picker catalogue reaches. */
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS = 100;
+export const MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH = 100;
+export const MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH = 100;
+
+/** Which upstream column each demographics row is stored in, in the profile update's camelCase keys. */
+export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
+  demographics: ['age', 'gender', 'raceEthnicity'],
+  socioeconomics: ['income', 'education'],
+} as const;
+
+/** Keys of the upstream `skill_set` column the mentee profile update owns; any other stored key is kept on save. */
+export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvementSkills', 'comments'] as const;
+
+/** Top-level keys the profile update accepts. Anything else is a 400. */
+export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
+export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
+
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE =
+  'Your introduction has too many line breaks or special characters to save. Shorten it or remove extra blank lines.';
+
+/** Copy per status; 403 is intentionally absent (the BFF impersonation guard authors its own message). */
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'Some of your changes could not be saved. Review them and try again.',
+  404: 'We could not find your mentee profile. Refresh the page and try again.',
+  409: 'Your mentee profile could not be updated because of a conflict. Refresh the page and try again.',
+};
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save your changes. Please try again.';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
+export const MENTORSHIP_MENTEE_DEMOGRAPHICS_SAVE_SUCCESS_SUMMARY = 'Demographics updated';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_TOAST_LIFE = 5000;
+export const MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';
