@@ -98,12 +98,7 @@
         data-testid="members-nps-bar">
         @for (segment of segments(); track segment.key) {
           @if (segment.widthPct > 0) {
-            <div
-              class="h-full"
-              [class]="segment.colorClass"
-              [style.width.%]="segment.widthPct"
-              [attr.title]="segment.label + ': ' + segment.countLabel"
-              [attr.data-testid]="'members-nps-segment-' + segment.key"></div>
+            <div class="h-full" [class]="segment.colorClass" [style.width.%]="segment.widthPct" [attr.data-testid]="'members-nps-segment-' + segment.key"></div>
           }
         }
       </div>

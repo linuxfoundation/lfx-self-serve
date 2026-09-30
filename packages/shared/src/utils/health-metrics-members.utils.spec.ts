@@ -819,7 +819,7 @@ describe('members nps', () => {
       footer: {
         isBelowFloor: false,
         lead: null,
-        text: 'Non-responses are rendered as the grey majority segment so the sample size is visible without reading a caption.',
+        text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
       },
     });
   });
@@ -888,7 +888,7 @@ describe('members nps', () => {
 
   it('withholds a flagged wave score but keeps its rate', () => {
     expect(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-04-01', 80, 0.21, true)])).toEqual([
-      { quarterStartDate: '2025-07-01', label: 'Q3 25', score: 54, scoreLabel: '54', ratePct: 71, rateLabel: '71%', isRateBelowFloor: false },
+      { quarterStartDate: '2025-07-01', label: 'Q3 25', score: 54, scoreLabel: '+54', ratePct: 71, rateLabel: '71%', isRateBelowFloor: false },
       { quarterStartDate: '2026-04-01', label: 'Q2 26', score: null, scoreLabel: 'Withheld', ratePct: 21, rateLabel: '21%', isRateBelowFloor: true },
     ]);
   });
@@ -906,6 +906,18 @@ describe('members nps', () => {
   it('flags a rising score whose last reportable rate is below the floor', () => {
     const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.41), quarter('2025-07-01', 51, 0.39)]);
     expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
+  });
+
+  it('never says a rising rate fell, sending one still below the floor to the floor note', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.2), quarter('2025-07-01', 58, 0.3)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
+  });
+
+  it('says nothing about a rate that moved materially without a rising score', () => {
+    const falling = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 60, 0.8), quarter('2025-07-01', 50, 0.5)]);
+    const rising = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.45), quarter('2025-07-01', 58, 0.7)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(falling)).toBeNull();
+    expect(buildHealthMetricsMembersNpsTrendNote(rising)).toBeNull();
   });
 
   it('compares reportable scores only, then judges the latest rate', () => {

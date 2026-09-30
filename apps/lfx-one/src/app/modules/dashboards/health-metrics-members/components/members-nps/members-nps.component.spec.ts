@@ -126,7 +126,7 @@ describe('MembersNpsComponent', () => {
     expect(text('members-nps-rate')).toBe('69%');
     expect(query('members-nps-rate')?.classList).toContain('text-gray-900');
     expect(query('members-nps-low-sample')).toBeNull();
-    expect(text('members-nps-footer')).toContain('Non-responses are rendered as the grey majority segment');
+    expect(text('members-nps-footer')).toContain('Non-responses are rendered as the grey segment');
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
@@ -150,8 +150,8 @@ describe('MembersNpsComponent', () => {
       [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim())
     );
     expect(rows).toEqual([
-      ['Q4 25', '54', '71%'],
-      ['Q2 26', '62', '69%'],
+      ['Q4 25', '+54', '71%'],
+      ['Q2 26', '+62', '69%'],
     ]);
     expect(query('members-nps-chart')?.getAttribute('aria-label')).toContain('over 2 survey waves');
     expect(text('members-nps-trend-note')).toBe('Response rate is holding around 69%, so the movement in the score is meaningful.');

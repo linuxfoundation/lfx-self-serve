@@ -440,7 +440,7 @@ export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembe
       : {
           isBelowFloor: false,
           lead: null,
-          text: 'Non-responses are rendered as the grey majority segment so the sample size is visible without reading a caption.',
+          text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
         },
   };
 }
@@ -475,7 +475,7 @@ export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNps
       quarterStartDate: quarter.quarterStartDate,
       label: quarter.quarterLabel ?? '—',
       score,
-      scoreLabel: score === null ? 'Withheld' : String(score),
+      scoreLabel: score === null ? 'Withheld' : formatSignedScore(score),
       ratePct,
       rateLabel: ratePct === null ? '—' : `${ratePct}%`,
       isRateBelowFloor: ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
@@ -484,25 +484,29 @@ export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNps
 }
 
 /**
- * The sentence under the trend. A rise between the first and last reportable scores is flagged when the rate
- * fell materially or ended below the floor; otherwise the latest rate decides. `null` when there is no rate to judge.
+ * The sentence under the trend: a rising score on a falling rate that fell materially or ended below the floor
+ * is flagged; else a below-floor rate, or a rate that moved under the drop threshold. `null` when neither applies.
  */
 export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembersNpsTrendPointView[]): HealthMetricsMembersNpsTrendNote | null {
-  const latest = points.filter((point) => point.ratePct !== null).at(-1);
+  const rated = points.filter((point) => point.ratePct !== null);
+  const latest = rated.at(-1);
   if (points.length < 2 || !latest) return null;
 
-  const scored = points.filter((point) => point.score !== null && point.ratePct !== null);
+  const scored = rated.filter((point) => point.score !== null);
   const first = scored[0];
   const last = scored.at(-1);
   if (first && last && first !== last) {
     const scoreUp = (last.score ?? 0) - (first.score ?? 0);
     const rateDrop = (first.ratePct ?? 0) - (last.ratePct ?? 0);
-    if (scoreUp > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
+    if (scoreUp > 0 && rateDrop > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
       return { kind: 'diverging', scoreChangeLabel: pluralize(scoreUp, 'point'), fromRateLabel: first.rateLabel, toRateLabel: last.rateLabel };
     }
   }
 
-  return { kind: latest.isRateBelowFloor ? 'below-floor' : 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  if (latest.isRateBelowFloor) return { kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
+  if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
+  return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
 }
 
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
