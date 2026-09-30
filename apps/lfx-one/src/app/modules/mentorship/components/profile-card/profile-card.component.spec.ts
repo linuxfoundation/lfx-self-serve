@@ -15,9 +15,12 @@ import {
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
   LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
   LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL,
+  LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
+  LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
   PROFILE_AUTH_ERROR_MESSAGES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, EnrichedIdentity } from '@lfx-one/shared/interfaces';
+import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -68,6 +71,7 @@ describe('ProfileCardComponent', () => {
   let openDialog: ReturnType<typeof vi.fn>;
   let refreshUserIdentities: ReturnType<typeof vi.fn>;
   let drawerOpen: ReturnType<typeof vi.fn>;
+  let syncLfxProfileFields: ReturnType<typeof vi.fn>;
   /** Stands in for the dialog's `onClose`, so a spec can close it with or without a result. */
   let dialogClose: Subject<unknown>;
 
@@ -87,6 +91,7 @@ describe('ProfileCardComponent', () => {
     toast = vi.fn();
     refreshUserIdentities = vi.fn();
     drawerOpen = vi.fn();
+    syncLfxProfileFields = vi.fn(() => of(undefined));
     dialogClose = new Subject<unknown>();
     openDialog = vi.fn(() => ({ onClose: dialogClose.asObservable() }));
 
@@ -98,6 +103,7 @@ describe('ProfileCardComponent', () => {
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: MessageService, useValue: { add: toast } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
+        { provide: MentorshipService, useValue: { syncLfxProfileFields } },
         // Every spec's fetches run off `identitiesRefresh$`, and the card reads `impersonating`
         // and `uploadedAvatarUrl` while constructing, so those belong to the harness rather than
         // to each fixture; a spec still overrides any of them by passing the key itself.
@@ -394,6 +400,64 @@ describe('ProfileCardComponent', () => {
 
     expect(uploadedAvatarUrl()).toBeNull();
     expect(refreshUserIdentities).not.toHaveBeenCalled();
+  });
+
+  describe('the fields a mentorship profile copies', () => {
+    const save = (metadata: Record<string, string>): void =>
+      (fixture.componentInstance as unknown as { onProfileSaved: (m: Record<string, string>) => void }).onProfileSaved(metadata);
+
+    it('holds the name, primary email and picture the card shows, leaving out one it has no value for', () => {
+      expect(fixture.componentInstance.lfxProfileFields()).toEqual({ firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.org' });
+    });
+
+    it('copies nothing on a save by default, as on the register pages, where there is no profile yet', () => {
+      save({ given_name: 'Updated' });
+
+      expect(syncLfxProfileFields).not.toHaveBeenCalled();
+    });
+
+    it('copies the saved name and picture, with the primary email, when the page asks it to', () => {
+      fixture.componentRef.setInput('syncMentorshipProfiles', true);
+
+      save({ given_name: 'Updated', picture: 'https://cdn.example.org/new.png' });
+
+      expect(syncLfxProfileFields).toHaveBeenCalledWith({
+        firstName: 'Updated',
+        lastName: 'Lovelace',
+        email: 'ada@example.org',
+        logoUrl: 'https://cdn.example.org/new.png',
+      });
+    });
+
+    it('does not copy while impersonating, since the write would be refused', () => {
+      render({
+        getCurrentUserProfile: () => of(combined),
+        getUserEmails: () => of(emails),
+        getIdentities: () => of(identities),
+        effectiveAvatarUrl: () => '',
+        impersonating: signal(true),
+      });
+      fixture.componentRef.setInput('syncMentorshipProfiles', true);
+
+      save({ given_name: 'Updated' });
+
+      expect(syncLfxProfileFields).not.toHaveBeenCalled();
+    });
+
+    it('warns when the copy fails, since the LFX profile itself did save', () => {
+      fixture.componentRef.setInput('syncMentorshipProfiles', true);
+      syncLfxProfileFields.mockReturnValue(throwError(() => new Error('upstream down')));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      save({ given_name: 'Updated' });
+
+      expect(toast).toHaveBeenCalledWith({
+        severity: 'warn',
+        summary: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
+        detail: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
+      });
+      consoleError.mockRestore();
+    });
   });
 
   /**

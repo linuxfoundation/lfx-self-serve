@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { EnrichedIdentity } from '../interfaces/profile.interface';
 import type { CombinedProfile, EmailManagementData, UserMetadata } from '../interfaces/user-profile.interface';
-import { buildLfxProfileSummary, formatLfxMailingAddress } from './mentorship-lfx-profile-card.utils';
+import { MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX, MENTORSHIP_LFX_PROFILE_NAME_MAX } from '../constants/mentorship-lfx-profile-card.constants';
+import {
+  buildLfxProfileSummary,
+  buildMentorshipLfxProfileFields,
+  formatLfxMailingAddress,
+  getMentorshipLfxProfileFieldErrors,
+} from './mentorship-lfx-profile-card.utils';
 
 function combinedProfile(user: Partial<CombinedProfile['user']> = {}, profile: UserMetadata | null = null): CombinedProfile {
   return {
@@ -182,5 +188,44 @@ describe('formatLfxMailingAddress', () => {
   it('returns no lines for a profile with no address at all', () => {
     expect(formatLfxMailingAddress(null)).toEqual([]);
     expect(formatLfxMailingAddress({ address: '   ' })).toEqual([]);
+  });
+});
+
+describe('getMentorshipLfxProfileFieldErrors', () => {
+  it('accepts valid fields and ignores absent ones', () => {
+    expect(getMentorshipLfxProfileFieldErrors({})).toEqual({});
+    expect(
+      getMentorshipLfxProfileFieldErrors({ firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' })
+    ).toEqual({});
+  });
+
+  it('refuses a blank or oversize name', () => {
+    const errors = getMentorshipLfxProfileFieldErrors({ firstName: '', lastName: 'x'.repeat(MENTORSHIP_LFX_PROFILE_NAME_MAX + 1) });
+
+    expect(Object.keys(errors).sort()).toEqual(['firstName', 'lastName']);
+  });
+
+  it('refuses an email that is not email-shaped', () => {
+    expect(getMentorshipLfxProfileFieldErrors({ email: 'not-an-email' }).email).toBeDefined();
+  });
+
+  it('refuses a logo URL that is not https, unparseable, or oversize', () => {
+    expect(getMentorshipLfxProfileFieldErrors({ logoUrl: 'http://example.com/avatar.png' }).logoUrl).toBeDefined();
+    expect(getMentorshipLfxProfileFieldErrors({ logoUrl: 'javascript:alert(1)' }).logoUrl).toBeDefined();
+    expect(getMentorshipLfxProfileFieldErrors({ logoUrl: 'not a url' }).logoUrl).toBeDefined();
+    expect(getMentorshipLfxProfileFieldErrors({ logoUrl: `https://example.com/${'a'.repeat(MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX)}` }).logoUrl).toBeDefined();
+  });
+});
+
+describe('buildMentorshipLfxProfileFields', () => {
+  it('trims each value and keeps the valid ones', () => {
+    expect(
+      buildMentorshipLfxProfileFields({ firstName: '  Test ', lastName: 'User', email: ' test.user@example.com ', logoUrl: 'https://example.com/avatar.png' })
+    ).toEqual({ firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' });
+  });
+
+  it('leaves out missing, blank and invalid values rather than sending them', () => {
+    expect(buildMentorshipLfxProfileFields({ firstName: null, lastName: '   ', email: 'not-an-email', logoUrl: 'http://example.com/avatar.png' })).toEqual({});
+    expect(buildMentorshipLfxProfileFields({ firstName: 'Test' })).toEqual({ firstName: 'Test' });
   });
 });

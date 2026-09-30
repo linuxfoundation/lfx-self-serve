@@ -17,6 +17,8 @@ const VALID_BODY = {
   termsAccepted: true,
 };
 
+const LFX_PROFILE = { firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' };
+
 /** The per-field error keys a rejected body reports. */
 const rejectedFields = (body: unknown): string[] => {
   try {
@@ -43,6 +45,20 @@ describe('parseMentorshipMentorRegisterRequest', () => {
     });
 
     expect(Object.keys(request).sort()).toEqual(Object.keys(VALID_BODY).sort());
+  });
+
+  it('keeps the LFX profile fields, trimmed, and drops an empty LFX profile', () => {
+    expect(parseMentorshipMentorRegisterRequest({ ...VALID_BODY, lfxProfile: { ...LFX_PROFILE, firstName: '  Test ' } }).lfxProfile).toEqual(LFX_PROFILE);
+    expect(parseMentorshipMentorRegisterRequest({ ...VALID_BODY, lfxProfile: {} })).not.toHaveProperty('lfxProfile');
+  });
+
+  it('rejects a bad LFX profile by field', () => {
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: 'text' })).toEqual(['lfxProfile']);
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: { firstName: 1, email: 'not-an-email', logoUrl: 'http://example.com/avatar.png' } }).sort()).toEqual([
+      'lfxProfile.email',
+      'lfxProfile.firstName',
+      'lfxProfile.logoUrl',
+    ]);
   });
 
   it.each([undefined, null, 'text', 42, ['a']])('rejects the non-object body %j', (body) => {
@@ -99,5 +115,14 @@ describe('buildMentorshipUpstreamMentorProfile', () => {
 
   it('sends no compliance column, identity, slug, logo or resume', () => {
     expect(Object.keys(buildMentorshipUpstreamMentorProfile(request)).sort()).toEqual(['introduction', 'skill_set', 'terms_and_conditions']);
+  });
+
+  it('sends the LFX profile fields in the upstream column names', () => {
+    expect(buildMentorshipUpstreamMentorProfile({ ...request, lfxProfile: LFX_PROFILE })).toMatchObject({
+      first_name: 'Test',
+      last_name: 'User',
+      email: 'test.user@example.com',
+      logo_url: 'https://example.com/avatar.png',
+    });
   });
 });

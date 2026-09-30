@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
@@ -22,11 +23,13 @@ import {
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeRegisterRequest } from '@lfx-one/shared/interfaces';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
+import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { MenteeRegisterComponent } from './mentee-register.component';
 
 /**
@@ -103,6 +106,8 @@ describe('MenteeRegisterComponent', () => {
         provideRouter([]),
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipMenteeService, useValue: { registerMenteeProfile } },
+        // The profile card injects it for its save-time copy, which the register page leaves off.
+        { provide: MentorshipService, useValue: { syncLfxProfileFields: vi.fn(() => of(undefined)) } },
         // The profile card at the top of the page fetches these three itself, off the refresh
         // subject it shares with the profile shell.
         {
@@ -245,6 +250,25 @@ describe('MenteeRegisterComponent', () => {
       termsAccepted: true,
     });
     expect(JSON.stringify(request)).not.toContain('test-resume.pdf');
+  });
+
+  it('sends the name, email and picture the profile card shows with the registration', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    // The card's own derivation is covered by its spec; this pins that the page sends what the card holds at submit.
+    const card = fixture.debugElement.query(By.directive(ProfileCardComponent)).componentInstance as ProfileCardComponent;
+    Object.defineProperty(card, 'lfxProfileFields', {
+      value: signal({ firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' }),
+    });
+    fillValidForm();
+
+    await submit();
+
+    expect(registerMenteeProfile.mock.calls[0][0].lfxProfile).toEqual({
+      firstName: 'Test',
+      lastName: 'User',
+      email: 'test.user@example.com',
+      logoUrl: 'https://example.com/avatar.png',
+    });
   });
 
   it('keeps Submit loading and disabled while the save is in flight, and sends no second request', async () => {

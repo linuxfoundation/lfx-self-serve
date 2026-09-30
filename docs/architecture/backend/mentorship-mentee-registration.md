@@ -39,9 +39,39 @@ The check-then-write pair is not atomic. Two concurrent submits from the same us
 | `demographics.age` · `gender` · `raceEthnicity` | `demographics.age` · `gender` · `race` (only answers the mentee consented to share) |
 | `demographics.income` · `education`             | `socioeconomics.income` · `educationLevel`                                          |
 
-`noDuplicateProfile` and `complianceAccepted` are validated but have no upstream column. Nothing about the user's identity is sent: no name, email, phone, slug or logo. The upstream derives identity from the bearer token and the mentorship user row, and no slug is sent, so this endpoint has no slug to conflict on. The pre-check above is what surfaces "you already registered".
+`noDuplicateProfile` and `complianceAccepted` are validated but have no upstream column. The name, email and picture go in the optional `lfxProfile` (see [LFX profile fields](#lfx-profile-fields)). No phone or slug is sent. The upstream derives the owner from the bearer token and the mentorship user row, and no slug is sent, so this endpoint has no slug to conflict on. The pre-check above is what surfaces "you already registered".
 
 The resume is not sent. Resume upload is coming soon: `ResumeSectionComponent` takes an opt-in `comingSoonSummary` input, and the register page passes one, so choosing a file only shows a coming-soon toast through `MentorshipComingSoonService`. The mentor form keeps the section's original behavior.
+
+## LFX profile fields
+
+A mentor or mentee profile keeps a copy of the user's LFX profile name, primary email and picture. Both register forms (mentee here, mentor in [Mentorship Mentor BFF](./mentorship-mentor.md#registration)) send them, and later LFX profile edits copy them over again.
+
+| `lfxProfile` | Upstream     | Rule (shared `getMentorshipLfxProfileFieldErrors`)                   |
+| ------------ | ------------ | -------------------------------------------------------------------- |
+| `firstName`  | `first_name` | 1 to `MENTORSHIP_LFX_PROFILE_NAME_MAX` (100) characters              |
+| `lastName`   | `last_name`  | 1 to `MENTORSHIP_LFX_PROFILE_NAME_MAX` (100) characters              |
+| `email`      | `email`      | email-shaped, at most `MENTORSHIP_LFX_PROFILE_EMAIL_MAX` (254)       |
+| `logoUrl`    | `logo_url`   | an `https` URL, at most `MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX` (2048) |
+
+- **At registration.** The register page reads `lfxProfileFields` from the `ProfileCardComponent` above the form at submit time, and the shared builder adds `lfxProfile` only when it holds a field. `buildMentorshipLfxProfileFields` trims each value and drops a missing, blank or invalid one, so the request never blanks a column. The server reads the four keys with `readMentorshipLfxProfileFields` (`helpers/mentorship-lfx-profile.helper.ts`), ignores any other key, and rejects a bad value with a `400` keyed `lfxProfile.<field>`. Upstream does not validate these columns, so the BFF is the only check.
+- **After an Edit LFX Profile save.** The card copies the saved name and picture, with the primary email, onto the user's mentorship profiles through `PATCH /api/mentorship/me/lfx-profile`:
+
+```text
+ProfileCardComponent.onProfileSaved()                   only with [syncMentorshipProfiles]="true"; skipped while impersonating
+  → buildMentorshipLfxProfileFields(card fields + saved metadata)
+  → MentorshipService.syncLfxProfileFields()            PATCH /api/mentorship/me/lfx-profile
+      → blockDuringImpersonation                        403 IMPERSONATION_READ_ONLY
+      → MentorshipController.syncLfxProfile             401 with no signed-in user · 400 per field
+      → GET /mentorship/v1/me/profiles                  every page, via listAllMentorshipPages
+      → PATCH /mentorship/v1/me/profiles/by-id/{id}     once per mentor and mentee row; upstream checks the owner
+  ← 204                                                 also when the caller has no such row
+```
+
+- **Which pages sync.** The mentor profile, mentee profile and mentee apply pages bind `[syncMentorshipProfiles]="true"`. The register pages leave it off: no profile exists yet, and the registration sends the fields itself.
+- **Why by id.** `PATCH …/profiles/{type}` refuses a type that has more than one row, so the BFF patches each row by id, one at a time. Only the keys sent are patched.
+- **A failed copy.** A failed row stops the rest. The LFX profile itself did save, so the card logs the error and shows a warn toast (`LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_*`) that asks the user to save again. Every save sends all the fields, so the next save repairs every row.
+- **Logs.** The controller logs only `synced_count` and `field_count`, never the values.
 
 ## Errors
 
@@ -65,4 +95,4 @@ A failed save is stored together with the form snapshot as it stands when the fa
 
 ## Impersonation
 
-The route is guarded by `blockDuringImpersonation`. Upstream would otherwise create or replace the **impersonated** user's profile, so the write is refused with `403 IMPERSONATION_READ_ONLY`. The lazy `PUT /mentorship/v1/me` provisioning retry is skipped while impersonating for the same reason. See [Impersonation](./impersonation.md).
+The register route and `PATCH /me/lfx-profile` are guarded by `blockDuringImpersonation`. Upstream would otherwise create or replace the **impersonated** user's profile, so the write is refused with `403 IMPERSONATION_READ_ONLY`. The lazy `PUT /mentorship/v1/me` provisioning retry is skipped while impersonating for the same reason. See [Impersonation](./impersonation.md).

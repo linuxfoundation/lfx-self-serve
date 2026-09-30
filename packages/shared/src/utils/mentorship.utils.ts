@@ -95,6 +95,7 @@ import type {
   MentorshipMentorRegisterForm,
   MentorshipMentorRegisterRequest,
 } from '../interfaces/mentorship-mentor.interface';
+import type { MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationStatus,
@@ -546,12 +547,16 @@ export function getMentorshipMentorRegisterErrors(
  * Builds the `POST /api/mentorship/mentor/profile` body from the register form. `resumeFileName` is
  * never read: resume upload is coming soon and no file metadata is sent.
  */
-export function buildMentorshipMentorRegisterRequest(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterRequest {
+export function buildMentorshipMentorRegisterRequest(
+  form: MentorshipMentorRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMentorRegisterRequest {
   return {
     introduction: form.introduction,
     skills: [...form.skills],
     complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
     termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
   };
 }
 
@@ -678,9 +683,13 @@ function hasUnknownMentorshipSkill(skills: string[]): boolean {
  * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
  * sent only when its consent box is checked and it is not blank, so declining a question never leaves
  * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
- * file metadata is sent.
+ * file metadata is sent. `lfxProfile` is the profile card's name, email and avatar, sent only when it
+ * has at least one of them.
  */
-export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterRequest {
+export function buildMentorshipMenteeRegisterRequest(
+  form: MentorshipMenteeRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMenteeRegisterRequest {
   const demographics: MentorshipMenteeDemographics = {};
   for (const row of MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS) {
     const answer = form[row.answerControl];
@@ -700,6 +709,7 @@ export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegis
     noDuplicateProfile: isMentorshipTermsAccepted(form.noDuplicateProfile),
     complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
     termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
   };
 }
 

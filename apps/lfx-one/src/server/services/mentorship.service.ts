@@ -24,13 +24,17 @@ import {
   MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
+  MentorshipUpstreamLfxProfileFields,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramDecisionRequest,
+  MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { MENTORSHIP_ME_PROFILES_PATH } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { logger } from './logger.service';
@@ -235,6 +239,37 @@ export class MentorshipService {
       body
     );
     return toProgramReview(program);
+  }
+
+  /**
+   * Copies the LFX profile's name, email and logo onto every mentor and mentee profile the caller
+   * holds, and returns how many were updated. Each row is patched by id, since `PATCH
+   * /me/profiles/{type}` refuses a type with more than one row; upstream checks the row is the
+   * caller's. Only the keys in `fields` are sent, so an empty body updates nothing and makes no
+   * call. A failed row propagates and leaves the rows after it unpatched; the card asks the user to
+   * save again, which rewrites them all.
+   */
+  public async syncLfxProfileFields(req: Request, fields: MentorshipUpstreamLfxProfileFields): Promise<number> {
+    if (Object.keys(fields).length === 0) return 0;
+
+    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
+    logger.debug(req, 'mentorship_sync_lfx_profile', 'Copying LFX profile fields onto mentorship profiles', {
+      profile_count: targets.length,
+      field_count: Object.keys(fields).length,
+    });
+
+    for (const profile of targets) {
+      await proxyMentorshipRequest<unknown>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_ME_PROFILES_PATH}/by-id/${encodeURIComponent(profile.id)}`,
+        'PATCH',
+        undefined,
+        fields
+      );
+    }
+    return targets.length;
   }
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */

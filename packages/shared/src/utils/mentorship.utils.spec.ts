@@ -595,6 +595,15 @@ describe('program detail helpers', () => {
     expect(request).toEqual({ introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true });
   });
 
+  it('adds the LFX profile fields to the mentor register request only when there are some', () => {
+    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], resumeFileName: '', complianceAccepted: true, termsAccepted: true };
+    const lfxProfile = { firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' };
+
+    expect(buildMentorshipMentorRegisterRequest(form, lfxProfile).lfxProfile).toEqual(lfxProfile);
+    expect(buildMentorshipMentorRegisterRequest(form, {})).not.toHaveProperty('lfxProfile');
+    expect(buildMentorshipMentorRegisterRequest(form)).not.toHaveProperty('lfxProfile');
+  });
+
   it('accepts only document extensions for a resume', () => {
     expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
     expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
@@ -1043,6 +1052,14 @@ describe('buildMentorshipMenteeRegisterRequest', () => {
 
     const optedOut = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, genderConsent: true, gender: 'preferNotToSay' });
     expect(optedOut.demographics).toEqual({ gender: 'preferNotToSay' });
+  });
+
+  it('adds the LFX profile fields only when there are some', () => {
+    const lfxProfile = { firstName: 'Test', email: 'test.user@example.com' };
+
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, lfxProfile).lfxProfile).toEqual(lfxProfile);
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, {})).not.toHaveProperty('lfxProfile');
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM)).not.toHaveProperty('lfxProfile');
   });
 
   it('never includes the resume, even when the form holds a file name', () => {

@@ -277,3 +277,24 @@ describe('mentorship router — mentor endpoints', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('mentorship router — LFX profile sync', () => {
+  const body = JSON.stringify({ firstName: 'Test' });
+
+  it('routes PATCH /api/mentorship/me/lfx-profile (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/me/lfx-profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses the sync while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/me/lfx-profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body,
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+});

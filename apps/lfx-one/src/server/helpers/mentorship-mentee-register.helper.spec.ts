@@ -27,6 +27,8 @@ const VALID_BODY = {
   termsAccepted: true,
 };
 
+const LFX_PROFILE = { firstName: 'Test', lastName: 'User', email: 'test.user@example.com', logoUrl: 'https://example.com/avatar.png' };
+
 /** The per-field error keys a rejected body reports. */
 const rejectedFields = (body: unknown): string[] => {
   try {
@@ -62,6 +64,20 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
 
   it('drops an empty demographics object', () => {
     expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, demographics: {} })).not.toHaveProperty('demographics');
+  });
+
+  it('keeps the LFX profile fields, trimmed, and drops an empty LFX profile', () => {
+    expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, lfxProfile: { ...LFX_PROFILE, firstName: '  Test ' } }).lfxProfile).toEqual(LFX_PROFILE);
+    expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, lfxProfile: {} })).not.toHaveProperty('lfxProfile');
+  });
+
+  it('rejects a bad LFX profile by field', () => {
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: 'text' })).toEqual(['lfxProfile']);
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: { firstName: 1, email: 'not-an-email', logoUrl: 'http://example.com/avatar.png' } }).sort()).toEqual([
+      'lfxProfile.email',
+      'lfxProfile.firstName',
+      'lfxProfile.logoUrl',
+    ]);
   });
 
   it.each([undefined, null, 'text', 42, ['a']])('rejects the non-object body %j', (body) => {
@@ -181,5 +197,14 @@ describe('buildMentorshipUpstreamMenteeProfile', () => {
 
     expect(body).toMatchObject({ age_eligible: false, work_eligible: false });
     expect(Object.keys(body).sort()).toEqual(['age_eligible', 'introduction', 'skill_set', 'terms_and_conditions', 'work_eligible']);
+  });
+
+  it('sends the LFX profile fields in the upstream column names', () => {
+    expect(buildMentorshipUpstreamMenteeProfile({ ...request, lfxProfile: LFX_PROFILE })).toMatchObject({
+      first_name: 'Test',
+      last_name: 'User',
+      email: 'test.user@example.com',
+      logo_url: 'https://example.com/avatar.png',
+    });
   });
 });

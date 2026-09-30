@@ -102,3 +102,74 @@ describe('MentorshipService program review', () => {
     await expect(service.submitProgramDecision(buildReq(), programId, 'approve')).rejects.toBe(forbidden);
   });
 });
+
+describe('MentorshipService LFX profile sync', () => {
+  const fields = { first_name: 'Test', email: 'test.user@example.com' };
+  let service: InstanceType<typeof MentorshipService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    proxyRequest.mockRestore();
+  });
+
+  it('patches each of the caller mentor and mentee rows by id, and no other row', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      data: [
+        { id: 'profile-mentor-1', profile_type: 'mentor' },
+        { id: 'profile-other-1', profile_type: 'maintainer' },
+        { id: 'profile-mentee-1', profile_type: 'mentee' },
+      ],
+      meta: { total: 3 },
+    });
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.syncLfxProfileFields(buildReq(), fields)).resolves.toBe(2);
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles',
+      'GET',
+      expect.objectContaining({ offset: 0 }),
+      undefined
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentor-1',
+      'PATCH',
+      undefined,
+      fields
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentee-1',
+      'PATCH',
+      undefined,
+      fields
+    );
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('makes no call when there is nothing to copy', async () => {
+    await expect(service.syncLfxProfileFields(buildReq(), {})).resolves.toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('lets a failed patch through so the card can report it', async () => {
+    const forbidden = Object.assign(new Error('forbidden'), { statusCode: 403 });
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'profile-mentor-1', profile_type: 'mentor' }], meta: { total: 1 } });
+    proxyRequest.mockRejectedValueOnce(forbidden);
+
+    await expect(service.syncLfxProfileFields(buildReq(), fields)).rejects.toBe(forbidden);
+  });
+});

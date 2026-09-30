@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorship-mentee.constants';
+import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
 import type { MentorshipRegisterSubmitFailure } from './mentorship.interface';
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,8 @@ export interface MentorshipMenteeRegisterFieldErrors {
  * `buildMentorshipMenteeRegisterRequest`. `resumeFileName` is deliberately absent: resume upload is
  * coming soon and no file metadata is sent. `demographics` carries only answers whose consent box was
  * checked; it is omitted when there are none. The five flags are the real checkbox values, validated
- * `true` by both the client and the BFF.
+ * `true` by both the client and the BFF. `lfxProfile` carries the name, email and avatar the profile
+ * card shows; it is omitted when the card had none to give.
  */
 export interface MentorshipMenteeRegisterRequest {
   introduction: string;
@@ -76,6 +78,7 @@ export interface MentorshipMenteeRegisterRequest {
   noDuplicateProfile: boolean;
   complianceAccepted: boolean;
   termsAccepted: boolean;
+  lfxProfile?: MentorshipLfxProfileFields;
 }
 
 /** A failed Become a Mentee submit, as `mapMentorshipRegisterFailure` classifies it. */
@@ -653,10 +656,11 @@ export interface MentorshipUpstreamMenteeSocioeconomicsInput {
 
 /**
  * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
- * upstream from the token and path; name, email, phone and slug are intentionally not sent. A PUT to an
- * existing profile replaces ALL columns, which is why the BFF pre-checks.
+ * upstream from the token and path; the name, email and logo come from the LFX profile, and phone and
+ * slug are intentionally not sent. A PUT to an existing profile replaces ALL columns, which is why the
+ * BFF pre-checks.
  */
-export interface MentorshipUpstreamMenteeProfileInput {
+export interface MentorshipUpstreamMenteeProfileInput extends MentorshipUpstreamLfxProfileFields {
   introduction: string;
   terms_and_conditions: boolean;
   age_eligible: boolean;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -103,6 +103,9 @@ export class MentorRegisterComponent {
   protected readonly profileExistsContinueLabel = MENTORSHIP_MENTOR_REGISTER_PROFILE_EXISTS_CONTINUE;
   protected readonly cancelRoute = '/mentorship/admin';
 
+  /** The card above the form: its name, email and picture go into the registration as they stand at submit. */
+  private readonly profileCard = viewChild(ProfileCardComponent);
+
   protected readonly form = new FormGroup({
     introduction: new FormControl('', { nonNullable: true }),
     skills: new FormControl<string[]>([], { nonNullable: true }),
@@ -176,7 +179,7 @@ export class MentorRegisterComponent {
     this.submitting.set(true);
 
     this.mentorService
-      .registerMentorProfile(buildMentorshipMentorRegisterRequest(form))
+      .registerMentorProfile(buildMentorshipMentorRegisterRequest(form, this.profileCard()?.lfxProfileFields()))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.onRegistered(),

@@ -14,6 +14,7 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipLfxProfileFields,
   MentorshipNameAvailability,
   MentorshipProgramDecisionRequest,
   MentorshipProgramDetail,
@@ -95,6 +96,14 @@ export class MentorshipService {
   public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramReview> {
     const body: MentorshipProgramDecisionRequest = { decision };
     return this.http.post<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
+  }
+
+  /**
+   * Copies the LFX profile's name, email and logo onto the caller's mentor and mentee profiles.
+   * Not caught here: the profile card logs the failure and tells the user.
+   */
+  public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
+    return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {

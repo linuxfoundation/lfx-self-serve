@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
@@ -27,7 +28,9 @@ import { MentorProfileComponent } from './mentor-profile.component';
   selector: 'lfx-mentorship-profile-card',
   template: '<div data-testid="mentorship-profile-card-stub"></div>',
 })
-class StubProfileCardComponent {}
+class StubProfileCardComponent {
+  public readonly syncMentorshipProfiles = input(false);
+}
 
 /**
  * Stub out the drawer to avoid pulling in its child components (PrimeNG drawer, rich editor,
@@ -112,6 +115,14 @@ describe('MentorProfileComponent', () => {
 
     expect(card).toBeLessThan(details);
     expect(details).toBeLessThan(history);
+  });
+
+  it('tells the profile card to copy a saved LFX profile onto the mentorship profiles', async () => {
+    await bootstrap();
+
+    expect((fixture.debugElement.query(By.directive(StubProfileCardComponent)).componentInstance as StubProfileCardComponent).syncMentorshipProfiles()).toBe(
+      true
+    );
   });
 
   it('opens the mentor profile edit drawer when the mentor asks to edit the profile', async () => {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
+import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
 import type {
   MentorshipApplicantTaskStatus,
   MentorshipMentorStatus,
@@ -53,13 +54,15 @@ export interface MentorshipMentorRegisterFieldErrors {
 
 /**
  * Body of `POST /api/mentorship/mentor/profile`. Program requests and the resume are not part of
- * it: requests are sent separately, and there is no upload endpoint yet.
+ * it: requests are sent separately, and there is no upload endpoint yet. `lfxProfile` carries the
+ * name, email and avatar the profile card shows; it is omitted when the card had none to give.
  */
 export interface MentorshipMentorRegisterRequest {
   introduction: string;
   skills: string[];
   complianceAccepted: boolean;
   termsAccepted: boolean;
+  lfxProfile?: MentorshipLfxProfileFields;
 }
 
 /** A failed Become a Mentor submit, as `mapMentorshipRegisterFailure` classifies it. */
@@ -72,10 +75,11 @@ export interface MentorshipMentorHasProfileResponse {
 
 /**
  * Body of `PUT /mentorship/v1/me/profiles/mentor`. `user_id` and `profile_type` are set upstream
- * from the token and path. A PUT to an existing profile replaces every column, which is why the
- * BFF checks for one first. Upstream has no compliance column, so that confirmation stops at the BFF.
+ * from the token and path, and the name, email and logo come from the LFX profile. A PUT to an
+ * existing profile replaces every column, which is why the BFF checks for one first. Upstream has no
+ * compliance column, so that confirmation stops at the BFF.
  */
-export interface MentorshipUpstreamMentorProfileInput {
+export interface MentorshipUpstreamMentorProfileInput extends MentorshipUpstreamLfxProfileFields {
   introduction: string;
   terms_and_conditions: boolean;
   skill_set: { skills: string[] };
