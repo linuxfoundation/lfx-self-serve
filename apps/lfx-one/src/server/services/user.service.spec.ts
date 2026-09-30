@@ -72,6 +72,7 @@ vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch: vi.fn() }));
 vi.mock('../helpers/api-gateway.helper', () => ({ getUserServiceBaseUrl: vi.fn(() => 'https://gw.test/user-service/v1') }));
 
 import { MicroserviceError } from '../errors';
+import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { logger } from './logger.service';
 import { UserService } from './user.service';
@@ -407,6 +408,7 @@ describe('UserService profile visibility', () => {
 describe('UserService.syncVerifiedEmailToUserService', () => {
   const req = { apiGatewayToken: 'gw-token' } as unknown as Request;
   const gw = gatewayFetch as unknown as ReturnType<typeof vi.fn>;
+  const baseUrl = getUserServiceBaseUrl as unknown as ReturnType<typeof vi.fn>;
   const warn = logger.warning as unknown as ReturnType<typeof vi.fn>;
 
   let service: UserService;
@@ -456,6 +458,23 @@ describe('UserService.syncVerifiedEmailToUserService', () => {
     const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
 
     expect(result).toBe(false);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  // Pins the never-throws contract against API_GW_AUDIENCE misconfiguration — getUserServiceBaseUrl
+  // throws when the env var is unset, and every sibling method calls it outside any try.
+  it('returns false with a warning when the gateway base URL cannot resolve (API_GW_AUDIENCE unset)', async () => {
+    baseUrl.mockImplementationOnce(() => {
+      throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', {
+        operation: 'sync_verified_email',
+        service: 'user_service',
+      });
+    });
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(gw).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalled();
   });
 });

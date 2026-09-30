@@ -1351,4 +1351,24 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
 
     expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
+
+  it('callback path: skips the gateway token exchange when the request already carries a token', async () => {
+    authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    const req = buildReq({
+      path: '/api/profile/auth/callback',
+      query: { state: 'state-1', code: 'code-1' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+      appSession: { pendingEmailVerification: { email: 'pending@example.com', otp: '654321' } },
+      apiGatewayToken: 'existing-gw-token',
+    });
+    const res = buildRes();
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(exchangeRefreshTokenForAudienceMock).not.toHaveBeenCalled();
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
+  });
 });
