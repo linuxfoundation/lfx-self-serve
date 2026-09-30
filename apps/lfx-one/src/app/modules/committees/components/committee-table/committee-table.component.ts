@@ -14,7 +14,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
 import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
-import { getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity } from '@lfx-one/shared/utils';
+import { getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
@@ -98,6 +98,7 @@ export class CommitteeTableComponent {
       linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
       joinModeSeverity: resolveJoinModeSeverity(committee.join_mode),
       joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
+      typeDisplay: resolveTypeDisplay(committee),
     }))
   );
 

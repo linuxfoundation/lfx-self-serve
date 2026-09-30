@@ -9,7 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_LABELS, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity } from '@lfx-one/shared/utils';
+import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -59,9 +59,10 @@ export class MyGroupsCardGridComponent {
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const scopeLabel = committee.project_name || committee.foundation_name;
         const joinModeLabel = committee.join_mode ? JOIN_MODE_LABELS[committee.join_mode] : null;
+        const typeDisplay = resolveTypeDisplay(committee);
         const parts = [
           `Open ${committee.name || 'group'}`,
-          ...(committee.classDisplay ? [committee.classDisplay.label] : []),
+          typeDisplay,
           ...(scopeLabel ? [scopeLabel] : []),
           committee.my_role || 'Member',
           ...(joinModeLabel ? [joinModeLabel] : []),
@@ -81,6 +82,7 @@ export class MyGroupsCardGridComponent {
           // Pre-computed so the template stays binding-only (frontend-checklist §63-65).
           joinModeSeverity: resolveJoinModeSeverity(committee.join_mode),
           joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
+          typeDisplay,
         };
       })
     );

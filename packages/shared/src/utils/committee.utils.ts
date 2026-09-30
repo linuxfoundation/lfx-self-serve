@@ -249,6 +249,21 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
 }
 
 /**
+ * Computes the merged "Type" display label for a committee row/card chip — collapses the former
+ * separate "Type" (raw category) and "Class" (behavioral class) columns into one:
+ *   - SIGs: `"SIG | {raw category}"` to expose the sub-type (e.g. "SIG | Marketing Mailing List")
+ *   - All others: behavioral-class label only (e.g. "Working Groups", "Boards", "Oversight")
+ *
+ * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent`.
+ */
+export function resolveTypeDisplay(committee: { behavioralClass?: string; category?: string; classDisplay?: { label?: string } }): string {
+  if (committee.behavioralClass === 'special-interest-group' && committee.category) {
+    return `SIG | ${committee.category}`;
+  }
+  return committee.classDisplay?.label ?? 'Other';
+}
+
+/**
  * Maps a group's `join_mode` to a tag severity so joinability is scannable at a glance.
  * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent` — extracted here
  * so the two views can't drift and so the 4-branch mapping is unit-tested in this package.

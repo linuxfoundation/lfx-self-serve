@@ -54,14 +54,12 @@
 
         @if (item.committee.classDisplay) {
           <span
-            [class]="
-              'inline-flex items-center gap-1 self-start text-xs font-medium px-2 py-0.5 rounded-full ' +
-              item.committee.classDisplay.bgColor +
-              ' ' +
-              item.committee.classDisplay.color
-            ">
-            <i [class]="item.committee.classDisplay.icon + ' text-[10px]'" aria-hidden="true"></i>
-            {{ item.committee.classDisplay.label }}
+            class="inline-flex max-w-full items-center gap-1 self-start text-xs font-medium px-2 py-0.5 rounded-full"
+            [class]="item.committee.classDisplay.bgColor + ' ' + item.committee.classDisplay.color"
+            [pTooltip]="item.typeDisplay"
+            tooltipPosition="top">
+            <i [class]="item.committee.classDisplay.icon + ' text-[10px] shrink-0'" aria-hidden="true"></i>
+            <span class="truncate">{{ item.typeDisplay }}</span>
           </span>
         }
 
