@@ -10,7 +10,7 @@ import { buildMentorshipMenteeTaskView } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeTaskRowComponent } from './mentee-task-row.component';
 
@@ -74,6 +74,7 @@ describe('MenteeTaskRowComponent', () => {
     });
 
   // Fixed clocks either side of the fixtures' due date (Sep 30, 2026), so a fixture never turns past due with the calendar.
+  // The row judges `pastDue` against its own clock, so each test also pins `Date` (to `beforeDue` unless it says otherwise).
   const beforeDue = Date.parse('2026-09-15T00:00:00Z');
   const afterDue = Date.parse('2026-10-01T00:00:00Z');
 
@@ -91,9 +92,15 @@ describe('MenteeTaskRowComponent', () => {
     );
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(beforeDue);
     notify = vi.fn();
     inFlight = new Subject<boolean>();
     changeStatus = vi.fn().mockReturnValue(inFlight.asObservable());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('status change', () => {
@@ -397,7 +404,7 @@ describe('MenteeTaskRowComponent', () => {
   });
 
   describe('past due', () => {
-    const pastDueInProgress = (): MentorshipMenteeTaskView =>
+    const pastDueInProgress = (nowMs: number = afterDue): MentorshipMenteeTaskView =>
       buildMentorshipMenteeTaskView(
         {
           id: 'row_late',
@@ -407,8 +414,12 @@ describe('MenteeTaskRowComponent', () => {
           submitFile: null,
           dueDate: '2026-09-30T00:00:00Z',
         },
-        afterDue
+        nowMs
       );
+
+    beforeEach(() => {
+      vi.setSystemTime(afterDue);
+    });
 
     it('disables Submitted and shows the past-due hint', async () => {
       await buildRow(pastDueInProgress());
@@ -436,11 +447,36 @@ describe('MenteeTaskRowComponent', () => {
     });
 
     it('keeps Upload enabled before the due date has ended', async () => {
+      vi.setSystemTime(beforeDue);
       await buildRow(uploadNeededTask());
       const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
 
       expect(uploadBtn?.disabled).toBe(false);
       expect(uploadBtn?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('locks Submitted and Upload when the due date closes while the row is open', async () => {
+      const lastSecond = Date.parse('2026-09-30T23:59:59Z');
+      // Re-faking without restoring first keeps the outer Date-only fake, so setTimeout would stay real.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      vi.setSystemTime(lastSecond);
+      // Built before the cutoff, like a cached view: its own `pastDue` stays false.
+      await buildRow(pastDueInProgress(lastSecond));
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+
+      vi.advanceTimersByTime(1000);
+      fixture.detectChanges();
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+      expect(byTestId('mentee-tasks-status-hint-row_late')?.textContent).toContain('due date has passed');
+    });
+
+    it('judges a view built before the cutoff against the current clock', async () => {
+      await buildRow(uploadNeededTask(beforeDue));
+      const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
+
+      expect(uploadBtn?.disabled).toBe(true);
     });
   });
 

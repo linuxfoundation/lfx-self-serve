@@ -59,6 +59,7 @@ import {
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
   mentorshipMenteeTaskStatusFields,
+  mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
@@ -300,6 +301,11 @@ describe('buildMentorshipProgramsUrl', () => {
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org')).toBe('https://mentorship.example.org/programs');
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org/')).toBe('https://mentorship.example.org/programs');
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org//')).toBe('https://mentorship.example.org/programs');
+  });
+
+  it('trims a long run of trailing slashes', () => {
+    expect(buildMentorshipProgramsUrl(`https://mentorship.example.org${'/'.repeat(10_000)}`)).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('/'.repeat(10_000))).toBe('/programs');
   });
 
   it("links one program's page, URL-encoding its id", () => {
@@ -1332,6 +1338,20 @@ describe('isMentorshipTaskPastDue', () => {
   it('uses the UTC day of a timestamp that carries a time of day', () => {
     expect(isMentorshipTaskPastDue('2026-09-30T18:00:00Z', Date.parse('2026-09-30T20:00:00Z'))).toBe(false);
     expect(isMentorshipTaskPastDue('2026-09-30T18:00:00Z', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('mentorshipTaskDueCutoffMs', () => {
+  it('is the midnight UTC after the due date', () => {
+    expect(mentorshipTaskDueCutoffMs('2026-09-30')).toBe(Date.parse('2026-10-01T00:00:00Z'));
+    expect(mentorshipTaskDueCutoffMs('2026-09-30T18:00:00Z')).toBe(Date.parse('2026-10-01T00:00:00Z'));
+  });
+
+  it('is null without a usable due date', () => {
+    expect(mentorshipTaskDueCutoffMs(undefined)).toBeNull();
+    expect(mentorshipTaskDueCutoffMs(null)).toBeNull();
+    expect(mentorshipTaskDueCutoffMs('')).toBeNull();
+    expect(mentorshipTaskDueCutoffMs('not-a-date')).toBeNull();
   });
 });
 

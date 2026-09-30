@@ -138,15 +138,21 @@ export function toMentorshipUtcInstant(value: string): string {
 }
 
 /**
- * Whether a task's due date has passed at `nowMs`. The deadline is the end of the due date's UTC day,
- * so a task due `2026-09-30` can still be submitted until `2026-10-01T00:00:00Z`. Takes a date-only value
- * or an ISO instant (only its UTC calendar day counts); a missing or unparseable due date is never past due.
+ * The instant (ms) a task closes: the end of its due date's UTC day, so a task due `2026-09-30` closes at
+ * `2026-10-01T00:00:00Z`. Takes a date-only value or an ISO instant (only its UTC calendar day counts);
+ * a missing or unparseable due date never closes, so it returns `null`.
  */
-export function isMentorshipTaskPastDue(dueDate: string | null | undefined, nowMs: number): boolean {
-  if (!dueDate) return false;
+export function mentorshipTaskDueCutoffMs(dueDate: string | null | undefined): number | null {
+  if (!dueDate) return null;
   const due = new Date(toMentorshipUtcInstant(dueDate));
-  if (Number.isNaN(due.getTime())) return false;
-  return nowMs >= Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate() + 1);
+  if (Number.isNaN(due.getTime())) return null;
+  return Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate() + 1);
+}
+
+/** Whether a task's due date has passed at `nowMs`, per `mentorshipTaskDueCutoffMs`; a task with no usable due date is never past due. */
+export function isMentorshipTaskPastDue(dueDate: string | null | undefined, nowMs: number): boolean {
+  const cutoff = mentorshipTaskDueCutoffMs(dueDate);
+  return cutoff !== null && nowMs >= cutoff;
 }
 
 /** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
@@ -175,7 +181,10 @@ export function isMentorshipHttpUrl(value: string): boolean {
  * A trailing `/` on `base` is dropped, so the join never doubles it.
  */
 export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
-  const programs = `${base.replace(/\/+$/, '')}/programs`;
+  // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
+  let end = base.length;
+  while (end > 0 && base[end - 1] === '/') end--;
+  const programs = `${base.slice(0, end)}/programs`;
   return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
 }
 
@@ -1279,7 +1288,8 @@ export function buildMentorshipMenteeApplicationView(
           nowMs
         )
       )
-      .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true })),
+      // Pinned to 'en' so the server render and the browser sort titles the same way.
+      .sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base', numeric: true })),
   };
 }
 

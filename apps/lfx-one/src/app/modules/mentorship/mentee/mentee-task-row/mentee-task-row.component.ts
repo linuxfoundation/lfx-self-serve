@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
+import { NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusChange,
@@ -15,7 +16,9 @@ import {
 import {
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
+  isMentorshipTaskPastDue,
   mentorshipMenteeTaskStatusFields,
+  mentorshipTaskDueCutoffMs,
   normalizeMentorshipMenteeTaskStatus,
 } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
@@ -34,7 +37,8 @@ import { MentorshipComingSoonService } from '@modules/mentorship/services/mentor
  *
  * File upload, view and download are not implemented yet, so those actions only fire the Coming Soon
  * toast. The BFF never sends a file, so a task that requires one cannot be submitted from here.
- * Once a task is past due (the end of its due date's UTC day), Submitted and Upload are disabled.
+ * Once a task is past due (the end of its due date's UTC day), Submitted and Upload are disabled. The row
+ * re-reads the clock at that cutoff, so a page left open across it locks without a reload.
  */
 @Component({
   selector: 'lfx-mentee-task-row',
@@ -47,6 +51,7 @@ export class MenteeTaskRowComponent {
   // ---- 1. DI ----------------------------------------------------------------
   private readonly comingSoonService = inject(MentorshipComingSoonService);
   private readonly taskStatusService = inject(MenteeTaskStatusService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // ---- 2. Inputs ------------------------------------------------------------
   public readonly task = input.required<MentorshipMenteeTaskView>();
@@ -58,6 +63,8 @@ export class MenteeTaskRowComponent {
   // ---- 3. Simple writable signals -------------------------------------------
   /** True while a status change is in flight; blocks the select and shows the spinner. */
   protected readonly saving = signal(false);
+  /** The clock `pastDue` is judged against; moved on when the task's due date closes. */
+  private readonly now = signal(Date.now());
 
   // ---- 4. Computed signals --------------------------------------------------
   /**
@@ -77,6 +84,12 @@ export class MenteeTaskRowComponent {
   protected readonly statusLabelledBy: Signal<string> = computed(() =>
     this.statusState().hint === null ? this.statusLabelId() : `${this.statusLabelId()} ${this.statusHintId()}`
   );
+
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      this.initDueDateClock();
+    }
+  }
 
   // ---- 5. Actions -----------------------------------------------------------
 
@@ -123,13 +136,25 @@ export class MenteeTaskRowComponent {
 
   private initEffectiveTask(): Signal<MentorshipMenteeTaskView> {
     return computed(() => {
-      const task = this.task();
+      // The view's `pastDue` is fixed when it is built, and the applications are cached, so judge it against the live clock.
+      const task = { ...this.task(), pastDue: isMentorshipTaskPastDue(this.task().dueDate, this.now()) };
       const confirmed = this.confirmed();
       // Ignored once the refreshed task no longer carries the status it was saved from (it also moved while the save was in flight).
       if (confirmed !== null && normalizeMentorshipMenteeTaskStatus(task.status) === confirmed.from) {
         return { ...task, ...mentorshipMenteeTaskStatusFields(confirmed.to) };
       }
       return task;
+    });
+  }
+
+  /** Moves `now` on at the due date's cutoff. A cutoff beyond the longest timer delay is reached in steps. */
+  private initDueDateClock(): void {
+    effect((onCleanup) => {
+      const cutoff = mentorshipTaskDueCutoffMs(this.task().dueDate);
+      const now = this.now();
+      if (cutoff === null || now >= cutoff) return;
+      const timer = setTimeout(() => this.now.set(Date.now()), Math.min(cutoff - now, NODE_MAX_TIMER_DELAY_MS));
+      onCleanup(() => clearTimeout(timer));
     });
   }
 
