@@ -29,6 +29,7 @@ import {
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
   MENTORSHIP_MENTEE_PROFILE_CREATED_STATE,
+  MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
   MENTORSHIP_MENTEE_TERMS_INTRO,
   MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
   MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
@@ -39,7 +40,7 @@ import {
   buildMentorshipMenteeRegisterRequest,
   createEmptyMentorshipMenteeForm,
   getMentorshipMenteeRegisterErrors,
-  mapMentorshipMenteeRegisterFailure,
+  mapMentorshipRegisterFailure,
   mentorshipMenteeApplyIds,
 } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
@@ -207,7 +208,7 @@ export class MenteeRegisterComponent {
   private onRegisterFailed(error: unknown): void {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     const body = error instanceof HttpErrorResponse ? error.error : null;
-    const failure = mapMentorshipMenteeRegisterFailure(status, body);
+    const failure = mapMentorshipRegisterFailure(status, body, MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS);
 
     // Keyed to the form as it stands now, not as it was sent: the form stays editable while the save is
     // in flight, and a failure keyed to the sent form would never match and would vanish unseen.

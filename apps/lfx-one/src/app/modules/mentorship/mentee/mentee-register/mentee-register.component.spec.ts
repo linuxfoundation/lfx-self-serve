@@ -11,13 +11,13 @@ import { RichEditorComponent } from '@components/rich-editor/rich-editor.compone
 import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
+  MENTORSHIP_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_REGISTER_WARN_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeRegisterRequest } from '@lfx-one/shared/interfaces';
@@ -373,7 +373,7 @@ describe('MenteeRegisterComponent', () => {
       await submit();
 
       expect(submitError()?.getAttribute('data-kind')).toBe('read-only');
-      expect(submitError()?.textContent).toContain(MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY);
+      expect(submitError()?.textContent).toContain(MENTORSHIP_REGISTER_ERROR_READ_ONLY);
       expect(byTestId('mentorship-mentee-profile-exists-continue')).toBeNull();
       expect(toast).not.toHaveBeenCalled();
     });
@@ -428,7 +428,7 @@ describe('MenteeRegisterComponent', () => {
       await submit();
 
       expect(submitError()?.getAttribute('data-kind')).toBe('error');
-      expect(submitError()?.textContent).toContain(MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK);
+      expect(submitError()?.textContent).toContain(MENTORSHIP_REGISTER_ERROR_FALLBACK);
       expect(component['submitting']()).toBe(false);
 
       await submit();

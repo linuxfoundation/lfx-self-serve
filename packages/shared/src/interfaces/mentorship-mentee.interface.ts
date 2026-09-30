@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorship-mentee.constants';
+import type { MentorshipRegisterSubmitFailure } from './mentorship.interface';
 
 // ---------------------------------------------------------------------------
 // Become a Mentee form types
@@ -77,17 +78,8 @@ export interface MentorshipMenteeRegisterRequest {
   termsAccepted: boolean;
 }
 
-/** How a failed registration submit is shown. */
-export type MentorshipMenteeRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
-
-/** Result of `mapMentorshipMenteeRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
-export interface MentorshipMenteeRegisterSubmitFailure {
-  kind: MentorshipMenteeRegisterSubmitFailureKind;
-  /** Banner / toast copy. For 'field-errors' this is the first field message. */
-  message: string;
-  /** Present only for kind 'field-errors'; contains only keys of MentorshipMenteeRegisterFieldErrors. */
-  fieldErrors?: MentorshipMenteeRegisterFieldErrors;
-}
+/** A failed Become a Mentee submit, as `mapMentorshipRegisterFailure` classifies it. */
+export type MentorshipMenteeRegisterSubmitFailure = MentorshipRegisterSubmitFailure<MentorshipMenteeRegisterFieldErrors>;
 
 /** One selectable option in a mentee demographic question. */
 export interface MentorshipDemographicOption {

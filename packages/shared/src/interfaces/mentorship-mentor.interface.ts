@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
-import type { MentorshipApplicantTaskStatus, MentorshipMentorStatus, MentorshipProgramApplicant, MentorshipProgramMentee } from './mentorship.interface';
+import type {
+  MentorshipApplicantTaskStatus,
+  MentorshipMentorStatus,
+  MentorshipProgramApplicant,
+  MentorshipProgramMentee,
+  MentorshipRegisterSubmitFailure,
+} from './mentorship.interface';
 
 // ---------------------------------------------------------------------------
 // Become a Mentor form types
@@ -43,6 +49,36 @@ export interface MentorshipMentorRegisterFieldErrors {
   skills?: string;
   complianceAccepted?: string;
   termsAccepted?: string;
+}
+
+/**
+ * Body of `POST /api/mentorship/mentor/profile`. Program requests and the resume are not part of
+ * it: requests are sent separately, and there is no upload endpoint yet.
+ */
+export interface MentorshipMentorRegisterRequest {
+  introduction: string;
+  skills: string[];
+  complianceAccepted: boolean;
+  termsAccepted: boolean;
+}
+
+/** A failed Become a Mentor submit, as `mapMentorshipRegisterFailure` classifies it. */
+export type MentorshipMentorRegisterSubmitFailure = MentorshipRegisterSubmitFailure<MentorshipMentorRegisterFieldErrors>;
+
+/** Response body from `GET /api/mentorship/mentor/has-profile`. */
+export interface MentorshipMentorHasProfileResponse {
+  hasProfile: boolean;
+}
+
+/**
+ * Body of `PUT /mentorship/v1/me/profiles/mentor`. `user_id` and `profile_type` are set upstream
+ * from the token and path. A PUT to an existing profile replaces every column, which is why the
+ * BFF checks for one first. Upstream has no compliance column, so that confirmation stops at the BFF.
+ */
+export interface MentorshipUpstreamMentorProfileInput {
+  introduction: string;
+  terms_and_conditions: boolean;
+  skill_set: { skills: string[] };
 }
 
 // ---------------------------------------------------------------------------

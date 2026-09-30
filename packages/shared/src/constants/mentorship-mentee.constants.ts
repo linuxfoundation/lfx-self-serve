@@ -7,6 +7,7 @@ import type {
   MentorshipMenteeDemographicRow,
   MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
+import type { MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -151,13 +152,13 @@ export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL = 'Your mentee profile has 
 /** Error code the BFF puts on the 409 returned when a mentee profile already exists. */
 export const MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE = 'MENTEE_PROFILE_EXISTS';
 
-/** Inline failure-banner copy for a rejected registration submit, keyed by `MentorshipMenteeRegisterSubmitFailureKind`. */
+/**
+ * Mentee-specific failure-banner copy for a rejected registration submit. The conflict, read-only and
+ * fallback copy both register forms share is `MENTORSHIP_REGISTER_ERROR_*` in `mentorship.constants.ts`.
+ */
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS = 'You already have a mentee profile, so we did not overwrite it.';
 export const MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE = 'Go to my mentee dashboard';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict with an existing record. Refresh the page and try again.';
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE = 'We could not accept your registration. Please confirm the eligibility statements and try again.';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
 /** The form fields a server 400 can name; anything else in `errors[]` is ignored rather than shown against a field that does not exist. */
@@ -171,6 +172,14 @@ export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMe
   'complianceAccepted',
   'termsAccepted',
 ];
+
+/** How `mapMentorshipRegisterFailure` classifies a rejected Become a Mentee submit. */
+export const MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS: MentorshipRegisterFailureOptions<MentorshipMenteeRegisterFieldErrors> = {
+  profileExistsCode: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  profileExistsMessage: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  fieldKeys: MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
+  ineligibleMessage: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
+};
 
 // ---------------------------------------------------------------------------
 // Mentee shell page — tab metadata, overview, and tasks

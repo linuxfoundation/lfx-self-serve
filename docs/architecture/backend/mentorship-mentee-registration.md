@@ -45,7 +45,7 @@ The resume is not sent. Resume upload is coming soon: `ResumeSectionComponent` t
 
 ## Errors
 
-The frontend maps a failure by status and error code only (`mapMentorshipMenteeRegisterFailure`), never by upstream message text.
+The frontend maps a failure by status and error code only (`mapMentorshipRegisterFailure` with `MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS`; the mentor form shares it), never by upstream message text.
 
 | Status and code                        | Kind             | UI                                                                   |
 | -------------------------------------- | ---------------- | -------------------------------------------------------------------- |
