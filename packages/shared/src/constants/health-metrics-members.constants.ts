@@ -22,6 +22,7 @@ import type {
   HealthMetricsMembersMovementDrawerCopy,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovements,
+  HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
   HealthMetricsMembersRenewals,
@@ -384,3 +385,30 @@ export const HEALTH_METRICS_MEMBERS_BOARD_NEVER_ATTENDED_LINK = {
   fragment: 'reps',
   queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: 'never' },
 } as const;
+
+/** Read-failed / no-foundation value: no audience surveyed, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_NPS_UNMEASURED: HealthMetricsMembersNps = {
+  audiences: [],
+  selectedAudience: null,
+  trend: [],
+};
+
+/** Audiences the toggle leads with, in order; the rest follow alphabetically. */
+export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['Board', 'Maintainers'] as const;
+
+/** Longest audience name a caller may pass; the view's names are far shorter. */
+export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
+
+/** Below this whole-percent response rate, a score is not a foundation-wide signal. */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT = 40;
+
+/** A response-rate fall of at least this many points makes a rising score unproven; a smaller one is noise. */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP = 5;
+
+/** The response distribution's segments, left to right, with non-responses last at full weight. */
+export const HEALTH_METRICS_MEMBERS_NPS_SEGMENTS = [
+  { key: 'promoters', label: 'Promoters', colorClass: 'bg-emerald-600' },
+  { key: 'passives', label: 'Passives', colorClass: 'bg-amber-600' },
+  { key: 'detractors', label: 'Detractors', colorClass: 'bg-red-600' },
+  { key: 'noResponse', label: 'No response', colorClass: 'bg-gray-200' },
+] as const;

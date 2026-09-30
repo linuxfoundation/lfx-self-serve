@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
@@ -3969,6 +3970,36 @@ export class AnalyticsController {
         range,
         cohort,
         total_records: response.totalRecords,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-nps` — member satisfaction per audience surveyed in a period, and one audience's waves. */
+  public async getMembersNps(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_nps');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_nps');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_members_nps');
+      if (!isSupportedMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Member satisfaction has no data for this range', { operation: 'get_members_nps' });
+      }
+
+      // Audiences are the view's own values, so the read matches against them rather than an allowlist.
+      const audience = (getStringQueryParam(req, 'audience') ?? '').trim().slice(0, HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH) || null;
+
+      const response = await this.healthMetricsMembersService.getNps(req, { foundationSlug, range, audience });
+
+      logger.success(req, 'get_members_nps', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        audience_count: response.audiences.length,
+        trend_count: response.trend.length,
       });
 
       res.json(response);
