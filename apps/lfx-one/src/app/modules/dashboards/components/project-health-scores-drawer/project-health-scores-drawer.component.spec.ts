@@ -10,13 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectHealthScoresDrawerComponent } from './project-health-scores-drawer.component';
 
-/**
- * Covers the category pill label (IN-1390): the band word, with an asterisk glued to it for a partial
- * score and never for an unscored row.
- *
- * The component is instantiated directly rather than rendered: the assertion is about one method, and
- * the template pulls in the drawer overlay and the chart.
- */
+// Instantiated directly, not rendered: the template pulls in the drawer overlay and the chart.
 describe('ProjectHealthScoresDrawerComponent — categoryLabelFor', () => {
   const row = (overrides: Partial<ProjectTableRow>): ProjectTableRow => ({
     id: 'project-1',

@@ -136,11 +136,7 @@ const UNSCORED: Partial<OrgLensProject> = {
   healthDevelopment: null,
 };
 
-/**
- * The health badge label, its accessible name and its CSV cell come from one rule (IN-1390): the band
- * with an asterisk glued to it for a partial score, the bare band for a full one, and `Unavailable`
- * never marked. Rows are ordered by name because every row ties on the default contributors sort.
- */
+// Badge label, accessible name and CSV cell share one rule: `*` on a partial band, never on Unavailable.
 describe('OrgProjectsComponent — health label', () => {
   const PROJECTS: OrgLensProject[] = [
     // Partial, Maintainer Health uncovered: 21 of a capped 60.
@@ -248,10 +244,7 @@ describe('OrgProjectsComponent — health label', () => {
       throw new Error('exportCsv() did not trigger a download');
     }
     // Project names and health labels carry no commas or quotes, so a plain split keeps the columns aligned.
-    const [header, ...lines] = (await csvBlob.text())
-      .replace('﻿', '')
-      .split('\r\n')
-      .map((line) => line.split(','));
+    const [header, ...lines] = (await csvBlob.text()).split('\r\n').map((line) => line.split(','));
     const nameColumn = header.indexOf('Project');
     const healthColumn = header.indexOf('Health Score');
     return Object.fromEntries(lines.map((cells) => [cells[nameColumn], cells[healthColumn]]));
@@ -267,6 +260,10 @@ describe('OrgProjectsComponent — health label', () => {
     const project = PROJECTS.find((p) => p.name === name) as OrgLensProject;
 
     expect(component['healthLabelFor'](project)).toBe(label);
+  });
+
+  it('healthLabelFor never marks an out-of-enum band, even with a covered count of 2', () => {
+    expect(component['healthLabelFor'](makeProject('Foxtrot', { health: 'bogus' as never, healthCoveredCategoryCount: 2 }))).toBe('Unavailable');
   });
 
   it('renders the same label on the badge, and spells a partial score out in its accessible name', () => {

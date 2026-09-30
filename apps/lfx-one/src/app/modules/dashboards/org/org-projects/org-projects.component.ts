@@ -1052,8 +1052,9 @@ export class OrgProjectsComponent {
 
   // Band label, marked partial from the BFF-sourced covered count; an unavailable badge never gets the marker.
   private healthLabelFor(project: OrgLensProject): string {
-    const label = HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)];
-    if (project.health === 'unavailable') {
+    const health = this.normalizeHealth(project.health);
+    const label = HEALTH_SCORE_LABELS[health];
+    if (health === 'unavailable') {
       return label;
     }
     return formatHealthLabel(label, isPartialHealthScore(project.healthCoveredCategoryCount));

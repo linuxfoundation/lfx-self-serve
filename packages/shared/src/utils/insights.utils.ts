@@ -86,13 +86,7 @@ export function normalizeHealthScoreCategoryV2(category: string | null | undefin
   return HEALTH_SCORE_BANDS.has(lower) ? lower : null;
 }
 
-/**
- * Shared accessible summary for a health badge — the single rule behind the
- * table and hero badge accessible names: `Health: {Label[, partial score]} ({score}/{max}). Maintainer
- * Health {x/40}, Security & Supply Chain {x/35}, Development Activity {x/25}.` A partial score is spelled
- * out because screen readers announce or skip a bare `*` depending on punctuation settings. A null label
- * or score renders `Health: Unavailable.` — the partial wording never applies to unavailable.
- */
+/** Health badge accessible name; spells a partial score out because screen readers may skip `*`. */
 export function buildHealthAriaLabel(args: {
   label: Exclude<HealthScore, 'unavailable'> | null;
   score: number | null;

@@ -28,6 +28,7 @@ export class OrgHealthPopupComponent {
   protected readonly unavailableText = ORG_HEALTH_POPUP_UNAVAILABLE_TEXT;
   protected readonly available = computed(() => this.label() != null && this.score() != null);
   // Partial = the max is capped under 100, the same condition that draws the dotted remainder.
+  // Max-based like Insights; host badges use the covered-category count (same rows on warehouse data).
   protected readonly isPartial = computed(() => {
     const max = this.maxScore();
     return max != null && max < 100;
