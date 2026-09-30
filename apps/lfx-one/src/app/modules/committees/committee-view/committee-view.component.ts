@@ -340,7 +340,10 @@ export class CommitteeViewComponent {
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(
-    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
+    // Non-visitors (members, chairs, etc.) always see the Members tab.
+    // Visitors see it only when the group admin has opted into BASIC_PROFILE visibility,
+    // or when they have edit / invite-send access (edge case: ED in admin mode).
+    () => !this.isVisitor() || this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
   );
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
