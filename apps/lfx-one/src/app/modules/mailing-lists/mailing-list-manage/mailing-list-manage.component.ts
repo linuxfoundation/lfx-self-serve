@@ -525,6 +525,12 @@ export class MailingListManageComponent {
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
     const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
+    // The upstream API accepts a single committee association via `committee_uid` (singular).
+    // The `committees` array field on the request is a BFF-side concept; sending it to upstream
+    // has no effect — the link is stored and retrieved via `committee_uid` only.
+    const selectedCommittees: CommitteeReference[] = formValue.committees ?? [];
+    const committeeUid = selectedCommittees[0]?.uid ?? null;
+
     return {
       name: groupName,
       public: formValue.public,
@@ -532,7 +538,7 @@ export class MailingListManageComponent {
       audience_access: formValue.audience_access,
       description: formValue.description || '',
       service_id: service.uid,
-      committees: formValue.committees?.length > 0 ? formValue.committees : undefined,
+      committee_uid: committeeUid,
       title: formValue.group_name,
     };
   }
