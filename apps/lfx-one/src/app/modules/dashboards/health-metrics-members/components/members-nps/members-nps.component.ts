@@ -26,7 +26,7 @@ import {
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, skipWhile, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -143,10 +143,11 @@ export class MembersNpsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
+      const seeded = this.audience();
       toObservable(this.audience)
         .pipe(
-          // `skip(1)` drops the state just read out of the URL; writing it back would be a no-op during hydration.
-          skip(1),
+          // Drops the state just read out of the URL, but not a reset of it that lands before the first emission.
+          skipWhile((value, index) => index === 0 && value === seeded),
           distinctUntilChanged(),
           takeUntilDestroyed()
         )
@@ -166,10 +167,17 @@ export class MembersNpsComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
+    // An audience the read fell back from; resetting it to `null` resolves to the same audience, so it is not re-read.
+    let droppedAudience: string | null = null;
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.range === b.range && a.audience === b.audience),
+        distinctUntilChanged(
+          (a, b) =>
+            a.foundationSlug === b.foundationSlug &&
+            a.range === b.range &&
+            (a.audience === b.audience || (b.audience === null && a.audience === droppedAudience))
+        ),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
@@ -184,7 +192,12 @@ export class MembersNpsComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
+              // An audience the period did not survey falls back, so the URL must not keep naming it.
+              if (!this.loadFailed() && query.audience !== null && response.selectedAudience !== query.audience) {
+                droppedAudience = query.audience;
+                this.audience.set(null);
+              }
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) this.settled.emit();

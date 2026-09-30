@@ -162,7 +162,15 @@ describe('MembersNpsComponent', () => {
 
     const [line] = fixture.componentInstance['chartData']().datasets as ChartDataset<'line'>[];
     expect(line.pointBackgroundColor).toEqual([lfxColors.amber[600], lfxColors.red[600]]);
-    expect(text('members-nps-trend-note')).toContain('The score is up 15 points while the response rate fell from 55% to 38%.');
+    expect(text('members-nps-trend-note')).toBe(
+      'The score is up 15 points while the response rate fell from 55% to 38%. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.'
+    );
+  });
+
+  it('warns that a rate below the floor makes neither the score nor its trend a foundation-wide signal', async () => {
+    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 60, 0.36), quarter('2026-04-01', 'Q2 26', 55, 0.35)] }));
+
+    expect(text('members-nps-trend-note')).toBe('Response rate is 35% — below the 40% floor, so neither the score nor its trend is a foundation-wide signal.');
   });
 
   it('leaves out the trend for a single wave', async () => {
@@ -225,6 +233,16 @@ describe('MembersNpsComponent', () => {
     TestBed.resetTestingModule();
     await render(response(), { npsAudience: '   ' });
     expect(getMembersNps).toHaveBeenCalledWith(expect.objectContaining({ audience: null }));
+  });
+
+  it('drops a URL audience the period did not survey, clearing the URL without a second read', async () => {
+    await render(response(), { npsAudience: 'Ambassador' });
+
+    expect(getMembersNps).toHaveBeenCalledTimes(1);
+    expect(getMembersNps).toHaveBeenCalledWith(expect.objectContaining({ audience: 'Ambassador' }));
+    expect(text('members-nps-score')).toBe('+62');
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { npsAudience: null } }));
+    expect(fixture.componentInstance['audience']()).toBeNull();
   });
 
   it('re-reads for a new period, and reads the default for one the views do not carry', async () => {

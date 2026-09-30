@@ -815,7 +815,7 @@ export class HealthMetricsMembersService {
     // The suffix comes from constants, never from the request, so interpolating it is safe.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
     const columns = `
-      audience_type,
+      TRIM(audience_type) AS audience_type,
       nps_score_${suffix} AS nps_score,
       nps_score_change_pp_${suffix} AS nps_score_change_pp,
       recipients_count_${suffix} AS recipients_count,
@@ -842,7 +842,7 @@ export class HealthMetricsMembersService {
     // The requested audience wins when it was surveyed in the period; otherwise the first in read order.
     const sql = `
       WITH chosen AS (
-        ${npsAudiencesSql(query.range, 'audience_type', 'IFF(TRIM(audience_type) = ?, 0, 1)')}
+        ${npsAudiencesSql(query.range, 'TRIM(audience_type) AS audience_type', 'IFF(TRIM(audience_type) = ?, 0, 1)')}
         LIMIT 1
       )
       SELECT
@@ -852,7 +852,7 @@ export class HealthMetricsMembersService {
         trend.response_rate_pct,
         trend.is_sample_too_small
       FROM ${MEMBERSHIP_NPS_QUARTERLY_TREND_VIEW} trend
-      JOIN chosen ON chosen.audience_type = trend.audience_type
+      JOIN chosen ON chosen.audience_type = TRIM(trend.audience_type)
       WHERE trend.foundation_slug = ?
         -- A wave that surveyed nobody has no rate or score to plot.
         AND trend.recipients_count > 0
@@ -889,7 +889,7 @@ function npsAudiencesSql(range: HealthMetricsL2Range, columns: string, leadingOr
     WHERE foundation_slug = ?
       AND recipients_count_${suffix} > 0
       AND NULLIF(TRIM(audience_type), '') IS NOT NULL
-    ORDER BY ${leadingOrder ? `${leadingOrder}, ` : ''}CASE audience_type WHEN '${first}' THEN 0 WHEN '${second}' THEN 1 ELSE 2 END, audience_type ASC
+    ORDER BY ${leadingOrder ? `${leadingOrder}, ` : ''}CASE TRIM(audience_type) WHEN '${first}' THEN 0 WHEN '${second}' THEN 1 ELSE 2 END, TRIM(audience_type) ASC
   `;
 }
 
@@ -1056,8 +1056,9 @@ function mapBoardMeeting(row: BoardMeetingRow): HealthMetricsMembersBoardMeeting
 }
 
 function mapNpsAudience(row: NpsAudienceRow): HealthMetricsMembersNpsAudience[] {
-  const audience = row.AUDIENCE_TYPE?.trim();
-  if (!audience) return [];
+  // Trimmed in SQL, as every read that resolves an audience compares it, so the id round-trips unchanged.
+  const audience = row.AUDIENCE_TYPE;
+  if (!audience?.trim()) return [];
 
   // A flagged sample is withheld here, so no caller can render it as a precise score.
   const isSampleTooSmall = row.IS_SAMPLE_TOO_SMALL === true;
