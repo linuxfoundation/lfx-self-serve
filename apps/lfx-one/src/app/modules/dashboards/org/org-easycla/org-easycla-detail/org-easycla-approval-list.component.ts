@@ -105,11 +105,7 @@ export class OrgEasyclaApprovalListComponent {
 
   protected readonly loading = computed(() => !this.locked() && this.loadingState() && !this.fetchError());
 
-  /**
-   * ACS approval-list update grant. Roster `canEdit` no longer drives Add/Edit/Remove; it remains
-   * on the payload as PUT defence-in-depth only.
-   */
-  protected readonly canMutate = computed(() => this.mutateGrant() === true);
+  protected readonly canMutate = computed(() => this.mutateGrant() === true && this.claGroup().viewerIsClaManager === true);
 
   protected readonly entries = computed(() => this.list()?.entries ?? []);
 

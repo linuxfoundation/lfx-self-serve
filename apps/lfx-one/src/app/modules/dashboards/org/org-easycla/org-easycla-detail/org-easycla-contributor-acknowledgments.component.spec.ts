@@ -42,6 +42,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       ...overrides,
     };
   }
@@ -460,6 +461,20 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         'No longer matches Approval List criteria. Invalidate to remove for good.'
       );
       expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+    });
+
+    it.each([
+      ['is not on the roster', false],
+      ['has no roster answer', undefined],
+    ])('offers no remedy links or Invalidate when ACS allows both but the viewer %s', async (_case, viewerIsClaManager) => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      const fixture = await render(claGroup({ viewerIsClaManager }));
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
     });
 
     it('offers no remedy links to a read-only reader who can neither invalidate nor edit the list', async () => {

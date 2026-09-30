@@ -208,7 +208,7 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  * document exists to fetch, since `sanctioned` describes the entity and not the agreement, and
  * that is the one question `signed` is here for.
  */
-function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
+function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string, viewerUsername: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? []).map((project) => ({
     projectName: project.projectName?.trim() ?? '',
     ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
@@ -261,7 +261,13 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     // only there, so an unsigned or preview row does not need to carry the flag. Missing on the
     // upstream row maps to false, matching the producer's own default when the column is unset.
     ...(entry.signed === true ? { autoCreateEcla: entry.autoCreateECLA === true } : {}),
+    viewerIsClaManager: Array.isArray(entry.claManagers) && rosterNamesUsername(entry.claManagers, viewerUsername),
   };
+}
+
+function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
+  if (!username) return false;
+  return claManagers.some((manager) => manager?.lfUsername?.trim().toLowerCase() === username);
 }
 
 /**
@@ -467,12 +473,13 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
+    const viewerUsername = (await getUsernameFromAuth(req))?.trim().toLowerCase() ?? '';
 
     return {
       orgUid,
       // Upstream order (signing entity, then CLA group name) is preserved, so what a support
       // engineer sees probing the endpoint directly matches what the page shows.
-      claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName)),
+      claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName, viewerUsername)),
     };
   }
 
@@ -1034,6 +1041,14 @@ export class OrgClaService {
         signature_id: signatureId,
       });
       return { outcome: 'not-signed' };
+    }
+
+    if (!context.canEdit) {
+      logger.warning(req, 'org_cla_update_ecla_auto_create', 'caller is not a CLA manager on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'forbidden' };
     }
 
     try {
@@ -1809,9 +1824,7 @@ export class OrgClaService {
     }
 
     const username = (await getUsernameFromAuth(req))?.trim().toLowerCase() ?? '';
-    if (!username) return false;
-
-    return entry.claManagers.some((manager) => manager?.lfUsername?.trim().toLowerCase() === username);
+    return rosterNamesUsername(entry.claManagers, username);
   }
 
   private requireApprovalListProject(context: ApprovalContext, operation: string): void {
@@ -2091,17 +2104,15 @@ export type OrgClaApprovalUpdateOutcome =
 /**
  * Result of an Auto ECLA toggle write (#1988).
  *
- * A union rather than a bare boolean plus a thrown error, because the two ordinary outcomes map
- * to distinct HTTP answers: a signature the organization does not hold is a 404, and an unsigned
- * agreement is a 400 with its own copy. `updated` is the success shape and carries the state the
- * producer now records — the caller sends the target, the service echoes it back so the client
- * can trust the new value without a re-read.
- *
  * Producer refusals (sanctions, ACL) travel as thrown 403s carrying the producer's own sentence
  * on `clientMessage`; they are not one of these outcomes. Splitting them out here would force the
  * BFF to translate copy the producer already wrote.
  */
-export type OrgClaEclaAutoCreateUpdateOutcome = { outcome: 'updated'; autoCreateEcla: boolean } | { outcome: 'not-found' } | { outcome: 'not-signed' };
+export type OrgClaEclaAutoCreateUpdateOutcome =
+  | { outcome: 'updated'; autoCreateEcla: boolean }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-signed' }
+  | { outcome: 'forbidden' };
 
 /** Query parameters accepted on the acknowledgments read. Every field is already validated. */
 export interface ContributorAcknowledgmentQuery {

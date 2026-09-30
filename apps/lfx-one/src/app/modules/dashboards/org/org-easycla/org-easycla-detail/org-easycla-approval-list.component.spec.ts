@@ -48,6 +48,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       ...overrides,
     };
   }
@@ -347,6 +348,20 @@ describe('OrgEasyclaApprovalListComponent', () => {
       const fixture = await render();
 
       expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
+    });
+  });
+
+  describe('a caller ACS allows to update but who is not on the roster', () => {
+    it.each([
+      ['is not on the roster', false],
+      ['has no roster answer', undefined],
+    ])('offers no add, edit or delete control when the viewer %s', async (_case, viewerIsClaManager) => {
+      const fixture = await render(claGroup({ viewerIsClaManager }));
+
+      expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-edit')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-delete')).toBeNull();
+      expect(allByTestId(fixture, 'org-easycla-approval-row')).toHaveLength(1);
     });
   });
 

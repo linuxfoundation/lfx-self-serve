@@ -511,14 +511,10 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
-   *
-   * Three conjuncts: the row is signed (the producer stores the flag on the corporate signature,
-   * so an unsigned row has nothing to update), ACS granted the write (hide-on-deny — the design
-   * withholds the control from a viewer who cannot use it, since the disabled-with-banner
-   * pattern needs #1989 to explain itself), and this page is not showing the pre-sign preview
-   * (the row it would flip does not exist yet).
    */
-  protected readonly showAutoEclaToggle = computed(() => this.claGroup()?.signed === true && !this.showingPreview() && this.autoEclaAllowed() === true);
+  protected readonly showAutoEclaToggle = computed(
+    () => this.claGroup()?.signed === true && this.claGroup()?.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true
+  );
 
   /**
    * The current toggle value the template binds to.

@@ -274,6 +274,51 @@ describe('OrgClaService.listClaGroups — what must not cross to the client', ()
     expect(row.claManagersCount).toBe(2);
     expect(row).not.toHaveProperty('claManagers');
   });
+});
+
+describe('OrgClaService.listClaGroups — whether the viewer is a CLA manager', () => {
+  it('marks a row whose roster names the caller', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('matches the LF username ignoring case and surrounding whitespace', async () => {
+    getUsernameFromAuth.mockResolvedValue('  APorter ');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: 'aporter ' }] })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('marks a row whose roster does not name the caller as not theirs', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('treats a row with no roster as not the caller’s', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: undefined })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('treats every row as not the caller’s when there is no username', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: '' }] })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
 
   it('carries the auto-ECLA flag on a signed row under the shared field name (#1988)', async () => {
     gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: true, autoCreateECLA: true })));
@@ -2061,6 +2106,15 @@ describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failu
 
     expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'not-signed' });
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports forbidden for a caller off the roster, without calling the producer', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry()));
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'forbidden' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());
   });
 
   it('refuses the write when two signatures share the company and CLA group, without calling the producer', async () => {

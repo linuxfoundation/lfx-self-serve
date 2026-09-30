@@ -84,6 +84,7 @@ export function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     needsClaManager: false,
     claManagersCount: 2,
     approvalCriteriaCount: 4,
+    viewerIsClaManager: true,
     ...overrides,
   };
 }

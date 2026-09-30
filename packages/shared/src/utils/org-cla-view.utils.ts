@@ -148,6 +148,7 @@ export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup 
     status: 'not-started',
     needsClaManager: false,
     claManagersCount: 0,
+    viewerIsClaManager: false,
     // 0, not absent. Absence means the deployment did not report a count; this agreement genuinely
     // has no approval criteria, because it has no signature for them to hang off.
     approvalCriteriaCount: 0,

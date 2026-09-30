@@ -563,6 +563,12 @@ export class OrgClasController {
         return;
       }
 
+      if (result.outcome === 'forbidden') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' });
+        return;
+      }
+
       logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
         org_uid: orgUid,
         signature_id: signatureId,

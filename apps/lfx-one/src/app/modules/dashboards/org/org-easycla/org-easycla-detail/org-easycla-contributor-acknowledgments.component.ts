@@ -228,17 +228,17 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     return list.list.map((ack) => this.toRow(ack, pending));
   });
 
-  // ACS decides both affordances, per the self permission check the gateway also enforces (#1980).
   // Each starts null (checking) and fails closed, so the control stays hidden until ACS says yes.
   // Invalidate is gated on `ecla-invalidate`; the dialog's also-remove option on
   // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
+  private readonly viewerIsClaManager = computed(() => this.claGroup().viewerIsClaManager === true);
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
-  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true);
+  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.viewerIsClaManager());
   // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
   // `approval-list-update` grant the tab itself needs, so a read-only reader isn't offered a
   // dead-end link into a list they can't edit. Fails closed while the grant is still checking.
-  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true);
+  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true && this.viewerIsClaManager());
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly showEmptyState = computed(
@@ -360,7 +360,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     const orgUid = this.orgUid();
     const claSignatureId = this.signatureId();
     const matchingEntries = signal<OrgClaApprovalEntry[] | null | undefined>(undefined);
-    const canRemoveEntries = signal(this.removeFromListGrant() === true);
+    const canRemoveEntries = signal(this.canAddToApprovalList());
     const dialogRef = this.dialogService.open(OrgEasyclaInvalidateAcknowledgmentDialogComponent, {
       showHeader: false,
       modal: true,

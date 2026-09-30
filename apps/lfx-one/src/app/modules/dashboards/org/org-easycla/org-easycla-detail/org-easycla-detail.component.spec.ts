@@ -117,6 +117,7 @@ describe('OrgEasyclaDetailComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       approvalCriteriaCount: 7,
       ...overrides,
     };
@@ -3190,6 +3191,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       approvalCriteriaCount: 7,
       ...overrides,
     };
@@ -3374,6 +3376,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       approvalCriteriaCount: 7,
       autoCreateEcla: false,
       ...overrides,
@@ -3475,6 +3478,15 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     checkPermission.mockReturnValue(of(false));
 
     const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+  });
+
+  it.each([
+    ['is not on the roster', false],
+    ['has no roster answer', undefined],
+  ])('hides the toggle when ACS allows but the viewer %s', async (_case, viewerIsClaManager) => {
+    const fixture = await render(row({ viewerIsClaManager }));
 
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
   });
