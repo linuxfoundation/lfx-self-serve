@@ -354,10 +354,14 @@ export class CommitteeViewComponent {
         return count != null ? `Members (${count})` : 'Members';
       },
       icon: 'fa-users',
-      visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
+      // Visitors may see the Members tab when the group admin has opted into basic_profile
+      // visibility — isMembersTabVisible() already encodes that check (BASIC_PROFILE || canEdit()
+      // || canSendMemberInvites()), so removing the isMemberOrAdmin() gate is sufficient.
+      visible: () => this.isMembersTabVisible(),
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
-    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
+    // Visitors see the Meetings tab when the group's calendar is marked public.
+    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public },
     { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
     { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
     { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
