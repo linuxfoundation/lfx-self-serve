@@ -265,6 +265,20 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
   };
 }
 
+/**
+ * The username EasyCLA compares against a CCLA roster: the Auth0 username, which the ID token
+ * carries on the LF username claim. `nickname`, which the general username getter prefers, is not
+ * tied to it. While impersonating, the session's own claims are the impersonator's, so the
+ * target's stored username is used instead.
+ */
+async function rosterUsername(req: Request): Promise<string> {
+  if (!isImpersonating(req)) {
+    const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+    if (typeof claim === 'string' && claim) return claim;
+  }
+  return (await getUsernameFromAuth(req)) ?? '';
+}
+
 function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
   if (!username) return false;
   return claManagers.some((manager) => manager?.lfUsername === username);
@@ -473,7 +487,7 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
-    const viewerUsername = (await getUsernameFromAuth(req)) ?? '';
+    const viewerUsername = await rosterUsername(req);
 
     return {
       orgUid,
@@ -1827,8 +1841,7 @@ export class OrgClaService {
       return true;
     }
 
-    const username = (await getUsernameFromAuth(req)) ?? '';
-    return rosterNamesUsername(entry.claManagers, username);
+    return rosterNamesUsername(entry.claManagers, await rosterUsername(req));
   }
 
   private requireApprovalListProject(context: ApprovalContext, operation: string): void {

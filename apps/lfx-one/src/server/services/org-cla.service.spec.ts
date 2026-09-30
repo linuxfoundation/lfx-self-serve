@@ -120,6 +120,10 @@ function req(overrides: Partial<Request> & { bearerToken?: string } = {}): Reque
   return overrides as unknown as Request;
 }
 
+function sessionClaims(user: Record<string, string>): Partial<Request> {
+  return { oidc: { user } } as unknown as Partial<Request>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   isImpersonating.mockReturnValue(false);
@@ -302,6 +306,44 @@ describe('OrgClaService.listClaGroups — whether the viewer is a CLA manager', 
     const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
 
     expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('reads the caller from the LF username claim rather than the general username', async () => {
+    getUsernameFromAuth.mockResolvedValue('ada-nickname');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })), ORG_UID))
+      .claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('prefers the LF username claim even when the general username is on the roster', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'someone-else' })), ORG_UID))
+      .claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('falls back to the general username when the session carries no LF username claim', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ nickname: 'someone-else' })), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('matches the impersonated user, not the impersonator whose claims the session still carries', async () => {
+    isImpersonating.mockReturnValue(true);
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })), ORG_UID))
+      .claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
   });
 
   it('does not mark a row whose roster spells the caller in a different case', async () => {
@@ -1645,6 +1687,33 @@ describe('OrgClaService.getApprovalList — who may write', () => {
     stageApprovalRead(corporateSignature());
 
     expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
+  });
+
+  it('grants write access from the LF username claim when the general username is not on the roster', async () => {
+    getUsernameFromAuth.mockResolvedValue('ada-nickname');
+    stageApprovalRead(corporateSignature());
+
+    const list = await new OrgClaService().getApprovalList(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(list?.canEdit).toBe(true);
+  });
+
+  it('checks write access against the impersonated user, not the impersonator', async () => {
+    isImpersonating.mockReturnValue(true);
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageApprovalRead(corporateSignature());
+
+    const list = await new OrgClaService().getApprovalList(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(list?.canEdit).toBe(false);
   });
 
   it('withholds write access from a caller whose username differs from the roster only in case', async () => {

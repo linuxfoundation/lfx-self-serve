@@ -3514,6 +3514,28 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
   });
 
+  it('offers the roster-gated controls after a manager change once the re-read list names the viewer', async () => {
+    const fixture = await render(row({ viewerIsClaManager: false }));
+    const component = fixture.componentInstance as unknown as { selectTab: (tab: string) => void; claGroup: () => OrgClaGroup | undefined };
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).toBeNull();
+
+    component.selectTab('managers');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] }));
+    const listReads = getClaGroups.mock.calls.length;
+    fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent)).componentInstance.rosterChanged.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getClaGroups.mock.calls.length).toBe(listReads + 1);
+    expect(fixture.debugElement.query(By.directive(OrgEasyclaManagersComponent))).not.toBeNull();
+    component.selectTab('overview');
+    fixture.detectChanges();
+    expect(component.claGroup()?.viewerIsClaManager).toBe(true);
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+  });
+
   it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
     checkPermission.mockReturnValue(of(false));
 

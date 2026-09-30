@@ -46,6 +46,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public readonly claGroup = input.required<OrgClaGroup>();
 
   public readonly managerCountChanged = output<number>();
+  public readonly rosterChanged = output<void>();
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
 
@@ -253,6 +254,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} has been added as a CLA Manager for this CLA and can act immediately.`,
           });
           this.fetchManagers();
+          this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;
@@ -286,6 +288,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} is no longer a CLA Manager for this CLA.`,
           });
           this.fetchManagers();
+          this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;

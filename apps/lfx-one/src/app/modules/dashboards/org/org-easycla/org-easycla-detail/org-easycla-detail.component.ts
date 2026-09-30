@@ -765,6 +765,30 @@ export class OrgEasyclaDetailComponent {
     if (!signatureId) return;
     this.loadedManagerCount.set({ signatureId, count });
   }
+
+  /**
+   * Re-reads the organization's CLA list after a manager was added or removed, so the roster flag
+   * is recomputed by the server. Fed through `retriedList$` rather than `orgUid$`, which would put
+   * the skeleton over the Managers panel that just reported the change.
+   */
+  protected onRosterChanged(): void {
+    const uid = this.selectedOrgUid();
+    if (!uid) return;
+    this.claService
+      .getClaGroups(uid)
+      .pipe(
+        catchError((error: unknown) => {
+          console.warn('Failed to refresh organization CLA groups after a manager change:', error);
+          return of(null);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((list) => {
+        if (!list || this.selectedOrgUid() !== uid) return;
+        this.selfRemovals.forgetAll();
+        this.retriedList$.next(list);
+      });
+  }
   protected onTabKeydown(event: KeyboardEvent): void {
     const ids = ORG_CLA_DETAIL_TABS.map((tab) => tab.id);
     const current = ids.indexOf(this.activeTab());

@@ -384,6 +384,29 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(selfRemovals.removed(ORG_UID, SIGNATURE_ID)).toBe(true);
     });
 
+    it('tells the page the roster changed after a successful add or removal, and not after a refused one', async () => {
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      let changes = 0;
+      component.rosterChanged.subscribe(() => changes++);
+      const target = { orgUid: ORG_UID, signatureId: SIGNATURE_ID };
+
+      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, target);
+      await fixture.whenStable();
+      expect(changes).toBe(1);
+
+      component['confirmRemove'](manager());
+      acceptConfirmation();
+      await fixture.whenStable();
+      expect(changes).toBe(2);
+
+      addManager.mockReturnValue(throwError(() => ({ error: { upstreamCode: 'something-new' } })));
+      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, target);
+      await fixture.whenStable();
+      expect(changes).toBe(2);
+    });
+
     it('records the self-removal even when the panel is gone before the removal lands', async () => {
       const answer = new Subject<void>();
       removeManager.mockReturnValue(answer);
