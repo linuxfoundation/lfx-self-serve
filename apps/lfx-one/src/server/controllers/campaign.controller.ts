@@ -518,40 +518,9 @@ export class CampaignController {
   }
 
   /**
-   * Build the brief's send audience — the prerequisite the email channel cannot dispatch without.
-   *
-   * `project` and `brief_id` travel as query params: both are PATH segments upstream.
-   */
-  public async buildAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
-    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
-
-    if (projectSlug === '' || briefId === '') {
-      next(
-        ServiceValidationError.forField('project', 'project and brief_id are required', {
-          operation: 'build_audience',
-          service: 'campaign_controller',
-        })
-      );
-      return;
-    }
-
-    const startTime = logger.startOperation(req, 'build_audience', { projectSlug });
-
-    try {
-      const result = await this.campaignServiceClient.buildAudience(req, projectSlug, briefId);
-      logger.success(req, 'build_audience', startTime, { enabled: result.enabled });
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * Read back the audiences campaign-service already holds for this brief.
    *
-   * Mirrors buildAudience's parameter handling exactly: `project` and `brief_id` are PATH
-   * segments upstream and travel here as query params.
+   * `project` and `brief_id` are PATH segments upstream and travel here as query params.
    */
   public async listAudiences(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';

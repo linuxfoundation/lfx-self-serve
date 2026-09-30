@@ -2247,7 +2247,7 @@ describe('CampaignServiceClient brief country mapping', () => {
   });
 });
 
-describe('CampaignServiceClient.buildAudience', () => {
+describe('CampaignServiceClient.listAudiences', () => {
   const audience = {
     id: 'aud-1',
     project_id: 'p-1',
@@ -2268,39 +2268,65 @@ describe('CampaignServiceClient.buildAudience', () => {
   it('answers enabled:false without calling upstream when the flag is off', async () => {
     isServerFeatureEnabled.mockReturnValue(false);
 
-    await expect(new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    await expect(new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
     // The flag being dark is an ordinary deployment state, so it must not spend an upstream call.
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  it('takes the etag off the ETag HEADER, not the body', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(audience, { etag: '"7"' }));
+  it('reads the rows from the `audiences` wrapper upstream returns', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [audience] }));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    // `design/audience.go` maps it as `Header("etag:ETag")` on the 202, so a body read would be
-    // `undefined` forever -- the same trap the brief wire-type comment records.
-    expect(result.audience?.etag).toBe('"7"');
-    expect(result.audience?.status).toBe('built');
+    // Goa's `ListAudiencesResponseBody` wraps the list. Reading the body as a bare array would
+    // report "no saved audience" forever, and a reload would push the operator into a duplicate.
+    expect(result.enabled).toBe(true);
+    expect(result.audiences).toHaveLength(1);
+    expect(result.audiences?.[0]).toMatchObject({ id: 'aud-1', briefId: 'b-1', platformMasterListId: 'list-9', status: 'built' });
+    expect(result.audiences?.[0].etag).toBeUndefined();
+  });
+
+  it('treats an absent or non-array list as empty, not as an error', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({}));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    // A brief with no audience yet is the ordinary first-visit state.
+    expect(result).toEqual({ enabled: true, audiences: [] });
+  });
+
+  it('drops rows with no id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, id: '' }, null, audience] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result.audiences?.map((row) => row.id)).toEqual(['aud-1']);
   });
 
   it('does not let an unrecognised status masquerade as usable', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'queued' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, status: 'queued' }] }));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
     // `canStageEmail` admits only `built`, so an unknown wire value must not pass through as one.
-    // `failed` is the honest landing spot -- it is the arm that offers the operator a rebuild.
-    expect(result.audience?.status).toBe('failed');
+    expect(result.audiences?.[0].status).toBe('failed');
   });
 
-  it('passes through the statuses upstream actually declares', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'building' }));
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    // Narrowing must not collapse the legitimate in-flight state into a failure.
-    expect(result.audience?.status).toBe('building');
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(result.audiences).toBeUndefined();
+  });
+});
+
+describe('CampaignServiceClient.generateEmailCopy upstream messages', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
   });
 
   it('keeps a controlled upstream message instead of saying "try again"', async () => {
@@ -2342,26 +2368,6 @@ describe('CampaignServiceClient.buildAudience', () => {
     // read, and "try again" is honest advice for it.
     expect(result.error).not.toContain('panic');
     expect(result.error).toContain('Try again');
-  });
-
-  it('reports an error result rather than throwing when upstream fails', async () => {
-    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
-
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
-
-    // A graceful degradation: the caller renders the message instead of the panel exploding.
-    expect(result.enabled).toBe(true);
-    expect(result.error).toBeTruthy();
-    expect(result.audience).toBeUndefined();
-  });
-
-  it('rejects a response with no audience id', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, id: '' }));
-
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
-
-    expect(result.error).toBeTruthy();
-    expect(result.audience).toBeUndefined();
   });
 });
 

@@ -227,6 +227,8 @@ export class AudienceBuilderTabComponent {
   protected readonly attachingId = signal<string | null>(null);
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
   protected readonly attachError = signal<string | null>(null);
+  /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
+  private readonly composeBriefId = signal('');
   /**
    * Names for suppression lists added by "Copy selection" that are not rows of the standard
    * suppression grid. The suppression map stores key -> list id only, and the grid supplies names
@@ -401,27 +403,6 @@ export class AudienceBuilderTabComponent {
     }));
   });
 
-  /**
-   * Compose is BLOCKED while the suppression fetch is unresolved or failed.
-   *
-   * This write is non-idempotent and creates real contact lists in the project's portal, so it
-   * must not proceed on an audience whose regulatory exclusions could not be read. A failed fetch
-   * is not an empty portal, and the difference is the whole point of the check.
-   */
-  /**
-   * Compose is a non-idempotent WRITE to a production portal, so this gate fails closed on
-   * every state where the suppression context is not yet known to be complete.
-   *
-   * `suppressionFailed` alone was not enough. It is false in two other states that must also
-   * block: while the fetch is still IN FLIGHT (the review pane renders as soon as discovery
-   * returns, so there is a real window where an operator can compose before GDPR/CASL
-   * exclusions have arrived), and when discovery produced no event identity, in which case
-   * the fetch never ran at all — see `loadReuseAndSuppression`.
-   *
-   * It also blocks once a compose has already produced a result or a partial. The same
-   * selection composing twice creates a duplicate master list, and the partial case is
-   * explicitly the one the operator must reconcile by hand rather than retry.
-   */
   /** Direct attach needs a brief to attach to and a usable HubSpot connection. */
   protected readonly canAttach = computed(() => this.briefId() !== '' && !this.degraded());
 
@@ -432,7 +413,9 @@ export class AudienceBuilderTabComponent {
       return attached.master.listId;
     }
     const composed = this.composeResult();
-    return composed?.recorded ? composed.master.listId : null;
+    // A compose is recorded against the brief it was DISPATCHED with. After the parent moves to
+    // another brief the lists still exist, but they are not that brief's send list.
+    return composed?.recorded && this.composeBriefId() === this.briefId() ? composed.master.listId : null;
   });
 
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
@@ -513,11 +496,39 @@ export class AudienceBuilderTabComponent {
     };
   });
 
-  /** A single included list can be sent to as-is; only several lists need combining into a master. */
+  /**
+   * A single included list can be sent to as-is; only several lists need combining into a master.
+   *
+   * Gated on a settled suppression fetch, for the same fail-closed reason as `canCompose`: the
+   * exclusions this attach records are the ones ticked from that fetch, so attaching while it is in
+   * flight or failed records a send with no GDPR/CASL suppression. A past send's lists are not
+   * gated here — they carry the suppression that send actually used.
+   */
   protected readonly canUseSelectionDirectly = computed(
-    () => this.canAttach() && this.inclusion().size === 1 && this.conflictingIds().length === 0 && !this.composing() && this.attachingId() === null
+    () =>
+      this.canAttach() &&
+      !this.suppressionLoading() &&
+      !this.suppressionFailed() &&
+      this.inclusion().size === 1 &&
+      this.conflictingIds().length === 0 &&
+      !this.composing() &&
+      this.attachingId() === null
   );
 
+  /**
+   * Compose is a non-idempotent WRITE to a production portal, so this gate fails closed on
+   * every state where the suppression context is not yet known to be complete.
+   *
+   * `suppressionFailed` alone was not enough. It is false in two other states that must also
+   * block: while the fetch is still IN FLIGHT (the review pane renders as soon as discovery
+   * returns, so there is a real window where an operator can compose before GDPR/CASL
+   * exclusions have arrived), and when discovery produced no event identity, in which case
+   * the fetch never ran at all — see `loadReuseAndSuppression`.
+   *
+   * It also blocks once a compose has already produced a result or a partial. The same
+   * selection composing twice creates a duplicate master list, and the partial case is
+   * explicitly the one the operator must reconcile by hand rather than retry.
+   */
   protected readonly canCompose = computed(
     () =>
       !this.degraded() &&
@@ -562,6 +573,18 @@ export class AudienceBuilderTabComponent {
         // the control dirty, and the `initialEventUrl` seed below only fires while it is pristine
         // — so typing in project A would silently suppress project B's advertised brief URL.
         this.eventUrlControl.reset('', { emitEvent: false });
+      });
+
+    // An attach result or error describes the brief it was made for. The parent swaps briefs
+    // under a mounted panel, so without this the previous brief's "attached" banner and list id
+    // read as the new brief's. Compose state is left alone: those lists exist regardless, and
+    // `composeAttempted` must keep blocking a duplicate compose.
+    toObservable(this.briefId)
+      .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.attachingId.set(null);
+        this.attachResult.set(null);
+        this.attachError.set(null);
       });
 
     toObservable(this.initialEventUrl)
@@ -851,6 +874,8 @@ export class AudienceBuilderTabComponent {
     const run = this.runGeneration;
     this.composeError.set(null);
     this.composePartial.set(null);
+    const dispatchBriefId = this.briefId();
+    this.composeBriefId.set(dispatchBriefId);
 
     this.campaignService
       .composeAudienceMaster(this.projectSlug(), {
@@ -864,7 +889,7 @@ export class AudienceBuilderTabComponent {
         // by which point the parent may have moved to another brief -- and the attach upstream was
         // made against whatever was sent here, so this is the only value that describes what
         // actually happened.
-        briefId: this.briefId() || undefined,
+        briefId: dispatchBriefId || undefined,
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -1127,12 +1152,17 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration) {
             return;
           }
+          // The parent guards the emission on its own brief id, so it is safe to emit after a
+          // brief switch; the local banner is not, because it would describe the previous brief.
+          this.audienceAttached.emit(result.audience);
+          if (briefId !== this.briefId()) {
+            return;
+          }
           this.attachingId.set(null);
           this.attachResult.set(result);
-          this.audienceAttached.emit(result.audience);
         },
         error: (httpErr: HttpErrorResponse) => {
-          if (run !== this.runGeneration) {
+          if (run !== this.runGeneration || briefId !== this.briefId()) {
             return;
           }
           this.attachingId.set(null);

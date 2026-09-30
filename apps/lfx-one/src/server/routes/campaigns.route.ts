@@ -45,7 +45,6 @@ router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMo
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
-router.post('/audience/build', (req, res, next) => campaignController.buildAudience(req, res, next));
 router.post('/email-copy', (req, res, next) => campaignController.generateEmailCopy(req, res, next));
 router.get('/audience', (req, res, next) => campaignController.getAudience(req, res, next));
 // PLURAL, and not by accident: `/audience` above is the paid-channel demographics read, which has

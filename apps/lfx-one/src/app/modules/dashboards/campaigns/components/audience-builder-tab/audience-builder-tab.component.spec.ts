@@ -1498,6 +1498,33 @@ describe('AudienceBuilderTabComponent', () => {
       expect(composeAudienceMaster).not.toHaveBeenCalled();
     });
 
+    it('holds the direct attach while the suppression fetch has failed', async () => {
+      getAudienceSuppressionLists.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+      await renderWithPastSend('brief-1');
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-use-direct');
+
+      expect(attachExistingAudience, 'a send was recorded with its GDPR/CASL exclusions unread').not.toHaveBeenCalled();
+    });
+
+    it('drops the attach result when the parent moves to another brief', async () => {
+      await renderWithPastSend('brief-1');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' }, suppressionListIds: ['201'], audience: ATTACHED_AUDIENCE })
+      );
+      click('audience-last-sent-use-em-7');
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]'), "brief-1's attach read as brief-2's").toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-attached"]')).toBeNull();
+    });
+
     it('offers no direct attach without a saved plan', async () => {
       await renderWithPastSend('');
       click('audience-card-grid-toggle-101');

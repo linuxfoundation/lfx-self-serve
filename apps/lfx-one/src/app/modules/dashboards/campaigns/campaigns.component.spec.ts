@@ -2884,7 +2884,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       // Staging is the second brief-scoped action now that the derived build is gone. It needs an
       // audience to get past its entry guard, and the composed handoff is the only way to set one.
-      internals().onAudienceComposed(builtAudience);
+      // Set directly rather than through the compose handoff: the handoff only accepts an audience
+      // for the brief the parent already holds, and this test needs that cache EMPTY.
+      internals().emailAudience.set(builtAudience);
       fixture.detectChanges();
 
       vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, copy }));
@@ -3180,6 +3182,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
+      internals().emailBriefId.set(audience.briefId);
       internals().onAudienceComposed(audience);
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
@@ -3204,6 +3207,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
+      internals().emailBriefId.set(audience.briefId);
       internals().onAudienceComposed(audience);
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(
@@ -3235,6 +3239,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-1');
       fixture.detectChanges();
 
+      internals().emailBriefId.set(audience.briefId);
       internals().onAudienceComposed(audience);
 
       // The create hangs, so the reset lands squarely inside its await -- past the entry check.
@@ -3277,6 +3282,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // The audience is attached synchronously by the compose handoff, so nothing here depends on
       // the persist -- which is what lets the persist be slowed below without hanging the setup.
+      internals().emailBriefId.set(audience.briefId);
       internals().onAudienceComposed(audience);
       create.mockClear();
 
@@ -3312,6 +3318,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       fixture.detectChanges();
 
       const late = new Subject<CampaignJobOutcome | null>();
+      internals().emailBriefId.set(audience.briefId);
       internals().onAudienceComposed(audience);
       vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
       vi.spyOn(TestBed.inject(CampaignService), 'getCreateResult').mockReturnValue(late.asObservable());
@@ -3371,6 +3378,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       onImplementTab();
       expect(internals().canStageEmail(), 'fixture precondition: staging must be blocked before an audience exists').toBe(false);
 
+      internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
       fixture.detectChanges();
 
@@ -3390,6 +3398,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(late.asObservable() as never);
 
       const pending = internals().restoreEmailAudience('tlf', 'brief-77');
+      internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
 
       late.next({ enabled: true, audiences: [{ ...composed, id: 'aud-stale', platformMasterListId: '111' }] });
@@ -3400,8 +3409,32 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudience()?.id, 'a stale read-back overwrote the composed audience').toBe('aud-9');
     });
 
+    /**
+     * A stage switch does not stop a compose already in flight on the Audience tab, and its reply
+     * names the brief it was dispatched with. Accepting it would put the previous stage's list on
+     * this stage's send.
+     */
+    it('ignores a composed audience for a brief the parent no longer holds', () => {
+      onImplementTab();
+      internals().emailBriefId.set('brief-other');
+      internals().onAudienceComposed(composed);
+      fixture.detectChanges();
+
+      expect(internals().emailAudience(), 'an audience for another brief was attached to this send').toBeNull();
+      expect(internals().canStageEmail()).toBe(false);
+    });
+
+    it('ignores a composed audience while no brief is held', () => {
+      onImplementTab();
+      internals().emailBriefId.set('');
+      internals().onAudienceComposed({ ...composed, briefId: '' });
+
+      expect(internals().emailAudience()).toBeNull();
+    });
+
     it('names the composed origin rather than claiming the audience came from the event details', () => {
       onImplementTab();
+      internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
       fixture.detectChanges();
 
@@ -3470,6 +3503,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().onAudienceComposeUnattached(looseMaster);
       fixture.detectChanges();
 
+      internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
       fixture.detectChanges();
 
@@ -3615,6 +3649,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     it('swaps skip for continue once an audience is attached, and records no skip', () => {
       selectEmail();
       internals().onEmailProceedFromPlanning(emailBrief);
+      internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
       fixture.detectChanges();
 
@@ -3634,6 +3669,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().onSkipAudienceStep();
       expect(internals().emailAudienceSkipped(), 'fixture precondition').toBe(true);
 
+      internals().emailBriefId.set(composed.briefId);
       internals().onAudienceComposed(composed);
       fixture.detectChanges();
 
@@ -4451,6 +4487,23 @@ describe('CampaignsComponent — email delivery channel', () => {
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
       expect(internals().emailBriefId(), 'the previous stage brief id survived a type change; generate and stage would address the wrong row').toBe('');
+    });
+
+    // The audience card's origin, the unattached-list warning and the skip all describe the
+    // previous stage's send. Clearing `emailAudience` alone left them rendering on the new one.
+    it('drops the audience-derived state when the type change moves the stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-cfp');
+      internals().emailAudienceOrigin.set('composed');
+      internals().emailAudienceUnattached.set({ listId: '900', name: 'Master', hubspotUrl: 'https://app.hubspot.com/l/1' } as AudienceComposedList);
+      internals().emailAudienceSkipped.set(true);
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
+
+      expect(internals().emailAudienceOrigin()).toBeNull();
+      expect(internals().emailAudienceUnattached()).toBeNull();
+      expect(internals().emailAudienceSkipped()).toBe(false);
     });
 
     // The other half of the gate, and the one a wholesale reset would break. Twelve types collapse

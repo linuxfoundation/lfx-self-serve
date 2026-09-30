@@ -7,7 +7,6 @@ import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadi
 import type {
   ApiResponse,
   BriefMetrics,
-  BuildAudienceResult,
   CampaignAudience,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
@@ -158,6 +157,11 @@ interface CampaignServiceAudienceList {
   inclusion_summary?: string;
   status: string;
   version: number;
+}
+
+/** `list-audiences` body: the rows sit under `audiences`, per the Goa `ListAudiencesResponseBody`. */
+interface CampaignServiceAudienceListResponse {
+  audiences?: (CampaignServiceAudienceList | null)[];
 }
 
 interface CampaignServiceBrief {
@@ -1025,57 +1029,6 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Build a brief's send audience in campaign-service.
-   *
-   * Takes NO body: the service derives the audience from the brief's own event details, so the
-   * only inputs are the two path segments. Sending a list from here would be the divergent second
-   * source of truth `hubspot.go:293` exists to avoid — it resolves the BUILT audience by brief id
-   * and never reads one off a request.
-   *
-   * Answers 202, not 200: the build calls Snowflake and several HubSpot creates, so it is
-   * accepted-and-recorded rather than a promise that every platform-side list is confirmed.
-   */
-  public async buildAudience(req: Request, projectSlug: string, briefId: string): Promise<BuildAudienceResult> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
-      // Same steady state as saveBrief: the flag being off is not a failure.
-      return { enabled: false };
-    }
-
-    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences/build`;
-    try {
-      // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
-      // fifth would serialize it into the query string and send no body.
-      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList>(
-        req,
-        'LFX_V2_CAMPAIGN_SERVICE',
-        path,
-        'POST',
-        undefined,
-        undefined
-      );
-
-      const built = response.data;
-      if (!built?.id) {
-        return { enabled: true, error: 'The audience build was accepted but returned nothing to track.' };
-      }
-
-      return {
-        enabled: true,
-        audience: {
-          ...this.toCampaignAudience(built),
-          // Off the HEADER, not the body: the design maps it as `Header("etag:ETag")` on the 202,
-          // so `built.etag` would read `undefined` forever -- the exact trap the brief wire-type
-          // comment above records. `readEtag` is the established way to take it.
-          etag: readEtag(response) ?? undefined,
-        },
-      };
-    } catch (error) {
-      logger.warning(req, 'build_audience', 'Audience build failed, returning an error result', { err: error });
-      return { enabled: true, error: upstreamMessageOr(error, 'The audience could not be built. Check the HubSpot connection and try again.') };
-    }
-  }
-
-  /**
    * Read back the audiences campaign-service already holds for a brief.
    *
    * This exists because `emailAudience` was in-memory only: a page reload lost a built audience
@@ -1093,18 +1046,20 @@ export class CampaignServiceClient {
    */
   public async listAudiences(req: Request, projectSlug: string, briefId: string): Promise<ListAudiencesResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
-      // Same steady state as buildAudience: the flag being off is not a failure.
+      // Same steady state as saveBrief: the flag being off is not a failure.
       return { enabled: false };
     }
 
     const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences`;
     try {
-      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList[]>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
+      // Wrapped, not a bare array: Goa generates `ListAudiencesResponseBody { audiences: [...] }`
+      // for `list-audiences`, so reading `response.data` as the array would always see nothing.
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceListResponse>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
 
       // An absent array is an empty one, not an error: a brief with no audience yet is the
       // ordinary first-visit state, and reporting it as a failure would put an error banner on
       // every new campaign.
-      const rows = Array.isArray(response.data) ? response.data : [];
+      const rows = Array.isArray(response.data?.audiences) ? response.data.audiences : [];
       return {
         enabled: true,
         audiences: rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id)).map((row) => this.toCampaignAudience(row)),
@@ -1790,9 +1745,8 @@ export class CampaignServiceClient {
   /**
    * Map one upstream audience row onto the shared shape.
    *
-   * `etag` is NOT set here. The two callers get it from different places — `buildAudience` takes
-   * it off the 202's header, `listAudiences` has none to take — so a mapper that guessed would be
-   * wrong for one of them. The build path assigns it after mapping instead.
+   * `etag` is NOT set here: `listAudiences` has none to take, and a mapper that guessed one would
+   * hand the caller a token that means nothing upstream.
    */
   private toCampaignAudience(row: CampaignServiceAudienceList): CampaignAudience {
     return {

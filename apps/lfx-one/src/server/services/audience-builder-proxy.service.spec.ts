@@ -85,7 +85,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
   it('fails a compose whose master id is blank, not just missing', async () => {
     // A blank string passes every null check and then reaches "Master list created" as a list
     // with nothing to open or search — the same unusable create, through a narrower door.
-    proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'u' }, source_list_ids: [] });
+    proxyRequest.mockResolvedValue({ master: { list_id: '  ', name: 'M', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: [] });
 
     await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(/blank/);
   });
@@ -94,8 +94,8 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // The suppression object was passed through unchecked beside a validated master, so a
     // create with a blank suppression name still rendered as confirmed and actionable.
     proxyRequest.mockResolvedValue({
-      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
-      suppression: { list_id: '901', name: '', hubspot_url: 'u' },
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
+      suppression: { list_id: '901', name: '', hubspot_url: 'https://app.hubspot.com/l/1' },
       source_list_ids: [],
     });
 
@@ -107,7 +107,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // a generic error and destroy the one record of a list that already exists in the portal.
     // A blank name must be tolerated so the operator still gets the id and link.
     const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
-      errorBody: { suppression: { list_id: '901', name: '', hubspot_url: 'u' } },
+      errorBody: { suppression: { list_id: '901', name: '', hubspot_url: 'https://app.hubspot.com/l/1' } },
     });
     proxyRequest.mockRejectedValue(err);
 
@@ -118,7 +118,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // A present-but-empty `brief_id` is a DIFFERENT request upstream: it reads it as an attach,
     // fails the brief lookup and 404s — refusing to create anything for an exploratory compose
     // that never asked to be attached to anything.
-    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'u' }, source_list_ids: [] });
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: [] });
 
     await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] });
     const [, , , , , withoutBrief] = proxyRequest.mock.calls[0];
@@ -135,7 +135,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // `audience`. Goa ignores unknown body fields, so a campaign-service deployed before this
     // feature accepts `brief_id`, composes normally and answers without either field. Defaulting
     // to attached there would tell the operator a send is wired up to a list nothing points at.
-    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'u' }, source_list_ids: ['1'] });
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: ['1'] });
 
     const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [], briefId: 'brief-1' });
 
@@ -145,7 +145,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
 
   it('maps the recorded audience onto the row the UI gates staging on', async () => {
     proxyRequest.mockResolvedValue({
-      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
       source_list_ids: ['1'],
       recorded: true,
       audience: { id: 'aud-1', status: 'built', version: 3, platform_master_list_id: '900' },
@@ -164,7 +164,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // "Audience attached" over a row with no id — an attachment the operator cannot verify or
     // undo, on a create that cannot be retried.
     proxyRequest.mockResolvedValue({
-      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
       source_list_ids: ['1'],
       recorded: true,
       audience: {},
@@ -177,7 +177,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // `canStageEmail` admits only `built`. A status upstream never declared must not be able to
     // reach that gate by arriving as a string nobody checked.
     proxyRequest.mockResolvedValue({
-      master: { list_id: '900', name: 'Master', hubspot_url: 'u' },
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
       source_list_ids: ['1'],
       recorded: true,
       audience: { id: 'aud-1', status: 'enqueued', version: 1, platform_master_list_id: '900' },
@@ -193,7 +193,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // body fell through to a generic error, losing the link to a master list that is real and
     // usable — on the one partial where the operator's route out is that exact list.
     const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
-      errorBody: { master: { list_id: '900', name: 'Master', hubspot_url: 'u' }, message: 'Lists created but not attached.' },
+      errorBody: { master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' }, message: 'Lists created but not attached.' },
     });
     proxyRequest.mockRejectedValue(err);
 
@@ -207,7 +207,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     // is "the master EXISTS, attach it by hand", so a blank id sends the operator hunting for a
     // list that was never confirmed to exist.
     const err = new MicroserviceError('compose failed', 500, 'UPSTREAM', {
-      errorBody: { master: { list_id: '  ', name: 'Master', hubspot_url: 'u' }, master_name: 'Master' },
+      errorBody: { master: { list_id: '  ', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' }, master_name: 'Master' },
     });
     proxyRequest.mockRejectedValue(err);
 
@@ -255,10 +255,35 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(email.listsUnavailable, 'a genuinely empty selection was marked unreadable').toBeUndefined();
   });
 
+  it('drops a hubspot_url that is not http(s) so it can never reach an [href]', async () => {
+    proxyRequest.mockResolvedValue({
+      emails: [
+        {
+          email_id: '57',
+          email_name: 'Synthetic Summit Reminder',
+          hubspot_url: 'javascript:alert(1)',
+          included_lists: [{ list_id: '1', name: 'L', missing: false, hubspot_url: 'data:text/html,x' }],
+          suppression_lists: [],
+        },
+      ],
+    });
+
+    const [email] = await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 5);
+
+    expect(email.hubspotUrl, 'a javascript: url survived the mapper').toBe('');
+    expect(email.includedLists[0]?.hubspotUrl, 'a data: url survived the mapper').toBeUndefined();
+  });
+
+  it('fails a created list whose hubspot_url is not http(s), the same as a blank one', async () => {
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'javascript:void(0)' }, source_list_ids: [] });
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow('master.hubspot_url');
+  });
+
   it('posts an attach with the wire field names and maps the recorded audience', async () => {
     const req = {} as Request;
     proxyRequest.mockResolvedValue({
-      master: { list_id: '501', name: 'Prospects', hubspot_url: 'u' },
+      master: { list_id: '501', name: 'Prospects', hubspot_url: 'https://app.hubspot.com/l/1' },
       suppression_list_ids: ['201'],
       audience: { id: 'aud-2', status: 'built', version: 1, platform_master_list_id: '501' },
     });
@@ -281,7 +306,7 @@ describe('AudienceBuilderProxyService wire mapping', () => {
           email_id: 'e1',
           email_name: 'Send',
           sent_at: '2026-01-01T00:00:00Z',
-          hubspot_url: 'h',
+          hubspot_url: 'https://app.hubspot.com/l/2',
           included_lists: [{ list_id: '1', name: 'L', missing: false, hubspot_url: 'https://app.hubspot.com/contacts/1/objectLists/1/filters' }],
           suppression_lists: [],
         },

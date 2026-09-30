@@ -751,18 +751,11 @@ export interface CampaignAudience {
   etag?: string;
 }
 
-/** Result of asking campaign-service to build a brief's audience. */
-export interface BuildAudienceResult {
-  enabled: boolean;
-  audience?: CampaignAudience;
-  error?: string;
-}
-
 /**
  * Result of reading back the audiences campaign-service already holds for a brief.
  *
- * Shaped like `BuildAudienceResult` on purpose, including `enabled: false` as a steady state
- * rather than a failure: the caller branches on the same three cases either way.
+ * `enabled: false` is a steady state rather than a failure: the flag being dark is an ordinary
+ * deployment state, and the caller branches on it the same way as on an empty list.
  *
  * `audiences` is newest-first, as upstream returns it. No `etag`: `list-audiences` declares no
  * `Header("etag:ETag")`, so a caller that means to PATCH one of these rows must re-read the

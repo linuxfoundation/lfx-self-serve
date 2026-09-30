@@ -269,6 +269,25 @@ function required<T>(value: T | undefined | null, field: string): T {
   return value;
 }
 
+/**
+ * A HubSpot link from upstream, kept only when it is an absolute `http(s)` URL.
+ *
+ * Every `hubspot_url` ends up in an `[href]`, and Angular's sanitizer is the only other thing
+ * standing between a `javascript:` value and a click. Checking the scheme once here, where the
+ * wire value enters the app, means no template has to remember to. An unusable value becomes
+ * `''` so the templates' existing `@if (hubspotUrl)` guards drop the link rather than render it.
+ */
+function httpHref(value: string | undefined | null): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  try {
+    const { protocol } = new URL(trimmed);
+    return protocol === 'http:' || protocol === 'https:' ? trimmed : '';
+  } catch {
+    return '';
+  }
+}
+
 function toDiscoveredList(wire: WireDiscoveredList): AudienceDiscoveredList {
   return {
     listId: wire.list_id,
@@ -278,7 +297,7 @@ function toDiscoveredList(wire: WireDiscoveredList): AudienceDiscoveredList {
     reason: wire.reason,
     listType: wire.list_type,
     scope: wire.scope === undefined ? undefined : (wire.scope as AudienceSpeakerScope),
-    hubspotUrl: wire.hubspot_url,
+    hubspotUrl: httpHref(wire.hubspot_url),
   };
 }
 
@@ -289,7 +308,7 @@ function toListBrief(wire: WireListBrief): AudienceListBrief {
     size: wire.size,
     missing: wire.missing,
     resolvedFromLegacyId: wire.resolved_from_legacy_id,
-    hubspotUrl: wire.hubspot_url || undefined,
+    hubspotUrl: httpHref(wire.hubspot_url) || undefined,
   };
 }
 
@@ -297,7 +316,7 @@ function toComposedList(wire: WireComposedList): AudienceComposedList {
   return {
     listId: wire.list_id,
     name: wire.name,
-    hubspotUrl: wire.hubspot_url,
+    hubspotUrl: httpHref(wire.hubspot_url),
     size: wire.size,
   };
 }
@@ -318,7 +337,8 @@ function toCreatedList(wire: WireComposedList, label: string): AudienceComposedL
   return {
     listId: required(wire.list_id, `${label}.list_id`),
     name: required(wire.name, `${label}.name`),
-    hubspotUrl: required(wire.hubspot_url, `${label}.hubspot_url`),
+    // A url that fails the scheme check is as unusable as a blank one, so it fails the same way.
+    hubspotUrl: required(httpHref(wire.hubspot_url), `${label}.hubspot_url`),
     size: wire.size,
   };
 }
@@ -397,7 +417,7 @@ function narrowQaResult(wire: WireQaResult): AudienceQaResult {
     needsDisambiguation: false,
     listId: wire.list_id ?? '',
     name: wire.name ?? '',
-    hubspotUrl: wire.hubspot_url ?? '',
+    hubspotUrl: httpHref(wire.hubspot_url),
     checks: {
       signalMapping: toCheck(checks.signal_mapping),
       // Upstream reports the two regulatory booleans FLAT alongside the verdict; the client
@@ -491,7 +511,7 @@ export class AudienceBuilderProxyService {
       listId: list.list_id,
       name: list.name,
       size: list.size,
-      hubspotUrl: list.hubspot_url,
+      hubspotUrl: httpHref(list.hubspot_url),
     }));
   }
 
@@ -510,7 +530,7 @@ export class AudienceBuilderProxyService {
       name: list.name,
       size: list.size,
       category: list.category as AudienceSuppressionCategory,
-      hubspotUrl: list.hubspot_url,
+      hubspotUrl: httpHref(list.hubspot_url),
     }));
   }
 
@@ -525,7 +545,7 @@ export class AudienceBuilderProxyService {
       emailId: email.email_id,
       emailName: email.email_name,
       sentAt: email.sent_at ?? '',
-      hubspotUrl: email.hubspot_url,
+      hubspotUrl: httpHref(email.hubspot_url),
       includedLists: (email.included_lists ?? []).map(toListBrief),
       suppressionLists: (email.suppression_lists ?? []).map(toListBrief),
       // Dropped, the two empty arrays above are indistinguishable from a send that genuinely
@@ -544,7 +564,7 @@ export class AudienceBuilderProxyService {
       listId: list.list_id,
       name: list.name,
       size: list.size,
-      hubspotUrl: list.hubspot_url,
+      hubspotUrl: httpHref(list.hubspot_url),
     }));
   }
 
@@ -640,20 +660,6 @@ export class AudienceBuilderProxyService {
   }
 
   /**
-   * The project-scoped path every endpoint hangs off.
-   *
-   * An empty slug is refused rather than sent, for the reason every sibling proxy method refuses
-   * it: `/projects//audience-builder/...` is a DIFFERENT route that 404s at the gateway, and a
-   * gateway 404 is not the service saying "no such project".
-   */
-  private path(projectSlug: string, suffix: string): string {
-    if (projectSlug === '') {
-      throw new Error('An audience-builder request requires the project it is scoped to.');
-    }
-    return `/projects/${encodeURIComponent(projectSlug)}/audience-builder/${suffix}`;
-  }
-
-  /**
    * Records EXISTING lists as the brief's send audience. Creates nothing in HubSpot, so unlike
    * compose it has no partial state and every failure is safe to retry.
    */
@@ -670,6 +676,20 @@ export class AudienceBuilderProxyService {
       suppressionListIds: required(wire.suppression_list_ids, 'suppression_list_ids'),
       audience: toRecordedAudience(required(wire.audience, 'audience'), request.briefId),
     };
+  }
+
+  /**
+   * The project-scoped path every endpoint hangs off.
+   *
+   * An empty slug is refused rather than sent, for the reason every sibling proxy method refuses
+   * it: `/projects//audience-builder/...` is a DIFFERENT route that 404s at the gateway, and a
+   * gateway 404 is not the service saying "no such project".
+   */
+  private path(projectSlug: string, suffix: string): string {
+    if (projectSlug === '') {
+      throw new Error('An audience-builder request requires the project it is scoped to.');
+    }
+    return `/projects/${encodeURIComponent(projectSlug)}/audience-builder/${suffix}`;
   }
 
   private get<T>(req: Request, projectSlug: string, suffix: string, query?: Record<string, unknown>): Promise<T> {
@@ -713,15 +733,6 @@ function timeout(): { timeoutMs: number } {
 }
 
 /**
- * The `ComposePartial` body, when this error is one.
- *
- * Upstream maps BOTH `ComposePartial` and its ordinary `InternalServerError` to 500 and tells
- * them apart with a `goa-error` response header, which `MicroserviceError` does not carry. The
- * body does: only `ComposePartial` has a `suppression` object, and the Go handler populates it
- * unconditionally (`partial.Suppression` is a value, not a pointer), so its presence is a sound
- * discriminator. A 500 without it is an ordinary failure and is rethrown.
- */
-/**
  * Does this wire object describe a list whose creation was CONFIRMED?
  *
  * Trimmed, not merely non-empty. A `list_id` of `'  '` survives a length check and then reaches
@@ -733,6 +744,15 @@ function confirmedWireList(list: WireComposedList | undefined): list is WireComp
   return list !== undefined && list !== null && typeof list.list_id === 'string' && list.list_id.trim().length > 0;
 }
 
+/**
+ * The `ComposePartial` body, when this error is one.
+ *
+ * Upstream maps BOTH `ComposePartial` and its ordinary `InternalServerError` to 500 and tells
+ * them apart with a `goa-error` response header, which `MicroserviceError` does not carry. The
+ * body does: only `ComposePartial` has a `suppression` object, and the Go handler populates it
+ * unconditionally (`partial.Suppression` is a value, not a pointer), so its presence is a sound
+ * discriminator. A 500 without it is an ordinary failure and is rethrown.
+ */
 function asComposePartial(error: unknown): WireComposePartialError | null {
   if (!(error instanceof MicroserviceError) || error.statusCode !== 500) return null;
 

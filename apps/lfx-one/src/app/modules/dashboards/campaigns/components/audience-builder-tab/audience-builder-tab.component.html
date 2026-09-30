@@ -156,9 +156,13 @@
         }
       </div>
       <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div class="flex flex-col gap-0.5">
+        <div class="flex min-w-0 flex-col gap-0.5">
           <dt class="text-xs text-gray-500">Event</dt>
-          <dd class="truncate text-sm font-medium text-gray-900" [attr.title]="identity()?.eventName ?? ''">{{ identity()?.eventName ?? '—' }}</dd>
+          <!-- Wraps rather than truncating: a title tooltip is unreachable by keyboard and touch, so a
+               clipped event name would be unreadable for those users. -->
+          <dd class="break-words text-sm font-medium text-gray-900" data-testid="campaigns-audience-summary-event">
+            {{ identity()?.eventName ?? '—' }}
+          </dd>
         </div>
         <div class="flex flex-col gap-0.5">
           <dt class="text-xs text-gray-500">Lists included</dt>

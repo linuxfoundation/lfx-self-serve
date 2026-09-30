@@ -2478,6 +2478,13 @@ export class CampaignsComponent {
    * newer -- and there is nothing newer to find.
    */
   protected onAudienceComposed(audience: CampaignAudience): void {
+    // Only for the brief this tab is addressing NOW. A stage switch clears `emailBriefId` but
+    // cannot stop a compose or attach already on the wire, so a reply landing afterwards carries
+    // the PREVIOUS brief's row -- and accepting it would satisfy `canStageEmail` for a brief that
+    // has no audience. `briefId` is stamped from the request that was sent, so it is a sound key.
+    if (audience.briefId === '' || audience.briefId !== this.emailBriefId()) {
+      return;
+    }
     // Bumped FIRST, before the signal is written. A read-back may be in flight, and its reply arm
     // checks this counter before setting `emailAudience` -- so bumping here is what stops an older
     // row from landing ON TOP of the list the operator just assembled. Doing it after the set
@@ -2604,6 +2611,12 @@ export class CampaignsComponent {
       // addressed stage's brief, or with nothing if that send has none yet.
       this.emailBriefOutput.set(null);
       this.emailAudience.set(null);
+      // The audience's provenance and warnings belong to the brief just left, exactly as
+      // `resetEmailBriefDerivedState` treats them: an "unattached list" warning carried onto the
+      // next brief would accuse a send that never composed anything.
+      this.emailAudienceOrigin.set(null);
+      this.emailAudienceUnattached.set(null);
+      this.emailAudienceSkipped.set(false);
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
@@ -3453,7 +3466,13 @@ export class CampaignsComponent {
 
     try {
       const result = await firstValueFrom(this.campaignService.listAudiences(projectSlug, briefId));
-      if (!isCurrent() || !result.enabled || result.error) {
+      if (!isCurrent() || !result.enabled) {
+        return;
+      }
+      if (result.error) {
+        // Still silent on screen, but not invisible: an upstream failure here is what makes a
+        // reload lose an attached audience, and without a trace it reads as "none was attached".
+        console.error('[campaigns] Failed to restore the email audience', result.error);
         return;
       }
 
@@ -3470,9 +3489,11 @@ export class CampaignsComponent {
       // and this read cannot know, so the card says where the value came from -- a reload -- and
       // claims nothing about the compose or build behind it.
       this.emailAudienceOrigin.set('restored');
-    } catch {
-      // Deliberately empty -- see the doc comment. A failed read leaves the screen where it already
-      // was, and there is no action to offer for an audience the operator has not asked about.
+    } catch (err) {
+      // Nothing on screen -- see the doc comment. A failed read leaves the screen where it already
+      // was, and there is no action to offer for an audience the operator has not asked about. It
+      // is still logged, for the same reason as the `result.error` arm above.
+      console.error('[campaigns] Failed to restore the email audience', err);
     }
   }
 

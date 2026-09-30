@@ -74,7 +74,7 @@ function strictStringArray(value: unknown): string[] | null {
  *
  * Separate from `CampaignController` rather than added to it: that class is 1700 lines of
  * paid-ad and brief plumbing, and this feature shares no state with it. It deliberately does NOT
- * touch `buildAudience` / `getAudience` — those resolve the SEND audience by brief id, which is a
+ * touch `listAudiences` — that reads the SEND audience rows by brief id, which is a
  * different record from the HubSpot lists this flow explores and composes. The two are
  * cross-linked in the UI, never wired together.
  *
