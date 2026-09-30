@@ -519,6 +519,7 @@ describe('members at risk', () => {
     expect(buildHealthMetricsMembersAtRiskNote(summary)).toBe('3 overdue · $120K');
     expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: 0 })).toBe('');
     expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: null })).toBe('');
+    expect(buildHealthMetricsMembersAtRiskNote({ ...summary, outstandingBalanceUsd: null })).toBe('');
   });
 
   it('pluralizes the member count', () => {

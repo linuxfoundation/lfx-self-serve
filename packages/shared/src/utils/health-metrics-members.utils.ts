@@ -268,10 +268,10 @@ export function buildHealthMetricsMembersAtRiskRows(rows: HealthMetricsMembersAt
   }));
 }
 
-/** The sub-nav note, "12 overdue · $480K"; empty while no member is at risk or the count is unset. */
+/** The sub-nav note, "12 overdue · $480K"; empty while no member is at risk or either total is unset. */
 export function buildHealthMetricsMembersAtRiskNote(summary: HealthMetricsMembersAtRiskSummary): string {
-  if (summary.memberCount === null || summary.memberCount <= 0) return '';
-  return `${summary.memberCount.toLocaleString('en-US')} overdue · ${formatUsd(summary.outstandingBalanceUsd)}`;
+  if (summary.memberCount === null || summary.memberCount <= 0 || summary.outstandingBalanceUsd === null) return '';
+  return `${summary.memberCount.toLocaleString('en-US')} overdue · ${formatCurrency(summary.outstandingBalanceUsd)}`;
 }
 
 /** The "N members" line beside the bucket pills. */
