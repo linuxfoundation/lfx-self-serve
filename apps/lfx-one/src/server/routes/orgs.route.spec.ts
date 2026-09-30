@@ -186,6 +186,66 @@ describe('orgs router — Org Lens read gate', () => {
 });
 
 /**
+ * #3136 — the Org Lens Access write gate and the list's `canManage` both follow the edit decision. Driven
+ * over HTTP so the service mapping (`assertCanManage`) and the controller envelope are covered together:
+ * reconnecting the gate to the roster alone, or folding "unverifiable" into a 403/502, fails here.
+ */
+describe('orgs router — Org Lens Access follows the edit decision', () => {
+  const TARGET = encodeURIComponent('member@example.com');
+  const writes = (): unknown[][] => proxyRequest.mock.calls.filter((call) => call[3] !== 'GET');
+
+  beforeEach(() => {
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, method: unknown) =>
+      method === 'GET' ? { writers: [], auditors: [] } : undefined
+    );
+  });
+
+  it('lets an allowed caller remove a principal', async () => {
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'allowed' });
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users/${TARGET}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).canManage).toBe(true);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][3]).toBe('DELETE');
+  });
+
+  it('refuses a denied caller with 403 FORBIDDEN before any write', async () => {
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'denied' });
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users/${TARGET}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe('FORBIDDEN');
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('answers an unverifiable decision with a retriable 503, not a 403 or a 502, before any write', async () => {
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'unverifiable', path: '/access-check' });
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users/${TARGET}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error.code).toBe('ROLE_GRANTS_UNAVAILABLE');
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('reports canManage only for an allowed decision', async () => {
+    for (const [decision, expected] of [
+      [{ kind: 'allowed' }, true],
+      [{ kind: 'denied' }, false],
+      [{ kind: 'unverifiable', path: '/access-check' }, false],
+    ] as const) {
+      resolveOrgLensEdit.mockResolvedValue(decision);
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users`);
+      expect(res.status).toBe(200);
+      expect((await res.json()).canManage).toBe(expected);
+    }
+  });
+});
+
+/**
  * LFXV2-3288 — the logo upload route's `express.raw()` middleware and its 413-conversion handler.
  * Router-level (real HTTP, real body-size enforcement) because the size limit and content-type
  * filter are configured on the route registration, not inside the controller — a unit test that

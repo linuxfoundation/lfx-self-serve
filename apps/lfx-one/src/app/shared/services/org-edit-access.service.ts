@@ -3,8 +3,7 @@
 
 import { computed, inject, Injectable, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { OrgLensEditProbe } from '@lfx-one/shared/interfaces';
-import { distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { combineLatest, distinctUntilChanged, EMPTY, map, scan, switchMap } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -38,13 +37,19 @@ export class OrgEditAccessService {
     return this.roleGrants.editorSet().has(uid) ? null : uid;
   });
 
-  /** The server's answer for `probeUid`, keyed by uid so an answer never applies to a newer selection. */
-  private readonly probe: Signal<OrgLensEditProbe | null> = toSignal(
-    toObservable(this.probeUid).pipe(
-      distinctUntilChanged(),
-      switchMap((uid) => (uid ? this.roleGrants.editCheck(uid).pipe(map((canEdit) => ({ uid, canEdit }))) : of(null)))
+  /**
+   * The server's answers, one per organization asked about, so an answer never applies to another
+   * selection and returning to an organization shows its last answer while the new one loads. A new
+   * role-grants load (the page's Retry) re-asks for the same organization, so a transient failure —
+   * answered fail-closed `false` — does not stick until the selection changes.
+   */
+  private readonly answers: Signal<ReadonlyMap<string, boolean>> = toSignal(
+    combineLatest([toObservable(this.probeUid), toObservable(this.roleGrants.loadedAtMs)]).pipe(
+      distinctUntilChanged(([uidA, loadedA], [uidB, loadedB]) => uidA === uidB && loadedA === loadedB),
+      switchMap(([uid]) => (uid ? this.roleGrants.editCheck(uid).pipe(map((canEdit) => [uid, canEdit] as const)) : EMPTY)),
+      scan((answers, [uid, canEdit]) => new Map(answers).set(uid, canEdit), new Map<string, boolean>())
     ),
-    { initialValue: null }
+    { initialValue: new Map<string, boolean>() }
   );
 
   /** True when the caller may edit the currently selected organization. */
@@ -56,7 +61,6 @@ export class OrgEditAccessService {
     if (this.roleGrants.editorSet().has(uid)) {
       return true;
     }
-    const probe = this.probe();
-    return probe?.uid === uid && probe.canEdit;
+    return this.answers().get(uid) === true;
   });
 }

@@ -79,12 +79,6 @@ export interface OrgLensEditCheckResponse {
   canEdit: boolean;
 }
 
-/** #3136 — the edit check's answer, keyed by the organization it was asked for so it never applies to another selection. */
-export interface OrgLensEditProbe {
-  uid: string;
-  canEdit: boolean;
-}
-
 /** PUT /api/orgs/:orgUid/lens/access/users/:email — change role. */
 export interface OrgAccessRoleChangeRequest {
   /** Target role (must differ from the current role). */

@@ -78,10 +78,39 @@ describe('resolveOrgLensEdit (#3136)', () => {
     expect(await resolveOrgLensEdit(req, ORG, 'op')).toEqual({ kind: 'unverifiable', path: '/query/resources', error: failure });
   });
 
-  it('reports a degraded roster as unverifiable without naming an upstream', async () => {
-    getRoleGrants.mockResolvedValue({ writers: [], cascadingWriters: [], degraded: true });
+  it('reports a roster whose lookup failed (returned, not thrown) as unverifiable at the roster upstream', async () => {
+    getRoleGrants.mockResolvedValue({ writers: [], cascadingWriters: [], degraded: true, lookupOutcome: 'failed' });
+
+    expect(await resolveOrgLensEdit(req, ORG, 'op')).toEqual({ kind: 'unverifiable', path: '/query/resources' });
+  });
+
+  it('reports a partial roll-up as unverifiable without naming an upstream', async () => {
+    getRoleGrants.mockResolvedValue({ writers: [], cascadingWriters: [], degraded: true, lookupOutcome: 'partial' });
 
     expect(await resolveOrgLensEdit(req, ORG, 'op')).toEqual({ kind: 'unverifiable' });
+  });
+
+  it('names the authorizer when both upstreams fail: its outage decides the answer', async () => {
+    const authorizerFailure = new Error('access-check down');
+    getRoleGrants.mockRejectedValue(new Error('query-service down'));
+    checkSingleAccessStrict.mockRejectedValue(authorizerFailure);
+
+    expect(await resolveOrgLensEdit(req, ORG, 'op')).toEqual({ kind: 'unverifiable', path: '/access-check', error: authorizerFailure });
+  });
+
+  it('lets the authorizer admit a caller despite a degraded roster', async () => {
+    getRoleGrants.mockResolvedValue({ writers: [], cascadingWriters: [], degraded: true, lookupOutcome: 'partial' });
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    expect(await resolveOrgLensEdit(req, ORG, 'op')).toEqual({ kind: 'allowed' });
+  });
+
+  it('trusts an editor the degraded roster does list, without asking the authorizer', async () => {
+    getRoleGrants.mockResolvedValue({ writers: [ORG], cascadingWriters: [], degraded: true, lookupOutcome: 'partial' });
+    hasEditorAccess.mockReturnValue(true);
+
+    expect(await resolveOrgLensEdit(req, ORG, 'op')).toEqual({ kind: 'allowed' });
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
   it('denies a request with no caller identity without consulting anything', async () => {

@@ -34,8 +34,8 @@ export type OrgLensEditDecision =
  *   1. roster lists the caller as an editor of this org   → allowed
  *   2. authorizer answered `true`                         → allowed
  *   3. authorizer threw                                   → unverifiable, `/access-check`
- *   4. roster threw                                       → unverifiable, `/query/resources`
- *   5. roster loaded but `degraded`                       → unverifiable (cause not attributable)
+ *   4. roster threw, or answered `lookupOutcome: failed`  → unverifiable, `/query/resources`
+ *   5. roster loaded but `degraded` (partial roll-up)     → unverifiable (cause not attributable)
  *   6. otherwise                                          → denied
  *
  * Never throws; each caller maps the decision to its own contract (a 403/503 write gate, or a
@@ -48,6 +48,8 @@ export async function resolveOrgLensEdit(req: Request, orgUid: string, operation
   }
 
   let rosterError: unknown;
+  // `getRoleGrants` folds a failed roster query into `degraded` without throwing; `lookupOutcome` keeps the two apart.
+  let rosterFailed = false;
   let degraded = false;
   try {
     const grants = await roleGrants.getRoleGrants(req, username);
@@ -55,6 +57,7 @@ export async function resolveOrgLensEdit(req: Request, orgUid: string, operation
       return { kind: 'allowed' };
     }
     degraded = grants.degraded;
+    rosterFailed = grants.lookupOutcome === 'failed';
   } catch (error) {
     // Recorded, not returned: the authorizer below may still confirm the caller.
     rosterError = error;
@@ -84,6 +87,10 @@ export async function resolveOrgLensEdit(req: Request, orgUid: string, operation
 
   if (rosterError !== undefined) {
     return { kind: 'unverifiable', path: '/query/resources', error: rosterError };
+  }
+  if (rosterFailed) {
+    logger.warning(req, operation, 'Role-grants lookup failed; cannot rule out an Org Lens editor grant', { org_uid: orgUid });
+    return { kind: 'unverifiable', path: '/query/resources' };
   }
   if (degraded) {
     // The authorizer said no, so this is a caller the roster may have under-resolved — not verifiable either way.

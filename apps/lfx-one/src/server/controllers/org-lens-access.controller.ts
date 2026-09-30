@@ -184,6 +184,14 @@ export class OrgLensAccessController {
       res.status(403).json({ error: { code: 'FORBIDDEN', message: error.message, conflict: false } });
       return;
     }
+    // #3136 — the same gate's "couldn't verify" stays a retriable 503 `ROLE_GRANTS_UNAVAILABLE`. Folding it
+    // into the upstream 5xx envelope below would report a 502 "write failed" for a write that never started.
+    if (error instanceof MicroserviceError && error.code === 'ROLE_GRANTS_UNAVAILABLE' && !error.originalMessage) {
+      logger.warning(req, operation, 'Org access write not attempted: manager permission could not be verified', { status: 503 });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(503).json({ error: { code: 'ROLE_GRANTS_UNAVAILABLE', message: error.message, conflict: false } });
+      return;
+    }
     const mapped = mapAccessUpstreamError(error);
     logger.warning(req, operation, 'Org access write failed', { status: mapped.status, conflict: mapped.conflict });
     res.setHeader('Cache-Control', 'no-store');

@@ -91,7 +91,7 @@ export class OrgLensAccessService {
   /**
    * US1 — list elevated-access principals + summary + caller management flag.
    * Pass `knownCanManage` from a write path that already asserted it to avoid a redundant
-   * role-grants lookup on the post-write refresh.
+   * edit decision (roster lookup + authorizer call) on the post-write refresh.
    */
   public async listAccessUsers(req: Request, orgUid: string, knownCanManage?: boolean): Promise<OrgAccessListResponse> {
     // A write refresh passes knownCanManage and must reflect the just-written state — bypass the cache
@@ -102,19 +102,31 @@ export class OrgLensAccessService {
     }
     const username = getEffectiveUsername(req) ?? '';
     // `:list` / `:principals` suffixes keep this read and getAccessPrincipals from colliding on the shared key.
+    // `canManage` is the edit decision as a UX boolean (#3136): `resolveOrgLensEdit` has logged any failure, and
+    // the write paths it decorates are guarded by `assertCanManage`. A decision it could not verify is a
+    // fail-closed `false`, not a verdict — served but never cached, or one authorizer blip would hide Access
+    // management for the whole TTL while the other tabs (no-store `edit-check`) still show their controls.
+    let canManageVerified = true;
     return withPerUserCache(
       `${VALKEY_CACHE.ORG_ACCESS_LIST_NAMESPACE}:list`,
       username,
       orgUid,
       VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.computeAccessList(req, orgUid, undefined),
-      isAccessListResponse
+      () => {
+        const canManage = resolveOrgLensEdit(req, orgUid, 'resolve_org_access_can_manage').then((decision) => {
+          canManageVerified = decision.kind !== 'unverifiable';
+          return decision.kind === 'allowed';
+        });
+        return this.computeAccessList(req, orgUid, canManage);
+      },
+      isAccessListResponse,
+      () => canManageVerified
     );
   }
 
   /**
    * Lightweight principals read for the unified people directory: settings → mapped writers/auditors only.
-   * Skips the `canManage` role-grants lookup and job-title enrichment that `listAccessUsers` does for the
+   * Skips the `canManage` edit decision and job-title enrichment that `listAccessUsers` does for the
    * Access tab — the directory orchestrator owns its own merge + enrichment.
    */
   public async getAccessPrincipals(req: Request, orgUid: string): Promise<OrgAccessUser[]> {
@@ -141,7 +153,7 @@ export class OrgLensAccessService {
     };
     await this.microserviceProxy.proxyRequest(req, 'LFX_V2_MEMBER_SERVICE', `/b2b_orgs/${encodeURIComponent(orgUid)}/settings/users`, 'POST', undefined, body);
     await this.invalidateCallerCaches(req, orgUid);
-    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    // canManage was just asserted true above — reuse it to skip a second edit decision.
     return this.listAccessUsers(req, orgUid, true);
   }
 
@@ -158,7 +170,7 @@ export class OrgLensAccessService {
       { invited_as: ORG_ACCESS_ROLE_RELATION[role] }
     );
     await this.invalidateCallerCaches(req, orgUid);
-    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    // canManage was just asserted true above — reuse it to skip a second edit decision.
     return this.listAccessUsers(req, orgUid, true);
   }
 
@@ -173,7 +185,7 @@ export class OrgLensAccessService {
       'DELETE'
     );
     await this.invalidateCallerCaches(req, orgUid);
-    // canManage was just asserted true above — reuse it to skip a second role-grants lookup.
+    // canManage was just asserted true above — reuse it to skip a second edit decision.
     return this.listAccessUsers(req, orgUid, true);
   }
 
@@ -194,13 +206,10 @@ export class OrgLensAccessService {
     ]);
   }
 
-  private async computeAccessList(req: Request, orgUid: string, knownCanManage: boolean | undefined): Promise<OrgAccessListResponse> {
-    const [settings, canManage] = await Promise.all([
-      this.fetchSettings(req, orgUid),
-      knownCanManage === undefined ? this.resolveCanManage(req, orgUid) : Promise.resolve(knownCanManage),
-    ]);
+  private async computeAccessList(req: Request, orgUid: string, canManage: boolean | Promise<boolean>): Promise<OrgAccessListResponse> {
+    const [settings, resolvedCanManage] = await Promise.all([this.fetchSettings(req, orgUid), canManage]);
     const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
-    return { orgUid, users, summary: this.buildSummary(users), canManage };
+    return { orgUid, users, summary: this.buildSummary(users), canManage: resolvedCanManage };
   }
 
   /** Authoritative settings read (member-service source of record). */
@@ -280,19 +289,10 @@ export class OrgLensAccessService {
     return users.map((user) => ({ ...user, jobTitle: titleByEmail.get(user.email) ?? null }));
   }
 
-  /** Caller can manage iff they may edit the org (#3136: roster editor or authorizer `writer`). UX gate only. */
-  private async resolveCanManage(req: Request, orgUid: string): Promise<boolean> {
-    const decision = await resolveOrgLensEdit(req, orgUid, 'resolve_org_access_can_manage');
-    // This gate answers a boolean for the UX by contract, so it cannot signal "unverifiable" the
-    // way `assertCanManage` does — the write path it decorates is guarded there. The helper has
-    // logged the cause, so a hidden-affordance report is diagnosable instead of looking like a missing grant.
-    return decision.kind === 'allowed';
-  }
-
   /**
    * Write gate: throws 403 when the caller is verified NOT to be able to edit the org, but a
    * retriable 503 when that could not be verified — so a transient outage doesn't masquerade as
-   * "no permission". (The lenient `resolveCanManage` is for the read/list UX gate only.)
+   * "no permission". (The list's lenient `canManage` in `listAccessUsers` is the UX gate only.)
    */
   private async assertCanManage(req: Request, orgUid: string, operation: string): Promise<void> {
     const decision = await resolveOrgLensEdit(req, orgUid, operation);

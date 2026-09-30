@@ -21,7 +21,8 @@ export class OrgRoleGrantsService {
 
   // `writerSet` / `auditorSet` stay DIRECT-ONLY by design: they answer "is this grant the caller's
   // own?", which is what the selector's persona badge and its "(Original)"/"(Inherited)" copy need.
-  // Since LFXV2-3029 they are NOT the edit gate — `editorSet` below is. Widening these would erase
+  // They are NOT the edit gate — Org Lens edit affordances read `OrgEditAccessService.canEditSelected` (#3136),
+  // whose roster half is `editorSet` below. Widening these would erase
   // the direct-vs-inherited distinction the badge depends on.
   private readonly writerSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly auditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
@@ -54,11 +55,11 @@ export class OrgRoleGrantsService {
   public readonly inheritedWriterSet: Signal<Set<string>> = this.inheritedWriterSetInternal.asReadonly();
   public readonly inheritedAuditorSet: Signal<Set<string>> = this.inheritedAuditorSetInternal.asReadonly();
   /**
-   * LFXV2-3029 — "editor from any source": `writerSet` (direct) union `inheritedWriterSet`
-   * (roll-up-derived). Every organization-edit capability gate should read this, not the
-   * direct-only `writerSet` — every edit surface a direct editor can reach is meant to also open
-   * for a roll-up editor. `writerSet` itself is kept direct-only for callers that still need that
-   * narrower, direct-only answer specifically.
+   * LFXV2-3029 — the caller's roster editors: `writerSet` (direct) union `inheritedWriterSet`
+   * (roll-up-derived). This is only the roster half of the edit decision: Org Lens edit gates read
+   * `OrgEditAccessService.canEditSelected` (#3136), which answers from this set first and otherwise asks
+   * the server, so company-wide writers the roster never lists (`global_org_admin`) are included. Do not
+   * gate an edit affordance on this set directly. `writerSet` stays direct-only for the persona badge.
    */
   public readonly editorSet: Signal<Set<string>> = computed(() => new Set([...this.writerSetInternal(), ...this.inheritedWriterSetInternal()]));
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
@@ -167,7 +168,10 @@ export class OrgRoleGrantsService {
     return this.http.get<OrgLensEditCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/edit-check`).pipe(
       map((response) => response?.canEdit === true),
       catchError((error: unknown) => {
-        console.warn('[org-lens] edit-check did not answer; hiding edit affordances', error);
+        // The read gate's own 403 is an answer (no access at all), not a failed check — only an outage is worth a trace.
+        if (classifySectionError(error) !== 'denied') {
+          console.warn('[org-lens] edit-check did not answer; hiding edit affordances', error);
+        }
         return of(false);
       })
     );

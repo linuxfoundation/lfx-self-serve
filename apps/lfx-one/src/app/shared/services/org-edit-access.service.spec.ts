@@ -18,6 +18,7 @@ interface Harness {
   service: OrgEditAccessService;
   selectedAccount: WritableSignal<{ uid: string; accountName: string }>;
   loaded: WritableSignal<boolean>;
+  loadedAtMs: WritableSignal<number | null>;
   editCheck: Mock<(uid: string) => Observable<boolean>>;
   answers: Subject<boolean>[];
 }
@@ -25,6 +26,7 @@ interface Harness {
 function setup(): Harness {
   const selectedAccount = signal({ uid: '', accountName: '' });
   const loaded = signal(true);
+  const loadedAtMs = signal<number | null>(1);
   const answers: Subject<boolean>[] = [];
   const editCheck: Mock<(uid: string) => Observable<boolean>> = vi.fn(() => {
     const answer = new Subject<boolean>();
@@ -35,11 +37,11 @@ function setup(): Harness {
   TestBed.configureTestingModule({
     providers: [
       { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgRoleGrantsService, useValue: { loaded, editorSet: signal(new Set([HELD])), editCheck } },
+      { provide: OrgRoleGrantsService, useValue: { loaded, loadedAtMs, editorSet: signal(new Set([HELD])), editCheck } },
     ],
   });
 
-  return { service: TestBed.inject(OrgEditAccessService), selectedAccount, loaded, editCheck, answers };
+  return { service: TestBed.inject(OrgEditAccessService), selectedAccount, loaded, loadedAtMs, editCheck, answers };
 }
 
 const account = (uid: string): { uid: string; accountName: string } => ({ uid, accountName: uid });
@@ -102,5 +104,33 @@ describe('OrgEditAccessService (#3136)', () => {
 
     h.answers[1].next(false);
     expect(h.service.canEditSelected()).toBe(false);
+  });
+
+  it('re-asks after the role grants reload (Retry), so a failed answer does not stick', () => {
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+    h.answers[0].next(false);
+    expect(h.service.canEditSelected()).toBe(false);
+
+    h.loadedAtMs.set(2);
+    TestBed.tick();
+    expect(h.editCheck).toHaveBeenCalledTimes(2);
+
+    h.answers[1].next(true);
+    expect(h.service.canEditSelected()).toBe(true);
+  });
+
+  it('shows the last answer for an organization at once when returning to it, while re-asking', () => {
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+    h.answers[0].next(true);
+
+    h.selectedAccount.set(account(THIRD));
+    TestBed.tick();
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+
+    expect(h.service.canEditSelected()).toBe(true);
+    expect(h.editCheck).toHaveBeenLastCalledWith(OTHER);
   });
 });
