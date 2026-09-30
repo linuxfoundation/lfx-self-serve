@@ -246,11 +246,11 @@
               <!-- Left column -->
               <div class="flex flex-col gap-3 flex-1 min-w-0">
                 @if (committee()?.description || canEdit()) {
-                  <div class="flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
+                  <div class="inline-flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
                     @if (committee()?.description) {
-                      <p class="text-gray-500 flex-1 text-sm">{{ committee()?.description }}</p>
+                      <p class="text-gray-500 text-sm">{{ committee()?.description }}</p>
                     } @else if (canEdit()) {
-                      <span class="text-gray-400 text-sm italic flex-1">No description yet.</span>
+                      <span class="text-gray-400 text-sm italic">No description yet.</span>
                     }
                     @if (canEdit()) {
                       <lfx-button
