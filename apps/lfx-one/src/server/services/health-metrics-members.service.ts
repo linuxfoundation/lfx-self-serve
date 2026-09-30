@@ -6,6 +6,10 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
@@ -15,7 +19,7 @@ import {
 import { toIsoDate } from '../helpers/date-format.helper';
 import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
-import { clampInteger } from '../helpers/validation.helper';
+import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -25,10 +29,15 @@ import type {
   HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeStepType,
+  HealthMetricsMembersDirectory,
+  HealthMetricsMembersDirectoryMember,
+  HealthMetricsMembersDirectoryQuery,
+  HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersFoundationRevenue,
   HealthMetricsMembersMovement,
   HealthMetricsMembersMovements,
   HealthMetricsMembersMovementsQuery,
+  HealthMetricsMembersNpsCategory,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
   HealthMetricsMembersTierYear,
@@ -39,8 +48,11 @@ const MEMBERSHIP_TIER_YEAR_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_TIER_YE
 const OVERVIEW_REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE';
 const MEMBERSHIP_WATERFALL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFALL';
 const MEMBERSHIP_MOVEMENT_DETAIL_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL';
+const MEMBERSHIP_DIRECTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY';
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
+const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
+const ENGAGEMENT_LEVELS: ReadonlySet<string> = new Set<HealthMetricsMembersEngagementLevel>(['High', 'Medium', 'Low']);
 
 interface TierYearRow {
   YEAR: number;
@@ -74,6 +86,32 @@ interface MovementRow {
   MOVEMENT_DATE: Date | string | null;
   LAST_ENGAGED_DATE: Date | string | null;
   SORT_RANK: number | null;
+}
+
+interface DirectoryRow {
+  SCOPE_TOTAL: number | null;
+  TOTAL_RECORDS: number | null;
+  AT_RISK_COUNT: number | null;
+  IS_PAGE_ROW: boolean | null;
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
+  ANNUAL_DUES_USD: number | null;
+  ENGAGEMENT_LEVEL: string | null;
+  ENGAGEMENT_SCORE: number | null;
+  NPS_CATEGORY: string | null;
+  IS_AT_RISK: boolean | null;
+  RENEWAL_DATE: Date | string | null;
+  RENEWAL_DUES_USD: number | null;
+  LAST_ENGAGED_DATE: Date | string | null;
+  CONTRIBUTION_COUNT: number | null;
+  SPONSORSHIP_USD: number | null;
+  TRAINING_ENROLLMENT_COUNT: number | null;
+  EVENT_REGISTRATION_COUNT: number | null;
+}
+
+interface DirectoryTierRow {
+  MEMBERSHIP_TIER: string | null;
 }
 
 /** True when the Members views carry columns for the range; for a controller to check before binding. */
@@ -196,6 +234,15 @@ export class HealthMetricsMembersService {
     };
   }
 
+  /**
+   * One page of the foundation's members, highest annual dues first and, within equal dues, least
+   * engaged first, with the activity counts for the period. The tier options are read alongside.
+   */
+  public async getDirectory(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<HealthMetricsMembersDirectory> {
+    const [page, tierOptions] = await Promise.all([this.getDirectoryPage(req, query), this.getDirectoryTiers(req, query)]);
+    return { ...page, tierOptions };
+  }
+
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
     const sql = `
       SELECT
@@ -233,6 +280,115 @@ export class HealthMetricsMembersService {
   }
 
   /** The foundation's total revenue per period, off the Memberships row whose tier revenue reconciles with it. */
+  private async getDirectoryPage(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<Omit<HealthMetricsMembersDirectory, 'tierOptions'>> {
+    // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
+    const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
+    const binds: string[] = [query.foundationSlug];
+
+    const predicates: string[] = [];
+    if (query.tier) {
+      predicates.push('membership_tier = ?');
+      binds.push(query.tier);
+    }
+    if (query.nps) {
+      predicates.push('nps_category = ?');
+      binds.push(query.nps);
+    }
+    if (query.search) {
+      predicates.push("account_name ILIKE ? ESCAPE '!'");
+      binds.push(`%${escapeSqlLikePattern(query.search)}%`);
+    }
+    const matchClause = predicates.length ? `WHERE ${predicates.join(' AND ')}` : '';
+
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const sql = `
+      WITH scoped AS (
+        SELECT
+          account_id,
+          account_name,
+          membership_tier,
+          annual_dues_usd,
+          engagement_level,
+          engagement_score,
+          nps_category,
+          is_at_risk,
+          renewal_date,
+          renewal_dues_usd,
+          last_engaged_date,
+          contribution_count_${suffix} AS contribution_count,
+          sponsorship_usd_${suffix} AS sponsorship_usd,
+          training_enrollment_count_${suffix} AS training_enrollment_count,
+          event_registration_count_${suffix} AS event_registration_count
+        FROM ${MEMBERSHIP_DIRECTORY_VIEW}
+        WHERE foundation_slug = ?
+          -- Rows the mapper cannot show must not count, or the totals and the page window drift apart.
+          AND account_id IS NOT NULL
+          AND account_id <> ''
+      ),
+      matched AS (
+        SELECT * FROM scoped ${matchClause}
+      ),
+      totals AS (
+        SELECT
+          (SELECT COUNT(*) FROM scoped) AS scope_total,
+          (SELECT COUNT_IF(is_at_risk) FROM scoped) AS at_risk_count,
+          (SELECT COUNT(*) FROM matched) AS total_records
+      ),
+      page AS (
+        SELECT *, TRUE AS is_page_row
+        FROM matched
+        -- account_id breaks any tie, and NULLS LAST pins placement against the session's null ordering.
+        ORDER BY annual_dues_usd DESC NULLS LAST, engagement_score ASC NULLS LAST, account_id ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.annual_dues_usd DESC NULLS LAST, page.engagement_score ASC NULLS LAST, page.account_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<DirectoryRow>(this.snowflakeService, req, sql, binds, {
+      view: MEMBERSHIP_DIRECTORY_VIEW,
+      operation: 'get_members_directory',
+      clientMessage: 'The members directory is unavailable right now.',
+    });
+
+    const first = result.rows[0];
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapDirectoryMember),
+      totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
+      scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
+      atRiskCount: Number(first?.AT_RISK_COUNT ?? 0),
+    };
+  }
+
+  /** The foundation's tiers, highest-paying first, for the tier filter. */
+  private async getDirectoryTiers(req: Request, query: HealthMetricsMembersDirectoryQuery): Promise<string[]> {
+    const sql = `
+      SELECT membership_tier
+      FROM ${MEMBERSHIP_DIRECTORY_VIEW}
+      WHERE foundation_slug = ?
+        AND account_id IS NOT NULL
+        AND account_id <> ''
+        AND membership_tier IS NOT NULL
+        AND membership_tier <> ''
+      GROUP BY membership_tier
+      ORDER BY MAX(annual_dues_usd) DESC NULLS LAST, membership_tier ASC
+      LIMIT ${HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP}
+    `;
+
+    const result = await executeSnowflakeViewRead<DirectoryTierRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: MEMBERSHIP_DIRECTORY_VIEW,
+      operation: 'get_members_directory_tiers',
+      clientMessage: 'The members directory is unavailable right now.',
+    });
+
+    return result.rows.flatMap((row) => (row.MEMBERSHIP_TIER ? [row.MEMBERSHIP_TIER] : []));
+  }
+
   private async getFoundationRevenue(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersFoundationRevenue[]> {
     // The suffixes come from constants, never from the request, so interpolating them is safe.
     // The view holds one row per foundation and revenue domain, so `LIMIT 1` needs no ORDER BY.
@@ -319,6 +475,31 @@ function mapMovement(row: MovementRow): HealthMetricsMembersMovement[] {
       duesImpactUsd: toNullableNumber(row.DUES_IMPACT_USD),
       movementDate: toIsoDate(row.MOVEMENT_DATE),
       lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
+    },
+  ];
+}
+
+function mapDirectoryMember(row: DirectoryRow): HealthMetricsMembersDirectoryMember[] {
+  if (!row.ACCOUNT_ID) return [];
+
+  return [
+    {
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      membershipTier: row.MEMBERSHIP_TIER || null,
+      annualDuesUsd: toNullableNumber(row.ANNUAL_DUES_USD),
+      engagementLevel:
+        row.ENGAGEMENT_LEVEL && ENGAGEMENT_LEVELS.has(row.ENGAGEMENT_LEVEL) ? (row.ENGAGEMENT_LEVEL as HealthMetricsMembersEngagementLevel) : null,
+      engagementScore: toNullableNumber(row.ENGAGEMENT_SCORE),
+      npsCategory: row.NPS_CATEGORY && NPS_CATEGORIES.has(row.NPS_CATEGORY) ? (row.NPS_CATEGORY as HealthMetricsMembersNpsCategory) : null,
+      isAtRisk: row.IS_AT_RISK === true,
+      renewalDate: toIsoDate(row.RENEWAL_DATE),
+      renewalDuesUsd: toNullableNumber(row.RENEWAL_DUES_USD),
+      lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
+      contributionCount: toNullableNumber(row.CONTRIBUTION_COUNT),
+      sponsorshipUsd: toNullableNumber(row.SPONSORSHIP_USD),
+      trainingEnrollmentCount: toNullableNumber(row.TRAINING_ENROLLMENT_COUNT),
+      eventRegistrationCount: toNullableNumber(row.EVENT_REGISTRATION_COUNT),
     },
   ];
 }

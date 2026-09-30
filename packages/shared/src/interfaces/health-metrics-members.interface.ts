@@ -3,6 +3,7 @@
 
 import type {
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
@@ -223,4 +224,87 @@ export interface HealthMetricsMembersMovementRowView {
   detail: string;
   duesLabel: string;
   loss: boolean;
+}
+
+/** A `MEMBERSHIP_DIRECTORY` NPS category, and the values the directory's NPS filter accepts. */
+export type HealthMetricsMembersNpsCategory = (typeof HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES)[number];
+
+/** The model's own engagement band; the page never re-bands the score. */
+export type HealthMetricsMembersEngagementLevel = 'High' | 'Medium' | 'Low';
+
+/** `GET /api/analytics/members-directory` — one page of the foundation's members. Empty filters match all. */
+export interface HealthMetricsMembersDirectoryQuery {
+  foundationSlug: string;
+  /** Picks the period columns for the activity counts. */
+  range: HealthMetricsL2Range;
+  tier: string;
+  nps: HealthMetricsMembersNpsCategory | '';
+  search: string;
+  offset: number;
+  pageSize: number;
+}
+
+/** One `MEMBERSHIP_DIRECTORY` row. Dates are ISO `YYYY-MM-DD`; `null` is not tracked, never zero. */
+export interface HealthMetricsMembersDirectoryMember {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  annualDuesUsd: number | null;
+  engagementLevel: HealthMetricsMembersEngagementLevel | null;
+  engagementScore: number | null;
+  npsCategory: HealthMetricsMembersNpsCategory | null;
+  isAtRisk: boolean;
+  renewalDate: string | null;
+  renewalDuesUsd: number | null;
+  lastEngagedDate: string | null;
+  /** The selected period's activity. */
+  contributionCount: number | null;
+  sponsorshipUsd: number | null;
+  trainingEnrollmentCount: number | null;
+  eventRegistrationCount: number | null;
+}
+
+export interface HealthMetricsMembersDirectory {
+  rows: HealthMetricsMembersDirectoryMember[];
+  /** Members matching the filters and search. */
+  totalRecords: number;
+  /** Every member of the foundation; the sub-nav badge and the unfiltered count. */
+  scopeTotal: number;
+  /** At-risk members across the whole foundation, whatever the filters. */
+  atRiskCount: number;
+  /** Tiers present in the foundation, highest-paying first, for the tier filter. */
+  tierOptions: string[];
+}
+
+/** One member row as the directory table renders it. */
+export interface HealthMetricsMembersDirectoryRowView {
+  accountId: string;
+  accountName: string;
+  npsLabel: string | null;
+  npsClass: string;
+  isAtRisk: boolean;
+  tierLabel: string;
+  duesLabel: string;
+  engagementLabel: string;
+  engagementDotClass: string;
+  scoreLabel: string;
+  renewsLabel: string;
+  renewalDuesLabel: string;
+  lastEngagedLabel: string;
+  activity: HealthMetricsMembersDirectoryCellView[];
+}
+
+/** An activity cell; `tracked` false renders the not-tracked dash, never 0. */
+export interface HealthMetricsMembersDirectoryCellView {
+  key: string;
+  label: string;
+  tracked: boolean;
+}
+
+/** The directory's filter and page state in the URL. */
+export interface HealthMetricsMembersQueryParams {
+  memTier: string;
+  memNps: string;
+  memSearch: string;
+  memPage: string;
 }

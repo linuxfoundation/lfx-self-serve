@@ -4,14 +4,22 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements } = vi.hoisted(() => ({ getTiers: vi.fn(), getBridge: vi.fn(), getMovements: vi.fn() }));
+const { getTiers, getBridge, getMovements, getDirectory } = vi.hoisted(() => ({
+  getTiers: vi.fn(),
+  getBridge: vi.fn(),
+  getMovements: vi.fn(),
+  getDirectory: vi.fn(),
+}));
 
 vi.mock('../services/health-metrics-members.service', () => ({
   HealthMetricsMembersService: class {
     public getTiers = getTiers;
     public getBridge = getBridge;
     public getMovements = getMovements;
+    public getDirectory = getDirectory;
   },
+  // The views carry the four L2 periods; a fourth completed year has no columns.
+  isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
 }));
 // The controller constructs six unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
@@ -28,6 +36,11 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
   HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED,
@@ -37,7 +50,7 @@ import {
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements';
+type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements' | 'getMembersDirectory';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -173,6 +186,81 @@ describe('AnalyticsController.getMembersMovements', () => {
     getMovements.mockRejectedValue(failure);
 
     const { next, promise } = call(valid, 'getMembersMovements');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersDirectory', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getDirectory.mockReset();
+    getDirectory.mockResolvedValue(HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED);
+  });
+
+  it('defaults to the running year, no filters and the first page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersDirectory');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getDirectory).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      tier: '',
+      nps: '',
+      search: '',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED);
+  });
+
+  it('passes the period, filters, trimmed search and page', async () => {
+    const longSearch = `  ${'a'.repeat(HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH + 10)}  `;
+    await call(
+      { ...valid, range: 'COMPLETED_YEAR_2', tier: ' Gold Membership ', nps: 'Promoter', search: longSearch, offset: '20', pageSize: '10' },
+      'getMembersDirectory'
+    ).promise;
+
+    expect(getDirectory).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR_2',
+      tier: 'Gold Membership',
+      nps: 'Promoter',
+      search: 'a'.repeat(HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH),
+      offset: 20,
+      pageSize: 10,
+    });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE + 1) }, 'getMembersDirectory').promise;
+
+    expect(getDirectory).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ ...valid, foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ ...valid, nps: 'Neutral' }, 'nps'],
+    [{ ...valid, tier: 'x'.repeat(HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH + 1) }, 'tier'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersDirectory');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getDirectory).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getDirectory.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersDirectory');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

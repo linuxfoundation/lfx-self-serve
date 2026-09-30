@@ -4,6 +4,8 @@
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
@@ -20,6 +22,10 @@ import type {
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeTone,
   HealthMetricsMembersBridgeView,
+  HealthMetricsMembersDirectoryCellView,
+  HealthMetricsMembersDirectoryMember,
+  HealthMetricsMembersDirectoryRowView,
+  HealthMetricsMembersSectionKey,
   HealthMetricsMembersMovement,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovementRowView,
@@ -34,9 +40,11 @@ import type {
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
 
-/** Sub-nav items for the Members tab. No section reports a count yet, so none carries a badge or note. */
-export function buildHealthMetricsMembersSubNavItems(): HealthMetricsMembersSubNavItem[] {
-  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: '' }));
+/** Sub-nav items for the Members tab; a section badges only once it reports a count. */
+export function buildHealthMetricsMembersSubNavItems(
+  counts: Partial<Record<HealthMetricsMembersSectionKey, number | null>> = {}
+): HealthMetricsMembersSubNavItem[] {
+  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
 }
 
 /**
@@ -174,6 +182,51 @@ export function buildHealthMetricsMembersMovementCountNote(totalRecords: number,
   if (barCount === null || barCount === totalRecords) return null;
 
   return `${pluralize(totalRecords, 'organization')} listed, while the bar counts ${barCount.toLocaleString('en-US')}. The list and the bar are counted separately, so they can differ slightly.`;
+}
+
+/** Directory rows. A NULL activity count is not tracked for the foundation and renders as a dash, never 0. */
+export function buildHealthMetricsMembersDirectoryRows(rows: HealthMetricsMembersDirectoryMember[]): HealthMetricsMembersDirectoryRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    npsLabel: row.npsCategory,
+    npsClass: row.npsCategory ? HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES[row.npsCategory] : '',
+    isAtRisk: row.isAtRisk,
+    tierLabel: row.membershipTier ?? '—',
+    duesLabel: formatUsd(row.annualDuesUsd),
+    engagementLabel: row.engagementLevel ?? '—',
+    engagementDotClass: row.engagementLevel ? HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES[row.engagementLevel] : '',
+    scoreLabel: row.engagementScore === null ? '—' : row.engagementScore.toFixed(1),
+    renewsLabel: formatIsoDate(row.renewalDate),
+    renewalDuesLabel: formatUsd(row.renewalDuesUsd),
+    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
+    activity: [
+      activityCell('contribution', row.contributionCount, formatCount),
+      activityCell('sponsorship', row.sponsorshipUsd, (value) => formatUsd(value === null ? null : Math.round(value))),
+      activityCell('training', row.trainingEnrollmentCount, formatCount),
+      activityCell('events', row.eventRegistrationCount, formatCount),
+    ],
+  }));
+}
+
+/** The unfiltered count line: "725 members · 12 at risk · highest dues first". */
+export function buildHealthMetricsMembersDirectorySummary(scopeTotal: number, atRiskCount: number): string {
+  return [pluralize(scopeTotal, 'member'), atRiskCount > 0 ? `${atRiskCount.toLocaleString('en-US')} at risk` : null, 'highest dues first']
+    .filter((part): part is string => part !== null)
+    .join(' · ');
+}
+
+/** The search box placeholder, sized to the whole foundation. */
+export function buildHealthMetricsMembersDirectorySearchPlaceholder(scopeTotal: number): string {
+  return `Search ${pluralize(scopeTotal, 'member')}…`;
+}
+
+function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
+  return { key, label: format(value), tracked: value !== null };
+}
+
+function formatIsoDate(value: string | null): string {
+  return value ? formatIsoDateLabel(value) : '—';
 }
 
 function buildBridgeBars(steps: HealthMetricsMembersBridgeStep[], endLabel: string): HealthMetricsMembersBridgeBarView[] {
@@ -322,5 +375,5 @@ function formatUsd(value: number | null): string {
 }
 
 function pluralize(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+  return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
 }

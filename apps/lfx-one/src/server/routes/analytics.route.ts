@@ -277,6 +277,9 @@ router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyti
 router.get('/members-bridge', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBridge(req, res, next));
 router.get('/members-movements', requireDashboardAccess, (req, res, next) => analyticsController.getMembersMovements(req, res, next));
 
+// Health Metrics Members "All members" (#3102)
+router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

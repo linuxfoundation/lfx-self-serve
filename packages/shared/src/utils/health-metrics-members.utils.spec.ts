@@ -10,6 +10,9 @@ import {
 } from '../constants/health-metrics-members.constants';
 import {
   buildHealthMetricsMembersBridgeView,
+  buildHealthMetricsMembersDirectoryRows,
+  buildHealthMetricsMembersDirectorySearchPlaceholder,
+  buildHealthMetricsMembersDirectorySummary,
   buildHealthMetricsMembersMovementCountNote,
   buildHealthMetricsMembersMovementDrawerTitle,
   buildHealthMetricsMembersMovementRows,
@@ -19,6 +22,7 @@ import {
 
 import type {
   HealthMetricsMembersBridge,
+  HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersTiers,
@@ -34,6 +38,111 @@ describe('buildHealthMetricsMembersSubNavItems', () => {
 
   it('renders no badge or note while no section reports a count', () => {
     expect(buildHealthMetricsMembersSubNavItems().every((item) => item.count === null && item.note === '')).toBe(true);
+  });
+
+  it('badges only the sections that report a count', () => {
+    const items = buildHealthMetricsMembersSubNavItems({ list: 725 });
+
+    expect(items.find((item) => item.key === 'list')?.count).toBe(725);
+    expect(items.filter((item) => item.key !== 'list').every((item) => item.count === null)).toBe(true);
+  });
+});
+
+describe('buildHealthMetricsMembersDirectoryRows', () => {
+  function member(overrides: Partial<HealthMetricsMembersDirectoryMember> = {}): HealthMetricsMembersDirectoryMember {
+    return {
+      accountId: '0014100000AcmeDir1',
+      accountName: 'Acme Robotics',
+      membershipTier: 'Gold Membership',
+      annualDuesUsd: 89_500,
+      engagementLevel: 'Low',
+      engagementScore: 2.26,
+      npsCategory: 'Detractor',
+      isAtRisk: true,
+      renewalDate: '2027-01-11',
+      renewalDuesUsd: 95_000,
+      lastEngagedDate: '2026-02-03',
+      contributionCount: 1_204,
+      sponsorshipUsd: 12_499.6,
+      trainingEnrollmentCount: 0,
+      eventRegistrationCount: 7,
+      ...overrides,
+    };
+  }
+
+  it('formats a tracked member', () => {
+    const [row] = buildHealthMetricsMembersDirectoryRows([member()]);
+
+    expect(row).toMatchObject({
+      accountId: '0014100000AcmeDir1',
+      npsLabel: 'Detractor',
+      npsClass: 'bg-red-50 text-red-700',
+      isAtRisk: true,
+      tierLabel: 'Gold Membership',
+      duesLabel: '$89.5K',
+      engagementLabel: 'Low',
+      engagementDotClass: 'bg-red-600',
+      scoreLabel: '2.3',
+      renewsLabel: 'Jan 11, 2027',
+      renewalDuesLabel: '$95K',
+      lastEngagedLabel: 'Feb 3, 2026',
+    });
+    expect(row.activity).toEqual([
+      { key: 'contribution', label: '1,204', tracked: true },
+      { key: 'sponsorship', label: '$12.5K', tracked: true },
+      { key: 'training', label: '0', tracked: true },
+      { key: 'events', label: '7', tracked: true },
+    ]);
+  });
+
+  it('renders every missing value as a dash, and an untracked activity as not tracked rather than 0', () => {
+    const [row] = buildHealthMetricsMembersDirectoryRows([
+      member({
+        membershipTier: null,
+        annualDuesUsd: null,
+        engagementLevel: null,
+        engagementScore: null,
+        npsCategory: null,
+        isAtRisk: false,
+        renewalDate: null,
+        renewalDuesUsd: null,
+        lastEngagedDate: null,
+        contributionCount: null,
+        sponsorshipUsd: null,
+        trainingEnrollmentCount: null,
+        eventRegistrationCount: null,
+      }),
+    ]);
+
+    expect(row).toMatchObject({
+      npsLabel: null,
+      npsClass: '',
+      tierLabel: '—',
+      duesLabel: '—',
+      engagementLabel: '—',
+      engagementDotClass: '',
+      scoreLabel: '—',
+      renewsLabel: '—',
+      renewalDuesLabel: '—',
+      lastEngagedLabel: '—',
+    });
+    expect(row.activity.every((cell) => cell.label === '—' && !cell.tracked)).toBe(true);
+  });
+});
+
+describe('buildHealthMetricsMembersDirectorySummary', () => {
+  it('counts the members and the at-risk ones', () => {
+    expect(buildHealthMetricsMembersDirectorySummary(1_204, 12)).toBe('1,204 members · 12 at risk · highest dues first');
+  });
+
+  it('drops the at-risk part when none is at risk', () => {
+    expect(buildHealthMetricsMembersDirectorySummary(1, 0)).toBe('1 member · highest dues first');
+  });
+});
+
+describe('buildHealthMetricsMembersDirectorySearchPlaceholder', () => {
+  it('sizes the placeholder to the foundation', () => {
+    expect(buildHealthMetricsMembersDirectorySearchPlaceholder(725)).toBe('Search 725 members…');
   });
 });
 

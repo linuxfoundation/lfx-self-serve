@@ -8,6 +8,11 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
@@ -17,6 +22,7 @@ import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEventsOrganizationsSegment,
   HealthMetricsMembersMovementListType,
+  HealthMetricsMembersNpsCategory,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -32,7 +38,7 @@ import {
 } from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
-import { HealthMetricsMembersService } from '../services/health-metrics-members.service';
+import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -54,6 +60,9 @@ const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRIC
 
 /** Bridge bars whose organizations the Members movements list serves. */
 const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
+
+/** NPS categories the Members directory filter accepts. */
+const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
 
 /** A four-digit calendar year, the only shape the movements list's `year` accepts. */
 const YEAR_PATTERN = /^\d{4}$/;
@@ -3760,6 +3769,64 @@ export class AnalyticsController {
         movement_type: movementType,
         row_count: response.rows.length,
         total_records: response.totalRecords,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-directory` — one page of the foundation's members, with the period's activity. */
+  public async getMembersDirectory(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_directory');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_directory');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_members_directory');
+      if (!isSupportedMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'The members directory has no data for this range', { operation: 'get_members_directory' });
+      }
+
+      const nps = getStringQueryParam(req, 'nps') ?? '';
+      if (nps && !MEMBERS_DIRECTORY_NPS_CATEGORIES.has(nps)) {
+        throw ServiceValidationError.forField('nps', `Invalid nps value. Allowed: ${[...MEMBERS_DIRECTORY_NPS_CATEGORIES].join(', ')}`, {
+          operation: 'get_members_directory',
+        });
+      }
+
+      // Tiers are free text in the view, so the value is only bound, never matched against a list.
+      const tier = (getStringQueryParam(req, 'tier') ?? '').trim();
+      if (tier.length > HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH) {
+        throw ServiceValidationError.forField('tier', 'tier is too long', { operation: 'get_members_directory' });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getDirectory(req, {
+        foundationSlug,
+        range,
+        tier,
+        nps: nps as HealthMetricsMembersNpsCategory | '',
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text is left out of the log; member names are the only thing it can match.
+      logger.success(req, 'get_members_directory', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        has_tier: tier.length > 0,
+        nps: nps || null,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
       });
 
       res.json(response);

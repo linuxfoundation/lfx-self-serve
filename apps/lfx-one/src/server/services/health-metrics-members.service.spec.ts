@@ -22,6 +22,8 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -347,5 +349,176 @@ describe('HealthMetricsMembersService.getMovements', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getMovements(req, query)).rejects.toBe(failure);
+  });
+});
+
+describe('HealthMetricsMembersService.getDirectory', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, tier: '', nps: '' as const, search: '', offset: 0, pageSize: 10 };
+
+  function directoryRow(overrides: Record<string, unknown> = {}) {
+    return {
+      SCOPE_TOTAL: 725,
+      TOTAL_RECORDS: 16,
+      AT_RISK_COUNT: 27,
+      IS_PAGE_ROW: true,
+      ACCOUNT_ID: '0014100000AcmeAAAA',
+      ACCOUNT_NAME: 'Acme Motors',
+      MEMBERSHIP_TIER: 'Gold Membership',
+      ANNUAL_DUES_USD: 89500,
+      ENGAGEMENT_LEVEL: 'Low',
+      ENGAGEMENT_SCORE: 2.26,
+      NPS_CATEGORY: 'Detractor',
+      IS_AT_RISK: true,
+      RENEWAL_DATE: new Date(Date.UTC(2027, 0, 11)),
+      RENEWAL_DUES_USD: null,
+      LAST_ENGAGED_DATE: '2026-02-03',
+      CONTRIBUTION_COUNT: 12,
+      SPONSORSHIP_USD: 1250.5,
+      TRAINING_ENROLLMENT_COUNT: 0,
+      EVENT_REGISTRATION_COUNT: null,
+      ...overrides,
+    };
+  }
+
+  /** The page read and the tier read hit the same view in parallel; the tier read is the grouped one. */
+  function directoryRead(kind: 'page' | 'tiers'): [string, unknown[]] {
+    const call = execute.mock.calls.find(([sql]) => String(sql).includes('GROUP BY membership_tier') === (kind === 'tiers'));
+    if (!call) throw new Error(`No ${kind} read`);
+    return call as [string, unknown[]];
+  }
+
+  function respondDirectory(pageRows: unknown[], tierRows: unknown[] = [{ MEMBERSHIP_TIER: 'Gold Membership' }, { MEMBERSHIP_TIER: 'Silver Membership' }]) {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('GROUP BY membership_tier') ? tierRows : pageRows }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respondDirectory([directoryRow()]);
+  });
+
+  it('reads the period columns for the range and binds only the foundation when unfiltered', async () => {
+    for (const [range, suffix] of [
+      ['YTD', 'ytd'],
+      ['COMPLETED_YEAR', 'last_completed_year'],
+      ['COMPLETED_YEAR_2', 'prev_completed_year'],
+      ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
+    ] as const) {
+      execute.mockClear();
+      await new HealthMetricsMembersService().getDirectory(req, { ...query, range });
+
+      const [sql, binds] = directoryRead('page');
+      expect(binds).toEqual(['acme']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_DIRECTORY');
+      for (const column of ['contribution_count', 'sponsorship_usd', 'training_enrollment_count', 'event_registration_count']) {
+        expect(sql).toContain(`${column}_${suffix} AS ${column}`);
+      }
+      expect(sql).not.toMatch(/FROM scoped WHERE/);
+    }
+  });
+
+  it('binds tier, NPS and an escaped search in placeholder order', async () => {
+    await new HealthMetricsMembersService().getDirectory(req, { ...query, tier: 'Gold Membership', nps: 'Promoter', search: '50%_off!' });
+
+    const [sql, binds] = directoryRead('page');
+    expect(binds).toEqual(['acme', 'Gold Membership', 'Promoter', '%50!%!_off!!%']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain("WHERE membership_tier = ? AND nps_category = ? AND account_name ILIKE ? ESCAPE '!'");
+  });
+
+  it('counts the foundation and its at-risk members before the filters, and pages highest dues first', async () => {
+    await new HealthMetricsMembersService().getDirectory(req, query);
+
+    const [sql] = directoryRead('page');
+    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
+    expect(scoped).toContain('AND account_id IS NOT NULL');
+    expect(scoped).toContain("AND account_id <> ''");
+    expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
+    expect(sql).toContain('(SELECT COUNT_IF(is_at_risk) FROM scoped) AS at_risk_count');
+    expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).toContain('ORDER BY annual_dues_usd DESC NULLS LAST, engagement_score ASC NULLS LAST, account_id ASC');
+    expect(sql).toContain('LIMIT 10 OFFSET 0');
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('clamps an oversized page and offset before interpolating them', async () => {
+    await new HealthMetricsMembersService().getDirectory(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = directoryRead('page');
+    const size = HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE;
+    expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
+  });
+
+  it('reads the tier options highest-paying first, bound only to the foundation', async () => {
+    await new HealthMetricsMembersService().getDirectory(req, { ...query, tier: 'Gold Membership', search: 'acme' });
+
+    const [sql, binds] = directoryRead('tiers');
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain("AND membership_tier <> ''");
+    expect(sql).toContain('ORDER BY MAX(annual_dues_usd) DESC NULLS LAST, membership_tier ASC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP}`);
+  });
+
+  it('maps a member with ISO dates, and keeps untracked values null', async () => {
+    const response = await new HealthMetricsMembersService().getDirectory(req, query);
+
+    expect(response).toEqual({
+      totalRecords: 16,
+      scopeTotal: 725,
+      atRiskCount: 27,
+      tierOptions: ['Gold Membership', 'Silver Membership'],
+      rows: [
+        {
+          accountId: '0014100000AcmeAAAA',
+          accountName: 'Acme Motors',
+          membershipTier: 'Gold Membership',
+          annualDuesUsd: 89500,
+          engagementLevel: 'Low',
+          engagementScore: 2.26,
+          npsCategory: 'Detractor',
+          isAtRisk: true,
+          renewalDate: '2027-01-11',
+          renewalDuesUsd: null,
+          lastEngagedDate: '2026-02-03',
+          contributionCount: 12,
+          sponsorshipUsd: 1250.5,
+          trainingEnrollmentCount: 0,
+          eventRegistrationCount: null,
+        },
+      ],
+    });
+  });
+
+  it('drops an unknown engagement band or NPS category, and a blank tier or name', async () => {
+    respondDirectory(
+      [directoryRow({ ENGAGEMENT_LEVEL: 'Extreme', NPS_CATEGORY: 'Neutral', MEMBERSHIP_TIER: '', ACCOUNT_NAME: '', IS_AT_RISK: null })],
+      [{ MEMBERSHIP_TIER: null }, { MEMBERSHIP_TIER: 'Gold Membership' }]
+    );
+
+    const response = await new HealthMetricsMembersService().getDirectory(req, query);
+
+    expect(response.rows[0]).toMatchObject({
+      accountName: '0014100000AcmeAAAA',
+      membershipTier: null,
+      engagementLevel: null,
+      npsCategory: null,
+      isAtRisk: false,
+    });
+    expect(response.tierOptions).toEqual(['Gold Membership']);
+  });
+
+  it('keeps the totals when the page is past the end', async () => {
+    respondDirectory([{ SCOPE_TOTAL: 725, TOTAL_RECORDS: 16, AT_RISK_COUNT: 27, IS_PAGE_ROW: null, ACCOUNT_ID: null }]);
+
+    const response = await new HealthMetricsMembersService().getDirectory(req, query);
+
+    expect(response).toMatchObject({ rows: [], totalRecords: 16, scopeTotal: 725, atRiskCount: 27 });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getDirectory(req, query)).rejects.toBe(failure);
   });
 });
