@@ -864,12 +864,13 @@ export class CommitteeOverviewComponent {
   }
 
   private initActivityItems(): Signal<ActivityFeedItem[]> {
-    // Skip-for-visitor + distinctUntilChanged shape mirrors this component's other committee-scoped
-    // fetches: the feed (and everything else in the enclosing !isVisitor() block) never renders for
-    // a visitor, so this fetch should never fire for one either. Derived from one combined computed
-    // (not combineLatest over separate toObservable() sources) so committee/myRoleLoading/isVisitor —
-    // all recomputed together in the same signal flush — can't glitch through an inconsistent
-    // intermediate tick that fires then immediately cancels a request.
+    // Derived from one combined computed (not combineLatest over separate toObservable() sources)
+    // so committee/myRoleLoading/isVisitor — all recomputed together in the same signal flush —
+    // can't glitch through an inconsistent intermediate tick that fires then immediately cancels a
+    // request. Visitors now also fetch the feed (committee#viewer FGA grants the same document
+    // access as the group page itself), but their result is filtered to meeting + document events
+    // only — votes, surveys, and notes are member-only content. The feed section in the template
+    // is visible to all, so the previous visitor short-circuit that returned [] early is removed.
     return toSignal(
       toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
@@ -882,13 +883,15 @@ export class CommitteeOverviewComponent {
             // can't have already cleared it out from under us.
             return EMPTY;
           }
-          if (visitor) {
-            this.activityFeedLoading.set(false);
-            return of<ActivityFeedItem[]>([]);
-          }
           this.activityFeedLoading.set(true);
           return this.committeeService.getCommitteeActivity(committee.uid).pipe(
-            map((events) => mapActivityEventsToFeedItems(events, { votingEnabled: !!committee.enable_voting })),
+            map((events) => {
+              const items = mapActivityEventsToFeedItems(events, { votingEnabled: !!committee.enable_voting });
+              // Visitors only see meeting and document events — votes, surveys, and notes contain
+              // member-facing content (vote/survey names can be sensitive) and their click-actions
+              // route to member-only tabs anyway.
+              return visitor ? items.filter((item) => item.type === 'past_meeting' || item.type === 'document') : items;
+            }),
             tap(() => this.activityFeedLoading.set(false)),
             // CommitteeService.getCommitteeActivity already falls back to of([]) on failure, so this
             // catchError is a belt-and-suspenders guard against that coupling changing underneath

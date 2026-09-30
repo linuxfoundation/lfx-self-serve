@@ -366,7 +366,11 @@ export class CommitteeViewComponent {
     // Visitors see the Meetings tab when the group's calendar is marked public.
     { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public },
     { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
-    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
+    // Visitors can see the Documents tab — committee#viewer FGA (the same check that gates the
+    // group page itself) also governs /committees/:id/folders, /links, and committee_document
+    // query-service resources, so a viewer of a public committee already has read access to all
+    // three document sub-types. No separate document-level visibility flag exists in the model.
+    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => true },
     { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
   ];
 
