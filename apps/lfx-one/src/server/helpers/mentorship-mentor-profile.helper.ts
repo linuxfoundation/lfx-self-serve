@@ -3,6 +3,7 @@
 
 import {
   MentorshipMentoringHistoryEntry,
+  MentorshipMentoringHistoryGroup,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileDetails,
   MentorshipUpstreamMentorDetail,
@@ -12,14 +13,6 @@ import {
 
 import { chooseMentorshipMentorTerm, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
 import { asRecord, asString, asStringArray } from './mentorship-profile-columns.helper';
-
-/** One (program name, term name) pair of the history while it is built. */
-interface HistoryGroup {
-  programName: string;
-  term: string;
-  menteeIds: Set<string>;
-  hasCurrentMentee: boolean;
-}
 
 /** Latest start first; a row with no start sorts after every row with one. */
 const byStartDescending = (a: number | undefined, b: number | undefined): number => {
@@ -52,8 +45,8 @@ export const mapMentorshipMentorProfileDetails = (profile: MentorshipUpstreamUse
 export const mapMentorshipMentoringHistory = (detail: MentorshipUpstreamMentorDetail | undefined, now: Date): MentorshipMentoringHistoryEntry[] => {
   if (!detail) return [];
 
-  const groups = new Map<string, HistoryGroup>();
-  const group = (programName: string, term: string): HistoryGroup => {
+  const groups = new Map<string, MentorshipMentoringHistoryGroup>();
+  const group = (programName: string, term: string): MentorshipMentoringHistoryGroup => {
     const key = JSON.stringify([programName, term]);
     let entry = groups.get(key);
     if (!entry) {

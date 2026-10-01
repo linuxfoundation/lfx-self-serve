@@ -277,6 +277,14 @@ export interface MentorshipMentoringHistoryEntry {
   status: MentorshipMentoringHistoryStatus;
 }
 
+/** One (program name, term name) pair of the Mentoring History while the BFF builds it. */
+export interface MentorshipMentoringHistoryGroup {
+  programName: string;
+  term: string;
+  menteeIds: Set<string>;
+  hasCurrentMentee: boolean;
+}
+
 /** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
 export interface MentorshipMentorProfileDetails {
   /** Rich-text HTML or plain text authored on the Become a Mentor form. */
