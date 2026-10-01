@@ -88,4 +88,4 @@ export const mapMentorshipMentorProgramCard = (
 /** My Programs order: active terms, then upcoming, then completed, each by program name. */
 export const compareMentorshipMentorProgramCards = (a: MentorshipMentorProgram, b: MentorshipMentorProgram): number =>
   MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER.indexOf(a.termStatus) - MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER.indexOf(b.termStatus) ||
-  a.name.localeCompare(b.name);
+  a.name.localeCompare(b.name, 'en-US');
