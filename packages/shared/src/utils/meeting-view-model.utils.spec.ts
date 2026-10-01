@@ -393,6 +393,20 @@ describe('resolveVisibleSections', () => {
     expect(sections.rsvpAvatarBadges).toBe(true);
   });
 
+  it('hides the RSVP surfaces with the roster on an ended meeting without artifact access', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'registrant',
+    });
+    expect(sections.people).toBe(false);
+    expect(sections.rsvpSummary).toBe(false);
+    expect(sections.rsvpRosterFilter).toBe(false);
+    expect(sections.rsvpAvatarBadges).toBe(false);
+  });
+
   it('withholds the RSVP surfaces from an outsider even when tracking is on', () => {
     const sections = resolveVisibleSections({
       fullAccess: false,

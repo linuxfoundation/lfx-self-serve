@@ -144,7 +144,9 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
   // `hasArtifactAccess` is the same rule {@link resolveEndedActionSlot} applies, shared rather
   // than restated: if the rail resolves to `tools`, the sections it points at must be visible.
   const contentVisible = !ended || hasArtifactAccess(input.viewerRole, input.fullAccess);
-  const rsvpVisible = input.inviteResponsesEnabled && onTheMeeting;
+  // RSVP surfaces are roster chrome, so they follow the roster: gated on artifact access for a past
+  // meeting exactly like `people`, never shown over a roster this same result hides.
+  const rsvpVisible = input.inviteResponsesEnabled && onTheMeeting && contentVisible;
 
   return {
     agenda: contentVisible,

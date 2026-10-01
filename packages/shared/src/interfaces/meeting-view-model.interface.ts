@@ -80,8 +80,8 @@ export interface MeetingViewerContext {
  * Inputs to `resolveActionSlot`.
  *
  * The viewer's own RSVP answer is deliberately not here: it changes what the RSVP card *shows*,
- * never which kind the rail renders. It belongs to the card, and to
- * {@link MeetingSectionVisibilityInput}, not to this decision.
+ * never which kind the rail renders. It belongs to the RSVP card's own input (E2-04 / E2-05), not
+ * to this decision or to section visibility.
  */
 export interface ActionSlotInput {
   /**
