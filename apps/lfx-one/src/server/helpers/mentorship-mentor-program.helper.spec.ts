@@ -174,6 +174,18 @@ describe('mapMentorshipMentorProgramCard', () => {
     });
   });
 
+  it('keeps the calendar date a term date was written with, whatever its offset', () => {
+    const card = mapMentorshipMentorProgramCard(
+      program,
+      {},
+      { term: term('x', 'open', '2026-09-01T00:00:00+05:00', '2026-12-15T20:00:00-08:00'), termStatus: 'active-term' },
+      sortMentorshipMentorProgramRows([], [])
+    );
+
+    expect(card.termStartDate).toBe('2026-09-01');
+    expect(card.termEndDate).toBe('2026-12-15');
+  });
+
   it('drops a term date that does not parse', () => {
     const card = mapMentorshipMentorProgramCard(
       program,

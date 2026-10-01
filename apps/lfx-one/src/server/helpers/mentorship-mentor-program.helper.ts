@@ -13,6 +13,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 
 import { MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES, MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER } from '../constants';
+import { toIsoDate } from './date-format.helper';
 import { isMentorshipMentorTermUnderway, latestStartingMentorshipMentorTerm, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
 
 /** The open term that starts first; a term with no start loses to any term with one. Ties keep the first. */
@@ -58,12 +59,6 @@ export const sortMentorshipMentorProgramRows = (
     (task) => task.status === 'submitted' && task.application_id !== undefined && acceptedApplicationIds.has(task.application_id)
   );
   return { mentees, applicants: [...applications], tasksToReview };
-};
-
-/** The `YYYY-MM-DD` date of an RFC 3339 instant, in UTC, or `undefined` when it is missing or does not parse. */
-const toIsoDate = (value?: string): string | undefined => {
-  const ms = value ? Date.parse(value) : Number.NaN;
-  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : undefined;
 };
 
 /** One My Programs card, from the mentor's program, the program's own record, the chosen term and its rows. */

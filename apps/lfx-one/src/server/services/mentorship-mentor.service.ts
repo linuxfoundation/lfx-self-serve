@@ -357,12 +357,20 @@ export class MentorshipMentorService {
 
   /**
    * One My Programs card. The program's own record carries its project name. The chosen term's applications
-   * and submitted tasks are read in full alongside it; with no term there is nothing to count.
+   * and submitted tasks are read in full alongside it; with no term there is nothing to count. The program and
+   * term ids come from upstream and go into paths, so an id that is not a UUID fails the list with a 502.
    */
   private async buildMentorProgramCard(req: Request, program: MentorshipUpstreamMentorProgram, now: Date): Promise<MentorshipMentorProgram> {
-    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(program.id)}`;
     const choice = chooseMentorshipMentorProgramTerm(program.terms ?? [], now);
     const termId = choice.term?.id;
+    if (!isUuid(program.id) || (termId !== undefined && !isUuid(termId))) {
+      throw new MicroserviceError('The mentorship service returned a program or term without a valid id', 502, 'MENTORSHIP_INVALID_PROGRAM', {
+        operation: 'mentorship_get_mentor_programs',
+        service: 'mentorship',
+      });
+    }
+
+    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(program.id)}`;
     const [record, applications, tasks] = await Promise.all([
       proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
       termId

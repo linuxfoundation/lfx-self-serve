@@ -592,6 +592,19 @@ describe('MentorshipMentorService.getMentorPrograms', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['program', program('..', 'GridFlow', [])],
+    ['term', program(GRIDFLOW_ID, 'GridFlow', [{ id: '../tasks', name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }])],
+  ])('refuses a %s id from upstream that is not a UUID before building a path from it', async (_kind, mentorProgram) => {
+    answer({
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => detailWith([mentorProgram]),
+    });
+
+    await expect(service.getMentorPrograms(buildReq())).rejects.toMatchObject({ statusCode: 502, code: 'MENTORSHIP_INVALID_PROGRAM' });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
   it.each([403, 404])("propagates upstream's %i on a program's rows rather than show counts it could not read", async (status) => {
     const error = upstreamError(status, { error: 'denied' });
     answer({
