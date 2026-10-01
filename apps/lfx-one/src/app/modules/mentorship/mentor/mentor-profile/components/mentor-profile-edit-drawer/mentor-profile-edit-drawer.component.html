@@ -70,10 +70,6 @@
 
         <lfx-mentorship-skills-picker [form]="form" label="Which of your skills should we feature?" idPrefix="mentor-profile-edit" [error]="errors().skills" />
       </div>
-
-      <hr class="border-gray-200" />
-
-      <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" [bordered]="false" idPrefix="mentor-profile-edit-resume" />
     </div>
 
     <!-- Kept next to the actions, not at the top of the body: Save sits below a long scrolling form, so an error at the top would render off-screen. -->

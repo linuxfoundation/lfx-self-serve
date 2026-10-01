@@ -218,7 +218,7 @@ export class MentorshipMenteeService {
   /**
    * Saves the changed groups of the signed-in user's mentee profile. Upstream keeps every column the body
    * omits and replaces a JSON column whole, so only the groups the caller changed are forwarded, and never
-   * `profile_links` (the resume is not editable yet). When a JSON column is among them, the stored row is
+   * `profile_links`. When a JSON column is among them, the stored row is
    * read first and each column is layered over its stored value, so keys this BFF does not model survive;
    * a failed read propagates rather than risk dropping them. The two calls are not atomic, so an edit made
    * elsewhere in between can be overwritten. The response is the re-mapped row: no history, since the caller

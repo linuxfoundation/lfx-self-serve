@@ -34,7 +34,7 @@ class StubProfileCardComponent {
 
 /**
  * Stub out the drawer to avoid pulling in its child components (PrimeNG drawer, rich editor,
- * skills picker, resume section). The drawer's own spec covers its behavior.
+ * skills picker). The drawer's own spec covers its behavior.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile-edit-drawer',
@@ -49,8 +49,6 @@ describe('MentorProfileComponent', () => {
     profile: {
       aboutMe: 'Maintainer working on telemetry.',
       skills: ['Python', 'Go'],
-      resumeFileName: 'test-mentor-resume.pdf',
-      resumeUrl: 'https://example.com/resume.pdf',
     },
     history: [{ id: 'mh_active', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' }],
   };

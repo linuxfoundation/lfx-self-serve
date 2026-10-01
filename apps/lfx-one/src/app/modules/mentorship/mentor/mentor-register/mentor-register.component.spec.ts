@@ -153,9 +153,10 @@ describe('MentorRegisterComponent', () => {
   });
 
   it('renders every section of the registration form', () => {
-    for (const section of ['programs', 'introduction', 'skills', 'resume', 'compliance']) {
+    for (const section of ['programs', 'introduction', 'skills', 'compliance']) {
       expect(element().querySelector(`[data-testid="mentorship-mentor-${section}"]`)).not.toBeNull();
     }
+    expect(element().querySelector('[data-testid="mentorship-mentor-resume"]')).toBeNull();
     expect(element().querySelector('#mentorship-mentor-terms-text')).not.toBeNull();
   });
 
@@ -197,10 +198,9 @@ describe('MentorRegisterComponent', () => {
     expect(registerMentorProfile).not.toHaveBeenCalled();
   });
 
-  it('sends the built request once, without the resume file name that has no upload yet', async () => {
+  it('sends the built request once', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fillValidForm();
-    component['form'].controls.resumeFileName.setValue('resume.pdf');
 
     await submit();
 

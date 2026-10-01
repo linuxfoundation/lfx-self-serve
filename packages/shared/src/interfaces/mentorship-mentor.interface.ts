@@ -100,13 +100,11 @@ export interface MentorshipMentorOpenProgramsState {
 
 /**
  * Become a Mentor form state. Name, email, and avatar are not here — they come from the
- * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
- * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
+ * signed-in LFX account.
  */
 export interface MentorshipMentorRegisterForm {
   introduction: string;
   skills: string[];
-  resumeFileName: string;
   complianceAccepted: boolean;
   termsAccepted: boolean;
 }
@@ -122,8 +120,8 @@ export interface MentorshipMentorRegisterFieldErrors extends MentorshipMentorPro
 }
 
 /**
- * Body of `POST /api/mentorship/mentor/profile`. Program requests and the resume are not part of
- * it: requests are sent separately, and there is no upload endpoint yet. `lfxProfile` carries the
+ * Body of `POST /api/mentorship/mentor/profile`. Program requests are not part of it: they are
+ * sent separately. `lfxProfile` carries the
  * name and avatar the profile card shows; it is omitted when the card had none to give. The BFF
  * adds the primary email itself.
  */
@@ -284,10 +282,6 @@ export interface MentorshipMentorProfileDetails {
   /** Rich-text HTML or plain text authored on the Become a Mentor form. */
   aboutMe: string;
   skills: string[];
-  /** Optional resume file name, matching the picker on the register form. */
-  resumeFileName?: string;
-  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
-  resumeUrl?: string;
 }
 
 /** Full response body from `GET /api/mentorship/mentor/profile`. */
@@ -307,8 +301,7 @@ export interface MentorshipMentorProfileFieldErrors {
 
 /**
  * Body of `PATCH /api/mentorship/mentor/profile`. Only the fields the mentor changed are sent, and at
- * least one must be. `introduction` is the rich-text HTML the editor produces. The resume is not part
- * of it: there is no upload endpoint yet.
+ * least one must be. `introduction` is the rich-text HTML the editor produces.
  */
 export interface MentorshipMentorProfileUpdateRequest {
   introduction?: string;

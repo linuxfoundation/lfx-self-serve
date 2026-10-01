@@ -33,8 +33,6 @@ const MENTOR_PROFILE_URL = '/mentorship/mentor/profile';
 const STORED_PROFILE: MentorshipMentorProfileDetails = {
   aboutMe: '<p>Test User 1 mentor introduction.</p>',
   skills: ['Kubernetes'],
-  resumeFileName: null,
-  resumeUrl: null,
 };
 
 interface ProfileStub {

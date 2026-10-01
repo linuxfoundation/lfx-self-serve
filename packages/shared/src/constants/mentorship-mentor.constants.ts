@@ -330,8 +330,6 @@ export const MENTORSHIP_MENTOR_INTRODUCTION_MAX = 3000;
 
 export const MENTORSHIP_MENTOR_SKILLS_INTRO = 'What are the skills that you are respected and known for? This helps match you with the right candidates.';
 
-export const MENTORSHIP_MENTOR_RESUME_INTRO = 'Optional, but candidates often look you up before applying.';
-
 export const MENTORSHIP_MENTOR_TERMS_INTRO =
   'Before you submit your mentor registration to the LFX Platform, review and accept the terms and conditions below.';
 
@@ -345,38 +343,6 @@ export const MENTORSHIP_MENTOR_COMPLIANCE_ITEMS: readonly string[] = [
   'owned or controlled by, acting for or on behalf of, or an individual or entity that has in the past acted for or on behalf of the Government of Cuba, Iran, North Korea, Syria, or Venezuela; or',
   "listed as a blocked person by the U.S. Department of the Treasury's Office of Foreign Assets Control (OFAC), or directly or indirectly owned 50 percent or more by such a listed person.",
 ];
-
-/**
- * The accepted resume formats, and the single source the rest of this block derives
- * from. `isMentorshipResumeFileName` validates against this list, so adding a format
- * here reaches the validator, the file-picker filter, and both user-facing strings at
- * once rather than leaving three of them behind.
- */
-export const MENTORSHIP_MENTOR_RESUME_EXTENSIONS = ['pdf', 'doc', 'docx'] as const;
-export const MENTORSHIP_MENTOR_RESUME_MAX_BYTES = 10 * 1024 * 1024;
-
-const RESUME_MAX_MB = MENTORSHIP_MENTOR_RESUME_MAX_BYTES / (1024 * 1024);
-const RESUME_DOTTED = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => `.${extension}`);
-const RESUME_UPPERCASE = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => extension.toUpperCase());
-
-/**
- * MIME type per accepted format, because macOS Finder filters on MIME type rather than
- * suffix. Typed against the extension list so a new format cannot be added there without
- * a type on this side too — leaving one out is what made Word documents unselectable.
- */
-const RESUME_MIME_TYPES: Record<(typeof MENTORSHIP_MENTOR_RESUME_EXTENSIONS)[number], string> = {
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-};
-
-/** The `accept` filter for the hidden file input: every extension and its MIME type. */
-export const MENTORSHIP_MENTOR_RESUME_ACCEPT = [...RESUME_DOTTED, ...Object.values(RESUME_MIME_TYPES)].join(',');
-
-export const MENTORSHIP_MENTOR_RESUME_HELPER = `File type: ${RESUME_UPPERCASE.join(', ')} · Max size: ${RESUME_MAX_MB} MB`;
-export const MENTORSHIP_MENTOR_RESUME_TYPE_ERROR = `Please upload a ${RESUME_UPPERCASE.slice(0, -1).join(', ')}, or ${RESUME_UPPERCASE.at(-1)} file.`;
-export const MENTORSHIP_MENTOR_RESUME_SIZE_ERROR = `File must be ${RESUME_MAX_MB} MB or smaller.`;
-export const MENTORSHIP_MENTOR_RESUME_EMPTY_LABEL = 'Choose file';
 
 /**
  * Request statuses as the mentor sees them. Spread from the admin labels so the two can
@@ -489,7 +455,6 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
   return {
     introduction: '',
     skills: [],
-    resumeFileName: '',
     complianceAccepted: false,
     termsAccepted: false,
   };
@@ -497,24 +462,15 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
 
 /**
  * Copy for the standalone Mentor Profile page at `/mentorship/mentor/profile`.
- * Sections mirror the Become a Mentor registration form: about-me introduction,
- * skills tags, and the picked resume file, plus a read-only mentoring history.
+ * Sections mirror the Become a Mentor registration form: about-me introduction and
+ * skills tags, plus a read-only mentoring history.
  */
 export const MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE = 'Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL = 'Edit Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'About Me';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL = 'Skills';
-export const MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
-export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
-/**
- * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
- * the two fields are independently optional in `MentorshipMentorProfileDetails`, so the
- * UI needs a readable label when only the URL is present rather than falling into the
- * "No resume uploaded yet." empty state.
- */
-export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
 /**
  * Copy for the mentor profile edit drawer — the slide-in panel opened from the
@@ -557,6 +513,6 @@ export const MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES: Record<Mentorshi
 };
 
 export const EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE: MentorshipMentorProfileResponse = {
-  profile: { aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined },
+  profile: { aboutMe: '', skills: [] },
   history: [],
 };

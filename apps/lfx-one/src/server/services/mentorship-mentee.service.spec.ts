@@ -669,8 +669,6 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
         skillsHave: ['Go'],
         skillsWant: ['Rust'],
         additionalNotes: 'Test notes.',
-        resumeUrl: 'https://example.com/files/test-resume.pdf',
-        resumeFileName: 'test-resume.pdf',
       },
       demographics: { age: '20-39', gender: 'female', raceEthnicity: 'asian', income: 'workingClass', education: 'college' },
     });

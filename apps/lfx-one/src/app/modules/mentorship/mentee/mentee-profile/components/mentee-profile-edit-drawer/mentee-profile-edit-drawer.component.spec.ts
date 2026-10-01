@@ -12,7 +12,6 @@ import {
   MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX,
   MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE,
-  MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY,
   MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
@@ -30,7 +29,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ButtonComponent } from '../../../../../../shared/components/button/button.component';
 import { TextareaComponent } from '../../../../../../shared/components/textarea/textarea.component';
-import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
 import { DrawerModule } from 'primeng/drawer';
 import { MenteeProfileEditDrawerComponent } from './mentee-profile-edit-drawer.component';
@@ -41,8 +39,6 @@ const PROFILE: MentorshipMenteeProfileDetails = {
   skillsHave: ['Go', 'Python'],
   skillsWant: ['Kubernetes'],
   additionalNotes: 'Comfortable working asynchronously.',
-  resumeFileName: 'resume.pdf',
-  resumeUrl: 'https://example.com/resume.pdf',
 };
 
 /* eslint-disable @angular-eslint/component-selector */
@@ -79,15 +75,6 @@ class StubSkillsPickerComponent {
   readonly idPrefix = input('');
   readonly control = input('skills');
   readonly error = input<string | undefined>(undefined);
-}
-
-@Component({ selector: 'lfx-mentorship-resume-section', template: '' })
-class StubResumeSectionComponent {
-  readonly form = input<FormGroup>();
-  readonly intro = input('');
-  readonly bordered = input(true);
-  readonly comingSoonSummary = input<string | null>(null);
-  readonly idPrefix = input('');
 }
 
 @Component({ selector: 'lfx-button', template: '' })
@@ -144,10 +131,10 @@ describe('MenteeProfileEditDrawerComponent', () => {
     })
       .overrideComponent(MenteeProfileEditDrawerComponent, {
         remove: {
-          imports: [DrawerModule, ButtonComponent, TextareaComponent, SkillsPickerComponent, ResumeSectionComponent],
+          imports: [DrawerModule, ButtonComponent, TextareaComponent, SkillsPickerComponent],
         },
         add: {
-          imports: [StubDrawerComponent, StubTextareaComponent, StubSkillsPickerComponent, StubResumeSectionComponent, StubButtonComponent],
+          imports: [StubDrawerComponent, StubTextareaComponent, StubSkillsPickerComponent, StubButtonComponent],
         },
       })
       .compileComponents();
@@ -167,7 +154,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(raw.skillsHave).toEqual(PROFILE.skillsHave);
     expect(raw.skillsWant).toEqual(PROFILE.skillsWant);
     expect(raw.additionalNotes).toBe(PROFILE.additionalNotes);
-    expect(raw.resumeFileName).toBe(PROFILE.resumeFileName);
+    expect(raw).not.toHaveProperty('resumeFileName');
   });
 
   it('preserves paragraph breaks when seeding a multi-paragraph introduction', () => {
@@ -231,28 +218,16 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['form'].controls.introduction.value).toBe(`${'a'.repeat(900)}${filler}`);
   });
 
-  it('emits valueChanges when seeding so skills pickers and resume receive the profile', () => {
+  it('emits valueChanges when seeding so skills pickers receive the profile', () => {
     const emitted: unknown[] = [];
     const sub = comp['form'].valueChanges.subscribe((value) => emitted.push(value));
 
-    drawer.open({ ...PROFILE, skillsHave: ['Rust'], resumeFileName: 'seeded-resume.pdf' });
+    drawer.open({ ...PROFILE, skillsHave: ['Rust'] });
     fixture.detectChanges();
     sub.unsubscribe();
 
     expect(emitted.length).toBeGreaterThan(0);
-    expect(emitted[emitted.length - 1]).toEqual(
-      expect.objectContaining({
-        skillsHave: ['Rust'],
-        resumeFileName: 'seeded-resume.pdf',
-      })
-    );
-  });
-
-  it('derives the resume filename from the URL when the profile has no resumeFileName', () => {
-    drawer.open({ ...PROFILE, resumeFileName: undefined, resumeUrl: 'https://example.com/files/url-only-resume.pdf' });
-    fixture.detectChanges();
-
-    expect(comp['form'].controls.resumeFileName.value).toBe('url-only-resume.pdf');
+    expect(emitted[emitted.length - 1]).toEqual(expect.objectContaining({ skillsHave: ['Rust'] }));
   });
 
   it('does not close or toast when Save is pressed with empty required skill pickers', () => {
@@ -294,7 +269,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
       expect(drawer.isOpen()).toBe(false);
     });
 
-    it('sends only skillSet when only the skills changed, and never the introduction, demographics or resume', () => {
+    it('sends only skillSet when only the skills changed, and never the introduction or demographics', () => {
       comp['form'].controls.skillsHave.setValue(['Go', 'Python', 'Rust']);
 
       comp['onSave']();
@@ -323,8 +298,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
       expect(updateMenteeProfile).toHaveBeenCalledWith({ introduction: '' });
     });
 
-    it('never sends the resume filename or a profile link', () => {
-      comp['form'].controls.resumeFileName.setValue('renamed-resume.pdf');
+    it('never sends a profile link', () => {
       comp['form'].controls.additionalNotes.setValue('Weekends only.');
 
       comp['onSave']();
@@ -542,10 +516,6 @@ describe('MenteeProfileEditDrawerComponent', () => {
     });
   });
 
-  it('keeps the resume inert with the coming-soon summary', () => {
-    expect(stub<StubResumeSectionComponent>('lfx-mentorship-resume-section').comingSoonSummary()).toBe(MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY);
-  });
-
   it('closes the drawer on cancel without a toast', () => {
     comp['onCancel']();
 
@@ -592,11 +562,11 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['saveLabel']).toBe(MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL);
   });
 
-  it('renders About Me, both skill pickers, additional notes, and resume', () => {
+  it('renders About Me, both skill pickers and additional notes, with no resume', () => {
     expect(element().querySelector('[data-testid="mentee-profile-edit-about"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-profile-edit-skills"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-profile-edit-additional-notes"]')).toBeTruthy();
     expect(element().querySelectorAll('lfx-mentorship-skills-picker').length).toBe(2);
-    expect(element().querySelector('lfx-mentorship-resume-section')).toBeTruthy();
+    expect(element().querySelector('[data-testid^="mentee-profile-edit-resume"]')).toBeNull();
   });
 });

@@ -72,7 +72,7 @@ export const parseMentorshipMentorRegisterRequest = (body: unknown): MentorshipM
  * checked by `parseMentorshipMentorRegisterRequest` and goes no further. The name and logo are the
  * LFX profile's, each sent only when the card had it; `email` is the resolved primary email, sent
  * only when there is one. Phone and slug are not sent: an unset slug cannot collide with another
- * profile's. The resume is not sent either, since there is no upload yet.
+ * profile's.
  */
 export const buildMentorshipUpstreamMentorProfile = (request: MentorshipMentorRegisterRequest, email?: string): MentorshipUpstreamMentorProfileInput => ({
   ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),

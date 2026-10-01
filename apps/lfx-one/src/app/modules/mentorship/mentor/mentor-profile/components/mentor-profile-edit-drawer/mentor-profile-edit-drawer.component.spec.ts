@@ -22,7 +22,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ButtonComponent } from '../../../../../../shared/components/button/button.component';
 import { RichEditorComponent } from '../../../../../../shared/components/rich-editor/rich-editor.component';
-import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
 import { MentorProfileSaveService } from '../../../../services/mentor-profile-save.service';
 import { MentorProgramRequestService } from '../../../../services/mentor-program-request.service';
@@ -35,8 +34,6 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
 const PROFILE: MentorshipMentorProfileDetails = {
   aboutMe: '<p>Hello world</p>',
   skills: ['Kubernetes', 'Angular'],
-  resumeFileName: 'resume.pdf',
-  resumeUrl: 'https://example.com/resume.pdf',
 };
 
 const PROGRAMS: MentorshipMentorOpenProgram[] = [
@@ -96,14 +93,6 @@ class StubSkillsPickerComponent {
   readonly label = input('');
   readonly idPrefix = input('');
   readonly error = input<string | undefined>(undefined);
-}
-
-@Component({ selector: 'lfx-mentorship-resume-section', template: '' })
-class StubResumeSectionComponent {
-  readonly form = input<FormGroup>();
-  readonly intro = input('');
-  readonly bordered = input(true);
-  readonly idPrefix = input('');
 }
 
 @Component({ selector: 'lfx-button', template: '' })
@@ -179,15 +168,7 @@ describe('MentorProfileEditDrawerComponent', () => {
     })
       .overrideComponent(MentorProfileEditDrawerComponent, {
         remove: {
-          imports: [
-            ConfirmDialogModule,
-            DrawerModule,
-            ButtonComponent,
-            RichEditorComponent,
-            MentorProgramsSectionComponent,
-            SkillsPickerComponent,
-            ResumeSectionComponent,
-          ],
+          imports: [ConfirmDialogModule, DrawerModule, ButtonComponent, RichEditorComponent, MentorProgramsSectionComponent, SkillsPickerComponent],
         },
         add: {
           imports: [
@@ -196,7 +177,6 @@ describe('MentorProfileEditDrawerComponent', () => {
             StubProgramsSectionComponent,
             StubRichEditorComponent,
             StubSkillsPickerComponent,
-            StubResumeSectionComponent,
             StubButtonComponent,
           ],
         },
@@ -218,7 +198,7 @@ describe('MentorProfileEditDrawerComponent', () => {
 
     expect(raw.introduction).toBe(PROFILE.aboutMe);
     expect(raw.skills).toEqual(PROFILE.skills);
-    expect(raw.resumeFileName).toBe(PROFILE.resumeFileName);
+    expect(raw).not.toHaveProperty('resumeFileName');
   });
 
   // --- Save / Cancel ---
@@ -335,7 +315,7 @@ describe('MentorProfileEditDrawerComponent', () => {
     const body = element().querySelector('[data-testid="mentor-profile-edit-drawer-body"]');
     const hrs = body?.querySelectorAll('hr.border-gray-200');
 
-    expect(hrs?.length).toBe(3);
+    expect(hrs?.length).toBe(2);
   });
 
   it('renders the save and cancel action buttons', () => {
@@ -360,11 +340,11 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).not.toBeNull();
   });
 
-  it('renders all four content sections', () => {
+  it('renders the programs, introduction and skills sections, with no resume', () => {
     expect(element().querySelector('lfx-mentorship-mentor-programs-section')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentor-profile-edit-introduction"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentor-profile-edit-skills"]')).toBeTruthy();
-    expect(element().querySelector('lfx-mentorship-resume-section')).toBeTruthy();
+    expect(element().querySelector('[data-testid^="mentor-profile-edit-resume"]')).toBeNull();
   });
 
   // --- Program requests ---

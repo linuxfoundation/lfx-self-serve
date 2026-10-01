@@ -11,7 +11,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 
 import { chooseMentorshipMentorTerm, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
-import { asRecord, asString, asStringArray, mapMentorshipProfileResume } from './mentorship-profile-columns.helper';
+import { asRecord, asString, asStringArray } from './mentorship-profile-columns.helper';
 
 /** One (program name, term name) pair of the history while it is built. */
 interface HistoryGroup {
@@ -33,7 +33,6 @@ const byStartDescending = (a: number | undefined, b: number | undefined): number
 export const mapMentorshipMentorProfileDetails = (profile: MentorshipUpstreamUserProfile): MentorshipMentorProfileDetails => ({
   aboutMe: asString(profile.introduction) ?? '',
   skills: asStringArray(asRecord(profile.skill_set)?.['skills']),
-  ...mapMentorshipProfileResume(profile),
 });
 
 /**

@@ -14,7 +14,6 @@ import {
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
@@ -138,9 +137,10 @@ describe('MenteeRegisterComponent', () => {
   it('renders every top-level section of the registration form', () => {
     // The sections' `data-testid`s are what the design and the E2E specs anchor to;
     // a rename here is a UX break, not a refactor.
-    for (const section of ['introduction', 'skills', 'resume', 'demographics', 'eligibility', 'compliance']) {
+    for (const section of ['introduction', 'skills', 'demographics', 'eligibility', 'compliance']) {
       expect(byTestId(`mentorship-mentee-${section}`)).not.toBeNull();
     }
+    expect(byTestId('mentorship-mentee-resume')).toBeNull();
     expect(element().querySelector('#mentorship-mentee-terms-text')).not.toBeNull();
   });
 
@@ -221,12 +221,11 @@ describe('MenteeRegisterComponent', () => {
     expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'warn' });
   });
 
-  it('sends the built request once, with the consented demographics and no resume', async () => {
+  it('sends the built request once, with the consented demographics', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fillValidForm();
     component['form'].patchValue({
       additionalNotes: '  Test notes  ',
-      resumeFileName: 'test-resume.pdf',
       ageConsent: true,
       age: '20-39',
       genderConsent: false,
@@ -249,7 +248,6 @@ describe('MenteeRegisterComponent', () => {
       complianceAccepted: true,
       termsAccepted: true,
     });
-    expect(JSON.stringify(request)).not.toContain('test-resume.pdf');
   });
 
   it('sends the name and picture the profile card shows with the registration', async () => {
@@ -368,13 +366,6 @@ describe('MenteeRegisterComponent', () => {
     expect(registerMenteeProfile).toHaveBeenCalledTimes(1);
     expect(registerMenteeProfile.mock.calls[0][0]).not.toHaveProperty('demographics');
     expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success' });
-  });
-
-  it('keeps resume upload coming-soon: Browse toasts and the file input is disabled', () => {
-    byTestId('mentorship-mentee-resume-browse')?.querySelector('button')?.click();
-
-    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY }));
-    expect((byTestId('mentorship-mentee-resume-file') as HTMLInputElement).disabled).toBe(true);
   });
 
   it('sends Cancel back to the mentorship admin page', () => {

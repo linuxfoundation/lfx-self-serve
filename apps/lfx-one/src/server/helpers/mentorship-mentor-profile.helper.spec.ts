@@ -17,7 +17,12 @@ const program = (name: string, terms: MentorshipUpstreamMentorProgram['terms']):
   terms,
 });
 
-const mentee = (userId: string, programName: string, termName: string, status: MentorshipUpstreamMentorMentee['status'] = 'active'): MentorshipUpstreamMentorMentee => ({
+const mentee = (
+  userId: string,
+  programName: string,
+  termName: string,
+  status: MentorshipUpstreamMentorMentee['status'] = 'active'
+): MentorshipUpstreamMentorMentee => ({
   user_id: userId,
   program_name: programName,
   term_name: termName,
@@ -36,18 +41,17 @@ const detail = (overrides: Partial<MentorshipUpstreamMentorDetail>): MentorshipU
 });
 
 describe('mapMentorshipMentorProfileDetails', () => {
-  it('maps the introduction, skills and resume of the mentor row', () => {
+  it('maps the introduction and skills of the mentor row', () => {
     expect(
       mapMentorshipMentorProfileDetails({
         introduction: '<p>Hello</p>',
         skill_set: { skills: ['Go', '', 'Rust'], comments: 'ignored' },
-        profile_links: { resumeLink: 'https://files.example.org/cv.pdf' },
       } as never)
-    ).toEqual({ aboutMe: '<p>Hello</p>', skills: ['Go', 'Rust'], resumeUrl: 'https://files.example.org/cv.pdf', resumeFileName: 'cv.pdf' });
+    ).toEqual({ aboutMe: '<p>Hello</p>', skills: ['Go', 'Rust'] });
   });
 
   it('defaults a row with no introduction or skills to empty fields', () => {
-    expect(mapMentorshipMentorProfileDetails({ skill_set: 'bad' } as never)).toEqual({ aboutMe: '', skills: [], resumeUrl: undefined, resumeFileName: undefined });
+    expect(mapMentorshipMentorProfileDetails({ skill_set: 'bad' } as never)).toEqual({ aboutMe: '', skills: [] });
   });
 });
 

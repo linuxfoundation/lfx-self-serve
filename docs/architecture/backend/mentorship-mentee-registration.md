@@ -41,8 +41,6 @@ The check-then-write pair is not atomic. Two concurrent submits from the same us
 
 `noDuplicateProfile` and `complianceAccepted` are validated but have no upstream column. The name and picture go in the optional `lfxProfile`, and the BFF adds the verified primary email (see [LFX profile fields](#lfx-profile-fields)). No phone or slug is sent. The upstream derives the owner from the bearer token and the mentorship user row, and no slug is sent, so this endpoint has no slug to conflict on. The pre-check above is what surfaces "you already registered".
 
-The resume is not sent. Resume upload is coming soon: `ResumeSectionComponent` takes an opt-in `comingSoonSummary` input, and the register page passes one, so choosing a file only shows a coming-soon toast through `MentorshipComingSoonService`. The mentor form keeps the section's original behavior.
-
 ## LFX profile fields
 
 A mentor or mentee profile keeps a copy of the user's LFX profile name, primary email and picture. Both register forms (mentee here, mentor in [Mentorship Mentor BFF](./mentorship-mentor.md#registration)) send the name and picture, and later LFX profile edits copy them over again. The email never comes from the browser: the BFF reads it itself.

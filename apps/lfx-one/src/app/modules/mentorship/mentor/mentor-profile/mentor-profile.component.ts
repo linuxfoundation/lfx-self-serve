@@ -24,7 +24,7 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
  *
  * Composes three sections: the shared `lfx-mentorship-profile-card` (LFX identity
  * summary — name, emails, linked accounts), the mentor's own profile details (About Me,
- * Skills, Resume), and a read-only Mentoring History.
+ * Skills), and a read-only Mentoring History.
  *
  * The profile-card owns its own fetch, so this page only loads the mentorship-side
  * fields. On failure it degrades to the empty response and surfaces a retry so a

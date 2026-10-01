@@ -8,7 +8,7 @@
  * and their mentoring history. Each test stubs that read via `page.route` with a synthetic payload, so
  * the suite never depends on the signed-in user's real profile: one populated payload proves the
  * profile and history render, an empty one drives every empty-state branch (about-me, skills,
- * resume, mentoring history), and a 503 drives the error state.
+ * mentoring history), and a 503 drives the error state.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the profile read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
@@ -42,8 +42,6 @@ const POPULATED: MentorshipMentorProfileResponse = {
   profile: {
     aboutMe: '<p>Test User 1 mentor introduction.</p>',
     skills: ['Kubernetes', 'Angular'],
-    resumeFileName: null,
-    resumeUrl: null,
   },
   history: [
     { id: ACTIVE_ROW_ID, programName: 'Test Program Alpha', term: 'Test Term Fall', menteesCount: 0, status: 'in-progress' },
@@ -52,7 +50,7 @@ const POPULATED: MentorshipMentorProfileResponse = {
 };
 
 const EMPTY: MentorshipMentorProfileResponse = {
-  profile: { aboutMe: '', skills: [], resumeFileName: null, resumeUrl: null },
+  profile: { aboutMe: '', skills: [] },
   history: [],
 };
 
@@ -109,13 +107,6 @@ test.describe('Mentor Profile — empty states', () => {
 
   test('shows the skills empty label when the mentor has none', async ({ page }) => {
     await expect(page.getByTestId('mentorship-mentor-profile-details-skills-empty')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-  });
-
-  test('shows the resume empty label when the mentor has not uploaded one', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentor-profile-details-resume-empty')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    // Empty resume ⇒ no anchor and no filename span, only the label.
-    await expect(page.getByTestId('mentorship-mentor-profile-details-resume-link')).toHaveCount(0);
-    await expect(page.getByTestId('mentorship-mentor-profile-details-resume-name')).toHaveCount(0);
   });
 
   test('shows the mentoring-history empty state when the mentor has no programs', async ({ page }) => {

@@ -363,8 +363,6 @@ describe('MentorshipMentorService.getMentorProfile', () => {
       profile: {
         aboutMe: '<p>I mentor ingestion pipelines.</p>',
         skills: ['Go', 'Kubernetes'],
-        resumeUrl: 'https://files.example.org/resumes/mentor-cv.pdf',
-        resumeFileName: 'mentor-cv.pdf',
       },
       history: [{ id: 'term-1', programName: 'GridFlow', term: 'Fall 2026', menteesCount: 1, status: 'in-progress' }],
     });
@@ -378,7 +376,7 @@ describe('MentorshipMentorService.getMentorProfile', () => {
 
     const response = await service.getMentorProfile(signedInReq());
 
-    expect(response.profile).toEqual({ aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined });
+    expect(response.profile).toEqual({ aboutMe: '', skills: [] });
     expect(response.history).toHaveLength(1);
   });
 
@@ -452,7 +450,7 @@ describe('MentorshipMentorService.updateMentorProfile', () => {
     proxyRequest.mockResolvedValueOnce(savedRow);
 
     await expect(service.updateMentorProfile(signedInReq(), { introduction: '<p>Updated.</p>' })).resolves.toEqual({
-      profile: { aboutMe: '<p>Updated.</p>', skills: ['Rust'], resumeFileName: undefined, resumeUrl: undefined },
+      profile: { aboutMe: '<p>Updated.</p>', skills: ['Rust'] },
     });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'PATCH', undefined, {
