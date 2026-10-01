@@ -24,6 +24,8 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
@@ -1129,5 +1131,223 @@ describe('HealthMetricsMembersService.getNps', () => {
     respond({ audiences: [], trend: [] });
 
     expect(await new HealthMetricsMembersService().getNps(req, query)).toEqual({ audiences: [], selectedAudience: null, trend: [] });
+  });
+});
+
+function churnRow(overrides: Record<string, unknown> = {}) {
+  return {
+    YEAR: 2025,
+    IS_PARTIAL_YEAR: false,
+    IS_ALL_TIERS: true,
+    MEMBERSHIP_TIER: null,
+    TIER_SORT_RANK: null,
+    MEMBERSHIPS_LOST_COUNT: 12,
+    MEMBERSHIPS_OPENING_COUNT: 120,
+    DUES_LOST_USD: 450000,
+    DUES_LOST_PRIOR_USD: 300000,
+    REVENUE_CHURN_RATE: 15.2,
+    REVENUE_CHURN_RATE_PRIOR: 10.6,
+    REVENUE_CHURN_RATE_CHANGE_PP: 4.6,
+    TIER_CHURN_RATE: 10,
+    SHARE_OF_LOSS_PCT: 100,
+    LOGO_CHURN_RATE: 10,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsMembersService.getChurn', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [churnRow()] });
+  });
+
+  it('reads every year of churn, all-tiers row first, bound only to the foundation', async () => {
+    await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = readOf('MEMBERSHIP_CHURN');
+    expect(binds).toEqual(['acme']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURN');
+    expect(sql).toContain('ORDER BY year DESC, is_all_tiers DESC NULLS LAST, tier_sort_rank ASC NULLS LAST, membership_tier ASC NULLS LAST');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP + 1}`);
+  });
+
+  it('splits the all-tiers rows from the tier rows and keeps unmeasured values null', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        churnRow({ IS_PARTIAL_YEAR: null, MEMBERSHIPS_OPENING_COUNT: null, REVENUE_CHURN_RATE_PRIOR: null, REVENUE_CHURN_RATE_CHANGE_PP: null }),
+        churnRow({
+          IS_ALL_TIERS: false,
+          MEMBERSHIP_TIER: 'Gold',
+          TIER_SORT_RANK: 1,
+          MEMBERSHIPS_LOST_COUNT: 2,
+          TIER_CHURN_RATE: 20,
+          DUES_LOST_USD: 300000,
+          SHARE_OF_LOSS_PCT: 66.7,
+        }),
+        churnRow({
+          IS_ALL_TIERS: false,
+          MEMBERSHIP_TIER: 'Bronze',
+          TIER_SORT_RANK: null,
+          MEMBERSHIPS_LOST_COUNT: 0,
+          TIER_CHURN_RATE: 0,
+          DUES_LOST_USD: 0,
+          SHARE_OF_LOSS_PCT: 0,
+        }),
+      ],
+    });
+
+    const response = await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    expect(response).toEqual({
+      years: [
+        {
+          year: 2025,
+          isPartialYear: false,
+          lostCount: 12,
+          openingCount: null,
+          duesLostUsd: 450000,
+          duesLostPriorUsd: 300000,
+          revenueChurnRate: 15.2,
+          revenueChurnRatePrior: null,
+          revenueChurnRateChangePp: null,
+          logoChurnRate: 10,
+        },
+      ],
+      tiers: [
+        { year: 2025, tier: 'Gold', tierSortRank: 1, lostCount: 2, churnRate: 20, duesLostUsd: 300000, shareOfLossPct: 66.7 },
+        { year: 2025, tier: 'Bronze', tierSortRank: Number.MAX_SAFE_INTEGER, lostCount: 0, churnRate: 0, duesLostUsd: 0, shareOfLossPct: 0 },
+      ],
+    });
+  });
+
+  it('drops a row with no year, no tier on a tier row, or no all-tiers flag', async () => {
+    execute.mockResolvedValue({
+      rows: [churnRow({ YEAR: null }), churnRow({ IS_ALL_TIERS: false, MEMBERSHIP_TIER: '' }), churnRow({ IS_ALL_TIERS: null }), churnRow()],
+    });
+
+    const response = await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    expect(response.years).toHaveLength(1);
+    expect(response.tiers).toHaveLength(0);
+  });
+
+  it('warns and drops the year the cap cuts through', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP - 1 }, () => churnRow({ YEAR: 2026 }));
+    execute.mockResolvedValue({ rows: [...newest, churnRow(), churnRow()] });
+
+    const response = await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    expect(response.years).toHaveLength(HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP - 1);
+    expect(response.years.every((year) => year.year === 2026)).toBe(true);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_members_churn',
+      'Membership churn rows hit the read cap',
+      expect.objectContaining({ row_cap: HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP })
+    );
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
+  });
+});
+
+function departureRow(overrides: Record<string, unknown> = {}) {
+  return {
+    TOTAL_RECORDS: 3,
+    IS_PAGE_ROW: true,
+    ACCOUNT_ID: '0014100000AcmeAAAA',
+    ACCOUNT_NAME: 'Acme Motors',
+    MEMBERSHIP_TIER: 'Gold',
+    DUES_IMPACT_USD: 150000,
+    LAPSED_DATE: new Date('2025-03-31T00:00:00Z'),
+    LAST_ENGAGED_DATE: null,
+    SORT_RANK: 1,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsMembersService.getChurnDepartures', () => {
+  const query = { foundationSlug: 'acme', year: 2025, offset: 25, pageSize: 25 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [departureRow()] });
+  });
+
+  it('binds foundation and year in placeholder order, scoped to lapsed members, and pages in sort-rank order', async () => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    const [sql, binds] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
+    expect(binds).toEqual(['acme', 2025, 'churned']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
+    expect(scoped).toContain('AND movement_type = ?');
+    expect(sql).toContain('lapsed_date,');
+    expect(scoped).toContain('AND account_id IS NOT NULL');
+    expect(scoped).toContain("AND account_id <> ''");
+    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST');
+    expect(sql).toContain('LIMIT 25 OFFSET 25');
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('clamps an oversized page and offset before interpolating them', async () => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
+    const size = HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE;
+    expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
+  });
+
+  it('maps rows with ISO dates and falls back to the account id for a missing name', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        departureRow(),
+        departureRow({ ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', DUES_IMPACT_USD: null, LAPSED_DATE: '2025-06-30' }),
+      ],
+    });
+
+    const response = await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    expect(response).toEqual({
+      totalRecords: 3,
+      rows: [
+        {
+          accountId: '0014100000AcmeAAAA',
+          accountName: 'Acme Motors',
+          membershipTier: 'Gold',
+          duesLostUsd: 150000,
+          lapsedDate: '2025-03-31',
+          lastEngagedDate: null,
+        },
+        {
+          accountId: '0014100000VendAAAA',
+          accountName: '0014100000VendAAAA',
+          membershipTier: null,
+          duesLostUsd: null,
+          lapsedDate: '2025-06-30',
+          lastEngagedDate: null,
+        },
+      ],
+    });
+  });
+
+  it('keeps the total when the page is past the end', async () => {
+    execute.mockResolvedValue({ rows: [{ TOTAL_RECORDS: 3, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+
+    const response = await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    expect(response).toEqual({ rows: [], totalRecords: 3 });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getChurnDepartures(req, query)).rejects.toBe(failure);
   });
 });

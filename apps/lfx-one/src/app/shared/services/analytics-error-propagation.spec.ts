@@ -180,6 +180,18 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation that was never surveyed.
       call: () => service.getMembersNps({ foundationSlug: 'aaif', range: 'YTD', audience: null }),
     },
+    {
+      name: 'getMembersChurn',
+      url: '/api/analytics/members-churn',
+      // A swallowed failure would read as a foundation that lost no members.
+      call: () => service.getMembersChurn('aaif'),
+    },
+    {
+      name: 'getMembersChurnDepartures',
+      url: '/api/analytics/members-churn-departures',
+      // A swallowed failure would read as a year in which no membership lapsed.
+      call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
