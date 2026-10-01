@@ -155,7 +155,7 @@
            Uses `is_foundation` to pick "foundation" vs "project" context label. -->
       @if (fromMeLens && (committee()?.project_name || committee()?.foundation_name)) {
         @let scopeLabel = committee()?.is_foundation ? 'foundation' : 'project';
-        @let scopeName = committee()?.foundation_name || committee()?.project_name;
+        @let scopeName = committee()?.is_foundation ? committee()?.foundation_name : committee()?.project_name;
         <div
           class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600"
           role="note"
@@ -370,7 +370,7 @@
                     }
                     @if (committee()?.updated_at) {
                       <span class="text-xs text-gray-400"
-                        >{{ committee()?.created_at ? '·' : 'Updated' }} {{ committee()?.updated_at | date: 'MMM d, y' }}</span
+                        >{{ committee()?.created_at ? '· Updated' : 'Updated' }} {{ committee()?.updated_at | date: 'MMM d, y' }}</span
                       >
                     }
                   </div>

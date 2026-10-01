@@ -54,9 +54,7 @@
               <th>Members</th>
               <th>Channels</th>
               <th>Voting</th>
-              @if (!isMeLens()) {
-                <th>Join Mode</th>
-              }
+              <th>Join Mode</th>
               @if (hasRoleColumn()) {
                 <th>My Role</th>
               }
@@ -177,20 +175,18 @@
                   <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
                 }
               </td>
-              @if (!isMeLens()) {
-                <td>
-                  @if (committee.join_mode) {
-                    <lfx-tag
-                      [value]="committee.join_mode | joinModeLabel"
-                      [severity]="committee.joinModeSeverity"
-                      [tooltip]="committee.joinModeTooltip"
-                      tooltipPosition="top"
-                      [attr.data-testid]="'join-mode-tag-' + committee.uid" />
-                  } @else {
-                    <span class="text-gray-400 text-xs">—</span>
-                  }
-                </td>
-              }
+              <td>
+                @if (committee.join_mode) {
+                  <lfx-tag
+                    [value]="committee.join_mode | joinModeLabel"
+                    [severity]="committee.joinModeSeverity"
+                    [tooltip]="committee.joinModeTooltip"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'join-mode-tag-' + committee.uid" />
+                } @else {
+                  <span class="text-gray-400 text-xs">—</span>
+                }
+              </td>
               @if (hasRoleColumn()) {
                 <td>
                   @if (committee.roleChip) {

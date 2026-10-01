@@ -889,8 +889,10 @@ export class CommitteeOverviewComponent {
               const items = mapActivityEventsToFeedItems(events, { votingEnabled: !!committee.enable_voting });
               // Visitors only see meeting and document events — votes, surveys, and notes contain
               // member-facing content (vote/survey names can be sensitive) and their click-actions
-              // route to member-only tabs anyway.
-              return visitor ? items.filter((item) => item.type === 'past_meeting' || item.type === 'document') : items;
+              // route to member-only tabs anyway. Past-meeting items are further gated on
+              // `calendar.public` to stay consistent with the Meetings tab visibility rule.
+              const calendarPublic = !!committee.calendar?.public;
+              return visitor ? items.filter((item) => (item.type === 'past_meeting' && calendarPublic) || item.type === 'document') : items;
             }),
             tap(() => this.activityFeedLoading.set(false)),
             // CommitteeService.getCommitteeActivity already falls back to of([]) on failure, so this

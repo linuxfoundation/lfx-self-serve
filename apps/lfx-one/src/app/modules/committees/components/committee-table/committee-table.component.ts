@@ -104,7 +104,6 @@ export class CommitteeTableComponent {
   );
 
   /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
-  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
   protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
 
   protected onRowSelect(event: { data: CommitteeTableRowVm }): void {

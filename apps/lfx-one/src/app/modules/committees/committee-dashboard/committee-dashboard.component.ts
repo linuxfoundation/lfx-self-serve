@@ -376,7 +376,7 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(null);
     this.searchForm?.get('foundationFilter')?.setValue(null, { emitEvent: false });
     this.searchForm?.get('projectFilter')?.setValue(null, { emitEvent: false });
-    this.searchForm?.get('joinModeFilter')?.setValue(null, { emitEvent: false });
+    this.searchForm?.get('joinModeFilter')?.setValue(null);
   }
 
   private initializeMyCommittees(): Signal<MyCommittee[]> {
