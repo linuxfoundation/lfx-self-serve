@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The vitest shared alias resolves enums/interfaces for real; constants/utils keep importActual subfile
 // stubs because their barrels reach Angular. The service's interfaces import is `import type` — erased, no mock needed.
-const { proxyRequest, getMeetings, getVotes, encodeActivityPageToken, warning, info, debug } = vi.hoisted(() => ({
+const { proxyRequest, getMeetings, getVotesUpstreamPage, encodeActivityPageToken, warning, info, debug } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getMeetings: vi.fn(),
-  getVotes: vi.fn(),
+  getVotesUpstreamPage: vi.fn(),
   encodeActivityPageToken: vi.fn((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`),
   warning: vi.fn(),
   info: vi.fn(),
@@ -69,7 +69,7 @@ vi.mock('./meeting.service', () => ({
 }));
 vi.mock('./vote.service', () => ({
   VoteService: class {
-    public getVotes = getVotes;
+    public getVotesUpstreamPage = getVotesUpstreamPage;
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -168,7 +168,7 @@ describe('CommitteeActivityService', () => {
     vi.clearAllMocks();
     proxyRequest.mockImplementation(defaultProxyRequest);
     getMeetings.mockResolvedValue({ data: [] });
-    getVotes.mockResolvedValue({ data: [] });
+    getVotesUpstreamPage.mockResolvedValue({ data: [] });
     encodeActivityPageToken.mockImplementation((cursor: { before: string; key: string }) => `token(${cursor.before}|${cursor.key})`);
     service = new CommitteeActivityService();
   });
@@ -184,7 +184,7 @@ describe('CommitteeActivityService', () => {
 
   it('merges all four sources and sorts the result by occurred_at descending', async () => {
     getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '2026-01-01T00:00:00Z' })] });
-    getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-03T00:00:00Z' })] });
+    getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-03T00:00:00Z' })] });
     proxyRequest.mockImplementation((r, s, path, m, query) => {
       if (path === '/query/resources' && query?.['type'] === 'survey') {
         return Promise.resolve({ resources: [{ type: 'survey', id: 'survey-1', data: survey({ last_modified_at: '2026-01-02T00:00:00Z' }) }] });
@@ -202,7 +202,7 @@ describe('CommitteeActivityService', () => {
   });
 
   it('drops a vote with an unparseable timestamp instead of throwing or including it unordered', async () => {
-    getVotes.mockResolvedValue({ data: [vote({ creation_time: 'not-a-timestamp', last_modified_time: undefined })] });
+    getVotesUpstreamPage.mockResolvedValue({ data: [vote({ creation_time: 'not-a-timestamp', last_modified_time: undefined })] });
     proxyRequest.mockImplementation((r, s, path, m, query) => {
       if (path === '/query/resources' && query?.['type'] === 'survey') {
         return Promise.resolve({ resources: [{ type: 'survey', id: 'survey-1', data: survey({ last_modified_at: '2026-01-01T00:00:00Z' }) }] });
@@ -317,10 +317,14 @@ describe('CommitteeActivityService', () => {
         limit: 8,
       });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_field: 'last_modified_time', date_to: '2026-02-01T00:00:00.000Z' }), {
-        includeProject: false,
-      });
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }), { includeProject: false });
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(
+        req,
+        expect.objectContaining({ date_field: 'last_modified_time', date_to: '2026-02-01T00:00:00.000Z' }),
+        {
+          includeProject: false,
+        }
+      );
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }), { includeProject: false });
     });
 
     it('sends no date_field/date_from/date_to to votes when only since is set, no cursor', async () => {
@@ -329,9 +333,9 @@ describe('CommitteeActivityService', () => {
       // send date_from as best-effort narrowing.
       await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 8 });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_field: expect.anything() }), { includeProject: false });
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }), { includeProject: false });
-      expect(getVotes).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_to: expect.anything() }), { includeProject: false });
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_field: expect.anything() }), { includeProject: false });
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_from: expect.anything() }), { includeProject: false });
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(req, expect.not.objectContaining({ date_to: expect.anything() }), { includeProject: false });
     });
 
     it('sends no date_field/date_from/date_to to the survey leg, even with since and cursor set', async () => {
@@ -364,7 +368,7 @@ describe('CommitteeActivityService', () => {
         limit: 8,
       });
 
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }), { includeProject: false });
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(req, expect.objectContaining({ date_to: '2026-02-01T00:00:01.000Z' }), { includeProject: false });
     });
 
     it('rejects an unparseable cursor.before instead of silently degrading to an empty feed', async () => {
@@ -381,7 +385,7 @@ describe('CommitteeActivityService', () => {
         })
       ).rejects.toThrow(ServiceValidationError);
 
-      expect(getVotes).not.toHaveBeenCalled();
+      expect(getVotesUpstreamPage).not.toHaveBeenCalled();
     });
 
     it('rejects an unparseable since instead of silently degrading to an empty feed', async () => {
@@ -391,7 +395,7 @@ describe('CommitteeActivityService', () => {
       // event, so an unparseable since would silently degrade to an empty feed instead of rejecting.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: 'not-a-timestamp', limit: 8 })).rejects.toThrow(ServiceValidationError);
 
-      expect(getVotes).not.toHaveBeenCalled();
+      expect(getVotesUpstreamPage).not.toHaveBeenCalled();
     });
 
     it('rejects an empty-string since rather than silently treating it as "no since"', async () => {
@@ -403,7 +407,7 @@ describe('CommitteeActivityService', () => {
       // unreachable while this guard stands, so it isn't (and can't be) covered by this test.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { since: '', limit: 8 })).rejects.toThrow(ServiceValidationError);
 
-      expect(getVotes).not.toHaveBeenCalled();
+      expect(getVotesUpstreamPage).not.toHaveBeenCalled();
     });
 
     it('normalizes a zone-less since to RFC3339 before sending it upstream as date_from', async () => {
@@ -432,7 +436,7 @@ describe('CommitteeActivityService', () => {
       // result with no signal anything's off.
       await expect(service.getCommitteeActivity(req, COMMITTEE_UID, { limit })).rejects.toThrow(ServiceValidationError);
 
-      expect(getVotes).not.toHaveBeenCalled();
+      expect(getVotesUpstreamPage).not.toHaveBeenCalled();
     });
 
     it("sets hasMore when a page_size-bounded leg's upstream page_token signals more data, even though the merged pool itself is not over limit", async () => {
@@ -448,7 +452,7 @@ describe('CommitteeActivityService', () => {
       const votes = Array.from({ length: fetchSize }, (_, i) =>
         vote({ uid: `v-${i}`, creation_time: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
       );
-      getVotes.mockResolvedValue({ data: votes, page_token: 'more-votes-upstream' });
+      getVotesUpstreamPage.mockResolvedValue({ data: votes, page_token: 'more-votes-upstream' });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 1 });
 
@@ -464,7 +468,7 @@ describe('CommitteeActivityService', () => {
       const votes = Array.from({ length: fetchSize }, (_, i) =>
         vote({ uid: `v-${i}`, creation_time: i === 0 ? '2026-02-01T00:00:00Z' : '2020-01-01T00:00:00Z' })
       );
-      getVotes.mockResolvedValue({ data: votes });
+      getVotesUpstreamPage.mockResolvedValue({ data: votes });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 1 });
 
@@ -478,7 +482,7 @@ describe('CommitteeActivityService', () => {
       // leg whose only fetched row is before `since`), page_token comes back undefined even though
       // the votes leg's own upstream page was genuinely saturated — any_leg_saturated is read
       // directly off each leg's own saturation and isn't affected by what survived filtering.
-      getVotes.mockResolvedValue({ data: [vote({ creation_time: '2020-01-01T00:00:00Z' })], page_token: 'more-votes-upstream' });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ creation_time: '2020-01-01T00:00:00Z' })], page_token: 'more-votes-upstream' });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { since: '2026-01-01T00:00:00Z', limit: 8 });
 
@@ -490,14 +494,14 @@ describe('CommitteeActivityService', () => {
     it('requests page_size = max(limit + 1, 25) from every source', async () => {
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 2 });
       expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), 'v1_past_meeting', false);
-      expect(getVotes).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), { includeProject: false });
+      expect(getVotesUpstreamPage).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 25 }), { includeProject: false });
 
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 30 });
       expect(getMeetings).toHaveBeenCalledWith(req, expect.objectContaining({ page_size: 31 }), 'v1_past_meeting', false);
     });
 
     it('caps the returned feed at limit and sets a (before, key) page_token when more candidates exist', async () => {
-      getVotes.mockResolvedValue({
+      getVotesUpstreamPage.mockResolvedValue({
         data: [
           vote({ uid: 'v1', creation_time: '2026-01-05T00:00:00Z' }),
           vote({ uid: 'v2', creation_time: '2026-01-04T00:00:00Z' }),
@@ -513,7 +517,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('omits page_token when every source is exhausted', async () => {
-      getVotes.mockResolvedValue({ data: [vote({ uid: 'v1' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ uid: 'v1' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.page_token).toBeUndefined();
     });
@@ -675,7 +679,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('excludes an out-of-window vote purely via the in-memory since/cursor filter — votes get no upstream date narrowing to rely on', async () => {
-      getVotes.mockResolvedValue({ data: [vote({ uid: 'v-out', creation_time: '2025-01-01T00:00:00Z', end_time: '2025-01-02T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ uid: 'v-out', creation_time: '2025-01-01T00:00:00Z', end_time: '2025-01-02T00:00:00Z' })] });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, {
         since: '2026-01-01T00:00:00Z',
@@ -686,7 +690,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('excludes the previous page boundary item instead of re-returning it — the exact (occurred_at, key) pair from the cursor is excluded', async () => {
-      getVotes.mockResolvedValue({ data: [vote({ uid: 'v-boundary', creation_time: '2026-01-04T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ uid: 'v-boundary', creation_time: '2026-01-04T00:00:00Z' })] });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, {
         cursor: { before: '2026-01-04T00:00:00Z', key: 'vote:v-boundary' },
@@ -699,7 +703,7 @@ describe('CommitteeActivityService', () => {
       // Regression guard for the timestamp-only cursor bug: two events sharing the exact same
       // occurred_at (e.g. a batch of documents uploaded in one request) must both be reachable
       // across pages, not have one silently dropped.
-      getVotes.mockResolvedValue({
+      getVotesUpstreamPage.mockResolvedValue({
         data: [vote({ uid: 'v-a', creation_time: '2026-01-04T00:00:00Z' }), vote({ uid: 'v-b', creation_time: '2026-01-04T00:00:00Z' })],
       });
 
@@ -726,10 +730,10 @@ describe('CommitteeActivityService', () => {
       const voteY = vote({ uid: 'v-y', creation_time: undefined, last_modified_time: undefined });
       const uidsOf = (r: Awaited<ReturnType<typeof service.getCommitteeActivity>>) => r.data.map((e) => (e.type === 'vote_opened' ? e.payload.vote_uid : null));
 
-      getVotes.mockResolvedValue({ data: [voteX, voteY] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [voteX, voteY] });
       expect(uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }))).toEqual([]);
 
-      getVotes.mockResolvedValue({ data: [voteY, voteX] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [voteY, voteX] });
       expect(uidsOf(await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }))).toEqual([]);
     });
 
@@ -764,7 +768,7 @@ describe('CommitteeActivityService', () => {
       // 2 votes have a real timestamp; 2 more have none and are dropped entirely (see the windowed
       // filter). With limit=3, the 2 remaining valid candidates fit on one page — no page_token,
       // even though 4 rows were fetched from the source.
-      getVotes.mockResolvedValue({
+      getVotesUpstreamPage.mockResolvedValue({
         data: [
           vote({ uid: 'v1', creation_time: '2026-01-05T00:00:00Z' }),
           vote({ uid: 'v2', creation_time: '2026-01-04T00:00:00Z' }),
@@ -782,7 +786,7 @@ describe('CommitteeActivityService', () => {
   describe('one-source-fails-others-still-render', () => {
     it('renders the other three sources when past meetings fail', async () => {
       getMeetings.mockRejectedValue(new Error('upstream down'));
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data.map((e) => e.type)).toEqual(['vote_opened']);
@@ -794,7 +798,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('renders the other three sources when votes fail', async () => {
-      getVotes.mockRejectedValue(new Error('upstream down'));
+      getVotesUpstreamPage.mockRejectedValue(new Error('upstream down'));
       getMeetings.mockResolvedValue({ data: [pastMeeting()] });
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
@@ -862,7 +866,7 @@ describe('CommitteeActivityService', () => {
 
   describe('voting_enabled gating', () => {
     it('excludes vote events from the result when the committee has voting disabled, but still fetches them', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (/^\/committees\/[^/]+$/.test(path)) return Promise.resolve({ uid: COMMITTEE_UID, enable_voting: false });
         return defaultProxyRequest(r, s, path, m, query);
@@ -870,7 +874,7 @@ describe('CommitteeActivityService', () => {
 
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toEqual([]);
-      expect(getVotes).toHaveBeenCalled();
+      expect(getVotesUpstreamPage).toHaveBeenCalled();
     });
 
     it('rejects the whole request when the committee lookup fails, rather than degrading to votes-excluded', async () => {
@@ -931,7 +935,7 @@ describe('CommitteeActivityService', () => {
 
   describe('knownCommittee (caller already resolved the committee)', () => {
     it('uses the passed-in committee instead of fetching it again', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (/^\/committees\/[^/]+$/.test(path)) throw new Error('fetchCommittee should not run when knownCommittee is provided');
         return defaultProxyRequest(r, s, path, m, query);
@@ -950,7 +954,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('still gates on enable_voting from the knownCommittee, not just skips the fetch', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
 
       const result = await service.getCommitteeActivity(
         req,
@@ -974,7 +978,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('logs the aggregation start/completion at DEBUG, not INFO, when quietAggregationLog is passed — this caller is a per-poll-tick tally, not the controller-driven feed the INFO rationale was written for', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
 
       await service.getCommitteeActivity(
         req,
@@ -990,7 +994,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('logs the aggregation start/completion at INFO, as before, when quietAggregationLog is omitted (the controller-driven feed path)', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
 
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
 
@@ -1001,7 +1005,7 @@ describe('CommitteeActivityService', () => {
     });
 
     it('still logs at INFO when knownCommittee is passed but quietAggregationLog is not — passing knownCommittee alone must not silence the log, since it exists only to skip a redundant fetch and says nothing about call frequency', async () => {
-      getVotes.mockResolvedValue({ data: [vote()] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote()] });
 
       await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 }, { knownCommittee: { uid: COMMITTEE_UID, enable_voting: true } as Committee });
 
@@ -1337,7 +1341,7 @@ describe('CommitteeActivityService', () => {
 
     it('merges all five sources including notes_added and sorts by occurred_at descending', async () => {
       getMeetings.mockResolvedValue({ data: [pastMeeting({ start_time: '2026-01-01T00:00:00Z' })] });
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-03T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-03T00:00:00Z' })] });
       proxyRequest.mockImplementation((r, s, path, m, query) => {
         if (path === '/query/resources' && query?.['type'] === 'survey') {
           return Promise.resolve({ resources: [{ type: 'survey', id: 'survey-1', data: survey({ last_modified_at: '2026-01-02T00:00:00Z' }) }] });
@@ -1368,14 +1372,16 @@ describe('CommitteeActivityService', () => {
 
   describe('one-event-per-row mapping', () => {
     it('maps an ended vote to vote_closed only', async () => {
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-10T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, end_time: '2026-01-10T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toHaveLength(1);
       expect(result.data[0].type).toBe('vote_closed');
     });
 
     it("carries the vote's creation_time as payload.opened_at and its end_time even once closed, independent of the collapsed occurred_at (GH-1967 review)", async () => {
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ENDED, creation_time: '2026-01-02T10:00:00Z', end_time: '2026-01-10T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({
+        data: [vote({ status: PollStatus.ENDED, creation_time: '2026-01-02T10:00:00Z', end_time: '2026-01-10T00:00:00Z' })],
+      });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       // end_time rides along for the weekly-brief staleness gate — upstream's VoteSource windows
       // on it alone (GH-1967 Copilot review).
@@ -1387,14 +1393,14 @@ describe('CommitteeActivityService', () => {
     });
 
     it('maps an active vote to vote_opened only', async () => {
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toHaveLength(1);
       expect(result.data[0].type).toBe('vote_opened');
     });
 
     it('maps a vote with an early_end_time to vote_closed even if status lags behind', async () => {
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, early_end_time: '2026-01-09T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, early_end_time: '2026-01-09T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data[0].type).toBe('vote_closed');
     });
@@ -1404,7 +1410,7 @@ describe('CommitteeActivityService', () => {
       // is in the past is effectively over — matching isVoteCalendarEventPast's established
       // "deadline passed" semantics elsewhere in the app. Without this, it stayed vote_opened at
       // creation_time indefinitely. Cursor Bugbot caught this as a follow-up to the casing fix.
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, end_time: '2020-01-01T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, end_time: '2020-01-01T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toMatchObject({ type: 'vote_closed', occurred_at: '2020-01-01T00:00:00Z' });
@@ -1412,7 +1418,7 @@ describe('CommitteeActivityService', () => {
 
     it('does not close an ACTIVE vote whose end_time is still in the future', async () => {
       // Negative control for the deadline-passed test above.
-      getVotes.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, end_time: '2099-06-01T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: PollStatus.ACTIVE, end_time: '2099-06-01T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data[0].type).toBe('vote_opened');
     });
@@ -1422,7 +1428,7 @@ describe('CommitteeActivityService', () => {
       // comment) — a raw `status === PollStatus.ENDED` comparison misclassifies this as
       // vote_opened, stamped at creation time instead of close time. Independently flagged by
       // Copilot and Cursor Bugbot, confirmed by dealako.
-      getVotes.mockResolvedValue({ data: [vote({ status: 'Ended' as PollStatus, end_time: '2026-01-10T00:00:00Z' })] });
+      getVotesUpstreamPage.mockResolvedValue({ data: [vote({ status: 'Ended' as PollStatus, end_time: '2026-01-10T00:00:00Z' })] });
       const result = await service.getCommitteeActivity(req, COMMITTEE_UID, { limit: 8 });
       expect(result.data).toHaveLength(1);
       expect(result.data[0].type).toBe('vote_closed');

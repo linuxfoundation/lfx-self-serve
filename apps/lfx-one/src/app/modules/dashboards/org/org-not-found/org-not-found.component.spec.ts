@@ -26,6 +26,7 @@ interface Harness {
   listLoaded: WritableSignal<boolean>;
   listFailed: WritableSignal<boolean>;
   isStaff: WritableSignal<boolean>;
+  isContractor: WritableSignal<boolean>;
   lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   staffCheck: WritableSignal<OrgLensStaffCheck>;
   refresh: Mock<(bypassCache?: boolean) => unknown>;
@@ -43,6 +44,7 @@ function setup(): Harness {
   const listLoaded = signal(true);
   const listFailed = signal(false);
   const isStaff = signal(false);
+  const isContractor = signal(false);
   const lookupOutcome = signal<OrgLensLookupOutcome>('ok');
   const staffCheck = signal<OrgLensStaffCheck>('ok');
   const refresh: Mock<(bypassCache?: boolean) => unknown> = vi.fn(() => of(undefined));
@@ -80,6 +82,8 @@ function setup(): Harness {
           loaded: signal(true),
           loading: grantsLoading,
           isStaff,
+          isContractor,
+          readCheck: vi.fn(() => of(true)),
           lookupOutcome,
           staffCheck,
           correlationId: signal('ref-1'),
@@ -114,6 +118,7 @@ function setup(): Harness {
     listLoaded,
     listFailed,
     isStaff,
+    isContractor,
     lookupOutcome,
     staffCheck,
     refresh,
@@ -144,6 +149,21 @@ describe('OrgNotFoundComponent.state', () => {
 
   it('renders no-access when a clean lookup holds nothing (FR-007)', () => {
     expect(renderedState(h)).toBe<OrgLensEmptyStateName>('no-access');
+  });
+
+  // #2961: the address was refused; a contractor who holds nothing gets their own reason, not the
+  // employee copy that points them at an OSPO.
+  it('renders contractor-no-grant, not no-access, for a contractor who holds nothing', () => {
+    h.isContractor.set(true);
+
+    expect(renderedState(h)).toBe<OrgLensEmptyStateName>('contractor-no-grant');
+  });
+
+  it('keeps wrong-organization for a contractor who holds other organizations, since the list is the way out', () => {
+    h.isContractor.set(true);
+    h.items.set([HELD_ROW]);
+
+    expect(renderedState(h)).toBe<OrgLensEmptyStateName>('wrong-organization');
   });
 
   it('renders wrong-organization with the held list when a clean lookup holds something (FR-008)', () => {

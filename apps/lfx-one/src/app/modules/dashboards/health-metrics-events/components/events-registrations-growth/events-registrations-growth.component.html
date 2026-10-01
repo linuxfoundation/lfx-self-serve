@@ -1,0 +1,100 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-registrations-growth">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Registrations and growth unavailable"
+      subtitle="We could not load registrations by year for this foundation. Refresh the page to try again."
+      data-testid="events-registrations-growth-error" />
+  } @else if (loading()) {
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-registrations-growth-loading" aria-hidden="true" />
+  } @else if (view().rows.length === 0) {
+    <lfx-empty-state
+      icon="fa-light fa-chart-column"
+      title="No registrations recorded yet"
+      subtitle="Once this foundation's events take registrations, each year's registrations and attendees appear here."
+      data-testid="events-registrations-growth-empty" />
+  } @else {
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="events-registrations-growth-controls">
+      <lfx-filter-pills
+        [options]="metricOptions"
+        [selectedFilter]="metric()"
+        (filterChange)="onMetricChange($event)"
+        data-testid="events-registrations-growth-metric-pills" />
+      <span class="text-[13px] text-gray-500" data-testid="events-registrations-growth-year-count">{{ yearCountLabel() }}</span>
+    </div>
+
+    <div class="h-72" data-testid="events-registrations-growth-chart">
+      <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+    </div>
+
+    @if (view().pandemicNote; as pandemicNote) {
+      <p class="flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2 text-[13px] text-gray-700" data-testid="events-registrations-growth-pandemic-note">
+        <i class="fa-light fa-circle-info mt-0.5 text-blue-600" aria-hidden="true"></i>
+        <span>{{ pandemicNote }}</span>
+      </p>
+    }
+
+    <div class="flex flex-col gap-2" data-testid="events-registrations-growth-by-year">
+      <div class="flex items-baseline justify-between gap-2">
+        <h4 class="text-sm font-medium text-gray-900">By year</h4>
+        <span class="text-xs text-gray-500" data-testid="events-registrations-growth-count-label">{{ countLabel() }}</span>
+      </div>
+      <lfx-table [value]="view().rows" data-testid="events-registrations-growth-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Year</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Total</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">In-person</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Virtual</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'events-registrations-growth-row-' + row.year">
+            <td>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-semibold tabular-nums text-gray-900">{{ row.year }}</span>
+                @if (row.isPartialYear) {
+                  <span
+                    class="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700"
+                    [attr.data-testid]="'events-registrations-growth-partial-' + row.year"
+                    >partial</span
+                  >
+                }
+                @if (!row.recorded) {
+                  <span class="text-xs text-gray-400" [attr.data-testid]="'events-registrations-growth-gap-' + row.year">no events recorded</span>
+                }
+              </div>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-registrations-growth-total-' + row.year">{{ row.totalLabel }}</span>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-registrations-growth-in-person-' + row.year">{{
+                row.inPersonLabel
+              }}</span>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-registrations-growth-virtual-' + row.year">{{
+                row.virtualLabel
+              }}</span>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    </div>
+
+    @if (view().hasPartialYear) {
+      <p class="flex flex-wrap items-center gap-1 border-t border-gray-100 pt-3 text-[12px] text-gray-400" data-testid="events-registrations-growth-footnote">
+        A partial year is still open — it sits against complete years, so it will always look short until the year ends.
+        <button type="button" class="text-blue-600 hover:underline" (click)="onViewForecast()" data-testid="events-registrations-growth-forecast-link">
+          Use the registration forecast to compare like with like
+        </button>
+      </p>
+    }
+  }
+</div>

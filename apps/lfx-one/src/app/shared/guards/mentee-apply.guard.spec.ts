@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { convertToParamMap, Router, UrlTree } from '@angular/router';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +20,7 @@ describe('menteeApplyGuard', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
-        { provide: MentorshipService, useValue: { hasMenteeProfile } },
+        { provide: MentorshipMenteeService, useValue: { hasMenteeProfile } },
         { provide: Router, useValue: { createUrlTree, getCurrentNavigation } },
       ],
     });
@@ -60,6 +61,18 @@ describe('menteeApplyGuard', () => {
     expect(createUrlTree).toHaveBeenCalledWith(['/mentorship/mentee'], {
       queryParams: { programId: 'mp_apicurio_winter26', programTermId: 'trm_apicurio_winter26' },
     });
+  });
+
+  it('allows the page during SSR without asking the profile check, so the browser run decides', async () => {
+    const hasMenteeProfile = vi.fn();
+    const { createUrlTree } = setup(hasMenteeProfile);
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+    const result = await TestBed.runInInjectionContext(() => menteeApplyGuard(routeWith(), {} as never));
+
+    expect(result).toBe(true);
+    expect(hasMenteeProfile).not.toHaveBeenCalled();
+    expect(createUrlTree).not.toHaveBeenCalled();
   });
 
   it('keeps a single id when the apply link only has one', async () => {

@@ -12,8 +12,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
 import { agreedUsername, avatarInitials } from '@lfx-one/shared/utils';
@@ -69,7 +69,7 @@ export class KeyContactsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(KeyContactsService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
-  private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
@@ -121,8 +121,8 @@ export class KeyContactsComponent {
 
   protected readonly hasUnfilledRoles: Signal<boolean> = computed(() => this.stats().unfilledRequiredRoleCount > 0);
 
-  // Writer-FGA gate (UX); BFF still re-enforces on write.
-  protected readonly canEdit: Signal<boolean> = computed(() => this.initCanEdit());
+  // Edit gate (UX, #3136): roster editor or authorizer `writer`; BFF/gateway still re-enforce on write.
+  protected readonly canEdit: Signal<boolean> = this.orgEditAccess.canEditSelected;
 
   protected readonly ariaSortMap: Signal<Record<OrgKeyContactSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
   protected readonly sortIconMap: Signal<Record<OrgKeyContactSortColumn, string>> = computed(() => this.initSortIconMap());
@@ -417,13 +417,6 @@ export class KeyContactsComponent {
       ...(removedPerson ? { detail: `${removedPerson.fullName} is no longer a ${event.contactTypeLabel}.` } : {}),
       life: 4000,
     });
-  }
-
-  private initCanEdit(): boolean {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return false; // No edit until the org uid resolves; placeholder bootstrap state.
-    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
-    return this.roleGrants.editorSet().has(uid);
   }
 
   private initFoundationOptions(): OrgKeyContactDropdownOption[] {

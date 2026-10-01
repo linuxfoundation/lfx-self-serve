@@ -55,7 +55,6 @@
                   severity="danger"
                   size="small"
                   [text]="true"
-                  styleClass="!px-0"
                   [ariaLabel]="'Withdraw request to join ' + row.programName"
                   (onClick)="withdraw.emit(row.id)"
                   [attr.data-testid]="'mentorship-mentor-withdraw-' + row.id" />

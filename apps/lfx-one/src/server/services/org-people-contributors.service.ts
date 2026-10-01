@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_CONTRIBUTOR_ROW_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
   OrgContributorFoundationOption,
   OrgContributorProjectOption,
@@ -12,11 +13,11 @@ import type {
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
-import { isObjectRowArray } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
+import { withOrgCompactCache } from './valkey.service';
 
 /** Contributors tab data access — single bundled GET, time-window aggregated server-side per Item 2 A1 lock. */
 export class OrgPeopleContributorsService {
@@ -32,12 +33,15 @@ export class OrgPeopleContributorsService {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    const rows = await withOrgCache(
+    // `people-contributors:v2:{timeRange}`: the stored value is now the compact projection below
+    // (GH-1906) — a project/foundation dictionary plus columnar person-grain rows — where it used
+    // to be the bare row array, so a `people-contributors:{timeRange}` entry must miss.
+    const rows = await withOrgCompactCache(
       accountId,
-      `people-contributors:${timeRange}`,
+      `people-contributors:v2:${timeRange}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchPersonProjectRows(accountId, timeRange),
-      isObjectRowArray
+      { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
     );
     return buildResponse(accountId, timeRange, rows);
   }
@@ -209,4 +213,90 @@ function computeStats(contributors: OrgContributorRow[], projects: number, found
     projects,
     foundations,
   };
+}
+
+/**
+ * Compacts the aggregate rows for Valkey storage (GH-1906).
+ *
+ * The grain is (person, project), so a person who contributes to twenty projects carries their
+ * identity twenty times and, worse, each of those rows repeats the project's and foundation's id,
+ * name and slug. Storing those six project-level columns once per distinct project and referencing
+ * them by index — on top of dropping the 17 repeated uppercase column names via columnar storage —
+ * is what brings the 'all' window back under the write cap.
+ */
+function encodeContributorRows(rows: ContributorPersonProjectRow[]): CompactOrgContributorRowsCache {
+  // Keyed on the whole tuple, not on PROJECT_ID: the project-level columns are `MAX()` aggregates
+  // per (person, project), so two rows for one project could in principle disagree, and collapsing
+  // them onto the first one seen would make the decoded rows differ from the uncached ones.
+  // Keyed once per row and reused for both the dictionary and the index array: the key is the
+  // expensive part of the encode, and computing it twice per row bought nothing.
+  const keys = new Map<ContributorPersonProjectRow, string>(
+    rows.map((row) => [row, tupleKey([row.PROJECT_ID, row.PROJECT_NAME, row.PROJECT_SLUG, row.FOUNDATION_ID, row.FOUNDATION_NAME, row.FOUNDATION_SLUG])])
+  );
+  const projects = dedupeByKey(rows, (row) => keys.get(row)!);
+
+  return {
+    projects: toColumnar(projects.values, ORG_CONTRIBUTOR_PROJECT_COLUMNS),
+    rows: toColumnar(rows, ORG_CONTRIBUTOR_ROW_COLUMNS),
+    // Every row was part of the set `projects` was built from, so the lookup always resolves.
+    rowProjects: rows.map((row) => projects.indexOf.get(keys.get(row)!)!),
+  };
+}
+
+/** Rebuilds the aggregate rows {@link encodeContributorRows} stored, so `buildResponse` sees exactly what a cache miss would hand it. */
+function decodeContributorRows(value: CompactOrgContributorRowsCache): ContributorPersonProjectRow[] {
+  const projects = fromColumnar<ContributorPersonProjectRow>(value.projects);
+  const rows = fromColumnar<ContributorPersonProjectRow>(value.rows);
+  rows.forEach((row, index) => Object.assign(row, projects[value.rowProjects[index]]));
+  return rows;
+}
+
+function isCompactContributorRows(value: unknown): boolean {
+  const cache = value as Partial<CompactOrgContributorRowsCache> | null;
+  if (!cache || typeof cache !== 'object' || !isColumnarTable(cache.projects) || !isColumnarTable(cache.rows)) {
+    return false;
+  }
+  // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+  // "successfully" into rows missing data the writer always emits, which is worse than a miss —
+  // the tab renders with holes in it for the rest of the TTL instead of refetching.
+  if (!hasExactColumns(cache.projects, ORG_CONTRIBUTOR_PROJECT_COLUMNS) || !hasExactColumns(cache.rows, ORG_CONTRIBUTOR_ROW_COLUMNS)) {
+    return false;
+  }
+  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
+  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
+  // into a row the mapper then reads, so it has to be a miss.
+  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
+  // through, so demanding a string would turn one null row into a permanent miss for that org.
+  // Absence and wrong types are still rejected — those the mapper cannot survive.
+  const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
+  const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
+  const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');
+  // `CDP_MEMBER_ID` may be null, not just a string: the query fills it with `MIN(cdp_member_id)`, and
+  // an aggregate over an all-NULL group returns NULL. Prod held no such group when this was written,
+  // but the cache must never be stricter than the uncached path — which passes a NULL straight
+  // through — or one such row would make that org's entry a permanent miss.
+  if (
+    !cache.rows.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[memberIdIndex])) ||
+    !cache.projects.r.every((row) => isStoredNullableString(row[projectIdIndex]))
+  ) {
+    return false;
+  }
+  // Every reference must resolve, so the decode can rebuild each row in full rather than silently
+  // emitting one with no project at all — a truncated entry is a miss, not a partial hit.
+  const projectCount = cache.projects.r.length;
+  return (
+    Array.isArray(cache.rowProjects) &&
+    cache.rowProjects.length === cache.rows.r.length &&
+    cache.rowProjects.every((index) => Number.isInteger(index) && index >= 0 && index < projectCount)
+  );
+}
+
+/** A required stored cell: present (not the absence marker) and a string. */
+function isStoredString(cell: unknown): boolean {
+  return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
+function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
 }

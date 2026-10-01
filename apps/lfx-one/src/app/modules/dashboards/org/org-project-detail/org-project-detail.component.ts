@@ -7,8 +7,10 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -16,6 +18,7 @@ import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -35,7 +38,6 @@ import {
   PD_DRAWER_QUERY_PARAM,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
   PD_VALID_DRAWER_CARD_KEYS,
@@ -65,7 +67,7 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
 } from '@lfx-one/shared/interfaces';
-import { buildHealthAriaLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, formatHealthLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
@@ -92,6 +94,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     ChartComponent,
     EmptyStateComponent,
     InputTextComponent,
+    OrgLensEmptyStateComponent,
     OrgLeaderboardDetailDrawerComponent,
     OrgProjectDetailTabBarComponent,
     PersonDetailDrawerComponent,
@@ -112,6 +115,8 @@ export class OrgProjectDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -173,6 +178,10 @@ export class OrgProjectDetailComponent {
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
   protected readonly timeRange = computed<OrgLensLeaderboardTimeRange>(() => this.initTimeRange());
+  // Spec 053 / #2961 — the page-level state replacing the whole page (`could-not-load`,
+  // `staff-check-failed`, `contractor-no-grant`, `no-organization`), or null when the page renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
   private readonly orgName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
@@ -232,9 +241,8 @@ export class OrgProjectDetailComponent {
       return { label: HEALTH_SCORE_LABELS.unavailable, ...HEALTH_SCORE_BADGE.unavailable };
     }
     const tag = PD_HEALTH_TAG[health];
-    // Bare-band bg/text stay unsuffixed for color lookup; only the rendered label gets " - Partial",
-    // sourced straight from the BFF's healthCoveredCategoryCount — never recomputed locally.
-    return isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null) ? { ...tag, label: `${tag.label}${HEALTH_SCORE_PARTIAL_SUFFIX}` } : tag;
+    // Colors stay on the bare band; only the label gets the partial marker, from the BFF's covered count.
+    return { ...tag, label: formatHealthLabel(tag.label, isPartialHealthScore(hero?.healthCoveredCategoryCount ?? null)) };
   });
   protected readonly heroHealthAriaLabel = computed(() =>
     buildHealthAriaLabel({

@@ -55,3 +55,17 @@ export const LFX_PROFILE_CARD_LABELS = {
   github: 'GitHub',
   linkedin: 'LinkedIn',
 } as const;
+
+/**
+ * Caps on the LFX profile fields a mentorship profile copies. The browser drops a name or logo URL
+ * past its cap rather than send it, and the BFF refuses one with a 400, so neither can store an
+ * oversize value. The BFF leaves out a resolved primary email past its cap.
+ */
+export const MENTORSHIP_LFX_PROFILE_NAME_MAX = 100;
+export const MENTORSHIP_LFX_PROFILE_EMAIL_MAX = 254;
+export const MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX = 2048;
+
+/** Shown when the LFX profile saved but copying it onto the mentorship profile failed. */
+export const LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY = 'Mentorship profile not updated';
+export const LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL =
+  'Your LFX profile was saved, but your mentorship profile still shows the old name, email or picture. Save your LFX profile again to retry.';

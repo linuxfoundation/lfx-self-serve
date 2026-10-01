@@ -66,9 +66,10 @@ describe('FormationCardComponent', () => {
       settingsResult?: Observable<ProjectSettings>;
       projectOverrides?: Partial<Project>;
       getProjectResult?: Partial<Project>;
+      readable?: boolean;
     } = {}
   ): Promise<void> {
-    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult } = options;
+    const { sfid = 'sfid-1', settingsResult = of(settings()), projectOverrides = {}, getProjectResult, readable = true } = options;
     TestBed.resetTestingModule();
     getProjectSpy = vi.fn(() => of(project(stage, { ...projectOverrides, auditor, ...getProjectResult })));
 
@@ -110,6 +111,7 @@ describe('FormationCardComponent', () => {
             activeProjectAnnouncementDate: announcementDate,
             activeProjectAnnouncementDateLoading: announcementDateLoading,
             activeProjectAnnouncementDateHasError: announcementDateHasError,
+            activeProjectAnnouncementDateReadable: signal(readable),
           },
         },
       ],
@@ -177,6 +179,15 @@ describe('FormationCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
   });
 
+  it('omits the announcement date in context mode when the caller may not read settings', async () => {
+    await render('Formation - Engaged', false, { readable: false });
+
+    expect(text()).not.toContain('Announcement date');
+    expect(text()).not.toContain('Not set');
+    expect(text()).toContain('project-one');
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-card-error"]')).toBeNull();
+  });
+
   it('formats the announcement date via the shared ISO-date label, and falls back to "Not set"', async () => {
     await render('Formation - Engaged', false);
     expect(text()).toContain('Sep 1, 2026');
@@ -203,6 +214,7 @@ describe('FormationCardComponent', () => {
         'activeProjectAnnouncementDate',
         'activeProjectAnnouncementDateLoading',
         'activeProjectAnnouncementDateHasError',
+        'activeProjectAnnouncementDateReadable',
       ];
       const stub = {};
       for (const member of members) {

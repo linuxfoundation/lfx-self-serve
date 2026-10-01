@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingType, MeetingVisibility } from '../enums';
 import type { Meeting } from '../interfaces';
 import { syncShowMeetingAttendeesLock } from './form.utils';
-import { getMeetingPrivacyIcon, getMeetingPrivacyLabel, isHostKeyVisible, isHostKeyVisibleForJoinWindow } from './meeting-privacy.utils';
+import { getMeetingPrivacyIcon, getMeetingPrivacyLabel, isHostKeyVisible, isHostKeyVisibleForJoinWindow, isWithinHostKeyWindow } from './meeting-privacy.utils';
 
 describe('getMeetingPrivacyLabel', () => {
   it('returns "Public" for public + unrestricted', () => {
@@ -136,6 +136,78 @@ describe('isHostKeyVisibleForJoinWindow', () => {
   it('is false for null/undefined meetings', () => {
     expect(isHostKeyVisibleForJoinWindow(null)).toBe(false);
     expect(isHostKeyVisibleForJoinWindow(undefined)).toBe(false);
+  });
+});
+
+describe('isWithinHostKeyWindow', () => {
+  const MIN = 60_000;
+  // Pin a fixed reference point so boundary assertions are fully deterministic.
+  const NOW = new Date('2025-06-01T12:00:00.000Z');
+  const nowMs = NOW.getTime();
+
+  function iso(offsetMs: number): string {
+    return new Date(nowMs + offsetMs).toISOString();
+  }
+
+  it('returns true when now is exactly at the window start (start_time − 70 min)', () => {
+    // start_time = now + 70 min → windowStart = now exactly
+    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when now is one ms before the window start', () => {
+    const oneMsBefore = new Date(nowMs - 1);
+    expect(isWithinHostKeyWindow({ start_time: iso(70 * MIN), duration: 60 }, oneMsBefore)).toBe(false);
+  });
+
+  it('returns true during the meeting itself', () => {
+    // start_time = 15 min ago; now is 15 min past start, well inside window
+    expect(isWithinHostKeyWindow({ start_time: iso(-15 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns true up to 40 min after meeting end', () => {
+    // start_time = 90 min ago, duration = 60 → end = 30 min ago, tail ends at now + 10 min
+    expect(isWithinHostKeyWindow({ start_time: iso(-90 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when now is exactly at the window end (start + duration + 40 min)', () => {
+    // windowEnd = start + 60 + 40 = now → exclusive upper bound, must be false
+    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 40) * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when now is just past the window end', () => {
+    expect(isWithinHostKeyWindow({ start_time: iso(-(60 + 41) * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when the meeting is more than 70 min away', () => {
+    expect(isWithinHostKeyWindow({ start_time: iso(71 * MIN), duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('prefers next_occurrence_start_time over start_time for recurring meetings', () => {
+    // series start_time is 30 days in the past (window long closed)
+    // next_occurrence_start_time is 30 min from now (inside window)
+    expect(
+      isWithinHostKeyWindow(
+        {
+          start_time: iso(-30 * 24 * 60 * MIN),
+          next_occurrence_start_time: iso(30 * MIN),
+          duration: 60,
+        },
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('falls back to start_time when next_occurrence_start_time is absent', () => {
+    // start_time is 30 min from now — inside window
+    expect(isWithinHostKeyWindow({ start_time: iso(30 * MIN), duration: 60 }, NOW)).toBe(true);
+  });
+
+  it('returns false when start_time is absent', () => {
+    expect(isWithinHostKeyWindow({ start_time: '', duration: 60 }, NOW)).toBe(false);
+  });
+
+  it('returns false when start_time is not a valid date', () => {
+    expect(isWithinHostKeyWindow({ start_time: 'not-a-date', duration: 60 }, NOW)).toBe(false);
   });
 });
 

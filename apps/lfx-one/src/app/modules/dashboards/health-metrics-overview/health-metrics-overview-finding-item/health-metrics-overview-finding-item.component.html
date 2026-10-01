@@ -80,7 +80,17 @@
         <span class="text-[12px] text-gray-500">{{ finding().keyLabel }}</span>
       }
 
-      @if (finding().linkHref; as linkHref) {
+      @if (finding().linkRoute; as linkRoute) {
+        <a
+          [routerLink]="linkRoute.commands"
+          [fragment]="linkRoute.fragment"
+          [queryParams]="linkRoute.queryParams"
+          queryParamsHandling="merge"
+          class="text-[12px] font-medium text-blue-600 hover:underline"
+          [attr.data-testid]="'health-metrics-overview-finding-link-' + finding().sortRank">
+          View details
+        </a>
+      } @else if (finding().linkHref; as linkHref) {
         <a
           [href]="linkHref"
           [target]="finding().linkIsExternal ? '_blank' : '_self'"

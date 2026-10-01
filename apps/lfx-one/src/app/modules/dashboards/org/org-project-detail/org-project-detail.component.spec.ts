@@ -1,19 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal, type WritableSignal } from '@angular/core';
+import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
-import { Account, BoardDisplayRow, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
+import { PD_HEALTH_TAG } from '@lfx-one/shared/constants';
+import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { IntercomService } from '@services/intercom.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { MessageService } from 'primeng/api';
 import { BehaviorSubject, EMPTY, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProjectDetailComponent } from './org-project-detail.component';
+
+// The page-level classifier's surface, with the state under test's control.
+function emptyStateStub(pageState: WritableSignal<OrgLensEmptyStateName | null>) {
+  return {
+    pageState,
+    hasPageState: computed(() => pageState() !== null),
+    pageReady: signal(true),
+    settled: signal(true),
+    retrying: signal(false),
+    retry: vi.fn(),
+  };
+}
 
 /**
  * Covers which leaderboard rows may open the score-breakdown drawer. The breakdown is keyed by
@@ -56,6 +73,8 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
       providers: [
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment: signal('acme') } },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
@@ -148,6 +167,85 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
 });
 
 /**
+ * #2961 — the shared page-level state replaces the whole page: a contractor refused the selected
+ * organization must see only that state, never the page's own not-found / error states or any block.
+ */
+describe('OrgProjectDetailComponent — page-level empty state', () => {
+  async function render(state: OrgLensEmptyStateName | null): Promise<HTMLElement> {
+    await TestBed.configureTestingModule({
+      imports: [OrgProjectDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
+        },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(state)) },
+        // The page-level state's own actions (copy reference, contact support).
+        MessageService,
+        { provide: IntercomService, useValue: { show: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        {
+          provide: OrgLensProjectDetailService,
+          useValue: {
+            // A null hero is the page's own whole-page not-found.
+            getHero: vi.fn(() => of(null)),
+            getInfluenceBlock: vi.fn(() => of(null)),
+            getTrendBlock: vi.fn(() => of(null)),
+            getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            getLeaderboardBreakdown: vi.fn(() => of(null)),
+          },
+        },
+        {
+          provide: PersonDetailDrawerService,
+          useValue: {
+            open: vi.fn(),
+            close: vi.fn(),
+            isOpen: signal(false),
+            activeContext: signal(null),
+            activeTab: signal('events'),
+            loading: signal(false),
+            error: signal(null),
+            emailError: signal(false),
+            companyEmails: signal([]),
+          },
+        },
+        { provide: Router, useValue: { navigate: vi.fn(), events: EMPTY, createUrlTree: vi.fn(() => ({}) as UrlTree), serializeUrl: vi.fn(() => '') } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            paramMap: of(convertToParamMap({ projectSlug: 'k8s' })),
+            queryParamMap: of(convertToParamMap({})),
+            snapshot: { queryParamMap: convertToParamMap({}) },
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(OrgProjectDetailComponent);
+    await fixture.whenStable();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('renders the page itself when there is no page-level state', async () => {
+    const el = await render(null);
+
+    expect(el.querySelector('[data-testid="org-project-detail-no-access-state"]')).toBeNull();
+    expect(el.querySelector('[data-testid="project-detail-not-found"]')).not.toBeNull();
+  });
+
+  it('replaces the page with the contractor-no-grant state and renders none of its own states', async () => {
+    const el = await render('contractor-no-grant');
+
+    expect(el.querySelector('[data-testid="org-project-detail-no-access-state"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="project-detail-not-found"]')).toBeNull();
+    expect(el.querySelector('[data-testid="project-detail-hero-loading"]')).toBeNull();
+  });
+});
+
+/**
  * LFXV2-3379: when the warehouse has no v2 health category, the hero's `health` is `null`. The
  * badge must render an "Unavailable" tag matching the Org Lens projects table's equivalent state,
  * not omit the "Health score" section entirely (the pre-fix behavior — `healthMeta()` returned
@@ -180,6 +278,8 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
           provide: AccountContextService,
           useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
         },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
           provide: OrgLensProjectDetailService,
@@ -235,10 +335,32 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
     expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: 'Fair' }));
   });
 
-  it('still appends the partial suffix when exactly 2 of 3 categories are covered (LFXV2-1262)', async () => {
+  it('marks the label with an asterisk, on the bare band colors, when exactly 2 of 3 categories are covered (LFXV2-1262)', async () => {
     const component = await createComponent({ ...HERO, health: 'fair', healthMaxScore: 65, healthCoveredCategoryCount: 2 });
 
-    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: expect.stringContaining('Fair') }));
-    expect(component['healthMeta']()?.label).toContain('Partial');
+    expect(component['healthMeta']()).toEqual({ ...PD_HEALTH_TAG.fair, label: 'Fair*' });
+  });
+
+  it('keeps the "Unavailable" tag bare even when the covered count is 2', async () => {
+    const component = await createComponent({ ...HERO, health: null, healthCoveredCategoryCount: 2 });
+
+    expect(component['healthMeta']()).toEqual(expect.objectContaining({ label: 'Unavailable' }));
+  });
+
+  it('names a partial score in words, not with an asterisk, in the badge accessible name', async () => {
+    const component = await createComponent({
+      ...HERO,
+      health: 'fair',
+      healthOverallScore: 52,
+      healthMaxScore: 65,
+      healthCoveredCategoryCount: 2,
+      healthMaintainer: 30,
+      healthSecurity: null,
+      healthDevelopment: 22,
+    });
+
+    expect(component['heroHealthAriaLabel']()).toBe(
+      'Health: Fair, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+    );
   });
 });

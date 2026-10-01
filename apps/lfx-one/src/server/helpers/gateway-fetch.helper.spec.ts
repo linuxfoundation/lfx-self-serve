@@ -240,3 +240,40 @@ describe('gatewayFetch log-only redaction', () => {
     });
   });
 });
+
+describe('gatewayFetch empty success body', () => {
+  const req = { apiGatewayToken: 'gateway-token' } as Request;
+  const options = {
+    operation: 'org_cla_update_ecla_auto_create',
+    service: 'cla_service',
+    errorMessage: 'Failed to update the Auto ECLA setting',
+    errorCode: 'UPSTREAM_ERROR',
+    method: 'PUT' as const,
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('treats an empty 200 as success when the caller accepts an empty body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 200 }))
+    );
+
+    await expect(gatewayFetch(req, 'https://gateway.example.test/ecla-auto-create', { ...options, acceptEmptyBody: true })).resolves.toBeNull();
+  });
+
+  it('still rejects an empty 200 when the caller expects a body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 200 }))
+    );
+
+    const error = (await gatewayFetch(req, 'https://gateway.example.test/ecla-auto-create', options).catch((caught: unknown) => caught)) as MicroserviceError;
+
+    expect(error.statusCode).toBe(502);
+    expect(error.code).toBe('UPSTREAM_INVALID_RESPONSE');
+  });
+});

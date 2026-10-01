@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 
 import sanitizeHtml from 'sanitize-html';
 
-import { createMarked } from './marked-config.mjs';
+import { createMarked, docsArticleUrl } from './marked-config.mjs';
 import { sanitizeDocsHtml } from './sanitize.mjs';
 
 const MANIFEST_SCHEMA_VERSION = 1;
@@ -88,7 +88,7 @@ export function buildDocsManifest({ records }) {
     };
     const marked = createMarked(ctx);
     const rawHtml = marked.parse(record.body);
-    const bodyHtml = sanitizeDocsHtml(typeof rawHtml === 'string' ? rawHtml : '');
+    const bodyHtml = sanitizeDocsHtml(typeof rawHtml === 'string' ? rawHtml : '', docsArticleUrl(record.slug));
     const bodyText = htmlToPlainText(bodyHtml);
 
     // FR-028 front-matter fallbacks.
@@ -117,7 +117,7 @@ export function buildDocsManifest({ records }) {
 
     const article = /** @type {import('@lfx-one/shared').DocsArticle} */ ({
       slug: record.slug,
-      url: record.slug === '' ? '/docs' : `/docs/${record.slug}`,
+      url: docsArticleUrl(record.slug),
       sourcePath: record.sourcePath,
       topic: articleStub.topic,
       title,

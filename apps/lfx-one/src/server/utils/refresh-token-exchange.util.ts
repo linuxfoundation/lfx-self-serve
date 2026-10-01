@@ -10,6 +10,41 @@ const TOKEN_EXPIRY_BUFFER_SECONDS = 300;
 const TOKEN_EXCHANGE_TIMEOUT_MS = 10_000;
 
 /**
+ * Populates `req.apiGatewayToken` with a user-scoped access token for the API Gateway
+ * audience, exchanging the session's refresh token when the request does not already
+ * carry one. Single owner of the API_GW_AUDIENCE / PCC_AUTH0_* env config and the
+ * 'apiGatewayToken' session-key contract — call this instead of re-wiring the exchange
+ * inline (the auth middleware and routes that skip it both populate the token here).
+ *
+ * Session-cached (with a 5-minute expiry buffer) and fail-open: misconfiguration or an
+ * exchange failure logs and leaves the request without the token.
+ */
+export async function populateApiGatewayToken(req: Request): Promise<void> {
+  const apiGatewayAudience = process.env['API_GW_AUDIENCE'];
+  if (!apiGatewayAudience) {
+    logger.warning(req, 'api_gateway_token', 'API_GW_AUDIENCE env var is not set, skipping secondary token fetch');
+    return;
+  }
+
+  if (req.apiGatewayToken) {
+    return;
+  }
+
+  const token = await exchangeRefreshTokenForAudience(req, {
+    issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
+    clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
+    clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
+    audience: apiGatewayAudience,
+    sessionKey: 'apiGatewayToken',
+  });
+
+  if (token) {
+    req.apiGatewayToken = token;
+    logger.debug(req, 'api_gateway_token', 'API Gateway token ready');
+  }
+}
+
+/**
  * Exchanges the user's OIDC refresh token for an access token scoped to a
  * different audience. Produces a user-scoped token — the resulting token
  * carries the user's identity, not the application's.

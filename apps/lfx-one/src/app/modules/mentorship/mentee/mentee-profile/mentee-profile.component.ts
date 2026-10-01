@@ -8,8 +8,11 @@ import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMenteeProfileResponse, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
+import { MenteeApplicationWithdrawService } from '@modules/mentorship/services/mentee-application-withdraw.service';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
@@ -31,6 +34,14 @@ import { MenteeProfileEditDrawerService } from './components/mentee-profile-edit
  * fields. On failure it degrades to the empty response and surfaces a retry so a
  * transient BFF error never leaves the mentee stranded on a spinner. The shell owns
  * the page H1 and the tab bar, so nothing here renders either.
+ *
+ * Withdrawing from Application History confirms first. The profile re-reads whenever the
+ * mentee's applications change (`menteeApplicationsRevision`), so the withdrawn row shows
+ * its new status.
+ *
+ * Saving the edit drawer shows the saved profile in place (`savedProfile`) instead of re-reading it, so the page
+ * never flashes its skeleton. A genuine load (Retry, or a change to the applications) drops that override so the
+ * freshly loaded data wins.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-profile',
@@ -41,26 +52,39 @@ import { MenteeProfileEditDrawerService } from './components/mentee-profile-edit
     MenteeProfileEditDrawerComponent,
     EmptyStateComponent,
     RouteLoadingComponent,
+    ConfirmDialogModule,
   ],
-  providers: [MenteeProfileEditDrawerService],
+  providers: [MenteeProfileEditDrawerService, ConfirmationService, MenteeApplicationWithdrawService],
   templateUrl: './mentee-profile.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeProfileComponent {
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly menteeService = inject(MentorshipMenteeService);
   private readonly drawerService = inject(MenteeProfileEditDrawerService);
+  private readonly withdrawService = inject(MenteeApplicationWithdrawService);
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
+  protected readonly withdrawingId = this.withdrawService.withdrawingId;
 
   private readonly reloadProfile = signal(0);
+  /** The profile the last successful save returned. Layered over the loaded state and dropped when a load starts. */
+  private readonly savedProfile = signal<MentorshipMenteeProfileUpdateResponse | null>(null);
   private readonly profileState: Signal<MentorshipMenteeProfileResponse> = this.initProfile();
 
-  protected readonly profile = computed(() => this.profileState().profile);
+  protected readonly profile = computed(() => this.savedProfile()?.profile ?? this.profileState().profile);
   protected readonly history = computed(() => this.profileState().history ?? []);
 
   protected onEditProfile(): void {
     this.drawerService.open(this.profile());
+  }
+
+  protected onProfileSaved(response: MentorshipMenteeProfileUpdateResponse): void {
+    this.savedProfile.set(response);
+  }
+
+  protected onWithdraw(applicationId: string): void {
+    this.withdrawService.confirmWithdraw(applicationId);
   }
 
   protected retry(): void {
@@ -69,13 +93,15 @@ export class MenteeProfileComponent {
 
   private initProfile(): Signal<MentorshipMenteeProfileResponse> {
     return toSignal(
-      toObservable(this.reloadProfile).pipe(
+      // A Retry here, or any change to the applications (a withdraw), reads the profile again.
+      toObservable(computed(() => [this.reloadProfile(), this.menteeService.menteeApplicationsRevision()])).pipe(
         tap(() => {
+          this.savedProfile.set(null);
           this.hasLoaded.set(false);
           this.loadError.set(null);
         }),
         switchMap(() =>
-          this.mentorshipService.getMenteeProfile().pipe(
+          this.menteeService.getMenteeProfile().pipe(
             map((response) => {
               this.hasLoaded.set(true);
               if (!Array.isArray(response.history)) {

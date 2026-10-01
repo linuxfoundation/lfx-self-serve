@@ -31,6 +31,7 @@ import {
   MeetingDeleteTypeSelectionComponent,
 } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
+import { HostKeyPopoverComponent } from '@app/modules/meetings/components/host-key-popover/host-key-popover.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
@@ -112,6 +113,7 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     MeetingRegistrantsDisplayComponent,
     MeetingMaterialsDrawerComponent,
     MeetingOrganizerComponent,
+    HostKeyPopoverComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',

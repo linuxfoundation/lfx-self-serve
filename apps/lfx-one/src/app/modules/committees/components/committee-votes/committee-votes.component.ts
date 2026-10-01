@@ -100,7 +100,7 @@ export class CommitteeVotesComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.loading.set(true);
-          return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
+          return this.voteService.getVotesByCommittee(c.uid).pipe(
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale index rows.
             map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
             catchError(() => {

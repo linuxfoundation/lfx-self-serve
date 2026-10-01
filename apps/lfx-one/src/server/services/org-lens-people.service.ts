@@ -1,8 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEE_STATS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_ALL_EMPLOYEE_STATS,
+  ORG_PEOPLE_ALL_ROW_COLUMNS,
+  ORG_PEOPLE_ALL_STATS_COLUMNS,
+  ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
+  CompactOrgAllEmployeesRawCache,
+  OrgPeopleAllRowRaw,
+  OrgPeopleAllStatsRow,
+  OrgPeopleFoundationOptionRow,
   OrgAllEmployeeCodeContribution,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
@@ -18,7 +28,7 @@ import type {
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -27,45 +37,7 @@ import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
-
-/** Per-(account, person) row from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL. */
-interface OrgPeopleAllRow {
-  ACCOUNT_ID: string;
-  PERSON_KEY: string;
-  LFID: string | null;
-  LF_USERNAME: string | null;
-  CDP_MEMBER_ID: string | null;
-  NAME: string | null;
-  TITLE: string | null;
-  EMAIL: string | null;
-  PHOTO: string | null;
-  SEATS_COUNT: number;
-  BOARD_SEATS_COUNT: number;
-  COMMITTEE_SEATS_COUNT: number;
-  COMMITS_COUNT: number;
-  EVENTS_COUNT: number;
-  COURSES_COUNT: number;
-}
-
-/** Roster row including the raw ENGAGED_FOUNDATION_IDS column (Snowflake ARRAY may arrive as a JSON string or a parsed array). */
-type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
-
-/** One-row aggregate from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_STATS. */
-interface OrgPeopleStatsRow {
-  ACCOUNT_ID: string;
-  ACTIVE_IN_OSS: number;
-  IN_GOVERNANCE: number;
-  CODE_CONTRIBUTORS: number;
-  EVENT_ATTENDEES: number;
-  TRAINEES: number;
-}
-
-/** Distinct (foundation_id, foundation_name) pair powering the All Foundations dropdown. */
-interface FoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
+import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 interface CommitteeMembershipRow {
   ACCOUNT_ID: string;
@@ -147,13 +119,13 @@ export class OrgLensPeopleService {
    * cached shape.
    */
   public async getAllEmployeesInternal(accountId: string): Promise<OrgAllEmployeesInternalResponse> {
-    const raw = await withOrgCache(
-      accountId,
-      'people-all',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchAllEmployeesRaw(accountId),
-      isAllEmployeesRaw
-    );
+    // `people-all:v2`: the stored value is now the compact projection below (GH-1906) — roster rows
+    // columnar with `ACCOUNT_ID` hoisted — so a `people-all` entry must miss rather than decode.
+    const raw = await withOrgCompactCache(accountId, 'people-all:v2', VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, () => this.fetchAllEmployeesRaw(accountId), {
+      encode: encodeAllEmployeesRaw,
+      decode: decodeAllEmployeesRaw,
+      accept: isCompactAllEmployeesRaw,
+    });
 
     return {
       accountId,
@@ -271,7 +243,7 @@ export class OrgLensPeopleService {
   /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */
   private async fetchAllEmployeesRaw(
     accountId: string
-  ): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; statsRaw: OrgPeopleStatsRow[]; foundationRaw: FoundationOptionRow[] }> {
+  ): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; statsRaw: OrgPeopleAllStatsRow[]; foundationRaw: OrgPeopleFoundationOptionRow[] }> {
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -333,8 +305,8 @@ export class OrgLensPeopleService {
 
     const [rowsResult, statsResult, foundationResult] = await Promise.all([
       this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId]),
-      this.snowflakeService.execute<OrgPeopleStatsRow>(statsQuery, [accountId]),
-      this.snowflakeService.execute<FoundationOptionRow>(foundationQuery, [accountId, accountId, accountId, accountId]),
+      this.snowflakeService.execute<OrgPeopleAllStatsRow>(statsQuery, [accountId]),
+      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, accountId, accountId, accountId]),
     ]);
 
     return { rowsRaw: rowsResult.rows, statsRaw: statsResult.rows, foundationRaw: foundationResult.rows };
@@ -366,7 +338,7 @@ export class OrgLensPeopleService {
     };
   }
 
-  private mapStats(rows: OrgPeopleStatsRow[]): OrgAllEmployeeStats {
+  private mapStats(rows: OrgPeopleAllStatsRow[]): OrgAllEmployeeStats {
     if (rows.length === 0) {
       return EMPTY_ORG_ALL_EMPLOYEE_STATS;
     }
@@ -656,23 +628,79 @@ function cleanDisplayName(rawName: string | null, email: string | null): string 
   return (email ?? '').trim() || 'Unknown member';
 }
 
-function isAllEmployeesRaw(value: unknown): boolean {
-  const v = value as { rowsRaw?: unknown; statsRaw?: unknown; foundationRaw?: unknown } | null;
-  return (
-    !!v &&
-    Array.isArray(v.rowsRaw) &&
-    Array.isArray(v.statsRaw) &&
-    Array.isArray(v.foundationRaw) &&
-    // Every row must carry LF_USERNAME, so entries cached before it was selected are rejected as a miss
-    // rather than replayed. A replayed row maps to a null username, which silently returns the people
-    // directory to email-only matching for the rest of the TTL. The value may legitimately be null, so
-    // this checks presence, not truthiness.
-    v.rowsRaw.every((row) => {
-      if (!row || typeof row !== 'object' || !('LF_USERNAME' in row)) return false;
-      const username = (row as { LF_USERNAME: unknown }).LF_USERNAME;
-      return username === null || typeof username === 'string';
-    })
-  );
+/**
+ * Compacts the three raw reads for Valkey storage (GH-1906). The roster is the bulk of the payload
+ * — well past the 1 MiB write cap at the largest org measured, so it was never actually stored —
+ * and almost half of that was the same 15 uppercase warehouse column names repeated on every row.
+ * Columnar storage carries them once.
+ */
+function encodeAllEmployeesRaw(raw: {
+  rowsRaw: OrgPeopleAllRowRaw[];
+  statsRaw: OrgPeopleAllStatsRow[];
+  foundationRaw: OrgPeopleFoundationOptionRow[];
+}): CompactOrgAllEmployeesRawCache {
+  return {
+    // The roster query filters on ACCOUNT_ID, so every row carries the same value — stored once
+    // here and put back on each row at decode. Normalized to null when the rows don't carry it at
+    // all: an entry rejected for a missing hoisted field would be a cache that silently never
+    // hits, which is the exact failure this compaction exists to remove.
+    accountId: raw.rowsRaw.length ? (raw.rowsRaw[0].ACCOUNT_ID ?? null) : null,
+    // `ENGAGED_FOUNDATION_IDS` is stored exactly as the driver returned it (a JSON string or a
+    // parsed array) so `parseFoundationIdArray` sees the same input it would on a cache miss.
+    rowsRaw: toColumnar(raw.rowsRaw, ORG_PEOPLE_ALL_ROW_COLUMNS),
+    statsRaw: toColumnar(raw.statsRaw, ORG_PEOPLE_ALL_STATS_COLUMNS),
+    foundationRaw: toColumnar(raw.foundationRaw, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS),
+  };
+}
+
+/** Rebuilds the raw rows {@link encodeAllEmployeesRaw} stored, so both accessors map exactly what a cache miss would hand them. */
+function decodeAllEmployeesRaw(value: CompactOrgAllEmployeesRawCache): {
+  rowsRaw: OrgPeopleAllRowRaw[];
+  statsRaw: OrgPeopleAllStatsRow[];
+  foundationRaw: OrgPeopleFoundationOptionRow[];
+} {
+  const rowsRaw = fromColumnar<OrgPeopleAllRowRaw>(value.rowsRaw);
+  if (value.accountId !== null) {
+    for (const row of rowsRaw) {
+      row.ACCOUNT_ID = value.accountId;
+    }
+  }
+  return {
+    rowsRaw,
+    statsRaw: fromColumnar<OrgPeopleAllStatsRow>(value.statsRaw),
+    foundationRaw: fromColumnar<OrgPeopleFoundationOptionRow>(value.foundationRaw),
+  };
+}
+
+function isCompactAllEmployeesRaw(value: unknown): boolean {
+  const cache = value as Partial<CompactOrgAllEmployeesRawCache> | null;
+  if (
+    !cache ||
+    typeof cache !== 'object' ||
+    (cache.accountId !== null && typeof cache.accountId !== 'string') ||
+    !isColumnarTable(cache.rowsRaw) ||
+    !isColumnarTable(cache.statsRaw) ||
+    !isColumnarTable(cache.foundationRaw) ||
+    // Exact columns, not `includes`: a duplicated, extra, reordered or short-rowed entry decodes
+    // "successfully" into rows missing data the writer always emits, which is worse than a miss.
+    // This is a SHAPE check only — the per-cell value checks below are separate and necessary.
+    !hasExactColumns(cache.rowsRaw, ORG_PEOPLE_ALL_ROW_COLUMNS) ||
+    !hasExactColumns(cache.statsRaw, ORG_PEOPLE_ALL_STATS_COLUMNS) ||
+    !hasExactColumns(cache.foundationRaw, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS)
+  ) {
+    return false;
+  }
+  // Exact columns prove the SHAPE; this proves the VALUE, and both are needed. The pre-compaction
+  // guard asserted per row that LF_USERNAME is present and either null or a string; a column-name
+  // check alone would let a current-shape entry holding a number or an object there through, and
+  // `mapEmployeeRow` would then call `.trim()` on it — turning a cache HIT into a 500 rather than a
+  // miss. Absence is rejected for the same reason it was before: a row mapped to a null username
+  // silently returns the people directory to email-only matching for the rest of the TTL.
+  const usernameIndex = ORG_PEOPLE_ALL_ROW_COLUMNS.indexOf('LF_USERNAME');
+  return cache.rowsRaw.r.every((row) => {
+    const username = row[usernameIndex];
+    return username === null || (typeof username === 'string' && !isColumnarAbsent(username));
+  });
 }
 
 function isEmployeeActivityRaw(value: unknown): boolean {

@@ -121,3 +121,121 @@ describe('OrgLensClaService acknowledgment client', () => {
     expect(http.post).toHaveBeenCalledWith(`${acknowledgmentsBase}/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`, request);
   });
 });
+
+describe('OrgLensClaService activity log client', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const SIGNATURE = 'signature-uuid-1';
+  const activityBase = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/${encodeURIComponent(SIGNATURE)}/activity`;
+
+  let service: OrgLensClaService;
+  let http: { get: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { get: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('getActivityLog GETs the encoded activity path with no query params by default', async () => {
+    const emptyPage = { signatureId: SIGNATURE, list: [], resultCount: 0, nextKey: null };
+    http.get.mockReturnValue(of(emptyPage));
+
+    await expect(firstValueFrom(service.getActivityLog(ORG, SIGNATURE))).resolves.toEqual(emptyPage);
+    const [url, opts] = http.get.mock.calls[0];
+    expect(url).toBe(activityBase);
+    expect((opts?.params as { keys(): string[] } | undefined)?.keys() ?? []).toEqual([]);
+  });
+
+  it('getActivityLog forwards pageSize and nextKey as query params when supplied', async () => {
+    const emptyPage = { signatureId: SIGNATURE, list: [], resultCount: 0, nextKey: null };
+    http.get.mockReturnValue(of(emptyPage));
+
+    await firstValueFrom(service.getActivityLog(ORG, SIGNATURE, { pageSize: 25, nextKey: 'cursor-page-2' }));
+
+    const [url, opts] = http.get.mock.calls[0];
+    expect(url).toBe(activityBase);
+    const params = opts?.params as { get(name: string): string | null };
+    expect(params.get('pageSize')).toBe('25');
+    expect(params.get('nextKey')).toBe('cursor-page-2');
+  });
+});
+
+describe('OrgLensClaService.setAutoCreateEcla', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const SIGNATURE = 'signature-uuid-1';
+  const url = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/${encodeURIComponent(SIGNATURE)}/ecla-auto-create`;
+
+  let service: OrgLensClaService;
+  let http: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { get: vi.fn(), post: vi.fn(), put: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('PUTs the target state to the Auto ECLA BFF route on enable', async () => {
+    http.put.mockReturnValue(of({ autoCreateEcla: true }));
+
+    await expect(firstValueFrom(service.setAutoCreateEcla(ORG, SIGNATURE, true))).resolves.toEqual({ autoCreateEcla: true });
+    expect(http.put).toHaveBeenCalledWith(url, { autoCreateEcla: true });
+  });
+
+  it('PUTs false explicitly rather than omitting the key, so the producer cannot read the request as no-change', async () => {
+    http.put.mockReturnValue(of({ autoCreateEcla: false }));
+
+    await firstValueFrom(service.setAutoCreateEcla(ORG, SIGNATURE, false));
+
+    expect(http.put).toHaveBeenCalledWith(url, { autoCreateEcla: false });
+  });
+});
+
+describe('OrgLensClaService designee client (#2780)', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const PROJECT = 'a09410000182dD3AAI';
+  const designeeBase = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/designee`;
+
+  let service: OrgLensClaService;
+  let http: { post: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { post: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('assignDesignee posts only the signing project, never an address', async () => {
+    http.post.mockReturnValue(of({ assigned: true }));
+
+    await expect(firstValueFrom(service.assignDesignee(ORG, PROJECT))).resolves.toEqual({ assigned: true });
+    expect(http.post).toHaveBeenCalledWith(designeeBase, { projectSfid: PROJECT });
+  });
+
+  it('nominateDesignee posts the named person to the nominations route', async () => {
+    const request = { projectSfid: PROJECT, fullName: 'Pat Contributor', email: 'contributor@example.org' };
+    http.post.mockReturnValue(of({ outcome: 'assigned', email: request.email }));
+
+    await expect(firstValueFrom(service.nominateDesignee(ORG, request))).resolves.toEqual({ outcome: 'assigned', email: request.email });
+    expect(http.post).toHaveBeenCalledWith(`${designeeBase}/nominations`, request);
+  });
+
+  it('encodes the organization segment of the designee URL', async () => {
+    http.post.mockReturnValue(of({ assigned: true }));
+
+    await firstValueFrom(service.assignDesignee('org/with?slash', PROJECT));
+
+    expect(http.post).toHaveBeenCalledWith('/api/orgs/org%2Fwith%3Fslash/lens/cla-groups/designee', { projectSfid: PROJECT });
+  });
+});

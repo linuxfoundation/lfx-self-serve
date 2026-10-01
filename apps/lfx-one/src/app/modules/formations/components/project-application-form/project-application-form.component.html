@@ -1,0 +1,305 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Submit is driven by the button's click (replayed by event replay if it lands before hydration), not the
+     native form submit, which is not replayed; (ngSubmit) still serves Enter once hydrated. The inputs carry no
+     `name`, so a pre-hydration native submit can never put an answer in a URL. -->
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-6" novalidate data-testid="project-application-form">
+  <!-- Project -->
+  <section [class]="sectionClass()" aria-labelledby="pa-section-project" data-testid="project-application-form-section-project">
+    <div class="flex flex-col gap-0.5">
+      <h2 id="pa-section-project" class="text-base font-medium text-gray-900 m-0">Project</h2>
+      <p class="text-sm text-gray-500 m-0">What the formation team needs to start.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+      <div class="flex flex-col gap-1.5">
+        <label for="pa-project-name" class="text-sm text-gray-700">{{ labels['project_name'] }} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <lfx-input-text
+          [form]="form"
+          control="project_name"
+          inputId="pa-project-name"
+          [maxlength]="textMax"
+          [required]="true"
+          [invalid]="invalid()['project_name']"
+          describedBy="pa-project-name-error"
+          placeholder="e.g. Shared AI Findings Exchange"
+          styleClass="w-full"
+          dataTest="project-application-form-project-name" />
+        @if (invalid()['project_name']) {
+          <p id="pa-project-name-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-project-name-error">Project name is required.</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="pa-website" class="text-sm text-gray-700">{{ labels['project_website'] }}</label>
+        <lfx-input-text
+          [form]="form"
+          control="project_website"
+          inputId="pa-website"
+          type="url"
+          [invalid]="invalid()['project_website']"
+          describedBy="pa-website-error"
+          placeholder="https://example.org"
+          styleClass="w-full"
+          dataTest="project-application-form-website" />
+        @if (invalid()['project_website']) {
+          <p id="pa-website-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-website-error">Enter an http or https URL.</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5 md:col-span-2">
+        <label for="pa-repository" class="text-sm text-gray-700"
+          >{{ labels['project_repository_url'] }} <span class="text-red-600" aria-hidden="true">*</span></label
+        >
+        <lfx-input-text
+          [form]="form"
+          control="project_repository_url"
+          inputId="pa-repository"
+          type="url"
+          [required]="true"
+          [invalid]="invalid()['project_repository_url']"
+          describedBy="pa-repository-hint pa-repository-error"
+          placeholder="https://github.com/org/repository"
+          styleClass="w-full"
+          dataTest="project-application-form-repository" />
+        <p id="pa-repository-hint" class="text-xs text-gray-500 m-0">GitHub, GitLab, or another public host. We'll ask for admin access during transfer.</p>
+        @if (invalid()['project_repository_url']) {
+          <p id="pa-repository-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-repository-error">
+            Enter the repository's http or https URL.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5 md:col-span-2">
+        <span id="pa-trademark-label" class="text-sm text-gray-700">{{ labels['trademark_status'] }}</span>
+        <lfx-select-button
+          [form]="form"
+          control="trademark_status"
+          [options]="trademarkOptions"
+          [attr.aria-labelledby]="'pa-trademark-label'"
+          data-testid="project-application-form-trademark" />
+      </div>
+    </div>
+  </section>
+
+  <!-- Contributing organization -->
+  <section [class]="sectionClass()" aria-labelledby="pa-section-org" data-testid="project-application-form-section-organization">
+    <div class="flex flex-col gap-0.5">
+      <h2 id="pa-section-org" class="text-base font-medium text-gray-900 m-0">Contributing organization</h2>
+      <p class="text-sm text-gray-500 m-0">Used to draft the contributor agreement and any IP or trademark assignment.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+      <div class="flex flex-col gap-1.5">
+        <label for="pa-organization" class="text-sm text-gray-700"
+          >{{ labels['contributing_organization'] }} <span class="text-red-600" aria-hidden="true">*</span></label
+        >
+        <lfx-input-text
+          [form]="form"
+          control="contributing_organization"
+          inputId="pa-organization"
+          [maxlength]="textMax"
+          [required]="true"
+          [invalid]="invalid()['contributing_organization']"
+          describedBy="pa-organization-error"
+          placeholder="Organization contributing the project"
+          styleClass="w-full"
+          dataTest="project-application-form-organization" />
+        @if (invalid()['contributing_organization']) {
+          <p id="pa-organization-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-organization-error">
+            Assigning organization is required.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="pa-legal" class="text-sm text-gray-700">{{ labels['legal_contact_email'] }} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <lfx-input-text
+          [form]="form"
+          control="legal_contact_email"
+          inputId="pa-legal"
+          type="email"
+          [required]="true"
+          [invalid]="invalid()['legal_contact_email']"
+          describedBy="pa-legal-error"
+          placeholder="legal@example.org"
+          styleClass="w-full"
+          dataTest="project-application-form-legal" />
+        @if (invalid()['legal_contact_email']) {
+          <p id="pa-legal-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-legal-error">
+            Enter the legal contact's email address.
+          </p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5 md:col-span-2">
+        <label for="pa-formation-list" class="text-sm text-gray-700">{{ labels['formation_list'] }}</label>
+        <lfx-textarea
+          [form]="form"
+          control="formation_list"
+          inputId="pa-formation-list"
+          [rows]="3"
+          [invalid]="invalid()['formation_list']"
+          describedBy="pa-formation-list-hint pa-formation-list-error"
+          placeholder="person@example.org, another@example.org"
+          styleClass="w-full"
+          dataTest="project-application-form-formation-list" />
+        <p id="pa-formation-list-hint" class="text-xs text-gray-500 m-0">
+          Who else should be on the formation checklist? Separate emails with commas, spaces or new lines.
+        </p>
+        @if (formationListPreview().valid.length > 0 || formationListPreview().invalid.length > 0) {
+          <p class="text-xs text-gray-600 m-0" data-testid="project-application-form-formation-list-preview">
+            {{ formationListPreview().valid.length }} valid
+            @if (formationListPreview().invalid.length > 0) {
+              <span class="text-red-600">· {{ formationListPreview().invalid.length }} invalid: {{ formationListInvalidText() }}</span>
+            }
+            @if (formationListPreview().duplicates.length > 0) {
+              <span>· {{ formationListPreview().duplicates.length }} duplicate(s) ignored</span>
+            }
+          </p>
+        }
+        @if (invalid()['formation_list']) {
+          <p id="pa-formation-list-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-formation-list-error">
+            @if (invalid()['formation_list_over_max']) {
+              List at most {{ formationListMax }} email addresses.
+            } @else {
+              Fix or remove the invalid email addresses.
+            }
+          </p>
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- Governance and licensing -->
+  <section [class]="sectionClass()" aria-labelledby="pa-section-governance" data-testid="project-application-form-section-governance">
+    <div class="flex flex-col gap-0.5">
+      <h2 id="pa-section-governance" class="text-base font-medium text-gray-900 m-0">Governance and licensing</h2>
+      <p class="text-sm text-gray-500 m-0">Used to draft the technical charter and IP policy.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+      <div class="flex flex-col gap-1.5">
+        <label for="pa-license" class="text-sm text-gray-700">{{ labels['license'] }} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <lfx-select
+          [form]="form"
+          control="license"
+          inputId="pa-license"
+          [options]="licenseOptions"
+          [filter]="true"
+          [required]="true"
+          placeholder="Select a license"
+          styleClass="w-full"
+          dataTest="project-application-form-license" />
+        @if (invalid()['license']) {
+          <p class="text-xs text-red-600 m-0" data-testid="project-application-form-license-error">Choose a code license.</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span id="pa-chat-label" class="text-sm text-gray-700">{{ labels['chat_platform'] }}</span>
+        <lfx-select-button
+          [form]="form"
+          control="chat_platform"
+          [options]="chatOptions"
+          [attr.aria-labelledby]="'pa-chat-label'"
+          data-testid="project-application-form-chat" />
+      </div>
+
+      <div class="flex flex-col gap-1.5 md:col-span-2">
+        <label for="pa-mission" class="text-sm text-gray-700">{{ labels['mission_statement'] }} <span class="text-red-600" aria-hidden="true">*</span></label>
+        <lfx-textarea
+          [form]="form"
+          control="mission_statement"
+          inputId="pa-mission"
+          [rows]="2"
+          [autoResize]="true"
+          [maxlength]="missionMax"
+          [required]="true"
+          [invalid]="invalid()['mission_statement']"
+          describedBy="pa-mission-hint pa-mission-error"
+          placeholder="The Mission of the Project is to…"
+          styleClass="w-full"
+          dataTest="project-application-form-mission" />
+        <p id="pa-mission-hint" class="text-xs text-gray-500 m-0">Start with "The Mission of the Project is to…". It is copied into the charter as written.</p>
+        @if (invalid()['mission_statement']) {
+          <p id="pa-mission-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-mission-error">Mission statement is required.</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span id="pa-agreement-label" class="text-sm text-gray-700">{{ labels['agreement_type'] }}</span>
+        <lfx-select-button
+          [form]="form"
+          control="agreement_type"
+          [options]="agreementOptions"
+          [attr.aria-labelledby]="'pa-agreement-label'"
+          data-testid="project-application-form-agreement" />
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span id="pa-spec-label" class="text-sm text-gray-700">{{ labels['is_spec_project'] }}</span>
+        <lfx-select-button
+          [form]="form"
+          control="is_spec_project"
+          [options]="specOptions"
+          [attr.aria-labelledby]="'pa-spec-label'"
+          data-testid="project-application-form-spec" />
+      </div>
+    </div>
+  </section>
+
+  <!-- About the project -->
+  <section [class]="sectionClass()" aria-labelledby="pa-section-about" data-testid="project-application-form-section-about">
+    <div class="flex flex-col gap-0.5">
+      <h2 id="pa-section-about" class="text-base font-medium text-gray-900 m-0">
+        {{ labels['description'] }} <span class="text-red-600" aria-hidden="true">*</span>
+      </h2>
+      <p class="text-sm text-gray-500 m-0">One paragraph is enough. This becomes the project description on its LFX page.</p>
+    </div>
+    <div class="flex flex-col gap-1.5">
+      <lfx-textarea
+        [form]="form"
+        control="description"
+        inputId="pa-description"
+        [rows]="5"
+        [maxlength]="descriptionMax"
+        [required]="true"
+        [invalid]="invalid()['description']"
+        describedBy="pa-description-count pa-description-error"
+        [attr.aria-labelledby]="'pa-section-about'"
+        styleClass="w-full"
+        dataTest="project-application-form-description" />
+      <div class="flex items-center justify-between gap-4">
+        @if (invalid()['description']) {
+          <p id="pa-description-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-description-error">
+            Tell the formation team about the project.
+          </p>
+        } @else {
+          <span></span>
+        }
+        <span id="pa-description-count" class="text-xs text-gray-500 tabular-nums" data-testid="project-application-form-description-count">
+          {{ descriptionLength() }} / {{ descriptionMax }}
+        </span>
+      </div>
+    </div>
+  </section>
+
+  @if (errorMessage(); as message) {
+    <lfx-message severity="error" [text]="message" icon="fa-light fa-circle-exclamation" data-testid="project-application-form-error" />
+  }
+
+  <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+    <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" (onClick)="onCancel()" data-testid="project-application-form-cancel" />
+    <lfx-button
+      [label]="submitLabel()"
+      [icon]="submitIcon()"
+      severity="primary"
+      size="small"
+      [loading]="submitting()"
+      [disabled]="submitting()"
+      (onClick)="onSubmit()"
+      data-testid="project-application-form-submit" />
+  </div>
+</form>
