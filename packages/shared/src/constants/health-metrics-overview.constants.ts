@@ -8,6 +8,7 @@ import type {
   HealthMetricsOverviewArea,
   HealthMetricsOverviewEngagementLinkSpec,
   HealthMetricsOverviewEventsLinkSpec,
+  HealthMetricsOverviewMembersLinkSpec,
   HealthMetricsOverviewTileLinkSpec,
   HealthOverviewKpisRow,
   HealthOverviewRevenueRow,
@@ -16,7 +17,8 @@ import type {
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
  * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS},
- * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS}.
+ * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS}, {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS} and
+ * {@link HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS}.
  * Order here is the tile-strip render order — never re-sorted.
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
@@ -94,12 +96,9 @@ export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
  * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
  * A one-line map so retiring a link when its Level 2 page ships is a one-line change.
  * `code.insights` is not here — it opens LFX Insights externally via `buildLensAwareInsightsUrl`.
- * Engagement's and Events' targets moved to their own in-app maps below.
+ * Engagement's, Events' and Members' targets moved to their own in-app maps below.
  */
 export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
-  'mem.atrisk': '/members#at-risk',
-  'mem.renewals': '/members#renewals',
-  'mem.list': '/members',
   'non.orgs': '/non-members',
   'trn.enrollment': '/training',
 } as const;
@@ -124,6 +123,16 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS = {
   'evt.forecast': { section: 'forecast', queryParams: { event: null } },
 } as const satisfies Record<string, HealthMetricsOverviewEventsLinkSpec>;
 
+/**
+ * `mem.*` `link_target` → the Members section that owns it. Its bucket, tier, NPS, search and page
+ * are cleared, so a stale cut carried over in the URL cannot hide the member a finding names.
+ */
+export const HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS = {
+  'mem.atrisk': { section: 'risk', queryParams: { riskBucket: null, riskPage: null } },
+  'mem.renewals': { section: 'renewals', queryParams: { renewalsPage: null } },
+  'mem.list': { section: 'list', queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null } },
+} as const satisfies Record<string, HealthMetricsOverviewMembersLinkSpec>;
+
 /** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
 export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 
@@ -131,6 +140,7 @@ export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
   eng: { linkTarget: 'eng.groups', label: 'View groups' },
   evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
+  mem: { linkTarget: 'mem.list', label: 'View members' },
 } as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */

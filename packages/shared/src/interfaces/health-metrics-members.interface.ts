@@ -319,20 +319,20 @@ export interface HealthMetricsMembersDirectoryCellView {
   tracked: boolean;
 }
 
-/** The directory's filter and page state in the URL. */
+/** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
 export interface HealthMetricsMembersQueryParams {
-  memTier: string;
-  memNps: string;
-  memSearch: string;
-  memPage: string;
-  riskBucket: string;
-  riskPage: string;
-  renewalsPage: string;
-  boardCohort: string;
-  boardPage: string;
-  npsAudience: string;
-  churnMode: string;
-  churnPage: string;
+  memTier?: string | null;
+  memNps?: HealthMetricsMembersNpsCategory | null;
+  memSearch?: string | null;
+  memPage?: number | null;
+  riskBucket?: HealthMetricsMembersAtRiskBucket | null;
+  riskPage?: number | null;
+  renewalsPage?: number | null;
+  boardCohort?: HealthMetricsMembersBoardCohort | null;
+  boardPage?: number | null;
+  npsAudience?: string | null;
+  churnMode?: HealthMetricsMembersChurnMode | null;
+  churnPage?: number | null;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */

@@ -146,6 +146,20 @@ describe('HealthMetricsOverviewComponent', () => {
     expect(link.getAttribute('target')).toBeNull();
   });
 
+  it.each([
+    ['mem.atrisk', '/foundation/health-metrics/members#risk'],
+    ['mem.renewals', '/foundation/health-metrics/members#renewals'],
+    ['mem.list', '/foundation/health-metrics/members#list'],
+  ] as const)('links a %s finding into its Members section even before the Salesforce id resolves', async (linkTarget, href) => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
+    fixture.componentRef.setInput('findings', [finding({ area: 'mem', linkTarget, sortRank: 9 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-9"]');
+    expect(link.getAttribute('href')).toBe(href);
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
   function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
     return {
       area: 'eng',
@@ -176,7 +190,7 @@ describe('HealthMetricsOverviewComponent', () => {
   /** One finding per group, with two `act` rows out of rank order and one PCC-, Insights- and in-app link each. */
   function sampleFindings(): HealthMetricsFinding[] {
     return [
-      finding({ classification: 'act', linkTarget: 'mem.atrisk', sortRank: 2 }),
+      finding({ classification: 'act', area: 'mem', linkTarget: 'mem.atrisk', sortRank: 2 }),
       finding({ classification: 'act', linkTarget: 'eng.groups', sortRank: 1 }),
       finding({ classification: 'watch', area: 'evt', linkTarget: 'evt.forecast', sortRank: 3 }),
       finding({ classification: 'opp', area: 'non', linkTarget: 'non.orgs', sortRank: 4 }),
@@ -325,6 +339,26 @@ describe('HealthMetricsOverviewComponent', () => {
       const link: HTMLAnchorElement = evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]');
       expect(link.textContent).toContain('View forecast');
       expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
+      httpMock.verify();
+    });
+
+    it('renders the live Members tile with its status chip and a link to the all members list', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' })] });
+      await fixture.whenStable();
+
+      const memTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-mem"]');
+      expect(memTile.textContent).toContain('Needs action');
+      const link: HTMLAnchorElement = memTile.querySelector('[data-testid="health-metrics-overview-tile-mem-link"]');
+      expect(link.textContent).toContain('View members');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#list');
       httpMock.verify();
     });
 

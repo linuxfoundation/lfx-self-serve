@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
   HEALTH_METRICS_OVERVIEW_TILE_LINKS,
@@ -40,7 +41,7 @@ const KPI_STATUS_TO_CLASSIFICATION: Record<string, HealthMetricsOverviewClassifi
  * Resolves an `hm_findings.link_target` key to a full PCC URL: `{pccBaseUrl}/project/{pccProjectId}
  * /reports/health-metrics{anchor}`. `pccBaseUrl` is passed in by the caller (e.g. `environment.urls.pcc`)
  * so this package stays environment-agnostic. Returns `undefined` for `code.insights` (which opens
- * externally via `buildLensAwareInsightsUrl` instead), for `eng.*` and `evt.*` targets (which route
+ * externally via `buildLensAwareInsightsUrl` instead), for `eng.*`, `evt.*` and `mem.*` targets (which route
  * in-app via `buildHealthMetricsOverviewTabRoute`), or a missing `pccProjectId`, so a caller never
  * renders a broken link.
  */
@@ -57,7 +58,7 @@ export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectI
 
 /**
  * Resolves an `eng.*` `link_target` to its in-app Engagement section: the tab route, the section key
- * as the fragment, and the arrival filters. `undefined` for every other target, which stays on PCC.
+ * as the fragment, and the arrival filters. `undefined` for every other target.
  */
 export function buildHealthMetricsOverviewEngagementRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
   if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS, linkTarget)) {
@@ -79,9 +80,25 @@ export function buildHealthMetricsOverviewEventsRoute(linkTarget: HealthMetricsO
   return { commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: spec.section, queryParams: spec.queryParams };
 }
 
-/** Resolves a `link_target` to its in-app Level 2 route, Engagement then Events; `undefined` for a PCC or Insights target. */
+/**
+ * Resolves a `mem.*` `link_target` to its in-app Members section: the tab route, the section key as
+ * the fragment, and the arrival filters. `undefined` for every other target.
+ */
+export function buildHealthMetricsOverviewMembersRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS, linkTarget)) {
+    return undefined;
+  }
+  const spec = HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'members'], fragment: spec.section, queryParams: spec.queryParams };
+}
+
+/** Resolves a `link_target` to its in-app Level 2 route, Engagement, Events then Members; `undefined` for a PCC or Insights target. */
 export function buildHealthMetricsOverviewTabRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
-  return buildHealthMetricsOverviewEngagementRoute(linkTarget) ?? buildHealthMetricsOverviewEventsRoute(linkTarget);
+  return (
+    buildHealthMetricsOverviewEngagementRoute(linkTarget) ??
+    buildHealthMetricsOverviewEventsRoute(linkTarget) ??
+    buildHealthMetricsOverviewMembersRoute(linkTarget)
+  );
 }
 
 /**
