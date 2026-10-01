@@ -342,6 +342,27 @@ describe('mentorship router — mentor endpoints', () => {
     expect(res.status).toBe(403);
   });
 
+  it.each(['accept', 'decline'])('routes POST /api/mentorship/mentor/invites/%s (auth required, not 404)', async (decision) => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/invites/${decision}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'payload.sig' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it.each(['accept', 'decline'])('refuses a mentor invite %s while impersonating, before the controller runs', async (decision) => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/invites/${decision}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: JSON.stringify({ token: 'payload.sig' }),
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
   it('still allows reading the mentor requests while impersonating', async () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentor/requests`, { headers: { 'x-test-impersonating': 'true' } });
 

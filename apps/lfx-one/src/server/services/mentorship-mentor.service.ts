@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentoringHistoryEntry,
@@ -41,6 +42,7 @@ import {
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH,
   MENTORSHIP_MENTORS_PATH,
+  MENTORSHIP_MENTOR_INVITES_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
@@ -182,6 +184,41 @@ export class MentorshipMentorService {
       `${MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH}/${encodeURIComponent(requestId)}/withdraw`,
       'POST'
     );
+  }
+
+  /**
+   * Accepts or declines a mentor invitation with the token from the invite email. Upstream checks the
+   * token belongs to the caller (403 otherwise) and answers 400 when it is expired, malformed, or the
+   * invitation was already answered; both pass through. Upstream takes the token in the path, so a
+   * failure is rethrown with it redacted from the path and operation the error log records.
+   */
+  public async respondToMentorInvite(req: Request, token: string, decision: MentorshipMentorInviteDecision): Promise<void> {
+    try {
+      await proxyMentorshipRequest<unknown>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`,
+        'POST',
+        undefined,
+        undefined,
+        `${MENTORSHIP_MENTOR_INVITES_PATH}/redacted/${decision}`
+      );
+    } catch (error) {
+      if (!(error instanceof MicroserviceError)) {
+        throw error;
+      }
+      const redact = (value?: string) => value?.split(token).join('redacted');
+      throw new MicroserviceError(error.message, error.statusCode, error.code, {
+        operation: redact(error.operation),
+        service: error.service,
+        path: redact(error.path),
+        errorBody: error.errorBody,
+        originalMessage: error.originalMessage,
+        originalError: error.originalError,
+        transportFailure: error.transportFailure,
+        clientMessage: error.clientMessage,
+      });
+    }
   }
 
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {

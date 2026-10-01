@@ -369,6 +369,9 @@ export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE = 20;
 /** Longest picker search the BFF accepts. No program name needs more to be found. */
 export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH = 100;
 
+/** Longest mentor invite token accepted. Upstream's tokens are about 200 characters. */
+export const MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH = 512;
+
 /** How long the picker waits after the last keystroke before searching. */
 export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS = 300;
 

@@ -34,6 +34,9 @@ export const MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH = `${MENTORSHIP_BOOTSTRAP_PA
 /** Upstream applications collection; an application's tasks live at `/{id}/tasks`. */
 export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 
+/** Upstream mentor invites; the invited mentor answers at `/{token}/accept` or `/{token}/decline`. */
+export const MENTORSHIP_MENTOR_INVITES_PATH = '/mentorship/v1/mentor-invites';
+
 /** Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`. */
 export const MENTORSHIP_TASKS_PATH = '/mentorship/v1/tasks';
 
@@ -64,12 +67,13 @@ export const MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER: readonly MentorshipUpstream
 /**
  * How a mentor's own program membership status reads on their request list. `requested` is the
  * mentor's own ask and `pending` an administrator's hold, so both are still waiting on the program,
- * and `active` is an accepted mentor. `invited` is left out: an invitation is not a request the
- * mentor raised, and mentor invites are their own story, so those rows are not listed.
+ * and `approved` is an accepted mentor (`active` before upstream renamed it). `invited` is left out: an invitation is not a
+ * request the mentor raised, and mentor invites are their own story, so those rows are not listed.
  */
 export const MENTORSHIP_MENTOR_REQUEST_STATUS_MAP: Readonly<Partial<Record<MentorshipUpstreamProgramMemberStatus, MentorshipMentorStatus>>> = {
   requested: 'pending',
   pending: 'pending',
+  approved: 'accepted',
   active: 'accepted',
   declined: 'declined',
   withdrawn: 'withdrawn',

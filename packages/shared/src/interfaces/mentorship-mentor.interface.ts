@@ -153,8 +153,11 @@ export interface MentorshipUpstreamMentorProfileInput extends MentorshipUpstream
   skill_set: { skills: string[] };
 }
 
-/** Statuses of an upstream `program_members` row, in the order the request lifecycle reaches them. */
-export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'active' | 'declined' | 'withdrawn';
+/**
+ * Statuses of an upstream `program_members` row, in the order the request lifecycle reaches them.
+ * Upstream renamed `active` to `approved`; `active` stays until every environment has migrated.
+ */
+export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'approved' | 'active' | 'declined' | 'withdrawn';
 
 /**
  * One row of upstream `GET /mentorship/v1/me/program-memberships`: the caller's own membership of a
@@ -175,6 +178,17 @@ export interface MentorshipUpstreamProgramMembership {
 export interface MentorshipUpstreamProgramMembershipRequest {
   program_id: string;
 }
+
+/** What an invited mentor does with the invitation on `/mentorship/mentor/invites`. */
+export type MentorshipMentorInviteDecision = 'accept' | 'decline';
+
+/** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
+export interface MentorshipMentorInviteResponseRequest {
+  token: string;
+}
+
+/** What the invite page shows: the choice, the outcome, or why the link cannot be used. */
+export type MentorshipMentorInviteState = 'confirm' | 'submitting' | 'accepted' | 'declined' | 'invalid-link' | 'forbidden' | 'read-only' | 'error';
 
 // ---------------------------------------------------------------------------
 // My Programs and program detail types

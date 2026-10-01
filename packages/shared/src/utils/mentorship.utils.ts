@@ -44,7 +44,11 @@ import {
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
   MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES,
 } from '../constants/mentorship-mentee.constants';
-import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS } from '../constants/mentorship-mentor.constants';
+import {
+  MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+  MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH,
+  MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS,
+} from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
@@ -1421,4 +1425,9 @@ function isoInstantMs(value: string): number {
 /** The latest of several ISO instants, returned as given. */
 function latestIsoInstant(values: readonly string[]): string {
   return values.reduce((latest, value) => (isoInstantMs(value) > isoInstantMs(latest) ? value : latest));
+}
+
+/** Whether a value has the shape of an upstream mentor invite token: two base64url parts joined by a dot. */
+export function isMentorshipMentorInviteToken(value: string): boolean {
+  return value.length <= MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
 }

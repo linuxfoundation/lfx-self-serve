@@ -109,6 +109,7 @@ import {
   mentorshipMenteeActionsFor,
   mentorshipMenteeDisplayStatus,
   isMentorshipMenteeProfileUpdateEmpty,
+  isMentorshipMentorInviteToken,
   mentorshipMenteeProgressTasks,
   mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
@@ -2034,5 +2035,15 @@ describe('isMentorshipMenteeProfileUpdateEmpty', () => {
     expect(isMentorshipMenteeProfileUpdateEmpty({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } })).toBe(false);
     expect(isMentorshipMenteeProfileUpdateEmpty({ demographics: { age: '61+' } })).toBe(false);
     expect(isMentorshipMenteeProfileUpdateEmpty({ socioeconomics: { income: 'upperClass' } })).toBe(false);
+  });
+});
+
+describe('isMentorshipMentorInviteToken', () => {
+  it('accepts two base64url parts joined by a dot', () => {
+    expect(isMentorshipMentorInviteToken('eyJwcm9ncmFtX2lkIjoicDEifQ.c2ln-_')).toBe(true);
+  });
+
+  it.each(['', 'nodot', '.sig', 'payload.', 'a.b.c', 'a.b/c', 'a.b=', `${'a'.repeat(512)}.b`])('rejects %j', (value) => {
+    expect(isMentorshipMentorInviteToken(value)).toBe(false);
   });
 });

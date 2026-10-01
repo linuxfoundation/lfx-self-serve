@@ -5,6 +5,8 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorInviteDecision,
+  MentorshipMentorInviteResponseRequest,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
@@ -119,6 +121,15 @@ export class MentorshipMentorService {
   /** Withdraws one of the signed-in mentor's pending requests. Failures propagate raw; a success drops the cached requests. */
   public withdrawMentorRequest(requestId: string): Observable<void> {
     return this.http.post<void>(`/api/mentorship/mentor/requests/${encodeURIComponent(requestId)}/withdraw`, null).pipe(
+      take(1),
+      tap(() => this.clearMentorCaches())
+    );
+  }
+
+  /** Accepts or declines a mentor invitation with the token from the invite email. Failures propagate raw; a success drops the cached requests. */
+  public respondToMentorInvite(token: string, decision: MentorshipMentorInviteDecision): Observable<void> {
+    const body: MentorshipMentorInviteResponseRequest = { token };
+    return this.http.post<void>(`/api/mentorship/mentor/invites/${decision}`, body).pipe(
       take(1),
       tap(() => this.clearMentorCaches())
     );
