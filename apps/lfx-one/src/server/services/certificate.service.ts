@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
-import { loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
+import { drawPdfSignature, loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { PDFTemplateDetails, CertificateData, CertificateEventRow, CertificateResult } from '@lfx-one/shared/interfaces';
@@ -170,7 +170,7 @@ export class CertificateService {
       // Closing & signature
       doc.text('Yours truly,');
       doc.moveDown();
-      doc.image(join(TEMPLATE_DIR, 'images', template.signature), { width: 110 });
+      drawPdfSignature(doc, join(TEMPLATE_DIR, 'images', template.signature), PAGE_START, 110);
       doc.moveDown();
       doc.text(template.signatureText);
 

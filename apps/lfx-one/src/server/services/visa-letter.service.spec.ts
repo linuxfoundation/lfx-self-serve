@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
   getApiGatewayProfile: vi.fn(),
-  images: [] as { path: string; options: Record<string, unknown> | undefined }[],
+  images: [] as { path: string; y: number; options: Record<string, unknown> | undefined }[],
   texts: [] as string[],
+  textYs: [] as number[],
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -32,6 +33,7 @@ vi.mock('./logger.service', () => ({
 // PDFKit is stubbed so assertions read the draw calls instead of parsing a rendered binary.
 vi.mock('pdfkit', () => {
   class FakePDFDocument {
+    public y = 0;
     private handlers: Record<string, ((arg?: unknown) => void)[]> = {};
 
     public on(event: string, handler: (arg?: unknown) => void): this {
@@ -41,12 +43,15 @@ vi.mock('pdfkit', () => {
 
     public image(path: string, ...rest: unknown[]): this {
       const options = rest.find((arg) => typeof arg === 'object' && arg !== null) as Record<string, unknown> | undefined;
-      mocks.images.push({ path, options });
+      mocks.images.push({ path, y: this.y, options });
       return this;
     }
 
     public text(text: unknown): this {
-      if (typeof text === 'string') mocks.texts.push(text);
+      if (typeof text === 'string') {
+        mocks.texts.push(text);
+        mocks.textYs.push(this.y);
+      }
       return this;
     }
 
@@ -65,7 +70,9 @@ vi.mock('pdfkit', () => {
     public lineGap(): this {
       return this;
     }
-    public moveDown(): this {
+    // Advances by a nominal line height so flow positions differ from the page origin.
+    public moveDown(lines = 1): this {
+      this.y += 12 * lines;
       return this;
     }
     public moveUp(): this {
@@ -81,8 +88,18 @@ vi.mock('pdfkit', () => {
   return { default: FakePDFDocument };
 });
 
+// Signature placement reads the PNG's IHDR size; image1.png is 261x80.
+function pngHeader(width: number, height: number): Buffer {
+  const header = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+  header.write('IHDR', 12, 'ascii');
+  header.writeUInt32BE(width, 16);
+  header.writeUInt32BE(height, 20);
+  return header;
+}
+
 vi.mock('fs', () => {
-  const readFileSync = vi.fn(() => Buffer.from('font'));
+  const readFileSync = vi.fn((path: string) => (String(path).endsWith('.png') ? pngHeader(261, 80) : Buffer.from('font')));
   const existsSync = vi.fn(() => true);
   return { default: { readFileSync, existsSync }, readFileSync, existsSync };
 });
@@ -150,6 +167,7 @@ describe('VisaLetterService', () => {
     vi.clearAllMocks();
     mocks.images.length = 0;
     mocks.texts.length = 0;
+    mocks.textYs.length = 0;
     mocks.getApiGatewayProfile.mockResolvedValue({ ID: '0032M00000sfid' });
     service = new VisaLetterService();
   });
@@ -278,6 +296,17 @@ describe('VisaLetterService', () => {
       await service.generateVisaLetter(req, EVENT_ID);
 
       expect(mocks.texts[mocks.texts.indexOf('Event Date:') + 1]).toBe('Mar 10, 2026');
+    });
+
+    it('starts the signatory block below the signature image', async () => {
+      mockLetters(letter());
+
+      await service.generateVisaLetter(req, EVENT_ID);
+
+      const signature = mocks.images[1];
+      const signatoryIndex = mocks.texts.findIndex((text) => text.startsWith('James R. Zemlin'));
+      expect(signature.path).toMatch(/image1\.png$/);
+      expect(mocks.textYs[signatoryIndex]).toBeCloseTo(signature.y + (110 * 80) / 261);
     });
 
     it('says the delegate will speak when they are a speaker', async () => {
