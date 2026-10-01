@@ -10,8 +10,6 @@ vi.mock('./snowflake.service', () => ({
     }
   },
 }));
-// `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
-vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import { HEALTH_METRICS_L2_RANGES } from '@lfx-one/shared/constants';
 
