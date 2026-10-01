@@ -176,6 +176,23 @@ describe('MentorshipMentorService — read error mapping', () => {
       read.flush({ data: [], total: 20 });
     });
 
+    it('encodes a plus sign in the search, so the BFF does not read it as a space', () => {
+      service.getOpenPrograms({ search: 'C++' }).subscribe();
+
+      const read = http.expectOne((request) => request.url === '/api/mentorship/mentor/open-programs');
+      expect(read.request.urlWithParams).toContain('search=C%2B%2B');
+      read.flush({ data: [], total: 0 });
+    });
+
+    it('marks a program unavailable once, however often it is marked', () => {
+      expect(service.unavailableProgramIds()).toEqual([]);
+
+      service.markProgramUnavailable(programId);
+      service.markProgramUnavailable(programId);
+
+      expect(service.unavailableProgramIds()).toEqual([programId]);
+    });
+
     it('caches the requests until a write clears them, and bumps the revision', () => {
       service.getMentorRequests().subscribe();
       http.expectOne('/api/mentorship/mentor/requests').flush(requests);

@@ -26,8 +26,9 @@ import { catchError, concatMap, from, map, Observable, of, reduce } from 'rxjs';
  *
  * A failure toast names the program, so a batch with several failures can be told apart. The 404 (the
  * program is gone) and the 409 (a request, invitation or membership for it already) get their own copy
- * and re-read the requests, since both mean the page was out of date; the impersonation guard's 403
- * shows the server's message.
+ * and re-read the requests, since both mean the page was out of date. A 404 also marks the program
+ * unavailable, so the picker disables it: re-reading the requests cannot drop it from a page of
+ * programs already read. The impersonation guard's 403 shows the server's message.
  *
  * Callers must not cancel the returned observable when their view goes away: the toasts are shown and
  * the cached requests dropped only when each request completes.
@@ -87,6 +88,7 @@ export class MentorProgramRequestService {
       detail = serverAuthoredMessage(err, MENTORSHIP_MENTOR_REQUEST_ERROR_FALLBACK);
     } else if (staleMessage) {
       detail = staleMessage;
+      if (err.status === 404) this.mentorService.markProgramUnavailable(program.id);
       this.mentorService.clearMentorCaches();
     }
 

@@ -430,6 +430,12 @@ export const MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS = { autoSize: false };
 /** Note on a disabled picker option the mentor holds an invitation to. */
 export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = 'Invited';
 
+/**
+ * Note on a disabled picker option a request found gone (404). A page of programs already read still
+ * lists it, so the picker disables it rather than let the mentor pick it again.
+ */
+export const MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE = 'No longer available';
+
 /** Shown under the picker when a page of programs cannot be read. */
 export const MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE = "We couldn't load programs.";
 

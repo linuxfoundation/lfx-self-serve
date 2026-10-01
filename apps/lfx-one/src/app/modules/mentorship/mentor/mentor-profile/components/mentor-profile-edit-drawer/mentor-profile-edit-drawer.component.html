@@ -13,17 +13,20 @@
   </ng-template>
 
   <div class="flex flex-col gap-6 h-full" data-testid="mentor-profile-edit-drawer-body">
-    <lfx-mentorship-mentor-programs-section
-      [requests]="requests()"
-      [invitedProgramIds]="invitedProgramIds()"
-      [requestsLoading]="requestsLoading()"
-      [requestsFailed]="requestsFailed()"
-      [requesting]="requesting()"
-      [withdrawingId]="withdrawingId()"
-      [bordered]="false"
-      (add)="onAddProgram($event)"
-      (withdraw)="onWithdraw($event)"
-      (retry)="onRetryRequests()" />
+    <!-- Projected content is created even while the drawer is hidden, so the section waits for the first open to read programs. -->
+    @if (opened()) {
+      <lfx-mentorship-mentor-programs-section
+        [requests]="requests()"
+        [invitedProgramIds]="invitedProgramIds()"
+        [requestsLoading]="requestsLoading()"
+        [requestsFailed]="requestsFailed()"
+        [requesting]="requesting()"
+        [withdrawingId]="withdrawingId()"
+        [bordered]="false"
+        (add)="onAddProgram($event)"
+        (withdraw)="onWithdraw($event)"
+        (retry)="onRetryRequests()" />
+    }
 
     <hr class="border-gray-200" />
 

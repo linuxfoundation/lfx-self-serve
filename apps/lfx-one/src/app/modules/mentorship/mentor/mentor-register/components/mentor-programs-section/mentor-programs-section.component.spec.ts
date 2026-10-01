@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
@@ -9,6 +10,7 @@ import {
   MENTORSHIP_MENTOR_PICKER_ITEM_SIZE,
   MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
   MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
+  MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE,
   MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE,
   MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE,
   MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS,
@@ -41,6 +43,7 @@ describe('MentorProgramsSectionComponent', () => {
 
   let fixture: ComponentFixture<MentorProgramsSectionComponent>;
   let getOpenPrograms: ReturnType<typeof vi.fn<(query: MentorshipMentorOpenProgramsQuery) => Observable<MentorshipMentorOpenProgramsResponse>>>;
+  let unavailableProgramIds: ReturnType<typeof signal<string[]>>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const withdrawButton = (id: string): HTMLButtonElement | null =>
@@ -63,11 +66,15 @@ describe('MentorProgramsSectionComponent', () => {
 
   beforeEach(() => {
     getOpenPrograms = vi.fn(() => page(PROGRAMS, PROGRAMS.length));
+    unavailableProgramIds = signal<string[]>([]);
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorProgramsSectionComponent],
-      providers: [provideNoopAnimations(), { provide: MentorshipMentorService, useValue: { getOpenPrograms } }],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MentorshipMentorService, useValue: { getOpenPrograms, unavailableProgramIds: unavailableProgramIds.asReadonly() } },
+      ],
     });
 
     createSection();
@@ -115,6 +122,14 @@ describe('MentorProgramsSectionComponent', () => {
     expect(option('mp_gridflow')?.disabled).toBe(false);
   });
 
+  it('lists a program a request found gone as disabled and no longer available, over any other note', () => {
+    unavailableProgramIds.set(['mp_kubernetes']);
+    fixture.detectChanges();
+
+    expect(option('mp_kubernetes')).toMatchObject({ disabled: true, note: MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE });
+    expect(option('mp_gridflow')?.disabled).toBe(false);
+  });
+
   it('disables the select while a request is being sent, and re-enables it after', () => {
     const control = fixture.componentInstance['pickerForm'].controls.programId;
 
@@ -159,6 +174,16 @@ describe('MentorProgramsSectionComponent', () => {
     vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
 
     expect(getOpenPrograms).toHaveBeenLastCalledWith({ search: 'a'.repeat(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH), offset: 0 });
+  });
+
+  it('drops an emoji the cut would split, rather than send half of it', () => {
+    vi.useFakeTimers();
+    const kept = 'a'.repeat(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH - 1);
+
+    fixture.componentInstance['onFilter']({ filter: `${kept}😀` });
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+
+    expect(getOpenPrograms).toHaveBeenLastCalledWith({ search: kept, offset: 0 });
   });
 
   it('reads the next page once the last loaded row is reached, and appends it', () => {

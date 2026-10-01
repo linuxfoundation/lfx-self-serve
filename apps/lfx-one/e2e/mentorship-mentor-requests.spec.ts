@@ -18,6 +18,7 @@
 
 import {
   MENTORSHIP_MENTOR_PICKER_ITEM_SIZE,
+  MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE,
   MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE,
   MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE,
   MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES,
@@ -173,6 +174,11 @@ test.describe('Mentor program requests — request', () => {
 
     await expect(page.locator('p-toast .p-toast-message-error')).toContainText(`${BETA.name}: ${MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES[404]}`);
     await expect(page.locator('[data-testid^="mentorship-mentor-request-row-"]')).toHaveCount(0);
+
+    await openPicker(page);
+    await expect(page.getByTestId(`mentorship-mentor-program-option-note-${BETA.id}`)).toHaveText(MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE);
+    const beta = page.getByRole('option').filter({ has: page.getByTestId(`mentorship-mentor-program-option-${BETA.id}`) });
+    await expect(beta).toHaveAttribute('data-p-disabled', 'true');
   });
 
   test('a program with a pending request stays listed, disabled, with its status as the note', async ({ page }) => {

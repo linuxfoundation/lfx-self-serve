@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
   MentorshipMentorHasProfileResponse,
@@ -14,6 +14,7 @@ import {
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
 } from '@lfx-one/shared/interfaces';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 /**
@@ -35,6 +36,11 @@ export class MentorshipMentorService {
 
   /** Bumped by `clearMentorCaches()`, so a view showing the requests re-reads them after a write. */
   public readonly mentorRequestsRevision = this.mentorRequestsRevisionSignal.asReadonly();
+
+  private readonly unavailableProgramIdsSignal = signal<string[]>([]);
+
+  /** Programs a request found gone (404) this session. The picker lists them disabled, since a page it already read still holds them. */
+  public readonly unavailableProgramIds = this.unavailableProgramIdsSignal.asReadonly();
 
   /**
    * Checks whether the signed-in user already has a mentor profile. A failed check reports no
@@ -64,9 +70,17 @@ export class MentorshipMentorService {
     this.mentorRequestsRevisionSignal.update((revision) => revision + 1);
   }
 
-  /** One page of published programs for the request picker, optionally narrowed by name. Rethrows; the picker shows the failure. */
+  public markProgramUnavailable(programId: string): void {
+    this.unavailableProgramIdsSignal.update((programIds) => (programIds.includes(programId) ? programIds : [...programIds, programId]));
+  }
+
+  /**
+   * One page of published programs for the request picker, optionally narrowed by name. Rethrows; the
+   * picker shows the failure. The search is typed text, so it goes through `strictHttpParams`: the
+   * default codec leaves `+` bare and Express would read `C++` as `C  `.
+   */
   public getOpenPrograms(query: MentorshipMentorOpenProgramsQuery = {}): Observable<MentorshipMentorOpenProgramsResponse> {
-    let params = new HttpParams();
+    let params = strictHttpParams();
     if (query.search) params = params.set('search', query.search);
     if (query.offset) params = params.set('offset', String(query.offset));
     return this.http

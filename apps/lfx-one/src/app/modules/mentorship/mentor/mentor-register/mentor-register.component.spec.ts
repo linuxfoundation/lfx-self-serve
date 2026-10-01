@@ -111,7 +111,7 @@ describe('MentorRegisterComponent', () => {
         provideNoopAnimations(),
         provideRouter([]),
         { provide: MessageService, useValue: { add: toast } },
-        { provide: MentorshipMentorService, useValue: { registerMentorProfile, getOpenPrograms } },
+        { provide: MentorshipMentorService, useValue: { registerMentorProfile, getOpenPrograms, unavailableProgramIds: signal<string[]>([]).asReadonly() } },
         { provide: MentorProgramRequestService, useValue: { requestMany } },
         // The profile card syncs its fields through this; the page itself no longer reads programs from it.
         { provide: MentorshipService, useValue: { syncLfxProfileFields: () => of(undefined) } },

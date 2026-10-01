@@ -254,6 +254,21 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(actions?.querySelector('[data-testid="mentor-profile-edit-drawer-cancel"]')).toBeTruthy();
   });
 
+  it('mounts the programs section on the first open only, and keeps it after a close', async () => {
+    drawer.close();
+    fixture = TestBed.createComponent(MentorProfileEditDrawerComponent);
+    await settle();
+    expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).toBeNull();
+
+    drawer.open(PROFILE);
+    await settle();
+    expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).not.toBeNull();
+
+    drawer.close();
+    await settle();
+    expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).not.toBeNull();
+  });
+
   it('renders all four content sections', () => {
     expect(element().querySelector('lfx-mentorship-mentor-programs-section')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentor-profile-edit-introduction"]')).toBeTruthy();

@@ -35,7 +35,9 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
  * on the standalone mentor profile page. Mirrors the Become a Mentor registration form
  * sections — program details, introduction, skills, and resume — in a drawer layout.
  *
- * The programs section reads the programs itself, a page at a time, each time the drawer opens.
+ * The programs section reads the programs itself, a page at a time. It mounts on the first open, so a
+ * profile visit that never opens the drawer reads no programs, and stays mounted after a close, so
+ * reopening lists what it already read and the content does not vanish while the drawer slides out.
  * Program requests are live: picking a program sends the request at once, and Withdraw (shown only
  * on pending rows) confirms and withdraws at once. Both leave the toasts to their services and the
  * refresh to `MentorshipMentorService`, whose revision signal makes the list re-read after a write.
@@ -78,6 +80,9 @@ export class MentorProfileEditDrawerComponent {
     resumeFileName: new FormControl('', { nonNullable: true }),
   });
 
+  /** False until the drawer first opens; the programs section mounts then. */
+  protected readonly opened = signal(false);
+
   /** True while a picked program's request is in flight; the picker is disabled meanwhile. */
   protected readonly requesting = signal(false);
   protected readonly withdrawingId = this.withdrawService.withdrawingId;
@@ -91,7 +96,10 @@ export class MentorProfileEditDrawerComponent {
   public constructor() {
     toObservable(this.drawer.context)
       .pipe(filter(Boolean), takeUntilDestroyed())
-      .subscribe((profile) => this.seedForm(profile));
+      .subscribe((profile) => {
+        this.opened.set(true);
+        this.seedForm(profile);
+      });
   }
 
   protected onAddProgram(program: MentorshipMentorOpenProgram): void {

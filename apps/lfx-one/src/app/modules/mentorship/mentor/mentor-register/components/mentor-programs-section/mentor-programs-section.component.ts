@@ -15,6 +15,7 @@ import {
   MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
   MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
   MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS,
+  MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE,
   MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE,
   MENTORSHIP_MENTOR_PROGRAMS_HELPER,
   MENTORSHIP_MENTOR_PROGRAMS_INTRO,
@@ -32,6 +33,7 @@ import {
   MentorshipMentorProgramOption,
   MentorshipMentorProgramRequest,
 } from '@lfx-one/shared/interfaces';
+import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { OverlayOptions } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
@@ -41,7 +43,8 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up
  * and clears itself. A program with a pending, accepted or declined request
  * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitedProgramIds`),
- * stays listed but disabled, with its status as a note. A program whose request was withdrawn stays
+ * stays listed but disabled, with its status as a note; so does one a request found gone (404), noted
+ * as no longer available. A program whose request was withdrawn stays
  * pickable, since asking again reopens it. When the parent could not read the requests, the section
  * says so with a Retry and keeps the select disabled, because it cannot tell which programs are
  * already requested.
@@ -146,9 +149,12 @@ export class MentorProgramsSectionComponent {
     this.initProgramPages();
   }
 
-  /** The search is cut to the length the BFF accepts, so a long paste narrows rather than fails. */
+  /**
+   * The search is cut to the length the BFF accepts, so a long paste narrows rather than fails. The
+   * cut keeps a surrogate pair whole: half an emoji would make `encodeURIComponent` throw.
+   */
   protected onFilter(event: { filter?: string | null }): void {
-    const search = (event.filter ?? '').trim().slice(0, MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH);
+    const search = truncateToUtf16Units((event.filter ?? '').trim(), MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH);
     this.searchPending.set(search !== this.search);
     this.filterInput$.next(search);
   }
@@ -166,7 +172,10 @@ export class MentorProgramsSectionComponent {
     this.pageRequests$.next({ search: this.search, offset: this.programsState().programs.length });
   }
 
-  /** Every loaded program as an option. One the mentor cannot request again is disabled, with the reason as its note. */
+  /**
+   * Every loaded program as an option. One the mentor cannot request again is disabled, with the reason
+   * as its note; a program found gone outranks any other reason.
+   */
   private initProgramOptions() {
     return computed((): MentorshipMentorProgramOption[] => {
       const notes = new Map<string, string>(this.invitedProgramIds().map((programId) => [programId, MENTORSHIP_MENTOR_PICKER_INVITED_NOTE]));
@@ -174,6 +183,9 @@ export class MentorProgramsSectionComponent {
         if (MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES.includes(request.status)) {
           notes.set(request.programId, MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS[request.status]);
         }
+      }
+      for (const programId of this.mentorService.unavailableProgramIds()) {
+        notes.set(programId, MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE);
       }
       return this.programsState().programs.map((program) => {
         const note = notes.get(program.id) ?? null;

@@ -27,6 +27,7 @@ describe('MentorProgramRequestService', () => {
   let add: ReturnType<typeof vi.fn>;
   let requestToMentor: ReturnType<typeof vi.fn<(programId: string) => Observable<void>>>;
   let clearMentorCaches: ReturnType<typeof vi.fn>;
+  let markProgramUnavailable: ReturnType<typeof vi.fn>;
 
   const httpError = (status: number, error: unknown = null) => new HttpErrorResponse({ status, error });
 
@@ -35,12 +36,13 @@ describe('MentorProgramRequestService', () => {
     add = vi.fn();
     requestToMentor = vi.fn(() => of(undefined));
     clearMentorCaches = vi.fn();
+    markProgramUnavailable = vi.fn();
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add } },
-        { provide: MentorshipMentorService, useValue: { requestToMentor, clearMentorCaches } },
+        { provide: MentorshipMentorService, useValue: { requestToMentor, clearMentorCaches, markProgramUnavailable } },
       ],
     });
 
@@ -69,6 +71,16 @@ describe('MentorProgramRequestService', () => {
         })
       );
       expect(clearMentorCaches).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks the program unavailable on a 404 only, since a 409 program still exists', async () => {
+      requestToMentor.mockReturnValueOnce(throwError(() => httpError(404))).mockReturnValueOnce(throwError(() => httpError(409)));
+
+      await firstValueFrom(service.request(ALPHA));
+      await firstValueFrom(service.request(BETA));
+
+      expect(markProgramUnavailable).toHaveBeenCalledTimes(1);
+      expect(markProgramUnavailable).toHaveBeenCalledWith(ALPHA.id);
     });
 
     it('shows the server message for the impersonation 403 and keeps the requests', async () => {
