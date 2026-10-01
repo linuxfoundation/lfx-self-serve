@@ -32,6 +32,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   let composerOpen: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let getMeetingDetail: ReturnType<typeof vi.fn>;
+  let getMeeting: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   /**
    * `MEETING_V2_ENABLED_FLAG`, stated per test.
@@ -58,6 +59,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
           provide: MeetingService,
           useValue: {
             getMeetingDetail,
+            getMeeting,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
@@ -85,6 +87,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     toastAdd = vi.fn();
     navigate = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));
+    getMeeting = vi.fn().mockReturnValue(of(MEETING));
   });
 
   it('opens the composer once a fresh read still reports the viewer as organizer', async () => {
@@ -252,10 +255,25 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(dialogOpen).toHaveBeenCalledTimes(2);
       expect(dialogOpen.mock.calls[1][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
 
+      const moved = { ...OCCURRENCE, occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z' };
+      getMeeting.mockReturnValue(of({ ...RECURRING, occurrences: [moved] }));
       dialogResults[1].next({ confirmed: true, start_time: '2030-01-02T00:00:00.000Z' });
 
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence rescheduled' }));
       expect(refreshed).toHaveBeenCalledTimes(1);
+      // A host that never binds `meetingDeleted` (the committee meetings list) still sees the new time.
+      expect(getMeeting).toHaveBeenCalledWith('meeting-1');
+      expect(component.currentOccurrence()?.occurrence_id).toBe('1893542400');
+    });
+
+    it('still finds a pinned occurrence whose id was written in milliseconds', async () => {
+      const component = await mountRecurring({ ...OCCURRENCE, occurrence_id: '1893456000000' } as MeetingOccurrence);
+
+      component.onEditMeeting();
+
+      expect(toastAdd).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data.occurrence.occurrence_id).toBe('1893456000');
     });
 
     it('takes the shown occurrence values from the fresh read, not the list payload the card rendered with', async () => {

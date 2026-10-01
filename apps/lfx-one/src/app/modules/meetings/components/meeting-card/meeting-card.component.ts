@@ -73,7 +73,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import { isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -707,7 +707,11 @@ export class MeetingCardComponent implements OnInit {
   }
 
   private findOccurrence(meeting: Meeting, occurrenceId: string): MeetingOccurrence | null {
-    return getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences).find((candidate) => candidate.occurrence_id === occurrenceId) ?? null;
+    return (
+      getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences).find((candidate) =>
+        isSameOccurrenceId(candidate.occurrence_id, occurrenceId)
+      ) ?? null
+    );
   }
 
   private showEditScopeModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
@@ -754,8 +758,10 @@ export class MeetingCardComponent implements OnInit {
         summary: 'Occurrence rescheduled',
         detail: 'Only this occurrence was moved. The rest of the series is unchanged.',
       });
-      // Same refresh the parent runs after an occurrence is cancelled: the list has to re-read the
-      // series to pick up the occurrence under its new start time (which is also its new id).
+      // Not every host binds `meetingDeleted` (the committee meetings list doesn't), so the card
+      // re-reads the series itself to show the occurrence under its new start time (also its new id).
+      // The emit still lets a listening parent re-sort its list.
+      this.refreshMeeting();
       this.meetingDeleted.emit();
     });
   }

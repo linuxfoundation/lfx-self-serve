@@ -23,7 +23,7 @@ Select the edit (pencil) icon on a meeting you organize, or open the meeting's d
 For a meeting that's part of a recurring series, selecting edit first asks what to change:
 
 - **Only this occurrence** — opens a **Reschedule Occurrence** dialog where you pick a new date, start time, and duration for that one instance. The time is read in the series' own timezone, and the rest of the series keeps its schedule. Title, agenda, recurrence pattern, and settings can't be changed per occurrence.
-- **The entire series** — opens the full editor, and your changes apply to every occurrence in the series.
+- **The entire series** — opens the full editor, and your changes apply to every upcoming occurrence in the series.
 
 ## Reschedule or cancel one occurrence from the join page
 

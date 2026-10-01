@@ -39,16 +39,18 @@
           styleClass="w-full"
           data-testid="reschedule-occurrence-time" />
         @if (showTimeFormatError()) {
-          <p class="text-sm text-red-600" data-testid="reschedule-occurrence-time-format-error">Enter a time like 9:30 AM</p>
+          <p class="text-sm text-red-600" role="alert" data-testid="reschedule-occurrence-time-format-error">Enter a time like 9:30 AM</p>
         }
       </div>
     </div>
 
     @if (showFutureError()) {
-      <p class="text-sm text-red-600" data-testid="reschedule-occurrence-future-error">The occurrence must be rescheduled to a time in the future</p>
+      <p class="text-sm text-red-600" role="alert" data-testid="reschedule-occurrence-future-error">
+        The occurrence must be rescheduled to a time in the future
+      </p>
     }
     @if (showNonexistentTimeError()) {
-      <p class="text-sm text-red-600" data-testid="reschedule-occurrence-nonexistent-time-error">
+      <p class="text-sm text-red-600" role="alert" data-testid="reschedule-occurrence-nonexistent-time-error">
         This time doesn't exist on that date in {{ timezoneLabel() }} because the clocks change. Pick another time.
       </p>
     }
