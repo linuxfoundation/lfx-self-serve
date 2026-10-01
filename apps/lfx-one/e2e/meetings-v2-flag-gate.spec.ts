@@ -30,7 +30,7 @@
 
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { expect, Locator, Page, Route, test } from '@playwright/test';
+import { expect, Locator, Page, Request, Route, test } from '@playwright/test';
 
 import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
@@ -221,15 +221,15 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   });
 
   /** Boots the app with the flag pinned, holds the meeting lookup open, and SPA-navigates to the page. */
-  // `release` lets the held meeting lookup answer 404. `settled` resolves once that answer has been
-  // delivered, or dropped because the page already aborted the request. `lookupAborted` resolves
-  // true if the browser aborted the meeting lookup — what destroying the pre-v2 page does to its
-  // in-flight request — and false if it never did. The waiter is registered before navigating so
-  // an abort that lands immediately is not missed.
+  // `release` lets the held meeting lookup answer 404, and `settled` resolves once the route handler
+  // has finished with a lookup (delivered, or dropped because the page aborted it). `lookups` records
+  // every meeting lookup the browser issued and which of them failed. The pre-v2 page holds its
+  // lookup behind `debounceTime(0)`, so on the flag-on path it may be destroyed before the request is
+  // ever sent: "never issued" and "issued, then aborted" are both a torn-down lookup.
   async function gotoMeetingDetails(
     page: Page,
     flagEnabled: boolean
-  ): Promise<{ release: () => void; settled: Promise<void>; lookupAborted: Promise<boolean> }> {
+  ): Promise<{ release: () => void; settled: Promise<void>; lookups: { issued: Request[]; failed: Set<Request> } }> {
     let release = (): void => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -251,17 +251,25 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    const lookupAborted = page
-      .waitForEvent('requestfailed', { predicate: (request) => request.url().includes(`/public/api/meetings/${MEETING_UID}`), timeout: PAGE_LOAD_TIMEOUT })
-      .then(() => true)
-      .catch(() => false);
+    const lookups = { issued: [] as Request[], failed: new Set<Request>() };
+    const isLookup = (request: Request): boolean => request.url().includes(`/public/api/meetings/${MEETING_UID}`);
+    page.on('request', (request) => {
+      if (isLookup(request)) {
+        lookups.issued.push(request);
+      }
+    });
+    page.on('requestfailed', (request) => {
+      if (isLookup(request)) {
+        lookups.failed.add(request);
+      }
+    });
 
     await page.evaluate((url) => {
       window.history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, `/meetings/${MEETING_UID}`);
 
-    return { release, settled, lookupAborted };
+    return { release, settled, lookups };
   }
 
   test('renders the pre-v2 meeting page while the flag is off', async ({ page }) => {
@@ -278,7 +286,7 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   });
 
   test('renders the v2 meeting page once the flag is on', async ({ page }) => {
-    const { release, settled, lookupAborted } = await gotoMeetingDetails(page, true);
+    const { release, settled, lookups } = await gotoMeetingDetails(page, true);
     const visited: string[] = [];
     page.on('framenavigated', (frame) => {
       if (frame === page.mainFrame()) {
@@ -293,11 +301,14 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
 
     // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it
     // is destroyed at the latch and its in-flight lookup torn down with it — so releasing the held
-    // route cannot redirect this branch to not-found the way it does with the flag off. The abort is
-    // the direct proof; the URL checks after the held 404 is released confirm nothing redirected.
-    expect(await lookupAborted).toBe(true);
+    // route cannot redirect this branch to not-found the way it does with the flag off. Either the
+    // lookup was never issued (the debounce had not fired when the latch destroyed the page) or every
+    // issued lookup was aborted; both mean nothing is left that could redirect.
+    await expect.poll(() => lookups.issued.every((request) => lookups.failed.has(request)), { timeout: PAGE_LOAD_TIMEOUT }).toBe(true);
     release();
-    await settled;
+    if (lookups.issued.length > 0) {
+      await settled;
+    }
     expect(visited.filter((url) => url.includes('/meetings/not-found'))).toEqual([]);
     await expect(page).toHaveURL(new RegExp(`/meetings/${MEETING_UID}$`));
   });
