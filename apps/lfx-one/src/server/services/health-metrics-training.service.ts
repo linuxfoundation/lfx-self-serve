@@ -9,10 +9,6 @@ import type { Request } from 'express';
 
 const TRAINING_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.TRAINING_SUMMARY';
 
-interface PresenceRow {
-  ROW_COUNT: number | null;
-}
-
 /** Snowflake reads behind the Health Metrics Training tab; every figure is foundation-wide. */
 export class HealthMetricsTrainingService {
   private readonly snowflakeService: SnowflakeService;
@@ -24,17 +20,18 @@ export class HealthMetricsTrainingService {
   /** Whether LF Education has any training rows for the foundation; none means it runs no programme. */
   public async getPresence(req: Request, query: HealthMetricsTrainingPresenceQuery): Promise<HealthMetricsTrainingPresence> {
     const sql = `
-      SELECT COUNT(*) AS row_count
+      SELECT 1 AS present
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
+      LIMIT 1
     `;
 
-    const { rows } = await executeSnowflakeViewRead<PresenceRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    const { rows } = await executeSnowflakeViewRead<{ PRESENT: number }>(this.snowflakeService, req, sql, [query.foundationSlug], {
       operation: 'get_training_presence',
       view: TRAINING_SUMMARY_VIEW,
       clientMessage: 'Training is unavailable right now.',
     });
 
-    return { hasProgramme: Number(rows[0]?.ROW_COUNT ?? 0) > 0 };
+    return { hasProgramme: rows.length > 0 };
   }
 }
