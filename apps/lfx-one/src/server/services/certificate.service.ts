@@ -191,19 +191,20 @@ export class CertificateService {
     const sameMonthYear = sameYear && startDate.getMonth() === endDate.getMonth();
 
     if (sameMonthYear) {
-      return `${startDate.getDate()} - ${this.toFullDate(endDate)}`;
+      return `${startDate.toLocaleDateString('en-GB', { day: '2-digit' })} - ${this.toFullDate(endDate)}`;
     }
 
     if (sameYear) {
-      const startStr = startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+      const startStr = startDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'long' });
       return `${startStr} - ${this.toFullDate(endDate)}`;
     }
 
     return `${this.toFullDate(startDate)} - ${this.toFullDate(endDate)}`;
   }
 
+  // Matches the legacy My Profile certificate: "DD MMMM YYYY", e.g. "05 March 2026".
   private toFullDate(date: Date): string {
-    return date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
   }
 
   private formatLocation(city: string | null, country: string | null, location: string | null): string {
