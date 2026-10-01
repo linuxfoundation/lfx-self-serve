@@ -4,6 +4,8 @@
 import { AUTH_FRAGMENT_KEYS, INVITE_TOKEN_QUERY_PARAM } from '../constants/auth-fragment.constants';
 import { isInviteLandingPath, isMentorshipMentorInvitePath } from './url.utils';
 
+const RETURN_TO_QUERY_PARAM = 'returnTo';
+
 /** Whether a URL fragment carries any key that counts as authentication material. */
 export function hasAuthFragment(hash: string): boolean {
   if (!hash) {
@@ -48,16 +50,29 @@ export function redactAuthFragment(url: string, base?: string): string {
  * Sibling of {@link redactAuthFragment}: that helper only rewrites the hash, and the invite
  * token lives in the query string. Both are called from Datadog RUM `beforeSend` so neither
  * credential reaches the analytics sink (GH-2290), and the server request log uses this one too.
- * A relative `url` comes back relative.
+ * A relative `url` comes back relative. A `returnTo` param holding an invite URL (the login and
+ * auth-error redirects carry one) is redacted the same way.
  */
 export function redactInviteToken(url: string, base?: string): string {
   try {
     const parsed = new URL(url, base);
+    let redacted = false;
     const isInvitePath = isInviteLandingPath(parsed.pathname) || isMentorshipMentorInvitePath(parsed.pathname);
-    if (!isInvitePath || !parsed.searchParams.has(INVITE_TOKEN_QUERY_PARAM)) {
+    if (isInvitePath && parsed.searchParams.has(INVITE_TOKEN_QUERY_PARAM)) {
+      parsed.searchParams.set(INVITE_TOKEN_QUERY_PARAM, 'redacted');
+      redacted = true;
+    }
+    const returnTo = parsed.searchParams.get(RETURN_TO_QUERY_PARAM);
+    if (returnTo) {
+      const redactedReturnTo = redactInviteToken(returnTo, parsed.origin);
+      if (redactedReturnTo !== returnTo) {
+        parsed.searchParams.set(RETURN_TO_QUERY_PARAM, redactedReturnTo);
+        redacted = true;
+      }
+    }
+    if (!redacted) {
       return url;
     }
-    parsed.searchParams.set(INVITE_TOKEN_QUERY_PARAM, 'redacted');
     return url.startsWith('/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.toString();
   } catch {
     const queryMarker = `?${INVITE_TOKEN_QUERY_PARAM}=`;
