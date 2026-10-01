@@ -799,6 +799,78 @@ export const MICROSOFT_MAX_CPC_BID = 1000;
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
 
 /**
+ * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.
+ *
+ * Shape only — it says nothing about whether the day named actually exists, so a caller that is
+ * about to act on the result must still round-trip the parsed date (see
+ * `CampaignController.isReversedFlightWindow`, which this pattern exists for).
+ */
+export const ISO_CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Country code to Google Ads geo target constant id.
+ *
+ * A curated list, NOT every assigned alpha-2 code: campaign-service ports the same 30 entries in
+ * `internal/platform/googleads/geo.go` (`geoTargetConstants`) and refuses anything absent from it —
+ * "geo target %q is not a supported country code". A well-formed but unlisted code such as `PT` or
+ * `ZA` therefore fails the create upstream, which is why callers gate on this map rather than on
+ * `META_GEO_CODE_PATTERN` alone.
+ *
+ * Shared so the create adapter and the legacy proxy resolve against one list. Keep it in step with
+ * `geo.go` — a code present here and absent there becomes an over-refusal at dispatch.
+ */
+export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
+  US: '2840',
+  CA: '2124',
+  GB: '2826',
+  DE: '2276',
+  FR: '2250',
+  JP: '2392',
+  AU: '2036',
+  IN: '2356',
+  BR: '2076',
+  CN: '2156',
+  KR: '2410',
+  NL: '2528',
+  SE: '2752',
+  CH: '2756',
+  IL: '2376',
+  SG: '2702',
+  IE: '2372',
+  ES: '2724',
+  IT: '2380',
+  AT: '2040',
+  FI: '2246',
+  NO: '2578',
+  DK: '2208',
+  BE: '2056',
+  PL: '2616',
+  CZ: '2203',
+  NZ: '2554',
+  TW: '2158',
+  HK: '2344',
+  MX: '2484',
+};
+
+/**
+ * Upstream's own bound on a Google Ads geo target list (`geo.go`'s `maxGeoTargets`), checked there
+ * BEFORE de-duplication — so a list that is only over the cap because it repeats a code is still
+ * refused.
+ */
+export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+
+/**
+ * LinkedIn's per-campaign budget floors, in USD.
+ *
+ * Mirrored from `internal/platform/linkedin/config.go` (`minDailyBudgetUSD` / `minLifetimeBudgetUSD`),
+ * which the client enforces before any POST. Which floor applies flips with the budget-type toggle,
+ * and nothing in the Implementation tab says the floor exists or that it moves tenfold — hence the
+ * named refusal that reads these.
+ */
+export const LINKEDIN_MIN_DAILY_BUDGET_USD = 10;
+export const LINKEDIN_MIN_LIFETIME_BUDGET_USD = 100;
+
+/**
  * The officially assigned ISO 3166-1 alpha-2 codes, derived from `COUNTRIES`.
  *
  * A Set rather than a repeated `.some()` scan: `normalizeGeoTargets` runs per code per keystroke
