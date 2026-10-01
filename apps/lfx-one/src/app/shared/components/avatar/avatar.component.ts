@@ -25,6 +25,7 @@ export class AvatarComponent {
 
   // Internal state for error handling
   private readonly imageErrorSignal = signal<boolean>(false);
+  // Intentionally non-reactive: only read inside the error handler, never by the template.
   private imageSwapped = false;
   private imageAppliedAt = 0;
 
