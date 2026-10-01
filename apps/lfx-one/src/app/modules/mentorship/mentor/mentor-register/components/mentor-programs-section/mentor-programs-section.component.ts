@@ -27,11 +27,13 @@ import {
 import {
   MentorshipMentorOpenProgram,
   MentorshipMentorOpenProgramsQuery,
+  MentorshipMentorOpenProgramsResponse,
   MentorshipMentorOpenProgramsState,
   MentorshipMentorProgramOption,
   MentorshipMentorProgramRequest,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
+import { OverlayOptions } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 /**
@@ -48,7 +50,9 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  * upstream by name once typing pauses, and scrolling to the end of the list reads the next page. A
  * failed page shows its own Retry, so it never looks like there are no programs. While a search
  * waits on its answer, the previous programs stay listed (the select narrows them as typed) and an
- * empty list says it is searching, since a slow read must not look like "no results".
+ * empty list says it is searching, since a slow read must not look like "no results". Closing the
+ * select clears the search, so it always reopens on every program; the programs already read with
+ * no search are kept, so that list comes back at once rather than read again.
  *
  * Applying is optional — a mentor may register a profile and come back for programs later — so
  * nothing here is required and the section surfaces no validation error. The parent owns the list
@@ -89,6 +93,8 @@ export class MentorProgramsSectionComponent {
   protected readonly programsFailedMessage = MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE;
   protected readonly itemSize = MENTORSHIP_MENTOR_PICKER_ITEM_SIZE;
   protected readonly scrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
+  /** On close the select clears its filter box (`resetFilterOnHide`); this clears the search behind it. */
+  protected readonly overlayOptions: OverlayOptions = { onBeforeHide: () => this.onFilter({ filter: '' }) };
 
   protected readonly pickerForm = new FormGroup({
     programId: new FormControl<string | null>(null),
@@ -106,6 +112,8 @@ export class MentorProgramsSectionComponent {
   private readonly pageRequests$ = new Subject<Required<MentorshipMentorOpenProgramsQuery>>();
   /** The search the loaded pages belong to, so the next page and a Retry read the same one. */
   private search = '';
+  /** Every program read so far with no search, so clearing a search lists them again without a read. */
+  private unfilteredPrograms: MentorshipMentorOpenProgramsResponse | null = null;
 
   protected readonly programOptions = this.initProgramOptions();
   protected readonly emptyMessage = this.initEmptyMessage();
@@ -213,6 +221,7 @@ export class MentorProgramsSectionComponent {
    * Searches on the filter text once typing pauses, starting with no search, and reads each
    * requested page. A new search keeps the previous programs listed until its first page answers,
    * then replaces them; if that page fails, the list empties so Retry reads the search from the start.
+   * The first page with no search comes from `unfilteredPrograms` once it has been read.
    */
   private initProgramPages(): void {
     // Subscribed first: the search stream below asks for the first page as soon as it subscribes.
@@ -223,22 +232,27 @@ export class MentorProgramsSectionComponent {
             offset === 0 ? { ...state, loading: true, loadingMore: false, failed: false } : { ...state, loadingMore: true, failed: false }
           )
         ),
-        switchMap((query) =>
-          this.mentorService.getOpenPrograms(query).pipe(
-            map((page) => ({ page, offset: query.offset })),
-            catchError(() => of({ page: null, offset: query.offset }))
-          )
-        ),
+        switchMap((query) => {
+          if (!query.search && query.offset === 0 && this.unfilteredPrograms) return of({ page: this.unfilteredPrograms, query });
+          return this.mentorService.getOpenPrograms(query).pipe(
+            map((page) => ({ page, query })),
+            catchError(() => of({ page: null, query }))
+          );
+        }),
         takeUntilDestroyed()
       )
-      .subscribe(({ page, offset }) =>
+      .subscribe(({ page, query }) => {
         this.programsState.update((state) => {
-          if (!page && offset === 0) return { programs: [], total: 0, loading: false, loadingMore: false, failed: true };
+          if (!page && query.offset === 0) return { programs: [], total: 0, loading: false, loadingMore: false, failed: true };
           if (!page) return { ...state, loading: false, loadingMore: false, failed: true };
-          const programs = offset === 0 ? page.data : [...state.programs, ...page.data];
+          const programs = query.offset === 0 ? page.data : [...state.programs, ...page.data];
           return { programs, total: page.total, loading: false, loadingMore: false, failed: false };
-        })
-      );
+        });
+        if (page && !query.search) {
+          const { programs, total } = this.programsState();
+          this.unfilteredPrograms = { data: programs, total };
+        }
+      });
 
     this.filterInput$
       .pipe(debounceTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS), startWith(''), distinctUntilChanged(), takeUntilDestroyed())

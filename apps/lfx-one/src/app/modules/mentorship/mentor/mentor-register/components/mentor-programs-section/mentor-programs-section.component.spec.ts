@@ -278,6 +278,52 @@ describe('MentorProgramsSectionComponent', () => {
     expect(scrollHeight()).toBe(height(1));
   });
 
+  it('clears the search when the select closes, listing the programs already read without reading them again', () => {
+    vi.useFakeTimers();
+    getOpenPrograms.mockReturnValueOnce(page([PROGRAMS[1]], 1));
+    fixture.componentInstance['onFilter']({ filter: 'grid' });
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+    expect(optionIds()).toEqual(['mp_gridflow']);
+
+    fixture.componentInstance['overlayOptions'].onBeforeHide?.();
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+
+    expect(optionIds()).toEqual(['mp_kubernetes', 'mp_gridflow']);
+    expect(getOpenPrograms).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps reading the next page with no search from where the kept programs end', () => {
+    vi.useFakeTimers();
+    getOpenPrograms.mockReturnValueOnce(page(PROGRAMS, 3));
+    createSection();
+    getOpenPrograms.mockReturnValueOnce(page([PROGRAMS[1]], 1));
+    fixture.componentInstance['onFilter']({ filter: 'grid' });
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+
+    fixture.componentInstance['onFilter']({ filter: '' });
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+    getOpenPrograms.mockReturnValueOnce(page([program('mp_opentofu', 'OpenTofu Docs')], 3));
+    fixture.componentInstance['onLazyLoad']({ last: 1 });
+
+    expect(getOpenPrograms).toHaveBeenLastCalledWith({ search: '', offset: 2 });
+    expect(optionIds()).toEqual(['mp_kubernetes', 'mp_gridflow', 'mp_opentofu']);
+  });
+
+  it('reads the programs with no search again when that first read failed, since there is nothing kept', () => {
+    vi.useFakeTimers();
+    getOpenPrograms.mockReturnValueOnce(throwError(() => new Error('boom')));
+    createSection();
+    getOpenPrograms.mockReturnValueOnce(page([PROGRAMS[1]], 1));
+    fixture.componentInstance['onFilter']({ filter: 'grid' });
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+
+    fixture.componentInstance['onFilter']({ filter: '' });
+    vi.advanceTimersByTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS);
+
+    expect(getOpenPrograms).toHaveBeenLastCalledWith({ search: '', offset: 0 });
+    expect(optionIds()).toEqual(['mp_kubernetes', 'mp_gridflow']);
+  });
+
   it('emits the picked program and clears the select, so it never looks selected', () => {
     const added: MentorshipMentorOpenProgram[] = [];
     fixture.componentInstance.add.subscribe((program) => added.push(program));

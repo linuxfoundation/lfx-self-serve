@@ -224,6 +224,23 @@ test.describe('Mentor program requests — request', () => {
     await expect(overlay).not.toContainText(MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE);
   });
 
+  test('picking a program clears the search, so the select reopens on every program', async ({ page }) => {
+    const { programSearches } = await stubMentorRequests(page);
+    await openEditDrawer(page);
+    await openPicker(page);
+
+    const searchBox = page.getByPlaceholder('Search programs');
+    await searchBox.fill('Alpha');
+    await expect.poll(() => programSearches).toContain('Alpha');
+    await expect(page.getByRole('option', { name: BETA.name, exact: true })).toHaveCount(0);
+    await page.getByRole('option', { name: ALPHA.name, exact: true }).click();
+    await expect(page.getByTestId('mentorship-mentor-request-status-req-1')).toHaveText(MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS.pending);
+
+    await openPicker(page);
+    await expect(searchBox).toHaveValue('');
+    await expect(page.getByRole('option', { name: BETA.name, exact: true })).toBeVisible();
+  });
+
   test('a search that matches after one that matched nothing lists every program it found', async ({ page }) => {
     await stubMentorRequests(page);
     // Registered after the shared stub, so it answers the search that matches nothing.
