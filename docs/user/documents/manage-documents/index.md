@@ -4,7 +4,7 @@ description: How to browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, manage, browse]
-last_updated: 2026-05-22
+last_updated: 2026-10-01
 intercom_collection: Documents
 ---
 
@@ -29,7 +29,7 @@ Select a document from the list to open its detail view. The detail view shows:
 
 ## Upload a document
 
-Document upload availability depends on your project role. If upload is available, use the upload option on the My Documents page.
+Document upload availability depends on your project role. If upload is available, use the upload option on the Documents page.
 
 ## Switch project context
 

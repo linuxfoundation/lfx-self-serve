@@ -432,7 +432,6 @@ Recommended label changes:
 - My Mailing Lists -> Mailing Lists
 - My Votes -> Votes
 - My Surveys -> Surveys
-- My Documents -> Documents
 - My Newsletters -> Newsletters, if Newsletters appears in Me navigation
 
 Acceptance:

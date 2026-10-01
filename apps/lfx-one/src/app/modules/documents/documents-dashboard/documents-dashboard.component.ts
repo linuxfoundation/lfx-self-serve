@@ -109,7 +109,7 @@ export class DocumentsDashboardComponent {
     const lens = this.activeLens();
     return !!this.project()?.uid && (lens === 'project' || lens === 'foundation');
   });
-  protected readonly pageTitle = computed(() => (this.lensService.activeLens() === 'me' ? 'My Documents' : 'Documents'));
+  protected readonly pageTitle = 'Documents';
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly projectSourceFilter: Signal<MyDocumentSource | null> = this.initProjectSourceFilter();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
