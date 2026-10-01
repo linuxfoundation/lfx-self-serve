@@ -332,7 +332,10 @@ export function buildAttendeePreviewFromRsvps(rsvps: ReadonlyArray<MeetingRsvp>,
   const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
   for (const rsvp of rsvps) {
     const key = rsvp.registrant_id || rsvp.email;
-    rsvpsByRegistrant.set(key, [...(rsvpsByRegistrant.get(key) ?? []), rsvp]);
+    if (!rsvpsByRegistrant.has(key)) {
+      rsvpsByRegistrant.set(key, []);
+    }
+    rsvpsByRegistrant.get(key)!.push(rsvp);
   }
 
   return [...rsvpsByRegistrant.entries()]

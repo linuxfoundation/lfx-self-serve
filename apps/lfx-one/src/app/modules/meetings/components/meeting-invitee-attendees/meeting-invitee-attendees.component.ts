@@ -9,7 +9,7 @@ import { Meeting, MeetingAttendeePreviewPerson, MeetingOccurrence, MeetingRegist
 import { buildAttendeePreviewFromRegistrants, isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, combineLatest, filter, finalize, Observable, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 /**
  * Attendee preview for an invitee's meeting card, plus the read-only guest drawer behind "View all".
@@ -35,7 +35,6 @@ export class MeetingInviteeAttendeesComponent {
 
   protected readonly drawerVisible = signal(false);
   protected readonly loading = signal(true);
-  protected readonly fullRosterLoading = signal(false);
   protected readonly registrants = this.initPreviewRegistrants();
   protected readonly fullRegistrants = this.initFullRegistrants();
   // Until the full roster lands, or if its fetch fails, the drawer shows the preview roster.
@@ -43,6 +42,9 @@ export class MeetingInviteeAttendeesComponent {
     const full = this.fullRegistrants();
     return full && full.length > 0 ? full : this.registrants();
   });
+  // True from the first render after the drawer opens until the full roster for the current
+  // meeting and occurrence lands.
+  protected readonly fullRosterLoading = computed(() => this.drawerVisible() && this.fullRegistrants() === null);
   protected readonly previewPeople = computed<MeetingAttendeePreviewPerson[]>(() =>
     buildAttendeePreviewFromRegistrants(this.registrants(), { inviteResponsesEnabled: isMeetingInviteResponsesEnabled(this.meeting()) })
   );
@@ -63,10 +65,7 @@ export class MeetingInviteeAttendeesComponent {
     const firstOpen$ = toObservable(this.drawerVisible).pipe(filter(Boolean), take(1));
     return toSignal(
       combineLatest([toObservable(this.meeting), toObservable(this.occurrence), firstOpen$]).pipe(
-        switchMap(([meeting, occurrence]) => {
-          this.fullRosterLoading.set(true);
-          return this.fetchRegistrants(meeting, occurrence, false).pipe(finalize(() => this.fullRosterLoading.set(false)));
-        })
+        switchMap(([meeting, occurrence]) => this.fetchRegistrants(meeting, occurrence, false).pipe(startWith(null)))
       ),
       { initialValue: null }
     );

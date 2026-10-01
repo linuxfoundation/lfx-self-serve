@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, MeetingRegistrant } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingInviteeAttendeesComponent } from './meeting-invitee-attendees.component';
@@ -54,6 +54,22 @@ describe('MeetingInviteeAttendeesComponent', () => {
 
     expect(previewCalls(false)).toHaveLength(1);
     expect(component()['drawerRegistrants']()).toEqual(full);
+  });
+
+  it('reports loading as soon as the drawer opens, until the full roster lands', async () => {
+    const full$ = new Subject<MeetingRegistrant[]>();
+    getMyMeetingRegistrants.mockImplementation((_id: string, _rsvp: boolean, _occ: string | undefined, isPreview: boolean) =>
+      isPreview ? of(preview) : full$
+    );
+    await fixture.whenStable();
+    expect(component()['fullRosterLoading']()).toBe(false);
+
+    component()['drawerVisible'].set(true);
+    expect(component()['fullRosterLoading']()).toBe(true);
+
+    await fixture.whenStable();
+    full$.next(full);
+    expect(component()['fullRosterLoading']()).toBe(false);
   });
 
   it('logs a failed fetch and renders nothing', async () => {
