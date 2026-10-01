@@ -23,8 +23,11 @@ leaving it in a chat transcript.
 
 Several issues in this epic were originally written as refactors of the live component. They have
 all been reframed. You are building **new** components that the feature flag renders.
-`meeting-join.component.ts` stays byte-identical. If an issue body still reads like a refactor,
-follow the V2 framing note in it.
+V1's component files keep **byte-identical contents**: no edit to their code, template, class name
+or selector. The one permitted change is a mechanical directory move: V2-02 moves them to
+`meeting-join-v1/` to follow the composer's `-v1` naming, and git records that as a pure rename.
+V1's behaviour is unchanged either way. If an issue body still reads like a refactor, follow the V2
+framing note in it.
 
 ### 2. Reuse before you create
 
@@ -75,9 +78,14 @@ This is a first-class axis of the state model (**Axis F**), not a footnote.
 detail endpoint, but they are **still optional on the interface** — TypeScript will not catch a
 component that reads them.
 
-Counts now come from the roster, and the roster is empty for anyone who is neither a registrant nor
-an organizer. So anonymous and non-registrant viewers have **no count source at all**. Do not design
-one in.
+For upcoming meetings, counts now come from the roster, and the roster is empty for anyone who is
+neither a registrant nor an organizer. So anonymous and non-registrant viewers have **no count
+source at all**. Do not design one in.
+
+Past meetings count differently. Invitee, participant and attended counts come from the
+past-meeting participants list (V1's `pastMeetingParticipants`), and the authenticated past-meeting
+endpoint still fills its count fields, so a viewer with past-meeting access does have counts. Do not
+apply the upcoming rule to a past meeting.
 
 ### SSR contract
 
@@ -96,7 +104,9 @@ V1 — in V2 they are a restyle, not a new build.
 
 ### Do not invent affordances
 
-None of these exist anywhere in the product, and none may be added by this epic:
+None of these exist on the meeting details page, and none may be added to it by this epic. (Some
+exist elsewhere. Committee and project `calendar.ics` feeds are offered from the committee page and
+the Meetings dashboard. That does not make them in scope here.)
 
 ```text
 add-to-calendar    .ics download     share beyond copy-link
@@ -121,6 +131,7 @@ Phase 0 is the foundation.
 | V2-03   | #2875 | Rollout / retirement doc               |
 | E0-01   | #1766 | This spec                              |
 | E0-02   | #2876 | View-model + `ActionSlotKind` resolver |
+| E0-03   | #1767 | ADR: public / admin surface boundary   |
 | E0-04   | #1768 | Testid contract                        |
 | E0-05   | #1769 | Design tokens                          |
 
@@ -152,25 +163,29 @@ verified · unknown/needs-review · auto-matched · AI-reconciled — plus the `
 E6-03 · E6-04 · E6-05 · E7-01 · E7-02 · E8-04 · E8-05 · E9-01 · E9-02 · E10-02 · E10-03 ·
 O-01…O-04 · M-01.
 
-E9-01 / E9-02 are blocked on U-07; M-01 is blocked on its sibling U-08. **The `U-` series is not
-defined anywhere in this epic and has no issue numbers here** — it came across from the original
-brief unresolved. Resolve what U-07 / U-08 track before planning any of those three items.
+Plan IDs listed without an issue number, here and in Phase 1, are **not filed yet**. The issue
+bodies are drafted in the implementation plan; file each before starting it.
+
+The `U-` series is upstream API blockers: changes owned by `lfx-v2-meeting-service` and
+`lfx-v2-committee-service`, tracked here as U-01 to U-08 (#2927 to #2934). E9-01 / E9-02 are blocked
+on U-07 (#2933, structured agenda items); M-01 is blocked on U-08 (#2934, magic-link tokens).
 
 ## Outstanding from #1766
 
-Deferred deliberately; #1766 stays open until these land.
+Deferred from this handoff spec and delivered in PR #2935 (pending at the time of writing):
 
-- **`FR-###` functional requirements** — one per legal state combination and per section, so every
-  Phase-1/Phase-2 issue can cite at least one.
-- **`SC-###` success criteria.**
-- **`data-model.md`** — the five axes plus Axis F, the derived view-model, and the field → state
-  mapping. E0-02 (#2876) will ship the runtime half of this as `meeting-view-model.interface.ts`
-  (PR #2909, unmerged at the time of writing); the document should describe what that file encodes
-  rather than restate it.
-- **`contracts/`** — JSON Schema for any new or widened BFF response (`MeetingOccurrenceSummary`,
-  public attachments, public artifacts).
-- **The full state matrix** — every legal combination with its expected page composition, and every
-  explicitly illegal combination with its outcome (e.g. redirect to `/meetings/not-found`).
+- **`requirements.md`**: `FR-###` functional requirements and `SC-###` success criteria, with a
+  traceability table so every Phase 1 and Phase 2 plan ID cites at least one FR.
+- **`state-matrix.md`**: the seven state axes A–G (time, viewer, privacy, past access, cadence, RSVP
+  tracking, arrival credential) plus page status, every legal combination with its expected page
+  composition, and every illegal combination with its outcome (e.g. redirect to
+  `/meetings/not-found`).
+- **`data-model.md`**: field → axis mapping and what the E0-02 view model
+  (`meeting-view-model.interface.ts`, PR #2909) encodes. That includes the view-scoped state the
+  axes do not cover: the selected occurrence and the viewer's own RSVP.
+
+**`contracts/`** (JSON Schema for new or widened BFF responses) moves to the PRs that build each
+endpoint (E3-03, E4-04, E6-01), so each schema is reviewed with its code.
 
 ### Deviations from #1766's acceptance criteria
 
