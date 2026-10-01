@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorship-mentee.constants';
+import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
+import type { MentorshipRegisterSubmitFailure } from './mentorship.interface';
 
 // ---------------------------------------------------------------------------
 // Become a Mentee form types
@@ -62,7 +64,8 @@ export interface MentorshipMenteeRegisterFieldErrors {
  * `buildMentorshipMenteeRegisterRequest`. `resumeFileName` is deliberately absent: resume upload is
  * coming soon and no file metadata is sent. `demographics` carries only answers whose consent box was
  * checked; it is omitted when there are none. The five flags are the real checkbox values, validated
- * `true` by both the client and the BFF.
+ * `true` by both the client and the BFF. `lfxProfile` carries the name and avatar the profile card
+ * shows; it is omitted when the card had none to give. The BFF adds the primary email itself.
  */
 export interface MentorshipMenteeRegisterRequest {
   introduction: string;
@@ -75,19 +78,11 @@ export interface MentorshipMenteeRegisterRequest {
   noDuplicateProfile: boolean;
   complianceAccepted: boolean;
   termsAccepted: boolean;
+  lfxProfile?: MentorshipLfxProfileFields;
 }
 
-/** How a failed registration submit is shown. */
-export type MentorshipMenteeRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
-
-/** Result of `mapMentorshipMenteeRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
-export interface MentorshipMenteeRegisterSubmitFailure {
-  kind: MentorshipMenteeRegisterSubmitFailureKind;
-  /** Banner / toast copy. For 'field-errors' this is the first field message. */
-  message: string;
-  /** Present only for kind 'field-errors'; contains only keys of MentorshipMenteeRegisterFieldErrors. */
-  fieldErrors?: MentorshipMenteeRegisterFieldErrors;
-}
+/** A failed Become a Mentee submit, as `mapMentorshipRegisterFailure` classifies it. */
+export type MentorshipMenteeRegisterSubmitFailure = MentorshipRegisterSubmitFailure<MentorshipMenteeRegisterFieldErrors>;
 
 /** One selectable option in a mentee demographic question. */
 export interface MentorshipDemographicOption {
@@ -207,6 +202,11 @@ export interface MentorshipMenteeTaskView {
   fileUrl: string | null;
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
+  /**
+   * True once the due date's UTC day has ended, when the task was built. A past-due task that is not
+   * submitted can no longer be submitted or have a file uploaded; `false` when there is no due date.
+   */
+  pastDue: boolean;
   /**
    * ISO 8601 UTC date string, or `null`. Named for its value (like `dueDate`/`submittedDate`),
    * not "label" — the template formats it via `DatePipe` with `'UTC'` (same contract as `dueDate`).
@@ -656,10 +656,11 @@ export interface MentorshipUpstreamMenteeSocioeconomicsInput {
 
 /**
  * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
- * upstream from the token and path; name, email, phone and slug are intentionally not sent. A PUT to an
- * existing profile replaces ALL columns, which is why the BFF pre-checks.
+ * upstream from the token and path; the name, email and logo come from the LFX profile, and phone and
+ * slug are intentionally not sent. A PUT to an existing profile replaces ALL columns, which is why the
+ * BFF pre-checks.
  */
-export interface MentorshipUpstreamMenteeProfileInput {
+export interface MentorshipUpstreamMenteeProfileInput extends MentorshipUpstreamLfxProfileFields {
   introduction: string;
   terms_and_conditions: boolean;
   age_eligible: boolean;

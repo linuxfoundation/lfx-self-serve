@@ -4,8 +4,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers } = vi.hoisted(() => ({
+const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance, getNps } = vi.hoisted(() => ({
   getTiers: vi.fn(),
+  getAtRisk: vi.fn(),
+  getRenewals: vi.fn(),
+  getBoardAttendance: vi.fn(),
+  getNps: vi.fn(),
   getBridge: vi.fn(),
   getMovements: vi.fn(),
   getDirectory: vi.fn(),
@@ -19,6 +23,10 @@ vi.mock('../services/health-metrics-members.service', () => ({
     public getMovements = getMovements;
     public getDirectory = getDirectory;
     public getDirectoryTiers = getDirectoryTiers;
+    public getAtRisk = getAtRisk;
+    public getRenewals = getRenewals;
+    public getBoardAttendance = getBoardAttendance;
+    public getNps = getNps;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
@@ -37,6 +45,12 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
+  HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
@@ -46,13 +60,27 @@ import {
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
+  HEALTH_METRICS_MEMBERS_NPS_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements' | 'getMembersDirectory' | 'getMembersDirectoryTiers';
+type Handler =
+  | 'getMembersTiers'
+  | 'getMembersBridge'
+  | 'getMembersMovements'
+  | 'getMembersDirectory'
+  | 'getMembersDirectoryTiers'
+  | 'getMembersAtRisk'
+  | 'getMembersRenewals'
+  | 'getMembersBoardAttendance'
+  | 'getMembersNps';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -297,6 +325,237 @@ describe('AnalyticsController.getMembersDirectoryTiers', () => {
     getDirectoryTiers.mockRejectedValue(failure);
 
     const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersDirectoryTiers');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersAtRisk', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getAtRisk.mockReset();
+    getAtRisk.mockResolvedValue(HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
+  });
+
+  it('defaults to every bucket and the first page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersAtRisk');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAtRisk).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      bucket: 'all',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED);
+  });
+
+  it('passes the bucket and page', async () => {
+    await call({ ...valid, bucket: '90_plus_days', offset: '10', pageSize: '10' }, 'getMembersAtRisk').promise;
+
+    expect(getAtRisk).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', bucket: '90_plus_days', offset: 10, pageSize: 10 });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE + 1) }, 'getMembersAtRisk').promise;
+
+    expect(getAtRisk).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, bucket: 'under_60_days' }, 'bucket'],
+    [{ ...valid, bucket: '30_days' }, 'bucket'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersAtRisk');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getAtRisk).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getAtRisk.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersAtRisk');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersRenewals', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getRenewals.mockReset();
+    getRenewals.mockResolvedValue(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
+  });
+
+  it('defaults to the first page and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersRenewals');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', offset: 0, pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
+  });
+
+  it('passes the page', async () => {
+    await call({ ...valid, offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
+
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', offset: 10, pageSize: 10 });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE + 1) }, 'getMembersRenewals').promise;
+
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE }));
+  });
+
+  it.each([[{ foundationSlug: '' }], [{ foundationSlug: 'Acme Corp' }]])('rejects %o on foundationSlug', async (query) => {
+    const { next, promise } = call(query, 'getMembersRenewals');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getRenewals).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getRenewals.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersRenewals');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersBoardAttendance', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getBoardAttendance.mockReset();
+    getBoardAttendance.mockResolvedValue(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
+  });
+
+  it('defaults to this year, the board cohort and the first page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getBoardAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      cohort: 'board',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
+  });
+
+  it('passes the range, cohort and page', async () => {
+    await call({ ...valid, range: 'COMPLETED_YEAR', cohort: 'voting_members', offset: '10', pageSize: '10' }, 'getMembersBoardAttendance').promise;
+
+    expect(getBoardAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      cohort: 'voting_members',
+      offset: 10,
+      pageSize: 10,
+    });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE + 1) }, 'getMembersBoardAttendance').promise;
+
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ ...valid, cohort: 'committee' }, 'cohort'],
+    [{ ...valid, cohort: 'toString' }, 'cohort'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getBoardAttendance).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getBoardAttendance.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersNps', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getNps.mockReset();
+    getNps.mockResolvedValue(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
+  });
+
+  it('defaults to this year and no audience, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersNps');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNps).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD', audience: null });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
+  });
+
+  it('passes the range and a trimmed audience, capping its length', async () => {
+    await call({ ...valid, range: 'COMPLETED_YEAR_2', audience: '  Maintainers ' }, 'getMembersNps').promise;
+    expect(getNps).toHaveBeenLastCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', audience: 'Maintainers' });
+
+    await call({ ...valid, audience: 'x'.repeat(HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH + 20) }, 'getMembersNps').promise;
+    expect(getNps).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ audience: 'x'.repeat(HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH) })
+    );
+  });
+
+  it('reads a blank audience as none', async () => {
+    await call({ ...valid, audience: '   ' }, 'getMembersNps').promise;
+
+    expect(getNps).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ audience: null }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersNps');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getNps).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getNps.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersNps');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

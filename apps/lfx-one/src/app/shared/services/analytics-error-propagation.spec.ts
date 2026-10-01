@@ -156,6 +156,30 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no tiers.
       call: () => service.getMembersDirectoryTiers('aaif'),
     },
+    {
+      name: 'getMembersAtRisk',
+      url: '/api/analytics/members-at-risk',
+      // A swallowed failure would read as a foundation with no members at risk.
+      call: () => service.getMembersAtRisk({ foundationSlug: 'aaif', bucket: 'all', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getMembersRenewals',
+      url: '/api/analytics/members-renewals',
+      // A swallowed failure would read as a foundation with no renewals due.
+      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getMembersBoardAttendance',
+      url: '/api/analytics/members-board-attendance',
+      // A swallowed failure would read as a board that met with no one attending.
+      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getMembersNps',
+      url: '/api/analytics/members-nps',
+      // A swallowed failure would read as a foundation that was never surveyed.
+      call: () => service.getMembersNps({ foundationSlug: 'aaif', range: 'YTD', audience: null }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

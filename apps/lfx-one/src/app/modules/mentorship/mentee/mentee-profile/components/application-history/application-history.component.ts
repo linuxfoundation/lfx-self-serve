@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, input, output, Signal } from '@angular/core';
+import { environment } from '@environments/environment';
 import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE,
@@ -11,9 +12,9 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
-  MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationHistoryEntry } from '@lfx-one/shared/interfaces';
+import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 
 /**
  * Application History for the mentee profile page. Each row is an `applications`
@@ -73,7 +74,7 @@ export class ApplicationHistoryComponent {
         // accepted/graduated/hold/withdrawn are not self-withdrawable.
         canWithdraw: entry.status === 'pending',
         // No program id means there is no page to open, so the row shows no View link.
-        programUrl: entry.programId ? `${MENTORSHIP_MENTEE_FIND_PROGRAM_URL}/${encodeURIComponent(entry.programId)}` : null,
+        programUrl: entry.programId ? buildMentorshipProgramsUrl(environment.urls.mentorship, entry.programId) : null,
       }))
     );
   }

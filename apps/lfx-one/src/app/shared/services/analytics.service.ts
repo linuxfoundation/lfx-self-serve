@@ -113,11 +113,19 @@ import {
   HealthMetricsEventsSponsorshipQuery,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeQuery,
+  HealthMetricsMembersAtRisk,
+  HealthMetricsMembersAtRiskQuery,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryQuery,
   HealthMetricsMembersDirectoryTiers,
   HealthMetricsMembersMovements,
   HealthMetricsMembersMovementsQuery,
+  HealthMetricsMembersBoardAttendance,
+  HealthMetricsMembersBoardAttendanceQuery,
+  HealthMetricsMembersNps,
+  HealthMetricsMembersNpsQuery,
+  HealthMetricsMembersRenewals,
+  HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
 } from '@lfx-one/shared/interfaces';
@@ -1427,6 +1435,61 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsMembersDirectoryTiers>('/api/analytics/members-directory-tiers', { params: { foundationSlug } }).pipe(
       catchError((error) => {
         console.error('[analytics] members-directory-tiers failed', { foundationSlug, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersAtRisk(query: HealthMetricsMembersAtRiskQuery): Observable<HealthMetricsMembersAtRisk> {
+    let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('offset', String(query.offset)).set('pageSize', String(query.pageSize));
+    if (query.bucket !== 'all') params = params.set('bucket', query.bucket);
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersAtRisk>('/api/analytics/members-at-risk', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-at-risk failed', { foundationSlug: query.foundationSlug, bucket: query.bucket, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersRenewals(query: HealthMetricsMembersRenewalsQuery): Observable<HealthMetricsMembersRenewals> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('offset', String(query.offset)).set('pageSize', String(query.pageSize));
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersRenewals>('/api/analytics/members-renewals', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-renewals failed', { foundationSlug: query.foundationSlug, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersBoardAttendance(query: HealthMetricsMembersBoardAttendanceQuery): Observable<HealthMetricsMembersBoardAttendance> {
+    const params = strictHttpParams()
+      .set('foundationSlug', query.foundationSlug)
+      .set('range', query.range)
+      .set('cohort', query.cohort)
+      .set('offset', String(query.offset))
+      .set('pageSize', String(query.pageSize));
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersBoardAttendance>('/api/analytics/members-board-attendance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-board-attendance failed', { foundationSlug: query.foundationSlug, cohort: query.cohort, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMembersNps(query: HealthMetricsMembersNpsQuery): Observable<HealthMetricsMembersNps> {
+    let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('range', query.range);
+    if (query.audience) params = params.set('audience', query.audience);
+
+    // Errors propagate so the section shows its error state rather than an empty one.
+    return this.http.get<HealthMetricsMembersNps>('/api/analytics/members-nps', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] members-nps failed', { foundationSlug: query.foundationSlug, error });
         return throwError(() => error);
       })
     );

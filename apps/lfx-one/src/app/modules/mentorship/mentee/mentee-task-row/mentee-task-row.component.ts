@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
+import { NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusChange,
@@ -15,11 +17,14 @@ import {
 import {
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
+  isMentorshipTaskPastDue,
   mentorshipMenteeTaskStatusFields,
+  mentorshipTaskDueCutoffMs,
   normalizeMentorshipMenteeTaskStatus,
 } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
+import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
 
 /**
  * One task row on the mentee tasks tab, shared by the applicant and accepted
@@ -34,6 +39,9 @@ import { MentorshipComingSoonService } from '@modules/mentorship/services/mentor
  *
  * File upload, view and download are not implemented yet, so those actions only fire the Coming Soon
  * toast. The BFF never sends a file, so a task that requires one cannot be submitted from here.
+ * Once a task is past due (the end of its due date's UTC day), Submitted and Upload are disabled. The row
+ * re-reads the clock whenever the due date changes and again at its cutoff, so a page left open across it
+ * locks without a reload.
  */
 @Component({
   selector: 'lfx-mentee-task-row',
@@ -46,6 +54,7 @@ export class MenteeTaskRowComponent {
   // ---- 1. DI ----------------------------------------------------------------
   private readonly comingSoonService = inject(MentorshipComingSoonService);
   private readonly taskStatusService = inject(MenteeTaskStatusService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // ---- 2. Inputs ------------------------------------------------------------
   public readonly task = input.required<MentorshipMenteeTaskView>();
@@ -60,6 +69,11 @@ export class MenteeTaskRowComponent {
 
   // ---- 4. Computed signals --------------------------------------------------
   /**
+   * The clock `pastDue` is judged against. In the browser it is re-read whenever the due date changes and
+   * again at its cutoff; on the server it is the render time.
+   */
+  private readonly now: Signal<number> = this.initNow();
+  /**
    * The change just saved, held until the refreshed task arrives so the options never lag behind the write.
    * Reset whenever the task's status moves off the one it was saved from, so a later reset back to that
    * status (say a reviewer reopening the task) is read as it is, not as `to`.
@@ -70,6 +84,8 @@ export class MenteeTaskRowComponent {
   protected readonly statusState: Signal<MentorshipMenteeTaskStatusOptionsState> = computed(() => getMentorshipMenteeTaskStatusOptions(this.effectiveTask()));
   protected readonly statusLabelId: Signal<string> = computed(() => `mentee-task-status-label-${this.task().id}`);
   protected readonly statusHintId: Signal<string> = computed(() => `mentee-task-status-hint-${this.task().id}`);
+  /** Upload is closed once an unsubmitted task is past due; the status hint, which then shows, says why. */
+  protected readonly uploadBlocked: Signal<boolean> = computed(() => this.effectiveTask().pastDue && !this.effectiveTask().submitted);
   /** Ids the combobox is labelled by: the sr-only name, plus the hint when there is one. */
   protected readonly statusLabelledBy: Signal<string> = computed(() =>
     this.statusState().hint === null ? this.statusLabelId() : `${this.statusLabelId()} ${this.statusHintId()}`
@@ -120,7 +136,8 @@ export class MenteeTaskRowComponent {
 
   private initEffectiveTask(): Signal<MentorshipMenteeTaskView> {
     return computed(() => {
-      const task = this.task();
+      // The view's `pastDue` is fixed when it is built, and the applications are cached, so judge it against the live clock.
+      const task = { ...this.task(), pastDue: isMentorshipTaskPastDue(this.task().dueDate, this.now()) };
       const confirmed = this.confirmed();
       // Ignored once the refreshed task no longer carries the status it was saved from (it also moved while the save was in flight).
       if (confirmed !== null && normalizeMentorshipMenteeTaskStatus(task.status) === confirmed.from) {
@@ -130,7 +147,27 @@ export class MenteeTaskRowComponent {
     });
   }
 
+  private initNow(): Signal<number> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal(Date.now()).asReadonly();
+    }
+    const cutoff = computed(() => mentorshipTaskDueCutoffMs(this.task().dueDate));
+    // A new cutoff re-reads the clock and re-arms the timer from it, never from the time the row was built.
+    return toSignal(toObservable(cutoff).pipe(switchMap((ms) => this.clockUntil(ms))), { initialValue: Date.now() });
+  }
+
   // ---- 7. Private helpers ---------------------------------------------------
+
+  /** Emits the time now, then again at `cutoff`. A cutoff beyond the longest timer delay is reached in steps. */
+  private clockUntil(cutoff: number | null): Observable<number> {
+    return defer(() => {
+      const now = Date.now();
+      if (cutoff === null || now >= cutoff) {
+        return of(now);
+      }
+      return concat(of(now), timer(Math.min(cutoff - now, NODE_MAX_TIMER_DELAY_MS)).pipe(switchMap(() => this.clockUntil(cutoff))));
+    });
+  }
 
   private onStatusSettled(taskId: string, to: MentorshipMenteeUpdatableTaskStatus, changed: boolean): void {
     if (changed) {

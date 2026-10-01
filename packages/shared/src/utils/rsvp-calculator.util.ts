@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
+import {
+  ITXMeetingResponseResult,
+  MeetingAttendeePreviewPerson,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRsvp,
+  RsvpCounts,
+} from '../interfaces/meeting.interface';
 
 /**
  * Convert an `occurrence_id` string into a millisecond epoch, regardless of the
@@ -287,4 +294,40 @@ export function mapITXResponseToMeetingRsvp(result: ITXMeetingResponseResult): M
     created_at: result.created_at,
     updated_at: result.updated_at,
   };
+}
+
+/** Preview order: people coming first, then undecided, then no reply, then declined. */
+const ATTENDEE_PREVIEW_STATUS_ORDER: Record<RegistrantAttendanceStatus, number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
+
+/**
+ * Orders registrants for a meeting card's attendee preview and maps them to display-only faces.
+ * @description Uses the same combined RSVP / `invite_accepted` status as the guest drawer chips
+ * ({@link getRegistrantAttendanceStatus}), so the first faces shown are the people attending.
+ * The sort is stable, so ties keep the caller's (host-then-name) order.
+ */
+export function buildAttendeePreviewFromRegistrants(
+  registrants: ReadonlyArray<Pick<MeetingRegistrant, 'uid' | 'email' | 'first_name' | 'last_name' | 'avatar_url' | 'rsvp' | 'invite_accepted'>>,
+  options?: { inviteResponsesEnabled?: boolean }
+): MeetingAttendeePreviewPerson[] {
+  return registrants
+    .map((registrant) => ({ registrant, rank: ATTENDEE_PREVIEW_STATUS_ORDER[getRegistrantAttendanceStatus(registrant, options)] }))
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ registrant }) => ({
+      key: registrant.uid || registrant.email,
+      name: `${registrant.first_name ?? ''} ${registrant.last_name ?? ''}`.trim() || registrant.email,
+      avatarUrl: registrant.avatar_url ?? null,
+    }));
+}
+
+/**
+ * RSVP-only fallback for surfaces that have responses but no registrant roster (the project and
+ * foundation lens cards, whose counts come from the meeting record). Same ordering as
+ * {@link buildAttendeePreviewFromRegistrants}; RSVP rows carry no profile picture.
+ */
+export function buildAttendeePreviewFromRsvps(
+  rsvps: ReadonlyArray<Pick<MeetingRsvp, 'id' | 'email' | 'name' | 'response_type'>>
+): MeetingAttendeePreviewPerson[] {
+  return [...rsvps]
+    .sort((a, b) => ATTENDEE_PREVIEW_STATUS_ORDER[a.response_type] - ATTENDEE_PREVIEW_STATUS_ORDER[b.response_type])
+    .map((rsvp) => ({ key: rsvp.id || rsvp.email, name: rsvp.name?.trim() || rsvp.email, avatarUrl: null }));
 }

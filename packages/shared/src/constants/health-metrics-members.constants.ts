@@ -2,11 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
+import { HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS } from './health-metrics-engagement.constants';
 
 import type { FilterOption } from '../interfaces/filter.interface';
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsMembersAtRisk,
+  HealthMetricsMembersAtRiskBucket,
+  HealthMetricsMembersAtRiskFilterOption,
   HealthMetricsMembersBridge,
+  HealthMetricsMembersBoardAttendance,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortOption,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
@@ -15,8 +22,10 @@ import type {
   HealthMetricsMembersMovementDrawerCopy,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovements,
+  HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
+  HealthMetricsMembersRenewals,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
@@ -50,7 +59,8 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
     description: 'Act-now view. Sorted by dues at risk rather than days overdue — the money order, not the calendar order.',
-    footnote: '',
+    footnote:
+      'Overdue balance and lapsed engagement together are the strongest churn predictor available today — which is why this sits above churn, not below it.',
     footnoteCaution: false,
   },
   {
@@ -58,8 +68,9 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'Renewals',
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
-    footnote: '',
-    footnoteCaution: false,
+    footnote:
+      'Organization, tier, dues and renewal date come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
+    footnoteCaution: true,
   },
   {
     key: 'board',
@@ -94,7 +105,15 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
 /** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
-export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = ['tiers', 'bridge', 'list'] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
+export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
+  'tiers',
+  'bridge',
+  'list',
+  'risk',
+  'renewals',
+  'board',
+  'nps',
+] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's group attendance. */
 export const HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
@@ -199,6 +218,12 @@ export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {
   directoryNps: 'memNps',
   directorySearch: 'memSearch',
   directoryPage: 'memPage',
+  atRiskBucket: 'riskBucket',
+  atRiskPage: 'riskPage',
+  renewalsPage: 'renewalsPage',
+  boardCohort: 'boardCohort',
+  boardPage: 'boardPage',
+  npsAudience: 'npsAudience',
 } as const satisfies Record<string, keyof HealthMetricsMembersQueryParams>;
 
 /** `MEMBERSHIP_DIRECTORY`'s NPS categories, and the allowlist the directory read validates against. */
@@ -268,3 +293,124 @@ export const HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES: Record<Hea
 
 /** Hover text on a not-tracked cell. */
 export const HEALTH_METRICS_MEMBERS_DIRECTORY_NOT_TRACKED = 'Not tracked yet for this foundation';
+
+/** `MEMBERSHIP_AT_RISK`'s buckets past 60 days, oldest last; the section leaves out balances under 60 days. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS = ['60_89_days', '90_plus_days'] as const;
+
+/** The design's label for each aging bucket, on its pill and its aging bar. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS: Record<HealthMetricsMembersAtRiskBucket, string> = {
+  '60_89_days': '60–89 days',
+  '90_plus_days': '90+ days',
+};
+
+/** The bucket pills over the hero; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetricsMembersAtRiskFilterOption[] = [
+  { id: 'all', label: 'All at risk' },
+  ...HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS.map((bucket) => ({ id: bucket, label: HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket] })),
+];
+
+/** Read-failed / no-foundation value: no members, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
+  rows: [],
+  totalRecords: 0,
+  summary: { outstandingBalanceUsd: 0, highRiskBalanceUsd: 0, mediumRiskBalanceUsd: 0, memberCount: 0 },
+  aging: [],
+};
+
+/** Rows per page; the busiest foundation has under a hundred members at risk. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE = 10;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE = 100;
+
+/** The aging bars' fill. */
+export const HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS = 'bg-red-600';
+
+/** Read-failed / no-foundation value: no renewals, and no figures rather than zeros. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED: HealthMetricsMembersRenewals = {
+  rows: [],
+  totalRecords: 0,
+  summary: { renewalCount: null, valueUsd: null, withoutDuesCount: null },
+};
+
+/** `MEMBERSHIP_RENEWALS` covers 0–93 days out; the section shows the next 90. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_WINDOW_DAYS = 90;
+
+/** Rows per page; the busiest foundation has around a hundred renewals in the window. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE = 10;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE = 100;
+
+/** The MEM-02 marker beside a renewing member with an outstanding balance, in the Needs action colour. */
+export const HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER = {
+  label: 'Balance outstanding',
+  icon: 'fa-light fa-circle-exclamation',
+  textClass: 'text-red-600',
+} as const;
+
+/** `MEMBERSHIP_BOARD_ATTENDANCE`'s cohorts; the first is the default. */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORTS = ['board', 'voting_members'] as const;
+
+/** The cohort toggle over the hero. */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS: readonly HealthMetricsMembersBoardCohortOption[] = [
+  { id: 'board', label: 'Board' },
+  { id: 'voting_members', label: 'Voting members' },
+];
+
+/** The meeting noun in each cohort's hero caption. */
+export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'board meeting',
+  voting_members: 'voting meeting',
+};
+
+/** Read-failed / no-foundation value: no cohorts measured, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED: HealthMetricsMembersBoardAttendance = {
+  cohorts: { board: null, voting_members: null },
+  trend: [],
+  rows: [],
+  totalRecords: 0,
+};
+
+/** Rows per page of the meetings table. */
+export const HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE = 10;
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE = 100;
+
+/** Meetings the attendance chart plots: the latest twelve in the period, oldest first. */
+export const HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS = 12;
+
+/** Where "see who" lands: Engagement's representatives, cut to those who never attended. */
+export const HEALTH_METRICS_MEMBERS_BOARD_NEVER_ATTENDED_LINK = {
+  route: 'engagement',
+  fragment: 'reps',
+  queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: 'never' },
+} as const;
+
+/** Read-failed / no-foundation value: no audience surveyed, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_NPS_UNMEASURED: HealthMetricsMembersNps = {
+  audiences: [],
+  selectedAudience: null,
+  trend: [],
+};
+
+/** Audiences the toggle leads with, in order; the rest follow alphabetically. */
+export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['Board', 'Maintainers'] as const;
+
+/** Longest audience name a caller may pass; the view's names are far shorter. */
+export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
+
+/** Below this whole-percent response rate, a score is not a foundation-wide signal. */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT = 40;
+
+/** A response-rate fall of at least this many points makes a rising score unproven; a smaller one is noise. */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP = 5;
+
+/** The response distribution's segments, left to right, with non-responses last at full weight. */
+export const HEALTH_METRICS_MEMBERS_NPS_SEGMENTS = [
+  { key: 'promoters', label: 'Promoters', colorClass: 'bg-emerald-600' },
+  { key: 'passives', label: 'Passives', colorClass: 'bg-amber-600' },
+  { key: 'detractors', label: 'Detractors', colorClass: 'bg-red-600' },
+  { key: 'noResponse', label: 'No response', colorClass: 'bg-gray-200' },
+] as const;

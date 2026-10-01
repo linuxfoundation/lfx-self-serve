@@ -2,21 +2,41 @@
 // SPDX-License-Identifier: MIT
 
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+  HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
-import { formatIsoDateLabel } from './date-time.utils';
+import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
+import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
+  HealthMetricsMembersAtRiskAging,
+  HealthMetricsMembersAtRiskAgingView,
+  HealthMetricsMembersAtRiskMember,
+  HealthMetricsMembersAtRiskRowView,
+  HealthMetricsMembersAtRiskSummary,
+  HealthMetricsMembersAtRiskSummaryView,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
+  HealthMetricsMembersBoardMeetingRowView,
+  HealthMetricsMembersBoardSummaryView,
+  HealthMetricsMembersBoardTrendBarView,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeBarView,
   HealthMetricsMembersBridgeStep,
@@ -29,6 +49,17 @@ import type {
   HealthMetricsMembersMovement,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovementRowView,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsAudienceOption,
+  HealthMetricsMembersNpsQuarter,
+  HealthMetricsMembersNpsSegmentView,
+  HealthMetricsMembersNpsSummaryView,
+  HealthMetricsMembersNpsTrendNote,
+  HealthMetricsMembersNpsTrendPointView,
+  HealthMetricsMembersRenewal,
+  HealthMetricsMembersRenewalRowView,
+  HealthMetricsMembersRenewalsSummary,
+  HealthMetricsMembersRenewalsSummaryView,
   HealthMetricsMembersSubNavItem,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersMode,
@@ -40,11 +71,17 @@ import type {
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
 
-/** Sub-nav items for the Members tab; a section badges only once it reports a count. */
+/** Sub-nav items for the Members tab; a section badges only once it reports a count, and notes only once it reports a note. */
 export function buildHealthMetricsMembersSubNavItems(
-  counts: Partial<Record<HealthMetricsMembersSectionKey, number | null>> = {}
+  counts: Partial<Record<HealthMetricsMembersSectionKey, number | null>> = {},
+  notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}
 ): HealthMetricsMembersSubNavItem[] {
-  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
+  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({
+    key: section.key,
+    label: section.label,
+    count: counts[section.key] ?? null,
+    note: notes[section.key] ?? '',
+  }));
 }
 
 /**
@@ -221,8 +258,263 @@ export function buildHealthMetricsMembersDirectorySearchPlaceholder(scopeTotal: 
   return `Search ${pluralize(scopeTotal, 'member')}…`;
 }
 
+/** The at-risk hero: the outstanding balance, its High / Medium split, and the member count; an unset total is a dash. */
+export function buildHealthMetricsMembersAtRiskSummary(summary: HealthMetricsMembersAtRiskSummary): HealthMetricsMembersAtRiskSummaryView {
+  return {
+    outstandingLabel: formatUsd(summary.outstandingBalanceUsd),
+    highRiskLabel: formatUsd(summary.highRiskBalanceUsd),
+    mediumRiskLabel: formatUsd(summary.mediumRiskBalanceUsd),
+    memberCountLabel: formatCount(summary.memberCount),
+  };
+}
+
+/** Aging bars, each sized against the largest bucket balance; a bucket with no members is left out, an unset one kept. */
+export function buildHealthMetricsMembersAtRiskAging(aging: HealthMetricsMembersAtRiskAging[]): HealthMetricsMembersAtRiskAgingView[] {
+  const shown = aging.filter((bucket) => bucket.memberCount === null || bucket.memberCount > 0);
+  const max = Math.max(0, ...shown.map((bucket) => bucket.balanceUsd ?? 0));
+  return shown.map((bucket) => ({
+    bucket: bucket.bucket,
+    label: `${HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS[bucket.bucket]} · ${bucket.memberCount === null ? '—' : pluralize(bucket.memberCount, 'member')}`,
+    balanceLabel: formatUsd(bucket.balanceUsd),
+    widthPct: max > 0 && bucket.balanceUsd !== null ? Math.min(100, Math.max(0, (bucket.balanceUsd / max) * 100)) : 0,
+  }));
+}
+
+/** At-risk rows; a missing tier, balance, age or engagement date renders as a dash. */
+export function buildHealthMetricsMembersAtRiskRows(rows: HealthMetricsMembersAtRiskMember[]): HealthMetricsMembersAtRiskRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    overdueLabel: formatUsd(row.outstandingBalanceUsd),
+    ageLabel: row.daysOverdue === null ? '—' : pluralize(Math.round(row.daysOverdue), 'day'),
+    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
+  }));
+}
+
+/** The sub-nav note, "12 overdue · $480K"; empty while no member is at risk or either total is unset. */
+export function buildHealthMetricsMembersAtRiskNote(summary: HealthMetricsMembersAtRiskSummary): string {
+  if (summary.memberCount === null || summary.memberCount <= 0 || summary.outstandingBalanceUsd === null) return '';
+  return `${summary.memberCount.toLocaleString('en-US')} overdue · ${formatCurrency(summary.outstandingBalanceUsd)}`;
+}
+
+/** The "N members" line beside the bucket pills. */
+export function buildHealthMetricsMembersAtRiskCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'member');
+}
+
+/** The renewals hero: the known dues up for renewal, the count, and how many renewals have no dues on record. */
+export function buildHealthMetricsMembersRenewalsSummary(summary: HealthMetricsMembersRenewalsSummary): HealthMetricsMembersRenewalsSummaryView {
+  const withoutDues = summary.withoutDuesCount ?? 0;
+  return {
+    valueLabel: formatUsd(summary.valueUsd),
+    renewalCountLabel: formatCount(summary.renewalCount),
+    coverageNote: withoutDues > 0 ? `${pluralize(withoutDues, 'renewal')} without dues on record, so the value counts only the known dues.` : '',
+  };
+}
+
+/** Renewal rows; a missing tier, date or dues renders as a dash, never $0. */
+export function buildHealthMetricsMembersRenewalRows(rows: HealthMetricsMembersRenewal[]): HealthMetricsMembersRenewalRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    renewalDateLabel: formatIsoDate(row.renewalDate),
+    duesLabel: formatUsd(row.duesUsd),
+    hasOutstandingBalance: row.hasOutstandingBalance,
+  }));
+}
+
+/** The "N renewals" line over the table. */
+export function buildHealthMetricsMembersRenewalsCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'renewal');
+}
+
+/** The board hero for the selected cohort, with the other cohort's latest share beside it. */
+export function buildHealthMetricsMembersBoardSummary(
+  cohort: HealthMetricsMembersBoardCohort,
+  selected: HealthMetricsMembersBoardCohortSummary | null,
+  other: HealthMetricsMembersBoardCohortSummary | null
+): HealthMetricsMembersBoardSummaryView {
+  const isBelowExpectedLevel = selected?.isBelowExpectedLevel === true;
+  const neverAttendedCount = Math.max(0, selected?.neverAttendedCount ?? 0);
+  const noun = HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort];
+  const attended = selected?.latestAttendedCount ?? null;
+  const invited = selected?.latestInvitedCount ?? null;
+  const meetings = selected?.meetingsInRangeCount ?? null;
+  return {
+    meetingsLabel: meetings === null ? '—' : `${pluralize(meetings, 'meeting')} in range`,
+    latestPctLabel: formatPct(selected?.latestAttendancePct ?? null),
+    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ' · below the ~100% this should be' : ''}`,
+    isBelowExpectedLevel,
+    otherCohortLabel: HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS.find((option) => option.id !== cohort)?.label ?? '',
+    otherCohortPctLabel: formatPct(other?.latestAttendancePct ?? null),
+    attendedInvitedLabel: attended === null || invited === null ? '—' : `${formatCount(attended)} / ${formatCount(invited)}`,
+    neverAttendedLabel: formatCount(selected?.neverAttendedCount ?? null),
+    neverAttendedCount,
+  };
+}
+
+/** Meeting rows; the rate bar takes the Engagement attendance tones. */
+export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardMeetingRowView[] {
+  return rows.map((row) => {
+    const ratePct = toWholePct(row.attendancePct);
+    return {
+      meetingId: row.meetingId,
+      committeeName: row.committeeName ?? '—',
+      dateLabel: formatIsoDate(row.meetingDate),
+      attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct)],
+    };
+  });
+}
+
+/** Trend bars, labelled by short date; the rate is clamped like the table's. */
+export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
+  return trend.map((meeting) => {
+    const pct = toWholePct(meeting.attendancePct);
+    return {
+      meetingId: meeting.meetingId,
+      label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
+      dateLabel: formatIsoDate(meeting.meetingDate),
+      committeeName: meeting.committeeName ?? '—',
+      pct,
+      pctLabel: pct === null ? '—' : `${pct}%`,
+      isLatest: meeting.isLatestMeeting,
+    };
+  });
+}
+
+/** The sub-nav note, from the board cohort: unused seats first, else the latest share when below its level. */
+export function buildHealthMetricsMembersBoardNote(board: HealthMetricsMembersBoardCohortSummary | null): string {
+  if (!board) return '';
+  const never = board.neverAttendedCount ?? 0;
+  if (never > 0) return `${pluralize(never, 'seat')} unused`;
+  if (board.isBelowExpectedLevel === true && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
+  return '';
+}
+
+/** The "N meetings" line over the table. */
+export function buildHealthMetricsMembersBoardCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'meeting');
+}
+
+/** The audience toggle, in the read's order. */
+export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMetricsMembersNpsAudience[]): HealthMetricsMembersNpsAudienceOption[] {
+  return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
+}
+
+/** The NPS hero, banner and footer for one audience; a flagged sample withholds the score rather than showing it as precise. */
+export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
+  const isWithheld = !audience || audience.isSampleTooSmall || audience.npsScore === null;
+  const recipients = audience?.recipientsCount ?? null;
+  const responses = audience?.responsesCount ?? null;
+  const ratePct = toWholePct(audience?.responseRatePct ?? null);
+  const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+  const change = isWithheld ? null : (audience?.scoreChangePp ?? null);
+  const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
+  const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
+
+  return {
+    isWithheld,
+    scoreLabel: isWithheld ? '—' : formatSignedScore(audience?.npsScore ?? null),
+    changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
+    changeDirection: directionOf(change),
+    caption: isWithheld ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
+    respondedLabel,
+    rateLabel,
+    isRateBelowFloor,
+    lowSampleNote: audience?.isSampleTooSmall
+      ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold — the score is suppressed rather than shown as precise.`
+      : null,
+    lastUpdatedLabel: audience?.lastUpdatedQuarter ? `Last updated ${audience.lastUpdatedQuarter}` : '',
+    surveyedLabel: `out of ${formatCount(recipients)} surveyed`,
+    footer: isRateBelowFloor
+      ? {
+          isBelowFloor: true,
+          lead: `${formatCount(audience?.noResponseCount ?? null)} of ${formatCount(recipients)} did not respond.`,
+          text: `A score computed on ${pluralize(Math.max(0, responses ?? 0), 'reply', 'replies')} is not a foundation-wide signal.`,
+        }
+      : {
+          isBelowFloor: false,
+          lead: null,
+          text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
+        },
+  };
+}
+
+/** Promoters, passives, detractors and non-responses as shares of everyone surveyed. */
+export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSegmentView[] {
+  const counts: Record<(typeof HEALTH_METRICS_MEMBERS_NPS_SEGMENTS)[number]['key'], number | null> = {
+    promoters: audience?.promotersCount ?? null,
+    passives: audience?.passivesCount ?? null,
+    detractors: audience?.detractorsCount ?? null,
+    noResponse: audience?.noResponseCount ?? null,
+  };
+  const recipients = audience?.recipientsCount ?? 0;
+  return HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => {
+    const count = counts[segment.key];
+    return {
+      key: segment.key,
+      label: segment.label,
+      countLabel: formatCount(count),
+      widthPct: recipients > 0 && count !== null ? Math.min(100, Math.max(0, (count / recipients) * 100)) : 0,
+      colorClass: segment.colorClass,
+    };
+  });
+}
+
+/** Trend points, oldest first; a flagged wave keeps its response rate but withholds its score. */
+export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
+  return trend.map((quarter) => {
+    const score = quarter.isSampleTooSmall ? null : quarter.npsScore;
+    const ratePct = toWholePct(quarter.responseRatePct);
+    return {
+      quarterStartDate: quarter.quarterStartDate,
+      label: quarter.quarterLabel ?? '—',
+      score,
+      scoreLabel: score === null ? 'Withheld' : formatSignedScore(score),
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      isRateBelowFloor: ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+    };
+  });
+}
+
+/**
+ * The sentence under the trend: a rising score on a falling rate that fell materially or ended below the floor
+ * is flagged; else a below-floor rate, or a rate that moved under the drop threshold. `null` when neither applies.
+ */
+export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembersNpsTrendPointView[]): HealthMetricsMembersNpsTrendNote | null {
+  const rated = points.filter((point) => point.ratePct !== null);
+  const latest = rated.at(-1);
+  if (points.length < 2 || !latest) return null;
+
+  const scored = rated.filter((point) => point.score !== null);
+  const first = scored[0];
+  const last = scored.at(-1);
+  if (first && last && first !== last) {
+    const scoreUp = (last.score ?? 0) - (first.score ?? 0);
+    const rateDrop = (first.ratePct ?? 0) - (last.ratePct ?? 0);
+    if (scoreUp > 0 && rateDrop > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
+      return { kind: 'diverging', scoreChangeLabel: pluralize(scoreUp, 'point'), fromRateLabel: first.rateLabel, toRateLabel: last.rateLabel };
+    }
+  }
+
+  if (latest.isRateBelowFloor) return { kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
+  if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
+  return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+}
+
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
   return { key, label: format(value), tracked: value !== null };
+}
+
+function toWholePct(share: number | null): number | null {
+  return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
 }
 
 function formatIsoDate(value: string | null): string {
@@ -374,6 +666,24 @@ function formatUsd(value: number | null): string {
   return value === null ? '—' : formatCurrency(value);
 }
 
-function pluralize(count: number, noun: string): string {
-  return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
+function formatPct(fraction: number | null): string {
+  const pct = toWholePct(fraction);
+  return pct === null ? '—' : `${pct}%`;
+}
+
+function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
+}
+
+/** A score or change with its sign; zero carries none. */
+function formatSignedScore(value: number | null): string {
+  if (value === null) return '—';
+  const rounded = Math.round(value);
+  if (rounded === 0) return '0';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}`;
+}
+
+function directionOf(value: number | null): 'up' | 'down' | 'neutral' {
+  if (value === null || Math.round(value) === 0) return 'neutral';
+  return value > 0 ? 'up' : 'down';
 }

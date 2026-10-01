@@ -238,3 +238,107 @@ describe('mentorship router — mentee profile update', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('mentorship router — mentor endpoints', () => {
+  it.each(['/mentor/has-profile', '/mentor/programs', '/mentor/programs/mp_test', '/mentor/profile', '/mentor/open-programs', '/mentor/requests'])(
+    'rejects unauthenticated GET /api/mentorship%s with 401',
+    async (path) => {
+      const res = await fetch(`${baseUrl}/api/mentorship${path}`);
+
+      expect(res.status).toBe(401);
+    }
+  );
+
+  it('still allows reading the mentor programs while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/programs`, { headers: { 'x-test-impersonating': 'true' } });
+
+    // 401 rather than 403: reads skip the impersonation guard and reach the controller's auth check.
+    expect(res.status).toBe(401);
+  });
+
+  it('routes POST /api/mentorship/mentor/profile (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a mentor registration while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: JSON.stringify({}),
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
+  const withdrawPath = '/api/mentorship/mentor/requests/0c6e2d3a-8f71-4b5e-a2c9-3d4e5f6a7b8c/withdraw';
+  const requestBody = JSON.stringify({ programId: '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e' });
+
+  it('routes POST /api/mentorship/mentor/requests (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: requestBody,
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('routes POST /api/mentorship/mentor/requests/:requestId/withdraw (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}${withdrawPath}`, { method: 'POST' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a mentor request while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: requestBody,
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
+  it('refuses a mentor request withdraw while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}${withdrawPath}`, { method: 'POST', headers: { 'x-test-impersonating': 'true' } });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
+  it('still allows reading the mentor requests while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/requests`, { headers: { 'x-test-impersonating': 'true' } });
+
+    // 401 rather than 403: reads skip the impersonation guard and reach the controller's auth check.
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('mentorship router — LFX profile sync', () => {
+  const body = JSON.stringify({ firstName: 'Test' });
+
+  it('routes PATCH /api/mentorship/me/lfx-profile (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/me/lfx-profile`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses the sync while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/me/lfx-profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body,
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+});

@@ -13,6 +13,7 @@ import {
   mapMentorshipMenteeApplicationHistory,
   mapMentorshipMenteeApplicationTask,
   mapMentorshipMenteeApplyTarget,
+  resolveMentorshipMenteeTaskDueDate,
 } from './mentorship-mentee-application.helper';
 
 const baseTask: MentorshipUpstreamTask = {
@@ -40,6 +41,22 @@ const baseApplication: MentorshipUpstreamApplication = {
   program: { id: 'prog-1', name: 'Test Program', slug: 'test-program', logo_url: 'https://example.com/logo.png', project_name: 'Test Project' },
   term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-08-01' },
 };
+
+describe('resolveMentorshipMenteeTaskDueDate', () => {
+  it("uses the task's own due date over the term's application close", () => {
+    expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, due_date: '2026-07-15' }, '2026-08-01')).toBe('2026-07-15T00:00:00Z');
+  });
+
+  it("falls back to the term's application close for a prerequisite with no due date", () => {
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01')).toBe('2026-08-01T00:00:00Z');
+  });
+
+  it('gives no due date to a non-prerequisite or uncategorized task, or when the term has no application close', () => {
+    expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, category: 'non_prerequisite' }, '2026-08-01')).toBeUndefined();
+    expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, category: undefined }, '2026-08-01')).toBeUndefined();
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, undefined)).toBeUndefined();
+  });
+});
 
 describe('mapMentorshipMenteeApplicationTask', () => {
   it('maps an open task with no submission', () => {

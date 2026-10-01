@@ -16,7 +16,8 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const { MicroserviceError } = await import('../errors');
-const { proxyMentorshipRequest } = await import('./mentorship-api.helper');
+const { logger } = await import('../services/logger.service');
+const { listAllMentorshipPages, proxyMentorshipRequest } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
@@ -94,5 +95,54 @@ describe('proxyMentorshipRequest', () => {
 
     await expect(proxyMentorshipRequest(proxy, req, path)).rejects.toBe(bootstrapError);
     expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('listAllMentorshipPages', () => {
+  let proxyRequest: ReturnType<typeof vi.fn>;
+  let proxy: Proxy;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequest = vi.fn();
+    proxy = { proxyRequest } as unknown as Proxy;
+  });
+
+  it('reads every page at the largest page size, keeping the query', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: `row-${index}` }));
+    proxyRequest
+      .mockResolvedValueOnce({ data: firstPage, meta: { total: 101, limit: 100, offset: 0 } })
+      .mockResolvedValueOnce({ data: [{ id: 'row-last' }], meta: { total: 101, limit: 100, offset: 100 } });
+
+    const rows = await listAllMentorshipPages<{ id: string }>(proxy, req, path, { role: 'mentee' });
+
+    expect(rows).toHaveLength(101);
+    expect(rows.at(-1)).toEqual({ id: 'row-last' });
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'GET', { role: 'mentee', limit: 100, offset: 0 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', path, 'GET', { role: 'mentee', limit: 100, offset: 100 }, undefined);
+  });
+
+  it('stops on an empty page even when the total says there are more', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ data: [{ id: 'row-1' }], meta: { total: 5, limit: 100, offset: 0 } })
+      .mockResolvedValueOnce({ data: [], meta: { total: 5, limit: 100, offset: 1 } });
+
+    await expect(listAllMentorshipPages(proxy, req, path)).resolves.toEqual([{ id: 'row-1' }]);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops after one page when the page carries no total', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'row-1' }] });
+
+    await expect(listAllMentorshipPages(proxy, req, path)).resolves.toEqual([{ id: 'row-1' }]);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at the page cap and warns when upstream keeps returning rows', async () => {
+    proxyRequest.mockResolvedValue({ data: [{ id: 'row' }], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } });
+
+    await expect(listAllMentorshipPages(proxy, req, path)).resolves.toHaveLength(50);
+    expect(proxyRequest).toHaveBeenCalledTimes(50);
+    expect(logger.warning).toHaveBeenCalledWith(req, 'mentorship_list_all_pages', expect.any(String), { path, max_pages: 50, count: 50 });
   });
 });

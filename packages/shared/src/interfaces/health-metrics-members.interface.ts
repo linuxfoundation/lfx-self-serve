@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-members.constants';
+import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
@@ -322,4 +325,325 @@ export interface HealthMetricsMembersQueryParams {
   memNps: string;
   memSearch: string;
   memPage: string;
+  riskBucket: string;
+  riskPage: string;
+  renewalsPage: string;
+  boardCohort: string;
+  boardPage: string;
+  npsAudience: string;
+}
+
+/** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
+export type HealthMetricsMembersAtRiskBucket = (typeof HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS)[number];
+
+/** The bucket pill: one aging bucket, or `all` for both. */
+export type HealthMetricsMembersAtRiskFilter = HealthMetricsMembersAtRiskBucket | 'all';
+
+/** `GET /api/analytics/members-at-risk` — a snapshot of now, so it takes no period. */
+export interface HealthMetricsMembersAtRiskQuery {
+  foundationSlug: string;
+  bucket: HealthMetricsMembersAtRiskFilter;
+  offset: number;
+  pageSize: number;
+}
+
+/** One at-risk member, in the view's own `sort_rank` order. Dates are ISO `YYYY-MM-DD`. */
+export interface HealthMetricsMembersAtRiskMember {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  outstandingBalanceUsd: number | null;
+  daysOverdue: number | null;
+  lastEngagedDate: string | null;
+}
+
+/**
+ * The hero, summed over every member 60+ days overdue whatever the bucket pill; with a bucket picked it exceeds the
+ * table's total. `null` is a total the model left unset for a foundation with members at risk, never a zero.
+ */
+export interface HealthMetricsMembersAtRiskSummary {
+  outstandingBalanceUsd: number | null;
+  highRiskBalanceUsd: number | null;
+  mediumRiskBalanceUsd: number | null;
+  memberCount: number | null;
+}
+
+/** One aging bar; always both buckets, whatever the selected pill. `null` is an unset model total, as in the summary. */
+export interface HealthMetricsMembersAtRiskAging {
+  bucket: HealthMetricsMembersAtRiskBucket;
+  memberCount: number | null;
+  balanceUsd: number | null;
+}
+
+export interface HealthMetricsMembersAtRisk {
+  rows: HealthMetricsMembersAtRiskMember[];
+  /** Members in the selected bucket. */
+  totalRecords: number;
+  summary: HealthMetricsMembersAtRiskSummary;
+  aging: HealthMetricsMembersAtRiskAging[];
+}
+
+/** A bucket pill; `all` is "All at risk". */
+export interface HealthMetricsMembersAtRiskFilterOption extends FilterPillOption {
+  id: HealthMetricsMembersAtRiskFilter;
+}
+
+/** The hero as the section renders it. */
+export interface HealthMetricsMembersAtRiskSummaryView {
+  outstandingLabel: string;
+  highRiskLabel: string;
+  mediumRiskLabel: string;
+  memberCountLabel: string;
+}
+
+/** One aging bar as the section renders it; `widthPct` is against the larger bucket's balance. */
+export interface HealthMetricsMembersAtRiskAgingView {
+  bucket: HealthMetricsMembersAtRiskBucket;
+  label: string;
+  balanceLabel: string;
+  widthPct: number;
+}
+
+/** One at-risk row as the table renders it. */
+export interface HealthMetricsMembersAtRiskRowView {
+  accountId: string;
+  accountName: string;
+  tierLabel: string;
+  overdueLabel: string;
+  ageLabel: string;
+  lastEngagedLabel: string;
+}
+
+/** `GET /api/analytics/members-renewals` — a snapshot of now, so it takes no period. */
+export interface HealthMetricsMembersRenewalsQuery {
+  foundationSlug: string;
+  offset: number;
+  pageSize: number;
+}
+
+/** One renewal still to happen inside the next 90 days, soonest first. Dates are ISO `YYYY-MM-DD`; `null` dues is not recorded, never $0. */
+export interface HealthMetricsMembersRenewal {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  renewalDate: string | null;
+  duesUsd: number | null;
+  /** The renewal plus a concurrent risk signal (MEM-02); every other row carries no status. */
+  hasOutstandingBalance: boolean;
+}
+
+/** The hero over every renewal in the window. `valueUsd` sums the known dues; `withoutDuesCount` renewals have none on record. */
+export interface HealthMetricsMembersRenewalsSummary {
+  renewalCount: number | null;
+  valueUsd: number | null;
+  withoutDuesCount: number | null;
+}
+
+export interface HealthMetricsMembersRenewals {
+  rows: HealthMetricsMembersRenewal[];
+  totalRecords: number;
+  summary: HealthMetricsMembersRenewalsSummary;
+}
+
+/** The renewals hero as the section renders it; `coverageNote` is empty when every renewal has dues. */
+export interface HealthMetricsMembersRenewalsSummaryView {
+  valueLabel: string;
+  renewalCountLabel: string;
+  coverageNote: string;
+}
+
+/** One renewal row as the table renders it. */
+export interface HealthMetricsMembersRenewalRowView {
+  accountId: string;
+  accountName: string;
+  tierLabel: string;
+  renewalDateLabel: string;
+  duesLabel: string;
+  hasOutstandingBalance: boolean;
+}
+
+/** `MEMBERSHIP_BOARD_ATTENDANCE`'s `attendance_cohort` values. */
+export type HealthMetricsMembersBoardCohort = (typeof HEALTH_METRICS_MEMBERS_BOARD_COHORTS)[number];
+
+/** The Board / Voting members toggle. */
+export interface HealthMetricsMembersBoardCohortOption extends FilterPillOption {
+  id: HealthMetricsMembersBoardCohort;
+}
+
+/** `GET /api/analytics/members-board-attendance` — one cohort's meetings in the period, one page at a time. */
+export interface HealthMetricsMembersBoardAttendanceQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  cohort: HealthMetricsMembersBoardCohort;
+  offset: number;
+  pageSize: number;
+}
+
+/** One cohort's period figures as the view carries them; every field is `null` when the period held no meeting. */
+export interface HealthMetricsMembersBoardCohortSummary {
+  /** 0–1 share of the invited who attended the latest meeting in the period. */
+  latestAttendancePct: number | null;
+  latestAttendedCount: number | null;
+  latestInvitedCount: number | null;
+  meetingsInRangeCount: number | null;
+  neverAttendedCount: number | null;
+  /** The view's own level flag; the page never compares the share with a threshold. */
+  isBelowExpectedLevel: boolean | null;
+}
+
+/** One meeting occurrence of the cohort. `meetingDate` is ISO `YYYY-MM-DD`; `attendancePct` is 0–1. */
+export interface HealthMetricsMembersBoardMeeting {
+  meetingId: string;
+  committeeName: string | null;
+  meetingDate: string | null;
+  attendedCount: number | null;
+  invitedCount: number | null;
+  attendancePct: number | null;
+  /** The view's latest meeting in the period — the one the hero reports. */
+  isLatestMeeting: boolean;
+}
+
+/** `cohorts` carries both cohorts so the hero can show the other one; `null` when the foundation has no row for it. */
+export interface HealthMetricsMembersBoardAttendance {
+  cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>;
+  /** The selected cohort's latest meetings in the period, oldest first, for the chart. */
+  trend: HealthMetricsMembersBoardMeeting[];
+  /** One page of the selected cohort's meetings in the period, newest first. */
+  rows: HealthMetricsMembersBoardMeeting[];
+  totalRecords: number;
+}
+
+/** The board hero as the section renders it. */
+export interface HealthMetricsMembersBoardSummaryView {
+  meetingsLabel: string;
+  latestPctLabel: string;
+  latestCaption: string;
+  isBelowExpectedLevel: boolean;
+  otherCohortLabel: string;
+  otherCohortPctLabel: string;
+  attendedInvitedLabel: string;
+  neverAttendedLabel: string;
+  neverAttendedCount: number;
+}
+
+/** One meeting row as the table renders it; `ratePct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersBoardMeetingRowView {
+  meetingId: string;
+  committeeName: string;
+  dateLabel: string;
+  attendedLabel: string;
+  ratePct: number | null;
+  rateLabel: string;
+  rateFillClass: string;
+}
+
+/** One bar of the trend chart, oldest first; `pct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersBoardTrendBarView {
+  meetingId: string;
+  label: string;
+  dateLabel: string;
+  committeeName: string;
+  pct: number | null;
+  pctLabel: string;
+  isLatest: boolean;
+}
+
+/** `GET /api/analytics/members-nps` — one audience's survey figures for a period; `null` picks the first audience. */
+export interface HealthMetricsMembersNpsQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  audience: string | null;
+}
+
+/** One audience surveyed in the period. Scores are `null` when the view flags the sample too small to report. */
+export interface HealthMetricsMembersNpsAudience {
+  audience: string;
+  npsScore: number | null;
+  /** Points since the audience's previous survey wave. */
+  scoreChangePp: number | null;
+  recipientsCount: number | null;
+  responsesCount: number | null;
+  /** 0–1 share of recipients who responded. */
+  responseRatePct: number | null;
+  promotersCount: number | null;
+  passivesCount: number | null;
+  detractorsCount: number | null;
+  noResponseCount: number | null;
+  isSampleTooSmall: boolean;
+  /** The survey wave the figures come from, e.g. `Q2 2026`. */
+  lastUpdatedQuarter: string | null;
+}
+
+/** One survey wave of the selected audience; `quarterStartDate` is ISO `YYYY-MM-DD`, `responseRatePct` 0–1. */
+export interface HealthMetricsMembersNpsQuarter {
+  quarterStartDate: string;
+  quarterLabel: string | null;
+  npsScore: number | null;
+  responseRatePct: number | null;
+  isSampleTooSmall: boolean;
+}
+
+/** Audiences in toggle order, the one the figures belong to, and its waves up to the period's end, oldest first. */
+export interface HealthMetricsMembersNps {
+  audiences: HealthMetricsMembersNpsAudience[];
+  selectedAudience: string | null;
+  trend: HealthMetricsMembersNpsQuarter[];
+}
+
+/** The audience toggle over the hero; the id is the view's audience name. */
+export interface HealthMetricsMembersNpsAudienceOption extends FilterPillOption {
+  id: string;
+}
+
+/** The note under the response distribution; `lead` is the bolded opening, when there is one. */
+export interface HealthMetricsMembersNpsFooterView {
+  isBelowFloor: boolean;
+  lead: string | null;
+  text: string;
+}
+
+/** The NPS hero as the section renders it; a withheld score renders the dash and the not-enough caption. */
+export interface HealthMetricsMembersNpsSummaryView {
+  isWithheld: boolean;
+  scoreLabel: string;
+  /** `null` renders no change. */
+  changeLabel: string | null;
+  changeDirection: 'up' | 'down' | 'neutral';
+  caption: string;
+  respondedLabel: string;
+  rateLabel: string;
+  isRateBelowFloor: boolean;
+  /** The low-confidence banner, when the view flags the sample too small. */
+  lowSampleNote: string | null;
+  lastUpdatedLabel: string;
+  surveyedLabel: string;
+  footer: HealthMetricsMembersNpsFooterView;
+}
+
+/** One segment of the response distribution; `widthPct` is its share of everyone surveyed. */
+export interface HealthMetricsMembersNpsSegmentView {
+  key: string;
+  label: string;
+  countLabel: string;
+  widthPct: number;
+  colorClass: string;
+}
+
+/** One wave of the trend chart; `ratePct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersNpsTrendPointView {
+  quarterStartDate: string;
+  label: string;
+  score: number | null;
+  scoreLabel: string;
+  ratePct: number | null;
+  rateLabel: string;
+  isRateBelowFloor: boolean;
+}
+
+/** The sentence under the trend: a score rising on a falling rate, a rate below the floor, or a rate holding. */
+export interface HealthMetricsMembersNpsTrendNote {
+  kind: 'diverging' | 'below-floor' | 'holding';
+  scoreChangeLabel: string;
+  fromRateLabel: string;
+  toRateLabel: string;
 }

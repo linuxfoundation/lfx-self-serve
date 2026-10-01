@@ -33,19 +33,12 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
-  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
-  MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
@@ -61,6 +54,10 @@ import {
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_PAST_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
 import type { FilterOption } from '../interfaces/filter.interface';
 import type {
@@ -74,13 +71,6 @@ import type {
   MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramDetail,
-  MentorshipMentorProgramLists,
-  MentorshipMentorProgramTabCounts,
-  MentorshipMentorReviewTask,
-  MentorshipMentorRegisterFieldErrors,
-  MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -90,9 +80,22 @@ import type {
   MentorshipProgramTabCounts,
   MentorshipProgramTerm,
   MentorshipProgramTermRow,
+  MentorshipRegisterFailureOptions,
+  MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipMentorProgram,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramLists,
+  MentorshipMentorProgramTabCounts,
+  MentorshipMentorReviewTask,
+  MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorRegisterForm,
+  MentorshipMentorRegisterRequest,
+} from '../interfaces/mentorship-mentor.interface';
+import type { MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationStatus,
@@ -110,7 +113,6 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeRegisterRequest,
-  MentorshipMenteeRegisterSubmitFailure,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusOptionsState,
   MentorshipMenteeTaskView,
@@ -136,6 +138,24 @@ export function toMentorshipUtcInstant(value: string): string {
   return MENTORSHIP_ISO_DATE.test(value) ? `${value}T00:00:00Z` : value;
 }
 
+/**
+ * The instant (ms) a task closes: the end of its due date's UTC day, so a task due `2026-09-30` closes at
+ * `2026-10-01T00:00:00Z`. Takes a date-only value or an ISO instant (only its UTC calendar day counts);
+ * a missing or unparseable due date never closes, so it returns `null`.
+ */
+export function mentorshipTaskDueCutoffMs(dueDate: string | null | undefined): number | null {
+  if (!dueDate) return null;
+  const due = new Date(toMentorshipUtcInstant(dueDate));
+  if (Number.isNaN(due.getTime())) return null;
+  return Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate() + 1);
+}
+
+/** Whether a task's due date has passed at `nowMs`, per `mentorshipTaskDueCutoffMs`; a task with no usable due date is never past due. */
+export function isMentorshipTaskPastDue(dueDate: string | null | undefined, nowMs: number): boolean {
+  const cutoff = mentorshipTaskDueCutoffMs(dueDate);
+  return cutoff !== null && nowMs >= cutoff;
+}
+
 /** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
 export function isMentorshipIsoDate(value: string): boolean {
   const match = MENTORSHIP_ISO_DATE.exec(value);
@@ -155,6 +175,18 @@ export function isMentorshipCiiProjectId(value: string): boolean {
 /** Optional-or-required HTTP(S) URL, matching the old maintainer `CustomValidators.url`. */
 export function isMentorshipHttpUrl(value: string): boolean {
   return normalizeToUrl(value.trim()) !== null;
+}
+
+/**
+ * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * A trailing `/` on `base` is dropped, so the join never doubles it.
+ */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
+  let end = base.length;
+  while (end > 0 && base[end - 1] === '/') end--;
+  const programs = `${base.slice(0, end)}/programs`;
+  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
 }
 
 export function isMentorshipLogoFileName(fileName: string): boolean {
@@ -480,15 +512,20 @@ export function isMentorshipResumeFileName(fileName: string): boolean {
 }
 
 /**
- * Validates the Become a Mentor form.
+ * Validates the Become a Mentor form, and the `POST /api/mentorship/mentor/profile` body the BFF
+ * receives, so the two are held to one rule set.
  *
  * Two things a mentor supplies are deliberately unvalidated. Program requests are
  * optional: a mentor may register a profile now and apply to programs later, so the
  * request list is not checked here and does not reach this function at all. The resume
  * is optional too, and its picker rejects a bad type or an oversized file at selection
- * time rather than letting either reach submit.
+ * time rather than letting either reach submit. A skill outside `MENTORSHIP_SKILL_OPTIONS`
+ * can only come from a tampered request (the picker offers nothing else), so it gets its
+ * own message after the required check.
  */
-export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
+export function getMentorshipMentorRegisterErrors(
+  form: Pick<MentorshipMentorRegisterForm, 'introduction' | 'skills' | 'complianceAccepted' | 'termsAccepted'>
+): MentorshipMentorRegisterFieldErrors {
   const errors: MentorshipMentorRegisterFieldErrors = {};
 
   const introductionError = mentorshipRichTextError(
@@ -499,10 +536,28 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
   );
   if (introductionError) errors.introduction = introductionError;
   if (!form.skills.length) errors.skills = 'Add at least one skill.';
+  else if (hasUnknownMentorshipSkill(form.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
   return errors;
+}
+
+/**
+ * Builds the `POST /api/mentorship/mentor/profile` body from the register form. `resumeFileName` is
+ * never read: resume upload is coming soon and no file metadata is sent.
+ */
+export function buildMentorshipMentorRegisterRequest(
+  form: MentorshipMentorRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMentorRegisterRequest {
+  return {
+    introduction: form.introduction,
+    skills: [...form.skills],
+    complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
+    termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
+  };
 }
 
 function trimmedParam(params: { get(name: string): string | null }, name: string): string {
@@ -607,10 +662,10 @@ export function getMentorshipMenteeRegisterRequestErrors(
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
   else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
@@ -628,9 +683,13 @@ function hasUnknownMentorshipSkill(skills: string[]): boolean {
  * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
  * sent only when its consent box is checked and it is not blank, so declining a question never leaves
  * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
- * file metadata is sent.
+ * file metadata is sent. `lfxProfile` is the profile card's name and avatar, sent only when it has
+ * at least one of them; the BFF adds the primary email itself.
  */
-export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterRequest {
+export function buildMentorshipMenteeRegisterRequest(
+  form: MentorshipMenteeRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMenteeRegisterRequest {
   const demographics: MentorshipMenteeDemographics = {};
   for (const row of MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS) {
     const answer = form[row.answerControl];
@@ -650,39 +709,47 @@ export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegis
     noDuplicateProfile: isMentorshipTermsAccepted(form.noDuplicateProfile),
     complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
     termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
   };
 }
 
 /**
- * Classifies a failed `POST /api/mentorship/mentee/profile` by status and error code, never by message
- * text (upstream wording is not a contract). A 422 has two upstream causes (the eligibility flags, or
- * the user row missing), so it gets one fixed message and the checkboxes are not re-highlighted.
+ * Classifies a failed `POST /api/mentorship/{mentor,mentee}/profile` by status and error code, never by
+ * message text (upstream wording is not a contract). `options` carries what differs by role: the
+ * profile-exists code and copy, the fields a 400 may name, and the 422 copy. The mentee 422 has two
+ * upstream causes (the eligibility flags, or the user row missing), so it gets one fixed message and the
+ * checkboxes are not re-highlighted. The mentor form has no eligibility statements, so without
+ * `ineligibleMessage` a 422 falls through to the fallback.
  */
-export function mapMentorshipMenteeRegisterFailure(status: number, body: unknown): MentorshipMenteeRegisterSubmitFailure {
+export function mapMentorshipRegisterFailure<TFieldErrors extends object>(
+  status: number,
+  body: unknown,
+  options: MentorshipRegisterFailureOptions<TFieldErrors>
+): MentorshipRegisterSubmitFailure<TFieldErrors> {
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
   const code = record['code'];
 
-  if (status === 409 && code === MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE) {
-    return { kind: 'profile-exists', message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS };
+  if (status === 409 && code === options.profileExistsCode) {
+    return { kind: 'profile-exists', message: options.profileExistsMessage };
   }
-  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT };
+  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_REGISTER_ERROR_CONFLICT };
   if (status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
-    return { kind: 'read-only', message: MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY };
+    return { kind: 'read-only', message: MENTORSHIP_REGISTER_ERROR_READ_ONLY };
   }
   if (status === 400 && Array.isArray(record['errors'])) {
-    const fieldErrors: MentorshipMenteeRegisterFieldErrors = {};
+    const fieldErrors: Partial<Record<keyof TFieldErrors, string>> = {};
     for (const entry of record['errors'] as unknown[]) {
       const item = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
-      const field = MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS.find((key) => key === item['field']);
+      const field = options.fieldKeys.find((key) => key === item['field']);
       const message = item['message'];
       if (field && typeof message === 'string' && message.trim() && !fieldErrors[field]) fieldErrors[field] = message;
     }
     const firstMessage = Object.values(fieldErrors)[0];
-    if (firstMessage) return { kind: 'field-errors', message: firstMessage, fieldErrors };
+    if (typeof firstMessage === 'string') return { kind: 'field-errors', message: firstMessage, fieldErrors: fieldErrors as TFieldErrors };
   }
-  if (status === 422) return { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
+  if (status === 422 && options.ineligibleMessage) return { kind: 'ineligible', message: options.ineligibleMessage };
 
-  return { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+  return { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
 }
 
 /**
@@ -1109,18 +1176,21 @@ export function mentorshipMenteeTaskStatusFields(
  * Build a display-ready task row from the fields both mentee phases share, so the
  * template reads flat fields instead of recomputing presentation logic in bindings.
  * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
- * (file already uploaded).
+ * (file already uploaded). `nowMs` decides `pastDue`.
  */
-export function buildMentorshipMenteeTaskView(input: {
-  id: string;
-  title: string;
-  description: string;
-  status: MentorshipMenteeTaskStatus;
-  submitFile: string | null;
-  fileUrl?: string;
-  dueDate?: string;
-  submittedDate?: string;
-}): MentorshipMenteeTaskView {
+export function buildMentorshipMenteeTaskView(
+  input: {
+    id: string;
+    title: string;
+    description: string;
+    status: MentorshipMenteeTaskStatus;
+    submitFile: string | null;
+    fileUrl?: string;
+    dueDate?: string;
+    submittedDate?: string;
+  },
+  nowMs: number = Date.now()
+): MentorshipMenteeTaskView {
   // Normalise once so an unrecognised runtime status resolves to a real option
   // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
   // it would read as `pending` in the dropdown yet render unstyled and vanish
@@ -1142,6 +1212,7 @@ export function buildMentorshipMenteeTaskView(input: {
     requiresFile: !!input.submitFile && !input.fileUrl,
     fileUrl: input.fileUrl ?? submitFileUrl,
     dueDate: input.dueDate ?? null,
+    pastDue: isMentorshipTaskPastDue(input.dueDate, nowMs),
     submittedDate: input.submittedDate ?? null,
   };
 }
@@ -1155,8 +1226,10 @@ export function isMentorshipMenteeUpdatableTaskStatus(value: unknown): value is 
  * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
  * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
  * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
- * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`.
- * The hint explains a disabled forward move or a locked row; only the file-required hint shows on screen.
+ * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`,
+ * and once the task is past due, when a pending task can still be started. The hint explains a
+ * disabled forward move or a locked row; only the past-due and file-required hints show on screen,
+ * and past due wins over file required.
  */
 export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskView): MentorshipMenteeTaskStatusOptionsState {
   const status = normalizeMentorshipMenteeTaskStatus(task.status);
@@ -1165,6 +1238,10 @@ export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskV
 
   if (status === 'submitted') {
     return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_LOCKED, hintVisible: false };
+  }
+  if (task.pastDue) {
+    const blocked = (value: MentorshipMenteeTaskStatus): boolean => value === 'submitted' || (status === 'in_progress' && value === 'pending');
+    return { options: withDisabled(blocked), locked: false, hint: MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE, hintVisible: true };
   }
   if (status === 'in_progress') {
     const fileBlocked = task.requiresFile;
@@ -1203,10 +1280,14 @@ export function mentorshipMenteeProgressTasks(app: MentorshipMenteeApplication):
   return (app.tasks ?? []).filter((task) => (task.category === 'prerequisite') === wantPrerequisite);
 }
 
-/** Build the card for a pending, accepted or graduated application with its display status. */
+/**
+ * Build the card for a pending, accepted or graduated application with its display status. Its task
+ * rows are ordered by name, A to Z; `nowMs` decides which of them are past due.
+ */
 export function buildMentorshipMenteeApplicationView(
   app: MentorshipMenteeApplication,
-  status: MentorshipMenteeApplicationStatus
+  status: MentorshipMenteeApplicationStatus,
+  nowMs: number = Date.now()
 ): MentorshipMenteeApplicationView {
   const tasks = mentorshipMenteeProgressTasks(app);
   const submittedCount = countSubmittedMentorshipMenteeTasks(tasks);
@@ -1227,33 +1308,39 @@ export function buildMentorshipMenteeApplicationView(
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
     decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
-    tasks: tasks.map((task) =>
-      buildMentorshipMenteeTaskView({
-        id: task.id,
-        title: task.name,
-        description: task.description,
-        status: task.status,
-        submitFile: task.submitFile,
-        fileUrl: task.fileUrl,
-        dueDate: task.dueDate,
-        submittedDate: task.submittedOn,
-      })
-    ),
+    tasks: tasks
+      .map((task) =>
+        buildMentorshipMenteeTaskView(
+          {
+            id: task.id,
+            title: task.name,
+            description: task.description,
+            status: task.status,
+            submitFile: task.submitFile,
+            fileUrl: task.fileUrl,
+            dueDate: task.dueDate,
+            submittedDate: task.submittedOn,
+          },
+          nowMs
+        )
+      )
+      // Pinned to 'en' so the server render and the browser sort titles the same way.
+      .sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base', numeric: true })),
   };
 }
 
 /**
  * Derive the mentee overview from the mentee's applications. Pending, accepted and graduated
  * applications become cards ordered active → graduated → awaiting review → in progress; declined, withdrawn
- * and held applications become Past Applications rows, newest first.
+ * and held applications become Past Applications rows, newest first. `nowMs` decides which tasks are past due.
  */
-export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[]): MentorshipMenteeOverview {
+export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[], nowMs: number = Date.now()): MentorshipMenteeOverview {
   const cards: MentorshipMenteeApplicationView[] = [];
   const past: MentorshipMenteePastApplication[] = [];
   for (const app of applications) {
     const status = mentorshipMenteeDisplayStatus(app);
     if (status) {
-      cards.push(buildMentorshipMenteeApplicationView(app, status));
+      cards.push(buildMentorshipMenteeApplicationView(app, status, nowMs));
       continue;
     }
     const outcome = MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS[app.upstreamStatus];

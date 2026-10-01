@@ -511,13 +511,13 @@ test.describe('Org Projects', () => {
 
     const badge = page.getByTestId('org-projects-health-seapath');
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(badge).toHaveText('Healthy - Partial');
+    await expect(badge).toHaveText('Healthy*');
     await badge.focus();
     await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
     await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(badge).toHaveAttribute(
       'aria-label',
-      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+      'Health: Healthy, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
     // Dotted remainder for the 35 unearnable points, plus a divider and a footnote naming the category.
     await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveAttribute('style', /width:\s*35%/);

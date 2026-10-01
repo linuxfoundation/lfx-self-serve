@@ -3,7 +3,6 @@
 
 import '@angular/compiler';
 
-import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi, afterEach, type MockInstance } from 'vitest';
 
@@ -21,11 +20,11 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { MentorshipService } = await import('./mentorship.service');
-const { ResourceNotFoundError } = await import('../errors');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { EmailVerificationService } = await import('./email-verification.service');
 
 function buildReq(): Request {
-  return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
+  return { path: '/api/mentorship/programs' } as Request;
 }
 
 describe('MentorshipService — read-only contract', () => {
@@ -48,94 +47,6 @@ describe('MentorshipService — read-only contract', () => {
     expect(first.total).toBe(second.total);
     expect(first.total).toBeGreaterThan(0);
     expect(first.data.map((p) => p.id)).toEqual(second.data.map((p) => p.id));
-  });
-});
-
-describe('MentorshipService.getMentorProgram', () => {
-  let service: InstanceType<typeof MentorshipService>;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
-    service = new MentorshipService();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('resolves by primary id and returns a fully-built detail (program + tab counts + lists)', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
-
-    const source = getMockMentorshipMentorPrograms().find((program) => program.id === 'mp_gridflow_fall26')!;
-    // Detail carries the raw program plus the derived tab counts and the mentee & applicant lists.
-    expect(detail.program.id).toBe(source.id);
-    expect(detail.program.slug).toBe(source.slug);
-    expect(detail.program.name).toBe(source.name);
-
-    // Tab counts and rows come from the id-keyed mentor lists (term-filtered), not
-    // the admin slug map. `tasks` is the submitted-task count on those mentees.
-    const lists = getMockMentorshipMentorProgramLists()[source.id];
-    expect(detail.tabCounts).toEqual({
-      tasks: source.stats.tasksToReview,
-      mentees: lists.mentees.length,
-      applicants: lists.applicants.length,
-    });
-    expect(detail.program.stats.tasksToReview).toBe(detail.tabCounts.tasks);
-    expect(detail.program.stats.mentees).toBe(lists.mentees.length);
-    expect(detail.program.stats.applicants).toBe(lists.applicants.length);
-    expect(detail.mentees).toEqual(lists.mentees);
-    expect(detail.applicants).toEqual(lists.applicants);
-    expect(detail.applicants.every((applicant) => applicant.termName === source.term)).toBe(true);
-  });
-
-  it('omits other-application links whose program id the mentor detail endpoint cannot resolve', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
-    const ifeoma = detail.applicants.find((applicant) => applicant.id === 'app_ifeoma_adeyemi');
-    expect(ifeoma?.otherApplications?.map((application) => application.programId)).toEqual(['mp_janusgraph_fall26']);
-  });
-
-  it('does not join a Fall mentor card to Winter applicant rows stored under the same slug', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_apicurio_fall26');
-    const lists = getMockMentorshipMentorProgramLists()['mp_apicurio_fall26'];
-    expect(detail.applicants).toEqual(lists.applicants);
-    expect(detail.applicants.some((applicant) => applicant.termName === 'Winter 2026')).toBe(false);
-    expect(detail.tabCounts.applicants).toBe(detail.applicants.length);
-    expect(detail.program.stats.applicants).toBe(detail.applicants.length);
-  });
-
-  it('resolves by slug for callers that route via the URL-friendly identifier', async () => {
-    const source = getMockMentorshipMentorPrograms()[0];
-    const detail = await service.getMentorProgram(buildReq(), source.slug);
-    expect(detail.program.id).toBe(source.id);
-  });
-
-  it('throws ResourceNotFoundError when neither id nor slug matches', async () => {
-    await expect(service.getMentorProgram(buildReq(), 'mp_does_not_exist')).rejects.toBeInstanceOf(ResourceNotFoundError);
-    // The error carries the operation tag so log/observability layers can group by it.
-    await expect(service.getMentorProgram(buildReq(), 'mp_does_not_exist')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-      statusCode: 404,
-      operation: 'mentorship_get_mentor_program',
-    });
-  });
-
-  it('keeps header counts and rows aligned when a card has no people for its term', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_envoy_fall26');
-    expect(detail.mentees).toEqual([]);
-    expect(detail.applicants).toEqual([]);
-    expect(detail.tabCounts.mentees).toBe(0);
-    expect(detail.tabCounts.applicants).toBe(0);
-    expect(detail.program.stats.mentees).toBe(0);
-    expect(detail.program.stats.applicants).toBe(0);
-  });
-
-  it('lists only accepted and graduated mentees on the mentor Mentees tab payload', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_thanos_summer26');
-    expect(detail.mentees.every((mentee) => mentee.status === 'accepted' || mentee.status === 'graduated')).toBe(true);
-    expect(detail.mentees.map((mentee) => mentee.id)).toEqual(['mnt_thanos_1', 'mnt_thanos_2']);
-    expect(detail.tabCounts.mentees).toBe(detail.mentees.length);
-    expect(detail.program.stats.mentees).toBe(detail.mentees.length);
   });
 });
 
@@ -190,5 +101,135 @@ describe('MentorshipService program review', () => {
     proxyRequest.mockRejectedValue(forbidden);
 
     await expect(service.submitProgramDecision(buildReq(), programId, 'approve')).rejects.toBe(forbidden);
+  });
+});
+
+describe('MentorshipService LFX profile sync', () => {
+  const fields = { firstName: 'Test' };
+  const body = { first_name: 'Test', email: 'test.user@example.com' };
+  const mentorRow = { data: [{ id: 'profile-mentor-1', profile_type: 'mentor' }], meta: { total: 1 } };
+  let service: InstanceType<typeof MentorshipService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+  let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
+
+  function signedInReq(): Request {
+    return { path: '/api/mentorship/me/lfx-profile', impersonationActive: false, oidc: { user: { sub: 'auth0|test-user-1' } } } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    getUserEmails = vi.spyOn(EmailVerificationService.prototype, 'getUserEmails').mockResolvedValue({
+      primary_email: 'test.user@example.com',
+      alternate_emails: [],
+    });
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    proxyRequest.mockRestore();
+    getUserEmails.mockRestore();
+  });
+
+  it('patches each of the caller mentor and mentee rows by id, and no other row', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      data: [
+        { id: 'profile-mentor-1', profile_type: 'mentor' },
+        { id: 'profile-other-1', profile_type: 'maintainer' },
+        { id: 'profile-mentee-1', profile_type: 'mentee' },
+      ],
+      meta: { total: 3 },
+    });
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.syncLfxProfileFields(signedInReq(), fields)).resolves.toBe(2);
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles',
+      'GET',
+      expect.objectContaining({ offset: 0 }),
+      undefined
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentor-1',
+      'PATCH',
+      undefined,
+      body
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentee-1',
+      'PATCH',
+      undefined,
+      body
+    );
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+  });
+
+  it('copies the verified primary email even when the body sends none', async () => {
+    proxyRequest.mockResolvedValueOnce(mentorRow);
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.syncLfxProfileFields(signedInReq(), {})).resolves.toBe(1);
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentor-1',
+      'PATCH',
+      undefined,
+      {
+        email: 'test.user@example.com',
+      }
+    );
+  });
+
+  it('leaves the email out when the lookup fails, rather than clearing it', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    proxyRequest.mockResolvedValueOnce(mentorRow);
+    proxyRequest.mockResolvedValue({});
+
+    await service.syncLfxProfileFields(signedInReq(), fields);
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentor-1',
+      'PATCH',
+      undefined,
+      {
+        first_name: 'Test',
+      }
+    );
+  });
+
+  it('skips the email lookup and patches nothing when the caller has no mentor or mentee row', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'profile-other-1', profile_type: 'maintainer' }], meta: { total: 1 } });
+
+    await expect(service.syncLfxProfileFields(signedInReq(), fields)).resolves.toBe(0);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(getUserEmails).not.toHaveBeenCalled();
+  });
+
+  it('patches nothing when there is nothing to copy', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    proxyRequest.mockResolvedValueOnce(mentorRow);
+
+    await expect(service.syncLfxProfileFields(signedInReq(), {})).resolves.toBe(0);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets a failed patch through so the card can report it', async () => {
+    const forbidden = Object.assign(new Error('forbidden'), { statusCode: 403 });
+    proxyRequest.mockResolvedValueOnce(mentorRow);
+    proxyRequest.mockRejectedValueOnce(forbidden);
+
+    await expect(service.syncLfxProfileFields(signedInReq(), fields)).rejects.toBe(forbidden);
   });
 });

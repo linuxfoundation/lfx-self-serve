@@ -33,6 +33,7 @@ import {
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { HostKeyPopoverComponent } from '@app/modules/meetings/components/host-key-popover/host-key-popover.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -116,6 +117,7 @@ import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    MeetingInviteeAttendeesComponent,
     MeetingMaterialsDrawerComponent,
     MeetingOrganizerComponent,
     HostKeyPopoverComponent,
@@ -145,6 +147,8 @@ export class MeetingCardComponent implements OnInit {
   public readonly showBorder = input<boolean>(false);
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
+  /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
+  public openRegistrantsOnAddForm: WritableSignal<boolean> = signal(false);
   public showMyRsvp: WritableSignal<boolean> = signal(false);
   // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
   // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
@@ -412,6 +416,16 @@ export class MeetingCardComponent implements OnInit {
 
   public onRegistrantsToggle(): void {
     this.showRegistrants.set(!this.showRegistrants());
+  }
+
+  public onInvitePeople(): void {
+    this.openRegistrantsOnAddForm.set(true);
+    this.showRegistrants.set(true);
+  }
+
+  public onRegistrantsDrawerHide(): void {
+    this.drawerGuestCount.set(null);
+    this.openRegistrantsOnAddForm.set(false);
   }
 
   public onRsvpViewToggle(): void {

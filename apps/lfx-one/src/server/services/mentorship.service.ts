@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
@@ -11,9 +10,6 @@ import {
   MENTORSHIP_PROGRAM_STATUSES,
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
-  MOCK_MENTORSHIP_MENTOR_PROFILE,
-  getMockMentorshipMentorProgramLists,
-  getMockMentorshipMentorPrograms,
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
 } from '@lfx-one/shared/constants';
@@ -21,11 +17,6 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
-  MentorshipMentorProfileResponse,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramDetail,
-  MentorshipMentorProgramLists,
-  MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
   MentorshipProgram,
   MentorshipProgramDetail,
@@ -33,15 +24,21 @@ import {
   MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
+  MentorshipLfxProfileFields,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramDecisionRequest,
+  MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
+import { buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { MENTORSHIP_ME_PROFILES_PATH } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { buildMentorshipUpstreamLfxProfileFields, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -77,6 +74,7 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
 
 export class MentorshipService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
 
   public async getPrograms(
     req: Request,
@@ -99,39 +97,6 @@ export class MentorshipService {
     logger.debug(req, 'mentorship_get_programs', 'Mentorship programs page built', { count: page.data.length, total: page.total });
 
     return page;
-  }
-
-  public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
-    logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
-    const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
-    logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
-    return { data, total: data.length };
-  }
-
-  public async getMentorProfile(req: Request): Promise<MentorshipMentorProfileResponse> {
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Loading mentor profile');
-    const response: MentorshipMentorProfileResponse = {
-      profile: { ...MOCK_MENTORSHIP_MENTOR_PROFILE.profile, skills: [...MOCK_MENTORSHIP_MENTOR_PROFILE.profile.skills] },
-      history: MOCK_MENTORSHIP_MENTOR_PROFILE.history.map((entry) => ({ ...entry })),
-    };
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
-    return response;
-  }
-
-  public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
-    logger.debug(req, 'mentorship_get_mentor_program', 'Resolving mentor program', { programId });
-    const program = this.findMentorProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
-    }
-
-    // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
-    // slug-twin, and cards without people fixtures stay empty instead of inheriting
-    // another program's rows.
-    const lists: MentorshipMentorProgramLists = getMockMentorshipMentorProgramLists()[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-    const detail = buildMentorshipMentorProgramDetail(program, lists);
-    logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
-    return detail;
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
@@ -279,14 +244,44 @@ export class MentorshipService {
     return toProgramReview(program);
   }
 
+  /**
+   * Copies the LFX profile's name and logo, with the caller's verified primary email, onto every
+   * mentor and mentee profile the caller holds, and returns how many were updated. The email is
+   * looked up here rather than taken from the browser, and is left out when the lookup fails. Each
+   * row is patched by id, since `PATCH /me/profiles/{type}` refuses a type with more than one row;
+   * upstream checks the row is the caller's. Only the keys that have a value are sent, so with no
+   * rows, or nothing to send, no row is patched. A failed row propagates and leaves the rows after
+   * it unpatched; the card asks the user to save again, which rewrites them all.
+   */
+  public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
+    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
+    if (targets.length === 0) return 0;
+
+    const body = buildMentorshipUpstreamLfxProfileFields(fields, await resolveMentorshipPrimaryEmail(req, this.emailVerificationService));
+    if (Object.keys(body).length === 0) return 0;
+    logger.debug(req, 'mentorship_sync_lfx_profile', 'Copying LFX profile fields onto mentorship profiles', {
+      profile_count: targets.length,
+      field_count: Object.keys(body).length,
+      has_email: body.email !== undefined,
+    });
+
+    for (const profile of targets) {
+      await proxyMentorshipRequest<unknown>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_ME_PROFILES_PATH}/by-id/${encodeURIComponent(profile.id)}`,
+        'PATCH',
+        undefined,
+        body
+      );
+    }
+    return targets.length;
+  }
+
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
     return findByIdOrSlug(mockPrograms, programId);
-  }
-
-  /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
-  private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
-    return findByIdOrSlug(getMockMentorshipMentorPrograms(), programId);
   }
 }
 

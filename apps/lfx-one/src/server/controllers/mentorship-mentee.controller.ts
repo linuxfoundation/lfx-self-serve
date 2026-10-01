@@ -108,6 +108,7 @@ export class MentorshipMenteeController {
   // Auth: logged-in user required (401 otherwise). A mentee can only start a task or submit one; the
   // reviewer statuses are refused here. Any other body key, notably `file`, is ignored and never
   // forwarded: upload is not wired, so upstream checks a required file against the one already stored.
+  // A submit after the task's due date (end of that UTC day) is refused with a 400 `TASK_PAST_DUE`.
   // Upstream's 400 (a required file is missing), 403 (not the assignee), 404 and 409 (not a legal
   // move from the task's status) pass through.
   public async updateMenteeTaskStatus(req: Request, res: Response, next: NextFunction): Promise<void> {

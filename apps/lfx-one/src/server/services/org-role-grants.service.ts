@@ -155,12 +155,12 @@ export class OrgRoleGrantsService {
   }
 
   /**
-   * LFXV2-3029 — the single "editor from any source" check: true for a direct writer grant OR a
-   * cascading (inherited) writer grant reachable through the connected component. Every
-   * organization edit surface is meant to widen along with this feature, so a gate that needs a
-   * hard "direct only" answer should not be added against this helper without a documented
-   * exception; a missed call site that still inlines `writers.includes(uid)` silently stays
-   * narrower than the platform authorizer now allows.
+   * LFXV2-3029 — the caller's roster editors: a direct writer grant OR a cascading (inherited)
+   * writer grant reachable through the connected component. This is only the roster half of the
+   * edit decision: Org Lens edit gates call `resolveOrgLensEdit` (#3136), which asks this first and
+   * then the authorizer's `b2b_org#writer`, so company-wide writers the roster never lists are
+   * included. Gate on this directly only where roster membership itself is the rule — the Projects
+   * workspace bootstrap (`OrgLensProjectsController.resolveCanEdit`) is the documented case.
    */
   public static hasEditorAccess(grants: Pick<RoleGrantsResponse, 'writers' | 'cascadingWriters'>, orgUid: string): boolean {
     return grants.writers.includes(orgUid) || grants.cascadingWriters.some((entry) => entry.uid === orgUid);

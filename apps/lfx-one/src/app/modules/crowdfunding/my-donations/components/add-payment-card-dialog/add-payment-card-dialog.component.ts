@@ -109,10 +109,7 @@ export class AddPaymentCardDialogComponent implements OnDestroy {
         return;
       }
 
-      const saved = await firstValueFrom(this.crowdfundingService.savePaymentMethod(paymentMethodId), { defaultValue: null });
-
-      // null means CF_UNAUTHENTICATED redirect is in progress — navigate away, don't close dialog
-      if (!saved) return;
+      const saved = await firstValueFrom(this.crowdfundingService.savePaymentMethod(paymentMethodId));
 
       this.dialogRef.close({ added: true, paymentMethod: saved });
     } catch (err) {

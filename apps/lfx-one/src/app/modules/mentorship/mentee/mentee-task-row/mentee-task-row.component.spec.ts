@@ -10,7 +10,7 @@ import { buildMentorshipMenteeTaskView } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeTaskRowComponent } from './mentee-task-row.component';
 
@@ -73,20 +73,34 @@ describe('MenteeTaskRowComponent', () => {
       submittedDate: '2026-09-12T00:00:00Z',
     });
 
-  const uploadNeededTask = (): MentorshipMenteeTaskView =>
-    buildMentorshipMenteeTaskView({
-      id: 'row_upload',
-      title: 'Upload task',
-      description: 'Needs a file',
-      status: 'pending',
-      submitFile: 'required',
-      dueDate: '2026-09-30T00:00:00Z',
-    });
+  // Fixed clocks either side of the fixtures' due date (Sep 30, 2026), so a fixture never turns past due with the calendar.
+  // The row judges `pastDue` against its own clock, so each test also pins `Date` (to `beforeDue` unless it says otherwise).
+  const beforeDue = Date.parse('2026-09-15T00:00:00Z');
+  const afterDue = Date.parse('2026-10-01T00:00:00Z');
+
+  const uploadNeededTask = (nowMs: number = beforeDue): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView(
+      {
+        id: 'row_upload',
+        title: 'Upload task',
+        description: 'Needs a file',
+        status: 'pending',
+        submitFile: 'required',
+        dueDate: '2026-09-30T00:00:00Z',
+      },
+      nowMs
+    );
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(beforeDue);
     notify = vi.fn();
     inFlight = new Subject<boolean>();
     changeStatus = vi.fn().mockReturnValue(inFlight.asObservable());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('status change', () => {
@@ -139,15 +153,18 @@ describe('MenteeTaskRowComponent', () => {
 
     it('hides the due date of a task just submitted until the refresh brings its submission date', async () => {
       const dueTask = (status: 'in_progress' | 'submitted', submittedDate?: string): MentorshipMenteeTaskView =>
-        buildMentorshipMenteeTaskView({
-          id: 'row_due',
-          title: 'Due task',
-          description: 'Under way',
-          status,
-          submitFile: null,
-          dueDate: '2026-09-30T00:00:00Z',
-          submittedDate,
-        });
+        buildMentorshipMenteeTaskView(
+          {
+            id: 'row_due',
+            title: 'Due task',
+            description: 'Under way',
+            status,
+            submitFile: null,
+            dueDate: '2026-09-30T00:00:00Z',
+            submittedDate,
+          },
+          beforeDue
+        );
       const task = dueTask('in_progress');
       const form = await buildRow(task);
       expect(byTestId('mentee-tasks-date-row_due')?.textContent).toContain('Due Sep 30, 2026');
@@ -384,6 +401,117 @@ describe('MenteeTaskRowComponent', () => {
     expect(notify).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenCalledWith('View submission for Uploaded task');
     expect(notify).toHaveBeenCalledWith('Download submission for Uploaded task');
+  });
+
+  describe('past due', () => {
+    const pastDueInProgress = (nowMs: number = afterDue): MentorshipMenteeTaskView =>
+      buildMentorshipMenteeTaskView(
+        {
+          id: 'row_late',
+          title: 'Late task',
+          description: 'Under way',
+          status: 'in_progress',
+          submitFile: null,
+          dueDate: '2026-09-30T00:00:00Z',
+        },
+        nowMs
+      );
+
+    // Fakes the timers along with `Date`; rxjs `timer` schedules through setInterval, so that pair is faked too.
+    const fakeClock = (nowMs: number): void => {
+      // Re-faking without restoring first keeps the outer Date-only fake, so the timers would stay real.
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(nowMs);
+    };
+
+    beforeEach(() => {
+      vi.setSystemTime(afterDue);
+    });
+
+    it('disables Submitted and shows the past-due hint', async () => {
+      await buildRow(pastDueInProgress());
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+      const hint = byTestId('mentee-tasks-status-hint-row_late');
+      expect(hint?.classList.contains('sr-only')).toBe(false);
+      expect(hint?.textContent).toContain('due date has passed');
+    });
+
+    it('lets a past-due pending task still be started', async () => {
+      await buildRow(uploadNeededTask(afterDue));
+
+      expect(optionState()).toEqual({ pending: false, in_progress: false, submitted: true });
+    });
+
+    it('disables Upload, describes it by the hint, and fires no toast', async () => {
+      await buildRow(uploadNeededTask(afterDue));
+      const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
+
+      expect(uploadBtn?.disabled).toBe(true);
+      expect(uploadBtn?.getAttribute('aria-describedby')).toBe('mentee-task-status-hint-row_upload');
+      uploadBtn?.click();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('keeps Upload enabled before the due date has ended', async () => {
+      vi.setSystemTime(beforeDue);
+      await buildRow(uploadNeededTask());
+      const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
+
+      expect(uploadBtn?.disabled).toBe(false);
+      expect(uploadBtn?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('locks Submitted and Upload when the due date closes while the row is open', async () => {
+      const lastSecond = Date.parse('2026-09-30T23:59:59Z');
+      fakeClock(lastSecond);
+      // Built before the cutoff, like a cached view: its own `pastDue` stays false.
+      await buildRow(pastDueInProgress(lastSecond));
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+
+      vi.advanceTimersByTime(1000);
+      fixture.detectChanges();
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+      expect(byTestId('mentee-tasks-status-hint-row_late')?.textContent).toContain('due date has passed');
+    });
+
+    it('re-reads the clock when a refresh moves the due date of an open row earlier', async () => {
+      fakeClock(beforeDue);
+      await buildRow(pastDueInProgress(beforeDue));
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+
+      // Time passes with no cutoff reached, then a refresh brings a due date that has already ended.
+      vi.setSystemTime(Date.parse('2026-09-25T12:00:00Z'));
+      fixture.componentRef.setInput('task', { ...pastDueInProgress(beforeDue), dueDate: '2026-09-20T00:00:00Z' });
+      fixture.detectChanges();
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+    });
+
+    it('re-arms the cutoff from the current clock when a refresh changes the due date', async () => {
+      fakeClock(beforeDue);
+      await buildRow(pastDueInProgress(beforeDue));
+
+      // One second before the new due date's cutoff; a timer armed from the build time would not fire for weeks.
+      vi.setSystemTime(Date.parse('2026-10-05T23:59:59Z'));
+      fixture.componentRef.setInput('task', { ...pastDueInProgress(beforeDue), dueDate: '2026-10-05T00:00:00Z' });
+      fixture.detectChanges();
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+
+      vi.advanceTimersByTime(1000);
+      fixture.detectChanges();
+
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: true });
+    });
+
+    it('judges a view built before the cutoff against the current clock', async () => {
+      await buildRow(uploadNeededTask(beforeDue));
+      const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
+
+      expect(uploadBtn?.disabled).toBe(true);
+    });
   });
 
   it('renders the upload button when an upload is required', async () => {

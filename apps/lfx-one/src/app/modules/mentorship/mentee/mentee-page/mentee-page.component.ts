@@ -5,14 +5,10 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
-import {
-  MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL,
-  MENTORSHIP_MENTEE_FIND_PROGRAM_URL,
-  MENTORSHIP_MENTEE_SHELL_TITLE,
-  MENTORSHIP_MENTEE_TABS,
-} from '@lfx-one/shared/constants';
+import { environment } from '@environments/environment';
+import { MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL, MENTORSHIP_MENTEE_SHELL_TITLE, MENTORSHIP_MENTEE_TABS } from '@lfx-one/shared/constants';
 import { MentorshipMenteeOverview, MentorshipMenteePageTab } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMenteeOverview } from '@lfx-one/shared/utils';
+import { buildMentorshipMenteeOverview, buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, filter, map, of, switchMap } from 'rxjs';
 
@@ -41,7 +37,7 @@ export class MenteePageComponent {
 
   protected readonly title = MENTORSHIP_MENTEE_SHELL_TITLE;
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
-  protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
+  protected readonly findProgramUrl = buildMentorshipProgramsUrl(environment.urls.mentorship);
   protected readonly tabs = MENTORSHIP_MENTEE_TABS;
 
   /** The overview derived from the mentee's applications, or null while loading or after a failed read. */

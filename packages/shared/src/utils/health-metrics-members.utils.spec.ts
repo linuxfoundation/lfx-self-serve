@@ -9,6 +9,16 @@ import {
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '../constants/health-metrics-members.constants';
 import {
+  buildHealthMetricsMembersAtRiskAging,
+  buildHealthMetricsMembersAtRiskCountLabel,
+  buildHealthMetricsMembersAtRiskNote,
+  buildHealthMetricsMembersAtRiskRows,
+  buildHealthMetricsMembersAtRiskSummary,
+  buildHealthMetricsMembersBoardCountLabel,
+  buildHealthMetricsMembersBoardMeetingRows,
+  buildHealthMetricsMembersBoardNote,
+  buildHealthMetricsMembersBoardSummary,
+  buildHealthMetricsMembersBoardTrend,
   buildHealthMetricsMembersBridgeView,
   buildHealthMetricsMembersDirectoryRows,
   buildHealthMetricsMembersDirectorySearchPlaceholder,
@@ -16,13 +26,26 @@ import {
   buildHealthMetricsMembersMovementCountNote,
   buildHealthMetricsMembersMovementDrawerTitle,
   buildHealthMetricsMembersMovementRows,
+  buildHealthMetricsMembersNpsAudienceOptions,
+  buildHealthMetricsMembersNpsSegments,
+  buildHealthMetricsMembersNpsSummary,
+  buildHealthMetricsMembersNpsTrend,
+  buildHealthMetricsMembersNpsTrendNote,
+  buildHealthMetricsMembersRenewalRows,
+  buildHealthMetricsMembersRenewalsCountLabel,
+  buildHealthMetricsMembersRenewalsSummary,
   buildHealthMetricsMembersSubNavItems,
   buildHealthMetricsMembersTiersView,
 } from './health-metrics-members.utils';
 
 import type {
+  HealthMetricsMembersAtRiskMember,
+  HealthMetricsMembersAtRiskSummary,
+  HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBridge,
   HealthMetricsMembersDirectoryMember,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsQuarter,
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersTiers,
@@ -45,6 +68,12 @@ describe('buildHealthMetricsMembersSubNavItems', () => {
 
     expect(items.find((item) => item.key === 'list')?.count).toBe(725);
     expect(items.filter((item) => item.key !== 'list').every((item) => item.count === null)).toBe(true);
+  });
+  it('notes only the sections that report a note', () => {
+    const items = buildHealthMetricsMembersSubNavItems({}, { risk: '3 overdue · $120K' });
+
+    expect(items.find((item) => item.key === 'risk')).toMatchObject({ count: null, note: '3 overdue · $120K' });
+    expect(items.filter((item) => item.key !== 'risk').every((item) => item.note === '')).toBe(true);
   });
 });
 
@@ -425,5 +454,483 @@ describe('buildHealthMetricsMembersMovementCountNote', () => {
     expect(buildHealthMetricsMembersMovementCountNote(6, 7)).toBe(
       '6 organizations listed, while the bar counts 7. The list and the bar are counted separately, so they can differ slightly.'
     );
+  });
+});
+
+describe('members at risk', () => {
+  const summary: HealthMetricsMembersAtRiskSummary = {
+    outstandingBalanceUsd: 120_000,
+    highRiskBalanceUsd: 90_000,
+    mediumRiskBalanceUsd: 30_000,
+    memberCount: 3,
+  };
+
+  function atRiskMember(overrides: Partial<HealthMetricsMembersAtRiskMember> = {}): HealthMetricsMembersAtRiskMember {
+    return {
+      accountId: '0014100000AcmeRsk1',
+      accountName: 'Acme Robotics',
+      membershipTier: 'Gold Membership',
+      outstandingBalanceUsd: 20_000,
+      daysOverdue: 71,
+      lastEngagedDate: '2026-03-04',
+      ...overrides,
+    };
+  }
+
+  it('labels the hero in compact currency', () => {
+    expect(buildHealthMetricsMembersAtRiskSummary(summary)).toEqual({
+      outstandingLabel: '$120K',
+      highRiskLabel: '$90K',
+      mediumRiskLabel: '$30K',
+      memberCountLabel: '3',
+    });
+    expect(
+      buildHealthMetricsMembersAtRiskSummary({ outstandingBalanceUsd: null, highRiskBalanceUsd: null, mediumRiskBalanceUsd: 0, memberCount: null })
+    ).toEqual({
+      outstandingLabel: '—',
+      highRiskLabel: '—',
+      mediumRiskLabel: '$0',
+      memberCountLabel: '—',
+    });
+  });
+
+  it('sizes the aging bars against the largest bucket and leaves out an empty bucket', () => {
+    const bars = buildHealthMetricsMembersAtRiskAging([
+      { bucket: '60_89_days', memberCount: 2, balanceUsd: 30_000 },
+      { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
+    ]);
+
+    expect(bars).toEqual([
+      { bucket: '60_89_days', label: '60–89 days · 2 members', balanceLabel: '$30K', widthPct: (30_000 / 90_000) * 100 },
+      { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
+    ]);
+    expect(buildHealthMetricsMembersAtRiskAging([{ bucket: '60_89_days', memberCount: 0, balanceUsd: 0 }])).toEqual([]);
+  });
+
+  it('keeps an aging bar whose totals are unset, drawn empty with dashes', () => {
+    expect(
+      buildHealthMetricsMembersAtRiskAging([
+        { bucket: '60_89_days', memberCount: null, balanceUsd: null },
+        { bucket: '90_plus_days', memberCount: 1, balanceUsd: 90_000 },
+      ])
+    ).toEqual([
+      { bucket: '60_89_days', label: '60–89 days · —', balanceLabel: '—', widthPct: 0 },
+      { bucket: '90_plus_days', label: '90+ days · 1 member', balanceLabel: '$90K', widthPct: 100 },
+    ]);
+  });
+
+  it('renders a row with its age in days, and dashes for missing values', () => {
+    expect(buildHealthMetricsMembersAtRiskRows([atRiskMember()])[0]).toMatchObject({
+      accountId: '0014100000AcmeRsk1',
+      tierLabel: 'Gold Membership',
+      overdueLabel: '$20K',
+      ageLabel: '71 days',
+    });
+    expect(
+      buildHealthMetricsMembersAtRiskRows([atRiskMember({ membershipTier: null, outstandingBalanceUsd: null, daysOverdue: null, lastEngagedDate: null })])[0]
+    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—' });
+  });
+
+  it('notes the overdue count and balance, and nothing while no member is at risk', () => {
+    expect(buildHealthMetricsMembersAtRiskNote(summary)).toBe('3 overdue · $120K');
+    expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: 0 })).toBe('');
+    expect(buildHealthMetricsMembersAtRiskNote({ ...summary, memberCount: null })).toBe('');
+    expect(buildHealthMetricsMembersAtRiskNote({ ...summary, outstandingBalanceUsd: null })).toBe('');
+  });
+
+  it('pluralizes the member count', () => {
+    expect(buildHealthMetricsMembersAtRiskCountLabel(1)).toBe('1 member');
+    expect(buildHealthMetricsMembersAtRiskCountLabel(12)).toBe('12 members');
+  });
+});
+
+describe('buildHealthMetricsMembersRenewalsSummary', () => {
+  it('labels the value and count, with no note when every renewal has dues', () => {
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 3, valueUsd: 185_000, withoutDuesCount: 0 })).toEqual({
+      valueLabel: '$185K',
+      renewalCountLabel: '3',
+      coverageNote: '',
+    });
+  });
+
+  it('notes the renewals without dues, since the value counts only the known dues', () => {
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 4, valueUsd: 95_000, withoutDuesCount: 1 }).coverageNote).toBe(
+      '1 renewal without dues on record, so the value counts only the known dues.'
+    );
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: 4, valueUsd: null, withoutDuesCount: 4 })).toEqual({
+      valueLabel: '—',
+      renewalCountLabel: '4',
+      coverageNote: '4 renewals without dues on record, so the value counts only the known dues.',
+    });
+  });
+
+  it('dashes unset totals rather than showing zeros', () => {
+    expect(buildHealthMetricsMembersRenewalsSummary({ renewalCount: null, valueUsd: null, withoutDuesCount: null })).toEqual({
+      valueLabel: '—',
+      renewalCountLabel: '—',
+      coverageNote: '',
+    });
+  });
+});
+
+describe('buildHealthMetricsMembersRenewalRows', () => {
+  it('formats the date and dues and keeps the balance marker', () => {
+    expect(
+      buildHealthMetricsMembersRenewalRows([
+        {
+          accountId: 'acct-1',
+          accountName: 'Acme Studios',
+          membershipTier: 'General',
+          renewalDate: '2026-11-18',
+          duesUsd: 20_000,
+          hasOutstandingBalance: true,
+        },
+      ])
+    ).toEqual([
+      {
+        accountId: 'acct-1',
+        accountName: 'Acme Studios',
+        tierLabel: 'General',
+        renewalDateLabel: 'Nov 18, 2026',
+        duesLabel: '$20K',
+        hasOutstandingBalance: true,
+      },
+    ]);
+  });
+
+  it('dashes a missing tier, date or dues instead of $0', () => {
+    const [row] = buildHealthMetricsMembersRenewalRows([
+      { accountId: 'acct-2', accountName: 'Acme Labs', membershipTier: null, renewalDate: null, duesUsd: null, hasOutstandingBalance: false },
+    ]);
+    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false });
+  });
+});
+
+describe('buildHealthMetricsMembersRenewalsCountLabel', () => {
+  it('pluralizes the renewal count', () => {
+    expect(buildHealthMetricsMembersRenewalsCountLabel(1)).toBe('1 renewal');
+    expect(buildHealthMetricsMembersRenewalsCountLabel(61)).toBe('61 renewals');
+  });
+});
+
+function boardCohort(overrides: Partial<HealthMetricsMembersBoardCohortSummary> = {}): HealthMetricsMembersBoardCohortSummary {
+  return {
+    latestAttendancePct: 0.82,
+    latestAttendedCount: 9,
+    latestInvitedCount: 11,
+    meetingsInRangeCount: 7,
+    neverAttendedCount: 2,
+    isBelowExpectedLevel: true,
+    ...overrides,
+  };
+}
+
+describe('buildHealthMetricsMembersBoardSummary', () => {
+  it('renders the selected cohort with the other cohort beside it, flagging a level below expected', () => {
+    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort(), boardCohort({ latestAttendancePct: 0.646 }))).toEqual({
+      meetingsLabel: '7 meetings in range',
+      latestPctLabel: '82%',
+      latestCaption: 'Last board meeting · below the ~100% this should be',
+      isBelowExpectedLevel: true,
+      otherCohortLabel: 'Voting members',
+      otherCohortPctLabel: '65%',
+      attendedInvitedLabel: '9 / 11',
+      neverAttendedLabel: '2',
+      neverAttendedCount: 2,
+    });
+  });
+
+  it('drops the caution at the expected level and names the board as the other cohort', () => {
+    const view = buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ isBelowExpectedLevel: false, neverAttendedCount: 0 }), null);
+    expect(view).toMatchObject({
+      latestCaption: 'Last voting meeting',
+      isBelowExpectedLevel: false,
+      otherCohortLabel: 'Board',
+      otherCohortPctLabel: '—',
+      neverAttendedCount: 0,
+    });
+  });
+
+  it('clamps a share recorded above the invited count to 100%, as the table and chart do', () => {
+    const view = buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 1.09 }), boardCohort({ latestAttendancePct: 1.2 }));
+    expect(view).toMatchObject({ latestPctLabel: '100%', otherCohortPctLabel: '100%' });
+  });
+
+  it('dashes every figure for a cohort with no meeting in the period', () => {
+    const empty = boardCohort({
+      latestAttendancePct: null,
+      latestAttendedCount: null,
+      latestInvitedCount: null,
+      meetingsInRangeCount: null,
+      neverAttendedCount: null,
+      isBelowExpectedLevel: null,
+    });
+    expect(buildHealthMetricsMembersBoardSummary('board', empty, null)).toMatchObject({
+      meetingsLabel: '—',
+      latestPctLabel: '—',
+      latestCaption: 'Last board meeting',
+      isBelowExpectedLevel: false,
+      attendedInvitedLabel: '—',
+      neverAttendedLabel: '—',
+      neverAttendedCount: 0,
+    });
+  });
+});
+
+describe('buildHealthMetricsMembersBoardMeetingRows', () => {
+  it('renders a meeting with its rate bar tone', () => {
+    expect(
+      buildHealthMetricsMembersBoardMeetingRows([
+        {
+          meetingId: 'm-1',
+          committeeName: 'Acme Board',
+          meetingDate: '2026-09-18',
+          attendedCount: 4,
+          invitedCount: 11,
+          attendancePct: 0.3636,
+          isLatestMeeting: false,
+        },
+      ])
+    ).toEqual([
+      {
+        meetingId: 'm-1',
+        committeeName: 'Acme Board',
+        dateLabel: 'Sep 18, 2026',
+        attendedLabel: '4 / 11',
+        ratePct: 36,
+        rateLabel: '36%',
+        rateFillClass: 'bg-amber-500',
+      },
+    ]);
+  });
+
+  it('dashes missing figures and greys an unmeasured rate', () => {
+    const [row] = buildHealthMetricsMembersBoardMeetingRows([
+      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null, isLatestMeeting: false },
+    ]);
+    expect(row).toMatchObject({ committeeName: '—', dateLabel: '—', attendedLabel: '—', ratePct: null, rateLabel: '—', rateFillClass: 'bg-gray-300' });
+  });
+});
+
+describe('buildHealthMetricsMembersBoardTrend', () => {
+  it('labels each bar by its short date and whole percent', () => {
+    expect(
+      buildHealthMetricsMembersBoardTrend([
+        {
+          meetingId: 'm-1',
+          committeeName: 'Acme Board',
+          meetingDate: '2026-08-31',
+          attendedCount: 9,
+          invitedCount: 11,
+          attendancePct: 0.818,
+          isLatestMeeting: true,
+        },
+      ])
+    ).toEqual([{ meetingId: 'm-1', label: 'Aug 31', dateLabel: 'Aug 31, 2026', committeeName: 'Acme Board', pct: 82, pctLabel: '82%', isLatest: true }]);
+  });
+
+  it('keeps an unmeasured bar null and clamps an out-of-range share', () => {
+    const [unmeasured, over] = buildHealthMetricsMembersBoardTrend([
+      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: null, attendancePct: null, isLatestMeeting: false },
+      {
+        meetingId: 'm-3',
+        committeeName: 'Acme Board',
+        meetingDate: '2026-09-18',
+        attendedCount: 12,
+        invitedCount: 11,
+        attendancePct: 1.09,
+        isLatestMeeting: false,
+      },
+    ]);
+    expect(unmeasured).toMatchObject({ label: '—', dateLabel: '—', committeeName: '—', pct: null, pctLabel: '—' });
+    expect(over).toMatchObject({ pct: 100, pctLabel: '100%' });
+  });
+});
+
+describe('buildHealthMetricsMembersBoardNote', () => {
+  it('counts unused seats first', () => {
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 1 }))).toBe('1 seat unused');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 3 }))).toBe('3 seats unused');
+  });
+
+  it('falls back to the latest share only when below the expected level', () => {
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0 }))).toBe('82% attended');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0, isBelowExpectedLevel: false }))).toBe('');
+    expect(buildHealthMetricsMembersBoardNote(null)).toBe('');
+  });
+});
+
+describe('buildHealthMetricsMembersBoardCountLabel', () => {
+  it('pluralizes the meeting count', () => {
+    expect(buildHealthMetricsMembersBoardCountLabel(1)).toBe('1 meeting');
+    expect(buildHealthMetricsMembersBoardCountLabel(12)).toBe('12 meetings');
+  });
+});
+
+describe('members nps', () => {
+  const audience = (overrides: Partial<HealthMetricsMembersNpsAudience> = {}): HealthMetricsMembersNpsAudience => ({
+    audience: 'Board',
+    npsScore: 62,
+    scoreChangePp: 4,
+    recipientsCount: 26,
+    responsesCount: 18,
+    responseRatePct: 0.692,
+    promotersCount: 11,
+    passivesCount: 5,
+    detractorsCount: 2,
+    noResponseCount: 8,
+    isSampleTooSmall: false,
+    lastUpdatedQuarter: 'Q2 2026',
+    ...overrides,
+  });
+  const quarter = (
+    quarterStartDate: string,
+    npsScore: number | null,
+    responseRatePct: number | null,
+    isSampleTooSmall = false
+  ): HealthMetricsMembersNpsQuarter => ({
+    quarterStartDate,
+    quarterLabel: `Q${Math.floor(Number(quarterStartDate.slice(5, 7)) / 3) + 1} ${quarterStartDate.slice(2, 4)}`,
+    npsScore,
+    responseRatePct,
+    isSampleTooSmall,
+  });
+
+  it('builds the audience toggle in the read order', () => {
+    expect(buildHealthMetricsMembersNpsAudienceOptions([audience(), audience({ audience: 'Committers' })])).toEqual([
+      { id: 'Board', label: 'Board' },
+      { id: 'Committers', label: 'Committers' },
+    ]);
+  });
+
+  it('reports a sample it can trust with its change and the non-response footer', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience())).toEqual({
+      isWithheld: false,
+      scoreLabel: '+62',
+      changeLabel: '+4pp',
+      changeDirection: 'up',
+      caption: 'Net Promoter Score · board audience',
+      respondedLabel: '18 of 26',
+      rateLabel: '69%',
+      isRateBelowFloor: false,
+      lowSampleNote: null,
+      lastUpdatedLabel: 'Last updated Q2 2026',
+      surveyedLabel: 'out of 26 surveyed',
+      footer: {
+        isBelowFloor: false,
+        lead: null,
+        text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
+      },
+    });
+  });
+
+  it('signs negative scores and changes, and leaves zero unsigned', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: -12, scoreChangePp: -3 }))).toMatchObject({
+      scoreLabel: '−12',
+      changeLabel: '−3pp',
+      changeDirection: 'down',
+    });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: 0, scoreChangePp: 0 }))).toMatchObject({
+      scoreLabel: '0',
+      changeLabel: '0pp',
+      changeDirection: 'neutral',
+    });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ scoreChangePp: null }))).toMatchObject({ changeLabel: null, changeDirection: 'neutral' });
+  });
+
+  it('withholds a flagged sample and explains why', () => {
+    expect(
+      buildHealthMetricsMembersNpsSummary(
+        audience({ npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19, isSampleTooSmall: true })
+      )
+    ).toMatchObject({
+      isWithheld: true,
+      scoreLabel: '—',
+      changeLabel: null,
+      caption: 'Not enough responses to report a score',
+      lowSampleNote: 'Only 5 of 24 responded (21%). Below the confidence threshold — the score is suppressed rather than shown as precise.',
+      isRateBelowFloor: true,
+      footer: { isBelowFloor: true, lead: '19 of 24 did not respond.', text: 'A score computed on 5 replies is not a foundation-wide signal.' },
+    });
+  });
+
+  it('keeps the singular reply and dashes a missing audience', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience({ responsesCount: 1, responseRatePct: 0.1 })).footer.text).toBe(
+      'A score computed on 1 reply is not a foundation-wide signal.'
+    );
+    expect(buildHealthMetricsMembersNpsSummary(null)).toMatchObject({
+      isWithheld: true,
+      scoreLabel: '—',
+      respondedLabel: '—',
+      rateLabel: '—',
+      lowSampleNote: null,
+      lastUpdatedLabel: '',
+      surveyedLabel: 'out of — surveyed',
+    });
+  });
+
+  it('sizes each segment against everyone surveyed', () => {
+    expect(
+      buildHealthMetricsMembersNpsSegments(audience({ recipientsCount: 20, promotersCount: 10, passivesCount: 4, detractorsCount: 2, noResponseCount: 4 }))
+    ).toEqual([
+      { key: 'promoters', label: 'Promoters', countLabel: '10', widthPct: 50, colorClass: 'bg-emerald-600' },
+      { key: 'passives', label: 'Passives', countLabel: '4', widthPct: 20, colorClass: 'bg-amber-600' },
+      { key: 'detractors', label: 'Detractors', countLabel: '2', widthPct: 10, colorClass: 'bg-red-600' },
+      { key: 'noResponse', label: 'No response', countLabel: '4', widthPct: 20, colorClass: 'bg-gray-200' },
+    ]);
+    expect(buildHealthMetricsMembersNpsSegments(null).map((segment) => [segment.countLabel, segment.widthPct])).toEqual([
+      ['—', 0],
+      ['—', 0],
+      ['—', 0],
+      ['—', 0],
+    ]);
+  });
+
+  it('withholds a flagged wave score but keeps its rate', () => {
+    expect(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-04-01', 80, 0.21, true)])).toEqual([
+      { quarterStartDate: '2025-07-01', label: 'Q3 25', score: 54, scoreLabel: '+54', ratePct: 71, rateLabel: '71%', isRateBelowFloor: false },
+      { quarterStartDate: '2026-04-01', label: 'Q2 26', score: null, scoreLabel: 'Withheld', ratePct: 21, rateLabel: '21%', isRateBelowFloor: true },
+    ]);
+  });
+
+  it('flags a rising score on a materially falling rate', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2024-10-01', 45, 0.55), quarter('2025-07-01', 54, 0.5), quarter('2026-01-01', 60, 0.45)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
+      kind: 'diverging',
+      scoreChangeLabel: '15 points',
+      fromRateLabel: '55%',
+      toRateLabel: '45%',
+    });
+  });
+
+  it('flags a rising score whose last reportable rate is below the floor', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.41), quarter('2025-07-01', 51, 0.39)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
+  });
+
+  it('never says a rising rate fell, sending one still below the floor to the floor note', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.2), quarter('2025-07-01', 58, 0.3)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
+  });
+
+  it('says nothing about a rate that moved materially without a rising score', () => {
+    const falling = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 60, 0.8), quarter('2025-07-01', 50, 0.5)]);
+    const rising = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.45), quarter('2025-07-01', 58, 0.7)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(falling)).toBeNull();
+    expect(buildHealthMetricsMembersNpsTrendNote(rising)).toBeNull();
+  });
+
+  it('compares reportable scores only, then judges the latest rate', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.7), quarter('2025-07-01', 55, 0.68), quarter('2026-01-01', 90, 0.3, true)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
+  });
+
+  it('calls a steady rate meaningful, and says nothing without two waves or a rate', () => {
+    const steady = buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-01-01', 62, 0.69)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(steady)).toEqual({ kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '69%' });
+    expect(buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2026-01-01', 62, 0.69)]))).toBeNull();
+    expect(
+      buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, null), quarter('2026-01-01', 62, null)]))
+    ).toBeNull();
   });
 });

@@ -52,15 +52,17 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 | _(top-level)_     | My Dashboard                  | `/`                              |
 | My Engagement     | My Meetings                   | `/meetings`                      |
 |                   | My Events                     | `/events`                        |
+|                   | My Meetups                    | `/meetups`                       |
 |                   | My Committees                 | `/groups`                        |
 |                   | My Mailing Lists              | `/mailing-lists`                 |
+|                   | My Newsletters                | `/newsletters/my`                |
 |                   | My Votes                      | `/votes`                         |
 |                   | My Surveys                    | `/surveys`                       |
 |                   | My Documents                  | `/documents`                     |
-| My Growth         | Training & Certifications     | `/me/training`                   |
-|                   | Mentorships                   | _(external link)_                |
-|                   | Crowdfunding                  | _(external link)_                |
+| Education         | Training & Certifications     | `/me/training`                   |
 |                   | Badges                        | `/badges`                        |
+| Crowdfunding      | My Initiatives                | `/crowdfunding/initiatives`      |
+|                   | My Donations                  | `/crowdfunding/donations`        |
 | Profile & Account | Profile & Account (user card) | `/profile`                       |
 |                   | Work history & Affiliations   | `/profile/attributions`          |
 |                   | Identities                    | `/profile/identities`            |

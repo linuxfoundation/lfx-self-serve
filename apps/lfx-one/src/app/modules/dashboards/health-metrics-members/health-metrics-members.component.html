@@ -28,4 +28,16 @@
   <ng-template lfxHealthMetricsL2Section="list">
     <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list')" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="risk">
+    <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk')" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="renewals">
+    <lfx-members-renewals (countChange)="renewalsCount.set($event)" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals')" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="board">
+    <lfx-members-board-attendance (noteChange)="boardNote.set($event)" (reading)="shell.sectionReading('board')" (settled)="shell.sectionSettled('board')" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="nps">
+    <lfx-members-nps (reading)="shell.sectionReading('nps')" (settled)="shell.sectionSettled('nps')" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>
