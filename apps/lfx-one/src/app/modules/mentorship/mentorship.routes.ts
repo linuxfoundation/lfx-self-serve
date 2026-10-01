@@ -124,7 +124,6 @@ export const MENTORSHIP_ROUTES: Routes = [
     children: [
       // `/mentorship/mentor/` (trailing slash) lands here rather than 404, matching the
       // shell's default view. Wildcard below covers unknown children the same way.
-      { path: '', pathMatch: 'full', redirectTo: 'programs' },
       {
         path: 'programs',
         title: 'My Programs',

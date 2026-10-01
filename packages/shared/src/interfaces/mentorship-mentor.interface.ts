@@ -3,7 +3,12 @@
 
 import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
 import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
-import type { MentorshipUpstreamProgramTermStatus } from './mentorship-mentee.interface';
+import type {
+  MentorshipUpstreamApplicationStatus,
+  MentorshipUpstreamApplicationTerm,
+  MentorshipUpstreamProgramTermStatus,
+  MentorshipUpstreamTask,
+} from './mentorship-mentee.interface';
 import type {
   MentorshipApplicantTaskStatus,
   MentorshipMentorStatus,
@@ -428,4 +433,48 @@ export interface MentorshipUpstreamMentorDetail {
   current_mentees: MentorshipUpstreamMentorMentee[];
   graduated_mentees: MentorshipUpstreamMentorMentee[];
   stats: MentorshipUpstreamMentorStats;
+}
+
+/** Another program a mentee row's applicant has applied to, on `GET /mentorship/v1/programs/{id}/applications`. */
+export interface MentorshipUpstreamProgramApplicationOther {
+  program_id: string;
+  program_name: string;
+  status: MentorshipUpstreamApplicationStatus;
+}
+
+/**
+ * One mentee application of a program, on `GET /mentorship/v1/programs/{id}/applications`, which a program's
+ * mentors and administrators may read. `tasks_submitted` counts the applicant's submitted and complete tasks.
+ */
+export interface MentorshipUpstreamProgramApplicationRow {
+  user_id: string;
+  application_id: string;
+  status: MentorshipUpstreamApplicationStatus;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  note?: string;
+  tasks_submitted: number;
+  tasks_total: number;
+  other_applications?: MentorshipUpstreamProgramApplicationOther[];
+  term?: MentorshipUpstreamApplicationTerm;
+  created_on: string;
+  updated_on: string;
+}
+
+/** The term a My Programs card is shown by, and the group that puts the card in. No term means zero counts. */
+export interface MentorshipMentorProgramTermChoice {
+  term?: MentorshipUpstreamMentorProgramTerm;
+  termStatus: MentorshipMentorProgramTermStatus;
+}
+
+/**
+ * One term's rows of a mentor's program, sorted the way the My Programs card and the program detail tabs
+ * count them: mentees are accepted and graduated applications, applicants are every application, and tasks
+ * to review are submitted tasks on accepted mentees' applications.
+ */
+export interface MentorshipMentorProgramRows {
+  mentees: MentorshipUpstreamProgramApplicationRow[];
+  applicants: MentorshipUpstreamProgramApplicationRow[];
+  tasksToReview: MentorshipUpstreamTask[];
 }

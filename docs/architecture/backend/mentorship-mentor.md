@@ -48,7 +48,7 @@ The register page and the profile edit drawer read the program picker through `G
 - `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is blank. It accepts a program id or slug, and answers 404 (`ResourceNotFoundError`) when neither matches.
 - The app service rethrows every failure, 404 included, so each page can tell a not-found state from a retry state.
 - The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests` and `POST /requests/:requestId/withdraw`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
-- Logs carry only ids, counts and flags (`programId`, `requestId`, `count`, `total`, `offset`, `has_search`, `dropped`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`). Names, emails, notes and the introduction never go in logs.
+- Logs carry only ids, counts and flags (`programId`, `requestId`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, and a card's `mentees`, `tasksToReview` and `applicants`). Names, emails, notes and the introduction never go in logs.
 
 ## Registration
 
@@ -75,6 +75,27 @@ MentorRegisterComponent.onSubmit()
 - **The guard.** `mentorRegisterGuard` skips the check during SSR and reads it in the browser. The app service reads a failed check as "no profile", so the form still opens and the 409 pre-check is what stops a duplicate.
 - **Errors.** The page maps a failure with the shared `mapMentorshipRegisterFailure` and `MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS`, by status and code only. The kinds match the mentee form, except that a `422` shows the generic retry banner: the mentor form asks no eligibility questions. The `profile-exists` banner's button goes to My Programs.
 - **After a save.** The page toasts success, sends one request per picked program (see [Program requests](#program-requests)), then navigates to `/mentorship/mentor/programs` whatever those requests answered.
+
+## My Programs
+
+My Programs (`/mentorship/mentor/programs`) reads one card per program the mentor belongs to through `GET /api/mentorship/mentor/programs` (linuxfoundation/lfx-mentorship#211).
+
+```text
+GET /programs → GET /mentorship/v1/me                                         local user id → isUuid, else 502 MENTORSHIP_INVALID_USER
+              → GET /mentorship/v1/mentors/{userId}                           the mentor's programs and their terms · 404 → no programs
+              → per program, at most 5 at once:
+                  GET  /mentorship/v1/programs/{id}                           project_name
+                ∥ GET  /mentorship/v1/programs/{id}/applications?term=        paged at 50 to meta.total
+                ∥ GET  /mentorship/v1/programs/{id}/terms/{termId}/tasks?status=submitted
+                                                                              paged at 100 to meta.total
+              ← { data: MentorshipMentorProgram[], total }
+```
+
+- **The programs.** Upstream's `/mentors/{userId}` lists only the caller's active mentor memberships of published programs, each with its non-deleted terms and their dates, so the BFF does not read `/programs/{id}/terms` as well. A caller with no such membership gets 404, which is an empty list.
+- **The term.** `chooseMentorshipMentorProgramTerm` (`helpers/mentorship-mentor-program.helper.ts`) picks the term each card counts and the group it goes in: the open term that started most recently (`active-term`), else the open term that starts first, an undated one last (`upcoming`), else the closed term that started most recently (`completed`). A program with no such term is `upcoming` with no term name and zero counts, and its rows are not read. Cards sort by group, then by program name (`compareMentorshipMentorProgramCards`).
+- **The counts.** `sortMentorshipMentorProgramRows` sorts the chosen term's rows: mentees are `accepted` and `graduated` applications, applicants are every application, and tasks to review are submitted tasks on an `accepted` mentee's application, so a graduated mentee's leftover submission is not counted. Upstream has no count endpoint, so the rows are read in full; the applications route resets any limit above 50 to 10, hence the smaller page (`MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE`). The program detail (linuxfoundation/lfx-mentorship#212) is meant to reuse the same helpers for its tabs.
+- **Access.** The applications and tasks routes need the gateway `manager` relation on the program, which an active mentor holds. Each read uses the caller's token and `encodeURIComponent` on every id in the path, and a failure on any program's reads, 403 and 404 included, fails the whole list rather than show counts it could not read.
+- **Program detail.** `GET /programs/:programId` still serves the mock seed until linuxfoundation/lfx-mentorship#212, so a card opened from the live list can land on its not-found state.
 
 ## Profile and Mentoring History
 
@@ -128,9 +149,9 @@ POST /requests/:requestId/withdraw          → blockDuringImpersonation · isUu
 
 ## Data source
 
-The profile read and update, the has-profile check, the register save and the program request routes call the mentorship service. Every other route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
+My Programs, the profile read and update, the has-profile check, the register save and the program request routes call the mentorship service. The program detail route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
 
-A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end. The mentor service uses it for the published programs and the caller's mentor memberships; the mentee service uses it for the caller's applications and an application's tasks.
+A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end, at the largest page size unless the caller passes a smaller one. The mentor service uses it for the published programs, the caller's mentor memberships, and each program's applications (at 50) and submitted tasks; the mentee service uses it for the caller's applications and an application's tasks.
 
 ## Related documentation
 

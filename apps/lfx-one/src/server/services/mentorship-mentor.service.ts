@@ -27,9 +27,12 @@ import {
   MentorshipMentorRegisterRequest,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMentorDetail,
+  MentorshipUpstreamMentorProgram,
   MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramMembership,
   MentorshipUpstreamProgramMembershipRequest,
+  MentorshipUpstreamTask,
   MentorshipUpstreamUser,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
@@ -43,12 +46,20 @@ import {
   MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH,
   MENTORSHIP_MENTORS_PATH,
   MENTORSHIP_MENTOR_INVITES_PATH,
+  MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY,
+  MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { mapMentorshipMentoringHistory, mapMentorshipMentorProfileDetails } from '../helpers/mentorship-mentor-profile.helper';
+import {
+  chooseMentorshipMentorProgramTerm,
+  compareMentorshipMentorProgramCards,
+  mapMentorshipMentorProgramCard,
+  sortMentorshipMentorProgramRows,
+} from '../helpers/mentorship-mentor-program.helper';
 import { buildMentorshipUpstreamMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import {
   escapeMentorshipIlikeSearch,
@@ -65,8 +76,8 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
  * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write, the
- * program requests and the profile read and edit call the mentorship service with the caller's token;
- * the program reads still serve the shared mock seed data.
+ * program requests, the profile read and edit, and My Programs call the mentorship service with the
+ * caller's token; the program detail read still serves the shared mock seed data.
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -221,9 +232,23 @@ export class MentorshipMentorService {
     }
   }
 
+  /**
+   * My Programs: one card for each published program the caller is an active mentor of, read from their
+   * public mentor detail. Upstream's 404 for no such membership is an empty list. Each card is built from its
+   * chosen term's rows, at most `MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY` programs at once. Any other
+   * failed read propagates, so a card is never shown with counts that were not read.
+   */
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
     logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
-    const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
+    const detail = await this.findMentorDetail(req, 'mentorship_get_mentor_programs');
+    const programs = detail?.programs ?? [];
+    const now = new Date();
+    const data: MentorshipMentorProgram[] = [];
+    for (let start = 0; start < programs.length; start += MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY) {
+      const batch = programs.slice(start, start + MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY);
+      data.push(...(await Promise.all(batch.map((program) => this.buildMentorProgramCard(req, program, now)))));
+    }
+    data.sort(compareMentorshipMentorProgramCards);
     logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
     return { data, total: data.length };
   }
@@ -294,35 +319,75 @@ export class MentorshipMentorService {
     return detail;
   }
 
-  /**
-   * The Mentoring History from the caller's public mentor detail. Upstream answers 404 when the caller has no
-   * active membership of a published program, which is no history rather than a failure.
-   */
+  /** The Mentoring History from the caller's public mentor detail; with none, the history is empty. */
   private async getMentoringHistory(req: Request): Promise<MentorshipMentoringHistoryEntry[]> {
+    const detail = await this.findMentorDetail(req, 'mentorship_get_mentor_profile');
+    return detail ? mapMentorshipMentoringHistory(detail, new Date()) : [];
+  }
+
+  /**
+   * The caller's public mentor detail. It is keyed by their local user id, so the user is read first; no id
+   * comes from the request, so a mentor reads only their own programs. Upstream answers 404 when the caller
+   * has no active membership of a published program, which is `undefined` rather than a failure.
+   */
+  private async findMentorDetail(req: Request, operation: string): Promise<MentorshipUpstreamMentorDetail | undefined> {
     const user = await proxyMentorshipRequest<MentorshipUpstreamUser>(this.microserviceProxy, req, MENTORSHIP_BOOTSTRAP_PATH);
     const userId = typeof user?.id === 'string' ? user.id.trim() : '';
     if (!isUuid(userId)) {
       throw new MicroserviceError('The mentorship service returned a user without a valid id', 502, 'MENTORSHIP_INVALID_USER', {
-        operation: 'mentorship_get_mentor_profile',
+        operation,
         service: 'mentorship',
       });
     }
 
-    let detail: MentorshipUpstreamMentorDetail;
     try {
-      detail = await proxyMentorshipRequest<MentorshipUpstreamMentorDetail>(
+      return await proxyMentorshipRequest<MentorshipUpstreamMentorDetail>(
         this.microserviceProxy,
         req,
         `${MENTORSHIP_MENTORS_PATH}/${encodeURIComponent(userId)}`
       );
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        logger.debug(req, 'mentorship_get_mentor_profile', 'No mentor detail for the signed-in user, returning an empty history');
-        return [];
+        logger.debug(req, operation, 'No mentor detail for the signed-in user');
+        return undefined;
       }
       throw error;
     }
-    return mapMentorshipMentoringHistory(detail, new Date());
+  }
+
+  /**
+   * One My Programs card. The program's own record carries its project name. The chosen term's applications
+   * and submitted tasks are read in full alongside it; with no term there is nothing to count.
+   */
+  private async buildMentorProgramCard(req: Request, program: MentorshipUpstreamMentorProgram, now: Date): Promise<MentorshipMentorProgram> {
+    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(program.id)}`;
+    const choice = chooseMentorshipMentorProgramTerm(program.terms ?? [], now);
+    const termId = choice.term?.id;
+    const [record, applications, tasks] = await Promise.all([
+      proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
+      termId
+        ? listAllMentorshipPages<MentorshipUpstreamProgramApplicationRow>(
+            this.microserviceProxy,
+            req,
+            `${programPath}/applications`,
+            { term: termId },
+            MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE
+          )
+        : [],
+      termId
+        ? listAllMentorshipPages<MentorshipUpstreamTask>(this.microserviceProxy, req, `${programPath}/terms/${encodeURIComponent(termId)}/tasks`, {
+            status: 'submitted',
+          })
+        : [],
+    ]);
+    const card = mapMentorshipMentorProgramCard(program, record ?? {}, choice, sortMentorshipMentorProgramRows(applications, tasks));
+    logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor program card built', {
+      program_id: program.id,
+      term_id: termId,
+      term_status: card.termStatus,
+      ...card.stats,
+    });
+    return card;
   }
 
   /**

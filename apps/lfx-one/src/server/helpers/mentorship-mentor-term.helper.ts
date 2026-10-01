@@ -16,7 +16,7 @@ export const isMentorshipMentorTermUnderway = (term: MentorshipUpstreamMentorPro
 };
 
 /** The term that starts last; a term with no start loses to any term with one. Ties keep the first. */
-const latestStart = (terms: MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
+export const latestStartingMentorshipMentorTerm = (terms: readonly MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
   terms.reduce((best, term) => ((mentorshipMentorTermStartMs(term) ?? -Infinity) > (mentorshipMentorTermStartMs(best) ?? -Infinity) ? term : best));
 
 /**
@@ -34,8 +34,8 @@ export const chooseMentorshipMentorTerm = (
   now: Date
 ): MentorshipUpstreamMentorProgramTerm | undefined => {
   const started = terms.filter((term) => isMentorshipMentorTermUnderway(term, now));
-  if (started.length > 0) return latestStart(started);
+  if (started.length > 0) return latestStartingMentorshipMentorTerm(started);
 
   const closed = terms.filter((term) => term.status === 'closed');
-  return closed.length > 0 ? latestStart(closed) : undefined;
+  return closed.length > 0 ? latestStartingMentorshipMentorTerm(closed) : undefined;
 };

@@ -4,7 +4,13 @@
 import '@angular/compiler';
 
 import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms, MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE } from '@lfx-one/shared/constants';
-import type { MentorshipMentorRegisterRequest, MentorshipUpstreamMentorDetail, MentorshipUpstreamProgramMembership } from '@lfx-one/shared/interfaces';
+import type {
+  MentorshipMentorRegisterRequest,
+  MentorshipUpstreamMentorDetail,
+  MentorshipUpstreamMentorProgram,
+  MentorshipUpstreamProgramApplicationRow,
+  MentorshipUpstreamProgramMembership,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -392,15 +398,214 @@ describe('MentorshipMentorService mentor requests', () => {
 });
 
 describe('MentorshipMentorService.getMentorPrograms', () => {
-  it('returns every mentor program with its total, as copies of the seed rows', async () => {
-    const service = new MentorshipMentorService();
-    const seeds = getMockMentorshipMentorPrograms();
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const GRIDFLOW_ID = '1a2b3c4d-0000-4000-8000-000000000001';
+  const ARCHIVE_ID = '1a2b3c4d-0000-4000-8000-000000000002';
+  const FALL_TERM_ID = '2b3c4d5e-0000-4000-8000-000000000001';
+  const SPRING_TERM_ID = '2b3c4d5e-0000-4000-8000-000000000002';
+  const GRIDFLOW_PATH = `/mentorship/v1/programs/${GRIDFLOW_ID}`;
+  const ARCHIVE_PATH = `/mentorship/v1/programs/${ARCHIVE_ID}`;
+
+  const program = (id: string, name: string, terms: MentorshipUpstreamMentorProgram['terms']): MentorshipUpstreamMentorProgram => ({
+    id,
+    name,
+    slug: name.toLowerCase(),
+    skills: [],
+    mentors: [],
+    terms,
+  });
+  const detailWith = (programs: MentorshipUpstreamMentorProgram[]): MentorshipUpstreamMentorDetail => ({
+    user_id: MENTOR_USER_ID,
+    skills: [],
+    joined_at: '2026-01-01T00:00:00Z',
+    programs,
+    current_mentees: [],
+    graduated_mentees: [],
+    stats: { programs_mentoring: programs.length, current_mentees: 0, mentees_graduated: 0 },
+  });
+  const application = (id: string, status: MentorshipUpstreamProgramApplicationRow['status']): MentorshipUpstreamProgramApplicationRow => ({
+    user_id: `user-${id}`,
+    application_id: id,
+    status,
+    tasks_submitted: 0,
+    tasks_total: 0,
+    created_on: '2026-08-01T00:00:00Z',
+    updated_on: '2026-08-01T00:00:00Z',
+  });
+  const submittedTask = (id: string, applicationId: string) => ({
+    id,
+    application_id: applicationId,
+    assignee_id: 'mentee',
+    status: 'submitted',
+    custom: false,
+    created_on: '2026-08-01T00:00:00Z',
+    updated_on: '2026-08-01T00:00:00Z',
+  });
+
+  /** Answers each upstream read by path, since the per-program reads run in parallel. */
+  function answer(routes: Record<string, (query: Record<string, unknown> | undefined) => unknown>) {
+    proxyRequest.mockImplementation(async (_req, _service, path, _method, query) => {
+      const route = routes[path];
+      if (!route) throw new Error(`unexpected upstream call to ${path}`);
+      return route(query as Record<string, unknown> | undefined) as never;
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("builds a card for each of the caller's programs from its chosen term's rows, active terms first", async () => {
+    answer({
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () =>
+        detailWith([
+          program(ARCHIVE_ID, 'Archive', [{ id: SPRING_TERM_ID, name: 'Spring 2026', status: 'closed', start_date_time: '2026-03-01T00:00:00Z' }]),
+          program(GRIDFLOW_ID, 'GridFlow', [
+            { id: FALL_TERM_ID, name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z', end_date_time: '2026-12-15T00:00:00Z' },
+          ]),
+        ]),
+      [GRIDFLOW_PATH]: () => ({ id: GRIDFLOW_ID, name: 'GridFlow', status: 'published', project_name: 'LF Energy' }),
+      [`${GRIDFLOW_PATH}/applications`]: () => listOf([application('a1', 'accepted'), application('a2', 'graduated'), application('a3', 'pending')]),
+      [`${GRIDFLOW_PATH}/terms/${FALL_TERM_ID}/tasks`]: () => listOf([submittedTask('t1', 'a1'), submittedTask('t2', 'a2')]),
+      [ARCHIVE_PATH]: () => ({ id: ARCHIVE_ID, name: 'Archive', status: 'published' }),
+      [`${ARCHIVE_PATH}/applications`]: () => listOf([]),
+      [`${ARCHIVE_PATH}/terms/${SPRING_TERM_ID}/tasks`]: () => listOf([]),
+    });
 
     const programs = await service.getMentorPrograms(buildReq());
 
-    expect(programs.total).toBe(seeds.length);
-    expect(programs.data.map((program) => program.id)).toEqual(seeds.map((program) => program.id));
-    expect(programs.data[0]).not.toBe(seeds[0]);
+    expect(programs.total).toBe(2);
+    expect(programs.data).toEqual([
+      {
+        id: GRIDFLOW_ID,
+        slug: 'gridflow',
+        name: 'GridFlow',
+        projectName: 'LF Energy',
+        term: 'Fall 2026',
+        termStatus: 'active-term',
+        stats: { mentees: 2, tasksToReview: 1, applicants: 3 },
+        termStartDate: '2026-09-01',
+        termEndDate: '2026-12-15',
+      },
+      expect.objectContaining({
+        id: ARCHIVE_ID,
+        projectName: '',
+        term: 'Spring 2026',
+        termStatus: 'completed',
+        stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
+      }),
+    ]);
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `${GRIDFLOW_PATH}/applications`,
+      'GET',
+      { term: FALL_TERM_ID, limit: 50, offset: 0 },
+      undefined
+    );
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `${GRIDFLOW_PATH}/terms/${FALL_TERM_ID}/tasks`,
+      'GET',
+      { status: 'submitted', limit: 100, offset: 0 },
+      undefined
+    );
+  });
+
+  it('pages applications at 50 until the total is reached', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => application(`a${index}`, 'pending'));
+    answer({
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () =>
+        detailWith([program(GRIDFLOW_ID, 'GridFlow', [{ id: FALL_TERM_ID, name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }])]),
+      [GRIDFLOW_PATH]: () => ({ id: GRIDFLOW_ID, name: 'GridFlow', status: 'published' }),
+      [`${GRIDFLOW_PATH}/applications`]: (query) =>
+        query?.['offset'] === 0
+          ? { data: firstPage, meta: { total: 51, limit: 50, offset: 0 } }
+          : { data: [application('a-last', 'accepted')], meta: { total: 51, limit: 50, offset: 50 } },
+      [`${GRIDFLOW_PATH}/terms/${FALL_TERM_ID}/tasks`]: () => listOf([]),
+    });
+
+    const [card] = (await service.getMentorPrograms(buildReq())).data;
+
+    expect(card.stats).toEqual({ mentees: 1, tasksToReview: 0, applicants: 51 });
+  });
+
+  it('reads no rows for a program with no terms and groups it as upcoming with zero counts', async () => {
+    answer({
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => detailWith([program(GRIDFLOW_ID, 'GridFlow', [])]),
+      [GRIDFLOW_PATH]: () => ({ id: GRIDFLOW_ID, name: 'GridFlow', status: 'published', project_name: 'LF Energy' }),
+    });
+
+    const [card] = (await service.getMentorPrograms(buildReq())).data;
+
+    expect(card).toMatchObject({ term: '', termStatus: 'upcoming', stats: { mentees: 0, tasksToReview: 0, applicants: 0 } });
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads at most five programs at once', async () => {
+    const ids = Array.from({ length: 7 }, (_, index) => `1a2b3c4d-0000-4000-8000-00000000010${index}`);
+    let inFlight = 0;
+    let peak = 0;
+    proxyRequest.mockImplementation(async (_req, _service, path) => {
+      if (path === ME_PATH) return { id: MENTOR_USER_ID } as never;
+      if (path === MENTOR_DETAIL_PATH) return detailWith(ids.map((id) => program(id, id, []))) as never;
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await Promise.resolve();
+      inFlight--;
+      return { status: 'published' } as never;
+    });
+
+    await expect(service.getMentorPrograms(buildReq())).resolves.toMatchObject({ total: 7 });
+    expect(peak).toBe(5);
+  });
+
+  it('returns no programs when upstream has no mentor detail for the caller (404)', async () => {
+    answer({
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => {
+        throw upstreamError(404, { error: 'mentor not found' });
+      },
+    });
+
+    await expect(service.getMentorPrograms(buildReq())).resolves.toEqual({ data: [], total: 0 });
+  });
+
+  it("reads only the caller's own mentor detail, and refuses a user without a valid id", async () => {
+    answer({ [ME_PATH]: () => ({ id: '../programs' }) });
+
+    await expect(service.getMentorPrograms(buildReq())).rejects.toMatchObject({ statusCode: 502, code: 'MENTORSHIP_INVALID_USER' });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([403, 404])("propagates upstream's %i on a program's rows rather than show counts it could not read", async (status) => {
+    const error = upstreamError(status, { error: 'denied' });
+    answer({
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () =>
+        detailWith([program(GRIDFLOW_ID, 'GridFlow', [{ id: FALL_TERM_ID, name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }])]),
+      [GRIDFLOW_PATH]: () => ({ id: GRIDFLOW_ID, name: 'GridFlow', status: 'published' }),
+      [`${GRIDFLOW_PATH}/applications`]: () => {
+        throw error;
+      },
+      [`${GRIDFLOW_PATH}/terms/${FALL_TERM_ID}/tasks`]: () => listOf([]),
+    });
+
+    await expect(service.getMentorPrograms(buildReq())).rejects.toBe(error);
   });
 });
 
