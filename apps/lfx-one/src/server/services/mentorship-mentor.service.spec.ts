@@ -73,6 +73,12 @@ describe('MentorshipMentorService.hasMentorProfile', () => {
     await expect(service.hasMentorProfile(buildReq())).resolves.toEqual({ hasProfile: false });
   });
 
+  it('reports no profile when upstream sends the list data as null', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: null, meta: { total: 0, limit: 1, offset: 0 } });
+
+    await expect(service.hasMentorProfile(buildReq())).resolves.toEqual({ hasProfile: false });
+  });
+
   it('propagates a failed check instead of reporting no profile', async () => {
     const error = upstreamError(500, { error: 'internal server error' });
     proxyRequest.mockRejectedValueOnce(error);
@@ -382,7 +388,7 @@ describe('MentorshipMentorService.getMentorProfile', () => {
   });
 
   it("maps the caller's mentor row and builds the history from their mentor detail", async () => {
-    answer({ [PROFILES_PATH]: () => listOf([storedProfile]), [ME_PATH]: () => ({ id: MENTOR_USER_ID }), [MENTOR_DETAIL_PATH]: () => detail });
+    answer({ [MENTOR_PROFILE_PATH]: () => storedProfile, [ME_PATH]: () => ({ id: MENTOR_USER_ID }), [MENTOR_DETAIL_PATH]: () => detail });
 
     await expect(service.getMentorProfile(signedInReq())).resolves.toEqual({
       profile: {
@@ -391,13 +397,19 @@ describe('MentorshipMentorService.getMentorProfile', () => {
       },
       history: [{ id: 'term-1', programName: 'GridFlow', term: 'Fall 2026', menteesCount: 1, status: 'in-progress' }],
     });
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentor', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'GET', undefined, undefined);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', ME_PATH, 'GET', undefined, undefined);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTOR_DETAIL_PATH, 'GET', undefined, undefined);
   });
 
-  it('returns an empty profile, with the history, when the caller has no mentor row', async () => {
-    answer({ [PROFILES_PATH]: () => listOf([]), [ME_PATH]: () => ({ id: MENTOR_USER_ID }), [MENTOR_DETAIL_PATH]: () => detail });
+  it('returns an empty profile, with the history, when upstream has no mentor row for the caller (404)', async () => {
+    answer({
+      [MENTOR_PROFILE_PATH]: () => {
+        throw upstreamError(404, { error: 'profile not found' });
+      },
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => detail,
+    });
 
     const response = await service.getMentorProfile(signedInReq());
 
@@ -407,7 +419,7 @@ describe('MentorshipMentorService.getMentorProfile', () => {
 
   it('returns an empty history when upstream has no mentor detail for the caller (404)', async () => {
     answer({
-      [PROFILES_PATH]: () => listOf([storedProfile]),
+      [MENTOR_PROFILE_PATH]: () => storedProfile,
       [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
       [MENTOR_DETAIL_PATH]: () => {
         throw upstreamError(404, { error: 'mentor not found' });
@@ -423,7 +435,7 @@ describe('MentorshipMentorService.getMentorProfile', () => {
   it('propagates any other failure of the mentor detail read', async () => {
     const error = upstreamError(500, { error: 'internal server error' });
     answer({
-      [PROFILES_PATH]: () => listOf([storedProfile]),
+      [MENTOR_PROFILE_PATH]: () => storedProfile,
       [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
       [MENTOR_DETAIL_PATH]: () => {
         throw error;
@@ -434,16 +446,16 @@ describe('MentorshipMentorService.getMentorProfile', () => {
   });
 
   it('refuses a user without a valid id rather than read another path', async () => {
-    answer({ [PROFILES_PATH]: () => listOf([storedProfile]), [ME_PATH]: () => ({ id: '../programs' }) });
+    answer({ [MENTOR_PROFILE_PATH]: () => storedProfile, [ME_PATH]: () => ({ id: '../programs' }) });
 
     await expect(service.getMentorProfile(signedInReq())).rejects.toMatchObject({ statusCode: 502, code: 'MENTORSHIP_INVALID_USER' });
     expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', expect.stringContaining('/mentors/'), 'GET', undefined, undefined);
   });
 
-  it('propagates a failed profile read', async () => {
-    const error = upstreamError(409, { error: 'multiple mentor profiles' });
+  it("propagates upstream's 409 for more than one mentor profile rather than pick one", async () => {
+    const error = upstreamError(409, { error: 'multiple mentor profiles exist for user' });
     answer({
-      [PROFILES_PATH]: () => {
+      [MENTOR_PROFILE_PATH]: () => {
         throw error;
       },
       [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
@@ -484,12 +496,12 @@ describe('MentorshipMentorService.updateMentorProfile', () => {
   });
 
   it('layers new skills over the stored skill_set, keeping the keys the BFF does not model', async () => {
-    proxyRequest.mockResolvedValueOnce(listOf([{ id: 'profile-1', profile_type: 'mentor', skill_set: { skills: ['Go'], comments: 'kept' } }]));
+    proxyRequest.mockResolvedValueOnce({ id: 'profile-1', profile_type: 'mentor', skill_set: { skills: ['Go'], comments: 'kept' } });
     proxyRequest.mockResolvedValueOnce(savedRow);
 
     await service.updateMentorProfile(signedInReq(), { skills: ['Rust'] });
 
-    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentor', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'GET', undefined, undefined);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'PATCH', undefined, {
       skill_set: { skills: ['Rust'], comments: 'kept' },
     });
@@ -497,6 +509,14 @@ describe('MentorshipMentorService.updateMentorProfile', () => {
 
   it('does not patch when the stored row cannot be read', async () => {
     const error = upstreamError(500, { error: 'internal server error' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMentorProfile(signedInReq(), { skills: ['Rust'] })).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not patch when upstream's read finds more than one mentor profile (409)", async () => {
+    const error = upstreamError(409, { error: 'multiple mentor profiles exist for user' });
     proxyRequest.mockRejectedValueOnce(error);
 
     await expect(service.updateMentorProfile(signedInReq(), { skills: ['Rust'] })).rejects.toBe(error);

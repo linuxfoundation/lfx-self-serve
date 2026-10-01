@@ -193,14 +193,14 @@ export class MentorshipMentorService {
 
   /**
    * The signed-in user's mentor profile and Mentoring History. The profile is their own mentor row; with
-   * none, the profile is empty, as the mentee page does. The history comes from their public mentor detail,
-   * which is keyed by their local user id, so the user is read first; the two branches run in parallel. A
-   * failed read propagates, except upstream's 404 for a mentor with no active membership of a published
-   * program, which is an empty history.
+   * none, the profile is empty, as the mentee page does, and upstream's 409 for more than one propagates.
+   * The history comes from their public mentor detail, which is keyed by their local user id, so the user is
+   * read first; the two branches run in parallel. A failed read propagates, except upstream's 404 for a
+   * mentor with no active membership of a published program, which is an empty history.
    */
   public async getMentorProfile(req: Request): Promise<MentorshipMentorProfileResponse> {
     logger.debug(req, 'mentorship_get_mentor_profile', 'Loading mentor profile');
-    const [[profile], history] = await Promise.all([this.listMentorProfiles(req), this.getMentoringHistory(req)]);
+    const [profile, history] = await Promise.all([this.findStoredMentorProfile(req), this.getMentoringHistory(req)]);
     if (!profile) {
       logger.debug(req, 'mentorship_get_mentor_profile', 'No mentor profile for the signed-in user, returning an empty profile', {
         history_count: history.length,
@@ -227,7 +227,7 @@ export class MentorshipMentorService {
   public async updateMentorProfile(req: Request, request: MentorshipMentorProfileUpdateRequest): Promise<MentorshipMentorProfileUpdateResponse> {
     // Field names only: the values are personal data.
     logger.debug(req, 'mentorship_update_mentor_profile', 'Updating mentor profile', { changed_fields: Object.keys(request) });
-    const [stored] = request.skills !== undefined ? await this.listMentorProfiles(req) : [];
+    const stored = request.skills !== undefined ? await this.getStoredMentorProfile(req) : undefined;
     const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
       this.microserviceProxy,
       req,
@@ -288,7 +288,10 @@ export class MentorshipMentorService {
     return mapMentorshipMentoringHistory(detail, new Date());
   }
 
-  /** The caller's own mentor profile rows. A user has at most one, so `limit: 1` is enough. */
+  /**
+   * The caller's own mentor profile rows, for checking whether one exists; `limit: 1` is enough for that.
+   * Upstream can send `data` as null for none.
+   */
   private async listMentorProfiles(req: Request): Promise<MentorshipUpstreamUserProfile[]> {
     const { data } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamUserProfile>>(
       this.microserviceProxy,
@@ -297,7 +300,25 @@ export class MentorshipMentorService {
       'GET',
       { profile_type: 'mentor', limit: 1 }
     );
-    return data;
+    return data ?? [];
+  }
+
+  /**
+   * The caller's mentor profile through upstream's typed read, which answers 409 when there is more than one
+   * rather than pick one, and 404 when there is none.
+   */
+  private async getStoredMentorProfile(req: Request): Promise<MentorshipUpstreamUserProfile> {
+    return proxyMentorshipRequest<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH);
+  }
+
+  /** As `getStoredMentorProfile`, with upstream's 404 (no mentor profile) read as none. */
+  private async findStoredMentorProfile(req: Request): Promise<MentorshipUpstreamUserProfile | undefined> {
+    try {
+      return await this.getStoredMentorProfile(req);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) return undefined;
+      throw error;
+    }
   }
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */

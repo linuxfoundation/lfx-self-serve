@@ -81,25 +81,25 @@ MentorRegisterComponent.onSubmit()
 The Profile page (`/mentorship/mentor/profile`) reads the mentor's profile and Mentoring History through `GET /api/mentorship/mentor/profile`, and the edit drawer saves the introduction and skills through `PATCH /api/mentorship/mentor/profile` (linuxfoundation/lfx-mentorship#210).
 
 ```text
-GET   /profile   → GET /mentorship/v1/me/profiles?profile_type=mentor&limit=1       mapMentorshipMentorProfileDetails
+GET   /profile   → GET /mentorship/v1/me/profiles/mentor                           mapMentorshipMentorProfileDetails · 404 → empty
                  ∥ GET /mentorship/v1/me                                           local user id → isUuid, else 502 MENTORSHIP_INVALID_USER
                    → GET /mentorship/v1/mentors/{userId}                           mapMentorshipMentoringHistory · 404 → []
                  ← { profile, history }
 PATCH /profile   → blockDuringImpersonation                                        403 IMPERSONATION_READ_ONLY
    { introduction?, skills? }
                  → parseMentorshipMentorProfileUpdate(body)                        allowlist, types, then the form rules → 400
-                 → GET /mentorship/v1/me/profiles?profile_type=mentor&limit=1     only when the skills change
+                 → GET /mentorship/v1/me/profiles/mentor                           only when the skills change
                  → PATCH /mentorship/v1/me/profiles/mentor                         buildMentorshipUpstreamMentorProfileUpdate
                  ← { profile }
 ```
 
-- **No profile row.** A caller with no mentor profile gets the empty profile, with the history still read, as the mentee page does.
+- **No profile row.** Both reads use upstream's typed `GET …/profiles/mentor`, which answers 404 when the caller has no mentor profile and 409 when there is more than one, rather than pick one. A caller with no mentor profile gets the empty profile, with the history still read, as the mentee page does. The registration pre-check and `/has-profile` only ask whether a row exists, so they keep the `limit=1` list.
 - **The history.** `mapMentorshipMentoringHistory` builds one row per distinct (program name, term name) pair across the mentor's current and graduated mentees, plus the term `chooseMentorshipMentorTerm` picks for each program the mentor belongs to, so a term with no mentees yet is listed with a count of zero. A program with no terms is not listed. A chosen open term reads in progress and a closed one completed. Upstream answers `/mentors/{userId}` with 404 when the caller has no active membership of a published program; that is an empty history, not a failure.
 - **Matching by name (H11).** A mentee row names its program and term but carries neither id, so the history matches it to the program's terms by program name and term name. Two terms of one program with the same name merge into one row, with a generated id. Upstream also lists each mentee at most once as current and once as graduated (its latest term of each), so a mentee who joined more than one term is counted in one of them only.
 - **What PATCH sends.** Only the fields the mentor changed: the drawer builds the request with `buildMentorshipMentorProfileUpdate`, which compares against the profile it was opened with, and Save with no change closes without a request. Upstream keeps every column the body leaves out but replaces `skill_set` whole, so when the skills change the BFF reads the stored row first and layers the new skills over its `skill_set`, keeping keys the UI does not show. A failed read fails the save. The read and the write are not atomic, so an edit made elsewhere in between can be overwritten. `profile_links` is never sent; the LFX profile sync owns it.
 - **Validation.** `parseMentorshipMentorProfileUpdate` refuses an unknown key, a null value or an empty body, drops repeated skills, then runs the rules the drawer and the register form share (`getMentorshipMentorProfileErrors`) on the present fields. The introduction HTML is stored as sent, capped but not sanitised: every render path sanitises it.
 - **App side.** `MentorProfileSaveService` sends the save, toasts `MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY` and maps a failure to `MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_MESSAGES` (400, 404, 409) or the fallback; a BFF validation 400 and the impersonation 403 show the server's message. The drawer shows that message inline and stays open with the mentor's input, makes the profile fields `inert` and blocks closing while the save is in flight. On success it emits `saved`, and the page shows the saved profile in place without re-reading it or the history; a Retry drops that override.
-- **Upstream errors.** A PATCH passes upstream's 404 (no mentor profile) and 409 (more than one) through.
+- **Upstream errors.** The GET passes upstream's 409 (more than one mentor profile) through. A PATCH passes its 404 (no mentor profile) and 409 through, from the stored-row read or the write.
 
 ## Program requests
 
