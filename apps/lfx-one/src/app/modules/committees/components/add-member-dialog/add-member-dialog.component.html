@@ -3,15 +3,29 @@
 
 <div class="flex flex-col gap-5 px-1" data-testid="add-member-dialog">
   @if (isDirectAdd()) {
-    <p class="text-sm text-gray-500">
-      Add people by email — one or many at once. Members are added immediately to the group. A notification email is sent by default unless you uncheck the
-      option below.
-    </p>
+    <div class="flex flex-col gap-2">
+      <p class="text-sm text-gray-500">
+        As a group admin you're adding members directly — they're in immediately, no acceptance needed. A notification email is sent by default; uncheck the
+        option below to suppress it.
+      </p>
+      <p class="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-2">
+        <i class="fa-light fa-circle-info mt-0.5 flex-none" aria-hidden="true"></i>
+        <span
+          >Anyone without an LF Account will receive a separate email to create one — they must complete that step before they can access the group. You can
+          check whether someone already has an LF Account by searching for them above.</span
+        >
+      </p>
+    </div>
   } @else {
-    <p class="text-sm text-gray-500">
-      Invite people by email — one or many at once. Each person gets an invitation to join the group and completes their own profile. They appear as "Pending"
-      until they accept.
-    </p>
+    <div class="flex flex-col gap-2">
+      <p class="text-sm text-gray-500">
+        Your role lets you invite people to join the group. Each person receives an invitation email and appears as "Pending" until they accept.
+      </p>
+      <p class="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-2">
+        <i class="fa-light fa-circle-info mt-0.5 flex-none" aria-hidden="true"></i>
+        <span>Recipients without an LF Account will be prompted to create one as part of accepting the invitation.</span>
+      </p>
+    </div>
   }
 
   <!-- ── Import from a meeting (optional) ─────────────────────────────────────── -->
@@ -242,25 +256,44 @@
   </div>
 
   <!-- ── Footer ───────────────────────────────────────────────────────────────── -->
-  <div class="flex justify-end gap-3 pt-6 mt-1 border-t border-gray-100">
-    <lfx-button
-      label="Cancel"
-      severity="secondary"
-      [outlined]="true"
-      (onClick)="onCancel()"
-      [disabled]="!collectOnly && submitting()"
-      size="small"
-      type="button"
-      data-testid="add-member-cancel"></lfx-button>
+  <div class="flex flex-col gap-3 pt-6 mt-1 border-t border-gray-100">
+    @if (isDirectAdd()) {
+      <p class="text-xs text-gray-500 flex items-center gap-1.5" data-testid="add-member-footer-hint">
+        <i class="fa-light fa-user-plus flex-none" aria-hidden="true"></i>
+        <span
+          >Selected people will be <strong class="font-medium text-gray-700">added immediately</strong> — no acceptance step. Those without an LF Account will
+          receive a separate account-creation email.</span
+        >
+      </p>
+    } @else {
+      <p class="text-xs text-gray-500 flex items-center gap-1.5" data-testid="add-member-footer-hint">
+        <i class="fa-light fa-paper-plane flex-none" aria-hidden="true"></i>
+        <span
+          >An <strong class="font-medium text-gray-700">invitation email</strong> will be sent — people appear as Pending until they accept. Those without an LF
+          Account will be prompted to create one.</span
+        >
+      </p>
+    }
+    <div class="flex justify-end gap-3">
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="onCancel()"
+        [disabled]="!collectOnly && submitting()"
+        size="small"
+        type="button"
+        data-testid="add-member-cancel"></lfx-button>
 
-    <lfx-button
-      [label]="submitLabel()"
-      [icon]="submitIcon()"
-      [loading]="submitting()"
-      [disabled]="!canSubmit() || submitting()"
-      (onClick)="onSubmit()"
-      size="small"
-      type="button"
-      data-testid="add-member-submit"></lfx-button>
+      <lfx-button
+        [label]="submitLabel()"
+        [icon]="submitIcon()"
+        [loading]="submitting()"
+        [disabled]="!canSubmit() || submitting()"
+        (onClick)="onSubmit()"
+        size="small"
+        type="button"
+        data-testid="add-member-submit"></lfx-button>
+    </div>
   </div>
 </div>
