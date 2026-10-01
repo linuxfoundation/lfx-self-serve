@@ -37,6 +37,8 @@ interface OrgRow {
   DISTINCT_PEOPLE_COUNT: number | null;
   CONTRIBUTIONS_COUNT: number | null;
   IS_NEW: boolean | null;
+  SORT_RANK: number | null;
+  IS_HIGH_FIT: boolean | null;
 }
 
 /** True when the Non-Members views carry columns for the range; for a controller to check before binding. */

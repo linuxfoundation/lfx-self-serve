@@ -54,7 +54,7 @@ export class NonMembersOrgsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every active organization in the period, for the sub-nav badge; `null` while a read is pending or failed. */
+  /** Every active organization in the period, for the sub-nav badge; `null` while a new foundation or period is read, or after a failed read. */
   public readonly countChange = output<number | null>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
@@ -237,7 +237,7 @@ export class NonMembersOrgsComponent {
   }
 
   private parseInitialSearch(): string {
-    return this.normalizeSearch(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch) ?? '');
+    return this.normalizeSearch(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch) ?? '');
   }
 
   private parseInitialPage(): number {

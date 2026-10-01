@@ -51,6 +51,8 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
       DISTINCT_PEOPLE_COUNT: 9,
       CONTRIBUTIONS_COUNT: 1840,
       IS_NEW: true,
+      SORT_RANK: 1,
+      IS_HIGH_FIT: false,
       ...overrides,
     };
   }
