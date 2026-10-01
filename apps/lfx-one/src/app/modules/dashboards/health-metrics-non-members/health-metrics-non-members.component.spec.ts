@@ -11,6 +11,7 @@ import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { NonMembersConversionComponent } from './components/non-members-conversion/non-members-conversion.component';
 import { NonMembersOrgsComponent } from './components/non-members-orgs/non-members-orgs.component';
 import { NonMembersPeopleComponent } from './components/non-members-people/non-members-people.component';
 import { HealthMetricsNonMembersComponent } from './health-metrics-non-members.component';
@@ -26,6 +27,14 @@ class OrgsStubComponent {
 /** Stands in for Engaged people, whose read its own spec covers. */
 @Component({ selector: 'lfx-non-members-people', template: '<div data-testid="non-members-people-stub"></div>' })
 class PeopleStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+/** Stands in for Conversion opportunity, whose read its own spec covers. */
+@Component({ selector: 'lfx-non-members-conversion', template: '<div data-testid="non-members-conversion-stub"></div>' })
+class ConversionStubComponent {
   public readonly countChange = output<number | null>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
@@ -47,8 +56,8 @@ describe('HealthMetricsNonMembersComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsNonMembersComponent, {
-        remove: { imports: [NonMembersOrgsComponent, NonMembersPeopleComponent] },
-        add: { imports: [OrgsStubComponent, PeopleStubComponent] },
+        remove: { imports: [NonMembersConversionComponent, NonMembersOrgsComponent, NonMembersPeopleComponent] },
+        add: { imports: [ConversionStubComponent, OrgsStubComponent, PeopleStubComponent] },
       })
       .compileComponents();
 
@@ -76,7 +85,7 @@ describe('HealthMetricsNonMembersComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the three sections in order, each anchored with its design copy and a body or placeholder', async () => {
+  it('renders the three sections in order, each anchored with its design copy and its body', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="non-members-section-"]')] as HTMLElement[];
 
@@ -84,12 +93,8 @@ describe('HealthMetricsNonMembersComponent', () => {
     rendered.forEach((element, index) => {
       const key = HEALTH_METRICS_NON_MEMBERS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_NON_MEMBERS_SECTIONS[index].heading);
-      if (key === 'orgs' || key === 'people') {
-        expect(element.querySelector(`[data-testid="non-members-${key}-stub"]`)).not.toBeNull();
-        expect(element.textContent).not.toContain('Awaiting data');
-      } else {
-        expect(element.textContent).toContain('Awaiting data');
-      }
+      expect(element.querySelector(`[data-testid="non-members-${key}-stub"]`)).not.toBeNull();
+      expect(element.textContent).not.toContain('Awaiting data');
     });
   });
 
@@ -117,13 +122,14 @@ describe('HealthMetricsNonMembersComponent', () => {
     );
   });
 
-  it('re-lands a held deep link once both data sections settle, then releases it', async () => {
+  it('re-lands a held deep link once every data section settles, then releases it', async () => {
     await setup('conversion');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
 
     stub(OrgsStubComponent).settled.emit();
     stub(PeopleStubComponent).settled.emit();
+    stub(ConversionStubComponent).settled.emit();
     await flush();
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('non-members-sub-nav-conversion');
@@ -131,6 +137,7 @@ describe('HealthMetricsNonMembersComponent', () => {
     scrollIntoView.mockClear();
     stub(OrgsStubComponent).settled.emit();
     stub(PeopleStubComponent).settled.emit();
+    stub(ConversionStubComponent).settled.emit();
     await flush();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
@@ -157,6 +164,19 @@ describe('HealthMetricsNonMembersComponent', () => {
     expect(item()).toContain('388');
 
     stub(PeopleStubComponent).countChange.emit(null);
+    await flush();
+    expect(item()).not.toMatch(/\d/);
+  });
+
+  it('badges Conversion opportunity with the high-fit count once it reports one', async () => {
+    await setup();
+    const item = () => fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-conversion"]').textContent;
+
+    stub(ConversionStubComponent).countChange.emit(14);
+    await flush();
+    expect(item()).toContain('14');
+
+    stub(ConversionStubComponent).countChange.emit(null);
     await flush();
     expect(item()).not.toMatch(/\d/);
   });

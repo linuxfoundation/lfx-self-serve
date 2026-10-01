@@ -48,7 +48,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX = 'sec-non-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS = ['orgs', 'people'] as const satisfies readonly HealthMetricsNonMembersSectionKey[];
+export const HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS = ['orgs', 'people', 'conversion'] as const satisfies readonly HealthMetricsNonMembersSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's non-member participation. */
 export const HEALTH_METRICS_NON_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {

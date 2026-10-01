@@ -18,8 +18,8 @@ describe('HEALTH_METRICS_NON_MEMBERS_SECTIONS', () => {
     expect(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.key)).toEqual(['orgs', 'people', 'conversion']);
   });
 
-  it('waits on Company participation and People, the sections reading data', () => {
-    expect(HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS).toEqual(['orgs', 'people']);
+  it('waits on every section, since each reads data', () => {
+    expect(HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS).toEqual(['orgs', 'people', 'conversion']);
   });
 });
 
