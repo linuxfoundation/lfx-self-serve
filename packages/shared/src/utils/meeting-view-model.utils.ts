@@ -112,8 +112,10 @@ export function resolvePrivacy(visibility: MeetingVisibility | null | undefined,
  * `invitation-required` for a signed-in outsider on a restricted meeting, and `rsvp-unavailable`
  * for a registrant on a pre-2024 meeting that never had invite responses.
  *
- * The full cell-by-cell table, with what V1 renders for each, is
- * `specs/010-meeting-details-redesign/state-matrix.md`.
+ * The executable source of truth for every cell is the `MATRIX` table in
+ * `meeting-view-model.utils.spec.ts`. The written state matrix, which adds what V1 renders for each
+ * cell, lands with E0-01 as `specs/010-meeting-details-redesign/state-matrix.md` (PR #2935) and is
+ * not on `main` at the time of writing.
  */
 export function resolveActionSlot(input: ActionSlotInput): ActionSlotKind {
   if (input.timeState === 'ended') {
