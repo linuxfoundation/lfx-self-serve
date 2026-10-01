@@ -47,7 +47,7 @@ import {
   resolveMentorshipMenteeTaskDueDate,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
-import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { buildMentorshipUpstreamMenteeProfile } from '../helpers/mentorship-mentee-register.helper';
 import { buildMentorshipUpstreamMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 
@@ -79,8 +79,9 @@ export class MentorshipMenteeService {
    * rows are listed first and an existing profile is refused with a 409 the register page reads.
    * A failed check propagates rather than falling through to the write. Upstream's own 400, 403
    * and 422 also pass through. The check and the write are two requests, so two simultaneous
-   * registrations by the same user can both pass the check; the later write wins. The email is
-   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
+   * registrations by the same user can both pass the check; the later write wins. The email and the
+   * GitHub link are the caller's verified primary email and connected GitHub account, looked up
+   * here, and each is left out when its lookup fails.
    */
   public async registerMenteeProfile(req: Request, request: MentorshipMenteeRegisterRequest): Promise<void> {
     logger.debug(req, 'mentorship_register_mentee_profile', 'Checking for an existing mentee profile');
@@ -90,11 +91,15 @@ export class MentorshipMenteeService {
       });
     }
 
-    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
-    const body = buildMentorshipUpstreamMenteeProfile(request, email);
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamMenteeProfile(request, email, githubProfileLink);
     logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', {
       has_demographics: body.demographics !== undefined,
       has_email: body.email !== undefined,
+      has_github: body.profile_links !== undefined,
     });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentee_profile', 'Mentee profile created');
@@ -218,7 +223,7 @@ export class MentorshipMenteeService {
   /**
    * Saves the changed groups of the signed-in user's mentee profile. Upstream keeps every column the body
    * omits and replaces a JSON column whole, so only the groups the caller changed are forwarded, and never
-   * `profile_links`. When a JSON column is among them, the stored row is
+   * `profile_links`, which the LFX profile sync owns. When a JSON column is among them, the stored row is
    * read first and each column is layered over its stored value, so keys this BFF does not model survive;
    * a failed read propagates rather than risk dropping them. The two calls are not atomic, so an edit made
    * elsewhere in between can be overwritten. The response is the re-mapped row: no history, since the caller

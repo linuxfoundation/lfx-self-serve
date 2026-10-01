@@ -91,6 +91,7 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
   let service: InstanceType<typeof MentorshipMentorService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
   let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
+  let listIdentitiesSafe: MockInstance<InstanceType<typeof EmailVerificationService>['listIdentitiesSafe']>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -99,6 +100,7 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
       primary_email: 'test.user@example.com',
       alternate_emails: [],
     });
+    listIdentitiesSafe = vi.spyOn(EmailVerificationService.prototype, 'listIdentitiesSafe').mockResolvedValue([]);
     service = new MentorshipMentorService();
   });
 
@@ -142,6 +144,28 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
     expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('email');
   });
 
+  it("adds the caller's connected GitHub link to the profile it puts", async () => {
+    listIdentitiesSafe.mockResolvedValue([
+      { provider: 'github', user_id: 'github-1', connection: 'github', isSocial: true, profileData: { nickname: 'test-user' } },
+    ]);
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await service.registerMentorProfile(signedInReq(), request);
+
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(proxyRequest.mock.calls[1][5]).toMatchObject({ profile_links: { githubProfileLink: 'https://github.com/test-user' } });
+  });
+
+  it('sends no profile links when the caller has no GitHub account connected', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+    proxyRequest.mockResolvedValueOnce({});
+
+    await service.registerMentorProfile(signedInReq(), request);
+
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('profile_links');
+  });
+
   it('refuses with a 409 profile-exists conflict, without writing, when a mentor profile exists', async () => {
     proxyRequest.mockResolvedValueOnce(listOf([{ id: 'profile-1', profile_type: 'mentor' }]));
 
@@ -151,6 +175,7 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
     });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(getUserEmails).not.toHaveBeenCalled();
+    expect(listIdentitiesSafe).not.toHaveBeenCalled();
   });
 
   it('fails closed when the existing-profile check fails', async () => {

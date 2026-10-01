@@ -45,7 +45,7 @@ import {
 } from '../constants';
 import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
-import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { mapMentorshipMentoringHistory, mapMentorshipMentorProfileDetails } from '../helpers/mentorship-mentor-profile.helper';
 import { buildMentorshipUpstreamMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import {
@@ -89,8 +89,9 @@ export class MentorshipMentorService {
    * rows are listed first and an existing profile is refused with a 409 the register page reads.
    * A failed check propagates rather than falling through to the write. Upstream's own 400 and 403
    * also pass through. The check and the write are two requests, so two simultaneous
-   * registrations by the same user can both pass the check; the later write wins. The email is
-   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
+   * registrations by the same user can both pass the check; the later write wins. The email and the
+   * GitHub link are the caller's verified primary email and connected GitHub account, looked up
+   * here, and each is left out when its lookup fails.
    */
   public async registerMentorProfile(req: Request, request: MentorshipMentorRegisterRequest): Promise<void> {
     logger.debug(req, 'mentorship_register_mentor_profile', 'Checking for an existing mentor profile');
@@ -100,11 +101,15 @@ export class MentorshipMentorService {
       });
     }
 
-    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
-    const body = buildMentorshipUpstreamMentorProfile(request, email);
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamMentorProfile(request, email, githubProfileLink);
     logger.debug(req, 'mentorship_register_mentor_profile', 'Creating mentor profile', {
       skills_count: body.skill_set.skills.length,
       has_email: body.email !== undefined,
+      has_github: body.profile_links !== undefined,
     });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentor_profile', 'Mentor profile created');
@@ -268,7 +273,11 @@ export class MentorshipMentorService {
 
     let detail: MentorshipUpstreamMentorDetail;
     try {
-      detail = await proxyMentorshipRequest<MentorshipUpstreamMentorDetail>(this.microserviceProxy, req, `${MENTORSHIP_MENTORS_PATH}/${encodeURIComponent(userId)}`);
+      detail = await proxyMentorshipRequest<MentorshipUpstreamMentorDetail>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_MENTORS_PATH}/${encodeURIComponent(userId)}`
+      );
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404) {
         logger.debug(req, 'mentorship_get_mentor_profile', 'No mentor detail for the signed-in user, returning an empty history');

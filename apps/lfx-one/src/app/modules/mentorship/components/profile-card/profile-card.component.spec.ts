@@ -15,6 +15,7 @@ import {
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
   LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
   LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL,
+  LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL,
   LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
   LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
   PROFILE_AUTH_ERROR_MESSAGES,
@@ -24,7 +25,7 @@ import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from '../../../profile/components/add-account-dialog/add-account-dialog.component';
@@ -86,12 +87,19 @@ describe('ProfileCardComponent', () => {
   /**
    * Boots the card against whatever the three profile endpoints return for this spec.
    * `queryParams` stands in for what the identity-link callback returns the mentor with.
+   * `sync` sets `syncMentorshipProfiles` and the copy's result before the first change detection,
+   * since the callback is read in `ngOnInit`.
    */
-  const render = (userService: Partial<Record<keyof UserService, unknown>>, queryParams: Record<string, string> = {}, platformId: string = 'browser'): void => {
+  const render = (
+    userService: Partial<Record<keyof UserService, unknown>>,
+    queryParams: Record<string, string> = {},
+    platformId: string = 'browser',
+    sync: { enabled?: boolean; result?: () => Observable<void> } = {}
+  ): void => {
     toast = vi.fn();
     refreshUserIdentities = vi.fn();
     drawerOpen = vi.fn();
-    syncLfxProfileFields = vi.fn(() => of(undefined));
+    syncLfxProfileFields = vi.fn(sync.result ?? (() => of(undefined)));
     dialogClose = new Subject<unknown>();
     openDialog = vi.fn(() => ({ onClose: dialogClose.asObservable() }));
 
@@ -123,6 +131,7 @@ describe('ProfileCardComponent', () => {
     TestBed.overrideProvider(ProfileEditDrawerService, { useValue: { open: drawerOpen, close: vi.fn(), isOpen: signal(false), context: signal(null) } });
 
     fixture = TestBed.createComponent(ProfileCardComponent);
+    if (sync.enabled) fixture.componentRef.setInput('syncMentorshipProfiles', true);
     fixture.detectChanges();
   };
 
@@ -538,6 +547,51 @@ describe('ProfileCardComponent', () => {
       expect(toast).toHaveBeenCalledTimes(1);
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL });
       expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+    });
+
+    describe('and the page copies the LFX profile onto mentorship profiles', () => {
+      it('copies the new account, sending no fields, so the BFF adds the GitHub link', () => {
+        render(profile, { success: 'identity_linked' }, 'browser', { enabled: true });
+
+        expect(syncLfxProfileFields).toHaveBeenCalledExactlyOnceWith({});
+      });
+
+      it('copies nothing on an ordinary visit', () => {
+        render(profile, {}, 'browser', { enabled: true });
+
+        expect(syncLfxProfileFields).not.toHaveBeenCalled();
+      });
+
+      it('copies nothing on the server', () => {
+        render(profile, { success: 'identity_linked' }, 'server', { enabled: true });
+
+        expect(syncLfxProfileFields).not.toHaveBeenCalled();
+      });
+
+      it('does not copy while impersonating, since the write would be refused', () => {
+        render({ ...profile, impersonating: signal(true) }, { success: 'identity_linked' }, 'browser', { enabled: true });
+
+        expect(syncLfxProfileFields).not.toHaveBeenCalled();
+      });
+
+      it('warns that the mentorship profile lags when the copy fails, after confirming the account', () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        render(profile, { success: 'identity_linked' }, 'browser', { enabled: true, result: () => throwError(() => new Error('upstream down')) });
+
+        expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL });
+        expect(toast).toHaveBeenLastCalledWith({
+          severity: 'warn',
+          summary: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
+          detail: LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL,
+        });
+        consoleError.mockRestore();
+      });
+    });
+
+    it('copies nothing after a link on the register pages, which have no mentorship profile yet', () => {
+      render(profile, { success: 'identity_linked' });
+
+      expect(syncLfxProfileFields).not.toHaveBeenCalled();
     });
 
     describe('and the params are stripped', () => {

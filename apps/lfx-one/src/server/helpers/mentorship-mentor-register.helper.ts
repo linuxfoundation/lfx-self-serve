@@ -5,7 +5,7 @@ import { MentorshipMentorRegisterRequest, MentorshipUpstreamMentorProfileInput }
 import { getMentorshipMentorRegisterErrors } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
-import { buildMentorshipUpstreamLfxProfileFields, readMentorshipLfxProfileFields } from './mentorship-lfx-profile.helper';
+import { buildMentorshipUpstreamLfxProfileFields, buildMentorshipUpstreamProfileLinks, readMentorshipLfxProfileFields } from './mentorship-lfx-profile.helper';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -70,13 +70,22 @@ export const parseMentorshipMentorRegisterRequest = (body: unknown): MentorshipM
  * The `PUT /mentorship/v1/me/profiles/mentor` body. `skill_set` carries the skills under the same
  * key the mentee register writes. Upstream has no compliance column, so that confirmation is
  * checked by `parseMentorshipMentorRegisterRequest` and goes no further. The name and logo are the
- * LFX profile's, each sent only when the card had it; `email` is the resolved primary email, sent
- * only when there is one. Phone and slug are not sent: an unset slug cannot collide with another
- * profile's.
+ * LFX profile's, each sent only when the card had it; `email` is the resolved primary email and
+ * `profile_links` the resolved GitHub link, each sent only when there is one. The profile is new, so
+ * there are no stored links to keep. Phone and slug are not sent: an unset slug cannot collide with
+ * another profile's.
  */
-export const buildMentorshipUpstreamMentorProfile = (request: MentorshipMentorRegisterRequest, email?: string): MentorshipUpstreamMentorProfileInput => ({
-  ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
-  introduction: request.introduction,
-  terms_and_conditions: request.termsAccepted,
-  skill_set: { skills: request.skills },
-});
+export const buildMentorshipUpstreamMentorProfile = (
+  request: MentorshipMentorRegisterRequest,
+  email?: string,
+  githubProfileLink?: string
+): MentorshipUpstreamMentorProfileInput => {
+  const profileLinks = buildMentorshipUpstreamProfileLinks(undefined, githubProfileLink);
+  return {
+    ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
+    ...(profileLinks ? { profile_links: profileLinks } : {}),
+    introduction: request.introduction,
+    terms_and_conditions: request.termsAccepted,
+    skill_set: { skills: request.skills },
+  };
+};

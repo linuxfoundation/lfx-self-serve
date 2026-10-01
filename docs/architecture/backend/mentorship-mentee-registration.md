@@ -43,36 +43,40 @@ The check-then-write pair is not atomic. Two concurrent submits from the same us
 
 ## LFX profile fields
 
-A mentor or mentee profile keeps a copy of the user's LFX profile name, primary email and picture. Both register forms (mentee here, mentor in [Mentorship Mentor BFF](./mentorship-mentor.md#registration)) send the name and picture, and later LFX profile edits copy them over again. The email never comes from the browser: the BFF reads it itself.
+A mentor or mentee profile keeps a copy of the user's LFX profile name, primary email, picture and connected GitHub account's link. Both register forms (mentee here, mentor in [Mentorship Mentor BFF](./mentorship-mentor.md#registration)) send the name and picture, and later LFX profile edits and account connects copy them over again. The email and the GitHub link never come from the browser: the BFF reads them itself.
 
-| Field       | Upstream     | Source and rule                                                                                                     |
-| ----------- | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `firstName` | `first_name` | `lfxProfile`; 1 to `MENTORSHIP_LFX_PROFILE_NAME_MAX` (100) characters (shared `getMentorshipLfxProfileFieldErrors`) |
-| `lastName`  | `last_name`  | `lfxProfile`; 1 to `MENTORSHIP_LFX_PROFILE_NAME_MAX` (100) characters                                               |
-| `logoUrl`   | `logo_url`   | `lfxProfile`; an `https` URL, at most `MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX` (2048)                                  |
-| —           | `email`      | the BFF; see below                                                                                                  |
+| Field       | Upstream                          | Source and rule                                                                                                     |
+| ----------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `firstName` | `first_name`                      | `lfxProfile`; 1 to `MENTORSHIP_LFX_PROFILE_NAME_MAX` (100) characters (shared `getMentorshipLfxProfileFieldErrors`) |
+| `lastName`  | `last_name`                       | `lfxProfile`; 1 to `MENTORSHIP_LFX_PROFILE_NAME_MAX` (100) characters                                               |
+| `logoUrl`   | `logo_url`                        | `lfxProfile`; an `https` URL, at most `MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX` (2048)                                  |
+| —           | `email`                           | the BFF; see below                                                                                                  |
+| —           | `profile_links.githubProfileLink` | the BFF; see below                                                                                                  |
 
 - **The email.** `resolveMentorshipPrimaryEmail` (`helpers/mentorship-lfx-profile.helper.ts`) looks up the caller's verified primary email through `EmailVerificationService.getUserEmails`, keyed by `getEffectiveSub`, and sends it only when it is email-shaped and at most `MENTORSHIP_LFX_PROFILE_EMAIL_MAX` (254). An `email` key in the request body is ignored, so a caller cannot write an address they have not verified. A failed lookup leaves the column as it is rather than failing the save.
-- **At registration.** The register page reads `lfxProfileFields` from the `ProfileCardComponent` above the form at submit time, and the shared builder adds `lfxProfile` only when it holds a field. `buildMentorshipLfxProfileFields` trims each value and drops a missing, blank or invalid one, so the request never blanks a column. The card lays any value the edit drawer just saved over the loaded profile, so a save that is still stashed (no profile record yet) is not lost. The server reads the three keys with `readMentorshipLfxProfileFields`, ignores any other key, and rejects a bad value with a `400` keyed `lfxProfile.<field>`. After the `409` pre-check passes, the service resolves the email and adds it to the `PUT`. Upstream does not validate these columns, so the BFF is the only check.
-- **After an Edit LFX Profile save.** The card copies the saved name and picture onto the user's mentorship profiles through `PATCH /api/mentorship/me/lfx-profile`, and the BFF adds the primary email:
+- **The GitHub link.** `resolveMentorshipGithubProfileLink` (same helper) reads the caller's identities through `EmailVerificationService.listIdentitiesSafe`, keyed by `getEffectiveSub`, and builds `https://github.com/<login>` from the GitHub identity's login (`profileData.nickname`) only when the login matches `MENTORSHIP_GITHUB_LOGIN_PATTERN`. No GitHub account, a bad login or a failed lookup leaves the stored link as it is. Upstream's `PATCH` replaces `profile_links` whole, so `buildMentorshipUpstreamProfileLinks` lays the link over the row's stored `profile_links`, keeping keys LFX One does not write (`linkedinProfileLink`, `resumeLink`). The mentee and mentor profile edits never send `profile_links`.
+- **No LinkedIn link.** A connected LinkedIn account gives the auth service only its email, not a profile URL, so nothing is copied into `linkedinProfileLink`.
+- **At registration.** The register page reads `lfxProfileFields` from the `ProfileCardComponent` above the form at submit time, and the shared builder adds `lfxProfile` only when it holds a field. `buildMentorshipLfxProfileFields` trims each value and drops a missing, blank or invalid one, so the request never blanks a column. The card lays any value the edit drawer just saved over the loaded profile, so a save that is still stashed (no profile record yet) is not lost. The server reads the three keys with `readMentorshipLfxProfileFields`, ignores any other key, and rejects a bad value with a `400` keyed `lfxProfile.<field>`. After the `409` pre-check passes, the service resolves the email and the GitHub link and adds them to the `PUT`. Upstream does not validate these columns, so the BFF is the only check.
+- **After an Edit LFX Profile save or a Connect.** The card copies the saved name and picture onto the user's mentorship profiles through `PATCH /api/mentorship/me/lfx-profile`, and the BFF adds the primary email and the GitHub link. When the identity-link callback returns with `success=identity_linked`, `ngOnInit` sends an empty body, so the BFF copies the email and the new GitHub link:
 
 ```text
-ProfileCardComponent.onProfileSaved()                   only with [syncMentorshipProfiles]="true"; skipped while impersonating
-  → lfxProfileFields()                                  card fields with the saved metadata laid over them
+ProfileCardComponent.onProfileSaved() / ngOnInit()      only with [syncMentorshipProfiles]="true"; skipped while impersonating
+  → lfxProfileFields()                                  card fields with the saved metadata laid over them; {} after a Connect
   → MentorshipService.syncLfxProfileFields()            PATCH /api/mentorship/me/lfx-profile
       → blockDuringImpersonation                        403 IMPERSONATION_READ_ONLY
       → MentorshipController.syncLfxProfile             401 with no signed-in user · 400 per field
       → GET /mentorship/v1/me/profiles                  every page, via listAllMentorshipPages
       → resolveMentorshipPrimaryEmail                   only when there is a mentor or mentee row
+      → resolveMentorshipGithubProfileLink              in parallel with the email
       → PATCH /mentorship/v1/me/profiles/by-id/{id}     once per mentor and mentee row; upstream checks the owner
   ← 204                                                 also when the caller has no such row
 ```
 
 - **Which pages sync.** The mentor profile, mentee profile and mentee apply pages bind `[syncMentorshipProfiles]="true"`. The register pages leave it off: no profile exists yet, and the registration sends the fields itself. While a registration is in flight the card is `inert` with the form, so an Edit LFX Profile save cannot change the name after the request was built.
-- **Why by id.** `PATCH …/profiles/{type}` refuses a type that has more than one row, so the BFF patches each row by id, one at a time. Only the keys that have a value are patched.
-- **A failed copy.** A failed row stops the rest. The LFX profile itself did save, so the card logs the error and shows a warn toast (`LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_*`) that asks the user to save again. The request is not tied to the card's lifetime, so a user who saves and then leaves the page still gets the copy, or the toast. Every save sends all the fields, so the next save repairs every row.
+- **Why by id.** `PATCH …/profiles/{type}` refuses a type that has more than one row, so the BFF patches each row by id, one at a time. Only the keys that have a value are patched; with no field, email or link there is nothing to patch.
+- **A failed copy.** A failed row stops the rest. The LFX profile itself did save, so the card logs the error and shows a warn toast (`LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_*`) that asks the user to save again; after a Connect the detail is `LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL`. The request is not tied to the card's lifetime, so a user who saves and then leaves the page still gets the copy, or the toast. Every save sends all the fields, so the next save repairs every row.
 - **Primary email changes.** Changing the primary email on the Emails tab does not sync on its own; the next registration or Edit LFX Profile save on a syncing page copies the current primary.
-- **Logs.** The controller logs only `synced_count` and `field_count`, and the service `profile_count`, `field_count` and `has_email`; never the values.
+- **Logs.** The controller logs only `synced_count` and `field_count`, and the service `profile_count`, `field_count`, `has_email` and `has_github`; never the values.
 
 ## Errors
 
