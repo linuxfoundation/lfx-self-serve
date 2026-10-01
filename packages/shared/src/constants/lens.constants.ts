@@ -73,10 +73,10 @@ export const NAV_SEARCH_DEBOUNCE_MS = 300;
  * API. A new app name rather than reusing Social Listening's `'PCC'` — this preference has no PCC
  * heritage to stay compatible with.
  */
-export const FAVORITE_PROJECTS_PREFERENCE_APP_NAME = 'LFX One';
+export const FAVORITE_PROJECTS_PREFERENCE_APP_NAME = 'LFXOne';
 
 /** Fixed preference name — there is exactly one favorites list per user, so no per-scope suffix is needed. */
-export const FAVORITE_PROJECTS_PREFERENCE_NAME = 'Favorite Projects';
+export const FAVORITE_PROJECTS_PREFERENCE_NAME = 'FavoriteProjects';
 
 /** Favorited-item cap — bounds the preference doc payload and keeps the "favorites first" sort cheap. */
 export const FAVORITE_PROJECTS_MAX_VALUES = 200;

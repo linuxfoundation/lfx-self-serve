@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  FAVORITE_PROJECTS_MAX_VALUES,
   FAVORITE_PROJECTS_PREFERENCE_APP_NAME,
   FAVORITE_PROJECTS_PREFERENCE_NAME,
   FAVORITE_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH,
@@ -116,6 +117,7 @@ export class NavigationController {
       // The API Gateway token always resolves the impersonator's profile — during impersonation
       // answer "no favorites" so the target-scoped selector never renders the impersonator's state.
       if (isImpersonating(req)) {
+        logger.success(req, operation, startTime, { impersonating: true });
         const response: PreferenceReadResponse = { name: FAVORITE_PROJECTS_PREFERENCE_NAME, value: null };
         res.json(response);
         return;
@@ -178,10 +180,17 @@ export class NavigationController {
       throw ServiceValidationError.forField('value', 'value exceeds the maximum allowed size', { operation });
     }
 
+    let parsed: unknown;
     try {
-      JSON.parse(body.value);
+      parsed = JSON.parse(body.value);
     } catch {
       throw ServiceValidationError.forField('value', 'value must be valid JSON', { operation });
+    }
+
+    if (!Array.isArray(parsed) || parsed.length > FAVORITE_PROJECTS_MAX_VALUES || !parsed.every((uid) => typeof uid === 'string' && uid.length > 0)) {
+      throw ServiceValidationError.forField('value', `value must be a JSON array of up to ${FAVORITE_PROJECTS_MAX_VALUES} non-empty uid strings`, {
+        operation,
+      });
     }
 
     return body.value;

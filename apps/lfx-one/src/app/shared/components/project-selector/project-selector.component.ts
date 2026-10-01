@@ -145,9 +145,7 @@ export class ProjectSelectorComponent {
     }
   }
 
-  /** Toggles a favorite from the row's star icon — stops propagation so it doesn't also select the item. */
-  protected toggleFavorite(event: Event, uid: string): void {
-    event.stopPropagation();
+  protected toggleFavorite(_event: Event, uid: string): void {
     this.favoriteProjectsService.toggleFavorite(uid);
   }
 

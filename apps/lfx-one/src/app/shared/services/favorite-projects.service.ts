@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { DestroyRef, Injectable, Injector, PLATFORM_ID, effect, inject } from '@angular/core';
+import { DestroyRef, Injectable, Injector, PLATFORM_ID, inject } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FAVORITE_PROJECTS_MAX_VALUES, FAVORITE_PROJECTS_PREFERENCE_CONTEXT_ID, FAVORITE_PROJECTS_PREFERENCE_NAME } from '@lfx-one/shared/constants';
 import { parseFavoriteProjectUids } from '@lfx-one/shared/utils';
 import { NavigationService } from '@services/navigation.service';
@@ -15,7 +16,7 @@ import { UserPreferenceStore } from './user-preference-store';
  * Favorited foundations/projects (GH-2995): a single global per-user preference — unlike
  * `MentionBookmarkService`, this is `providedIn: 'root'` because `ProjectSelectorComponent` is
  * rendered app-wide (sidebar), not confined to one page; a page-scoped store would be destroyed
- * and recreated on every navigation. Context tracks the signed-in user via an `effect()` here
+ * and recreated on every navigation. Context tracks the signed-in user via `toObservable` here
  * rather than requiring a hosting component to call `setContext`.
  */
 @Injectable({
@@ -46,10 +47,12 @@ export class FavoriteProjectsService {
   public readonly state = this.store.state;
 
   public constructor() {
-    effect(() => {
-      const userId = this.userService.user()?.sub;
-      this.store.setContext(userId ? { userId, projectId: FAVORITE_PROJECTS_PREFERENCE_CONTEXT_ID } : null);
-    });
+    toObservable(this.userService.user)
+      .pipe(takeUntilDestroyed())
+      .subscribe((user) => {
+        const userId = user?.sub;
+        this.store.setContext(userId ? { userId, projectId: FAVORITE_PROJECTS_PREFERENCE_CONTEXT_ID } : null);
+      });
   }
 
   public toggleFavorite(uid: string): void {
