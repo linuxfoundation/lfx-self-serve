@@ -5,7 +5,7 @@
   <!-- Tab Content -->
   @if (activeTab() === 'upcoming') {
     @if (showUpcomingViewPills()) {
-      <div class="mb-4" data-testid="events-upcoming-view-pills">
+      <div class="my-4" data-testid="events-upcoming-view-pills">
         <lfx-filter-pills [options]="upcomingViewOptions" [selectedFilter]="upcomingView()" (filterChange)="onUpcomingViewChange($event)" />
       </div>
     }

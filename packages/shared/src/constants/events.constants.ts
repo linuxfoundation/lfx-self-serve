@@ -107,7 +107,7 @@ export const MY_EVENTS_TABS: (FilterPillOption & { id: EventTabId })[] = [
 /** Upcoming-tab registration view pills in visible order. */
 export const MY_EVENTS_UPCOMING_VIEWS: (FilterPillOption & { id: MyEventsUpcomingView })[] = [
   { id: 'registered', label: 'My Registrations' },
-  { id: 'all', label: 'All Upcoming' },
+  { id: 'all', label: 'All Events' },
 ];
 
 /** Default tab for the My Events dashboard when `?tab=` is absent or invalid. */

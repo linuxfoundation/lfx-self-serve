@@ -37,7 +37,7 @@ Use the tabs to switch between **Upcoming**, **Past**, [**Visa Letters**](../vis
 On the **Upcoming** tab, choose a view:
 
 - **My Registrations** — only the events you are registered for. This view is selected by default when you have at least one upcoming registration.
-- **All Upcoming** — your registrations plus upcoming events from your affiliated projects. Co-located events are left out of this list unless you are registered for them.
+- **All Events** — your registrations plus upcoming events from your affiliated projects. Co-located events are left out of this list unless you are registered for them.
 
 Filter by **All Foundations** and **All Roles** using the dropdown menus. The **All Statuses** filter is available on the **Past**, **Visa Letters**, and **Travel Funding** tabs.
 

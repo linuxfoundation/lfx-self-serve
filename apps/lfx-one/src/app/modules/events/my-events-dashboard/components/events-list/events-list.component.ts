@@ -163,7 +163,7 @@ export class EventsListComponent {
   }
 
   /**
-   * Defaults to My Registrations when the user has any upcoming registration, otherwise All Upcoming.
+   * Defaults to My Registrations when the user has any upcoming registration, otherwise All Events.
    * linkedSignal re-derives that default once the registered count loads and on every tab switch,
    * while still letting a pill click override it in between.
    */
