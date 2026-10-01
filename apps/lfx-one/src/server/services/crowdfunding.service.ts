@@ -203,7 +203,7 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
+    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires the user's bearer token; owner-scoped via Crowdfunding's FGA check (initiative owners only, not public access)
     const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/me/initiatives/${encodeURIComponent(slug)}`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
@@ -428,7 +428,7 @@ export class CrowdfundingService {
     if (kind) params.set('kind', kind);
     const qs = params.toString();
 
-    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
+    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires the user's bearer token; owner-scoped via Crowdfunding's FGA check (initiative owners only, not public access)
     const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getInitiativeTransactions',

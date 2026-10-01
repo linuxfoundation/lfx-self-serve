@@ -72,8 +72,6 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Profile auth start — needs auth but no bearer token (initiates redirect)
   { pattern: '/api/profile/auth/start', type: 'api', auth: 'required', tokenRequired: false },
 
-  // Crowdfunding auth start — needs session auth but no bearer token (initiates CF auth-code redirect)
-
   // Protected API routes - require authentication and token. `classifyRoute`'s `apiFallback` mirrors this row's
   // shape so a malformed/undecodable API path fails closed the same way — keep the two in sync.
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
