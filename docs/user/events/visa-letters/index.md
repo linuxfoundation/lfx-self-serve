@@ -44,9 +44,9 @@ Your request appears on the **Visa Letters** tab with its current **Status**, al
 
 ## Download your visa letter
 
-When your request shows **Approved**, a **Download** button appears next to the status. Select it to save your visa support letter as a PDF. The button is available until the event ends.
+When your request shows **Approved**, a **Download Letter** button appears at the end of its row. Select it to save your visa support letter as a PDF. The button is available until the event ends.
 
-Some letters are prepared by hand. If yours is one of them, Download tells you the events team will email the letter to you instead.
+Some letters are prepared by hand. If yours is one of them, Download Letter tells you the events team will email the letter to you instead.
 
 ## Questions
 
