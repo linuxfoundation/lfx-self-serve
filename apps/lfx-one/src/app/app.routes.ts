@@ -25,6 +25,7 @@ import { formationProjectEnabledGuard } from './shared/guards/formation-project-
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { gwEmbedTenantGuard } from './shared/guards/gw-embed-tenant.guard';
 import { gatewazeEmbedEnabledGuard } from './shared/guards/gatewaze-embed-enabled.guard';
+import { flatDocumentsRedirect } from './shared/guards/flat-documents-redirect.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
@@ -644,10 +645,11 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/newsletters/newsletters.routes').then((m) => m.NEWSLETTER_ROUTES),
       },
       {
+        // Me-lens My Documents is removed (#2990). Foundation and project still have their
+        // own mounts above; this flat path only redirects so old links do not 404.
         path: 'documents',
-        title: `My ${DOCUMENT_LABEL.plural}`,
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
-        loadChildren: () => import('./modules/documents/documents.routes').then((m) => m.DOCUMENT_ROUTES),
+        pathMatch: 'full',
+        redirectTo: flatDocumentsRedirect,
       },
       {
         // Me lens → /profile/settings (canonical); foundation/project → lens-prefixed settings.

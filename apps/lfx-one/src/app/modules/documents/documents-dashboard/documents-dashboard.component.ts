@@ -65,6 +65,7 @@ export class DocumentsDashboardComponent {
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
+  protected readonly pageTitle = DOCUMENT_LABEL.plural;
   protected readonly sourceTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All Sources' },
     { id: 'link', label: 'Links' },
@@ -109,7 +110,6 @@ export class DocumentsDashboardComponent {
     const lens = this.activeLens();
     return !!this.project()?.uid && (lens === 'project' || lens === 'foundation');
   });
-  protected readonly pageTitle = computed(() => (this.lensService.activeLens() === 'me' ? 'My Documents' : 'Documents'));
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly projectSourceFilter: Signal<MyDocumentSource | null> = this.initProjectSourceFilter();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
@@ -118,7 +118,7 @@ export class DocumentsDashboardComponent {
   protected readonly mailingListFilter: Signal<string | null> = this.initMailingListFilter();
   /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. */
   protected readonly rawProjectDocuments: Signal<ProjectDocument[]> = this.initRawProjectDocuments();
-  /** Aggregator-fed documents (Me / Org lens, or no project context). */
+  /** Aggregator-fed documents, used only when no project context is selected. */
   protected readonly legacyDocuments: Signal<MyDocumentItem[]> = this.initLegacyDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
@@ -243,7 +243,7 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * Aggregator-fed documents (Me / Org lens, or no project context). Existing behavior —
+   * Aggregator-fed documents, used only when no project context is selected. Existing behavior —
    * queries legacy committee_link, mailing-list, meeting-attachment indexed sources.
    * Skipped entirely when in project mode (returns []).
    */
@@ -395,7 +395,7 @@ export class DocumentsDashboardComponent {
           return true;
         }
 
-        // Legacy aggregator filters (Me / Org lens)
+        // Legacy aggregator filters (no project context)
         if (foundation && doc.foundationUid !== foundation) return false;
         if (group && doc.groupOrMeetingUid !== group) return false;
         if (meeting && doc.meetingId !== meeting && doc.pastMeetingId !== meeting) return false;
