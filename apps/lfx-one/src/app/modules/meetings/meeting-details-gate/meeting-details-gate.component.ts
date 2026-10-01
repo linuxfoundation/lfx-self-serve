@@ -62,6 +62,8 @@ import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component'
  */
 @Component({
   selector: 'lfx-meeting-details-gate',
+  // No layout box of its own — see the template comment. The route used to render v1 directly.
+  host: { class: 'contents' },
   imports: [MeetingJoinComponent, MeetingDetailsPageComponent],
   templateUrl: './meeting-details-gate.component.html',
 })

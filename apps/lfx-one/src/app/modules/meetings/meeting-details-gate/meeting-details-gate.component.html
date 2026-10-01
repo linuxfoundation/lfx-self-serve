@@ -5,9 +5,12 @@
   The branch markers sit on wrappers of their own, outside anything that depends on the meeting
   payload, so an e2e assertion can tell the two trees apart on a real `/meetings/:id` navigation
   even when the BFF has no such meeting and the tree renders its own error state.
+
+  Both wrappers, and the gate's host element, are `display: contents`, so none of them creates a
+  layout box: with the flag off, v1 lays out exactly as it did when the route rendered it directly.
 -->
 @if (v2Enabled()) {
-  <div data-testid="meeting-details-gate-v2">
+  <div class="contents" data-testid="meeting-details-gate-v2">
     <!-- Deferred so the v1 majority never downloads the v2 tree; see the component's doc comment. -->
     @defer (on immediate) {
       <lfx-meeting-details-page />
@@ -18,7 +21,7 @@
     }
   </div>
 } @else {
-  <div data-testid="meeting-details-gate-v1">
+  <div class="contents" data-testid="meeting-details-gate-v1">
     <lfx-meeting-join />
   </div>
 }
