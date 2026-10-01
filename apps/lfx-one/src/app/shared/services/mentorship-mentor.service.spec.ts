@@ -4,7 +4,7 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MentorshipMentorRegisterRequest } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProfileUpdateRequest, MentorshipMentorProfileUpdateResponse, MentorshipMentorRegisterRequest } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorshipMentorService } from './mentorship-mentor.service';
@@ -153,6 +153,45 @@ describe('MentorshipMentorService — read error mapping', () => {
     });
   });
 
+  describe('updateMentorProfile', () => {
+    const request: MentorshipMentorProfileUpdateRequest = { introduction: '<p>Updated</p>', skills: ['Kubernetes'] };
+    const response: MentorshipMentorProfileUpdateResponse = { profile: { aboutMe: '<p>Updated</p>', skills: ['Kubernetes'] } };
+
+    it('patches the mentor profile endpoint with the changed fields and emits the saved profile once', () => {
+      const emitted: MentorshipMentorProfileUpdateResponse[] = [];
+      let completed = false;
+      service.updateMentorProfile(request).subscribe({ next: (value) => emitted.push(value), complete: () => (completed = true) });
+
+      const req = http.expectOne('/api/mentorship/mentor/profile');
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual(request);
+      req.flush(response);
+
+      expect(emitted).toEqual([response]);
+      expect(completed).toBe(true);
+    });
+
+    it('does not drop the cached requests or bump mentorRequestsRevision', () => {
+      const revision = service.mentorRequestsRevision();
+      service.updateMentorProfile(request).subscribe();
+
+      http.expectOne('/api/mentorship/mentor/profile').flush(response);
+
+      expect(service.mentorRequestsRevision()).toBe(revision);
+    });
+
+    it('rethrows the HttpErrorResponse unchanged', () => {
+      let error: HttpErrorResponse | undefined;
+      service.updateMentorProfile(request).subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http.expectOne('/api/mentorship/mentor/profile').flush({ error: 'conflict' }, { status: 409, statusText: 'Conflict' });
+
+      expect(error).toBeInstanceOf(HttpErrorResponse);
+      expect(error?.status).toBe(409);
+      expect(error?.error).toEqual({ error: 'conflict' });
+    });
+  });
+
   describe('mentor requests', () => {
     const programId = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
     const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }], invitedProgramIds: [] };
@@ -237,6 +276,17 @@ describe('MentorshipMentorService — read error mapping', () => {
       http.expectOne('/api/mentorship/mentor/requests').flush({ error: 'program membership already exists' }, { status: 409, statusText: 'Conflict' });
       expect(error?.status).toBe(409);
       expect(service.mentorRequestsRevision()).toBe(revision);
+    });
+
+    it.each(['accept', 'decline'] as const)('answers an invitation with %s, the token in the body, and clears the cache', (decision) => {
+      const revision = service.mentorRequestsRevision();
+      service.respondToMentorInvite('payload.sig', decision).subscribe();
+
+      const req = http.expectOne(`/api/mentorship/mentor/invites/${decision}`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'payload.sig' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(service.mentorRequestsRevision()).toBe(revision + 1);
     });
   });
 });

@@ -33,6 +33,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
@@ -197,6 +198,8 @@ export default {
     HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
+    // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

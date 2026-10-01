@@ -48,6 +48,7 @@ import {
   QueryServiceCountResponse,
   ReconcilePastMeetingParticipantsResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -343,6 +344,13 @@ export class MeetingService {
 
   public cancelOccurrence(meetingId: string, occurrenceId: string): Observable<void> {
     return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(
+      take(1),
+      tap(() => this.meetingDetailCache.delete(meetingId))
+    );
+  }
+
+  public updateOccurrence(meetingId: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${encodeURIComponent(meetingId)}/occurrences/${encodeURIComponent(occurrenceId)}`, payload).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(meetingId))
     );

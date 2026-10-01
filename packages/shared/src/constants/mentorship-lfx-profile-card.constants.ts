@@ -65,7 +65,18 @@ export const MENTORSHIP_LFX_PROFILE_NAME_MAX = 100;
 export const MENTORSHIP_LFX_PROFILE_EMAIL_MAX = 254;
 export const MENTORSHIP_LFX_PROFILE_LOGO_URL_MAX = 2048;
 
+/**
+ * A GitHub login as GitHub allows it: up to 39 letters, digits or single hyphens, not starting or
+ * ending with a hyphen. The BFF builds the mentorship profile's GitHub link only from a login that
+ * matches, so a malformed identity cannot store an odd URL.
+ */
+export const MENTORSHIP_GITHUB_LOGIN_PATTERN = /^(?=.{1,39}$)[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
+export const MENTORSHIP_GITHUB_PROFILE_URL_BASE = 'https://github.com/';
+
 /** Shown when the LFX profile saved but copying it onto the mentorship profile failed. */
 export const LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY = 'Mentorship profile not updated';
 export const LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL =
   'Your LFX profile was saved, but your mentorship profile still shows the old name, email or picture. Save your LFX profile again to retry.';
+/** Shown when an account connected but copying the GitHub link onto the mentorship profile failed. */
+export const LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL =
+  'Your account was connected, but your mentorship profile does not show it yet. Save your LFX profile to retry.';

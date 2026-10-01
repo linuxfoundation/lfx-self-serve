@@ -1378,6 +1378,41 @@ export interface MeetingCancelOccurrenceResult {
 }
 
 /**
+ * Request body for rescheduling a single occurrence of a recurring meeting
+ * @description Carries no `recurrence`: upstream rejects one unless `all_following_occurrences` is set,
+ * which would widen the change from this occurrence to every later one.
+ */
+export interface UpdateMeetingOccurrenceRequest {
+  /** New start time of the occurrence in RFC3339 format */
+  start_time: string;
+  /** New duration of the occurrence in minutes */
+  duration: number;
+}
+
+/**
+ * Result of rescheduling a meeting occurrence
+ * @description `start_time` is the occurrence's new start, which is also its new occurrence id
+ */
+export interface MeetingRescheduleOccurrenceResult {
+  confirmed: boolean;
+  start_time?: string;
+  error?: string;
+}
+
+/**
+ * Which part of a recurring meeting an edit applies to
+ */
+export type RecurringMeetingEditScope = 'occurrence' | 'series';
+
+/**
+ * Result of the recurring meeting edit scope dialog
+ */
+export interface RecurringMeetingEditScopeResult {
+  proceed: boolean;
+  scope: RecurringMeetingEditScope;
+}
+
+/**
  * Recording session information
  * @description Individual session within a past meeting recording
  */

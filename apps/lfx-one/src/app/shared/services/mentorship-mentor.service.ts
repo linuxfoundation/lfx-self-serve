@@ -5,9 +5,13 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorInviteDecision,
+  MentorshipMentorInviteResponseRequest,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
+  MentorshipMentorProfileUpdateRequest,
+  MentorshipMentorProfileUpdateResponse,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramRequestCreate,
   MentorshipMentorProgramRequestsResponse,
@@ -122,12 +126,28 @@ export class MentorshipMentorService {
     );
   }
 
+  /** Accepts or declines a mentor invitation with the token from the invite email. Failures propagate raw; a success drops the cached requests. */
+  public respondToMentorInvite(token: string, decision: MentorshipMentorInviteDecision): Observable<void> {
+    const body: MentorshipMentorInviteResponseRequest = { token };
+    return this.http.post<void>(`/api/mentorship/mentor/invites/${decision}`, body).pipe(
+      take(1),
+      tap(() => this.clearMentorCaches())
+    );
+  }
+
   public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
     return this.http.get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs').pipe(catchError(this.rethrowError('getMentorPrograms')));
   }
 
   public getMentorProfile(): Observable<MentorshipMentorProfileResponse> {
     return this.http.get<MentorshipMentorProfileResponse>('/api/mentorship/mentor/profile').pipe(catchError(this.rethrowError('getMentorProfile')));
+  }
+
+  /** PATCHes the changed profile fields and emits the saved profile once. Rethrows so the edit drawer can show the failure inline. */
+  public updateMentorProfile(request: MentorshipMentorProfileUpdateRequest): Observable<MentorshipMentorProfileUpdateResponse> {
+    return this.http
+      .patch<MentorshipMentorProfileUpdateResponse>('/api/mentorship/mentor/profile', request)
+      .pipe(take(1), catchError(this.rethrowError('updateMentorProfile')));
   }
 
   /** Loads a mentor program by id (default URL) or slug. */

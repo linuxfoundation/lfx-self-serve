@@ -35,7 +35,12 @@ import { Request } from 'express';
 import { MENTORSHIP_ME_PROFILES_PATH } from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
-import { buildMentorshipUpstreamLfxProfileFields, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import {
+  buildMentorshipUpstreamLfxProfileFields,
+  buildMentorshipUpstreamProfileLinks,
+  resolveMentorshipGithubProfileLink,
+  resolveMentorshipPrimaryEmail,
+} from '../helpers/mentorship-lfx-profile.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { EmailVerificationService } from './email-verification.service';
@@ -245,35 +250,43 @@ export class MentorshipService {
   }
 
   /**
-   * Copies the LFX profile's name and logo, with the caller's verified primary email, onto every
-   * mentor and mentee profile the caller holds, and returns how many were updated. The email is
-   * looked up here rather than taken from the browser, and is left out when the lookup fails. Each
-   * row is patched by id, since `PATCH /me/profiles/{type}` refuses a type with more than one row;
-   * upstream checks the row is the caller's. Only the keys that have a value are sent, so with no
-   * rows, or nothing to send, no row is patched. A failed row propagates and leaves the rows after
-   * it unpatched; the card asks the user to save again, which rewrites them all.
+   * Copies the LFX profile's name and logo, with the caller's verified primary email and connected
+   * GitHub account, onto every mentor and mentee profile the caller holds, and returns how many were
+   * updated. The email and the GitHub link are looked up here rather than taken from the browser,
+   * and each is left out when its lookup fails. The GitHub link is laid over each row's stored
+   * `profile_links`, since upstream replaces that column whole. Each row is patched by id, since
+   * `PATCH /me/profiles/{type}` refuses a type with more than one row; upstream checks the row is
+   * the caller's. Only the keys that have a value are sent, so with no rows, or nothing to send, no
+   * row is patched. A failed row propagates and leaves the rows after it unpatched; the card asks
+   * the user to save again, which rewrites them all.
    */
   public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
     const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
     const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
     if (targets.length === 0) return 0;
 
-    const body = buildMentorshipUpstreamLfxProfileFields(fields, await resolveMentorshipPrimaryEmail(req, this.emailVerificationService));
-    if (Object.keys(body).length === 0) return 0;
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamLfxProfileFields(fields, email);
+    if (Object.keys(body).length === 0 && githubProfileLink === undefined) return 0;
     logger.debug(req, 'mentorship_sync_lfx_profile', 'Copying LFX profile fields onto mentorship profiles', {
       profile_count: targets.length,
       field_count: Object.keys(body).length,
       has_email: body.email !== undefined,
+      has_github: githubProfileLink !== undefined,
     });
 
     for (const profile of targets) {
+      const profileLinks = buildMentorshipUpstreamProfileLinks(profile.profile_links, githubProfileLink);
       await proxyMentorshipRequest<unknown>(
         this.microserviceProxy,
         req,
         `${MENTORSHIP_ME_PROFILES_PATH}/by-id/${encodeURIComponent(profile.id)}`,
         'PATCH',
         undefined,
-        body
+        profileLinks ? { ...body, profile_links: profileLinks } : body
       );
     }
     return targets.length;

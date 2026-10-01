@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- The design sets this note at an exact 12px. -->
+<p class="mb-4 flex items-center gap-2 text-[12px] text-gray-500" data-testid="non-members-scope-note">
+  <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+  {{ scopeNote }}
+</p>
+
+<!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
+<lfx-health-metrics-l2-shell
+  #shell
+  [sections]="sections"
+  [idPrefix]="idPrefix"
+  [dataSections]="dataSections"
+  [subNavItems]="subNavItems()"
+  navLabel="Non-Members sections"
+  testIdPrefix="non-members"
+  [crossReference]="crossReference">
+  <ng-template lfxHealthMetricsL2Section="orgs">
+    <lfx-non-members-orgs (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
+  </ng-template>
+</lfx-health-metrics-l2-shell>

@@ -246,11 +246,6 @@ export class SidebarNavService {
           icon: 'fa-light fa-clipboard-list',
           routerLink: '/surveys',
         },
-        {
-          label: 'My ' + DOCUMENT_LABEL.plural,
-          icon: 'fa-light fa-folder-open',
-          routerLink: '/documents',
-        },
       ],
     },
     {

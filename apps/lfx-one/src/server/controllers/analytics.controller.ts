@@ -14,6 +14,8 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
@@ -25,6 +27,10 @@ import {
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
@@ -34,6 +40,7 @@ import type {
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
+  HealthMetricsNonMembersOrgsFilter,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -50,6 +57,7 @@ import {
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
+import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -81,6 +89,9 @@ const MEMBERS_AT_RISK_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMB
 /** Cohorts the Members board-attendance read accepts. */
 const MEMBERS_BOARD_COHORTS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_BOARD_COHORTS);
 
+/** Filters the Non-Members company participation table accepts, `all` included. */
+const NON_MEMBERS_ORGS_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS);
+
 /** A four-digit calendar year, the only shape the movements list's `year` accepts. */
 const YEAR_PATTERN = /^\d{4}$/;
 
@@ -99,6 +110,7 @@ export class AnalyticsController {
   private readonly healthMetricsEngagementService: HealthMetricsEngagementService;
   private readonly healthMetricsEventsService: HealthMetricsEventsService;
   private readonly healthMetricsMembersService: HealthMetricsMembersService;
+  private readonly healthMetricsNonMembersService: HealthMetricsNonMembersService;
 
   public constructor() {
     this.userService = new UserService();
@@ -108,6 +120,7 @@ export class AnalyticsController {
     this.healthMetricsEngagementService = new HealthMetricsEngagementService();
     this.healthMetricsEventsService = new HealthMetricsEventsService();
     this.healthMetricsMembersService = new HealthMetricsMembersService();
+    this.healthMetricsNonMembersService = new HealthMetricsNonMembersService();
   }
 
   /**
@@ -3835,7 +3848,7 @@ export class AnalyticsController {
         pageSize,
       });
 
-      // The search text is left out of the log; member names are the only thing it can match.
+      // The search text stays out of this metadata; it can only match member names, which the request URL also logs.
       logger.success(req, 'get_members_directory', startTime, {
         foundation_slug: foundationSlug,
         range,
@@ -4008,6 +4021,60 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/members-churn` — every year's revenue and logo churn, overall and per tier. */
+  public async getMembersChurn(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_churn');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_churn');
+
+      const response = await this.healthMetricsMembersService.getChurn(req, { foundationSlug });
+
+      logger.success(req, 'get_members_churn', startTime, {
+        foundation_slug: foundationSlug,
+        year_count: response.years.length,
+        tier_count: response.tiers.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-churn-departures` — one page of the memberships that lapsed in a year. */
+  public async getMembersChurnDepartures(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_churn_departures');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_churn_departures');
+
+      const rawYear = getStringQueryParam(req, 'year') ?? '';
+      if (!YEAR_PATTERN.test(rawYear)) {
+        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_churn_departures' });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+      });
+
+      const year = Number(rawYear);
+      const response = await this.healthMetricsMembersService.getChurnDepartures(req, { foundationSlug, year, offset, pageSize });
+
+      logger.success(req, 'get_members_churn_departures', startTime, {
+        foundation_slug: foundationSlug,
+        year,
+        row_count: response.rows.length,
+        total_records: response.totalRecords,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** `GET /api/analytics/events-organizations` — one page of the organizations active at the foundation's events in a period. */
   public async getEventsOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_events_organizations');
@@ -4042,11 +4109,61 @@ export class AnalyticsController {
         pageSize,
       });
 
-      // The search text is left out of the log; organization names are the only thing it can match.
+      // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
       logger.success(req, 'get_events_organizations', startTime, {
         foundation_slug: foundationSlug,
         range,
         segment,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-orgs` — one page of the non-member organizations active in a period. */
+  public async getNonMembersOrgs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_orgs');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_orgs');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_orgs');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Company participation has no data for this range', { operation: 'get_non_members_orgs' });
+      }
+
+      const filter = getStringQueryParam(req, 'filter') || 'all';
+      if (!NON_MEMBERS_ORGS_FILTERS.has(filter)) {
+        throw ServiceValidationError.forField('filter', `Invalid filter value. Allowed: ${[...NON_MEMBERS_ORGS_FILTERS].join(', ')}`, {
+          operation: 'get_non_members_orgs',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsNonMembersService.getOrgs(req, {
+        foundationSlug,
+        range,
+        filter: filter as HealthMetricsNonMembersOrgsFilter,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
+      logger.success(req, 'get_non_members_orgs', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        filter,
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,

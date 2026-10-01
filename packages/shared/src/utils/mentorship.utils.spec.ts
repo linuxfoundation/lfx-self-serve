@@ -40,7 +40,6 @@ import {
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
-import { htmlClipboardToText } from './html-utils';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationTask,
@@ -58,6 +57,7 @@ import {
   buildMentorshipMenteeProfileUpdate,
   buildMentorshipMenteeOverview,
   buildMentorshipMenteeRegisterRequest,
+  buildMentorshipMentorProfileUpdate,
   buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
@@ -82,8 +82,10 @@ import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
+  getMentorshipMenteeIntroductionError,
   getMentorshipMenteeRegisterErrors,
   getMentorshipMenteeRegisterRequestErrors,
+  getMentorshipMentorProfileErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -96,7 +98,7 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
-  isMentorshipResumeFileName,
+  isMentorshipMentorProfileUpdateEmpty,
   isMentorshipRichTextOverRawMax,
   isMentorshipTaskPastDue,
   isMentorshipTermsAccepted,
@@ -107,13 +109,13 @@ import {
   mentorshipMenteeActionsFor,
   mentorshipMenteeDisplayStatus,
   isMentorshipMenteeProfileUpdateEmpty,
+  isMentorshipMentorInviteToken,
   mentorshipMenteeProgressTasks,
   mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
-  mentorshipPlainTextToHtml,
   mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -544,12 +546,11 @@ describe('program detail helpers', () => {
     });
   });
 
-  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
-    // Both are optional: a mentor can register a profile now and apply to programs later.
+  it('registers a mentor who has not applied to a program', () => {
+    // Requests are optional: a mentor can register a profile now and apply to programs later.
     const complete: MentorshipMentorRegisterForm = {
       introduction: '<p>Maintainer on two CNCF projects.</p>',
       skills: ['Kubernetes'],
-      resumeFileName: '',
       complianceAccepted: true,
       termsAccepted: true,
     };
@@ -583,11 +584,39 @@ describe('program detail helpers', () => {
     expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
   });
 
-  it('builds the mentor register request without the resume file name', () => {
+  it('checks only the mentor profile fields present in an edit', () => {
+    expect(getMentorshipMentorProfileErrors({})).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p>Hi</p>' })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ skills: ['Kubernetes'] })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p></p>' })).toEqual({ introduction: 'Introduction is required.' });
+    expect(getMentorshipMentorProfileErrors({ skills: [] })).toEqual({ skills: 'Add at least one skill.' });
+    expect(getMentorshipMentorProfileErrors({ skills: ['Not A Skill'] })).toEqual({ skills: MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL });
+  });
+
+  it('sends only the mentor profile fields that changed', () => {
+    const seed = { aboutMe: '<p>Hi</p>', skills: ['Kubernetes', 'Angular'] };
+
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: [' Kubernetes ', 'Angular', ''] })).toEqual({});
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hello</p>', skills: ['Kubernetes', 'Angular'] })).toEqual({
+      introduction: '<p>Hello</p>',
+    });
+    // Order counts, and the whole list is sent, since upstream replaces it.
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: ['Angular', 'Kubernetes'] })).toEqual({
+      skills: ['Angular', 'Kubernetes'],
+    });
+    expect(buildMentorshipMentorProfileUpdate({ aboutMe: '', skills: [] }, { introduction: '', skills: [] })).toEqual({});
+  });
+
+  it('treats a mentor profile update with no field present as empty', () => {
+    expect(isMentorshipMentorProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMentorProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMentorProfileUpdateEmpty({ skills: [] })).toBe(false);
+  });
+
+  it('builds the mentor register request from the form', () => {
     const request = buildMentorshipMentorRegisterRequest({
       introduction: '<p>Hi</p>',
       skills: ['Kubernetes'],
-      resumeFileName: 'resume.pdf',
       complianceAccepted: true,
       termsAccepted: true,
     });
@@ -596,22 +625,12 @@ describe('program detail helpers', () => {
   });
 
   it('adds the LFX profile fields to the mentor register request only when there are some', () => {
-    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], resumeFileName: '', complianceAccepted: true, termsAccepted: true };
+    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
     const lfxProfile = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
 
     expect(buildMentorshipMentorRegisterRequest(form, lfxProfile).lfxProfile).toEqual(lfxProfile);
     expect(buildMentorshipMentorRegisterRequest(form, {})).not.toHaveProperty('lfxProfile');
     expect(buildMentorshipMentorRegisterRequest(form)).not.toHaveProperty('lfxProfile');
-  });
-
-  it('accepts only document extensions for a resume', () => {
-    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
-    // No extension at all, and a name that only looks like one.
-    expect(isMentorshipResumeFileName('resume')).toBe(false);
-    expect(isMentorshipResumeFileName('')).toBe(false);
   });
 
   it('tints an avatar deterministically, and survives an empty name', () => {
@@ -876,10 +895,9 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     });
   });
 
-  it('accepts a fully populated form — additional notes, resume, and demographic answers stay optional', () => {
-    // `additionalNotes`, `resumeFileName`, and every demographic control are optional
-    // by design: declining a demographic is a valid answer, and the resume is
-    // validated by its picker at selection time.
+  it('accepts a fully populated form — additional notes and demographic answers stay optional', () => {
+    // `additionalNotes` and every demographic control are optional by design:
+    // declining a demographic is a valid answer.
     const complete = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
@@ -1060,13 +1078,6 @@ describe('buildMentorshipMenteeRegisterRequest', () => {
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, lfxProfile).lfxProfile).toEqual(lfxProfile);
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, {})).not.toHaveProperty('lfxProfile');
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM)).not.toHaveProperty('lfxProfile');
-  });
-
-  it('never includes the resume, even when the form holds a file name', () => {
-    const request = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, resumeFileName: 'test-resume.pdf' });
-
-    expect(request).not.toHaveProperty('resumeFileName');
-    expect(JSON.stringify(request)).not.toContain('test-resume.pdf');
   });
 
   it('coerces the five flags with isMentorshipTermsAccepted', () => {
@@ -1825,35 +1836,19 @@ describe('rich-text fields over MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
   });
 });
 
-describe('mentorshipPlainTextToHtml', () => {
-  it('returns an empty string for null, undefined, empty and whitespace-only input', () => {
-    expect(mentorshipPlainTextToHtml(null)).toBe('');
-    expect(mentorshipPlainTextToHtml(undefined)).toBe('');
-    expect(mentorshipPlainTextToHtml('')).toBe('');
-    expect(mentorshipPlainTextToHtml(' \n\t \r\n ')).toBe('');
+describe('getMentorshipMenteeIntroductionError', () => {
+  it('requires text, not just markup', () => {
+    expect(getMentorshipMenteeIntroductionError('')).toBe('Introduction is required.');
+    expect(getMentorshipMenteeIntroductionError('<p></p>')).toBe('Introduction is required.');
   });
 
-  it('wraps each non-blank line in a paragraph and turns a blank line into an empty paragraph', () => {
-    expect(mentorshipPlainTextToHtml('First\nSecond')).toBe('<p>First</p><p>Second</p>');
-    expect(mentorshipPlainTextToHtml('First\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
+  it('counts the visible text against the max, not the markup', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p><strong>${'a'.repeat(3000)}</strong></p>`)).toBeUndefined();
+    expect(getMentorshipMenteeIntroductionError(`<p>${'a'.repeat(3001)}</p>`)).toBe('Introduction must be 3000 characters or fewer.');
   });
 
-  it('collapses a run of blank lines into one empty paragraph', () => {
-    expect(mentorshipPlainTextToHtml('First\n\n \n\t\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
-  });
-
-  it('escapes markup so a caller can never store tags', () => {
-    expect(mentorshipPlainTextToHtml(`<script>alert("x")</script> & 'y'`)).toBe('<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;</p>');
-  });
-
-  it('normalizes CRLF and lone CR line endings', () => {
-    expect(mentorshipPlainTextToHtml('One\r\nTwo\rThree')).toBe('<p>One</p><p>Two</p><p>Three</p>');
-  });
-
-  it('round-trips through htmlClipboardToText to the same text', () => {
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\nTwo'))).toBe('One\nTwo');
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\n\nTwo'))).toBe('One\n\nTwo');
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml(`A & B <c> "d" 'e'\n\n\n\nF`))).toBe(`A & B <c> "d" 'e'\n\nF`);
+  it('reports formatting as the problem over the raw max', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p>a</p>${'<p></p>'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}`)).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
   });
 });
 
@@ -1864,60 +1859,58 @@ describe('buildMentorshipMenteeProfileUpdate', () => {
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
   };
-  const seededIntroduction = 'Hello world';
   const unchanged: MentorshipMenteeProfileFormValue = {
-    introduction: seededIntroduction,
+    introduction: '<p>Hello world</p>',
     skillsHave: ['Go', 'Python'],
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
   };
 
   it('returns an empty request when nothing changed', () => {
-    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, unchanged);
+    const request = buildMentorshipMenteeProfileUpdate(seed, unchanged);
     expect(request).toEqual({});
     expect(isMentorshipMenteeProfileUpdateEmpty(request)).toBe(true);
   });
 
-  it('omits the introduction when it equals the seeded text, ignoring surrounding whitespace and CRLF', () => {
-    const multiline = 'Line one\nLine two';
-    expect(buildMentorshipMenteeProfileUpdate(seed, multiline, { ...unchanged, introduction: '  Line one\r\nLine two\r\n' })).toEqual({});
-    expect(buildMentorshipMenteeProfileUpdate(seed, '  Line one\r\nLine two \n', { ...unchanged, introduction: multiline })).toEqual({});
+  it('sends the introduction HTML as is, only when it differs from the stored HTML', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '<p>Hello <strong>there</strong></p>' })).toEqual({
+      introduction: '<p>Hello <strong>there</strong></p>',
+    });
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '' })).toEqual({ introduction: '' });
   });
 
-  it('sends the introduction only when it was edited, and an empty string when it was cleared', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: ' Hello there\r\n' })).toEqual({
-      introduction: 'Hello there',
-    });
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: '  ' })).toEqual({ introduction: '' });
+  it('leaves an empty stored introduction out while the editor stays empty', () => {
+    const withoutAbout: MentorshipMenteeProfileDetails = { ...seed, aboutMe: '' };
+    expect(buildMentorshipMenteeProfileUpdate(withoutAbout, { ...unchanged, introduction: '' })).toEqual({});
   });
 
   it('sends the whole skill set when only the additional notes changed', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
       skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'], additionalNotes: 'Weekends too' },
     });
   });
 
   it('compares skills after trimming and detects a reorder', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
       skillSet: { skillsHave: ['Python', 'Go'], skillsWant: ['Kubernetes'], additionalNotes: 'Evenings only' },
     });
   });
 
   it('omits additional notes when the trimmed notes are blank', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: '   ' })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: '   ' })).toEqual({
       skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'] },
     });
   });
 
   it('treats missing stored notes and blank notes as the same', () => {
     const withoutNotes: MentorshipMenteeProfileDetails = { ...seed, additionalNotes: undefined };
-    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, seededIntroduction, { ...unchanged, additionalNotes: '' })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, { ...unchanged, additionalNotes: '' })).toEqual({});
   });
 
   it('never emits demographics or socioeconomics', () => {
-    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, {
-      introduction: 'New',
+    const request = buildMentorshipMenteeProfileUpdate(seed, {
+      introduction: '<p>New</p>',
       skillsHave: ['Rust'],
       skillsWant: ['Go'],
       additionalNotes: 'x',
@@ -2023,5 +2016,15 @@ describe('isMentorshipMenteeProfileUpdateEmpty', () => {
     expect(isMentorshipMenteeProfileUpdateEmpty({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } })).toBe(false);
     expect(isMentorshipMenteeProfileUpdateEmpty({ demographics: { age: '61+' } })).toBe(false);
     expect(isMentorshipMenteeProfileUpdateEmpty({ socioeconomics: { income: 'upperClass' } })).toBe(false);
+  });
+});
+
+describe('isMentorshipMentorInviteToken', () => {
+  it('accepts two base64url parts joined by a dot', () => {
+    expect(isMentorshipMentorInviteToken('eyJwcm9ncmFtX2lkIjoicDEifQ.c2ln-_')).toBe(true);
+  });
+
+  it.each(['', 'nodot', '.sig', 'payload.', 'a.b.c', 'a.b/c', 'a.b=', `${'a'.repeat(512)}.b`])('rejects %j', (value) => {
+    expect(isMentorshipMentorInviteToken(value)).toBe(false);
   });
 });

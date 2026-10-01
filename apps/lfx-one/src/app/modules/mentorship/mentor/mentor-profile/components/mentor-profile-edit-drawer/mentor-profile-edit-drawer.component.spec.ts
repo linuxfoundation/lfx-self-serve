@@ -6,10 +6,11 @@ import { Component, input, output, signal } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_COMING_SOON_TOAST_LIFE, MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorOpenProgram,
   MentorshipMentorProfileDetails,
+  MentorshipMentorProfileUpdateRequest,
+  MentorshipMentorProfileUpdateResponse,
   MentorshipMentorProgramRequest,
   MentorshipMentorProgramRequestsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -21,8 +22,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ButtonComponent } from '../../../../../../shared/components/button/button.component';
 import { RichEditorComponent } from '../../../../../../shared/components/rich-editor/rich-editor.component';
-import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
+import { MentorProfileSaveService } from '../../../../services/mentor-profile-save.service';
 import { MentorProgramRequestService } from '../../../../services/mentor-program-request.service';
 import { MentorRequestWithdrawService } from '../../../../services/mentor-request-withdraw.service';
 import { MentorProgramsSectionComponent } from '../../../mentor-register/components/mentor-programs-section/mentor-programs-section.component';
@@ -32,9 +33,7 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
 
 const PROFILE: MentorshipMentorProfileDetails = {
   aboutMe: '<p>Hello world</p>',
-  skills: ['Go', 'Kubernetes'],
-  resumeFileName: 'resume.pdf',
-  resumeUrl: 'https://example.com/resume.pdf',
+  skills: ['Kubernetes', 'Angular'],
 };
 
 const PROGRAMS: MentorshipMentorOpenProgram[] = [
@@ -55,6 +54,9 @@ class StubDrawerComponent {
   readonly visible = input(false);
   readonly position = input('right');
   readonly modal = input(false);
+  readonly closable = input(true);
+  readonly dismissible = input(true);
+  readonly closeOnEscape = input(true);
   readonly styleClass = input('');
 }
 
@@ -93,14 +95,6 @@ class StubSkillsPickerComponent {
   readonly error = input<string | undefined>(undefined);
 }
 
-@Component({ selector: 'lfx-mentorship-resume-section', template: '' })
-class StubResumeSectionComponent {
-  readonly form = input<FormGroup>();
-  readonly intro = input('');
-  readonly bordered = input(true);
-  readonly idPrefix = input('');
-}
-
 @Component({ selector: 'lfx-button', template: '' })
 class StubButtonComponent {
   readonly label = input('');
@@ -108,6 +102,8 @@ class StubButtonComponent {
   readonly variant = input('');
   readonly severity = input('');
   readonly size = input('');
+  readonly loading = input(false);
+  readonly disabled = input(false);
   readonly onClick = output<MouseEvent>();
 }
 /* eslint-enable @angular-eslint/component-selector */
@@ -123,6 +119,11 @@ describe('MentorProfileEditDrawerComponent', () => {
   let confirmWithdraw: ReturnType<typeof vi.fn>;
   let clearMentorCaches: ReturnType<typeof vi.fn>;
   let withdrawingId: ReturnType<typeof signal<string | null>>;
+  let saving: ReturnType<typeof signal<boolean>>;
+  let save: ReturnType<typeof vi.fn<(body: MentorshipMentorProfileUpdateRequest) => Observable<MentorshipMentorProfileUpdateResponse>>>;
+  let saveErrorMessage: ReturnType<typeof vi.fn<(err: unknown) => string>>;
+
+  const SAVED: MentorshipMentorProfileUpdateResponse = { profile: { ...PROFILE, aboutMe: '<p>Updated</p>' } };
 
   function element(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
@@ -147,6 +148,9 @@ describe('MentorProfileEditDrawerComponent', () => {
     confirmWithdraw = vi.fn();
     clearMentorCaches = vi.fn();
     withdrawingId = signal<string | null>(null);
+    saving = signal(false);
+    save = vi.fn(() => of(SAVED));
+    saveErrorMessage = vi.fn(() => 'Could not save.');
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -157,21 +161,14 @@ describe('MentorProfileEditDrawerComponent', () => {
           useValue: { getMentorRequests, clearMentorCaches, mentorRequestsRevision: revision.asReadonly() },
         },
         { provide: MentorProgramRequestService, useValue: { request } },
+        { provide: MentorProfileSaveService, useValue: { save, saving: saving.asReadonly(), errorMessage: saveErrorMessage } },
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: MentorProfileEditDrawerService, useValue: drawer },
       ],
     })
       .overrideComponent(MentorProfileEditDrawerComponent, {
         remove: {
-          imports: [
-            ConfirmDialogModule,
-            DrawerModule,
-            ButtonComponent,
-            RichEditorComponent,
-            MentorProgramsSectionComponent,
-            SkillsPickerComponent,
-            ResumeSectionComponent,
-          ],
+          imports: [ConfirmDialogModule, DrawerModule, ButtonComponent, RichEditorComponent, MentorProgramsSectionComponent, SkillsPickerComponent],
         },
         add: {
           imports: [
@@ -180,7 +177,6 @@ describe('MentorProfileEditDrawerComponent', () => {
             StubProgramsSectionComponent,
             StubRichEditorComponent,
             StubSkillsPickerComponent,
-            StubResumeSectionComponent,
             StubButtonComponent,
           ],
         },
@@ -202,23 +198,98 @@ describe('MentorProfileEditDrawerComponent', () => {
 
     expect(raw.introduction).toBe(PROFILE.aboutMe);
     expect(raw.skills).toEqual(PROFILE.skills);
-    expect(raw.resumeFileName).toBe(PROFILE.resumeFileName);
+    expect(raw).not.toHaveProperty('resumeFileName');
   });
 
   // --- Save / Cancel ---
 
-  it('fires the coming-soon toast and closes the drawer on save', () => {
+  it('sends only the changed fields, emits the saved profile and closes the drawer', () => {
+    const emitted: MentorshipMentorProfileUpdateResponse[] = [];
+    comp.saved.subscribe((response) => emitted.push(response));
+    comp['form'].controls.introduction.setValue('<p>Updated</p>');
+
     comp['onSave']();
 
-    expect(messageAdd).toHaveBeenCalledWith(
-      expect.objectContaining({
-        severity: 'info',
-        summary: MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL,
-        detail: MENTORSHIP_COMING_SOON_DETAIL,
-        life: MENTORSHIP_COMING_SOON_TOAST_LIFE,
-      })
-    );
+    expect(save).toHaveBeenCalledWith({ introduction: '<p>Updated</p>' });
+    expect(emitted).toEqual([SAVED]);
     expect(drawer.isOpen()).toBe(false);
+  });
+
+  it('sends the skills when only they change', () => {
+    comp['form'].controls.skills.setValue(['Kubernetes']);
+
+    comp['onSave']();
+
+    expect(save).toHaveBeenCalledWith({ skills: ['Kubernetes'] });
+  });
+
+  it('closes without a request when nothing changed', () => {
+    comp['onSave']();
+
+    expect(save).not.toHaveBeenCalled();
+    expect(drawer.isOpen()).toBe(false);
+  });
+
+  it('shows the field error and sends nothing when a changed field is invalid', async () => {
+    comp['form'].controls.skills.setValue([]);
+
+    comp['onSave']();
+    await settle();
+
+    expect(save).not.toHaveBeenCalled();
+    expect(drawer.isOpen()).toBe(true);
+    expect(comp['errors']().skills).toBeTruthy();
+    const picker = fixture.debugElement.query(By.directive(StubSkillsPickerComponent)).componentInstance as StubSkillsPickerComponent;
+    expect(picker.error()).toBe(comp['errors']().skills);
+
+    // The error follows the edit once it is shown.
+    comp['form'].controls.skills.setValue(['Angular']);
+    await settle();
+    expect(comp['errors']().skills).toBeUndefined();
+  });
+
+  it('shows the introduction error inline when the changed introduction is empty', async () => {
+    comp['form'].controls.introduction.setValue('');
+
+    comp['onSave']();
+    await settle();
+
+    expect(save).not.toHaveBeenCalled();
+    expect(element().querySelector('[data-testid="mentor-profile-edit-introduction-error"]')).toBeTruthy();
+  });
+
+  it('keeps the drawer open with the input and shows the failure inline, cleared by the next edit', async () => {
+    save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409 })));
+    comp['form'].controls.introduction.setValue('<p>Updated</p>');
+
+    comp['onSave']();
+    await settle();
+
+    expect(drawer.isOpen()).toBe(true);
+    expect(comp['form'].getRawValue().introduction).toBe('<p>Updated</p>');
+    expect(element().querySelector('[data-testid="mentor-profile-edit-drawer-error"]')?.textContent?.trim()).toBe('Could not save.');
+
+    comp['form'].controls.introduction.setValue('<p>Updated again</p>');
+    await settle();
+    expect(element().querySelector('[data-testid="mentor-profile-edit-drawer-error"]')).toBeNull();
+  });
+
+  it('blocks save, cancel and close while a save is in flight, and makes the fields inert', async () => {
+    saving.set(true);
+    await settle();
+    comp['form'].controls.introduction.setValue('<p>Updated</p>');
+
+    comp['onSave']();
+    comp['onCancel']();
+    comp['onVisibleChange'](false);
+
+    expect(save).not.toHaveBeenCalled();
+    expect(drawer.isOpen()).toBe(true);
+    expect(element().querySelector('[data-testid="mentor-profile-edit-drawer-fields"]')?.hasAttribute('inert')).toBe(true);
+    const drawerStub = fixture.debugElement.query(By.directive(StubDrawerComponent)).componentInstance as StubDrawerComponent;
+    expect(drawerStub.closable()).toBe(false);
+    expect(drawerStub.dismissible()).toBe(false);
+    expect(drawerStub.closeOnEscape()).toBe(false);
   });
 
   it('closes the drawer on cancel without a toast', () => {
@@ -244,7 +315,7 @@ describe('MentorProfileEditDrawerComponent', () => {
     const body = element().querySelector('[data-testid="mentor-profile-edit-drawer-body"]');
     const hrs = body?.querySelectorAll('hr.border-gray-200');
 
-    expect(hrs?.length).toBe(3);
+    expect(hrs?.length).toBe(2);
   });
 
   it('renders the save and cancel action buttons', () => {
@@ -269,11 +340,11 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).not.toBeNull();
   });
 
-  it('renders all four content sections', () => {
+  it('renders the programs, introduction and skills sections, with no resume', () => {
     expect(element().querySelector('lfx-mentorship-mentor-programs-section')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentor-profile-edit-introduction"]')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentor-profile-edit-skills"]')).toBeTruthy();
-    expect(element().querySelector('lfx-mentorship-resume-section')).toBeTruthy();
+    expect(element().querySelector('[data-testid^="mentor-profile-edit-resume"]')).toBeNull();
   });
 
   // --- Program requests ---

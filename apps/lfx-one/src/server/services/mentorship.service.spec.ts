@@ -111,6 +111,8 @@ describe('MentorshipService LFX profile sync', () => {
   let service: InstanceType<typeof MentorshipService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
   let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
+  let listIdentitiesSafe: MockInstance<InstanceType<typeof EmailVerificationService>['listIdentitiesSafe']>;
+  const githubIdentity = { provider: 'github', user_id: 'github-1', connection: 'github', isSocial: true, profileData: { nickname: 'test-user' } };
 
   function signedInReq(): Request {
     return { path: '/api/mentorship/me/lfx-profile', impersonationActive: false, oidc: { user: { sub: 'auth0|test-user-1' } } } as unknown as Request;
@@ -122,12 +124,15 @@ describe('MentorshipService LFX profile sync', () => {
       primary_email: 'test.user@example.com',
       alternate_emails: [],
     });
+    // No GitHub account by default, so the specs that are not about the link send no `profile_links`.
+    listIdentitiesSafe = vi.spyOn(EmailVerificationService.prototype, 'listIdentitiesSafe').mockResolvedValue([]);
     service = new MentorshipService();
   });
 
   afterEach(() => {
     proxyRequest.mockRestore();
     getUserEmails.mockRestore();
+    listIdentitiesSafe.mockRestore();
   });
 
   it('patches each of the caller mentor and mentee rows by id, and no other row', async () => {
@@ -215,6 +220,7 @@ describe('MentorshipService LFX profile sync', () => {
     await expect(service.syncLfxProfileFields(signedInReq(), fields)).resolves.toBe(0);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(getUserEmails).not.toHaveBeenCalled();
+    expect(listIdentitiesSafe).not.toHaveBeenCalled();
   });
 
   it('patches nothing when there is nothing to copy', async () => {
@@ -223,6 +229,69 @@ describe('MentorshipService LFX profile sync', () => {
 
     await expect(service.syncLfxProfileFields(signedInReq(), {})).resolves.toBe(0);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("lays the connected GitHub link over each row's stored links, keeping the keys LFX One does not write", async () => {
+    listIdentitiesSafe.mockResolvedValue([githubIdentity]);
+    proxyRequest.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'profile-mentor-1',
+          profile_type: 'mentor',
+          profile_links: { resumeLink: 'https://example.com/r.pdf', githubProfileLink: 'https://github.com/old-login' },
+        },
+        { id: 'profile-mentee-1', profile_type: 'mentee', profile_links: null },
+      ],
+      meta: { total: 2 },
+    });
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.syncLfxProfileFields(signedInReq(), {})).resolves.toBe(2);
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentor-1',
+      'PATCH',
+      undefined,
+      {
+        email: 'test.user@example.com',
+        profile_links: { resumeLink: 'https://example.com/r.pdf', githubProfileLink: 'https://github.com/test-user' },
+      }
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentee-1',
+      'PATCH',
+      undefined,
+      {
+        email: 'test.user@example.com',
+        profile_links: { githubProfileLink: 'https://github.com/test-user' },
+      }
+    );
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+  });
+
+  it('copies the GitHub link alone when nothing else resolves', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    listIdentitiesSafe.mockResolvedValue([githubIdentity]);
+    proxyRequest.mockResolvedValueOnce(mentorRow);
+    proxyRequest.mockResolvedValue({});
+
+    await expect(service.syncLfxProfileFields(signedInReq(), {})).resolves.toBe(1);
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/me/profiles/by-id/profile-mentor-1',
+      'PATCH',
+      undefined,
+      {
+        profile_links: { githubProfileLink: 'https://github.com/test-user' },
+      }
+    );
   });
 
   it('lets a failed patch through so the card can report it', async () => {

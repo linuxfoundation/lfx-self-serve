@@ -314,6 +314,21 @@ describe('AppComponent — meetings v2 flag', () => {
     }
   });
 
+  it('keeps URL-capturing analytics off the mentor-invite page, but still loads feature flags', async () => {
+    window.history.pushState({}, '', '/mentorship/mentor/invites?token=payload.sig');
+    try {
+      await mount({ auth: authedContext });
+      expect(segmentInitialize).not.toHaveBeenCalled();
+      expect(plausibleInitialize).not.toHaveBeenCalled();
+      expect(segmentIdentifyUser).not.toHaveBeenCalled();
+      expect(intercomBoot).not.toHaveBeenCalled();
+      // Mentorship routes are gated by a flag, so the invite page needs them.
+      expect(featureFlagInitialize).toHaveBeenCalledWith(authedUser);
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('initializes Segment and Plausible on a product route', async () => {
     await mount();
     expect(segmentInitialize).toHaveBeenCalledTimes(1);

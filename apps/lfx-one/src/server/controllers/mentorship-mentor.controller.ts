@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isUuid } from '@lfx-one/shared/utils';
+import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
+import { isMentorshipMentorInviteToken, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
 import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
@@ -142,6 +144,16 @@ export class MentorshipMentorController {
     }
   }
 
+  // POST /api/mentorship/mentor/invites/accept  { token } -> 204
+  public async acceptMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.respondToMentorInvite(req, res, next, 'accept');
+  }
+
+  // POST /api/mentorship/mentor/invites/decline  { token } -> 204
+  public async declineMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.respondToMentorInvite(req, res, next, 'decline');
+  }
+
   // GET /api/mentorship/mentor/programs
   public async getMentorPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentor_programs');
@@ -193,6 +205,50 @@ export class MentorshipMentorController {
       const profile = await this.mentorService.getMentorProfile(req);
       logger.success(req, 'get_mentorship_mentor_profile', startTime, { history_count: profile.history.length });
       res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentor/profile
+  public async updateMentorProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentor_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentor_profile' });
+      }
+
+      const request = parseMentorshipMentorProfileUpdate(req.body, 'update_mentorship_mentor_profile');
+      const response = await this.mentorService.updateMentorProfile(req, request);
+      // Field names only: the values are personal data.
+      logger.success(req, 'update_mentorship_mentor_profile', startTime, { changed_fields: Object.keys(request) });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Auth: logged-in user required (401 otherwise). The token travels in the body so it stays out of
+  // this server's access logs; a malformed one is a 400. Upstream's 400 (expired, or already
+  // answered) and 403 (another user's invitation) pass through.
+  private async respondToMentorInvite(req: Request, res: Response, next: NextFunction, decision: MentorshipMentorInviteDecision): Promise<void> {
+    const operation = `${decision}_mentorship_mentor_invite`;
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const token = parseTrimmedString(req.body?.token);
+      if (!token || !isMentorshipMentorInviteToken(token)) {
+        throw ServiceValidationError.forField('token', 'token must be a mentor invite token', { operation });
+      }
+
+      await this.mentorService.respondToMentorInvite(req, token, decision);
+      logger.success(req, operation, startTime);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

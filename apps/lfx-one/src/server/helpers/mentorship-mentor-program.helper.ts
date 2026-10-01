@@ -1,0 +1,91 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import {
+  MentorshipMentorProgram,
+  MentorshipMentorProgramRows,
+  MentorshipMentorProgramTermChoice,
+  MentorshipUpstreamMentorProgram,
+  MentorshipUpstreamMentorProgramTerm,
+  MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramApplicationRow,
+  MentorshipUpstreamTask,
+} from '@lfx-one/shared/interfaces';
+
+import { MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES, MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER } from '../constants';
+import { toIsoDate } from './date-format.helper';
+import { isMentorshipMentorTermUnderway, latestStartingMentorshipMentorTerm, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
+
+/** The open term that starts first; a term with no start loses to any term with one. Ties keep the first. */
+const earliestStart = (terms: readonly MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
+  terms.reduce((best, term) => ((mentorshipMentorTermStartMs(term) ?? Infinity) < (mentorshipMentorTermStartMs(best) ?? Infinity) ? term : best));
+
+/**
+ * The term a mentor's program is shown by on My Programs, and the group its card goes in:
+ *
+ * - an open term that has started: the one that started most recently, `active-term`;
+ * - otherwise an open term that starts later, or has no start yet: the one that starts first, `upcoming`;
+ * - otherwise a closed term: the one that started most recently, `completed`;
+ * - otherwise no term, `upcoming`, and the card's counts are zero.
+ *
+ * Deleted terms are never chosen. `now` is passed in so the choice can be tested.
+ */
+export const chooseMentorshipMentorProgramTerm = (terms: readonly MentorshipUpstreamMentorProgramTerm[], now: Date): MentorshipMentorProgramTermChoice => {
+  const started = terms.filter((term) => isMentorshipMentorTermUnderway(term, now));
+  if (started.length > 0) return { term: latestStartingMentorshipMentorTerm(started), termStatus: 'active-term' };
+
+  const open = terms.filter((term) => term.status === 'open');
+  if (open.length > 0) return { term: earliestStart(open), termStatus: 'upcoming' };
+
+  const closed = terms.filter((term) => term.status === 'closed');
+  if (closed.length > 0) return { term: latestStartingMentorshipMentorTerm(closed), termStatus: 'completed' };
+
+  return { termStatus: 'upcoming' };
+};
+
+/**
+ * Sorts one term's applications and tasks the way the My Programs card and the program detail tabs count
+ * them. Mentees are accepted and graduated applications and applicants are every application. Tasks to
+ * review are submitted tasks on an accepted mentee's application, so a graduated mentee's leftover
+ * submission is not waiting on the mentor.
+ */
+export const sortMentorshipMentorProgramRows = (
+  applications: readonly MentorshipUpstreamProgramApplicationRow[],
+  tasks: readonly MentorshipUpstreamTask[]
+): MentorshipMentorProgramRows => {
+  const mentees = applications.filter((application) => MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES.includes(application.status));
+  const acceptedApplicationIds = new Set(mentees.filter((mentee) => mentee.status === 'accepted').map((mentee) => mentee.application_id));
+  const tasksToReview = tasks.filter(
+    (task) => task.status === 'submitted' && task.application_id !== undefined && acceptedApplicationIds.has(task.application_id)
+  );
+  return { mentees, applicants: [...applications], tasksToReview };
+};
+
+/** One My Programs card, from the mentor's program, the program's own record, the chosen term and its rows. */
+export const mapMentorshipMentorProgramCard = (
+  program: MentorshipUpstreamMentorProgram,
+  record: Pick<MentorshipUpstreamProgram, 'project_name'>,
+  choice: MentorshipMentorProgramTermChoice,
+  rows: MentorshipMentorProgramRows
+): MentorshipMentorProgram => {
+  const card: MentorshipMentorProgram = {
+    id: program.id,
+    slug: program.slug,
+    name: program.name,
+    projectName: record.project_name?.trim() ?? '',
+    term: choice.term?.name ?? '',
+    termStatus: choice.termStatus,
+    stats: { mentees: rows.mentees.length, tasksToReview: rows.tasksToReview.length, applicants: rows.applicants.length },
+  };
+  if (program.logo_url) card.logoUrl = program.logo_url;
+  const termStartDate = toIsoDate(choice.term?.start_date_time);
+  const termEndDate = toIsoDate(choice.term?.end_date_time);
+  if (termStartDate) card.termStartDate = termStartDate;
+  if (termEndDate) card.termEndDate = termEndDate;
+  return card;
+};
+
+/** My Programs order: active terms, then upcoming, then completed, each by program name. */
+export const compareMentorshipMentorProgramCards = (a: MentorshipMentorProgram, b: MentorshipMentorProgram): number =>
+  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER.indexOf(a.termStatus) - MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER.indexOf(b.termStatus) ||
+  a.name.localeCompare(b.name, 'en-US');
