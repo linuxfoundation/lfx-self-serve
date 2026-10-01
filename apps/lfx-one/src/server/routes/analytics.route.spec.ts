@@ -157,6 +157,8 @@ describe.each([
   ['/members-renewals', 'foundationSlug'],
   ['/members-board-attendance', 'foundationSlug'],
   ['/members-nps', 'foundationSlug'],
+  ['/members-churn', 'foundationSlug'],
+  ['/members-churn-departures', 'year=2025&foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

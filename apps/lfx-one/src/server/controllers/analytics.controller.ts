@@ -14,6 +14,8 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
   HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
@@ -4000,6 +4002,60 @@ export class AnalyticsController {
         range,
         audience_count: response.audiences.length,
         trend_count: response.trend.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-churn` — every year's revenue and logo churn, overall and per tier. */
+  public async getMembersChurn(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_churn');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_churn');
+
+      const response = await this.healthMetricsMembersService.getChurn(req, { foundationSlug });
+
+      logger.success(req, 'get_members_churn', startTime, {
+        foundation_slug: foundationSlug,
+        year_count: response.years.length,
+        tier_count: response.tiers.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-churn-departures` — one page of the memberships that lapsed in a year. */
+  public async getMembersChurnDepartures(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_churn_departures');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_churn_departures');
+
+      const rawYear = getStringQueryParam(req, 'year') ?? '';
+      if (!YEAR_PATTERN.test(rawYear)) {
+        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_churn_departures' });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+      });
+
+      const year = Number(rawYear);
+      const response = await this.healthMetricsMembersService.getChurnDepartures(req, { foundationSlug, year, offset, pageSize });
+
+      logger.success(req, 'get_members_churn_departures', startTime, {
+        foundation_slug: foundationSlug,
+        year,
+        row_count: response.rows.length,
+        total_records: response.totalRecords,
       });
 
       res.json(response);
