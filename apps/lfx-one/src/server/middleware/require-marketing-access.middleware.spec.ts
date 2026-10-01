@@ -37,7 +37,8 @@ vi.mock('../services/project.service', () => ({
   })),
 }));
 
-const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff } = await import('./require-marketing-access.middleware');
+const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } =
+  await import('./require-marketing-access.middleware');
 
 interface PersonaResult {
   personas: string[];
@@ -362,6 +363,60 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
 
         expect(verdict(next)).toBe('allow');
       });
+    });
+  });
+
+  describe('requireNorthStarAccess', () => {
+    it('refuses a project-scoped grant on the tlf umbrella without checking it', async () => {
+      getPersonas.mockResolvedValue(nonEd());
+      checkRootMarketingAuditor.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-tlf', exists: true });
+      checkSingleAccess.mockResolvedValue(true);
+      const next = vi.fn();
+
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('deny');
+      expect(getProjectIdBySlug).not.toHaveBeenCalled();
+      expect(checkSingleAccess).not.toHaveBeenCalled();
+    });
+
+    it('still admits a project-scoped grant on a single foundation', async () => {
+      getPersonas.mockResolvedValue(nonEd());
+      checkRootMarketingAuditor.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-cncf', exists: true });
+      checkSingleAccess.mockResolvedValue(true);
+      const next = vi.fn();
+
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+    });
+
+    it('admits a root grant on the tlf umbrella', async () => {
+      getPersonas.mockResolvedValue(nonEd());
+      checkRootMarketingAuditor.mockResolvedValue(true);
+      const next = vi.fn();
+
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, next as unknown as NextFunction);
+
+      expect(verdict(next)).toBe('allow');
+    });
+
+    it('admits an ED scoped to tlf and LF Staff on the tlf umbrella', async () => {
+      getPersonas.mockResolvedValueOnce({
+        personas: ['executive-director'],
+        personaProjects: { 'executive-director': [{ projectSlug: 'tlf' }] },
+      });
+      const edNext = vi.fn();
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, edNext as unknown as NextFunction);
+
+      getPersonas.mockResolvedValueOnce(nonEd({ isLFStaff: true }));
+      const staffNext = vi.fn();
+      await requireNorthStarAccess(buildReq({ foundationSlug: 'tlf' }), {} as Response, staffNext as unknown as NextFunction);
+
+      expect(verdict(edNext)).toBe('allow');
+      expect(verdict(staffNext)).toBe('allow');
     });
   });
 });

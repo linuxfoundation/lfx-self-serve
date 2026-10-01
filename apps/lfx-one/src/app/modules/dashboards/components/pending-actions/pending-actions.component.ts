@@ -192,8 +192,9 @@ export class PendingActionsComponent {
     }
     // RSVP fallback (meeting load failed): the user is being redirected to the meeting page to RSVP from there — opening
     // the page is not the same as completing the RSVP, so we leave the reminder visible. Only successful RSVP submission
-    // hides the row.
-    if (item.type !== 'RSVP') {
+    // hides the row. Same for Survey: the button opens an external SurveyMonkey tab the app never hears back from, so
+    // only a stamped `response_datetime` (server-side) may retire the row — a bare click must not hide it.
+    if (item.type !== 'RSVP' && item.type !== 'Survey') {
       this.startCompletion(item, { withSkeleton: false });
     }
     this.actionClick.emit(item);

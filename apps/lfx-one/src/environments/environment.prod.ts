@@ -7,7 +7,8 @@ export const environment = {
     home: 'https://app.lfx.dev',
     pcc: 'https://projectadmin.lfx.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
-    mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
+    // The old mentorship site until the new one has a production deployment.
+    mentorship: 'https://mentorship.lfx.linuxfoundation.org',
     crowdfunding: 'https://crowdfunding.linuxfoundation.org/',
     enrollment: 'https://enrollment.lfx.linuxfoundation.org/',
     // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).

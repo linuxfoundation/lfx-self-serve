@@ -15,10 +15,12 @@ apps/lfx-one/
 │   ├── formation-checklist-robust.spec.ts           # structural
 │   ├── pending-actions-formation-item.spec.ts       # content-based — Me-lens row → checklist ?item= deep link (#2732)
 │   ├── pending-actions-formation-item-robust.spec.ts # structural
-│   ├── formation-sidebar.spec.ts                    # content-based — Formation-only project sidebar + overview redirect (#2754)
+│   ├── formation-sidebar.spec.ts                    # content-based — formation-stage project sidebar + overview redirect (#2754, #3059)
 │   ├── formation-sidebar-robust.spec.ts             # structural
 │   ├── my-formations.spec.ts                        # content-based — Me-lens My Formations page (#2753)
 │   ├── my-formations-robust.spec.ts                 # structural
+│   ├── project-proposals.spec.ts                    # content-based — Propose a project intake, Submitted proposals, LF queue (#3037)
+│   ├── project-proposals-robust.spec.ts             # structural
 │   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
 │   ├── fixtures/
 │   │   └── mock-data/

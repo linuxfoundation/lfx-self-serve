@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (triggerVisible()) {
+  <lfx-button
+    class="w-full"
+    icon="fa-light fa-key"
+    label="Host Key"
+    size="small"
+    severity="secondary"
+    styleClass="w-full"
+    data-testid="host-controls-button"
+    [ariaExpanded]="hostKeyPopover.overlayVisible"
+    (onClick)="onTriggerClick($event, hostKeyPopover)"></lfx-button>
+  <p-popover #hostKeyPopover>
+    <div class="flex w-72 flex-col gap-2 p-1" data-testid="host-key-popover-content">
+      @if (state().loading) {
+        <div class="flex items-center justify-center gap-2 py-4" data-testid="host-key-loading">
+          <i class="fa-light fa-spinner fa-spin text-gray-400" aria-hidden="true"></i>
+          <span class="text-sm text-gray-500">Loading host key…</span>
+        </div>
+      } @else if (state().error) {
+        <div class="flex flex-col gap-2" data-testid="host-key-error">
+          <p class="text-sm text-gray-600">Couldn't load the host key.</p>
+          <lfx-button label="Retry" severity="secondary" size="small" (onClick)="retry()" data-testid="host-key-retry"></lfx-button>
+        </div>
+      } @else if (state().data; as detail) {
+        @if (detail.can_view_host_key && detail.host_key; as hostKey) {
+          <lfx-host-key-panel [hostKey]="hostKey" />
+        } @else {
+          <p class="text-sm text-gray-600" data-testid="host-key-empty">
+            The host key isn't available right now. It's only visible to meeting hosts, starting {{ hostKeyEarlyMinutes }} minutes before the meeting.
+          </p>
+        }
+      }
+    </div>
+  </p-popover>
+}

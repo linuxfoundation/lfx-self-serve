@@ -11,9 +11,22 @@ import {
   sanitizePlainText,
   slugify,
   splitIntoParagraphs,
+  stripDiacritics,
   stripMarkdown,
   truncateToUtf16Units,
 } from './string.utils';
+
+describe('stripDiacritics', () => {
+  it('folds precomposed and decomposed accents to the base letter', () => {
+    expect(stripDiacritics('München')).toBe('Munchen');
+    expect(stripDiacritics('Jose\u0301')).toBe('Jose');
+  });
+
+  it('leaves case and unaccented text untouched', () => {
+    expect(stripDiacritics('ZOË Smith')).toBe('ZOE Smith');
+    expect(stripDiacritics('plain text')).toBe('plain text');
+  });
+});
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {

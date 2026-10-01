@@ -68,17 +68,29 @@ export interface PublicProfileTechnicalContribution {
   projects: PublicProfileProject[];
 }
 
-// Backed by upstream `ProjectContribution` — `Name`/`Slug`/`LogoURL` are PascalCase and `omitempty`
-// (render a fallback rather than assuming `Name`), while the contribution counts are lowercase.
-export interface PublicProfileProject {
-  LogoURL?: string;
-  Name?: string;
-  Slug?: string;
+export interface PublicProfileContributionCounts {
   commits: number;
   deleted: number;
   added: number;
   prs: number;
   issues: number;
+}
+
+// One yearly row from the upstream `contributions[]`, whose relative `date` label (`current_year`,
+// `last_year`, `2nd_last_year`, …) is resolved to a calendar year by the BFF.
+export interface PublicProfileYearContribution extends PublicProfileContributionCounts {
+  year: number;
+}
+
+// Backed by upstream `ProjectContribution` — `Name`/`Slug`/`LogoURL` are PascalCase and `omitempty`
+// (render a fallback rather than assuming `Name`), while the contribution counts are lowercase.
+// Upstream leaves the top-level counts at 0 and only fills `contributions[]`, so the BFF sums the
+// yearly rows into the counts here and exposes them per year in `years` (newest first).
+export interface PublicProfileProject extends PublicProfileContributionCounts {
+  LogoURL?: string;
+  Name?: string;
+  Slug?: string;
+  years: PublicProfileYearContribution[];
 }
 
 // Backed by the upstream `Activity` struct (shared with PublicProfileTraining) — PascalCase keys,

@@ -13,4 +13,4 @@ export const USER_SEARCH_EMPTY_MESSAGE = 'No users found';
  * BFF validates against, and the source `UserSearchType` is derived from, so adding a corpus is
  * one edit rather than three.
  */
-export const USER_SEARCH_TYPES = ['committee_member', 'meeting_registrant'] as const;
+export const USER_SEARCH_TYPES = ['committee_member', 'v1_meeting_registrant'] as const;

@@ -1,0 +1,71 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-geo">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Geographic distribution unavailable"
+      subtitle="We could not load registrations by country for this foundation. Refresh the page to try again."
+      data-testid="events-geo-error" />
+  } @else if (loading()) {
+    <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="events-geo-loading" aria-hidden="true" />
+  } @else if (!view().foundationMeasured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="No registrations by country yet"
+      subtitle="Once this foundation's event registrations carry a country, the countries represented appear here."
+      data-testid="events-geo-foundation-unmeasured" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Geographic distribution not available for this period"
+      subtitle="No registration in the selected period carries a country. Pick another period to see it."
+      data-testid="events-geo-unmeasured" />
+  } @else {
+    <span class="self-end rounded-full bg-gray-100 px-2.5 py-0.5 text-[12px] text-gray-600" data-testid="events-geo-countries">{{
+      view().countriesLabel
+    }}</span>
+
+    <div class="flex flex-col gap-2 rounded-lg border border-gray-100 p-4" data-testid="events-geo-headline">
+      <div class="flex items-baseline gap-2">
+        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-geo-headline-value">{{ view().headline.value }}</span>
+        @if (view().headline.delta !== null) {
+          <span
+            class="text-[13px] font-medium tabular-nums"
+            [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
+            [class.text-red-600]="view().headline.deltaDirection === 'down'"
+            [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
+            data-testid="events-geo-headline-delta">
+            {{ view().headline.delta }}
+          </span>
+        }
+      </div>
+      <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+    </div>
+
+    <div class="flex flex-col gap-3" data-testid="events-geo-top">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Top countries</h4>
+        <span class="text-[12px] text-gray-400">registrations</span>
+      </div>
+      <ul class="flex flex-col gap-2.5">
+        @for (bar of view().bars; track bar.key; let index = $index) {
+          <li class="flex flex-col gap-1" [attr.data-testid]="'events-geo-country-' + index">
+            <div class="flex items-baseline justify-between gap-2 text-[13px]">
+              <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
+              <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-geo-country-' + index + '-value'">{{ bar.valueLabel }}</span>
+            </div>
+            <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+              <div class="h-full rounded-full" [class]="bar.barClass" [style.width.%]="bar.widthPct"></div>
+            </div>
+          </li>
+        }
+      </ul>
+      @if (view().moreLabel) {
+        <span class="text-[12px] text-gray-400" data-testid="events-geo-more">{{ view().moreLabel }}</span>
+      }
+    </div>
+  }
+</div>

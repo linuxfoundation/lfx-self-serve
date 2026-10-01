@@ -49,6 +49,7 @@ import {
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
 import { EmailVerificationService } from './email-verification.service';
@@ -645,10 +646,24 @@ export class ClaService {
       throw error;
     }
 
-    if (!result?.url) return null;
+    // Typed as a string, but `gatewayFetch` only casts the parsed body, and `new URL` would coerce
+    // an array of one https address into a pass.
+    const url: unknown = result?.url;
+    if (url == null || url === '') return null;
+
+    if (typeof url !== 'string' || !isHttpsUrl(url)) {
+      logger.warning(req, 'cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
+        signature_id: signatureId,
+        pdf_url_scheme: typeof url === 'string' ? urlSchemeForLog(url) : 'non-string',
+      });
+      throw new MicroserviceError('Upstream returned an unusable signed document address', 502, 'CLA_PDF_URL_INVALID', {
+        operation: 'cla_get_pdf_url',
+        service: SERVICE,
+      });
+    }
 
     logger.success(req, 'cla_get_pdf_url', startTime);
-    return { url: result.url, expiresInSeconds: result.expiresInSeconds ?? 0 };
+    return { url, expiresInSeconds: result?.expiresInSeconds ?? 0 };
   }
 
   /**

@@ -65,7 +65,7 @@ export interface OrgContributorFoundationOption {
   foundationName: string;
 }
 
-/** Project dropdown option — only active projects the org has Contributors rows for in the active window. Sorted by project name; needs filter-typeahead at scale (~200+ projects for Red Hat at 12mo). */
+/** Project dropdown option — only active projects the org has Contributors rows for in the active window. Sorted by project name; needs filter-typeahead at scale (~200+ projects for the largest organizations at 12mo). */
 export interface OrgContributorProjectOption {
   projectId: string;
   projectName: string;

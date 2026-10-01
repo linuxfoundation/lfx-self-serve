@@ -4,9 +4,10 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,6 +58,7 @@ describe('EngagementOrgParticipationComponent', () => {
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementOrgParticipation } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         // The component reads its initial segment off the URL, and writes it back.
@@ -89,7 +91,7 @@ describe('EngagementOrgParticipationComponent', () => {
   function typeSearch(term: string): void {
     vi.useFakeTimers();
     fixture.componentInstance['searchForm'].controls.search.setValue(term);
-    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS);
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS);
     fixture.detectChanges();
   }
 
@@ -143,6 +145,22 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(emitted).toEqual([null, null]);
   });
 
+  // Missing caption counts must not hide organizations the view did return.
+  it('still renders the returned rows when only the caption counts are unmeasured', async () => {
+    await render(response({ counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
+  });
+
+  it('shows the not-available state when the view returns no rows for the scope', async () => {
+    await render(response({ rows: [], counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain(
+      'No organizations recorded for this foundation'
+    );
+  });
+
   // Two foundations can hold the same number of orgs, so the row count cannot stand in for identity.
   it('restarts paging when the foundation changes, not merely when the row count does', async () => {
     const rows = Array.from({ length: 60 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Org ${index}` }));
@@ -194,7 +212,7 @@ describe('EngagementOrgParticipationComponent', () => {
 
     vi.useFakeTimers();
     fixture.componentInstance['searchForm'].controls.search.setValue('vendor');
-    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS - 1);
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS - 1);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();

@@ -32,15 +32,37 @@ export class OrgPeopleBoardMembersService {
 
   /** Org-wide Board roster (FR-001/003/004): drain → KEEP Board → enrich foundation names → map → board stats. */
   public async getBoardMembers(req: Request, orgUid: string): Promise<OrgPeopleBoardMembersResponse> {
+    const startedAt = Date.now();
+    let seatsDrained = false;
     // Org-wide drain: no project filter → committee-service's organization-only scope (every
     // foundation the org holds seats on); the shared drain enforces the 200-page fail-closed cap.
-    const seats = await this.boardCommitteeService.fetchAllOrgSeats(req, orgUid);
+    const seats = await this.boardCommitteeService.fetchAllOrgSeats(req, orgUid, () => {
+      seatsDrained = true;
+    });
+    const seatsDurationMs = Date.now() - startedAt;
     // KEEP only Board-category seats — the exact inverse of the Committee tab's `!isBoardCategory`.
     const board = seats.filter((s) => isBoardCategory(s.committee_category));
 
-    const foundationNames = await enrichFoundationNames(req, board, this.projectService);
+    const enrichStartedAt = Date.now();
+    const { names: foundationNames, cachedHits, requested, resolved } = await enrichFoundationNames(req, board, this.projectService);
+    const enrichDurationMs = Date.now() - enrichStartedAt;
     const assignments = board.map((s) => toAssignment(s, foundationNames));
     const stats = this.computeStats(assignments);
+
+    // Read endpoints log success at DEBUG, so this is the one production-visible line that splits
+    // the tab's latency into the seat read and the foundation-name lookup.
+    logger.info(req, 'get_org_people_board_members', 'Board roster built', {
+      org_uid: orgUid,
+      seat_count: seats.length,
+      assignment_count: assignments.length,
+      seats_drained: seatsDrained,
+      seats_duration_ms: seatsDurationMs,
+      name_enrichment_duration_ms: enrichDurationMs,
+      names_cached_hits: cachedHits,
+      names_requested: requested,
+      names_resolved: resolved,
+      total_duration_ms: Date.now() - startedAt,
+    });
 
     return { orgUid, assignments, stats };
   }
@@ -71,7 +93,11 @@ export class OrgPeopleBoardMembersService {
       }
     );
 
-    const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);
+    // The tab re-fetches right after a reassign; drop the caller's own 30-second seat roster and
+    // directory entries so that re-fetch reflects the new seat instead of the cached old one.
+    await this.boardCommitteeService.invalidateCallerSeatCaches(req, orgUid);
+
+    const { names: foundationNames } = await enrichFoundationNames(req, [upstream], this.projectService);
     const seat = toAssignment(upstream, foundationNames);
     logger.debug(req, 'reassign_board_member_proxy', 'committee-service returned reassigned seat', {
       org_uid: orgUid,

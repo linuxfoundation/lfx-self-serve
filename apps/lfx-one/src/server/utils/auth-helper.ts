@@ -75,6 +75,33 @@ export function getEffectiveEmail(req: Request): string | null {
 }
 
 /**
+ * Resolves the effective identity pair behind every email-OR-username index query (My Surveys,
+ * My Votes, Pending Actions) in one place: the lowercased effective email plus the
+ * prefix-stripped username. A future identity-resolution change (new provider claim, new
+ * normalization rule) lands here instead of drifting across call sites — the GH-2987 class of
+ * bug. Either side can be null (email-only or username-only auth contexts); callers decide how
+ * to handle the both-null case.
+ */
+export async function resolveUserIdentity(req: Request): Promise<{ email: string | null; username: string | null }> {
+  const rawUsername = await getUsernameFromAuth(req);
+  return { email: getEffectiveEmail(req), username: rawUsername ? stripAuthPrefix(rawUsername) : null };
+}
+
+/**
+ * Gets the effective email WITHOUT lowercasing — the same resolution as `getEffectiveEmail`
+ * (impersonation target first, never the impersonator's own), preserving the stored casing.
+ * Pair it with `getEffectiveEmail` only when querying a case-sensitive exact-match index whose
+ * stored casing is outside our control (e.g. `vote_response.user_email` — GH #2985), matching
+ * on both the lowercased and the raw value. Almost all callers want `getEffectiveEmail`.
+ */
+export function getRawEffectiveEmail(req: Request): string | null {
+  if (isImpersonating(req)) {
+    return (req.appSession?.['impersonationUser']?.email as string) || null;
+  }
+  return (req.oidc?.user?.['email'] as string) || null;
+}
+
+/**
  * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — the one
  * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
  * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is

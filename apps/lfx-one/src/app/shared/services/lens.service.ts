@@ -125,7 +125,7 @@ export class LensService {
    * committee-only writer creating against a project/foundation target) has no normal
    * `setLens()`/`switchLens()` call left to run, since the lens-switcher UI only offers lenses
    * `getAllowedLensIds()` admits. Left unscoped, the override would silently stick past this one
-   * navigation and clamp every subsequent route (including lens-agnostic ones like `/profile`) to
+   * navigation and clamp every subsequent route (including lens-agnostic ones like `/badges`) to
    * `lens` for the rest of the session.
    */
   public setContextLens(lens: Lens): void {

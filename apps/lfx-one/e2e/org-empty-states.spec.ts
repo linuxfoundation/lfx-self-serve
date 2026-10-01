@@ -15,11 +15,14 @@
  * - S3a–S3c: the two halves of #2090 — a held-but-partial lookup renders the page plus the switcher
  *   notice, an unheld partial or failed lookup renders the page-level could-not-load state.
  * - S4: staff check failed carries the correlation reference and never falls through.
- * - S5: staff and contractor sessions are one wire shape, so the same body runs twice.
+ * - S5: an LF-staff session sees the search invite; a contractor holding an explicit org grant (not
+ *   in `LF_TEAM_IDS` since the rollback of lfx-self-serve#2157) keeps the switcher but loses
+ *   catalogue search.
  * - S7 lives in `org-projects.spec.ts` / `org-selector.spec.ts` (legacy wording updated in place).
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
+import { LENS_COOKIE_KEY } from '@lfx-one/shared/constants/lens.constants';
 import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants/org-lens-empty-state.constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -46,7 +49,9 @@ const NO_ACCESS_COPY = ORG_LENS_EMPTY_STATE_COPY['no-access'];
 
 type RoleGrantsOverrides = Partial<{
   writers: string[];
+  auditors: string[];
   isStaff: boolean;
+  isContractor: boolean;
   degraded: boolean;
   lookupOutcome: 'ok' | 'partial' | 'failed';
   staffCheck: 'ok' | 'failed';
@@ -281,6 +286,24 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // Following the primary must reach its destination, not just render (SC-004).
       await state.primary.click();
       await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      // The profile is a Me page: the lens must follow, not stay on Organization with its menu.
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    // The profile route declares the Me lens, so every way in switches — not only the in-app link:
+    // a deep link, a refresh or back/forward while the Organization lens is the saved one.
+    test('S2a′: opening the profile directly with the Organization lens saved lands in the Me lens', async ({ page, baseURL }) => {
+      // Scoped to baseURL, not a hardcoded host: on an E2E_BASE_URL override a localhost cookie would
+      // never reach the app, and the Me fallback would pass this test without exercising the route lens.
+      await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'org', url: baseURL ?? 'http://localhost:4200' }]);
+
+      await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
 
     // Unheld and nonexistent are one scenario at the wire (spec 050 DR-002), so S2b and S2d share
@@ -446,7 +469,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
 
     // FR-012 / "never say no access when the truth is a failed lookup": an LF-team caller holds
     // every organization, so even with own rows an unresolvable address is not a wrong-organization
-    // case — the invite wins, and the own rows stay available beneath it.
+    // case — the invite wins, and the own rows are not listed (staff reach any org through search).
     test('S2f: an LF-team caller with own organizations still sees the search invite, never wrong-organization', async ({ page }) => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ isStaff: true, writers: [ORG_A_UID] }),
@@ -463,31 +486,150 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'not-found-staff');
       await expect(page.getByTestId('org-not-found-primary')).toBeVisible();
-      await expect(page.getByTestId('org-not-found-org-list')).toContainText(ORG_A_NAME);
+      // Staff reach any organization through switcher search: the staff state lists none of their own.
+      await expect(page.getByTestId('org-not-found-org-list')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText('You do not have access');
       await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
     });
   });
 
-  test.describe('page level — LF team parity (FR-012)', () => {
-    // Staff and contractor are one population on the wire (`isStaff` covers `lf-staff` and
-    // `lf-contractor`), so the same body runs for both; the assertions are identical by construction.
-    for (const session of ['staff', 'contractor'] as const) {
-      test(`S5 (${session}): an LF-team session with no selection sees the staff search invite, never a no-access state`, async ({ page }) => {
-        await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: true }) });
+  test.describe('page level — LF team affordance (FR-012)', () => {
+    test('S5 (staff): an LF-team session with no selection sees the staff search invite, never a no-access state', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: true }) });
 
-        await gotoOverview(page);
+      await gotoOverview(page);
 
-        await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
-        await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
-        await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for an organization');
-        await expect(overviewState(page).root).toHaveCount(0);
-        await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
-        await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
-        // The switcher is the control that fills an LF-team member's empty list — it must be there.
-        await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for an organization');
+      await expect(overviewState(page).root).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
+      await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
+      // The switcher is the control that fills an LF-team member's empty list — it must be there.
+      await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+    });
+
+    // Since the rollback of lfx-self-serve#2157, lf-contractor is not in `LF_TEAM_IDS`, so the server
+    // answers `isStaff: false` for a contractor. A contractor holding one explicit org grant keeps
+    // the switcher (they hold an org) but loses the catalogue search this rollback removes. The e2e
+    // stubs `isStaff` on the wire, so it pins the UI contract only; what fails if `lf-contractor` is
+    // re-added to `LF_TEAM_IDS` is the unit spec (`org-role-grants.service.spec.ts`). The switcher
+    // sequence copies M4 in `org-multi-grant-switch.spec.ts` (non-LF-team: no catalogue search).
+    test('S5 (contractor): a contractor with an explicit org grant keeps the switcher but gets no catalogue search', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isStaff: false, auditors: [ORG_A_UID] }),
+        orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+        resolvable: [HELD_ORG],
       });
+
+      await gotoOverview(page);
+
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toHaveCount(0);
+      const trigger = page.getByTestId('org-selector');
+      await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await trigger.click();
+      const listbox = page.locator('#org-selector-listbox');
+      await expect(listbox).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(listbox).toContainText(ORG_A_NAME);
+      // The removed affordance: no LF-team catalogue search input.
+      await expect(page.getByTestId('org-search-input')).toHaveCount(0);
+    });
+  });
+
+  // #2961 — an LF contractor with no grant. The page keys on the server's answer (the read gate for a
+  // selected organization, the resolver for an address), never on the roster, and always gives the
+  // contractor reason rather than employee copy, a zero-metric overview or a retryable failure.
+  test.describe('page level — LF contractor without a grant (#2961)', () => {
+    const CONTRACTOR_HEADLINE = ORG_LENS_EMPTY_STATE_COPY['contractor-no-grant'].headline;
+
+    /** The read gate's answer for the selected organization; registered last so it wins over the lens stub. */
+    async function stubReadCheck(page: Page, status: 204 | 403): Promise<void> {
+      await page.route('**/api/orgs/*/lens/read-check*', (route) =>
+        status === 204
+          ? route.fulfill({ status: 204, body: '' })
+          : route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ code: 'FORBIDDEN', message: 'stubbed' }) })
+      );
     }
+
+    test('C4: with nothing selected and nothing held, a contractor sees contractor-no-grant, not no-organization', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isContractor: true }) });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(state.title).toHaveText(CONTRACTOR_HEADLINE);
+      await expect(state.contactSupport).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('Add an affiliation');
+    });
+
+    test('C1: a persona-seeded organization the read gate refuses renders contractor-no-grant, never a zero-metric overview', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+      });
+      await stubReadCheck(page, 403);
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(page.getByTestId('org-overview-title')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText('You do not have access to any organizations');
+      // The copy depends only on the caller. (The header switcher still shows their own persona org.)
+      await expect(state.root).not.toContainText(ORG_A_NAME);
+    });
+
+    test('C3: a deep link the resolver refuses renders contractor-no-grant on the dead end, with the organization unnamed', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isContractor: true }) });
+
+      await page.goto(`/org/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      const root = page.getByTestId('org-not-found-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(page.locator('body')).not.toContainText('your OSPO');
+      await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
+    });
+
+    // Every Org page renders the shared page state, not only Overview (#2977 review): People stands in
+    // for the pages that used to show their own load errors to a refused contractor.
+    test('C1-people: the People page renders contractor-no-grant for a refused persona-seeded organization', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+      });
+      await stubReadCheck(page, 403);
+
+      await page.goto('/org/people', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      const root = page.getByTestId('org-people-no-access-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(root).not.toContainText(ORG_A_NAME);
+    });
+
+    // The negative case: the read gate also admits FGA-only readers (key-contact auditors) that no
+    // roster lists. A roster-based rule would lock them out; this one keeps their page.
+    test('C-admit: a persona-seeded organization the read gate admits renders the page', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+        resolvable: [HELD_ORG],
+      });
+      await stubReadCheck(page, 204);
+
+      await gotoOverview(page);
+
+      await expect(page.getByTestId('org-overview-title')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(overviewState(page).root).toHaveCount(0);
+    });
   });
 
   // One section stands in for all of them (the shared component is the only renderer). The ROI

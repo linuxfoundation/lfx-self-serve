@@ -7,12 +7,11 @@ import { FORMATION_ASSIGNEE_PENDING_NOTE, LF_STAFF_EMAIL_DOMAIN } from '../const
 import type { FormationPerson } from '../interfaces/formation-people.interface';
 import {
   buildFormationPeople,
+  buildFormationPeopleRowGroups,
   countAssignedFormationItems,
   findFormationPersonByUsername,
   formatFormationPersonSubtitle,
-  formationPeopleGroupKeys,
   formationPersonKey,
-  groupFormationPeople,
   isLfStaffEmail,
   resolveFormationPersonStatus,
   toAssigneeSearchOption,
@@ -155,26 +154,69 @@ describe('buildFormationPeople', () => {
   });
 });
 
-describe('formationPeopleGroupKeys', () => {
-  it('follows the labels constant, staff first', () => {
-    expect(formationPeopleGroupKeys()).toEqual(['staff', 'invited']);
-  });
-});
+describe('buildFormationPeopleRowGroups', () => {
+  const shape = (people: FormationPerson[]) =>
+    buildFormationPeopleRowGroups(people, []).map((group) => ({ key: group.key, label: group.label, rows: group.rows.map((row) => row.key) }));
 
-describe('groupFormationPeople', () => {
-  it('returns every group key even when empty', () => {
-    expect(groupFormationPeople([])).toEqual({ staff: [], invited: [] });
+  it('emits nothing for an empty list', () => {
+    expect(buildFormationPeopleRowGroups([], [])).toEqual([]);
   });
 
-  it('partitions by group and preserves order within each', () => {
-    const groups = groupFormationPeople([
-      person({ key: 'b', name: 'B', group: 'invited' }),
-      person({ key: 'a', name: 'A', group: 'staff' }),
-      person({ key: 'c', name: 'C', group: 'invited' }),
+  it('puts staff first, then organizations A–Z, then Other, preserving row order within each', () => {
+    expect(
+      shape([
+        person({ key: 'a', group: 'invited', organization: 'Vendor Corp' }),
+        person({ key: 'b', group: 'staff', organization: 'The Linux Foundation' }),
+        person({ key: 'c', group: 'invited', organization: null, username: null, is_pending: true }),
+        person({ key: 'd', group: 'invited', organization: 'Acme Motors' }),
+        person({ key: 'e', group: 'invited', organization: 'Vendor Corp' }),
+      ])
+    ).toEqual([
+      { key: 'staff', label: 'LF Staff', rows: ['b'] },
+      { key: 'org-acme-motors', label: 'Acme Motors', rows: ['d'] },
+      { key: 'org-vendor-corp', label: 'Vendor Corp', rows: ['a', 'e'] },
+      { key: 'other', label: 'Other', rows: ['c'] },
     ]);
+  });
 
-    expect(groups.staff.map((p) => p.key)).toEqual(['a']);
-    expect(groups.invited.map((p) => p.key)).toEqual(['b', 'c']);
+  it('merges spelling variants of one organization under the first spelling seen', () => {
+    expect(shape([person({ key: 'a', organization: 'Acme Motors' }), person({ key: 'b', organization: '  acme  motors ' })])).toEqual([
+      { key: 'org-acme-motors', label: 'Acme Motors', rows: ['a', 'b'] },
+    ]);
+  });
+
+  it('keeps names that differ only by punctuation apart, with unique keys', () => {
+    expect(shape([person({ key: 'a', organization: 'C++' }), person({ key: 'b', organization: 'C' })])).toEqual([
+      { key: 'org-c', label: 'C', rows: ['b'] },
+      { key: 'org-c-2', label: 'C++', rows: ['a'] },
+    ]);
+  });
+
+  it('folds an organization literally named Other into the Other group instead of a second heading', () => {
+    expect(shape([person({ key: 'a', organization: 'other' }), person({ key: 'b', organization: null })])).toEqual([
+      { key: 'other', label: 'Other', rows: ['a', 'b'] },
+    ]);
+  });
+
+  it('keeps non-Latin organization names as their own group', () => {
+    expect(shape([person({ key: 'a', organization: '示例公司' })])).toEqual([{ key: 'org-示例公司', label: '示例公司', rows: ['a'] }]);
+  });
+
+  it('keeps combining marks in the key, so names differing only by a mark stay apart', () => {
+    // Devanagari: the trailing vowel sign (U+0940) is a combining mark — slugging it away would merge these two.
+    expect(shape([person({ key: 'a', organization: 'कंपनी' }), person({ key: 'b', organization: 'कंपन' })])).toHaveLength(2);
+  });
+
+  it('sends a blank or punctuation-only organization to Other', () => {
+    expect(shape([person({ key: 'a', organization: '   ' }), person({ key: 'b', organization: '—' })])).toEqual([
+      { key: 'other', label: 'Other', rows: ['a', 'b'] },
+    ]);
+  });
+
+  it('builds full rows from the checklist assignees', () => {
+    const [group] = buildFormationPeopleRowGroups([person({ organization: 'Acme Motors', job_title: 'Legal' })], ['sam.chen']);
+
+    expect(group.rows[0]).toEqual(expect.objectContaining({ assigned_item_count: 1, subtitle: 'Legal · 1 item', status: 'invited' }));
   });
 });
 
@@ -191,18 +233,13 @@ describe('resolveFormationPersonStatus', () => {
 });
 
 describe('formatFormationPersonSubtitle', () => {
-  it('renders title and organization joined by a middot', () => {
-    expect(formatFormationPersonSubtitle(person({ job_title: 'Partner contact', organization: 'Cascade Data' }), 0)).toBe('Partner contact · Cascade Data');
+  it('renders the title and leaves the organization to the group heading', () => {
+    expect(formatFormationPersonSubtitle(person({ job_title: 'Partner contact', organization: 'Cascade Data' }), 0)).toBe('Partner contact');
   });
 
-  it('renders whichever of title or organization is present', () => {
-    expect(formatFormationPersonSubtitle(person({ job_title: 'Legal' }), 0)).toBe('Legal');
-    expect(formatFormationPersonSubtitle(person({ organization: 'Cascade Data' }), 0)).toBe('Cascade Data');
-    expect(formatFormationPersonSubtitle(person({ job_title: '   ', organization: 'Cascade Data' }), 0)).toBe('Cascade Data');
-  });
-
-  it('falls back to the email when nothing is known', () => {
+  it('falls back to the email when there is no title', () => {
     expect(formatFormationPersonSubtitle(person(), 0)).toBe('sam.chen@cascade-data.example');
+    expect(formatFormationPersonSubtitle(person({ job_title: '   ', organization: 'Cascade Data' }), 0)).toBe('sam.chen@cascade-data.example');
   });
 
   it('appends a singular or plural item count only when non-zero', () => {

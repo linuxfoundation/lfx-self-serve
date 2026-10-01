@@ -3,9 +3,11 @@
 
 import {
   ACCESS_CHECK_BATCH_SIZE,
+  LF_CONTRACTOR_TEAM_ID,
   LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
+  ORG_ADMIN_TEAM_IDS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
@@ -35,6 +37,15 @@ import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { cacheKeyNamespace, valkeyService } from './valkey.service';
+
+/**
+ * #3077 — every team that can read every organization, whatever grant gives it that read: plain
+ * `auditor` (`LF_TEAM_IDS`) or the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`). Org Lens search
+ * and the switcher follow this list (`RoleGrantsResponse.isStaff`); it is never a read gate. Built here,
+ * not in the shared package, so neither team name reaches the browser bundle: a top-level spread in a
+ * shared module survives tree-shaking. A new team joins one of the two source lists, never this one.
+ */
+const ORG_WIDE_READ_TEAM_IDS = [...LF_TEAM_IDS, ...ORG_ADMIN_TEAM_IDS] as const;
 
 /** Loads caller role grants from b2b_org_settings (FR-018a "what can I see" pattern; spec 022 data-model.md). */
 export class OrgRoleGrantsService {
@@ -122,7 +133,11 @@ export class OrgRoleGrantsService {
    * vs `partial` (roll-up incomplete).
    */
   public async getRoleGrants(req: Request, username: string, bypassCache = false): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username, bypassCache);
+    const { resolved, loadedAt, isStaff, isContractor, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(
+      req,
+      username,
+      bypassCache
+    );
     const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
     if (upstreamFailed) {
       response.lookupOutcome = 'failed';
@@ -132,6 +147,7 @@ export class OrgRoleGrantsService {
       response.lookupOutcome = 'ok';
     }
     response.staffCheck = staffCheck;
+    response.isContractor = isContractor;
     if (staffCheck === 'failed' && correlationId) {
       response.correlationId = correlationId;
     }
@@ -139,12 +155,12 @@ export class OrgRoleGrantsService {
   }
 
   /**
-   * LFXV2-3029 — the single "editor from any source" check: true for a direct writer grant OR a
-   * cascading (inherited) writer grant reachable through the connected component. Every
-   * organization edit surface is meant to widen along with this feature, so a gate that needs a
-   * hard "direct only" answer should not be added against this helper without a documented
-   * exception; a missed call site that still inlines `writers.includes(uid)` silently stays
-   * narrower than the platform authorizer now allows.
+   * LFXV2-3029 — the caller's roster editors: a direct writer grant OR a cascading (inherited)
+   * writer grant reachable through the connected component. This is only the roster half of the
+   * edit decision: Org Lens edit gates call `resolveOrgLensEdit` (#3136), which asks this first and
+   * then the authorizer's `b2b_org#writer`, so company-wide writers the roster never lists are
+   * included. Gate on this directly only where roster membership itself is the rule — the Projects
+   * workspace bootstrap (`OrgLensProjectsController.resolveCanEdit`) is the documented case.
    */
   public static hasEditorAccess(grants: Pick<RoleGrantsResponse, 'writers' | 'cascadingWriters'>, orgUid: string): boolean {
     return grants.writers.includes(orgUid) || grants.cascadingWriters.some((entry) => entry.uid === orgUid);
@@ -186,6 +202,8 @@ export class OrgRoleGrantsService {
       // Entries written before `isStaff` existed fail here and are recomputed, rather than
       // deserializing to `undefined` and silently denying an LF-team caller for the rest of the TTL.
       typeof entry.isStaff === 'boolean' &&
+      // #2961: same for `isContractor` — an entry without it would hide the contractor state until it expired.
+      typeof entry.isContractor === 'boolean' &&
       // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
       // connected-component classification. Rejecting it recomputes instead.
@@ -194,7 +212,8 @@ export class OrgRoleGrantsService {
       // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
       // correlation id it was logged under — without it the page would render `Reference: —` — and
       // only fail-closed: a check that did not complete can never have granted the LF-team affordance.
-      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false))
+      (entry.staffCheck === 'ok' ||
+        (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false && entry.isContractor === false))
     );
   }
 
@@ -247,6 +266,7 @@ export class OrgRoleGrantsService {
       loadedAt: result.loadedAt,
       username: result.username,
       isStaff: result.isStaff,
+      isContractor: result.isContractor,
       degraded: result.degraded,
       staffCheck: result.staffCheck,
       ...(result.staffCheck === 'failed' && result.correlationId ? { correlationId: result.correlationId } : {}),
@@ -262,6 +282,7 @@ export class OrgRoleGrantsService {
       loadedAt: entry.loadedAt,
       username: entry.username,
       isStaff: entry.isStaff,
+      isContractor: entry.isContractor,
       degraded: entry.degraded,
       staffCheck: entry.staffCheck,
       correlationId: entry.correlationId,
@@ -281,6 +302,7 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff: false,
+      isContractor: false,
       degraded: false,
       staffCheck: 'ok',
     };
@@ -342,7 +364,7 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const { isStaff, staffCheck } = await teamPromise;
+    const { isStaff, isContractor, staffCheck } = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
@@ -357,6 +379,7 @@ export class OrgRoleGrantsService {
         loadedAt,
         username,
         isStaff,
+        isContractor,
         degraded: directRosterTruncated,
         staffCheck,
         correlationId,
@@ -370,7 +393,7 @@ export class OrgRoleGrantsService {
       directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error, correlation_id: correlationId });
-      return { ...empty, upstreamFailed: true, isStaff, staffCheck, correlationId };
+      return { ...empty, upstreamFailed: true, isStaff, isContractor, staffCheck, correlationId };
     }
 
     // A direct grant whose b2b_org doc never landed cannot be walked, so its whole connected
@@ -414,6 +437,7 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff,
+      isContractor,
       degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
       staffCheck,
       correlationId,
@@ -421,37 +445,45 @@ export class OrgRoleGrantsService {
   }
 
   /**
-   * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
-   * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
-   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccessStrict` over both teams.
+   * Asks the platform authorizer whether the caller belongs to any team in `ORG_WIDE_READ_TEAM_IDS`:
+   * the teams that read every `b2b_org`, through a plain `auditor` grant (`LF_TEAM_IDS`, `lf-staff`) or
+   * the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`, #3077). One batched `checkAccessStrict` over
+   * that list plus `LF_CONTRACTOR_TEAM_ID` (#2961), which rides the same batch only to set
+   * `isContractor`: it explains an empty Org Lens and grants nothing.
    *
    * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
    * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
-   * `b2b_org:<uid>#auditor` directly. It intentionally differs from
-   * `PersonaDetectionService.checkLFStaff`, which stays staff-only for the non-Org-Lens surfaces it
-   * gates (DR-002).
+   * `b2b_org:<uid>#auditor` directly. It is a separate list from
+   * `PersonaDetectionService.checkLFStaff` (`LF_STAFF_TEAM_ID`), with separate
+   * consumers: that one gates non-Org-Lens surfaces, so widening either must not widen the other.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed on `isStaff` (`false`), but reports the failure as `staffCheck: 'failed'`
+   * principle. Fails closed on `isStaff` and `isContractor` (both `false`), but reports the failure as `staffCheck: 'failed'`
    * (spec 053 FR-011) so the page can say "we could not confirm your staff access" instead of the
    * employee no-access copy. `checkAccessStrict` is used so an authorizer outage surfaces as a throw
    * rather than a silent all-false that would read as "not staff".
    */
-  private async resolveIsStaff(req: Request, username: string, correlationId: string): Promise<{ isStaff: boolean; staffCheck: OrgLensStaffCheck }> {
+  private async resolveIsStaff(
+    req: Request,
+    username: string,
+    correlationId: string
+  ): Promise<{ isStaff: boolean; isContractor: boolean; staffCheck: OrgLensStaffCheck }> {
     try {
+      // #2961: the contractor team rides the same batch; it only explains an empty Org Lens and grants nothing.
       const membership = await this.accessCheck.checkAccessStrict(
         req,
-        LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
+        [...ORG_WIDE_READ_TEAM_IDS, LF_CONTRACTOR_TEAM_ID].map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
       );
-      return { isStaff: LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true), staffCheck: 'ok' };
+      const isStaff = ORG_WIDE_READ_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
+      return { isStaff, isContractor: !isStaff && membership.get(`${LF_CONTRACTOR_TEAM_ID}#member`) === true, staffCheck: 'ok' };
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
         correlation_id: correlationId,
       });
-      return { isStaff: false, staffCheck: 'failed' };
+      return { isStaff: false, isContractor: false, staffCheck: 'failed' };
     }
   }
 
@@ -463,7 +495,7 @@ export class OrgRoleGrantsService {
     const directAuditors = new Set<string>();
 
     for (const resource of response?.resources ?? []) {
-      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000Te2QjAAJ`).
+      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000AcmeAAAA`).
       // We key on the bare account id (SFID) so it matches the b2b_org details lookup downstream.
       const orgUid = this.extractUid(resource.id);
       if (!orgUid) continue;

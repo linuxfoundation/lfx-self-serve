@@ -136,7 +136,7 @@ export class MainLayoutComponent {
     // AND every flat write route carrying a `?project=` param, and derives the kind from the route
     // or from the resolved project. This handler runs on NavigationEnd — *after* the guard — so it
     // must not overwrite what the guard just established. It therefore only acts on routes the guard
-    // does not touch: no declared lens and no `?project=` param (e.g. `/profile`, `/badges`), where
+    // does not touch: no declared lens and no `?project=` param (e.g. `/badges`), where
     // it resets to `null`. On a lens route it re-asserts the value the guard set (idempotent); on a
     // flat `?project=` route it leaves the guard's derived kind alone — clobbering it there is the
     // bug that made a direct hit on `/meetings/create?project=<foundation>` resolve a null context.

@@ -11,3 +11,10 @@ export const IMPERSONATION_USER_NOT_FOUND_MESSAGE =
   'We were unable to locate the user to impersonate. Please double-check the username or email address and try again.';
 
 export const IMPERSONATION_START_FAILED_MESSAGE = 'We could not start impersonation. Please try again.';
+
+/**
+ * Rendered height of the fixed impersonation banner. `styles.scss` sets the root font size to
+ * 14px, so Tailwind's rem-based `h-12`/`min-h-12` (`3rem`) undershoots to 42px, not 48px — see
+ * `.claude/rules/styling.md`.
+ */
+export const IMPERSONATION_BANNER_HEIGHT_PX = 42;

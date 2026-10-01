@@ -21,14 +21,20 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
+// validation.helper (clampInteger) imports `@lfx-one/shared/utils`, whose barrel pulls Angular and cannot
+// load outside a test bed; see validation.helper.spec.ts. The real clampInteger is what runs here.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
-  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
+  SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -128,12 +134,33 @@ describe('HealthMetricsEngagementService', () => {
     expect(response.counts).toEqual({ groups: 34, dormantGroups: 3 });
   });
 
-  it('reports zeroed counts for an empty page instead of reading an absent first row', async () => {
+  it('reports unmeasured counts, not a real zero, when the unfiltered scope has no rows', async () => {
     execute.mockResolvedValue({ rows: [] });
 
     const response = await service.getGroupAttendance(req, query());
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
+    expect(response.counts).toBeNull();
+  });
+
+  // A filtered cut with zero matches is a real measured zero — the "No groups of this type" empty
+  // state needs its own counts, not the unfiltered scope's unmeasured shape.
+  it('reports real zero counts, not unmeasured, when a filtered cut matches nothing', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getGroupAttendance(req, query({ groupType: 'wg' }));
+
+    expect(response.counts).toEqual({ groups: 0, dormantGroups: 0 });
+    expect(response.totalRecords).toBe(0);
+  });
+
+  // A project-scoped read with no rows is likewise a real measured zero, not an unmeasured foundation.
+  it('reports real zero counts, not unmeasured, when a project-scoped read matches nothing', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getGroupAttendance(req, query({ projectSlug: 'acme-core' }));
+
+    expect(response.counts).toEqual({ groups: 0, dormantGroups: 0 });
   });
 
   // The totals join keeps one row when the page selects nothing, so a page past the end still
@@ -215,7 +242,7 @@ describe('HealthMetricsEngagementService', () => {
   it('returns the default response for a range the view has no columns for', async () => {
     const response = await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_4' }));
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -238,6 +265,7 @@ describe('HealthMetricsEngagementService', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -279,6 +307,22 @@ describe('HealthMetricsEngagementService', () => {
     const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
 
     expect(error.toResponse()['error']).toBe('Try again shortly.');
+  });
+
+  // An open circuit throws before the query runs, with no client message of its own.
+  it('rewraps a Snowflake error that carries no client message, such as an open circuit', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError('Snowflake circuit breaker OPEN — retrying in 42s', 503, 'SNOWFLAKE_CIRCUIT_OPEN', {
+        operation: 'circuit_breaker_check',
+        service: 'snowflake',
+      })
+    );
+
+    const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Group attendance is unavailable right now.');
+    expect(error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(error.toResponse()).not.toHaveProperty('service');
   });
 
   it('rethrows any other Snowflake failure rather than reporting an empty foundation', async () => {
@@ -418,8 +462,18 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
   it('returns the empty shape for a range the view carries no columns for', async () => {
     const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  // A null column is unmeasured, not zero — coercing it would report a real "no meetings held".
+  it('keeps a null meetings-held column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [participationRow({ MEETINGS_HELD_COUNT_YTD: null, TOTAL_GROUPS_COUNT: null })] });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(response.total?.periods[3]).toMatchObject({ meetingsHeld: null, meetingsChangePct: null });
+    expect(response.total?.totalGroups).toBeNull();
   });
 
   it('reports a null total when the foundation has no roll-up row', async () => {
@@ -427,7 +481,7 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
 
     const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {
@@ -435,6 +489,7 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -532,6 +587,15 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     expect(response.rows[0]?.periods[3]).toMatchObject({ attendancePct: null, avgReps: null, sortRank: null });
   });
 
+  // A null attended/total column is unmeasured, not zero — coercing it would report a real "no attendance".
+  it('keeps a null attended-count and meetings-total column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ MEETINGS_ATTENDED_COUNT_YTD: null, MEETINGS_ORG_TOTAL_COUNT_YTD: null })] });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ attendedCount: null, meetingsTotal: null });
+  });
+
   it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
     execute.mockResolvedValue({ rows: [orgWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
 
@@ -585,7 +649,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
 
     const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {
@@ -593,6 +657,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -679,6 +744,15 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     expect(response.rows[0]?.periods[3]).toMatchObject({ sortRank: null, meetingsAttended: 12 });
   });
 
+  // A null attended/people column is unmeasured, not zero — coercing it would report a real "no attendance".
+  it('keeps a null attended-count and distinct-people column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ MEETINGS_ATTENDED_COUNT_YTD: null, DISTINCT_PEOPLE_COUNT_YTD: null })] });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsAttended: null, distinctPeople: null });
+  });
+
   it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
     execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
 
@@ -726,7 +800,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
 
     const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {
@@ -734,6 +808,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -747,6 +822,193 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
     await expect(service.getNonMemberParticipation(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
+  });
+});
+
+describe('HealthMetricsEngagementService.getRepresentatives', () => {
+  const service = new HealthMetricsEngagementService();
+
+  /** The column suffix each period is read under, newest first as the fixture writes them. */
+  const SUFFIXES = ['YTD', 'LAST_COMPLETED_YEAR', 'PREV_COMPLETED_YEAR', '3RD_LAST_COMPLETED_YEAR'];
+
+  /** One warehouse row: unlike the other views, every caption count here carries a period suffix. */
+  function repWarehouseRow(overrides: Record<string, unknown> = {}) {
+    const periods = SUFFIXES.reduce<Record<string, unknown>>(
+      (columns, suffix, index) => ({
+        ...columns,
+        [`MEETINGS_INVITED_COUNT_${suffix}`]: 6,
+        [`MEETINGS_ATTENDED_COUNT_${suffix}`]: 2 + index,
+        [`HAS_NEVER_ATTENDED_${suffix}`]: false,
+        [`IS_LAPSED_${suffix}`]: false,
+        [`SCOPE_REPS_COUNT_${suffix}`]: 486 + index,
+        [`SCOPE_NEVER_ATTENDED_REPS_COUNT_${suffix}`]: 112,
+      }),
+      {}
+    );
+
+    return {
+      REP_KEY: 'r-1',
+      PERSON_DISPLAY_NAME: 'Dana Fields',
+      ACCOUNT_NAME: 'Acme Motors',
+      COMMITTEE_NAME: 'Technical Steering Committee',
+      LAST_ATTENDED_DATE: new Date('2026-08-14T00:00:00.000Z'),
+      ...periods,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [repWarehouseRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    loggerError.mockReset();
+    warning.mockReset();
+  });
+
+  // The period pill projects these rows client-side, so one read has to serve every period.
+  it('reads every period in one pass, scoped to the foundation', async () => {
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastBinds()).toEqual(['acme']);
+    expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
+    expect(response.rows[0]).toMatchObject({
+      key: 'r-1',
+      personName: 'Dana Fields',
+      accountName: 'Acme Motors',
+      committeeName: 'Technical Steering Committee',
+      lastAttendedDate: '2026-08-14',
+    });
+    expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false });
+  });
+
+  // A null invited/attended column is unmeasured, not zero — coercing it would report a real "never invited".
+  it('keeps a null invited-count and attended-count column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ MEETINGS_INVITED_COUNT_YTD: null, MEETINGS_ATTENDED_COUNT_YTD: null })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsInvited: null, meetingsAttended: null });
+  });
+
+  // The view owns these metrics. Re-deriving never-attended or lapsed from rolled-up project rows
+  // restates a definition dbt publishes, and OR-ing the per-project flags gets it wrong outright:
+  // someone who attended under one project and no-showed under another has attended.
+  it('reads the published rows and flags rather than aggregating them', async () => {
+    await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('GROUP BY');
+    expect(lastSql()).not.toContain('BOOLOR_AGG(');
+    expect(lastSql()).not.toContain('SUM(');
+    expect(lastSql()).not.toContain('MAX(');
+    expect(lastSql()).toContain('has_never_attended_ytd');
+  });
+
+  // The person key may hold a lowercased email, so it is never read and never mapped. Asserting on
+  // the value, not the column name: the name alone could not appear whatever the SELECT asked for.
+  it('never reads the person key into the response', async () => {
+    execute.mockResolvedValueOnce({ rows: [repWarehouseRow({ PERSON_KEY: 'dana.fields@acme-motors.example' })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('person_key');
+    expect(JSON.stringify(response)).not.toContain('dana.fields@acme-motors.example');
+    expect(Object.keys(response.rows[0] ?? {})).not.toContain('personKey');
+  });
+
+  // Unlike the org and non-member captions, this view counts its scope per period.
+  it('reads a caption count pair for every period off a row rather than counting the rows', async () => {
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('COUNT(');
+    expect(response.counts).toEqual([
+      { range: 'COMPLETED_YEAR_3', reps: 489, neverAttendedReps: 112 },
+      { range: 'COMPLETED_YEAR_2', reps: 488, neverAttendedReps: 112 },
+      { range: 'COMPLETED_YEAR', reps: 487, neverAttendedReps: 112 },
+      { range: 'YTD', reps: 486, neverAttendedReps: 112 },
+    ]);
+  });
+
+  // A zero in one period would caption a full table as empty, so a single null drops the whole set.
+  it('reports no counts at all when any period leaves its scope count null', async () => {
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ SCOPE_REPS_COUNT_PREV_COMPLETED_YEAR: null })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.counts).toBeNull();
+  });
+
+  it('carries the view flags through rather than re-deriving them from the last attended date', async () => {
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ LAST_ATTENDED_DATE: null, HAS_NEVER_ATTENDED_YTD: true, IS_LAPSED_LAST_COMPLETED_YEAR: true })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.lastAttendedDate).toBeNull();
+    expect(response.rows[0]?.periods[3]).toMatchObject({ neverAttended: true, lapsed: false });
+    expect(response.rows[0]?.periods[2]).toMatchObject({ neverAttended: false, lapsed: true });
+  });
+
+  // The client sorts, filters and pages this payload in memory, so the read carries its own ceiling.
+  it('caps the read and orders longest-absent first, independently of the selected period', async () => {
+    await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    // One past the cap: a scope of exactly the cap must not be reported as truncated.
+    expect(lastSql()).toContain(`LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}`);
+    // Never-attended sorts first, then the longest absence — and the order never moves with the pill.
+    expect(lastSql()).toContain('ORDER BY last_attended_date ASC NULLS FIRST');
+    // Two people can share a name, and a tie at the cap boundary would drop a different one per read.
+    expect(lastSql()).toContain('rep_key ASC');
+  });
+
+  it('truncates to the cap and says so out loud when the scope overruns it', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1 }, () => repWarehouseRow()) });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_representatives', 'Representative rows hit the read cap', {
+      foundation_slug: 'acme',
+      row_cap: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+    });
+  });
+
+  it('stays quiet for a scope of exactly the cap, which is complete rather than truncated', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP }, () => repWarehouseRow()) });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
+  });
+
+  it('sends its own client message for a missing view rather than the warehouse object name', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getRepresentatives(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Representatives are unavailable right now.');
+  });
+
+  it('rethrows any other Snowflake failure', async () => {
+    execute.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.getRepresentatives(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
   });
 });
 

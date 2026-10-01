@@ -14,17 +14,15 @@ import { CardComponent } from '@components/card/card.component';
 /** States whose wording must never carry an addressed organization's name (spec 050 DR-002 / 053 DR-001). */
 const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-access', 'wrong-organization', 'section-no-access', 'section-could-not-verify']);
 
-/** States that render the caller's own organization list (FR-008). */
-const ORG_LIST_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['wrong-organization', 'not-found-staff']);
-
 /**
  * Spec 053 — the one shared Org Lens empty state. Renders headline → reason → primary → secondary from
  * the copy registry; call sites choose a state, never a string (FR-001/FR-004).
  *
  * Visual shape follows the LFX Insights empty-state pattern (lfx-self-serve#2533 "Design"), in exact
  * px because the app root is 14px: a 56px `blue-100` disc (Insights' accent-100) with a 32px `blue-500`
- * icon, a Roboto Slab 18/20px headline, one 14px paragraph (max 448px), one primary `lfx-button` with a
- * leading icon at `size="small"` (the app's empty-state CTA default, `lfx-empty-state`), and at most one muted 13px secondary link.
+ * icon, a Roboto Slab 18/20px headline, one 14px paragraph (max 448px), one primary call to action
+ * rendered as an `accent-500` text-link `lfx-button` (Inter 600 · 14px label · 16px leading icon, see
+ * `ctaStyleClass`), and at most one muted 13px secondary link.
  *
  * Not a thin wrapper over `lfx-empty-state`: that primitive carries one CTA and no secondary line, and
  * FR-002/FR-008 need a secondary action and an organization list.
@@ -50,6 +48,12 @@ export class OrgLensEmptyStateComponent {
   public readonly retry = output<void>();
   public readonly resetFilters = output<void>();
   public readonly orgSelected = output<string>();
+
+  /**
+   * The call to action is an `accent-500` text link, not a filled button (#2533 Tokens row: Inter 600 ·
+   * 14px · 16px icon). Exact px, not rem: the app root is 14px (styling.md).
+   */
+  protected readonly ctaStyleClass = '[&_.p-button-icon]:!text-[16px] [&_.p-button-label]:!text-[14px] [&_.p-button-label]:!font-semibold';
 
   /**
    * The registry entry for the state. The name set is closed at compile time, but a name that reaches
@@ -96,11 +100,12 @@ export class OrgLensEmptyStateComponent {
   /** Hidden when it has been promoted to the primary slot. */
   protected readonly secondary = computed(() => (this.primary() === this.copy().secondary ? undefined : this.copy().secondary));
 
-  /** FR-008 — the caller's own organizations, honoured only for the states that list them. Empty renders nothing rather than an empty box. */
-  protected readonly orgList = computed(() => (ORG_LIST_STATES.has(this.state()) ? (this.values().orgList ?? []) : []));
-
-  /** The list is the primary control (`wrong-organization`: the way out is picking a held organization) — rendered under the primary's label, in the primary's slot. */
-  protected readonly orgListIsPrimary = computed(() => this.primary()?.action === 'org-list');
+  /**
+   * FR-008 — the caller's own organizations, listed only on `wrong-organization`, where picking one is
+   * the way out. The staff not-found state lists none: staff reach any organization through switcher
+   * search. Empty renders nothing rather than an empty box.
+   */
+  protected readonly orgList = computed(() => (this.state() === 'wrong-organization' ? (this.values().orgList ?? []) : []));
 
   protected onAction(action: OrgLensEmptyStateAction): void {
     if (action.action === 'retry') {

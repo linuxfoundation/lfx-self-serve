@@ -5,7 +5,6 @@ import {
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-  HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
 
@@ -19,6 +18,10 @@ import type {
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgPeriod,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRepFilter,
+  HealthMetricsEngagementRepPeriod,
+  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementRepRow,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
@@ -26,29 +29,36 @@ import type {
   HealthMetricsEngagementSubNavItem,
 } from '../interfaces/health-metrics-engagement.interface';
 
-/** DOM id for a section; the URL fragment stays the bare key. */
-export function buildHealthMetricsEngagementSectionId(key: HealthMetricsEngagementSectionKey): string {
-  return `${HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX}${key}`;
-}
-
-/** True when `fragment` names one of the six sections — the deep-link allowlist. */
-export function isHealthMetricsEngagementSectionKey(fragment: string | null | undefined): fragment is HealthMetricsEngagementSectionKey {
-  return HEALTH_METRICS_ENGAGEMENT_SECTIONS.some((section) => section.key === fragment);
-}
-
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
  * period with too few meetings reads "No data" rather than a percentage built on one or two events.
  */
-export function formatHealthMetricsEngagementAttendance(fraction: number | null, meetingsHeld: number): string {
+export function formatHealthMetricsEngagementAttendance(fraction: number | null, meetingsHeld: number | null): string {
   if (fraction === null) {
     return '—';
   }
-  if (meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE) {
+  if (meetingsHeld === null || meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE) {
     return 'No data';
   }
 
   return `${Math.round(fraction * 100)}%`;
+}
+
+/** A count cell: "—" when unmeasured, else the count with its locale pinned so SSR and hydration agree. */
+export function formatHealthMetricsEngagementCount(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString('en-US');
+}
+
+/**
+ * "12 / 27"-style ratio cell shared by the org, rep and participation tables. Either side unmeasured
+ * makes the whole cell "—" — a partial "12 / —" would wrongly imply the other side is a real zero.
+ */
+export function formatHealthMetricsEngagementRatio(numerator: number | null, denominator: number | null): string {
+  if (numerator === null || denominator === null) {
+    return '—';
+  }
+
+  return `${numerator} / ${denominator}`;
 }
 
 /**
@@ -80,7 +90,9 @@ export function selectHealthMetricsEngagementGroupPeriod(
  * the line rather than plotting a point the table itself refuses to state.
  */
 export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagementGroupRow): (number | null)[] {
-  return row.periods.map((period) => (period.meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE ? null : period.attendancePct));
+  return row.periods.map((period) =>
+    period.meetingsHeld === null || period.meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE ? null : period.attendancePct
+  );
 }
 
 /**
@@ -190,6 +202,45 @@ export function sortHealthMetricsEngagementNonMemberRows(
   range: HealthMetricsRange
 ): HealthMetricsEngagementNonMemberRow[] {
   return [...rows].sort((a, b) => compareByPeriodRank(a, b, range));
+}
+
+/** The selected period's numbers for one representative, falling back to the newest period held. */
+export function selectHealthMetricsEngagementRepPeriod(row: HealthMetricsEngagementRepRow, range: HealthMetricsRange): HealthMetricsEngagementRepPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** The selected period's caption counts. This view counts its scope per period, unlike the others. */
+export function selectHealthMetricsEngagementRepCounts(
+  counts: readonly HealthMetricsEngagementRepPeriodCounts[] | null,
+  range: HealthMetricsRange
+): HealthMetricsEngagementRepPeriodCounts | null {
+  return counts ? selectPeriod(counts, range) : null;
+}
+
+/**
+ * The representatives table's client-side cut. Every cut starts from the people invited in the
+ * selected period — the population the view's own caption counts — so the table and its caption
+ * cannot disagree. Read order is already last-attended-first and period-independent, so the pill
+ * re-filters without re-sorting.
+ */
+export function filterHealthMetricsEngagementRepRows(
+  rows: readonly HealthMetricsEngagementRepRow[],
+  filter: HealthMetricsEngagementRepFilter,
+  search: string,
+  range: HealthMetricsRange
+): HealthMetricsEngagementRepRow[] {
+  const term = search.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    const period = selectPeriod(row.periods, range);
+    // Null is unmeasured, like a real 0 invited — the population the caption counts is missing either way.
+    if (!period || !period.meetingsInvited) return false;
+    if (filter === 'never' && !period.neverAttended) return false;
+    if (filter === 'lapsed' && !period.lapsed) return false;
+
+    // Searched together because the name and its organization sub-line read as one cell.
+    return term === '' || row.personName.toLowerCase().includes(term) || row.accountName.toLowerCase().includes(term);
+  });
 }
 
 /** One rank order for both organization tables: a divergent copy would sort them differently. */

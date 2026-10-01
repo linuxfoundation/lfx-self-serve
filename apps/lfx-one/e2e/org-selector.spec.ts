@@ -22,8 +22,8 @@
  * - S17: LF-team caller with zero assigned orgs still gets the switcher, no redirect or error toast
  * - S18: catalogue search runs only at or above the two-character minimum
  * - S19: discovered rows sit under their own heading and carry a membership chip
- * - S20: LF-team caller (lf-staff or lf-contractor) sees the switcher + catalogue search, opens an
- *        org they hold no grant on read-only, and is refused on the access write (spec 044)
+ * - S20: LF-team caller (lf-staff) sees the switcher + catalogue search, opens an org they hold
+ *        no grant on read-only, and is refused on the access write
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -34,6 +34,14 @@
 import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
+import {
+  SYNTHETIC_ORG_ACCOUNT_ID,
+  SYNTHETIC_ORG_DOMAIN,
+  SYNTHETIC_ORG_LEGAL_NAME,
+  SYNTHETIC_SECOND_ORG_ACCOUNT_ID,
+  SYNTHETIC_SECOND_ORG_DOMAIN,
+  SYNTHETIC_SECOND_ORG_LEGAL_NAME,
+} from './fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
@@ -73,9 +81,9 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
   }
 }
 
-// Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
-// wire is the two-team population (`lf-staff` or `lf-contractor`, see `LF_TEAM_IDS`) — the field
-// name is kept for wire compatibility.
+// Skip a company-wide-team scenario when the bootstrap identity is not in one. `isStaff` on the wire is
+// membership of a team that reads every company (server `ORG_WIDE_READ_TEAM_IDS`; never `lf-contractor`
+// since the rollback of lfx-self-serve#2157); the field name is kept for wire compatibility.
 async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
@@ -83,7 +91,7 @@ async function skipWhenNotLfTeam(page: Page): Promise<void> {
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (!body.isStaff) {
-    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff or lf-contractor member');
+    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not in a company-wide team');
   }
 }
 
@@ -190,9 +198,9 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
     skipWhenAuthMissing(page);
 
     // Org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
-    const PARENT_UID = '0014100000Te2QjAAJ';
-    const CHILD_UID = '0014100000TdzYmAAJ';
-    const PARENT_NAME = 'Red Hat, Inc.';
+    const PARENT_UID = SYNTHETIC_ORG_ACCOUNT_ID;
+    const CHILD_UID = SYNTHETIC_SECOND_ORG_ACCOUNT_ID;
+    const PARENT_NAME = SYNTHETIC_ORG_LEGAL_NAME;
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
       route.fulfill({
@@ -218,19 +226,19 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
           items: [
             {
               uid: PARENT_UID,
-              accountId: '0014100000Te2QjAAJ',
+              accountId: SYNTHETIC_ORG_ACCOUNT_ID,
               name: PARENT_NAME,
               logoUrl: null,
-              primaryDomain: 'redhat.com',
+              primaryDomain: SYNTHETIC_ORG_DOMAIN,
               isMember: true,
               parentName: null,
             },
             {
               uid: CHILD_UID,
-              accountId: '0014100000TdzYmAAJ',
-              name: 'CoreOS, Inc.',
+              accountId: CHILD_UID,
+              name: SYNTHETIC_SECOND_ORG_LEGAL_NAME,
               logoUrl: null,
-              primaryDomain: 'coreos.com',
+              primaryDomain: SYNTHETIC_SECOND_ORG_DOMAIN,
               isMember: true,
               parentName: PARENT_NAME,
             },
@@ -271,7 +279,7 @@ test.describe('Org Selector — no mock fallback (S11)', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          writers: ['0014100000Te2QjAAJ'],
+          writers: [SYNTHETIC_ORG_ACCOUNT_ID],
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
@@ -318,7 +326,7 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          writers: ['0014100000Te2QjAAJ'],
+          writers: [SYNTHETIC_ORG_ACCOUNT_ID],
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
@@ -676,8 +684,8 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    const ASSIGNED_UID = '0014100000Te2QjAAJ';
-    const DISCOVERED_UID = '0014100000TdzYmAAJ';
+    const ASSIGNED_UID = SYNTHETIC_ORG_ACCOUNT_ID;
+    const DISCOVERED_UID = SYNTHETIC_SECOND_ORG_ACCOUNT_ID;
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
       route.fulfill({
@@ -704,9 +712,9 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
             {
               uid: ASSIGNED_UID,
               accountId: ASSIGNED_UID,
-              name: 'Red Hat, Inc.',
+              name: SYNTHETIC_ORG_LEGAL_NAME,
               logoUrl: null,
-              primaryDomain: 'redhat.com',
+              primaryDomain: SYNTHETIC_ORG_DOMAIN,
               isMember: true,
               parentName: null,
               isAssigned: true,
@@ -714,9 +722,9 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
             {
               uid: DISCOVERED_UID,
               accountId: DISCOVERED_UID,
-              name: 'CoreOS, Inc.',
+              name: SYNTHETIC_SECOND_ORG_LEGAL_NAME,
               logoUrl: null,
-              primaryDomain: 'coreos.com',
+              primaryDomain: SYNTHETIC_SECOND_ORG_DOMAIN,
               isMember: false,
               parentName: null,
               isAssigned: false,
@@ -757,11 +765,13 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
   });
 });
 
-// S20 — LF-team global auditor (spec 044). Both `lf-staff` and `lf-contractor` hold `auditor` on
-// every b2b_org, so a team member reaches the switcher + catalogue search and may open any org
-// read-only; team membership never confers edit (FR-010), so the access write is refused. The
-// code path is identical for both teams, so a contractor-only identity is not required in CI —
-// contractor-specific verification is the post-release step (spec 044 T038a).
+// S20 — company-wide-team caller. `lf-staff` holds `auditor` on every b2b_org, so a team member
+// reaches the switcher + catalogue search and may open any org read-only; team membership never
+// confers edit (FR-010), so the access write is refused. `lf-contractor` held the same grant under
+// spec 044 and was rolled back (lfx-self-serve#2157). What guards that is the unit spec
+// `org-role-grants.service.spec.ts` (contractor-only caller → `isStaff: false`, and the
+// `TEAM_REQUESTS` batch) — every e2e stubs `isStaff` on the wire, so no e2e can catch a re-widened
+// `LF_TEAM_IDS`. A live contractor-only check remains a post-deploy step (#2157 verification).
 test.describe('Org Selector — LF-team caller reads any org, edits none (S20)', () => {
   test('S20: LF-team caller sees catalogue search, opens an ungranted org read-only, and is refused on the access write', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -833,7 +843,7 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
 // Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
 // flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
-// hydrating one against the other used to leave "My Engagement" / "My Growth" sections
+// hydrating one against the other used to leave "My Engagement" / "Education" sections
 // interleaved with org items. The sidebar now withholds the concrete menu until
 // afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.
 test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
@@ -849,6 +859,6 @@ test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)
 
     // The org lens tab and the resolved menu must be consistent: no Me-lens sections remain on screen.
     await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "My Engagement" must not leak into the org sidebar').toHaveCount(0);
-    await expect(page.getByTestId('sidebar-item-my-growth'), 'Me-lens "My Growth" must not leak into the org sidebar').toHaveCount(0);
+    await expect(page.getByTestId('sidebar-item-education'), 'Me-lens "Education" must not leak into the org sidebar').toHaveCount(0);
   });
 });

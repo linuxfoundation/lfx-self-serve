@@ -5,7 +5,7 @@
 // vitest's plain Node runtime that needs the JIT compiler loaded first (as `formation.service.spec.ts` does).
 import '@angular/compiler';
 
-import type { CommitteeMember, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import type { CommitteeMember, MeetingRegistrant, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,8 +34,21 @@ function member(overrides: Partial<CommitteeMember>): CommitteeMember {
   } as unknown as CommitteeMember;
 }
 
-function upstream(members: CommitteeMember[]): QueryServiceResponse<CommitteeMember> {
-  return { resources: members.map((data) => ({ data })) } as unknown as QueryServiceResponse<CommitteeMember>;
+function registrant(overrides: Partial<MeetingRegistrant>): MeetingRegistrant {
+  return {
+    uid: 'registrant:1',
+    email: 'rosa.diaz@vendor-corp.example',
+    first_name: 'Rosa',
+    last_name: 'Diaz',
+    job_title: 'Engineer',
+    org_name: 'Vendor Corp',
+    username: 'rosa.diaz',
+    ...overrides,
+  } as unknown as MeetingRegistrant;
+}
+
+function upstream<T>(rows: T[]): QueryServiceResponse<T> {
+  return { resources: rows.map((data) => ({ data })) } as unknown as QueryServiceResponse<T>;
 }
 
 describe('SearchService (server)', () => {
@@ -94,5 +107,34 @@ describe('SearchService (server)', () => {
       username: 'kim.park',
     });
     expect(response.results[1]).toEqual(expect.objectContaining({ uid: 'member:3', username: null, organization: null }));
+  });
+
+  it('maps meeting registrants and forwards the v1_meeting_registrant type verbatim', async () => {
+    proxyRequest.mockResolvedValue(
+      upstream([
+        registrant({}),
+        registrant({ uid: 'registrant:2', username: 'amy.s', email: 'amy.s@vendor-corp.example', first_name: 'Amy', last_name: 'Santiago', org_name: null }),
+      ])
+    );
+
+    const response = await service.searchUsers(req, { name: 'rosa', type: 'v1_meeting_registrant', sort: 'best_match' });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      name: 'rosa',
+      sort: 'best_match',
+      type: 'v1_meeting_registrant',
+    });
+    expect(response.results[0]).toEqual({
+      uid: 'registrant:1',
+      email: 'rosa.diaz@vendor-corp.example',
+      first_name: 'Rosa',
+      last_name: 'Diaz',
+      job_title: 'Engineer',
+      organization: { name: 'Vendor Corp', website: null },
+      committee: null,
+      type: 'v1_meeting_registrant',
+      username: 'rosa.diaz',
+    });
+    expect(response.results[1]).toEqual(expect.objectContaining({ uid: 'registrant:2', organization: null, committee: null, type: 'v1_meeting_registrant' }));
   });
 });

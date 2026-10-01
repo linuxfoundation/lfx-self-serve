@@ -5,10 +5,12 @@ import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
+  HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
+import type { HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -29,26 +31,9 @@ export interface HealthMetricsTab {
   route: string | null;
 }
 
-/** A section with its DOM ids resolved once, so the template never calls a builder per render. */
-export interface HealthMetricsEngagementSectionView {
+/** Engagement's sub-nav badge, keyed to its own sections. */
+export interface HealthMetricsEngagementSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsEngagementSectionKey;
-  label: string;
-  heading: string;
-  description: string;
-  footnote: string;
-  footnoteCaution: boolean;
-  id: string;
-  headingId: string;
-}
-
-/** Sub-nav badge for one section: a count plus an optional qualifier note. */
-export interface HealthMetricsEngagementSubNavItem {
-  key: HealthMetricsEngagementSectionKey;
-  label: string;
-  /** `null` for sections the design gives no badge (`participation`, `trend`). */
-  count: number | null;
-  /** e.g. `3 dormant`; empty when nothing qualifies. */
-  note: string;
 }
 
 /**
@@ -69,9 +54,10 @@ export interface HealthMetricsEngagementSubNavCounts {
  * re-reads rather than re-deriving. */
 export interface HealthMetricsEngagementGroupPeriod {
   range: HealthMetricsRange;
-  meetingsHeld: number;
-  invitedCount: number;
-  attendedCount: number;
+  /** `null` when the view carries no column value for this row/period — unmeasured, not zero. */
+  meetingsHeld: number | null;
+  invitedCount: number | null;
+  attendedCount: number | null;
   /** 0-1 share of invited seats filled; `null` means no invited population at all. */
   attendancePct: number | null;
   /** The view's own `IS_DORMANT_<period>` — not re-derived client-side. */
@@ -110,7 +96,8 @@ export interface HealthMetricsEngagementGroupCounts {
 export interface HealthMetricsEngagementGroupAttendance {
   rows: HealthMetricsEngagementGroupRow[];
   totalRecords: number;
-  counts: HealthMetricsEngagementGroupCounts;
+  /** `null` when the unfiltered foundation scope has no rows at all — distinct from a real zero. */
+  counts: HealthMetricsEngagementGroupCounts | null;
 }
 
 /** Wire query for `GET /api/analytics/engagement-group-attendance`. */
@@ -137,13 +124,14 @@ export type HealthMetricsEngagementParticipationLevel = 'all' | 'group';
 /** One participation row's numbers for a single period. Every period ships on every row. */
 export interface HealthMetricsEngagementParticipationPeriod {
   range: HealthMetricsRange;
-  meetingsHeld: number;
-  invitedCount: number;
-  attendedCount: number;
+  /** `null` when the view carries no column value for this row/period — unmeasured, not zero. */
+  meetingsHeld: number | null;
+  invitedCount: number | null;
+  attendedCount: number | null;
   /** 0-1 share of invited seats filled; `null` means no invited population at all. */
   attendancePct: number | null;
-  activeGroups: number;
-  neverAttended: number;
+  activeGroups: number | null;
+  neverAttended: number | null;
   /** Point change vs the previous comparable period; `null` when the view holds no prior period. */
   attendanceChangePp: number | null;
   /** Fractional change in meetings held vs the previous period; `null` when there is no prior. */
@@ -156,7 +144,8 @@ export interface HealthMetricsEngagementParticipationRow {
   /** The view's `MEETING_TYPE_GROUP`; `null` on the roll-up row. */
   group: string | null;
   label: string;
-  totalGroups: number;
+  /** `null` when the view carries no column value for this row — unmeasured, not zero. */
+  totalGroups: number | null;
   /** True for the rows whose detail belongs to the Members tab rather than this page. */
   governance: boolean;
   periods: HealthMetricsEngagementParticipationPeriod[];
@@ -188,12 +177,13 @@ export type HealthMetricsEngagementOrgFilter = (typeof HEALTH_METRICS_ENGAGEMENT
  * pill re-projects client-side and costs no request. */
 export interface HealthMetricsEngagementOrgPeriod {
   range: HealthMetricsRange;
-  /** Meetings held across the scope in this period — the "No data" threshold reads this. */
-  meetingsHeld: number;
+  /** Meetings held across the scope in this period — the "No data" threshold reads this. `null` is
+   * unmeasured, not zero. */
+  meetingsHeld: number | null;
   /** Meetings that concerned this org at all (invited or attended) — the attendance denominator. */
-  meetingsTotal: number;
-  invitedCount: number;
-  attendedCount: number;
+  meetingsTotal: number | null;
+  invitedCount: number | null;
+  attendedCount: number | null;
   /** 0-1 share of the org's meetings it turned up to; `null` when no meeting concerned it. */
   attendancePct: number | null;
   /** Mean representatives per attended meeting; `null` when it attended none. */
@@ -224,6 +214,8 @@ export interface HealthMetricsEngagementOrgRowView {
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastEngagedLabel: string;
   avgRepsLabel: string;
+  /** `12 / 27` — attended over total for the selected period; "—" when either side is unmeasured. */
+  attendedLabel: string;
 }
 
 /** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
@@ -249,10 +241,11 @@ export interface HealthMetricsEngagementOrgQuery {
  * the period pill re-projects client-side and costs no request. */
 export interface HealthMetricsEngagementNonMemberPeriod {
   range: HealthMetricsRange;
-  /** Meetings this org turned up to in the period; `0` is measured, not missing. */
-  meetingsAttended: number;
+  /** Meetings this org turned up to in the period; `0` is measured, not missing. `null` when the
+   * view carries no column value for this row/period — unmeasured, not zero. */
+  meetingsAttended: number | null;
   /** Distinct people it sent across those meetings. */
-  distinctPeople: number;
+  distinctPeople: number | null;
   /** The view's `SORT_RANK_<period>`, best-first. Per period, so the pill re-sorts the loaded rows. */
   sortRank: number | null;
 }
@@ -288,4 +281,78 @@ export interface HealthMetricsEngagementNonMemberParticipation {
  * project key, so the section is foundation-scoped and the period resolves client-side. */
 export interface HealthMetricsEngagementNonMemberQuery {
   foundationSlug: string;
+}
+
+/** Which cut of the representatives table is showing. Every cut reads the selected period's own
+ * flags, so the pill re-filters the loaded rows rather than re-reading. */
+export type HealthMetricsEngagementRepFilter = (typeof HEALTH_METRICS_ENGAGEMENT_REP_FILTERS)[number]['key'];
+
+/** One representative's numbers for a single period. Every period ships on every row, so the
+ * period pill re-projects client-side and costs no request. */
+export interface HealthMetricsEngagementRepPeriod {
+  range: HealthMetricsRange;
+  /** `null` when the view carries no column value for this row/period — unmeasured, not zero. */
+  meetingsInvited: number | null;
+  meetingsAttended: number | null;
+  /** The view's `HAS_NEVER_ATTENDED_<period>`: invited in this period, never attended all-time. */
+  neverAttended: boolean;
+  /** The view's `IS_LAPSED_<period>`: invited in it, attended none of it, and last seen before it. */
+  lapsed: boolean;
+}
+
+/**
+ * A row of the Representatives table — one person per group per project, the grain the view
+ * publishes. Rows cover every period, so a row only belongs to the visible table when it was
+ * invited in the selected one.
+ */
+export interface HealthMetricsEngagementRepRow {
+  /** The view's `_KEY`: a surrogate over (foundation, project, person, group), so unique per row. */
+  key: string;
+  personName: string;
+  /** Sub-line under the name; the row's organization, not a second identity. */
+  accountName: string;
+  committeeName: string;
+  /** All-time, not per period: ISO date this person last attended this group under this project. */
+  lastAttendedDate: string | null;
+  periods: HealthMetricsEngagementRepPeriod[];
+}
+
+/** One representatives row with its selected-period numbers and labels already resolved. */
+export interface HealthMetricsEngagementRepRowView {
+  row: HealthMetricsEngagementRepRow;
+  period: HealthMetricsEngagementRepPeriod | null;
+  /** `2 / 6` — attended over invited for the selected period. */
+  attendedLabel: string;
+  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
+  lastAttendedLabel: string;
+}
+
+/** Scope counts for one period. Unlike the org and non-member captions, this view's scope counts
+ * are period-suffixed, so the caption and the sub-nav badge follow the pill. */
+export interface HealthMetricsEngagementRepPeriodCounts {
+  range: HealthMetricsRange;
+  reps: number;
+  neverAttendedReps: number;
+}
+
+/** `GET /api/analytics/engagement-representatives` — every representative, every period, one read. */
+export interface HealthMetricsEngagementRepresentatives {
+  rows: HealthMetricsEngagementRepRow[];
+  /** `null` when the view reports no scope counts on rows that exist — unmeasured, not zero. */
+  counts: HealthMetricsEngagementRepPeriodCounts[] | null;
+}
+
+/** Wire query for `GET /api/analytics/engagement-representatives`. Search, the filter cut and the
+ * period all resolve client-side, so none of them reaches the wire. */
+export interface HealthMetricsEngagementRepQuery {
+  foundationSlug: string;
+}
+
+/** Query params the Engagement sections read on arrival and write back; `null` clears one the URL carries. */
+export interface HealthMetricsEngagementQueryParams {
+  groupType?: HealthMetricsEngagementGroupTypeFilter | null;
+  groupPage?: number | null;
+  orgFilter?: HealthMetricsEngagementOrgFilter | null;
+  partMode?: HealthMetricsEngagementParticipationMode | null;
+  repFilter?: HealthMetricsEngagementRepFilter | null;
 }

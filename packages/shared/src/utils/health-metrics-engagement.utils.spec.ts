@@ -19,23 +19,28 @@ import {
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgRow,
   HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementRepRow,
   HealthMetricsEngagementSubNavCounts,
 } from '../interfaces/health-metrics-engagement.interface';
 import {
   buildHealthMetricsEngagementGroupTrend,
-  buildHealthMetricsEngagementSectionId,
   buildHealthMetricsEngagementSubNavItems,
   filterHealthMetricsEngagementOrgRows,
+  filterHealthMetricsEngagementRepRows,
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementAvgReps,
+  formatHealthMetricsEngagementCount,
   formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
-  isHealthMetricsEngagementSectionKey,
+  formatHealthMetricsEngagementRatio,
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
   selectHealthMetricsEngagementGroupPeriod,
   selectHealthMetricsEngagementNonMemberPeriod,
   selectHealthMetricsEngagementParticipationPeriod,
+  selectHealthMetricsEngagementRepCounts,
+  selectHealthMetricsEngagementRepPeriod,
   sortHealthMetricsEngagementNonMemberRows,
 } from './health-metrics-engagement.utils';
 
@@ -51,27 +56,6 @@ function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): H
     ...overrides,
   };
 }
-
-describe('buildHealthMetricsEngagementSectionId', () => {
-  it('prefixes the key so the DOM id never collides with the bare URL fragment', () => {
-    expect(buildHealthMetricsEngagementSectionId('committees')).toBe('sec-eng-committees');
-  });
-});
-
-describe('isHealthMetricsEngagementSectionKey', () => {
-  it('accepts every shipped section key', () => {
-    for (const section of HEALTH_METRICS_ENGAGEMENT_SECTIONS) {
-      expect(isHealthMetricsEngagementSectionKey(section.key)).toBe(true);
-    }
-  });
-
-  it('rejects anything else, including the prefixed DOM id and an absent fragment', () => {
-    expect(isHealthMetricsEngagementSectionKey('sec-eng-committees')).toBe(false);
-    expect(isHealthMetricsEngagementSectionKey('groups')).toBe(false);
-    expect(isHealthMetricsEngagementSectionKey(null)).toBe(false);
-    expect(isHealthMetricsEngagementSectionKey(undefined)).toBe(false);
-  });
-});
 
 describe('formatHealthMetricsEngagementAttendance', () => {
   it('renders an em dash when there was no invited population, never 0%', () => {
@@ -89,6 +73,37 @@ describe('formatHealthMetricsEngagementAttendance', () => {
 
   it('renders a genuine zero attendance as 0%, distinct from the em dash', () => {
     expect(formatHealthMetricsEngagementAttendance(0, 9)).toBe('0%');
+  });
+
+  it('renders "No data" when the meeting count itself is unmeasured, not a real fraction', () => {
+    expect(formatHealthMetricsEngagementAttendance(0.83, null)).toBe('No data');
+  });
+});
+
+describe('formatHealthMetricsEngagementCount', () => {
+  it('renders an unmeasured count as an em dash and a genuine zero as 0', () => {
+    expect(formatHealthMetricsEngagementCount(null)).toBe('—');
+    expect(formatHealthMetricsEngagementCount(0)).toBe('0');
+  });
+
+  it('pins en-US grouping separators', () => {
+    expect(formatHealthMetricsEngagementCount(12345)).toBe('12,345');
+  });
+});
+
+describe('formatHealthMetricsEngagementRatio', () => {
+  it('renders the "N / N" cell when both sides are measured', () => {
+    expect(formatHealthMetricsEngagementRatio(12, 27)).toBe('12 / 27');
+  });
+
+  it('renders an em dash when either side is unmeasured, never a partial ratio', () => {
+    expect(formatHealthMetricsEngagementRatio(null, 27)).toBe('—');
+    expect(formatHealthMetricsEngagementRatio(12, null)).toBe('—');
+    expect(formatHealthMetricsEngagementRatio(null, null)).toBe('—');
+  });
+
+  it('renders a genuine zero side as 0, distinct from the em dash', () => {
+    expect(formatHealthMetricsEngagementRatio(0, 27)).toBe('0 / 27');
   });
 });
 
@@ -187,6 +202,13 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
   it('nulls a period with too few meetings to rate', () => {
     const periods = [...row.periods];
     periods[3] = { ...periods[3], meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 };
+
+    expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
+  });
+
+  it('nulls a period whose meeting count is unmeasured, not just below the floor', () => {
+    const periods = [...row.periods];
+    periods[3] = { ...periods[3], meetingsHeld: null };
 
     expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
   });
@@ -415,5 +437,102 @@ describe('non-member participation rules', () => {
     sortHealthMetricsEngagementNonMemberRows(rows, 'YTD');
 
     expect(rows.map((row) => row.accountName)).toEqual(['Zeta Labs', 'Alpha Works']);
+  });
+});
+
+describe('representatives rules', () => {
+  function repRow(personName: string, accountName: string, overrides: Partial<HealthMetricsEngagementRepRow> = {}): HealthMetricsEngagementRepRow {
+    return {
+      key: `${personName}|${accountName}`.toLowerCase(),
+      personName,
+      accountName,
+      committeeName: 'Technical Steering Committee',
+      lastAttendedDate: '2026-08-14',
+      // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
+      periods: [
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('selects the period the pill asks for, falling back to the newest period held', () => {
+    const row = repRow('Dana Fields', 'Acme Motors');
+
+    expect(selectHealthMetricsEngagementRepPeriod(row, 'COMPLETED_YEAR')?.meetingsAttended).toBe(0);
+    // A period the read never returned falls back rather than blanking every cell in the row.
+    expect(selectHealthMetricsEngagementRepPeriod(row, 'COMPLETED_YEAR_3')?.range).toBe('YTD');
+    expect(selectHealthMetricsEngagementRepPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
+  });
+
+  // Unlike the org and non-member captions, this view counts its scope per period.
+  it('selects the caption counts for the period, and reports an unmeasured scope as null', () => {
+    const counts: HealthMetricsEngagementRepPeriodCounts[] = [
+      { range: 'COMPLETED_YEAR', reps: 40, neverAttendedReps: 9 },
+      { range: 'YTD', reps: 48, neverAttendedReps: 12 },
+    ];
+
+    expect(selectHealthMetricsEngagementRepCounts(counts, 'COMPLETED_YEAR')).toEqual({ range: 'COMPLETED_YEAR', reps: 40, neverAttendedReps: 9 });
+    expect(selectHealthMetricsEngagementRepCounts(counts, 'YTD')?.reps).toBe(48);
+    expect(selectHealthMetricsEngagementRepCounts(null, 'YTD')).toBeNull();
+  });
+
+  // The caption counts the period's invited population, so the table cannot show anyone outside it.
+  it('drops rows that were not invited in the selected period, on every cut', () => {
+    const invitedLater = repRow('Sam Rivera', 'Vendor Corp', {
+      periods: [
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
+        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
+      ],
+    });
+    const rows = [repRow('Dana Fields', 'Acme Motors'), invitedLater];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD').map((row) => row.personName)).toEqual(['Dana Fields']);
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'COMPLETED_YEAR').map((row) => row.personName)).toEqual(['Dana Fields', 'Sam Rivera']);
+  });
+
+  // A null invited count is unmeasured, the same as a real 0 — neither belongs in the counted population.
+  it('drops a row whose invited count is unmeasured for the selected period', () => {
+    const unmeasured = repRow('Sam Rivera', 'Vendor Corp', {
+      periods: [
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
+        { range: 'YTD', meetingsInvited: null, meetingsAttended: null, neverAttended: false, lapsed: false },
+      ],
+    });
+    const rows = [repRow('Dana Fields', 'Acme Motors'), unmeasured];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD').map((row) => row.personName)).toEqual(['Dana Fields']);
+  });
+
+  it('cuts on the selected period own flags rather than a client-side date comparison', () => {
+    const lapsed = repRow('Sam Rivera', 'Vendor Corp', {
+      periods: [
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 1, neverAttended: false, lapsed: false },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true },
+      ],
+    });
+    const rows = [repRow('Dana Fields', 'Acme Motors'), lapsed];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'lapsed', '', 'YTD').map((row) => row.personName)).toEqual(['Sam Rivera']);
+    // The same pair reads differently in the completed year, where neither flag is set.
+    expect(filterHealthMetricsEngagementRepRows(rows, 'lapsed', '', 'COMPLETED_YEAR')).toEqual([]);
+    expect(filterHealthMetricsEngagementRepRows(rows, 'never', '', 'COMPLETED_YEAR').map((row) => row.personName)).toEqual(['Dana Fields']);
+  });
+
+  // The name and its organization sub-line read as one cell, so one term searches both.
+  it('searches the person and the organization together, case-insensitively', () => {
+    const rows = [repRow('Dana Fields', 'Acme Motors'), repRow('Sam Rivera', 'Vendor Corp')];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '  DANA ', 'YTD').map((row) => row.personName)).toEqual(['Dana Fields']);
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', 'vendor', 'YTD').map((row) => row.personName)).toEqual(['Sam Rivera']);
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD')).toHaveLength(2);
+  });
+
+  it("leaves the caller's array untouched, since the rows are shared with the response signal", () => {
+    const rows = [repRow('Zeta Labs', 'Zeta Labs'), repRow('Alpha Works', 'Alpha Works')];
+    filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD');
+
+    expect(rows.map((row) => row.personName)).toEqual(['Zeta Labs', 'Alpha Works']);
   });
 });

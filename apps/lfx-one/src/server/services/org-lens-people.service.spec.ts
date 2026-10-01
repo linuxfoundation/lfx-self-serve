@@ -3,7 +3,7 @@
 
 import { createRequire } from 'node:module';
 
-import type { OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
+import type { CompactOrgAllEmployeesRawCache, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,10 +17,16 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/string.utils')),
+  // Real, not stubbed: the roster cache encodes and decodes through these on every read/write, so a
+  // stub would make the round-trip assertions below vacuous.
+  ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-people.constants')),
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
+  // Real, not stubbed: the roster guard validates the stored columns against these lists, so a
+  // hand-written copy here would let a column-drift regression pass.
+  ...(await import('../../../../../packages/shared/src/constants/org-cache-compact.constants')),
 }));
 
 vi.mock('./snowflake.service', () => ({
@@ -68,7 +74,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 import { OrgLensPeopleService } from './org-lens-people.service';
-import { ValkeyService } from './valkey.service';
+import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
   exec(sql: string): void;
@@ -445,5 +451,140 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
     const internal = await service.getAllEmployeesInternal(ACCOUNT);
     expect(execute).toHaveBeenCalledTimes(3);
     expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
+  });
+});
+
+describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
+  /** Two rows exercising both ENGAGED_FOUNDATION_IDS arrivals (the driver returns either) plus a null-heavy row. */
+  function mockRoster(): void {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            ACCOUNT_ID: ACCOUNT,
+            PERSON_KEY: 'person-one',
+            LFID: 'lfid-one',
+            LF_USERNAME: 'RosterUser',
+            CDP_MEMBER_ID: 'cdp-1',
+            NAME: 'Roster User',
+            TITLE: 'Engineer',
+            EMAIL: 'roster.user@example.com',
+            PHOTO: 'https://avatars.example.com/roster.png',
+            SEATS_COUNT: 2,
+            BOARD_SEATS_COUNT: 1,
+            COMMITTEE_SEATS_COUNT: 1,
+            COMMITS_COUNT: 30,
+            EVENTS_COUNT: 2,
+            COURSES_COUNT: 1,
+            ENGAGED_FOUNDATION_IDS: '["foundation-one","foundation-two"]',
+          },
+          {
+            ACCOUNT_ID: ACCOUNT,
+            PERSON_KEY: 'person-two',
+            LFID: null,
+            LF_USERNAME: null,
+            CDP_MEMBER_ID: null,
+            NAME: null,
+            TITLE: null,
+            EMAIL: null,
+            PHOTO: null,
+            SEATS_COUNT: 0,
+            BOARD_SEATS_COUNT: 0,
+            COMMITTEE_SEATS_COUNT: 0,
+            COMMITS_COUNT: 0,
+            EVENTS_COUNT: 0,
+            COURSES_COUNT: 0,
+            ENGAGED_FOUNDATION_IDS: ['foundation-one'],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ ACCOUNT_ID: ACCOUNT, ACTIVE_IN_OSS: 2, IN_GOVERNANCE: 1, CODE_CONTRIBUTORS: 1, EVENT_ATTENDEES: 1, TRAINEES: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ FOUNDATION_ID: 'foundation-one', FOUNDATION_NAME: 'Foundation One' }] });
+  }
+
+  it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
+    mockRoster();
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT);
+
+    // Second call reads the entry the first one wrote, through the real serialize/parse round trip
+    // the in-memory Valkey fixture performs.
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT);
+
+    // `toStrictEqual` distinguishes null from undefined from an absent key — the distinction this
+    // exercises via `accessBadge`, which is optional and unset on a stored-only roster row. The
+    // serialized comparison additionally pins key order, which `mapEmployeeRow`'s object literal
+    // fixes and a decode must not perturb.
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(execute).toHaveBeenCalledTimes(3);
+    // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it — the
+    // column is stored verbatim, so a decode that normalized it would show up here.
+    expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
+    // ACCOUNT_ID is hoisted off every row at encode; a decode that forgot to put it back would
+    // leave the stored rows unusable for anything keyed on it.
+    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgAllEmployeesRawCache;
+    expect(stored.accountId).toBe(ACCOUNT);
+    expect(stored.rowsRaw.k).not.toContain('ACCOUNT_ID');
+  });
+
+  it('treats a stored roster whose LF_USERNAME is not a string as a miss, not a 500', async () => {
+    // Exact columns prove the shape, not the value. A current-shape entry holding a number there
+    // reaches `mapEmployeeRow`, which calls `.trim()` on it — so without this check a cache HIT
+    // becomes a 500 rather than a miss.
+    mockRoster();
+    await service.getAllEmployeesInternal(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
+    const usernameIndex = stored.rowsRaw.k.indexOf('LF_USERNAME');
+    stored.rowsRaw.r = stored.rowsRaw.r.map((row) => row.map((cell, index) => (index === usernameIndex ? 42 : cell)));
+    cacheValues.set(key, JSON.stringify(stored));
+    mockRoster();
+
+    const response = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
+  });
+
+  it('rejects a stored roster whose columns drifted from what the writer emits', async () => {
+    // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
+    // missing data, so the guard has to reject the entry up front rather than serve a roster with
+    // holes in it — silently dropping LF_USERNAME returns the directory to email-only matching.
+    mockRoster();
+    await service.getAllEmployeesInternal(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
+    stored.rowsRaw.k = stored.rowsRaw.k.filter((column) => column !== 'LF_USERNAME');
+    cacheValues.set(key, JSON.stringify(stored));
+    mockRoster();
+
+    const response = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
+  });
+
+  it('round-trips an empty roster unchanged', async () => {
+    // The empty envelope has to survive its own guard — `accountId` is null with no rows to hoist
+    // it from — or an org with no roster would refetch on every request forever.
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT);
+
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(cacheValues.size).toBe(1);
+  });
+
+  it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {
+    // The shape guard, not just the key bump, has to reject this: decoding an array as a
+    // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
+    const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], statsRaw: [], foundationRaw: [] };
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v2')!, JSON.stringify(legacy));
+    mockRoster();
+
+    const response = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(response.rows.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
   });
 });

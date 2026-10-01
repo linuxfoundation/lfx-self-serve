@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LF_FOUNDATION_ROOT_SLUG } from '@lfx-one/shared/constants';
 import type { AccessCheckAccessType, PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -18,6 +19,12 @@ type MarketingAccessType = Extract<AccessCheckAccessType, 'marketing_auditor' | 
 
 interface MarketingAccessMiddlewareOptions {
   allowLfStaff?: boolean;
+  /**
+   * For handlers that turn `LF_FOUNDATION_ROOT_SLUG` into a cross-foundation aggregate, a
+   * project-scoped grant on that project must not stand in for the ROOT grant that actually
+   * cascades to every foundation.
+   */
+  rootGrantOnlyForUmbrella?: boolean;
 }
 
 const accessCheckService = new AccessCheckService();
@@ -33,7 +40,9 @@ const projectService = new ProjectService();
  * change, so flag-off preserves their prior behavior exactly. Every other route this middleware
  * now covers — the rest of `analytics.route.ts` (`email-ctr`, `social-reach`,
  * `keyword-performance`, `social-media`, `social-media/monthly`, `event-growth`, `brand-reach`,
- * `brand-health`, `revenue-impact`, `marketing-attribution`) and all of `campaigns.route.ts` —
+ * `brand-health`, `revenue-impact`, `marketing-attribution`, plus the North Star rows
+ * `member-retention`, `member-acquisition`, `engaged-community`, `flywheel-conversion` added later
+ * under linuxfoundation/lfx-self-serve-ops#43) and all of `campaigns.route.ts` —
  * previously had **no** authorization middleware. For those, flag-off is an intentional
  * tightening: they now 403 any non-ED caller rather than admitting everyone. The kill switch
  * restores the ED-only baseline, not the pre-PR open baseline. This tightening is covered by the
@@ -121,6 +130,11 @@ function createMarketingAccessMiddleware(
         return;
       }
 
+      if (options.rootGrantOnlyForUmbrella && requestedSlug.toLowerCase() === LF_FOUNDATION_ROOT_SLUG) {
+        denyMarketingAccess(req, next, operation, access, 'umbrella_requires_root', requestedSlug);
+        return;
+      }
+
       const { uid, exists } = await projectService.getProjectIdBySlug(req, requestedSlug);
       if (!exists) {
         denyMarketingAccess(req, next, operation, access, 'project_not_found', requestedSlug);
@@ -140,10 +154,10 @@ function createMarketingAccessMiddleware(
   };
 }
 
-type DenyReason = 'no_slug' | 'project_not_found' | 'no_grant';
+type DenyReason = 'no_slug' | 'umbrella_requires_root' | 'project_not_found' | 'no_grant';
 
 // `apiErrorHandler` logs every rejected request centrally (ADR 0002); this only adds the
-// triage detail — which of the three deny paths fired — that the generic error log can't carry.
+// triage detail — which of the deny paths fired — that the generic error log can't carry.
 function denyMarketingAccess(
   req: Request,
   next: NextFunction,
@@ -178,6 +192,17 @@ export const requireMarketingAuditorOrLfStaff = createMarketingAccessMiddleware(
   'require_marketing_auditor_or_lf_staff',
   { allowLfStaff: true }
 );
+
+/**
+ * North Star foundation KPI endpoints: same audience as {@link requireMarketingAuditorOrLfStaff},
+ * except the `tlf` umbrella (a cross-foundation aggregate) needs a ROOT `marketing_auditor` grant —
+ * a project-scoped grant on `tlf` is refused. EDs scoped to `tlf`, LF Staff and root writers are
+ * unaffected.
+ */
+export const requireNorthStarAccess = createMarketingAccessMiddleware('marketing_auditor', ['foundationSlug', 'project'], 'require_north_star_access', {
+  allowLfStaff: true,
+  rootGrantOnlyForUmbrella: true,
+});
 
 /** Campaigns endpoints — read and write. */
 export const requireCampaignManager = createMarketingAccessMiddleware('campaign_manager', ['project', 'foundationSlug'], 'require_campaign_manager');

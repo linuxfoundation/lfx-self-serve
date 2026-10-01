@@ -20,6 +20,7 @@ describe('orgClaCoverageDialogConfig', () => {
     status: 'signed',
     needsClaManager: false,
     claManagersCount: 2,
+    viewerIsClaManager: false,
   };
 
   it('names the agreement in the dialog header', () => {

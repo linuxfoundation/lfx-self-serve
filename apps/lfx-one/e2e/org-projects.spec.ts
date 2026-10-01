@@ -3,9 +3,11 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME, SYNTHETIC_ORG_SLUG } from './fixtures/mock-data/synthetic-org.mock';
+
 const ORG_PROJECTS_URL = '/org/projects';
 const DATA_LOAD_TIMEOUT = 30_000;
-const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const TEST_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const TEST_ORG_UID = TEST_ACCOUNT_ID;
 const DEFAULT_WORKSPACE = { id: 'all-activities', name: 'All Projects with Activities', projectSlugs: ['kubernetes'] };
 const CUSTOM_EMPTY_WORKSPACE = { id: 'focus', name: 'Focus Workspace', projectSlugs: [] };
@@ -116,8 +118,8 @@ function ecosystemOnlyProject(slug: string, name: string) {
 
 function projectsResponse(projects = [project('kubernetes', 'Kubernetes')]) {
   return {
-    orgSlug: 'red-hat-llc',
-    orgName: 'Red Hat LLC',
+    orgSlug: SYNTHETIC_ORG_SLUG,
+    orgName: SYNTHETIC_ORG_NAME,
     dataUpdatedAt: new Date().toISOString(),
     projects,
   };
@@ -144,7 +146,7 @@ async function stubOrgContext(
           ? [
               {
                 accountId: TEST_ACCOUNT_ID,
-                accountName: 'Red Hat LLC',
+                accountName: SYNTHETIC_ORG_NAME,
                 membershipTier: '',
                 uid: TEST_ORG_UID,
               },
@@ -167,7 +169,7 @@ async function stubOrgContext(
   await page.route('**/api/nav/org-items*', (route) =>
     fulfillJson(route, {
       items: hasAccess
-        ? [{ uid: TEST_ORG_UID, accountId: TEST_ACCOUNT_ID, name: 'Red Hat LLC', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
+        ? [{ uid: TEST_ORG_UID, accountId: TEST_ACCOUNT_ID, name: SYNTHETIC_ORG_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true }]
         : [],
       next_page_token: null,
       upstream_failed: false,
@@ -487,10 +489,14 @@ test.describe('Org Projects', () => {
     await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('35/40');
     await expect(page.getByTestId('org-health-popup-row-security')).toContainText('30/35');
     await expect(page.getByTestId('org-health-popup-row-development')).toContainText('23/25');
-    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/kubernetes/);
+    await expect(page.getByTestId('org-health-popup-link')).toHaveCount(0);
+    // A full score (out of 100) has no unavailable remainder, asterisk, divider or footnote.
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-partial-divider')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-partial-note')).toHaveCount(0);
   });
 
-  test('opens the health popup on focus with badge, popup, and aria in agreement', async ({ page }) => {
+  test('opens the health popup on focus with the asterisk headline and footnote, in agreement with the badge and aria label', async ({ page }) => {
     await stubOrgContext(page);
     await page.route(/\/api\/orgs\/[^/]+\/lens\/projects(?:\?.*)?$/, (route) => {
       if (route.request().method() !== 'GET') return route.fallback();
@@ -505,15 +511,20 @@ test.describe('Org Projects', () => {
 
     const badge = page.getByTestId('org-projects-health-seapath');
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(badge).toHaveText('Healthy - Partial');
+    await expect(badge).toHaveText('Healthy*');
     await badge.focus();
-    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
-    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('-/35');
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(badge).toHaveAttribute(
       'aria-label',
-      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+      'Health: Healthy, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
-    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/seapath/);
+    // Dotted remainder for the 35 unearnable points, plus a divider and a footnote naming the category.
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveAttribute('style', /width:\s*35%/);
+    await expect(page.getByTestId('org-health-popup-partial-divider')).toBeVisible();
+    await expect(page.getByTestId('org-health-popup-partial-note')).toHaveText(
+      '*The Health score is partial because the Security & Supply Chain category is missing data for this project.'
+    );
   });
 
   test('renders the unavailable popup block for projects without a v2 score', async ({ page }) => {

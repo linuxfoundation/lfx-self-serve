@@ -1,0 +1,118 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="members-renewals">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Renewals unavailable"
+      subtitle="We could not load this foundation's upcoming renewals. Refresh the page to try again."
+      data-testid="members-renewals-error" />
+  } @else if (firstRead()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="members-renewals-loading" aria-hidden="true" />
+  } @else if (!loading() && noneDue()) {
+    <lfx-empty-state
+      icon="fa-light fa-calendar-check"
+      title="No renewals in the next 90 days"
+      subtitle="Nothing falls inside the window. Renewals appear here as they come inside 90 days."
+      data-testid="members-renewals-empty" />
+  } @else {
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-renewals-controls">
+      <span class="text-[13px] font-medium text-gray-700" data-testid="members-renewals-window">Next {{ windowDays }} days</span>
+      <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-renewals-count">
+        @if (loading()) {
+          &mdash;
+        } @else {
+          {{ countLabel() }}
+        }
+      </span>
+    </div>
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-renewals-hero">
+      <div class="flex flex-col gap-2">
+        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="members-renewals-value">{{ summary().valueLabel }}</span>
+        <span class="text-[12.5px] text-gray-500">Value up for renewal</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-renewals-side">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">Renewals due</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-renewals-due">{{ summary().renewalCountLabel }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    @if (summary().coverageNote) {
+      <p class="flex items-center gap-2 text-[12px] text-gray-500" data-testid="members-renewals-coverage">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+        {{ summary().coverageNote }}
+      </p>
+    }
+
+    <lfx-table
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > size"
+      [rows]="size"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      [scrollable]="true"
+      [tableStyle]="{ 'min-width': '560px' }"
+      (onPage)="onTablePage($event)"
+      data-testid="members-renewals-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Renewal date</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Dues</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'members-renewals-row-' + view.accountId">
+          <td>
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-name'">{{
+                view.accountName
+              }}</span>
+              @if (view.hasOutstandingBalance) {
+                <span
+                  class="flex items-center gap-1 text-[12px] font-medium"
+                  [class]="marker.textClass"
+                  [attr.data-testid]="'members-renewals-row-' + view.accountId + '-balance'">
+                  <i [class]="marker.icon" aria-hidden="true"></i>
+                  {{ marker.label }}
+                </span>
+              }
+            </div>
+          </td>
+          <td>
+            <span
+              class="rounded-full px-2 py-0.5 text-[12px] font-medium"
+              [class]="tierPillClass"
+              [attr.data-testid]="'members-renewals-row-' + view.accountId + '-tier'"
+              >{{ view.tierLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-date'">{{
+              view.renewalDateLabel
+            }}</span>
+          </td>
+          <td class="text-right">
+            <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-renewals-row-' + view.accountId + '-dues'">{{
+              view.duesLabel
+            }}</span>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+</div>

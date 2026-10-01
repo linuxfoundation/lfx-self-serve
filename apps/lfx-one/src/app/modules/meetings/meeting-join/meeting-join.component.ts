@@ -108,6 +108,7 @@ import {
 } from 'rxjs';
 
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
+import { HostKeyPanelComponent } from '../components/host-key-panel/host-key-panel.component';
 import { MeetingMaterialsDrawerComponent } from '../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../components/public-registration-modal/public-registration-modal.component';
@@ -127,6 +128,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     MeetingRegistrantsDisplayComponent,
     MeetingOrganizerComponent,
     GuestFormComponent,
+    HostKeyPanelComponent,
     TooltipModule,
     DrawerModule,
     SkeletonModule,
@@ -217,14 +219,8 @@ export class MeetingJoinComponent implements OnInit {
   private optimisticAdditional = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
-  // Host key is masked by default. Reveal state is scoped to a specific meeting id so that
-  // navigating to a different meeting on the same component instance requires a fresh reveal and
-  // never renders another meeting's key unmasked once its response arrives.
-  private readonly revealedHostKeyMeetingId: WritableSignal<string | null> = signal<string | null>(null);
-  protected readonly showHostKey: Signal<boolean> = computed(() => !!this.meeting()?.id && this.revealedHostKeyMeetingId() === this.meeting().id);
-  // Single gate for the host-key chip: the BFF authorized this viewer (and sent a key) AND the
-  // meeting is inside the 70-min pre / 40-min post window applied server-side to can_view_host_key.
-  // The frontend does not re-derive the window — it trusts the BFF's flag directly.
+  // Single gate for the host-key callout: BFF authorized (can_view_host_key + key sent) and inside the
+  // 70-min pre / 40-min post window applied server-side. The frontend trusts the BFF's flag directly.
   protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisible(this.meeting()));
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
@@ -529,41 +525,6 @@ export class MeetingJoinComponent implements OnInit {
       summary: 'Meeting Link Copied',
       detail: 'The meeting link has been copied to your clipboard',
     });
-  }
-
-  /**
-   * Toggles the masked/revealed state of the host key for the currently loaded meeting.
-   * Reveal state is keyed to the meeting id, so it resets when a different meeting loads.
-   */
-  public toggleHostKey(): void {
-    const meetingId = this.meeting()?.id ?? null;
-    this.revealedHostKeyMeetingId.update((current) => (current === meetingId ? null : meetingId));
-  }
-
-  /**
-   * Copies the raw host key to the clipboard, showing a success or failure toast.
-   * No-ops when the current meeting has no host key.
-   */
-  public copyHostKey(): void {
-    const hostKey = this.meeting().host_key;
-    if (!hostKey) {
-      return;
-    }
-
-    const success = this.clipboard.copy(hostKey);
-    if (success) {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Host Key Copied',
-        detail: 'The host key has been copied to your clipboard',
-      });
-    } else {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Copy Failed',
-        detail: 'Unable to copy the host key. Please copy it manually.',
-      });
-    }
   }
 
   public onRegistrantsToggle(): void {

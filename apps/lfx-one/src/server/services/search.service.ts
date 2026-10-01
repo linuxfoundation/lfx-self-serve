@@ -42,7 +42,7 @@ export class SearchService {
     const mapped: UserSearchResult[] = resources.map((resource) => {
       const data = resource.data;
 
-      if (params.type === 'meeting_registrant') {
+      if (params.type === 'v1_meeting_registrant') {
         const registrant = data as MeetingRegistrant;
         return {
           uid: registrant.uid,
@@ -57,7 +57,7 @@ export class SearchService {
               }
             : null,
           committee: null,
-          type: 'meeting_registrant',
+          type: 'v1_meeting_registrant',
           username: registrant.username,
         };
       }

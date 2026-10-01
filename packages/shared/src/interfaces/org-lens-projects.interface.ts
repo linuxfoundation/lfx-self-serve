@@ -83,8 +83,9 @@ export interface OrgLensProject {
   healthMaxScore: number | null;
   /**
    * Warehouse-computed count (0–3) of categories covered for `health`. `2` marks a partial score and drives only the
-   * ` - Partial` suffix — never availability: a null label is `'unavailable'` regardless of this count. Sourced
-   * straight from `covered_category_count_v2`, never recomputed locally.
+   * partial marking (`*` on the visible label, `, partial score` in the accessible name), never availability: a null
+   * label is `'unavailable'` regardless of this count. Sourced straight from `covered_category_count_v2`, never
+   * recomputed locally.
    */
   healthCoveredCategoryCount: number | null;
   /** Maintainer Health category score (0–40) from the same snapshot row; `null` when the category is uncovered/unavailable. */
@@ -150,8 +151,10 @@ export interface OrgLensHealthPopupRow {
   name: string;
   /** FontAwesome icon name (e.g. `heart-pulse`). */
   icon: string;
-  /** Score display (e.g. `32/40`) or `-` with denominator when uncovered (e.g. `-/35`). */
-  display: string;
+  /** Category score (e.g. `32`), or `null` when the category is uncovered (the popup renders a dash). */
+  score: string | null;
+  /** Fixed denominator (40 / 35 / 25). */
+  max: number;
 }
 
 /** Top-level response for the Org Lens Projects page. */
@@ -231,7 +234,6 @@ export interface OrgProjectsSignalBar {
 
 /** Projects-table row: the project plus presentation values precomputed off the template hot path. */
 export interface OrgProjectsTableRow extends OrgLensProject {
-  insightsUrl: string;
   /**
    * True for explicit fallback rows (`health-only` / `unavailable`, or legacy `noActivityYet` when `metricsState`
    * is missing): drives the "Unavailable" band/trend/count treatment, the plain-text (non-linked) name, and the

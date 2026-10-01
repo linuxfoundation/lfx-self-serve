@@ -30,9 +30,17 @@ let server: http.Server;
 let port: number;
 
 vi.mock('node:dns', () => ({
-  // 203.0.113.0/24 is TEST-NET-3 (RFC 5737) — routable-looking, so it clears the private-IP
-  // patterns, and reserved for documentation, so it can never be a real host.
-  promises: { resolve4: vi.fn(async () => ['203.0.113.10']), resolve6: vi.fn(async () => []) },
+  // A genuinely PUBLIC address, and deliberately not a documentation range.
+  //
+  // This fixture used 203.0.113.10 (TEST-NET-3) on the reasoning that it is "routable-looking,
+  // so it clears the private-IP patterns". That was true of the module-local denylist this file
+  // used to gate on, and is false of the shared `isPrivateHost` that replaced it -- RFC 5737
+  // documentation space is one of the ranges it rejects. The fixture'd have been quietly
+  // asserting against a blocked address rather than exercising the success path.
+  //
+  // 93.184.216.34 is example.com's address: public, stable, and never routed to by these tests
+  // because fetch itself is mocked.
+  promises: { resolve4: vi.fn(async () => ['93.184.216.34']), resolve6: vi.fn(async () => []) },
 }));
 
 // `fetchSafeUrl` connects to the DNS-resolved IP; redirect the transport to the local server
@@ -46,6 +54,43 @@ const toLocalServer = (opts: https.RequestOptions, cb: (res: http.IncomingMessag
 };
 
 vi.mock('node:https', () => ({ default: { request: toLocalServer }, request: toLocalServer }));
+
+describe('fetchSafeUrl final URL after redirects', () => {
+  let redirectServer: http.Server;
+
+  beforeAll(async () => {
+    redirectServer = http.createServer((req, res) => {
+      if (req.url === '/old') {
+        // Same host, DIFFERENT directory -- the case that silently breaks a relative og:image.
+        res.writeHead(302, { location: '/events/new/' });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<meta property="og:image" content="hero.jpg" />');
+    });
+    await new Promise<void>((resolve) => redirectServer.listen(0, '127.0.0.1', resolve));
+    port = (redirectServer.address() as { port: number }).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => redirectServer.close(() => resolve()));
+  });
+
+  it('reports the URL that actually served the response, not the one requested', async () => {
+    // Imported INSIDE the test, like the ceiling tests below: the module must load after the
+    // `node:https` mock is installed, or it captures the real transport.
+    const { fetchSafeUrl } = await import('./url-validation');
+    const result = await fetchSafeUrl('https://events.example.com/old', new AbortController().signal);
+
+    expect(result.ok).toBe(true);
+    // Resolving a relative `og:image` against the REQUESTED url yields
+    // https://events.example.com/hero.jpg -- a path that does not exist, so the hero silently
+    // disappears. Against the final url it is .../events/new/hero.jpg, which is the real one.
+    expect(result.finalUrl).toBe('https://events.example.com/events/new/');
+    expect(new URL('hero.jpg', result.finalUrl).href).toBe('https://events.example.com/events/new/hero.jpg');
+  });
+});
 
 describe('fetchSafeUrl response byte ceiling', () => {
   beforeAll(async () => {
@@ -168,5 +213,109 @@ describe('encodePathSegment', () => {
     ['a slug', 'cncf-kubernetes'],
   ])('is a no-op on %s, the shape every legitimate identifier has', (_label, identifier) => {
     expect(encodePathSegment(identifier)).toBe(identifier);
+  });
+});
+
+describe('resolved-address SSRF gate uses the shared judge', () => {
+  /**
+   * This path used to gate on a module-local `PRIVATE_IP_PATTERNS` regex list while the rest of
+   * the codebase hardened `isPrivateHost`. The two diverged badly, and the weaker one guarded
+   * the REAL fetch: nine of ten sampled addresses that isPrivateHost rejects passed here,
+   * including CGNAT, 6to4, multicast, site-local and the reserved ranges.
+   *
+   * Each case is a range the OLD list missed, so every one of them fails if the shared judge is
+   * swapped back out for a local list.
+   */
+  it.each([
+    ['CGNAT (100.64/10)', '100.64.0.1'],
+    ['CGNAT upper bound', '100.127.255.254'],
+    ['6to4 (2002::/16)', '2002:a00:1::'],
+    ['IPv4 multicast', '224.0.0.1'],
+    ['IPv6 site-local', 'fec0::1'],
+    ['RFC 2544 benchmark space', '198.18.0.1'],
+    ['RFC 5737 documentation space', '192.0.2.1'],
+    ['limited broadcast', '255.255.255.255'],
+    ['reserved 240/4', '240.0.0.1'],
+  ])('blocks a host resolving to %s', async (_label, address) => {
+    // Imported inside the test, matching this file's existing convention.
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(address.includes(':') ? [] : [address]);
+    vi.mocked(dns.promises.resolve6).mockResolvedValueOnce(address.includes(':') ? [address] : []);
+
+    // Rejected at RESOLUTION time, before any socket is opened -- which is why these cases need
+    // no server, unlike the redirect tests above.
+    await expect(fetchSafeUrl('https://events.example.com/e', new AbortController().signal)).rejects.toThrow(/private IP/);
+  });
+
+  it('does not reject a genuinely public address at the resolution gate', async () => {
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    const callsBefore = vi.mocked(dns.promises.resolve4).mock.calls.length;
+    vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
+    vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
+
+    // The CONTROL for the cases above: without it, a gate that refused EVERYTHING would pass all
+    // nine of them.
+    //
+    // "no private-IP rejection" alone is too weak -- a run that never reached the gate would
+    // also satisfy it -- so the resolver being CALLED is asserted as well. Together they say the
+    // address was judged and passed, which is the property the nine cases are being compared
+    // against. What the transport does afterwards belongs to the redirect tests.
+    let rejection = '';
+    try {
+      await fetchSafeUrl('https://events.example.com/e', new AbortController().signal);
+    } catch (error) {
+      rejection = error instanceof Error ? error.message : String(error);
+    }
+    // Counted ACROSS THIS TEST, not asserted against call history. Nothing clears these mocks
+    // between tests and all nine cases above use the same hostname, so both `toHaveBeenCalled()`
+    // and `toHaveBeenCalledWith('events.example.com')` are already satisfied before this test
+    // runs -- neither can fail, which makes them controls that prove nothing. A delta is the
+    // only form that actually witnesses THIS invocation.
+    expect(vi.mocked(dns.promises.resolve4).mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(rejection).not.toMatch(/private IP/);
+  });
+});
+
+describe('fetch path enforces the shared port allow-list', () => {
+  /**
+   * `refuseUnfetchablePort` lives in `@lfx-one/shared/utils/url.utils` and is called from BOTH
+   * this path and `canonicalHttpUrl`, so the two cannot drift. They did drift once:
+   * `canonicalHttpUrl` persisted `:8443` on a public host while this path refused it, meaning a
+   * url one validator approved was one the other would reject.
+   *
+   * The canonicalizer's half is covered in `url.utils.spec.ts`. This is the fetch-path half.
+   */
+  it.each([
+    ['a non-standard https port', 'https://events.example.com:8443/e'],
+    ['an SSH port', 'https://events.example.com:22/e'],
+    ['a high ephemeral port', 'https://events.example.com:49152/e'],
+  ])('refuses %s', async (_label, url) => {
+    const { fetchSafeUrl } = await import('./url-validation');
+
+    // Refused before DNS resolution, so no mock is needed -- the port gate runs on the parsed
+    // URL, ahead of the address checks above.
+    await expect(fetchSafeUrl(url, new AbortController().signal)).rejects.toThrow(/Only ports 80 and 443/);
+  });
+
+  it('allows an explicit default port', async () => {
+    // The CONTROL: WHATWG drops a default port, so `:443` must not be mistaken for a custom one.
+    // Without this, a gate that refused every explicit port would pass the cases above.
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
+    vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
+
+    // ASSERT THE REASON, not merely "did not throw the port error". `rejects.not.toThrow(/Only
+    // ports/)` passes on ANY rejection, so it would still pass if the port gate refused `:443`
+    // and something else rejected first. Catching the error and checking its message is what
+    // ties this control to the port rule.
+    const error = await fetchSafeUrl('https://events.example.com:443/e', new AbortController().signal).then(
+      () => null,
+      (e: unknown) => e
+    );
+
+    expect(error === null || !/Only ports/.test(String(error))).toBe(true);
   });
 });

@@ -55,6 +55,15 @@ test.describe('Formations queue (GH-1958)', () => {
     await expect(page.getByTestId('stat-card-Blocked')).toContainText('2 blocked items');
     await expect(page.getByTestId('stat-card-On hold')).toBeVisible();
     await expect(page.getByTestId('filter-pill-all')).toHaveText(`All (${mockFormationsQueue.length})`);
+
+    // Blocking names one item per row (#3066): the next open gate, red when it is itself blocked,
+    // and "Formation to set Active" once every gate is cleared.
+    const cascadeBlocking = page.getByTestId('formations-table-blocking-formation:cascade-data-alliance');
+    await expect(cascadeBlocking).toHaveText('Contribution agreement executed');
+    await expect(cascadeBlocking.locator('[data-blocked="false"]')).toBeVisible();
+    await expect(page.getByTestId('formations-table-blocking-formation:harbor-data-exchange').locator('[data-blocked="true"]')).toContainText('Intake review');
+    await expect(page.getByTestId('formations-table-blocking-formation:brightpath-working-group')).toHaveText('Formation to set Active');
+    await expect(page.getByTestId('formations-table-gates-cleared-formation:brightpath-working-group')).toBeVisible();
   });
 
   test('a non-auditor contributor is redirected to /foundation/overview', async ({ page }) => {

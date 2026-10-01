@@ -63,7 +63,7 @@
           }
         </header>
 
-        <div class="prose prose-lfx mt-4 max-w-none" [innerHTML]="a.bodyHtml" data-testid="docs-article-body"></div>
+        <div class="prose prose-lfx mt-4 max-w-none" [innerHTML]="trustedBodyHtml()" data-testid="docs-article-body"></div>
       </div>
 
       @if (topicArticles().length > 0) {

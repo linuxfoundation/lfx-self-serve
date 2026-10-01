@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, persona]
-last_updated: 2026-08-31
+last_updated: 2026-09-25
 intercom_collection: Dashboards
 ---
 
@@ -47,3 +47,4 @@ Many dashboard cards open a **drawer** (a side panel) when you select them. Draw
 
 - [Dashboard overview](../) — lens and persona concepts
 - [Committees](../../committees/) — manage your committees from the dashboard
+- [Foundation Health Metrics](../foundation-health-metrics/) — health cards and the Health Metrics page

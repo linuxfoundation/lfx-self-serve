@@ -28,23 +28,36 @@
 
     <p class="text-[14px] text-gray-600" [attr.data-testid]="testId() + '-description'">{{ reason() }}</p>
 
-    @if (!orgListIsPrimary()) {
-      <ng-container [ngTemplateOutlet]="orgListTpl" />
-    }
-
     @if (primary(); as action) {
       @if (action.action === 'org-list') {
-        <!-- FR-008: the caller's own organizations ARE the primary control — each row is the way out. -->
+        <!-- FR-008: the caller's own organizations ARE the primary control — each row is the way out. The label
+             follows the rows in the call-to-action style (#2533 mockup), but is not itself a control. -->
         @if (orgList().length > 0) {
-          <p class="text-sm font-medium text-gray-900" [attr.data-testid]="testId() + '-primary'">{{ action.label }}</p>
-          <ng-container [ngTemplateOutlet]="orgListTpl" />
+          <ul class="flex w-full flex-col gap-1" [attr.data-testid]="testId() + '-org-list'">
+            @for (org of orgList(); track org.uid) {
+              <li>
+                <button
+                  type="button"
+                  class="w-full rounded-md border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-gray-50"
+                  [attr.data-testid]="testId() + '-org-' + org.uid"
+                  (click)="orgSelected.emit(org.uid)">
+                  {{ org.name }}
+                </button>
+              </li>
+            }
+          </ul>
+          <p class="flex items-center gap-2 text-[14px] font-semibold text-blue-500" [attr.data-testid]="testId() + '-primary'">
+            <i class="fa-light fa-list text-[16px]" aria-hidden="true"></i>
+            {{ action.label }}
+          </p>
         }
       } @else if (action.action === 'contact-support') {
         <lfx-button
           [label]="action.label"
           icon="fa-light fa-life-ring"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           lfxOpenIntercom
           [attr.data-testid]="testId() + '-contact-support'"></lfx-button>
       } @else if (action.route) {
@@ -52,7 +65,8 @@
           [label]="action.label"
           icon="fa-light fa-arrow-right"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           [routerLink]="action.route"
           [attr.data-testid]="testId() + '-primary'"></lfx-button>
       } @else if (action.href) {
@@ -60,7 +74,8 @@
           [label]="action.label"
           icon="fa-light fa-arrow-up-right-from-square"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           [href]="action.href"
           target="_blank"
           rel="noopener noreferrer"
@@ -70,7 +85,8 @@
           [label]="action.label"
           icon="fa-light fa-rotate-right"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           [loading]="retrying()"
           [disabled]="retrying()"
           (onClick)="onAction(action)"
@@ -80,7 +96,8 @@
           [label]="action.label"
           icon="fa-light fa-filter-circle-xmark"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           (onClick)="onAction(action)"
           [attr.data-testid]="testId() + '-reset-filters'"></lfx-button>
       }
@@ -104,22 +121,4 @@
       }
     }
   </div>
-</ng-template>
-
-<ng-template #orgListTpl>
-  @if (orgList().length > 0) {
-    <ul class="flex w-full flex-col gap-1" [attr.data-testid]="testId() + '-org-list'">
-      @for (org of orgList(); track org.uid) {
-        <li>
-          <button
-            type="button"
-            class="w-full rounded-md border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-gray-50"
-            [attr.data-testid]="testId() + '-org-' + org.uid"
-            (click)="orgSelected.emit(org.uid)">
-            {{ org.name }}
-          </button>
-        </li>
-      }
-    </ul>
-  }
 </ng-template>

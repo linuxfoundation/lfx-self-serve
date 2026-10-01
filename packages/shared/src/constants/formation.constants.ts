@@ -103,6 +103,15 @@ export const SEEDED_FORMATION_TEMPLATE_UID = 'formation-template-seed-v1';
 export const FORMATION_ORPHAN_SECTION = { key: '__orphan__', title: 'Other' } as const;
 
 /**
+ * `cel_filter` for the formation list tables' next-gate read (#3066): gating items not yet `done`
+ * — skipped gates included, since the formation service still counts them as outstanding and
+ * `selectNextFormationGateItem` names one when nothing else is open. Applied by the query service
+ * in-process, before its access check — the `formation_item` document carries no `gate`/`status`
+ * tag to filter on instead.
+ */
+export const FORMATION_OPEN_GATE_CEL_FILTER = 'data.gate == true && data.status != "done"';
+
+/**
  * `FormationItemDrawerComponent`'s sentinel for "closed" or "not yet loaded" — a factory, not a
  * shared object, for the same reason as `createEmptyFormationsQueueResponse`: `history` backs both
  * a `toSignal` `initialValue` and a `catchError` fallback, which would otherwise alias one mutable

@@ -14,53 +14,27 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
-  MentorshipMenteeApplyTarget,
-  MentorshipMenteeHasProfileResponse,
-  MentorshipMenteeOverviewResponse,
-  MentorshipMenteePhase,
-  MentorshipMenteeProfileResponse,
-  MentorshipMenteeTasksResponse,
-  MentorshipMentorProfileResponse,
-  MentorshipMentorProgramDetail,
-  MentorshipMentorProgramsResponse,
+  MentorshipLfxProfileFields,
   MentorshipNameAvailability,
+  MentorshipProgramDecisionRequest,
   MentorshipProgramDetail,
+  MentorshipProgramReview,
+  MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, shareReplay, take, throwError } from 'rxjs';
+import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
  * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
  * response on error so the admin surface never blocks on upstream faults.
- * Mentor-program and profile reads rethrow so their callers can surface
- * explicit retry or failure states.
+ * The mentor pages' own reads live in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
   private readonly http = inject(HttpClient);
-
-  /**
-   * Session cache for the mentee overview/tasks reads. The Overview and the
-   * "My Application Tasks" / "My Tasks" tabs read the same unparameterized
-   * payload, so without this a plain overview↔tasks tab switch re-fetched the
-   * whole response every time. `shareReplay({ bufferSize: 1, refCount: false })`
-   * keeps the first successful response and replays it to later subscribers. A
-   * failure clears that slot so the next read fetches fresh. A user Retry calls
-   * `clearMenteeCaches()` so a successful-but-unusable payload (a non-applicant
-   * phase on the applicant tab) is not replayed forever. Phase-scoped overview
-   * reads (the dev phase switcher) bypass the cache and never fill it.
-   *
-   * The slots last for the browser session. An identity swap is a full document
-   * load here, so this cache is not torn down on user change the way
-   * `UserService` is. Server-side mentee updates stay stale until reload or
-   * `clearMenteeCaches()`. Add write-path invalidation once real write
-   * endpoints land.
-   */
-  private menteeOverview$: Observable<MentorshipMenteeOverviewResponse> | null = null;
-  private menteeTasks$: Observable<MentorshipMenteeTasksResponse> | null = null;
 
   public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number }): Observable<MentorshipProgramsResponse> {
     let httpParams = new HttpParams();
@@ -72,21 +46,6 @@ export class MentorshipService {
     return this.http
       .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
-  }
-
-  public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {
-    return this.http.get<MentorshipMentorProgramsResponse>('/api/mentorship/mentor/programs').pipe(catchError(this.rethrowError('getMentorPrograms')));
-  }
-
-  public getMentorProfile(): Observable<MentorshipMentorProfileResponse> {
-    return this.http.get<MentorshipMentorProfileResponse>('/api/mentorship/mentor/profile').pipe(catchError(this.rethrowError('getMentorProfile')));
-  }
-
-  /** Loads a mentor program by id (default URL) or slug. */
-  public getMentorProgram(programId: string): Observable<MentorshipMentorProgramDetail> {
-    return this.http
-      .get<MentorshipMentorProgramDetail>(`/api/mentorship/mentor/programs/${encodeURIComponent(programId)}`)
-      .pipe(catchError(this.rethrowError('getMentorProgram')));
   }
 
   /** Loads a program by id (default URL) or slug. */
@@ -123,61 +82,28 @@ export class MentorshipService {
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, 'getInvitableUsers')));
   }
 
-  // ---------------------------------------------------------------------------
-  // Mentee endpoints
-  // ---------------------------------------------------------------------------
-
-  /** Checks whether the signed-in user already has a mentee profile. */
-  public hasMenteeProfile(): Observable<MentorshipMenteeHasProfileResponse> {
+  /** The program an approve/reject email link points at. Rethrows so the page can branch on the status code. */
+  public getProgramReview(programId: string): Observable<MentorshipProgramReview> {
     return this.http
-      .get<MentorshipMenteeHasProfileResponse>('/api/mentorship/mentee/has-profile')
-      .pipe(catchError(this.handleError({ hasProfile: false }, 'hasMenteeProfile')));
+      .get<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}`)
+      .pipe(catchError(this.rethrowError('getProgramReview')));
   }
 
-  /** Drop cached mentee overview and tasks so the next read hits the network. */
-  public clearMenteeCaches(): void {
-    this.menteeOverview$ = null;
-    this.menteeTasks$ = null;
+  /**
+   * Records an approver's decision. Not caught here: 403 (not an approver) and 409 (already
+   * decided) are expected outcomes the review page renders, not failures to log.
+   */
+  public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramReview> {
+    const body: MentorshipProgramDecisionRequest = { decision };
+    return this.http.post<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
   }
 
-  public getMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {
-    // Phase-scoped reads (dev phase switcher) are one-off and must never be cached.
-    if (phase) return this.fetchMenteeOverview(phase);
-    if (!this.menteeOverview$) {
-      this.menteeOverview$ = this.fetchMenteeOverview().pipe(
-        catchError((err: unknown) => {
-          this.menteeOverview$ = null; // don't cache failures — the next read retries
-          return throwError(() => err);
-        }),
-        shareReplay({ bufferSize: 1, refCount: false })
-      );
-    }
-    return this.menteeOverview$;
-  }
-
-  public getMenteeTasks(): Observable<MentorshipMenteeTasksResponse> {
-    if (!this.menteeTasks$) {
-      this.menteeTasks$ = this.fetchMenteeTasks().pipe(
-        catchError((err: unknown) => {
-          this.menteeTasks$ = null; // don't cache failures — the next read retries
-          return throwError(() => err);
-        }),
-        shareReplay({ bufferSize: 1, refCount: false })
-      );
-    }
-    return this.menteeTasks$;
-  }
-
-  public getMenteeProfile(): Observable<MentorshipMenteeProfileResponse> {
-    return this.http.get<MentorshipMenteeProfileResponse>('/api/mentorship/mentee/profile').pipe(catchError(this.rethrowError('getMenteeProfile')));
-  }
-
-  /** Program name, project, and term name for the mentee apply header. Rethrows so the page can show a retry. */
-  public getMenteeApplyTarget(programId: string, programTermId: string): Observable<MentorshipMenteeApplyTarget> {
-    const params = new HttpParams().set('programId', programId).set('programTermId', programTermId);
-    return this.http
-      .get<MentorshipMenteeApplyTarget>('/api/mentorship/mentee/apply-target', { params })
-      .pipe(catchError(this.rethrowError('getMenteeApplyTarget')));
+  /**
+   * Copies the LFX profile's name, email and logo onto the caller's mentor and mentee profiles.
+   * Not caught here: the profile card logs the failure and tells the user.
+   */
+  public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
+    return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {
@@ -189,18 +115,6 @@ export class MentorshipService {
         return throwError(() => err);
       })
     );
-  }
-
-  private fetchMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {
-    let params = new HttpParams();
-    if (phase) params = params.set('phase', phase);
-    return this.http
-      .get<MentorshipMenteeOverviewResponse>('/api/mentorship/mentee/overview', { params })
-      .pipe(catchError(this.rethrowError('getMenteeOverview')));
-  }
-
-  private fetchMenteeTasks(): Observable<MentorshipMenteeTasksResponse> {
-    return this.http.get<MentorshipMenteeTasksResponse>('/api/mentorship/mentee/tasks').pipe(catchError(this.rethrowError('getMenteeTasks')));
   }
 
   /**

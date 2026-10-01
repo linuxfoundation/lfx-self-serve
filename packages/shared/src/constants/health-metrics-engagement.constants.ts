@@ -8,21 +8,34 @@ import type {
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementQueryParams,
+  HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
+import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
+import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
- * Health Metrics tab bar. Overview and Engagement are routable today; the remaining four render
- * disabled so the bar does not reshuffle as LFXV2-3367..3370 land.
+ * Health Metrics tab bar. Overview, Engagement, Events and Members are routable today; the remaining
+ * two render disabled so the bar does not reshuffle as their tabs land.
  */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
-  { key: 'events', label: 'Events', route: null },
-  { key: 'members', label: 'Members', route: null },
+  { key: 'events', label: 'Events', route: 'events' },
+  { key: 'members', label: 'Members', route: 'members' },
   { key: 'non-members', label: 'Non-Members', route: null },
   { key: 'training', label: 'Training', route: null },
 ] as const;
+
+/** The query-param keys the sections and the Overview deep links share, tied to the typed param shape. */
+export const HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS = {
+  groupType: 'groupType',
+  groupPage: 'groupPage',
+  orgFilter: 'orgFilter',
+  partMode: 'partMode',
+  repFilter: 'repFilter',
+} as const satisfies { [K in keyof HealthMetricsEngagementQueryParams]-?: K };
 
 /**
  * The six Engagement sections in render order. `key` is the section's URL fragment and the
@@ -89,8 +102,13 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
 ] as const;
 
-/** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
-export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE = 'Board & voting-member attendance is reported per member in Members';
+/** Note under the sub-nav items, linking to the Members board section. */
+export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
+  text: 'Board & voting-member attendance is reported per member in',
+  linkLabel: 'Members',
+  route: 'members',
+  fragment: 'board',
+};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a
@@ -122,11 +140,8 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX = 'sec-eng-';
 /** Absolute router path the Health Metrics tab bar resolves its tab links against. */
 export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 
-/**
- * The four periods `ENGAGEMENT_GROUP_ATTENDANCE` carries as column suffixes, oldest → current.
- * `COMPLETED_YEAR_4` has no column on the view, so it is deliberately absent.
- */
-export const HEALTH_METRICS_ENGAGEMENT_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;
+/** The four periods `ENGAGEMENT_GROUP_ATTENDANCE` carries as column suffixes — the shared Level 2 set. */
+export const HEALTH_METRICS_ENGAGEMENT_RANGES = HEALTH_METRICS_L2_RANGES;
 
 /**
  * The four labels `ENGAGEMENT_GROUP_ATTENDANCE.GROUP_TYPE_LABEL` actually emits. The view buckets
@@ -149,14 +164,16 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Partial<Record<HealthM
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE = 25;
 
 /**
- * The empty Group attendance shape — a period the view carries no columns for, the pre-hydration
- * render, a read with no foundation selected, and the client's post-error placeholder behind
- * `loadFailed`. The server never returns it for a failed read; that error propagates.
+ * The empty Group attendance shape — an unsupported range, the pre-hydration render, a read with no
+ * foundation selected, and the client's post-error placeholder behind `loadFailed`. `counts` is
+ * `null` because none of these states measured anything; the server uses this same shape for a real
+ * foundation whose unfiltered scope has zero rows. The server never returns it for a failed read;
+ * that error propagates.
  */
-export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEngagementGroupAttendance = {
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED: HealthMetricsEngagementGroupAttendance = {
   rows: [],
   totalRecords: 0,
-  counts: { groups: 0, dormantGroups: 0 },
+  counts: null,
 };
 
 /** Inline sparkline viewBox, in px — a 60px trend cell is the design's column width. */
@@ -170,19 +187,6 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetri
   ok: 'bg-blue-500',
 };
 
-/** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */
-export const HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX = 24;
-
-/** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
-export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
-
-/**
- * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.
- * Sized at roughly double the server's ~15s worst-case budget for one read, leaving room for
- * hydration and the network on top, so a slow-but-healthy read still lands its scroll.
- */
-export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
-
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
  * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
@@ -192,11 +196,9 @@ export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'participation',
   'committees',
   'orgs',
+  'reps',
   'nonmem',
 ] as const satisfies readonly HealthMetricsEngagementSectionKey[];
-
-/** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
-export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
 
 /** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES = [
@@ -245,16 +247,17 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] =
  * post-error placeholder. A `null` total renders the section's empty state, which is why the
  * server never returns this for a failed read; that error propagates.
  */
-export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetricsEngagementMeetingParticipation = {
+export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED: HealthMetricsEngagementMeetingParticipation = {
   total: null,
   rows: [],
 };
 
 /**
- * Debounce on the org search box. The filter runs over the whole loaded scope, so a keystroke is
- * more expensive than a typical typeahead and deserves the same pause as the other local filters.
+ * Debounce shared by the org and representatives search boxes. Either filter runs over the whole
+ * loaded scope, so a keystroke is more expensive than a typical typeahead and deserves the same
+ * pause as the other local filters.
  */
-export const HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS = 200;
+export const HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS = 200;
 
 /** Client-side page size for the org table — the whole foundation arrives in one read. */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
@@ -270,16 +273,6 @@ export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'lapsed', label: 'No activity in 180 days' },
 ] as const;
-
-/**
- * A foundation the view holds no organizations for — a measured empty scope, which is why the
- * counts are zero rather than null. The server never returns it for a failed read; that error
- * propagates.
- */
-export const HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT: HealthMetricsEngagementOrgParticipation = {
-  rows: [],
-  counts: { orgs: 0, lapsedOrgs: 0 },
-};
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
@@ -301,21 +294,41 @@ export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE = 25;
 export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP = 5000;
 
 /**
- * A foundation the view holds no non-member organizations for — a measured empty scope, which is
- * why the count is zero rather than null. The server never returns it for a failed read; that
- * error propagates.
- */
-export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT: HealthMetricsEngagementNonMemberParticipation = {
-  rows: [],
-  counts: { orgs: 0 },
-};
-
-/**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
  * Its count is `null` because nothing was measured — a zero here would caption a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngagementNonMemberParticipation = {
+  rows: [],
+  counts: null,
+};
+
+/** Client-side page size for the representatives table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read. Higher than the org and non-member caps because this view's grain is
+ * one row per person per group *per project*, so it multiplies out further than either of those.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP = 20000;
+
+/**
+ * The representatives table's cuts, all three scoped to the people invited in the selected period —
+ * the population the view's own caption counts. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
+ * and "Lapsed" is `IS_LAPSED_<period>`, so neither cut is a client-side date comparison.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REP_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'never', label: 'Never attended' },
+  { key: 'lapsed', label: 'Lapsed' },
+] as const;
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED: HealthMetricsEngagementRepresentatives = {
   rows: [],
   counts: null,
 };

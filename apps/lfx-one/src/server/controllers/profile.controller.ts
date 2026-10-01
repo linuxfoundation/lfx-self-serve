@@ -64,6 +64,7 @@ import { UserService } from '../services/user.service';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { withMeetingInviteLock } from '../utils/meeting-invite-lock';
+import { populateApiGatewayToken } from '../utils/refresh-token-exchange.util';
 
 // Maps auth-service error strings to user-facing responses. First match wins; if
 // none match, the password-change path falls back to a generic 502.
@@ -1917,6 +1918,13 @@ export class ProfileController {
               const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
 
               if (linkResponse.success) {
+                // This route's auth config skips the middleware's gateway-token exchange — populate
+                // it here (session-cached, fail-open) so the v1 sync below has a token to work with.
+                await populateApiGatewayToken(req);
+
+                // Sync the freshly verified address into v1 so meeting-invite resolution finds it (fail-open)
+                await this.userService.syncVerifiedEmailToUserService(req, pending.email);
+
                 // Fire-and-forget CDP verification
                 const lfid = this.resolveEffectiveLfid(req, currentUserSub);
 
@@ -2381,6 +2389,9 @@ export class ProfileController {
         }
         return;
       }
+
+      // Sync the freshly verified address into v1 so meeting-invite resolution finds it (fail-open)
+      await this.userService.syncVerifiedEmailToUserService(req, email);
 
       // Step 4: Fire-and-forget CDP identity verification
       const lfid = this.resolveEffectiveLfid(req, sub);
