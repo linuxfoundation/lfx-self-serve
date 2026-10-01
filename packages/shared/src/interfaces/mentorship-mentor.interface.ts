@@ -27,6 +27,76 @@ export interface MentorshipMentorProgramRequest {
   status: MentorshipMentorStatus;
 }
 
+/** Response body from `GET /api/mentorship/mentor/requests`. */
+export interface MentorshipMentorProgramRequestsResponse {
+  data: MentorshipMentorProgramRequest[];
+  /**
+   * Programs the mentor has an open invitation to. They are not requests, so `data` leaves them out,
+   * but upstream refuses a request for them, so the picker leaves them out too.
+   */
+  invitedProgramIds: string[];
+}
+
+/** The profile drawer's view of the mentor's requests: a failed read is its own state, never an empty list. */
+export interface MentorshipMentorRequestsState {
+  requests: MentorshipMentorProgramRequest[];
+  invitedProgramIds: string[];
+  loading: boolean;
+  failed: boolean;
+}
+
+/** Body of `POST /api/mentorship/mentor/requests`. A request is for the whole program, not a term. */
+export interface MentorshipMentorProgramRequestCreate {
+  programId: string;
+}
+
+/**
+ * A program the mentor picker offers: any published program. Only what the picker shows, so the
+ * admin `MentorshipProgram` is not needed to fill it.
+ */
+export interface MentorshipMentorOpenProgram {
+  id: string;
+  name: string;
+}
+
+/** Query for `GET /api/mentorship/mentor/open-programs`: one page of published programs, optionally narrowed by name. */
+export interface MentorshipMentorOpenProgramsQuery {
+  /** Matched anywhere in the program name, ignoring case. */
+  search?: string;
+  /** Rows to skip; the page size is fixed by the BFF. */
+  offset?: number;
+}
+
+/** Response body from `GET /api/mentorship/mentor/open-programs`: one page, and how many programs match in all. */
+export interface MentorshipMentorOpenProgramsResponse {
+  data: MentorshipMentorOpenProgram[];
+  total: number;
+}
+
+/**
+ * One option in the mentor program picker. A program the mentor already asked to join, or is invited
+ * to, stays listed but disabled, with a note saying why, so the mentor can see it rather than wonder
+ * where it went.
+ */
+export interface MentorshipMentorProgramOption {
+  label: string;
+  value: string;
+  disabled: boolean;
+  note: string | null;
+}
+
+/** What the picker has loaded so far for the current search. */
+export interface MentorshipMentorOpenProgramsState {
+  programs: MentorshipMentorOpenProgram[];
+  total: number;
+  /** True while the first page of a search is in flight. */
+  loading: boolean;
+  /** True while a further page is in flight. */
+  loadingMore: boolean;
+  /** True when the last page read failed, so the list is not mistaken for "no programs". */
+  failed: boolean;
+}
+
 /**
  * Become a Mentor form state. Name, email, and avatar are not here — they come from the
  * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
@@ -84,6 +154,29 @@ export interface MentorshipUpstreamMentorProfileInput extends MentorshipUpstream
   introduction: string;
   terms_and_conditions: boolean;
   skill_set: { skills: string[] };
+}
+
+/** Statuses of an upstream `program_members` row, in the order the request lifecycle reaches them. */
+export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'active' | 'declined' | 'withdrawn';
+
+/**
+ * One row of upstream `GET /mentorship/v1/me/program-memberships`: the caller's own membership of a
+ * program, with its name. Upstream omits the email on this read.
+ */
+export interface MentorshipUpstreamProgramMembership {
+  id: string;
+  program_id: string;
+  program_name: string;
+  member_type: 'program_admin' | 'mentor';
+  /** Absent on a row upstream never gave a status. */
+  status?: MentorshipUpstreamProgramMemberStatus;
+  created_on: string;
+  updated_on: string;
+}
+
+/** Body of `POST /mentorship/v1/me/program-memberships`. Upstream takes the user from the token. */
+export interface MentorshipUpstreamProgramMembershipRequest {
+  program_id: string;
 }
 
 // ---------------------------------------------------------------------------

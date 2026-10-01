@@ -282,17 +282,9 @@ export function getMockMentorshipMentorPrograms(): MentorshipMentorProgram[] {
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';
 
-/**
- * Both strings stop short of promising that anything was sent: submit saves the profile, but
- * the program picks stay on this page until the request endpoint exists, so copy claiming an
- * administrator had been notified would be a false confirmation. Reword them once requests land.
- */
-export const MENTORSHIP_MENTOR_PROGRAMS_INTRO = 'Choose the LFX mentorships you would like to join as a mentor. Your choices are listed below.';
+export const MENTORSHIP_MENTOR_PROGRAMS_INTRO = 'Choose the LFX mentorships you would like to join as a mentor. Your requests are listed below.';
 export const MENTORSHIP_MENTOR_PROGRAMS_HELPER =
-  'You can choose more than one. Submitting saves your mentor profile, but nothing is sent to a program administrator yet — requesting to join is not available in this release.';
-
-/** Coming-soon toast summary shown after a save when the mentor picked programs, which are not sent yet. */
-export const MENTORSHIP_MENTOR_PROGRAM_REQUESTS_COMING_SOON_SUMMARY = 'Request to join programs';
+  "You can choose more than one. Each request goes to that program's administrator, and you can withdraw it while it is pending.";
 
 /** Success-toast copy shown once the mentor profile has been saved to the mentorship platform. */
 export const MENTORSHIP_MENTOR_SUBMIT_SUCCESS_SUMMARY = 'Profile created';
@@ -399,7 +391,100 @@ export const MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS: Record<MentorshipMentorSta
   pending: 'Pending',
 };
 
+/**
+ * Request statuses that keep a program out of the mentor picker: one already waiting on the
+ * administrator, one accepted, or one declined, which upstream will not take a new request for.
+ * Only a withdrawn request leaves the program pickable, and asking again reopens it.
+ */
+export const MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES: readonly MentorshipMentorStatus[] = ['pending', 'accepted', 'declined'];
+
+/** Programs per page in the mentor program picker. Upstream caps a page at 100. */
+export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE = 20;
+
+/** Longest picker search the BFF accepts. No program name needs more to be found. */
+export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH = 100;
+
+/** How long the picker waits after the last keystroke before searching. */
+export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS = 300;
+
+/** Row height in the picker's virtual scroll, in px. */
+export const MENTORSHIP_MENTOR_PICKER_ITEM_SIZE = 40;
+
+/** Tallest the picker's list grows, in px; past this it scrolls. */
+export const MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT = 240;
+
+/**
+ * The select list's top and bottom padding together (the theme's `select.list.padding`, 0.25rem
+ * each). The scroller adds it to the scroll height, so the list's height must too, or a short list
+ * scrolls by that much.
+ */
+export const MENTORSHIP_MENTOR_PICKER_LIST_PADDING = '0.5rem';
+
+/**
+ * Turns off the PrimeNG scroller's auto-size. It measures the list before redrawing it for a new
+ * item count, so a search that matches after one that matched nothing kept the empty list's
+ * few-px height. The picker sizes the list itself instead.
+ */
+export const MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS = { autoSize: false };
+
+/** Note on a disabled picker option the mentor holds an invitation to. */
+export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = 'Invited';
+
+/**
+ * Note on a disabled picker option a request found gone (404). A page of programs already read still
+ * lists it, so the picker disables it rather than let the mentor pick it again.
+ */
+export const MENTORSHIP_MENTOR_PICKER_UNAVAILABLE_NOTE = 'No longer available';
+
+/** Shown under the picker when a page of programs cannot be read. */
+export const MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE = "We couldn't load programs.";
+
+/** Shown in the picker's list while a search waits on its answer, so a slow read never says there are no programs. */
+export const MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE = 'Searching programs…';
+
+/** Shown in the picker's list once a read answers with no programs. */
+export const MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE = 'No results found';
+
+/** Shown in place of the request list when it cannot be read, so a failed read never looks like "no requests". */
+export const MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE = "We couldn't load your program requests.";
+
 export const MENTORSHIP_MENTOR_WITHDRAW_CONFIRM = 'Are you sure you want to withdraw this request?';
+export const MENTORSHIP_MENTOR_WITHDRAW_CONFIRM_HEADER = 'Withdraw Request';
+export const MENTORSHIP_MENTOR_WITHDRAW_LABEL = 'Withdraw';
+export const MENTORSHIP_MENTOR_WITHDRAW_CANCEL_LABEL = 'Cancel';
+export const MENTORSHIP_MENTOR_WITHDRAW_SUCCESS_SUMMARY = 'Request withdrawn';
+export const MENTORSHIP_MENTOR_WITHDRAW_SUCCESS_DETAIL = 'Your request to mentor this program has been withdrawn.';
+export const MENTORSHIP_MENTOR_WITHDRAW_ERROR_SUMMARY = 'Could not withdraw the request';
+
+/**
+ * Withdraw failures that mean the mentor's view of the request is out of date, keyed by status: 409 is
+ * upstream refusing to withdraw a request no longer waiting on the administrator, and 404 is a request
+ * that is gone or not the mentor's. The page shows this copy and re-reads the requests; any other
+ * status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTOR_WITHDRAW_STALE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  404: 'This request no longer exists. Your requests have been refreshed.',
+  409: 'This request is no longer pending, so it cannot be withdrawn. Your requests have been refreshed.',
+};
+
+export const MENTORSHIP_MENTOR_REQUEST_SUCCESS_SUMMARY = 'Request sent';
+export const MENTORSHIP_MENTOR_REQUEST_SUCCESS_DETAIL = 'Your request to mentor this program has been sent.';
+/** Summary of the one success toast a batch of requests shows; its detail lists the programs sent. */
+export const MENTORSHIP_MENTOR_REQUESTS_SUCCESS_SUMMARY = 'Requests sent';
+export const MENTORSHIP_MENTOR_REQUEST_ERROR_SUMMARY = 'Could not send the request';
+export const MENTORSHIP_MENTOR_REQUEST_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTOR_REQUEST_TOAST_LIFE = 5000;
+
+/**
+ * Request failures with their own copy, keyed by status. A 404 is upstream no longer finding the
+ * program, or no longer showing it. A 409 is upstream finding a request, invitation, membership or
+ * declined request of the mentor's for that program already. Both mean the picker is out of date,
+ * so the requests are re-read.
+ */
+export const MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  404: 'This program is no longer available.',
+  409: 'You already have a request, invitation or membership for this program.',
+};
 
 export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm {
   return {

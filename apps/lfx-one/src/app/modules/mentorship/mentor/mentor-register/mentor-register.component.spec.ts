@@ -10,10 +10,8 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import {
-  MENTORSHIP_COMING_SOON_DETAIL,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
-  MENTORSHIP_MENTOR_PROGRAM_REQUESTS_COMING_SOON_SUMMARY,
   MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
   MENTORSHIP_MENTOR_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTOR_SUBMIT_SUCCESS_SUMMARY,
@@ -21,7 +19,13 @@ import {
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_REGISTER_WARN_SUMMARY,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgramRequest, MentorshipMentorRegisterRequest, MentorshipProgram, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorOpenProgram,
+  MentorshipMentorOpenProgramsQuery,
+  MentorshipMentorOpenProgramsResponse,
+  MentorshipMentorProgramRequest,
+  MentorshipMentorRegisterRequest,
+} from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { UserService } from '@services/user.service';
@@ -30,6 +34,7 @@ import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
+import { MentorProgramRequestService } from '../../services/mentor-program-request.service';
 import { MentorRegisterComponent } from './mentor-register.component';
 
 /**
@@ -51,19 +56,9 @@ class StubRichEditorComponent {
 }
 
 describe('MentorRegisterComponent', () => {
-  const program = (id: string, name: string): MentorshipProgram => ({
-    id,
-    slug: name.toLowerCase().replace(/\s+/g, '-'),
-    name,
-    projectName: 'LF Energy',
-    term: 'Fall 2026',
-    status: 'open',
-    stats: { mentors: 2, mentees: 1, graduated: 0 },
-    createdOn: '2026-05-01',
-    updatedOn: '2026-07-02',
-  });
+  const program = (id: string, name: string): MentorshipMentorOpenProgram => ({ id, name });
 
-  const programs: MentorshipProgramsResponse = { data: [program('mp_gridflow', 'GridFlow Ingestion')], total: 1 };
+  const programs: MentorshipMentorOpenProgramsResponse = { data: [program('mp_gridflow', 'GridFlow Ingestion')], total: 1 };
 
   /** Stands in for requests the mentor already raised. The component itself starts empty. */
   const existingRequests: MentorshipMentorProgramRequest[] = [
@@ -75,6 +70,8 @@ describe('MentorRegisterComponent', () => {
   let toast: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
   let registerMentorProfile: ReturnType<typeof vi.fn<(request: MentorshipMentorRegisterRequest) => Observable<void>>>;
+  let getOpenPrograms: ReturnType<typeof vi.fn<(query: MentorshipMentorOpenProgramsQuery) => Observable<MentorshipMentorOpenProgramsResponse>>>;
+  let requestMany: ReturnType<typeof vi.fn<(programs: MentorshipMentorOpenProgram[]) => Observable<MentorshipMentorOpenProgram[]>>>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const byTestId = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -103,6 +100,9 @@ describe('MentorRegisterComponent', () => {
   beforeEach(async () => {
     toast = vi.fn();
     registerMentorProfile = vi.fn<(request: MentorshipMentorRegisterRequest) => Observable<void>>(() => of(undefined));
+    getOpenPrograms = vi.fn(() => of(programs));
+    // The requests' own toasts and failure handling are covered by the service's spec.
+    requestMany = vi.fn((picked: MentorshipMentorOpenProgram[]) => of(picked));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -111,8 +111,10 @@ describe('MentorRegisterComponent', () => {
         provideNoopAnimations(),
         provideRouter([]),
         { provide: MessageService, useValue: { add: toast } },
-        { provide: MentorshipService, useValue: { getPrograms: () => of(programs) } },
-        { provide: MentorshipMentorService, useValue: { registerMentorProfile } },
+        { provide: MentorshipMentorService, useValue: { registerMentorProfile, getOpenPrograms, unavailableProgramIds: signal<string[]>([]).asReadonly() } },
+        { provide: MentorProgramRequestService, useValue: { requestMany } },
+        // The profile card syncs its fields through this; the page itself no longer reads programs from it.
+        { provide: MentorshipService, useValue: { syncLfxProfileFields: () => of(undefined) } },
         // The profile card at the top of the page fetches these three itself, off the refresh
         // subject it shares with the profile shell.
         {
@@ -248,21 +250,69 @@ describe('MentorRegisterComponent', () => {
     expect(component['submitting']()).toBe(false);
   });
 
-  it('says the picked program requests are not sent yet, after the profile is saved', async () => {
-    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    component['requests'].set([...existingRequests]);
+  it('leaves reading the programs to the programs section, which asks for the first page', () => {
+    expect(getOpenPrograms).toHaveBeenCalledTimes(1);
+    expect(getOpenPrograms).toHaveBeenCalledWith({ search: '', offset: 0 });
+  });
+
+  it('sends the picked programs once the profile is saved, then lands on My Programs', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['onAddProgram'](program('mp_gridflow', 'GridFlow Ingestion'));
+    component['onAddProgram'](program('mp_edgeops', 'EdgeOps Telemetry'));
     fillValidForm();
 
     await submit();
 
-    expect(toast).toHaveBeenCalledTimes(2);
-    expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success' });
-    // The profile is saved but the requests are not, so this must not read as a confirmation.
-    expect(toast.mock.calls[1][0]).toMatchObject({
-      severity: 'info',
-      summary: MENTORSHIP_MENTOR_PROGRAM_REQUESTS_COMING_SOON_SUMMARY,
-      detail: MENTORSHIP_COMING_SOON_DETAIL,
-    });
+    expect(requestMany).toHaveBeenCalledTimes(1);
+    expect(requestMany).toHaveBeenCalledWith([program('mp_gridflow', 'GridFlow Ingestion'), program('mp_edgeops', 'EdgeOps Telemetry')]);
+    expect(navigate).toHaveBeenCalledWith(['/mentorship/mentor/programs']);
+  });
+
+  it('waits for the requests to settle before leaving, and keeps Submit loading meanwhile', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const pending = new Subject<MentorshipMentorOpenProgram[]>();
+    requestMany.mockReturnValueOnce(pending);
+    component['onAddProgram'](program('mp_gridflow', 'GridFlow Ingestion'));
+    fillValidForm();
+
+    await submit();
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(component['submitting']()).toBe(true);
+
+    // Even when every request failed, the profile is saved, so the mentor still moves on.
+    pending.next([]);
+    pending.complete();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(['/mentorship/mentor/programs']);
+    expect(component['submitting']()).toBe(false);
+  });
+
+  it('stays put when the mentor has left the page before the requests settle', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const pending = new Subject<MentorshipMentorOpenProgram[]>();
+    requestMany.mockReturnValueOnce(pending);
+    component['onAddProgram'](program('mp_gridflow', 'GridFlow Ingestion'));
+    fillValidForm();
+
+    await submit();
+    fixture.destroy();
+
+    pending.next([program('mp_gridflow', 'GridFlow Ingestion')]);
+    pending.complete();
+
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('sends no program requests when the profile save fails', async () => {
+    registerMentorProfile.mockReturnValueOnce(httpFailure(500, null));
+    component['onAddProgram'](program('mp_gridflow', 'GridFlow Ingestion'));
+    fillValidForm();
+
+    await submit();
+
+    expect(requestMany).not.toHaveBeenCalled();
   });
 
   it('keeps Submit loading and disabled while the save is in flight, and sends no second request', () => {
