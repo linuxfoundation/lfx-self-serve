@@ -502,6 +502,12 @@ export const COMMITTEE_FORM_STEPS = {
 };
 
 /**
+ * Inline note shown on feature toggles that gate-keep the org-name/URL join requirement.
+ * Extracted to avoid the two copies drifting if the wording ever changes.
+ */
+const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an organization name and URL.';
+
+/**
  * Committee settings features for Step 2 form
  * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
  */
@@ -511,7 +517,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-shield',
     title: 'Business Email Required',
     description: 'Require members to have a business email address',
-    note: 'Members joining this group will need to provide an organization name and URL.',
+    note: ORG_REQUIRED_NOTE,
     color: lfxColors.blue[500],
   },
   {
@@ -519,7 +525,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-check-to-slot',
     title: 'Enable Voting',
     description: `Allow members to vote on ${COMMITTEE_LABEL.singular.toLowerCase()} matters`,
-    note: 'Members joining this group will need to provide an organization name and URL.',
+    note: ORG_REQUIRED_NOTE,
     recommended: true,
     color: lfxColors.violet[500],
   },
