@@ -44,7 +44,7 @@ import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
-import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -1571,8 +1571,10 @@ export class CommitteeService {
    * endpoint ({@link getCommitteeApplications}) is separate and intentionally unrelated.
    */
   public async getMyApplication(req: Request, committeeId: string): Promise<CommitteeJoinApplication | null> {
-    const username = await getUsernameFromAuth(req);
-    if (!username) {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    // See CommitteeApplication.Tags() in lfx-v2-committee-service — no username tag is emitted.
+    const email = getEffectiveEmail(req);
+    if (!email) {
       return null;
     }
 
@@ -1581,7 +1583,7 @@ export class CommitteeService {
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'committee_application',
-          tags_all: [`committee_uid:${committeeId}`, `username:${username}`],
+          tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
           ...(pageToken && { page_token: pageToken }),
         }),
       { maxResults: 20 }
@@ -1602,8 +1604,10 @@ export class CommitteeService {
    * fall back to the committee_uid string so the row is still renderable.
    */
   public async getMyApplications(req: Request): Promise<MyPendingApplication[]> {
-    const username = await getUsernameFromAuth(req);
-    if (!username) {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    // See CommitteeApplication.Tags() in lfx-v2-committee-service — no username tag is emitted.
+    const email = getEffectiveEmail(req);
+    if (!email) {
       return [];
     }
 
@@ -1612,7 +1616,7 @@ export class CommitteeService {
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'committee_application',
-          tags_all: [`username:${username}`],
+          tags_all: [`applicant_email:${email}`],
           ...(pageToken && { page_token: pageToken }),
         }),
       { maxResults: 100 }
