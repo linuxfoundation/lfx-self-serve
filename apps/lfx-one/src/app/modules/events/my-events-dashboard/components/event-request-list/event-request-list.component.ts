@@ -55,12 +55,12 @@ export class EventRequestListComponent {
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.requestsResponse().total > 10 ? [10, 25, 50] : undefined));
 
   // TODO(#2740): gate on 'Issued' and hide for manual letters once the dbt model exposes both.
-  protected readonly downloadableLetterIds = computed<Set<string>>(() => {
-    if (this.requestType() !== 'visa') return new Set();
-    return new Set(
+  protected readonly downloadableLetters = computed<Readonly<Record<string, boolean>>>(() => {
+    if (this.requestType() !== 'visa') return {};
+    return Object.fromEntries(
       this.requestsResponse()
         .data.filter((request) => request.status === VISA_LETTER_DOWNLOADABLE_STATUS && !request.eventEnded)
-        .map((request) => request.id)
+        .map((request) => [request.id, true])
     );
   });
 

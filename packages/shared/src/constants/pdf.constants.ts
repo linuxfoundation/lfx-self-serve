@@ -68,6 +68,10 @@ export const VISA_LETTER_SIGNATORY = { name: 'James R. Zemlin', title: 'Executiv
 /** Only letters in this upstream state can be generated; the server re-checks it on every download */
 export const VISA_LETTER_ISSUED_STATUS: VisaLetterTicketStatus = 'letter_issued';
 
+/** Event countries that route the visa letter to the LF India and LF Open Source entities */
+export const VISA_LETTER_INDIA_COUNTRY = 'India';
+export const VISA_LETTER_CHINA_COUNTRY = 'China';
+
 /** Default visa letter letterhead; also the fallback when the event country is unknown */
 export const VISA_LETTER_DEFAULT_ENTITY: VisaLetterEntity = {
   name: 'The Linux Foundation',

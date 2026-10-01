@@ -113,7 +113,7 @@
         </td>
         @if (requestType() === 'visa') {
           <td>
-            @if (downloadableLetterIds().has(request.id)) {
+            @if (downloadableLetters()[request.id]) {
               <div class="flex justify-end">
                 <lfx-button
                   label="Download Letter"

@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
 import { join } from 'node:path';
 import { Request } from 'express';
 
 import { VISA_LETTER_MANUAL_ERROR_CODE, VISA_LETTER_NOT_ISSUED_ERROR_CODE } from '@lfx-one/shared/constants';
 import {
+  VISA_LETTER_CHINA_COUNTRY,
   VISA_LETTER_COUNTRY_ENTITIES,
   VISA_LETTER_DEFAULT_ENTITY,
   VISA_LETTER_FIXED_PAYERS,
+  VISA_LETTER_INDIA_COUNTRY,
   VISA_LETTER_ISSUED_STATUS,
   VISA_LETTER_LF_EUROPE_COUNTRIES,
   VISA_LETTER_MEMBERS_LINK,
@@ -22,7 +23,7 @@ import { buildVisaLetterFileName } from '@lfx-one/shared/utils';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
+import { loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
 import { logger } from './logger.service';
 import { UserService } from './user.service';
 
@@ -108,8 +109,8 @@ export class VisaLetterService {
   private resolveEntity(country: string | undefined): VisaLetterEntity {
     if (!country) return VISA_LETTER_DEFAULT_ENTITY;
     if (VISA_LETTER_LF_EUROPE_COUNTRIES.has(country)) return VISA_LETTER_COUNTRY_ENTITIES.europe;
-    if (country === 'India') return VISA_LETTER_COUNTRY_ENTITIES.india;
-    if (country === 'China') return VISA_LETTER_COUNTRY_ENTITIES.china;
+    if (country === VISA_LETTER_INDIA_COUNTRY) return VISA_LETTER_COUNTRY_ENTITIES.india;
+    if (country === VISA_LETTER_CHINA_COUNTRY) return VISA_LETTER_COUNTRY_ENTITIES.china;
     return VISA_LETTER_DEFAULT_ENTITY;
   }
 
@@ -128,6 +129,13 @@ export class VisaLetterService {
     return entity.dayFirstDates
       ? date.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric' })
       : date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: '2-digit', year: 'numeric' });
+  }
+
+  // Single-day or open-ended events print one date rather than a dangling " - ".
+  private formatEventDates(start: string | undefined, end: string | undefined, entity: VisaLetterEntity): string {
+    const startStr = this.formatDate(start, entity);
+    const endStr = this.formatDate(end, entity);
+    return endStr && endStr !== startStr ? `${startStr} - ${endStr}` : startStr;
   }
 
   private formatEventLocation(letter: VisaLetterRequest): string {
@@ -157,7 +165,7 @@ export class VisaLetterService {
       const nameOnPassport = attendee.nameAsPerPassport ?? '';
       const country = event.country ?? '';
 
-      doc.registerFont('Helvetica', fs.readFileSync(join(TEMPLATE_DIR, 'fonts', 'Helvetica.ttc')));
+      doc.registerFont('Helvetica', loadPdfFont());
       doc.font('Helvetica');
 
       // Letterhead: logo (top-left), address and link (top-right)
@@ -188,7 +196,7 @@ export class VisaLetterService {
 
       field('Event Name:', event.name ?? '');
       doc.moveDown();
-      field('Event Date:', `${this.formatDate(event.startDate, entity)} - ${this.formatDate(event.endDate, entity)}`);
+      field('Event Date:', this.formatEventDates(event.startDate, event.endDate, entity));
       field('Event Location:', this.formatEventLocation(letter));
       doc.moveDown();
       field('Name:', nameOnPassport);

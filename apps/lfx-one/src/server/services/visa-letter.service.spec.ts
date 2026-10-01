@@ -270,6 +270,16 @@ describe('VisaLetterService', () => {
       expect(hasText('about/members')).toBe(false);
     });
 
+    it.each([[undefined], ['2026-03-10']])('prints a single event date when the end date is %j', async (endDate) => {
+      const singleDay = letter();
+      (singleDay['event'] as Record<string, unknown>)['endDate'] = endDate;
+      mockLetters(singleDay);
+
+      await service.generateVisaLetter(req, EVENT_ID);
+
+      expect(mocks.texts[mocks.texts.indexOf('Event Date:') + 1]).toBe('Mar 10, 2026');
+    });
+
     it('says the delegate will speak when they are a speaker', async () => {
       mockLetters(letter({ attendeeType: 'speaker' }));
 

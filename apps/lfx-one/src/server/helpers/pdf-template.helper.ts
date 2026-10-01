@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,4 +17,11 @@ export function resolvePdfTemplateDir(): string {
   if (existsSync(devPath)) return devPath;
 
   return bundlePath; // will produce a clear ENOENT if neither exists
+}
+
+let helveticaFont: Buffer | undefined;
+
+// Read once per process: the font is a static multi-MB asset shared by every generated PDF.
+export function loadPdfFont(): Buffer {
+  return (helveticaFont ??= readFileSync(join(resolvePdfTemplateDir(), 'fonts', 'Helvetica.ttc')));
 }

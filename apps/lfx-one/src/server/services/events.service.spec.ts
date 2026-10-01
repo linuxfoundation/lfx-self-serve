@@ -244,3 +244,48 @@ describe('EventsService filter options use the same past-event predicate', () =>
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
   });
 });
+
+describe('EventsService.getVisaRequests event-ended gate', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new EventsService();
+  });
+
+  function visaRow(eventEnded: unknown): Record<string, unknown> {
+    return {
+      EVENT_ID: 'evt-1',
+      EVENT_NAME: 'Example Community Summit',
+      EVENT_URL: null,
+      EVENT_LOCATION: null,
+      EVENT_CITY: 'Shanghai',
+      EVENT_COUNTRY: 'China',
+      APPLICATION_DATE: '2026-06-01T00:00:00.000Z',
+      REQUEST_STATUS: 'Approved',
+      TRAVEL_FUND_END_TS: null,
+      EVENT_ENDED: eventEnded,
+      TOTAL_RECORDS: 1,
+    };
+  }
+
+  it('selects EVENT_ENDED from the end date, falling back to the start date', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+
+    await service.getVisaRequests({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
+
+    expect(snowflakeMocks.execute.mock.calls[0][0]).toContain('COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED');
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+    [null, false],
+  ])('maps EVENT_ENDED %j to eventEnded %j', async (eventEnded, expected) => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [visaRow(eventEnded)] });
+
+    const result = await service.getVisaRequests({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
+
+    expect(result.data[0].eventEnded).toBe(expected);
+  });
+});

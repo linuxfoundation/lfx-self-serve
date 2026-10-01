@@ -341,7 +341,7 @@ export interface CertificateResult {
 export type VisaLetterTicketStatus = 'submitted' | 'approved' | 'denied' | 'letter_issued' | 'letter_issued_archived' | 'expired';
 
 /** Who pays for the delegate's travel and accommodation, as recorded on the letter request */
-export type VisaLetterPaidBy = 'delegate' | 'delegates_company' | 'the_linux_foundation' | 'cncf';
+export type VisaLetterPaidBy = AttendeeAccommodationPaidBy;
 
 /** Attendee block of a user-service visa letter request (only the fields the letter prints) */
 export interface VisaLetterAttendee {

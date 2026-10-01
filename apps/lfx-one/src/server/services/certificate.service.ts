@@ -4,12 +4,11 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import PDFDocument from 'pdfkit';
-import fs from 'fs';
 import { join } from 'node:path';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
-import { resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
+import { loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { PDFTemplateDetails, CertificateData, CertificateEventRow, CertificateResult } from '@lfx-one/shared/interfaces';
@@ -126,8 +125,7 @@ export class CertificateService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const font = fs.readFileSync(join(TEMPLATE_DIR, 'fonts', 'Helvetica.ttc'));
-      doc.registerFont('Helvetica', font);
+      doc.registerFont('Helvetica', loadPdfFont());
       doc.font('Helvetica');
 
       // Project logo (top-left)
