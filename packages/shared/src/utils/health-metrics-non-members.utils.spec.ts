@@ -25,7 +25,7 @@ const ORG: HealthMetricsNonMembersOrg = {
 };
 
 const PERSON: HealthMetricsNonMembersPerson = {
-  personKey: 'person-0001',
+  rowKey: '1',
   displayName: 'Jane Doe',
   jobTitle: 'Staff Engineer',
   accountId: '0014100000AcmeAAAA',
@@ -90,7 +90,7 @@ describe('buildHealthMetricsNonMembersPersonRows', () => {
   it('formats the meeting count and the last attended date, keeping the title', () => {
     expect(buildHealthMetricsNonMembersPersonRows([PERSON])).toEqual([
       {
-        personKey: 'person-0001',
+        rowKey: '1',
         displayName: 'Jane Doe',
         jobTitle: 'Staff Engineer',
         organizationLabel: 'Acme Motors',

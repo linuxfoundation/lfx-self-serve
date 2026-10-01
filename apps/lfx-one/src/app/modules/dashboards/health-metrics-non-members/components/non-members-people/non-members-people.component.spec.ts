@@ -16,11 +16,11 @@ import { NonMembersPeopleComponent } from './non-members-people.component';
 
 import type { HealthMetricsNonMembersPeople, HealthMetricsNonMembersPerson } from '@lfx-one/shared/interfaces';
 
-const PERSON_KEY = 'person-0001';
+const ROW_KEY = '1';
 
 function person(overrides: Partial<HealthMetricsNonMembersPerson> = {}): HealthMetricsNonMembersPerson {
   return {
-    personKey: PERSON_KEY,
+    rowKey: ROW_KEY,
     displayName: 'Jane Doe',
     jobTitle: 'Staff Engineer',
     accountId: '0014100000AcmeAAAA',
@@ -99,7 +99,7 @@ describe('NonMembersPeopleComponent', () => {
     await render(response({ totalRecords: 388, scopeTotal: 388 }));
 
     expect(getNonMembersPeople).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', search: '', offset: 0, pageSize: 10 });
-    expect(text(`non-members-people-row-${PERSON_KEY}-name`)).toBe('Jane Doe');
+    expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
     expect(text('non-members-people-count')).toBe('388 engaged individuals');
     expect(text('non-members-people-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
@@ -108,7 +108,7 @@ describe('NonMembersPeopleComponent', () => {
 
   it('renders a person row with title, organization, meetings and last attended', async () => {
     await render();
-    const cell = (key: string) => text(`non-members-people-row-${PERSON_KEY}-${key}`);
+    const cell = (key: string) => text(`non-members-people-row-${ROW_KEY}-${key}`);
 
     expect(cell('title')).toBe('Staff Engineer');
     expect(cell('organization')).toBe('Acme Motors');
@@ -119,13 +119,13 @@ describe('NonMembersPeopleComponent', () => {
   it('omits the title line when a person has none', async () => {
     await render(response({ rows: [person({ jobTitle: null })] }));
 
-    expect(query(`non-members-people-row-${PERSON_KEY}-title`)).toBeNull();
-    expect(text(`non-members-people-row-${PERSON_KEY}-name`)).toBe('Jane Doe');
+    expect(query(`non-members-people-row-${ROW_KEY}-title`)).toBeNull();
+    expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
   });
 
   it('shows no contact details and renders rows as plain text, not links', async () => {
     await render();
-    const row = query(`non-members-people-row-${PERSON_KEY}`);
+    const row = query(`non-members-people-row-${ROW_KEY}`);
 
     expect(row?.querySelector('a')).toBeNull();
     expect(row?.textContent).not.toMatch(/@/);
@@ -175,6 +175,12 @@ describe('NonMembersPeopleComponent', () => {
 
     expect(getNonMembersPeople).toHaveBeenCalledTimes(1);
     expect(getNonMembersPeople).toHaveBeenLastCalledWith(expect.objectContaining({ search: '' }));
+  });
+
+  it('keeps the matched count singular when one individual is in scope', async () => {
+    await render(response({ totalRecords: 1, scopeTotal: 1 }), { nonPeopleSearch: 'jane' });
+
+    expect(text('non-members-people-count')).toBe('1 of 1 engaged individual match · clear');
   });
 
   it('keeps the sub-nav count through page turns and searches, blanking it only for a new period', async () => {

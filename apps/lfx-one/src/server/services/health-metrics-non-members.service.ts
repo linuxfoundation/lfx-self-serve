@@ -217,27 +217,24 @@ export class HealthMetricsNonMembersService {
 
     const first = result.rows[0];
     return {
-      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapPerson),
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true && !!row.PERSON_KEY).map((row, index) => mapPerson(row, offset + index + 1)),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
     };
   }
 }
 
-function mapPerson(row: PersonRow): HealthMetricsNonMembersPerson[] {
-  if (!row.PERSON_KEY) return [];
-
-  return [
-    {
-      personKey: row.PERSON_KEY,
-      displayName: row.PERSON_DISPLAY_NAME || 'Unnamed individual',
-      jobTitle: row.PERSON_JOB_TITLE || null,
-      accountId: row.ACCOUNT_ID || null,
-      accountName: row.ACCOUNT_NAME || null,
-      lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
-      meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),
-    },
-  ];
+// Keyed by rank position: PERSON_KEY can hold an email address, so it orders the page but is never returned.
+function mapPerson(row: PersonRow, position: number): HealthMetricsNonMembersPerson {
+  return {
+    rowKey: String(position),
+    displayName: row.PERSON_DISPLAY_NAME || 'Unnamed individual',
+    jobTitle: row.PERSON_JOB_TITLE || null,
+    accountId: row.ACCOUNT_ID || null,
+    accountName: row.ACCOUNT_NAME || null,
+    lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
+    meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),
+  };
 }
 
 function mapOrg(row: OrgRow): HealthMetricsNonMembersOrg[] {

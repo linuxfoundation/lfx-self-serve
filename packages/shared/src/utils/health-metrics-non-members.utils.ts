@@ -42,7 +42,7 @@ export function buildHealthMetricsNonMembersOrgsSummary(scopeTotal: number, newC
 /** People rows. A person with no matched organization, or no attended date, renders a dash. */
 export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMembersPerson[]): HealthMetricsNonMembersPersonRowView[] {
   return rows.map((row) => ({
-    personKey: row.personKey,
+    rowKey: row.rowKey,
     displayName: row.displayName,
     jobTitle: row.jobTitle?.trim() || null,
     organizationLabel: row.accountName || row.accountId || '—',

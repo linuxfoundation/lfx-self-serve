@@ -77,7 +77,8 @@ export interface HealthMetricsNonMembersPeopleQuery {
 
 /** One `NON_MEMBER_PEOPLE` row for the period; never carries an email address. The date is ISO `YYYY-MM-DD`. */
 export interface HealthMetricsNonMembersPerson {
-  personKey: string;
+  /** 1-based position in the ranked result; the warehouse person key can be an email, so it stays on the server. */
+  rowKey: string;
   displayName: string;
   jobTitle: string | null;
   accountId: string | null;
@@ -96,7 +97,7 @@ export interface HealthMetricsNonMembersPeople {
 
 /** One person row as the People table renders it; a missing title has no secondary line. */
 export interface HealthMetricsNonMembersPersonRowView {
-  personKey: string;
+  rowKey: string;
   displayName: string;
   jobTitle: string | null;
   organizationLabel: string;

@@ -100,7 +100,6 @@ export class NonMembersPeopleComponent {
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly summary = computed(() => buildHealthMetricsNonMembersPeopleCountLabel(this.scopeTotal()));
   protected readonly totalRecordsLabel = computed(() => this.totalRecords().toLocaleString('en-US'));
-  protected readonly scopeTotalLabel = computed(() => this.scopeTotal().toLocaleString('en-US'));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {

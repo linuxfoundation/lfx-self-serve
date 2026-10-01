@@ -36,7 +36,7 @@
       @if (loading()) {
         &mdash;
       } @else if (search()) {
-        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ scopeTotalLabel() }} engaged individuals match &middot;
+        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ summary() }} match &middot;
         <button type="button" class="text-blue-600 hover:underline" (click)="clearSearch()" data-testid="non-members-people-clear">clear</button>
       } @else {
         {{ summary() }}
@@ -70,19 +70,19 @@
       </ng-template>
 
       <ng-template #body let-view>
-        <tr [attr.data-testid]="'non-members-people-row-' + view.personKey">
+        <tr [attr.data-testid]="'non-members-people-row-' + view.rowKey">
           <td>
             <div class="flex flex-col">
-              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'non-members-people-row-' + view.personKey + '-name'">{{
+              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-name'">{{
                 view.displayName
               }}</span>
               @if (view.jobTitle) {
-                <span class="text-[11.5px] text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.personKey + '-title'">{{ view.jobTitle }}</span>
+                <span class="text-[11.5px] text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-title'">{{ view.jobTitle }}</span>
               }
             </div>
           </td>
           <td>
-            <span class="text-sm text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.personKey + '-organization'">{{
+            <span class="text-sm text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-organization'">{{
               view.organizationLabel
             }}</span>
           </td>
@@ -91,14 +91,14 @@
               class="text-sm tabular-nums"
               [class.text-gray-800]="view.meetingsLabel !== '—'"
               [class.text-gray-400]="view.meetingsLabel === '—'"
-              [attr.data-testid]="'non-members-people-row-' + view.personKey + '-meetings'"
+              [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-meetings'"
               >{{ view.meetingsLabel }}</span
             >
           </td>
           <td class="text-right">
             <span
               class="whitespace-nowrap text-sm tabular-nums text-gray-500"
-              [attr.data-testid]="'non-members-people-row-' + view.personKey + '-last-attended'"
+              [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-last-attended'"
               >{{ view.lastAttendedLabel }}</span
             >
           </td>

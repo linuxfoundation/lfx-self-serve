@@ -268,7 +268,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
       rows: [
         personRow(),
         personRow({
-          PERSON_KEY: 'person-0002',
+          PERSON_KEY: 'jane.doe@acme-motors.example',
           PERSON_JOB_TITLE: null,
           ACCOUNT_ID: null,
           ACCOUNT_NAME: '',
@@ -285,7 +285,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
       scopeTotal: 214,
       rows: [
         {
-          personKey: 'person-0001',
+          rowKey: '1',
           displayName: 'Jane Doe',
           jobTitle: 'Staff Engineer',
           accountId: '0014100000AcmeAAAA',
@@ -294,7 +294,7 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
           meetingsAttended: 42,
         },
         {
-          personKey: 'person-0002',
+          rowKey: '2',
           displayName: 'Jane Doe',
           jobTitle: null,
           accountId: null,
@@ -304,6 +304,16 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
         },
       ],
     });
+    // The warehouse key can be an email address, so it must not reach the response.
+    expect(JSON.stringify(response)).not.toMatch(/person-0001|@/);
+  });
+
+  it('keys rows by their rank position across pages', async () => {
+    execute.mockResolvedValue({ rows: [personRow(), personRow({ PERSON_KEY: 'person-0002' })] });
+
+    const response = await new HealthMetricsNonMembersService().getPeople(req, { ...query, offset: 20 });
+
+    expect(response.rows.map((row) => row.rowKey)).toEqual(['21', '22']);
   });
 
   it('keeps the totals when the page is past the end', async () => {
