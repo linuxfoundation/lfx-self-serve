@@ -12,8 +12,8 @@
 
 ## Why this exists
 
-Three prototype-driven meetings redesigns have already been abandoned in this repo (composer PRs
-#1751–#1764, all closed unmerged). This epic therefore over-invests in the flag gate and the
+Three prototype-driven meetings redesigns have already been abandoned in this repo (composer
+PRs #1751–#1764, all closed unmerged). This epic therefore over-invests in the flag gate and the
 contracts before any V2 component exists, and it writes its intent down in the repo rather than
 leaving it in a chat transcript.
 
@@ -84,8 +84,10 @@ source at all**. Do not design one in.
 
 Past meetings count differently. Invitee, participant and attended counts come from the
 past-meeting participants list (V1's `pastMeetingParticipants`), and the authenticated past-meeting
-endpoint still fills its count fields, so a viewer with past-meeting access does have counts. Do not
-apply the upcoming rule to a past meeting.
+endpoint still fills its count fields, so a **signed-in** viewer with past-meeting access does have
+counts. Anonymous viewers do not, even on a public, unrestricted past meeting where `full_access` is
+true: V1 fetches participants only when the viewer is authenticated, so an anonymous viewer gets an
+empty list, which must not be rendered as zero counts. Do not apply either rule to the other case.
 
 ### SSR contract
 
