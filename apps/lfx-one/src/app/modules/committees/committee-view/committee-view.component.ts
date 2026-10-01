@@ -421,15 +421,28 @@ export class CommitteeViewComponent {
     // existing pending application so the CTA reflects the real state on first load (not
     // just what's recorded in sessionStorage for this browser session). Browser-only:
     // SSR cannot make authenticated user-scoped API calls for this secondary enrichment.
+    //
+    // Implementation note: we observe a *computed trigger* rather than toObservable(this.committee)
+    // directly. In initializeCommittee(), `committee` emits its value *before* finalize() runs and
+    // clears `loading`. If we filtered on this.committee() directly, myRoleLoading() would still be
+    // true at filter time (finalize hasn't fired yet), so the predicate would fail and the fetch
+    // would never happen. The computed signal re-evaluates whenever ANY of committee, myRole, or
+    // myRoleLoading changes — including when loading settles — so the pipeline fires once the full
+    // visitor state is confirmed.
     if (isPlatformBrowser(this.platformId)) {
-      toObservable(this.committee)
+      const applicationCheckTrigger = computed(() => {
+        const committee = this.committee();
+        // Emit the committee UID only when loading has settled and the caller is confirmed visitor.
+        const isVisitorReady = this.myRole() === null && !this.myRoleLoading();
+        if (!committee?.uid || committee.join_mode !== 'application' || !isVisitorReady) {
+          return null;
+        }
+        return committee.uid;
+      });
+
+      toObservable(applicationCheckTrigger)
         .pipe(
-          // Fire once per distinct committee, only while the user is a visitor (no role).
-          // We re-evaluate when myRoleLoading clears so we don't pre-seed while loading.
-          filter((committee): committee is Committee => {
-            return !!committee?.uid && committee.join_mode === 'application' && this.myRole() === null && !this.myRoleLoading();
-          }),
-          map((committee) => committee.uid),
+          filter((uid): uid is string => !!uid),
           distinctUntilChanged(),
           switchMap((uid) =>
             this.committeeService.getMyApplication(uid).pipe(
