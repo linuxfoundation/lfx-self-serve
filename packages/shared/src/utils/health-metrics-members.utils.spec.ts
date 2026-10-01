@@ -21,6 +21,7 @@ import {
   buildHealthMetricsMembersBoardTrend,
   buildHealthMetricsMembersBridgeView,
   buildHealthMetricsMembersChurnDepartureRows,
+  buildHealthMetricsMembersChurnCountNote,
   buildHealthMetricsMembersChurnDeparturesSubtitle,
   buildHealthMetricsMembersChurnView,
   buildHealthMetricsMembersDirectoryRows,
@@ -1109,8 +1110,15 @@ describe('members churn', () => {
     ]);
   });
 
-  it('claims the bridge count only when the list matches it', () => {
-    expect(buildHealthMetricsMembersChurnDeparturesSubtitle(12, 12)).toBe('largest dues lost first · the same 12 as the bridge above');
+  it('claims the churn count only when the list matches it', () => {
+    expect(buildHealthMetricsMembersChurnDeparturesSubtitle(12, 12)).toBe('largest dues lost first · the same 12 as lost above');
     expect(buildHealthMetricsMembersChurnDeparturesSubtitle(11, 12)).toBe('largest dues lost first');
+  });
+
+  it('notes a gap between the list and the churn count only when they differ', () => {
+    expect(buildHealthMetricsMembersChurnCountNote(12, 12)).toBeNull();
+    expect(buildHealthMetricsMembersChurnCountNote(11, 12)).toBe(
+      '11 organizations listed, while churn counts 12 lost. The list and the churn count are counted separately, so they can differ slightly.'
+    );
   });
 });

@@ -577,9 +577,16 @@ export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsM
   }));
 }
 
-/** "Who left"'s subtitle; it claims the bridge's count only when the list carries exactly that many. */
+/** "Who left"'s subtitle; it claims the churn count only when the list carries exactly that many. */
 export function buildHealthMetricsMembersChurnDeparturesSubtitle(totalRecords: number, lostCount: number): string {
-  return totalRecords === lostCount ? `largest dues lost first · the same ${formatCount(lostCount)} as the bridge above` : 'largest dues lost first';
+  return totalRecords === lostCount ? `largest dues lost first · the same ${formatCount(lostCount)} as lost above` : 'largest dues lost first';
+}
+
+/** Shown when "Who left" and the churn count disagree, so the gap reads as a counting difference. */
+export function buildHealthMetricsMembersChurnCountNote(totalRecords: number, lostCount: number): string | null {
+  if (totalRecords === lostCount) return null;
+
+  return `${pluralize(totalRecords, 'organization')} listed, while churn counts ${formatCount(lostCount)} lost. The list and the churn count are counted separately, so they can differ slightly.`;
 }
 
 /** The view's own point change, read only when the year before is in the read to compare against. */

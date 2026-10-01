@@ -258,6 +258,23 @@ interface ChurnRow {
   LOGO_CHURN_RATE: number | null;
 }
 
+interface MovementDetailPageRow {
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+}
+
+/** One movement-detail page read; `dateColumn` is the per-read date the page selects. */
+interface MovementDetailPageRead {
+  foundationSlug: string;
+  year: number;
+  movementType: string;
+  dateColumn: 'movement_date' | 'lapsed_date';
+  pageSize: number;
+  offset: number;
+  operation: string;
+  clientMessage: string;
+}
+
 interface ChurnDepartureRow {
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
@@ -340,54 +357,18 @@ export class HealthMetricsMembersService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
-    const sql = `
-      WITH scoped AS (
-        SELECT *
-        FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
-        WHERE foundation_slug = ?
-          AND year = ?
-          AND movement_type = ?
-          -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
-          AND account_id IS NOT NULL
-          AND account_id <> ''
-      ),
-      totals AS (
-        SELECT COUNT(*) AS total_records
-        FROM scoped
-      ),
-      page AS (
-        SELECT
-          account_id,
-          account_name,
-          membership_tier,
-          dues_impact_usd,
-          movement_date,
-          last_engaged_date,
-          sort_rank,
-          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
-          TRUE AS is_page_row
-        FROM scoped
-        -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST
-        LIMIT ${pageSize} OFFSET ${offset}
-      )
-      -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
-      FROM totals
-      LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC NULLS LAST
-    `;
-
-    const result = await executeSnowflakeViewRead<MovementRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.year, query.movementType], {
-      view: MEMBERSHIP_MOVEMENT_DETAIL_VIEW,
+    const page = await this.readMovementDetailPage<MovementRow>(req, {
+      foundationSlug: query.foundationSlug,
+      year: query.year,
+      movementType: query.movementType,
+      dateColumn: 'movement_date',
+      pageSize,
+      offset,
       operation: 'get_members_movements',
       clientMessage: 'This list of members is unavailable right now.',
     });
 
-    return {
-      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapMovement),
-      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
-    };
+    return { rows: page.rows.flatMap(mapMovement), totalRecords: page.totalRecords };
   }
 
   /**
@@ -748,13 +729,36 @@ export class HealthMetricsMembersService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
+    const page = await this.readMovementDetailPage<ChurnDepartureRow>(req, {
+      foundationSlug: query.foundationSlug,
+      year: query.year,
+      movementType: 'churned',
+      dateColumn: 'lapsed_date',
+      pageSize,
+      offset,
+      operation: 'get_members_churn_departures',
+      clientMessage: 'The list of departed members is unavailable right now.',
+    });
+
+    return { rows: page.rows.flatMap(mapChurnDeparture), totalRecords: page.totalRecords };
+  }
+
+  /**
+   * One page of a year's `MEMBERSHIP_MOVEMENT_DETAIL` rows for a movement type, in `sort_rank` order. The total
+   * is a separate aggregate joined onto the page, so a page past the end still reports it.
+   */
+  private async readMovementDetailPage<T extends MovementDetailPageRow>(
+    req: Request,
+    read: MovementDetailPageRead
+  ): Promise<{ rows: T[]; totalRecords: number }> {
+    // `dateColumn` and the clamped `pageSize`/`offset` come from the callers, never the request, so interpolating them is safe.
     const sql = `
       WITH scoped AS (
         SELECT *
         FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
         WHERE foundation_slug = ?
           AND year = ?
-          AND movement_type = 'churned'
+          AND movement_type = ?
           -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
           AND account_id IS NOT NULL
           AND account_id <> ''
@@ -769,7 +773,7 @@ export class HealthMetricsMembersService {
           account_name,
           membership_tier,
           dues_impact_usd,
-          lapsed_date,
+          ${read.dateColumn},
           last_engaged_date,
           sort_rank,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
@@ -777,7 +781,7 @@ export class HealthMetricsMembersService {
         FROM scoped
         -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
         ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST
-        LIMIT ${pageSize} OFFSET ${offset}
+        LIMIT ${read.pageSize} OFFSET ${read.offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
@@ -786,14 +790,14 @@ export class HealthMetricsMembersService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC NULLS LAST
     `;
 
-    const result = await executeSnowflakeViewRead<ChurnDepartureRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.year], {
+    const result = await executeSnowflakeViewRead<T>(this.snowflakeService, req, sql, [read.foundationSlug, read.year, read.movementType], {
       view: MEMBERSHIP_MOVEMENT_DETAIL_VIEW,
-      operation: 'get_members_churn_departures',
-      clientMessage: 'The list of departed members is unavailable right now.',
+      operation: read.operation,
+      clientMessage: read.clientMessage,
     });
 
     return {
-      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapChurnDeparture),
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true),
       totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
     };
   }

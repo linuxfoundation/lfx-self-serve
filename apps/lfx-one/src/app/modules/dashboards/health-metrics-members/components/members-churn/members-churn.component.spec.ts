@@ -183,13 +183,13 @@ describe('MembersChurnComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('lists who left, claiming the bridge count only when the list matches it', async () => {
+  it('lists who left, claiming the churn count only when the list matches it', async () => {
     await render();
 
     expect(text('members-churn-departure-acct-1')).toContain('Acme Motors');
     expect(text('members-churn-departure-acct-1-dues')).toBe('$250K');
     expect(text('members-churn-departure-acct-2-dues')).toBe('$50K');
-    expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first · the same 12 as the bridge above');
+    expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first · the same 12 as lost above');
     expect(query('members-churn-count-note')).toBeNull();
   });
 
@@ -197,7 +197,7 @@ describe('MembersChurnComponent', () => {
     await render(CHURN, { ...DEPARTURES, totalRecords: 11 });
 
     expect(text('members-churn-departures-subtitle')).toBe('largest dues lost first');
-    expect(text('members-churn-count-note')).toContain('11 organizations listed, while the bar counts 12');
+    expect(text('members-churn-count-note')).toContain('11 organizations listed, while churn counts 12 lost');
   });
 
   it('pages through who left and writes the page to the URL, keeping the churn read', async () => {

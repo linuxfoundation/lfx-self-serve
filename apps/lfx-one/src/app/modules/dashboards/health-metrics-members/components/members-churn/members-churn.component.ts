@@ -22,10 +22,10 @@ import {
   lfxColors,
 } from '@lfx-one/shared/constants';
 import {
+  buildHealthMetricsMembersChurnCountNote,
   buildHealthMetricsMembersChurnDepartureRows,
   buildHealthMetricsMembersChurnDeparturesSubtitle,
   buildHealthMetricsMembersChurnView,
-  buildHealthMetricsMembersMovementCountNote,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -121,7 +121,7 @@ export class MembersChurnComponent {
   protected readonly totalRecords = computed(() => this.departures().totalRecords);
   protected readonly departuresSubtitle = computed(() => buildHealthMetricsMembersChurnDeparturesSubtitle(this.totalRecords(), this.view().lostCount));
   protected readonly countNote = computed(() =>
-    this.departuresLoading() || this.departuresFailed() ? null : buildHealthMetricsMembersMovementCountNote(this.totalRecords(), this.view().lostCount)
+    this.departuresLoading() || this.departuresFailed() ? null : buildHealthMetricsMembersChurnCountNote(this.totalRecords(), this.view().lostCount)
   );
   protected readonly first = computed(() => (this.page() - 1) * this.size);
   /** Holds the skeleton until a foundation's first read lands; a period or mode change re-projects in place. */

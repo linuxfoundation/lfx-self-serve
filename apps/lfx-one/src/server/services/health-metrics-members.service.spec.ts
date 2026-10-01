@@ -1283,10 +1283,11 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
     await new HealthMetricsMembersService().getChurnDepartures(req, query);
 
     const [sql, binds] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
-    expect(binds).toEqual(['acme', 2025]);
+    expect(binds).toEqual(['acme', 2025, 'churned']);
     expect(sql.match(/\?/g)).toHaveLength(binds.length);
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
-    expect(scoped).toContain("AND movement_type = 'churned'");
+    expect(scoped).toContain('AND movement_type = ?');
+    expect(sql).toContain('lapsed_date,');
     expect(scoped).toContain('AND account_id IS NOT NULL');
     expect(scoped).toContain("AND account_id <> ''");
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST');
