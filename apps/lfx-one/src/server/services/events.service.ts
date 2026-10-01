@@ -905,6 +905,7 @@ export class EventsService {
         ${applicationDateColumn} AS APPLICATION_DATE,
         ${statusColumn} AS REQUEST_STATUS,
         TRAVEL_FUND_END_TS,
+        COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
       WHERE ${statusColumn} IS NOT NULL
@@ -1050,6 +1051,7 @@ export class EventsService {
         : '—',
       status: row.REQUEST_STATUS,
       travelFundEnd: row.TRAVEL_FUND_END_TS ? new Date(row.TRAVEL_FUND_END_TS).toISOString() : null,
+      eventEnded: !!row.EVENT_ENDED,
     };
   }
 

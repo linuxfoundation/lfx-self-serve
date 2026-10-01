@@ -4,7 +4,7 @@ description: Request a visa support letter to help international attendees obtai
 audience: [all]
 product_area: Events
 tags: [events, visa-letters, visa, travel, attendance]
-last_updated: 2026-08-19
+last_updated: 2026-10-01
 intercom_collection: Events
 ---
 
@@ -41,6 +41,12 @@ Enter your details exactly as they appear on your passport so the letter is issu
 ## After you submit
 
 Your request appears on the **Visa Letters** tab with its current **Status**, along with the event, location, and application date. The Linux Foundation events team reviews your request and follows up with your visa support letter.
+
+## Download your visa letter
+
+When your request shows **Approved**, a **Download Letter** button appears at the end of its row. Select it to save your visa support letter as a PDF. The button is available until the event ends.
+
+Some letters are prepared by hand. If yours is one of them, Download Letter tells you the events team will email the letter to you instead.
 
 ## Questions
 
