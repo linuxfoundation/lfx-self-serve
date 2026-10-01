@@ -29,6 +29,8 @@ import type { LDClient } from '@launchdarkly/node-server-sdk';
 export class LaunchDarklyServerService {
   private static instance: LaunchDarklyServerService | null = null;
   private client: LDClient | null = null;
+  private initAttempted = false;
+  private closed = false;
 
   public static getInstance(): LaunchDarklyServerService {
     if (!LaunchDarklyServerService.instance) {
@@ -83,13 +85,27 @@ export class LaunchDarklyServerService {
       return null;
     }
 
+    if (this.closed) {
+      return null;
+    }
+
     this.client ??= init(sdkKey);
+
+    // Only the first evaluation waits for the connection. While LaunchDarkly stays unreachable the SDK
+    // keeps retrying, and waiting again would add the full timeout to every later request.
+    if (this.client.initialized()) {
+      return this.client;
+    }
+    if (this.initAttempted) {
+      return null;
+    }
+    this.initAttempted = true;
 
     try {
       await this.client.waitForInitialization({ timeout: LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS });
       return this.client;
     } catch (error) {
-      // The SDK keeps connecting in the background; a later request may find it ready.
+      // The SDK keeps connecting in the background; once it reports ready, later requests use it.
       logger.warning(req, 'evaluate_server_flag', 'LaunchDarkly not ready; using flag default', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
@@ -97,7 +113,9 @@ export class LaunchDarklyServerService {
     }
   }
 
+  /** After shutdown no request may open a new connection; evaluations fail closed. */
   private shutdown(): Promise<void> {
+    this.closed = true;
     this.client?.close();
     this.client = null;
     return Promise.resolve();

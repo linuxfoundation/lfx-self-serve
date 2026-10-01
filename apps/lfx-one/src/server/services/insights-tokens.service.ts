@@ -108,7 +108,9 @@ export class InsightsTokensService {
   }
 
   /**
-   * Whether the caller may create tokens: they must be a Key Contact of at least one org. Any entry
+   * Whether the caller may create tokens. A user targeted by the `insights-public-api` flag is eligible
+   * straight away (`INSIGHTS_TOKEN_FLAG_ELIGIBLE`, no member-service call); everyone else must be a Key
+   * Contact of at least one org, as follows. Any entry
    * with a non-empty `b2b_org_uid` is enough; `company_name` is optional upstream and the tier value
    * itself is not checked. Fails closed:
    * an empty list or a missing username yields `canCreate: false`; any upstream error, a response that

@@ -3,8 +3,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { init, waitForInitialization, boolVariation, close, loggerWarning, getUsernameFromAuth } = vi.hoisted(() => ({
+const { init, initialized, waitForInitialization, boolVariation, close, loggerWarning, getUsernameFromAuth } = vi.hoisted(() => ({
   init: vi.fn(),
+  initialized: vi.fn(),
   waitForInitialization: vi.fn(),
   boolVariation: vi.fn(),
   close: vi.fn(),
@@ -29,8 +30,14 @@ describe('LaunchDarklyServerService', () => {
 
   beforeEach(() => {
     process.env['LD_SDK_KEY'] = 'sdk-test-key';
-    init.mockReset().mockReturnValue({ waitForInitialization, boolVariation, close });
-    waitForInitialization.mockReset().mockResolvedValue(undefined);
+    // Mirrors the SDK: `initialized()` turns true once the initial connection succeeds.
+    let ready = false;
+    init.mockReset().mockReturnValue({ initialized, waitForInitialization, boolVariation, close });
+    initialized.mockReset().mockImplementation(() => ready);
+    waitForInitialization.mockReset().mockImplementation(() => {
+      ready = true;
+      return Promise.resolve();
+    });
     boolVariation.mockReset().mockResolvedValue(true);
     close.mockReset();
     loggerWarning.mockReset();
@@ -81,6 +88,25 @@ describe('LaunchDarklyServerService', () => {
     expect(boolVariation).not.toHaveBeenCalled();
   });
 
+  it('waits for LaunchDarkly only once while it stays unreachable', async () => {
+    waitForInitialization.mockReset().mockRejectedValue(new Error('timeout'));
+
+    await service.isFlagEnabled(req, 'insights-public-api');
+    await service.isFlagEnabled(req, 'insights-public-api');
+
+    expect(waitForInitialization).toHaveBeenCalledTimes(1);
+    expect(boolVariation).not.toHaveBeenCalled();
+  });
+
+  it('does not open a new connection after shutdown', async () => {
+    await service.isFlagEnabled(req, 'insights-public-api');
+    await LaunchDarklyServerService.shutdownIfInitialized();
+    init.mockClear();
+
+    expect(await service.isFlagEnabled(req, 'insights-public-api')).toBe(false);
+    expect(init).not.toHaveBeenCalled();
+  });
+
   it('returns the default when evaluation throws, instead of failing the request', async () => {
     boolVariation.mockRejectedValue(new Error('boom'));
 
@@ -93,10 +119,14 @@ describe('LaunchDarklyServerService', () => {
     expect(await service.isFlagEnabled(req, 'insights-public-api', true)).toBe(true);
   });
 
-  it('closes the client on shutdown only if one was created', async () => {
+  it('does not create a client just to close it on shutdown', async () => {
     await LaunchDarklyServerService.shutdownIfInitialized();
-    expect(close).not.toHaveBeenCalled();
 
+    expect(init).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('closes the client on shutdown when one was created', async () => {
     await service.isFlagEnabled(req, 'insights-public-api');
     await LaunchDarklyServerService.shutdownIfInitialized();
     expect(close).toHaveBeenCalledTimes(1);
