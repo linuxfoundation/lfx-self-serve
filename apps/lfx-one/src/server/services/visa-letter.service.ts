@@ -23,7 +23,7 @@ import { buildVisaLetterFileName } from '@lfx-one/shared/utils';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
+import { drawPdfSignature, loadPdfFont, resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
 import { logger } from './logger.service';
 import { UserService } from './user.service';
 
@@ -238,8 +238,7 @@ export class VisaLetterService {
       doc.moveDown(3);
 
       doc.text('Yours truly,');
-      // TODO(#3191): signatory text overlaps the image; fix together with the certificate.
-      doc.image(join(TEMPLATE_DIR, 'images', 'image1.png'), PAGE_START, undefined, { width: 110 });
+      drawPdfSignature(doc, join(TEMPLATE_DIR, 'images', 'image1.png'), PAGE_START, 110);
       const signatureOrg = entity.signatureOrgFromEvent && event.name ? event.name : entity.signatureOrg;
       const { name, title, phone } = VISA_LETTER_SIGNATORY;
       doc.text(`${name}\n${title}\n${signatureOrg}\n${phone}`);

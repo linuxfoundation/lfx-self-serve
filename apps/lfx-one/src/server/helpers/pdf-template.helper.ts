@@ -25,3 +25,28 @@ let helveticaFont: Buffer | undefined;
 export function loadPdfFont(): Buffer {
   return (helveticaFont ??= readFileSync(join(resolvePdfTemplateDir(), 'fonts', 'Helvetica.ttc')));
 }
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const pngSizes = new Map<string, { width: number; height: number }>();
+
+// Width and height sit in the IHDR chunk right after the 8-byte signature.
+function readPngSize(path: string): { width: number; height: number } {
+  let size = pngSizes.get(path);
+  if (!size) {
+    const header = readFileSync(path).subarray(0, 24);
+    if (header.length < 24 || !header.subarray(0, 8).equals(PNG_SIGNATURE) || header.toString('ascii', 12, 16) !== 'IHDR') {
+      throw new Error(`Not a PNG image: ${path}`);
+    }
+    size = { width: header.readUInt32BE(16), height: header.readUInt32BE(20) };
+    pngSizes.set(path, size);
+  }
+  return size;
+}
+
+// PDFKit 0.15 leaves doc.y at the image's top edge, so move it below the image ourselves.
+export function drawPdfSignature(doc: PDFKit.PDFDocument, imagePath: string, x: number, width: number): void {
+  const { width: pixelWidth, height: pixelHeight } = readPngSize(imagePath);
+  const top = doc.y;
+  doc.image(imagePath, x, top, { width });
+  doc.y = top + (width * pixelHeight) / pixelWidth;
+}
