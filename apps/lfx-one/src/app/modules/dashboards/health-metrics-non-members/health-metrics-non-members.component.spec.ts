@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { Component, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
@@ -10,9 +11,18 @@ import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { NonMembersOrgsComponent } from './components/non-members-orgs/non-members-orgs.component';
 import { HealthMetricsNonMembersComponent } from './health-metrics-non-members.component';
 
-// Covers only what Non-Members wires into the shell: its copy, placeholders and sub-nav. The
+/** Stands in for Company participation, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-non-members-orgs', template: '<div data-testid="non-members-orgs-stub"></div>' })
+class OrgsStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+// Covers only what Non-Members wires into the shell: its copy, section bodies and sub-nav. The
 // scroll-spy and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsNonMembersComponent', () => {
   const originalScrollIntoView = Element.prototype.scrollIntoView;
@@ -26,10 +36,24 @@ describe('HealthMetricsNonMembersComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(HealthMetricsNonMembersComponent, {
+        remove: { imports: [NonMembersOrgsComponent] },
+        add: { imports: [OrgsStubComponent] },
+      })
+      .compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsNonMembersComponent);
     fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  function stub<T>(type: new (...args: never[]) => T): T {
+    return fixture.debugElement.query(By.directive(type)).componentInstance as T;
+  }
+
+  async function flush(): Promise<void> {
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -43,14 +67,20 @@ describe('HealthMetricsNonMembersComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the three sections in order, each anchored with its design copy and a placeholder', async () => {
+  it('renders the three sections in order, each anchored with its design copy and a body or placeholder', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="non-members-section-"]')] as HTMLElement[];
 
     expect(rendered.map((element) => element.id)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => `sec-non-${section.key}`));
     rendered.forEach((element, index) => {
+      const key = HEALTH_METRICS_NON_MEMBERS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_NON_MEMBERS_SECTIONS[index].heading);
-      expect(element.textContent).toContain('Awaiting data');
+      if (key === 'orgs') {
+        expect(element.querySelector('[data-testid="non-members-orgs-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
+      } else {
+        expect(element.textContent).toContain('Awaiting data');
+      }
     });
   });
 
@@ -78,10 +108,32 @@ describe('HealthMetricsNonMembersComponent', () => {
     );
   });
 
-  it('scrolls to the section a deep link names', async () => {
+  it('re-lands a held deep link when Company participation settles, then releases it', async () => {
     await setup('conversion');
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
 
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
+    stub(OrgsStubComponent).settled.emit();
+    await flush();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('non-members-sub-nav-conversion');
+
+    scrollIntoView.mockClear();
+    stub(OrgsStubComponent).settled.emit();
+    await flush();
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('badges Company participation with the organization count once it reports one', async () => {
+    await setup();
+    const item = () => fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-orgs"]').textContent;
+
+    stub(OrgsStubComponent).countChange.emit(412);
+    await flush();
+    expect(item()).toContain('412');
+
+    stub(OrgsStubComponent).countChange.emit(null);
+    await flush();
+    expect(item()).not.toMatch(/\d/);
   });
 });

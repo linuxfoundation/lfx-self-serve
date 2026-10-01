@@ -1,8 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
-import type { HealthMetricsNonMembersSectionKey } from '../interfaces/health-metrics-non-members.interface';
+import type {
+  HealthMetricsNonMembersOrgs,
+  HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsNonMembersQueryParams,
+  HealthMetricsNonMembersSectionKey,
+} from '../interfaces/health-metrics-non-members.interface';
 
 /**
  * The three Non-Members sections in render order. `key` is the section's URL fragment and the
@@ -40,7 +46,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX = 'sec-non-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS = [] as const satisfies readonly HealthMetricsNonMembersSectionKey[];
+export const HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS = ['orgs'] as const satisfies readonly HealthMetricsNonMembersSectionKey[];
 
 /** Note under the sub-nav items, linking to Engagement's non-member participation. */
 export const HEALTH_METRICS_NON_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
@@ -52,3 +58,43 @@ export const HEALTH_METRICS_NON_MEMBERS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2
 
 /** The project selector does not narrow Non-Members, so the page says so above its sections. */
 export const HEALTH_METRICS_NON_MEMBERS_SCOPE_NOTE = 'Non-Members figures are foundation-wide. The project selector does not narrow them.';
+
+/** Each section's filter, search and page state in the URL; each key is namespaced to the tab. */
+export const HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS = {
+  orgsFilter: 'nonFit',
+  orgsSearch: 'nonSearch',
+  orgsPage: 'nonPage',
+} as const satisfies Record<string, keyof HealthMetricsNonMembersQueryParams>;
+
+/** Company participation's filters, and the allowlist the read validates against. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS = ['all', 'meetings', 'high-fit'] as const;
+
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS: readonly (FilterPillOption & { id: HealthMetricsNonMembersOrgsFilter })[] = [
+  { id: 'all', label: 'All' },
+  { id: 'meetings', label: 'Attends meetings' },
+  { id: 'high-fit', label: 'High fit' },
+];
+
+/** Read-failed / no-foundation value: no organizations, so the section renders no rows. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_UNMEASURED: HealthMetricsNonMembersOrgs = {
+  rows: [],
+  totalRecords: 0,
+  scopeTotal: 0,
+  newCount: 0,
+};
+
+/** Rows per page, and the rows-per-page choices; the largest foundation has several hundred active organizations. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE = 10;
+
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
+
+/** Largest page a caller may ask for. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE = 100;
+
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH = 100;
+
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
+
+/** Under the table until the organization match is validated. */
+export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
+  "Organization matching is under validation. Treat this list as provisional and don't send it to sales unchecked.";

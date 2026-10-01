@@ -192,6 +192,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a year in which no membership lapsed.
       call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25 }),
     },
+    {
+      name: 'getNonMembersOrgs',
+      url: '/api/analytics/non-members-orgs',
+      // A swallowed failure would read as a foundation no non-member organization engages with.
+      call: () => service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
@@ -229,6 +235,15 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     expect(req.request.urlWithParams).toContain('tier=Gold%2B');
     expect(req.request.params.has('nps')).toBe(false);
     req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0 });
+  });
+
+  it('getNonMembersOrgs sends a typed plus sign encoded and leaves the default filter out', () => {
+    service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/non-members-orgs');
+    expect(req.request.urlWithParams).toContain('search=A%2BE');
+    expect(req.request.params.has('filter')).toBe(false);
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, newCount: 0 });
   });
 
   afterEach(() => {

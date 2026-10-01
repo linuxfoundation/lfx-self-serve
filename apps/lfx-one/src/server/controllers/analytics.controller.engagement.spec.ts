@@ -26,9 +26,10 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
     },
   };
 });
-// The controller constructs six unrelated domain services; none of them are exercised here.
+// The controller constructs seven unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {} }));
 vi.mock('../services/health-metrics-members.service', () => ({ HealthMetricsMembersService: class {} }));
+vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
