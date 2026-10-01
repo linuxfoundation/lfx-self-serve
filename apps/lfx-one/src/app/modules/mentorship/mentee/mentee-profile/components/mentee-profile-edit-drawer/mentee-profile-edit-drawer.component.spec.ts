@@ -311,6 +311,22 @@ describe('MenteeProfileEditDrawerComponent', () => {
       expect(introductionErrorElement()).toBeNull();
     });
 
+    it('clears the error and sends nothing when the introduction is reverted to the stored HTML', () => {
+      comp['form'].controls.introduction.setValue('');
+      comp['onSave']();
+      fixture.detectChanges();
+      expect(introductionErrorElement()).not.toBeNull();
+
+      comp['form'].controls.introduction.setValue(PROFILE.aboutMe);
+      fixture.detectChanges();
+      expect(introductionErrorElement()).toBeNull();
+
+      comp['onSave']();
+
+      expect(updateMenteeProfile).not.toHaveBeenCalled();
+      expect(drawer.isOpen()).toBe(false);
+    });
+
     it('never sends a profile link', () => {
       comp['form'].controls.additionalNotes.setValue('Weekends only.');
 
