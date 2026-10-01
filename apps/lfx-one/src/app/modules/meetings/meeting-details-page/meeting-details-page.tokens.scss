@@ -96,7 +96,7 @@
   --md-status-warn-bg: rgb(148 94 16 / 12%); // derived from --md-status-warn
 
   // ── Status: live (in progress, declined, destructive) ─────────────────────
-  --md-status-live: #c4342b; // DIVERGENCE: nearest lfxColors.red.600 (#E7000B), softer than upstream. 4.67:1 on chip, 5.42:1 on card
+  --md-status-live: #c4342b; // DIVERGENCE: nearest lfxColors.red.600 (#E7000B), softer than upstream; converges on red.700 (#C10007, 5.35:1 on its tint) — NOT red.600, which is 4.01:1. 4.67:1 on chip, 5.42:1 on card
   --md-status-live-bg: rgb(196 52 43 / 10%); // derived from --md-status-live
 
   // ── Radii ─────────────────────────────────────────────────────────────────

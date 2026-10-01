@@ -93,7 +93,7 @@ there — the stricter of the two surfaces — with the value on `--md-surface-c
 | `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
 | `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange; V2 reads as ochre         | **No** — hue; keep V2, raise upstream |
 | `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
-| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange | Yes — converge on `red.600`           |
+| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange | Yes — converge on `red.700`           |
 | `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
 
 All three hues are darkened from the prototype, which measured roughly 3.6:1 on-chip across
@@ -105,6 +105,10 @@ wants ochre.
 `--md-status-good` converges on `emerald.700`, not the hue-nearer `emerald.600`: `emerald.600`
 (`#009966`) measures only 3.65:1 on white and would reintroduce the chip-text failure the
 darkening fixed. `emerald.700` measures 5.36:1 on white and 4.67:1 on its own 10% tint.
+
+`--md-status-live` follows the same rule. `red.600` stays the nearest palette reference, but it
+measures only 4.01:1 on its own 10% tint, so it cannot be the convergence target for chip text.
+`red.700` (`#C10007`) measures 6.42:1 on white and 5.35:1 on its tint.
 
 ### Radii and elevation
 
