@@ -344,6 +344,10 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
+    // Snapshot member count before opening — used by the poll to detect when the
+    // query-service index has caught up with the write (indexing lag).
+    const countBeforeAdd = this.members().length;
+
     const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
       header: 'Add Member',
       width: '540px',
@@ -360,11 +364,15 @@ export class CommitteeMembersComponent implements OnInit {
     dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result === true) {
         this.refreshMembers();
+        this.pollUntilMemberAdded(countBeforeAdd);
       }
     });
   }
 
   public openInviteMemberDialog(): void {
+    // Snapshot invite count — used by the poll to detect when the new invite is indexed.
+    const countBeforeInvite = this.invites().length;
+
     const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
       header: 'Invite Someone',
       width: '540px',
@@ -381,6 +389,7 @@ export class CommitteeMembersComponent implements OnInit {
     dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result === true) {
         this.refreshMembers();
+        this.pollUntilInviteAdded(countBeforeInvite);
       }
     });
   }
@@ -637,6 +646,70 @@ export class CommitteeMembersComponent implements OnInit {
 
   private refreshMembers(): void {
     this.refresh.emit();
+  }
+
+  /**
+   * Polls getCommitteeMembers until the count exceeds `countBefore`, absorbing the
+   * query-service indexing lag after a direct-add write (same pattern as
+   * refreshCommitteeAfterMembershipChange in committee-view.component.ts).
+   * Fires a final refreshMembers() when the new row is detected, or gives up after 6 attempts.
+   */
+  private pollUntilMemberAdded(countBefore: number): void {
+    const committeeUid = this.committee()?.uid;
+    if (!committeeUid) return;
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommitteeMembers(committeeUid).pipe(catchError(() => of(null as CommitteeMember[] | null)))),
+        filter((members): members is CommitteeMember[] => Array.isArray(members) && members.length > countBefore),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
+  /**
+   * Same as pollUntilMemberAdded but watches the invite list, absorbing query-service
+   * indexing lag after a new invite is created.
+   */
+  private pollUntilInviteAdded(countBefore: number): void {
+    const committeeUid = this.committee()?.uid;
+    if (!committeeUid) return;
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
+        filter((invites): invites is CommitteeInvite[] => Array.isArray(invites) && invites.length > countBefore),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
   }
 
   /**
