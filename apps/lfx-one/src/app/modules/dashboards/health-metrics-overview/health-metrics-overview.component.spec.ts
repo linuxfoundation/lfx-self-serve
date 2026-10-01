@@ -160,6 +160,19 @@ describe('HealthMetricsOverviewComponent', () => {
     expect(link.getAttribute('target')).toBeNull();
   });
 
+  it.each([
+    ['non.orgs', '/foundation/health-metrics/non-members?nonFit=high-fit#orgs'],
+    ['non.conversion', '/foundation/health-metrics/non-members#conversion'],
+  ] as const)('links a %s finding into its Non-Members section even before the Salesforce id resolves', async (linkTarget, href) => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
+    fixture.componentRef.setInput('findings', [finding({ area: 'non', linkTarget, sortRank: 10 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-10"]');
+    expect(link.getAttribute('href')).toBe(href);
+    expect(link.getAttribute('target')).toBeNull();
+  });
+
   function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {
     return {
       area: 'eng',
@@ -359,6 +372,26 @@ describe('HealthMetricsOverviewComponent', () => {
       const link: HTMLAnchorElement = memTile.querySelector('[data-testid="health-metrics-overview-tile-mem-link"]');
       expect(link.textContent).toContain('View members');
       expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#list');
+      httpMock.verify();
+    });
+
+    it('renders the live Non-Members tile with a link to the High fit organizations', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'opp' })] });
+      await fixture.whenStable();
+
+      const nonTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-non"]');
+      expect(nonTile.textContent).toContain('Opportunity');
+      const link: HTMLAnchorElement = nonTile.querySelector('[data-testid="health-metrics-overview-tile-non-link"]');
+      expect(link.textContent).toContain('View organizations');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonFit=high-fit#orgs');
       httpMock.verify();
     });
 
