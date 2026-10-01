@@ -61,6 +61,7 @@ import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../s
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
+import { HealthMetricsTrainingService } from '../services/health-metrics-training.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -114,6 +115,7 @@ export class AnalyticsController {
   private readonly healthMetricsEventsService: HealthMetricsEventsService;
   private readonly healthMetricsMembersService: HealthMetricsMembersService;
   private readonly healthMetricsNonMembersService: HealthMetricsNonMembersService;
+  private readonly healthMetricsTrainingService: HealthMetricsTrainingService;
 
   public constructor() {
     this.userService = new UserService();
@@ -124,6 +126,7 @@ export class AnalyticsController {
     this.healthMetricsEventsService = new HealthMetricsEventsService();
     this.healthMetricsMembersService = new HealthMetricsMembersService();
     this.healthMetricsNonMembersService = new HealthMetricsNonMembersService();
+    this.healthMetricsTrainingService = new HealthMetricsTrainingService();
   }
 
   /**
@@ -4235,6 +4238,23 @@ export class AnalyticsController {
         high_fit_count: response.highFitCount,
         warmest_count: response.warmest.length,
       });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-presence` — whether the foundation runs a training programme, which decides the Training tab's shell. */
+  public async getTrainingPresence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_presence');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_presence');
+
+      const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
+
+      logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
 
       res.json(response);
     } catch (error) {

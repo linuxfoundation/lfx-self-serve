@@ -137,6 +137,8 @@ import {
   HealthMetricsNonMembersOrgsQuery,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
+  HealthMetricsTrainingPresence,
+  HealthMetricsTrainingPresenceQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1579,6 +1581,19 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] non-members-conversion failed', { foundationSlug: query.foundationSlug, range: query.range, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getTrainingPresence(query: HealthMetricsTrainingPresenceQuery): Observable<HealthMetricsTrainingPresence> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
+
+    // Errors propagate so the tab shows its error state rather than claiming the foundation has no programme.
+    return this.http.get<HealthMetricsTrainingPresence>('/api/analytics/training-presence', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] training-presence failed', { foundationSlug: query.foundationSlug, status });
         return throwError(() => error);
       })
     );
