@@ -299,6 +299,22 @@ describe('MentorRegisterComponent', () => {
     expect(component['submitting']()).toBe(false);
   });
 
+  it('stays put when the mentor has left the page before the requests settle', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const pending = new Subject<MentorshipMentorOpenProgram[]>();
+    requestMany.mockReturnValueOnce(pending);
+    component['onAddProgram'](program('mp_gridflow', 'GridFlow Ingestion'));
+    fillValidForm();
+
+    await submit();
+    fixture.destroy();
+
+    pending.next([program('mp_gridflow', 'GridFlow Ingestion')]);
+    pending.complete();
+
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it('sends no program requests when the profile save fails', async () => {
     registerMentorProfile.mockReturnValueOnce(httpFailure(500, null));
     component['onAddProgram'](program('mp_gridflow', 'GridFlow Ingestion'));

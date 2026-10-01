@@ -155,7 +155,7 @@ describe('MentorshipMentorService — read error mapping', () => {
 
   describe('mentor requests', () => {
     const programId = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
-    const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }] };
+    const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }], invitedProgramIds: [] };
 
     it('reads the open programs', () => {
       let loaded: unknown;

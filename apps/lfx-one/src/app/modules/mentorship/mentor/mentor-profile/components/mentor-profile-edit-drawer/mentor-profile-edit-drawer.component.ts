@@ -15,7 +15,7 @@ import {
   MENTORSHIP_MENTOR_RESUME_INTRO,
   MENTORSHIP_MENTOR_SKILLS_INTRO,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorOpenProgram, MentorshipMentorProfileDetails, MentorshipMentorProgramRequest } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorOpenProgram, MentorshipMentorProfileDetails, MentorshipMentorRequestsState } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -85,6 +85,8 @@ export class MentorProfileEditDrawerComponent {
   private readonly requestsState = this.initRequests();
   protected readonly programs = computed(() => this.programsState().programs);
   protected readonly requests = computed(() => this.requestsState().requests);
+  protected readonly invitedProgramIds = computed(() => this.requestsState().invitedProgramIds);
+  protected readonly requestsFailed = computed(() => this.requestsState().failed);
   protected readonly loading = computed(() => this.programsState().loading || this.requestsState().loading);
 
   public constructor() {
@@ -105,6 +107,11 @@ export class MentorProfileEditDrawerComponent {
 
   protected onWithdraw(requestId: string): void {
     this.withdrawService.confirmWithdraw(requestId);
+  }
+
+  /** Dropping the cache bumps the revision, so the request list reads again. */
+  protected onRetryRequests(): void {
+    this.mentorService.clearMentorCaches();
   }
 
   protected onSave(): void {
@@ -149,10 +156,12 @@ export class MentorProfileEditDrawerComponent {
    * Load the mentor's requests when the drawer opens, and again whenever a request or withdraw
    * bumps `mentorRequestsRevision`. Only an open shows the loading state, so a refresh after a
    * write keeps the current rows until the new ones arrive. A failed read (already logged by the
-   * service) shows no rows; a duplicate request it lets through gets upstream's 409.
+   * service) is recorded as failed rather than as an empty list, so the section shows a Retry and keeps
+   * the picker disabled instead of offering programs that are already requested.
    */
   private initRequests() {
-    const empty = { requests: [] as MentorshipMentorProgramRequest[], loading: true };
+    const empty: MentorshipMentorRequestsState = { requests: [], invitedProgramIds: [], loading: true, failed: false };
+    const failed: MentorshipMentorRequestsState = { requests: [], invitedProgramIds: [], loading: false, failed: true };
     const revision$ = toObservable(this.mentorService.mentorRequestsRevision);
 
     return toSignal(
@@ -162,8 +171,15 @@ export class MentorProfileEditDrawerComponent {
           revision$.pipe(
             switchMap(() =>
               this.mentorService.getMentorRequests().pipe(
-                map((response) => ({ requests: response.data, loading: false })),
-                catchError(() => of({ requests: [] as MentorshipMentorProgramRequest[], loading: false }))
+                map(
+                  (response): MentorshipMentorRequestsState => ({
+                    requests: response.data,
+                    invitedProgramIds: response.invitedProgramIds,
+                    loading: false,
+                    failed: false,
+                  })
+                ),
+                catchError(() => of(failed))
               )
             ),
             startWith(empty)

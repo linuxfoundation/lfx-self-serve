@@ -160,7 +160,7 @@ describe('MentorshipMentorController', () => {
     });
 
     it('answers with the requests', async () => {
-      const response = { data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' as const }] };
+      const response = { data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' as const }], invitedProgramIds: [] };
       vi.spyOn(MentorshipMentorService.prototype, 'getMentorRequests').mockResolvedValue(response);
 
       await controller.getMentorRequests(buildReq(), res, next);

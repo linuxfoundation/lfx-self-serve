@@ -17,11 +17,14 @@
       [programs]="programs()"
       [loading]="loading()"
       [requests]="requests()"
+      [invitedProgramIds]="invitedProgramIds()"
+      [requestsFailed]="requestsFailed()"
       [requesting]="requesting()"
       [withdrawingId]="withdrawingId()"
       [bordered]="false"
       (add)="onAddProgram($event)"
-      (withdraw)="onWithdraw($event)" />
+      (withdraw)="onWithdraw($event)"
+      (retry)="onRetryRequests()" />
 
     <hr class="border-gray-200" />
 

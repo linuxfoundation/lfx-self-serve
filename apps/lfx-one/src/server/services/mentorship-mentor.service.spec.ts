@@ -222,11 +222,13 @@ describe('MentorshipMentorService mentor requests', () => {
     );
   });
 
-  it("lists the caller's mentor memberships as requests, folding the status and dropping invitations", async () => {
-    proxyRequest.mockResolvedValueOnce(listOf([membership, { ...membership, id: 'member-invited', status: 'invited' }]));
+  it("lists the caller's mentor memberships as requests, folding the status and moving invitations to their own list", async () => {
+    const invitedProgramId = '3c9d8e7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f';
+    proxyRequest.mockResolvedValueOnce(listOf([membership, { ...membership, id: 'member-invited', program_id: invitedProgramId, status: 'invited' }]));
 
     await expect(service.getMentorRequests(buildReq())).resolves.toEqual({
       data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' }],
+      invitedProgramIds: [invitedProgramId],
     });
     expect(proxyRequest).toHaveBeenCalledWith(
       expect.anything(),

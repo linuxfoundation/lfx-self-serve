@@ -24,7 +24,12 @@
     <p class="text-xs text-gray-500 mt-1">{{ helper }}</p>
   </div>
 
-  @if (rows().length) {
+  @if (requestsFailed()) {
+    <div class="flex flex-wrap items-center gap-3" role="alert" data-testid="mentorship-mentor-requests-failed">
+      <p class="text-sm text-red-600">{{ requestsFailedMessage }}</p>
+      <lfx-button label="Retry" size="small" [text]="true" (onClick)="retry.emit()" data-testid="mentorship-mentor-requests-retry" />
+    </div>
+  } @else if (rows().length) {
     <div class="overflow-x-auto rounded-xl border border-gray-200">
       <!-- 36rem is the width the three columns need before the program name starts wrapping; below it the wrapper scrolls. -->
       <table class="w-full min-w-[36rem] text-left">

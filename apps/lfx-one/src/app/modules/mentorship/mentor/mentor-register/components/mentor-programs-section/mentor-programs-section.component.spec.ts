@@ -62,6 +62,14 @@ describe('MentorProgramsSectionComponent', () => {
     expect(fixture.componentInstance['availablePrograms']().map((option) => option.value)).toEqual(['mp_gridflow']);
   });
 
+  it('keeps a program out of the picker while the mentor holds an invitation to it, since upstream would refuse a request', () => {
+    fixture.componentRef.setInput('requests', []);
+    fixture.componentRef.setInput('invitedProgramIds', ['mp_kubernetes']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['availablePrograms']().map((option) => option.value)).toEqual(['mp_gridflow']);
+  });
+
   it('disables the select while a request is being sent, and re-enables it after', () => {
     const control = fixture.componentInstance['pickerForm'].controls.programId;
 
@@ -145,6 +153,28 @@ describe('MentorProgramsSectionComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-withdraw-req_1"]')?.getAttribute('data-loading')).toBe('true');
     expect(withdrawButton('req_1')?.disabled).toBe(true);
     expect(withdrawButton('req_2')?.disabled).toBe(true);
+  });
+
+  it('shows a failed read with Retry in place of the table, and disables the select, rather than an empty list', () => {
+    const control = fixture.componentInstance['pickerForm'].controls.programId;
+    let retries = 0;
+    fixture.componentInstance.retry.subscribe(() => retries++);
+
+    fixture.componentRef.setInput('requests', []);
+    fixture.componentRef.setInput('requestsFailed', true);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-requests-failed"]')).not.toBeNull();
+    expect(element().querySelector('table')).toBeNull();
+    expect(control.disabled).toBe(true);
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-requests-retry"] button')?.click();
+    expect(retries).toBe(1);
+
+    fixture.componentRef.setInput('requestsFailed', false);
+    fixture.detectChanges();
+    expect(element().querySelector('[data-testid="mentorship-mentor-requests-failed"]')).toBeNull();
+    expect(control.disabled).toBe(false);
   });
 
   it('hides the request table entirely when nothing has been requested', () => {

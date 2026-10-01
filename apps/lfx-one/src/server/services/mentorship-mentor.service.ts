@@ -32,7 +32,11 @@ import { MENTORSHIP_ME_MENTOR_PROFILE_PATH, MENTORSHIP_ME_PROFILES_PATH, MENTORS
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
-import { mapMentorshipMentorOpenProgram, mapMentorshipMentorProgramRequests } from '../helpers/mentorship-mentor-request.helper';
+import {
+  mapMentorshipMentorInvitedProgramIds,
+  mapMentorshipMentorOpenProgram,
+  mapMentorshipMentorProgramRequests,
+} from '../helpers/mentorship-mentor-request.helper';
 import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
@@ -101,15 +105,23 @@ export class MentorshipMentorService {
     return { data };
   }
 
-  /** The caller's own mentor `program_members` rows, as request rows with their status folded for the mentor. */
+  /**
+   * The caller's own mentor `program_members` rows, as request rows with their status folded for the mentor.
+   * Invited rows are not requests, so they are left out of `data`; their programs go in `invitedProgramIds`.
+   */
   public async getMentorRequests(req: Request): Promise<MentorshipMentorProgramRequestsResponse> {
     logger.debug(req, 'mentorship_get_mentor_requests', 'Loading mentor program requests');
     const memberships = await listAllMentorshipPages<MentorshipUpstreamProgramMembership>(this.microserviceProxy, req, MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH, {
       member_type: 'mentor',
     });
     const data = mapMentorshipMentorProgramRequests(memberships);
-    logger.debug(req, 'mentorship_get_mentor_requests', 'Mentor program requests loaded', { count: data.length, dropped: memberships.length - data.length });
-    return { data };
+    const invitedProgramIds = mapMentorshipMentorInvitedProgramIds(memberships);
+    logger.debug(req, 'mentorship_get_mentor_requests', 'Mentor program requests loaded', {
+      count: data.length,
+      invited: invitedProgramIds.length,
+      dropped: memberships.length - data.length,
+    });
+    return { data, invitedProgramIds };
   }
 
   /**

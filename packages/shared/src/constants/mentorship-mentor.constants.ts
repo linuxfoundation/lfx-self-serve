@@ -398,6 +398,9 @@ export const MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS: Record<MentorshipMentorSta
  */
 export const MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES: readonly MentorshipMentorStatus[] = ['pending', 'accepted', 'declined'];
 
+/** Shown in place of the request list when it cannot be read, so a failed read never looks like "no requests". */
+export const MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE = "We couldn't load your program requests.";
+
 export const MENTORSHIP_MENTOR_WITHDRAW_CONFIRM = 'Are you sure you want to withdraw this request?';
 export const MENTORSHIP_MENTOR_WITHDRAW_CONFIRM_HEADER = 'Withdraw Request';
 export const MENTORSHIP_MENTOR_WITHDRAW_LABEL = 'Withdraw';

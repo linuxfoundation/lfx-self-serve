@@ -30,6 +30,19 @@ export interface MentorshipMentorProgramRequest {
 /** Response body from `GET /api/mentorship/mentor/requests`. */
 export interface MentorshipMentorProgramRequestsResponse {
   data: MentorshipMentorProgramRequest[];
+  /**
+   * Programs the mentor has an open invitation to. They are not requests, so `data` leaves them out,
+   * but upstream refuses a request for them, so the picker leaves them out too.
+   */
+  invitedProgramIds: string[];
+}
+
+/** The profile drawer's view of the mentor's requests: a failed read is its own state, never an empty list. */
+export interface MentorshipMentorRequestsState {
+  requests: MentorshipMentorProgramRequest[];
+  invitedProgramIds: string[];
+  loading: boolean;
+  failed: boolean;
 }
 
 /** Body of `POST /api/mentorship/mentor/requests`. A request is for the whole program, not a term. */

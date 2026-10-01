@@ -63,12 +63,12 @@ export class MentorshipMentorService {
     this.mentorRequestsRevisionSignal.update((revision) => revision + 1);
   }
 
-  /** Every published program, for the request picker. Rethrows so the picker can show it failed. */
+  /** Every published program, for the request picker. Rethrows; the picker's pages fall back to an empty list. */
   public getOpenPrograms(): Observable<MentorshipMentorOpenProgramsResponse> {
     return this.http.get<MentorshipMentorOpenProgramsResponse>('/api/mentorship/mentor/open-programs').pipe(catchError(this.rethrowError('getOpenPrograms')));
   }
 
-  /** The signed-in mentor's program requests, cached for the session. Rethrows so views can show a retry. */
+  /** The signed-in mentor's program requests, cached for the session. Rethrows so the profile drawer can show a failed state with Retry. */
   public getMentorRequests(): Observable<MentorshipMentorProgramRequestsResponse> {
     if (!this.mentorRequests$) {
       this.mentorRequests$ = this.http.get<MentorshipMentorProgramRequestsResponse>('/api/mentorship/mentor/requests').pipe(

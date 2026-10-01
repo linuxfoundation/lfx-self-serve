@@ -70,8 +70,11 @@ class StubProgramsSectionComponent {
   readonly requests = input<MentorshipMentorProgramRequest[]>([]);
   readonly requesting = input(false);
   readonly withdrawingId = input<string | null>(null);
+  readonly invitedProgramIds = input<string[]>([]);
+  readonly requestsFailed = input(false);
   readonly add = output<MentorshipMentorOpenProgram>();
   readonly withdraw = output<string>();
+  readonly retry = output<void>();
 }
 
 @Component({ selector: 'lfx-rich-editor', template: '' })
@@ -121,6 +124,7 @@ describe('MentorProfileEditDrawerComponent', () => {
   let getMentorRequests: ReturnType<typeof vi.fn<() => Observable<MentorshipMentorProgramRequestsResponse>>>;
   let request: ReturnType<typeof vi.fn<(program: MentorshipMentorOpenProgram) => Observable<boolean>>>;
   let confirmWithdraw: ReturnType<typeof vi.fn>;
+  let clearMentorCaches: ReturnType<typeof vi.fn>;
   let withdrawingId: ReturnType<typeof signal<string | null>>;
 
   function element(): HTMLElement {
@@ -142,16 +146,20 @@ describe('MentorProfileEditDrawerComponent', () => {
     drawer = new MentorProfileEditDrawerService();
     revision = signal(0);
     getOpenPrograms = vi.fn(() => of({ data: PROGRAMS }));
-    getMentorRequests = vi.fn(() => of({ data: REQUESTS }));
+    getMentorRequests = vi.fn(() => of({ data: REQUESTS, invitedProgramIds: [] }));
     request = vi.fn(() => of(true));
     confirmWithdraw = vi.fn();
+    clearMentorCaches = vi.fn();
     withdrawingId = signal<string | null>(null);
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [MentorProfileEditDrawerComponent],
       providers: [
-        { provide: MentorshipMentorService, useValue: { getOpenPrograms, getMentorRequests, mentorRequestsRevision: revision.asReadonly() } },
+        {
+          provide: MentorshipMentorService,
+          useValue: { getOpenPrograms, getMentorRequests, clearMentorCaches, mentorRequestsRevision: revision.asReadonly() },
+        },
         { provide: MentorProgramRequestService, useValue: { request } },
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: MentorProfileEditDrawerService, useValue: drawer },
@@ -264,15 +272,31 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(section().programs()).toEqual(PROGRAMS);
     expect(section().requests()).toEqual(REQUESTS);
     expect(section().loading()).toBe(false);
+    expect(section().requestsFailed()).toBe(false);
   });
 
-  it('shows no rows, not a stuck loading state, when the requests cannot be read', async () => {
+  it('passes the invited programs to the section so the picker can leave them out', async () => {
+    getMentorRequests.mockReturnValue(of({ data: REQUESTS, invitedProgramIds: ['p2'] }));
+    drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
+    await settle();
+
+    expect(section().invitedProgramIds()).toEqual(['p2']);
+  });
+
+  it('marks the requests failed, not empty, when they cannot be read', async () => {
     getMentorRequests.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
     drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
     await settle();
 
+    expect(section().requestsFailed()).toBe(true);
     expect(section().requests()).toEqual([]);
     expect(section().loading()).toBe(false);
+  });
+
+  it('clears the mentor caches on Retry so the requests are read again', () => {
+    section().retry.emit();
+
+    expect(clearMentorCaches).toHaveBeenCalledTimes(1);
   });
 
   it('re-reads the requests when a write bumps the revision, keeping the rows meanwhile', async () => {
@@ -288,7 +312,7 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(section().loading()).toBe(false);
 
     const updated: MentorshipMentorProgramRequest[] = [{ ...REQUESTS[0], status: 'withdrawn' }];
-    pending.next({ data: updated });
+    pending.next({ data: updated, invitedProgramIds: [] });
     pending.complete();
     await settle();
 

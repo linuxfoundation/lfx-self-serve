@@ -4,7 +4,7 @@
 import { MentorshipUpstreamProgramMembership, MentorshipUpstreamProgramMemberStatus } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { mapMentorshipMentorOpenProgram, mapMentorshipMentorProgramRequests } from './mentorship-mentor-request.helper';
+import { mapMentorshipMentorInvitedProgramIds, mapMentorshipMentorOpenProgram, mapMentorshipMentorProgramRequests } from './mentorship-mentor-request.helper';
 
 const membership: MentorshipUpstreamProgramMembership = {
   id: 'member-1',
@@ -48,5 +48,17 @@ describe('mapMentorshipMentorProgramRequests', () => {
       { ...membership, id: 'member-4', status: 'withdrawn' },
     ]);
     expect(rows.map((row) => row.id)).toEqual(['member-2', 'member-4']);
+  });
+});
+
+describe('mapMentorshipMentorInvitedProgramIds', () => {
+  it('returns the program of each invited row only', () => {
+    const ids = mapMentorshipMentorInvitedProgramIds([
+      { ...membership, program_id: 'prog-1', status: 'invited' },
+      { ...membership, program_id: 'prog-2', status: 'requested' },
+      { ...membership, program_id: 'prog-3', status: 'invited' },
+      { ...membership, program_id: 'prog-4', status: undefined },
+    ]);
+    expect(ids).toEqual(['prog-1', 'prog-3']);
   });
 });

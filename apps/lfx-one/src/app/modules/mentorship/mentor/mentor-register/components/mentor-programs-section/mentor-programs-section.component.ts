@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, input, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -11,6 +11,7 @@ import {
   MENTORSHIP_MENTOR_PROGRAMS_HELPER,
   MENTORSHIP_MENTOR_PROGRAMS_INTRO,
   MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS,
+  MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lfx-one/shared/interfaces';
@@ -19,8 +20,10 @@ import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lf
  * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
  * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up,
  * clears itself, and drops programs with a pending, accepted or declined request from its options
- * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`). A program whose request was withdrawn stays
- * pickable, since asking again reopens it.
+ * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitedProgramIds`).
+ * A program whose request was withdrawn stays pickable, since asking again reopens it. When the
+ * parent could not read the requests, the section says so with a Retry and keeps the select
+ * disabled, because it cannot tell which programs are already requested.
  *
  * Applying is optional — a mentor may register a profile and come back for programs later — so
  * nothing here is required and the section surfaces no validation error. The parent owns the list
@@ -46,11 +49,17 @@ export class MentorProgramsSectionComponent {
   public readonly withdrawingId = input<string | null>(null);
 
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
+  /** Programs the mentor is already invited to; upstream refuses a request for them. */
+  public readonly invitedProgramIds = input<string[]>([]);
+  /** True when the parent could not read the requests: shows the failure and its Retry instead of the list. */
+  public readonly requestsFailed = input(false);
   public readonly add = output<MentorshipMentorOpenProgram>();
   public readonly withdraw = output<string>();
+  public readonly retry = output<void>();
 
   protected readonly intro = MENTORSHIP_MENTOR_PROGRAMS_INTRO;
   protected readonly helper = MENTORSHIP_MENTOR_PROGRAMS_HELPER;
+  protected readonly requestsFailedMessage = MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE;
 
   protected readonly pickerForm = new FormGroup({
     programId: new FormControl<string | null>(null),
@@ -59,6 +68,7 @@ export class MentorProgramsSectionComponent {
   protected readonly availablePrograms = this.initAvailablePrograms();
   protected readonly rows = this.initRows();
   protected readonly wrapperClass = this.initWrapperClass();
+  private readonly pickerDisabled = this.initPickerDisabled();
 
   public constructor() {
     // Choosing is the whole interaction: hand the program up, then clear so the same
@@ -70,23 +80,26 @@ export class MentorProgramsSectionComponent {
       if (program) this.add.emit(program);
     });
 
-    effect(() => {
-      const control = this.pickerForm.controls.programId;
-      if (this.requesting()) {
-        control.disable({ emitEvent: false });
-      } else {
-        control.enable({ emitEvent: false });
-      }
-    });
+    toObservable(this.pickerDisabled)
+      .pipe(takeUntilDestroyed())
+      .subscribe((disabled) => {
+        const control = this.pickerForm.controls.programId;
+        if (disabled) {
+          control.disable({ emitEvent: false });
+        } else {
+          control.enable({ emitEvent: false });
+        }
+      });
   }
 
   private initAvailablePrograms() {
     return computed(() => {
-      const requested = new Set(
-        this.requests()
+      const requested = new Set([
+        ...this.requests()
           .filter((item) => MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES.includes(item.status))
-          .map((item) => item.programId)
-      );
+          .map((item) => item.programId),
+        ...this.invitedProgramIds(),
+      ]);
       return this.programs()
         .filter((program) => !requested.has(program.id))
         .map((program) => ({ label: program.name, value: program.id }));
@@ -102,6 +115,11 @@ export class MentorProgramsSectionComponent {
         canWithdraw: request.status === 'pending',
       }))
     );
+  }
+
+  /** The select is off while a request is in flight, and while the requests are unknown after a failed read. */
+  private initPickerDisabled() {
+    return computed(() => this.requesting() || this.requestsFailed());
   }
 
   private initWrapperClass() {

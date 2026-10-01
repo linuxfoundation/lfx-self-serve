@@ -26,3 +26,7 @@ export const mapMentorshipMentorProgramRequests = (memberships: MentorshipUpstre
     const status = membership.status ? MENTORSHIP_MENTOR_REQUEST_STATUS_MAP[membership.status] : undefined;
     return status ? [{ id: membership.id, programId: membership.program_id, programName: membership.program_name, status }] : [];
   });
+
+/** The programs the caller holds an open mentor invitation to, which upstream will not take a request for. */
+export const mapMentorshipMentorInvitedProgramIds = (memberships: MentorshipUpstreamProgramMembership[]): string[] =>
+  memberships.filter((membership) => membership.status === 'invited').map((membership) => membership.program_id);

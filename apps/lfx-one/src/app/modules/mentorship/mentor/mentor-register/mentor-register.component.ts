@@ -235,9 +235,16 @@ export class MentorRegisterComponent {
     });
 
     // Not tied to this view's lifetime: the requests and their toasts must finish even if the
-    // mentor leaves first. The service never errors, so My Programs follows whatever the outcome.
+    // mentor leaves first. The service never errors, so My Programs follows whatever the outcome,
+    // but only while this page is still open: a mentor who navigated away mid-batch stays put.
     const programs = this.requests().map((request) => ({ id: request.programId, name: request.programName }));
-    this.programRequests.requestMany(programs).subscribe(() => this.navigateToPrograms());
+    let left = false;
+    const stopWatching = this.destroyRef.onDestroy(() => (left = true));
+    this.programRequests.requestMany(programs).subscribe(() => {
+      if (left) return;
+      stopWatching();
+      this.navigateToPrograms();
+    });
   }
 
   private navigateToPrograms(): void {
