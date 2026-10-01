@@ -238,7 +238,7 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
-  /** Set for the `eng` and `evt` areas while they carry a figure — the tile links into its Level 2 tab. */
+  /** Set for each area in `HEALTH_METRICS_OVERVIEW_TILE_LINKS` while it carries a figure — the tile links into its Level 2 tab. */
   route?: HealthMetricsOverviewFindingRoute;
   /** The tile link's text, set with {@link route}. */
   routeLabel?: string;
