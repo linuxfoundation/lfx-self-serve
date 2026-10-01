@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_EMAIL_SEGMENTS, CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -218,6 +218,26 @@ export interface CampaignEventDetails {
   speakers: string[];
   slug: string;
   formatNotes: string;
+  /**
+   * The event's own summary of itself, 1-3 sentences.
+   *
+   * This is the single richest fact the scrape produces, and email copy generation is its main
+   * consumer: campaign-service's generator refuses to invent facts, so without a description it
+   * can only write from the name, dates and location and the resulting email is three lines long.
+   */
+  description: string;
+  /**
+   * Links the event page itself publishes, beyond `registrationUrl`.
+   *
+   * Empty string means "the page did not state one", which is NOT the same as "the model could
+   * not find one": every value here survived `verifyPageLink`, so it is a URL the fetched HTML
+   * actually links to. A link the extraction invented is dropped before it reaches this type.
+   * See `event-links.helper.ts` for why that check exists rather than trusting the extraction.
+   */
+  agendaUrl: string;
+  cfpUrl: string;
+  venueUrl: string;
+  sponsorshipUrl: string;
   heroImageUrl?: string;
   sponsors?: CampaignEventSponsor[];
 }
@@ -2556,6 +2576,21 @@ export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
  * cannot drift apart.
  */
 export type CampaignEmailVariant = (typeof CAMPAIGN_EMAIL_VARIANTS)[number];
+
+/**
+ * Narrows which of a `generate-email-copy` draft's content blocks are relevant to a named
+ * audience -- `'developer'`, `'business-decision-maker'`, `'alumni'` or `'prospect'`.
+ *
+ * Orthogonal to `CampaignEmailVariant`: variant restyles the whole draft's framing, segment
+ * narrows which blocks within that draft matter to this audience. Both may be set together,
+ * either alone, or neither. Same free-text, lenient-fallback shape as `CampaignEmailStage` and
+ * `CampaignEmailVariant`: an unrecognised or absent value produces the normal stage-based copy
+ * under a 200 rather than an error.
+ *
+ * Derived from `CAMPAIGN_EMAIL_SEGMENTS` rather than restated, so the UI's selector and this type
+ * cannot drift apart.
+ */
+export type CampaignEmailSegment = (typeof CAMPAIGN_EMAIL_SEGMENTS)[number];
 
 /**
  * One selectable email type.

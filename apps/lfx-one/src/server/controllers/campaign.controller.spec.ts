@@ -1688,7 +1688,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // The whole selector is inert if this argument is dropped, and nothing else would say so:
     // generation still succeeds, just with default-stage copy under the operator's chosen label.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined, undefined);
   });
 
   it('forwards the body variant to the campaign-service client', async () => {
@@ -1698,7 +1698,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // Same inert-if-dropped hazard as `stage`: generation still succeeds, silently producing
     // variant-A copy for an operator who asked for B, and the A/B test compares A against A.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B');
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B', undefined);
   });
 
   it.each([
@@ -1710,7 +1710,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined, undefined);
   });
 
   it.each([
@@ -1724,7 +1724,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // `undefined`, not '' -- upstream reads absence as "the caller did not say" and defaults,
     // while an empty string would fail its enum and 400 a request the operator did not make.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined, undefined);
   });
 
   it('forwards the generated subject, body, and preheader to the dispatcher', async () => {

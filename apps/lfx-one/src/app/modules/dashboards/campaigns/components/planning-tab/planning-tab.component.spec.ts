@@ -322,6 +322,33 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(emitted[0].etag).toBeNull();
   });
 
+  it('clears the free-text brief fields on reset, but keeps the url', async () => {
+    const component = fixture.componentInstance as unknown as {
+      reset(): void;
+      briefForm: { patchValue(v: Record<string, string>): void; controls: Record<string, { value: string }> };
+    };
+
+    // `loadBrief` defaults to a bare `vi.fn()` that returns undefined, and typing a url triggers a
+    // lookup whose `.pipe` would throw on it -- an unhandled error this test is not about.
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    component.briefForm.patchValue({ targetAudience: 'platform engineers', valueProp: 'hands-on kubernetes tracks' });
+
+    component.reset();
+    await fixture.whenStable();
+
+    // These two described the brief just DISCARDED. Leaking them into the next New Brief click
+    // pre-filled the new brief with the old event's audience and pitch
+    // (LFX-Campaigns-Email-QA-Report B5).
+    expect(component.briefForm.controls['targetAudience'].value).toBe('');
+    expect(component.briefForm.controls['valueProp'].value).toBe('');
+
+    // The url is deliberately NOT cleared: `onUrlInput` only issues a lookup when the slug
+    // CHANGES, so blanking it here would strand the restore offer with no keystroke able to
+    // bring it back. Asserted so a future "clear everything" does not quietly undo that.
+    expect(component.briefForm.controls['url'].value).toBe('https://events.example.com/kubecon-eu-2026');
+  });
+
   it('keeps the restore offer across Cancel', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))

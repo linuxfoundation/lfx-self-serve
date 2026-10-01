@@ -1,0 +1,76 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { EmailBodyPreviewComponent } from './email-body-preview.component';
+
+/**
+ * This component bypasses Angular's HTML sanitizer, so the sandbox is the only control left on the
+ * framed document. These are the assertions that keep it: the two forbidden tokens, and the fact
+ * that inline styles reach the frame at all -- which is the whole reason the bypass exists and the
+ * thing that would silently stop being true if anyone "fixed" the bypass back into a sanitize call.
+ */
+describe('EmailBodyPreviewComponent', () => {
+  let fixture: ComponentFixture<EmailBodyPreviewComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [EmailBodyPreviewComponent] }).compileComponents();
+    fixture = TestBed.createComponent(EmailBodyPreviewComponent);
+  });
+
+  async function render(html: string): Promise<HTMLIFrameElement | null> {
+    fixture.componentRef.setInput('html', html);
+    await fixture.whenStable();
+    return fixture.nativeElement.querySelector('iframe') as HTMLIFrameElement | null;
+  }
+
+  // The two grants that would make the bypass unsound. `allow-scripts` turns model-authored HTML
+  // derived from scraped third-party pages into an execution sink; adding `allow-same-origin`
+  // beside it lets the framed document strip its own sandbox attribute.
+  it('never grants allow-scripts or allow-same-origin', async () => {
+    const sandbox = (await render('<p>Join us</p>'))?.getAttribute('sandbox');
+
+    expect(sandbox).toBe('allow-popups allow-popups-to-escape-sandbox');
+    expect(sandbox).not.toContain('allow-scripts');
+    expect(sandbox).not.toContain('allow-same-origin');
+  });
+
+  // The app's own URL carries the project and brief ids, so it must not ride along on any request
+  // the framed document makes.
+  it('sends no referrer from the frame', async () => {
+    expect((await render('<p>Join us</p>'))?.getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  // The regression this component exists to prevent. `[innerHTML]` stripped `style` through
+  // `SecurityContext.HTML`; the campaign service's email styling is entirely inline, so a preview
+  // that drops it shows the operator layout the recipient will never see.
+  it('carries inline styles into the frame instead of stripping them', async () => {
+    const srcdoc = (await render('<p style="color:#2563eb;font-weight:bold">Join us</p>'))?.getAttribute('srcdoc');
+
+    expect(srcdoc).toContain('style="color:#2563eb;font-weight:bold"');
+    expect(srcdoc).toContain('<!doctype html>');
+  });
+
+  // A blank body must read as blank. Rendering the placeholder inside the frame would make an
+  // ungenerated email look like a one-line email that was generated.
+  it('renders the placeholder as text with no frame when there is no body', async () => {
+    fixture.componentRef.setInput('html', '   ');
+    fixture.componentRef.setInput('emptyText', '(no body yet)');
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('iframe')).toBeNull();
+    expect((fixture.nativeElement.textContent as string).trim()).toBe('(no body yet)');
+  });
+
+  // E2E targets the same testid whichever arm renders, so neither arm may drop it.
+  it('puts the testid on both the frame and the placeholder', async () => {
+    fixture.componentRef.setInput('testId', 'campaigns-email-preview-body');
+    expect((await render('<p>Join us</p>'))?.getAttribute('data-testid')).toBe('campaigns-email-preview-body');
+
+    fixture.componentRef.setInput('html', '');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-preview-body"]')).not.toBeNull();
+  });
+});

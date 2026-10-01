@@ -61,6 +61,15 @@ function briefWithSlug(slug: string): CampaignBriefOutput {
       speakers: [],
       slug,
       formatNotes: '',
+      // The five event-link/description fields are required on `CampaignEventDetails` and are
+      // blank here deliberately: this fixture exists to exercise SLUG derivation, and a blank
+      // string is what `coerceCampaignEventDetails` yields for a brief whose upstream payload
+      // omits them -- so it is the realistic shape, not a placeholder.
+      description: '',
+      agendaUrl: '',
+      cfpUrl: '',
+      venueUrl: '',
+      sponsorshipUrl: '',
     },
     structuredCopy: { headline: 'Register now' },
     keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
