@@ -85,8 +85,13 @@ So every ended combination is legal. Anonymous + `full` happens only for `public
 - **Axis D on a non-ended meeting.** `full_access` only exists on the past payload.
 - **Axis F × any RSVP state when F = `off`.** F = `off` removes the RSVP dimension; it is not an
   RSVP state.
-- **Manage-role viewer of a past meeting on this page.** Per #2251 they are routed to
-  `/meetings/:id/details` (the admin surface). This matrix is the View-role experience.
+
+### Not an access dimension
+
+- **Manage-role viewers of a past meeting.** #2251 points the past-meeting card's call to action at
+  `/meetings/:id/details` (the admin surface) for Manage-role users, but routes are not guarded by
+  role: a Manage-role viewer can still open `/meetings/:id` directly. That is a legal state on this
+  page, covered by the organizer rows. It is alternate navigation, not an illegal combination.
 
 ## Action slot
 
@@ -179,7 +184,7 @@ anonymous included (V1 HTML:585).
 | Agenda                       | ✅               | ✅       | ✅         | ✅          | hidden when `ended/none`                                                                                                                                                                                                                                 |
 | Materials                    | ❌ sign-in state | ✅       | ✅         | ✅ + Manage | fetch is auth-gated; V1's anonymous copy is wrong on public meetings. Public route is E3-03                                                                                                                                                              |
 | People / roster              | ❌               | ❌       | ✅         | ✅          | no count source for non-registrants (GH-1731); hidden when `ended/none`                                                                                                                                                                                  |
-| RSVP summary, filter, badges | ❌               | ❌       | F=`on`     | F=`on`      | F=`off` removes all three; invitee count only                                                                                                                                                                                                            |
+| RSVP summary, filter, badges | ❌               | ❌       | F=`on`     | F=`on`      | F=`off` removes all three; invitee count only. Also hidden with the roster on an ended meeting without artifact access                                                                                                                                   |
 | Join details                 | ❌               | ❌       | ✅         | ✅          | not once the meeting has ended (`joinDetails: !ended && onTheMeeting`)                                                                                                                                                                                   |
 | Host key                     | ❌               | if host  | if host    | if host     | any signed-in viewer the BFF returns `host_key` to (FGA `host` relation, which includes co-hosts who are not organizers), inside −70 / +40 min, never on a past meeting. Must not depend on the join-details row, which a non-organizer host may not see |
 | Meeting Tools                | D-4              | `full`   | `full`     | ✅          | per-tool unavailable states; unapproved AI summaries currently shown "Pending"                                                                                                                                                                           |

@@ -61,13 +61,23 @@ Two invariants tie the resolvers together:
 2. **RSVP tracking removes, it does not vary.** When F is off, every RSVP surface is false and no
    RSVP slot kind is returned.
 
+## View-scoped state
+
+Two pieces of state are not axes and not part of the detail payload, but the page cannot render
+without them:
+
+| State                 | Source                                                                                                                                               | Notes                                                                                                                                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Selected occurrence   | `?occurrence=<id>` on the URL (V1 TS:934), else the current or next active occurrence; a composite `{id}-{13-digit ms}` id selects a past occurrence | cancelled occurrences are never selected; a cancelled `?occurrence=` falls back to the current or next one. Feeds `resolveTimeState`                                                              |
+| The viewer's own RSVP | `GET /api/meetings/:uid/rsvp/me?occurrenceId=<selected occurrence>` (authenticated; registrants)                                                     | the public detail payload does **not** populate `my_rsvp`. Scope the request to the selected occurrence, or a per-occurrence RSVP is lost. Only fetched when RSVP tracking is on (FR-023, FR-024) |
+
 ## Counts
 
-| Count                                                     | Where it comes from now                                        | Who can have it                                                              |
-| --------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Invitees / accepted / declined / pending (upcoming)       | the roster, via `/api/meetings/:uid/my-meeting-registrants`    | registrants and organizers only                                              |
-| `individual_registrants_count`, `committee_members_count` | **not populated** on either upcoming detail endpoint (GH-1731) | nobody — still optional on the interface, so TypeScript will not flag a read |
-| Attended / participant counts (past)                      | authenticated `/api/past-meetings/:uid` still fills them       | signed-in viewers with access                                                |
+| Count                                                     | Where it comes from now                                                                                                                                                                                                                                             | Who can have it                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Invitees / accepted / declined / pending (upcoming)       | the roster, via `/api/meetings/:uid/my-meeting-registrants`                                                                                                                                                                                                         | registrants and organizers only                                                                                    |
+| `individual_registrants_count`, `committee_members_count` | **not populated** on either upcoming detail endpoint (GH-1731)                                                                                                                                                                                                      | nobody — still optional on the interface, so TypeScript will not flag a read                                       |
+| Invitee / participant / attended counts (past)            | the public page derives them from the participants list, `GET /api/past-meetings/:uid/participants` (V1 `pastMeetingParticipants`). `GET /api/past-meetings/:uid` (route `past-meetings.route.ts:65`) also fills count fields, but the public page does not call it | signed-in viewers with access only; V1 fetches participants only when authenticated, so anonymous viewers get none |
 
 Anonymous and outsider viewers have no count source. V2 MUST NOT design one in (FR-032).
 

@@ -147,7 +147,9 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 - **SC-001**: For every legal cell of the state matrix, the rendered `meeting-action-slot[data-kind]`
   equals the matrix's V2 kind — checked by the resolver's table test and by E2E on the presets.
-- **SC-002**: Every illegal combination lands on `/meetings/not-found` in E2E; none renders a page.
+- **SC-002**: Every combination the state matrix's Reachability section marks illegal lands on
+  `/meetings/not-found` in E2E; none renders a page. (The other illegal combinations are impossible
+  states, not redirects.)
 - **SC-003**: An invitee with no LFX session opens their invite link to a restricted meeting during
   the window and joins through the guest form, without signing in.
 - **SC-004**: No viewer sees an empty action slot without explanation: `none` appears only in the
