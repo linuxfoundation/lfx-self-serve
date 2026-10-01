@@ -255,9 +255,7 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
  * Returns `null` when the role is absent, `'None'`, or an empty string so the template can use
  * `@if (committee.roleChip)` to hide the chip cleanly.
  */
-export function resolveRoleChip(
-  role: CommitteeMemberRole | 'Member' | null | undefined,
-): { bgColor: string; color: string } | null {
+export function resolveRoleChip(role: CommitteeMemberRole | 'Member' | null | undefined): { bgColor: string; color: string } | null {
   if (!role || role === CommitteeMemberRole.NONE) return null;
   switch (role) {
     case CommitteeMemberRole.CHAIR:
