@@ -1563,6 +1563,36 @@ export class CommitteeService {
   }
 
   /**
+   * Returns the caller's own pending join application for a committee, or null if none exists.
+   *
+   * No writer guard — callers can only see their own application. Uses a `tags_all` query so
+   * the result is scoped to the (committee_uid, username) pair; the full writer-gated list
+   * endpoint ({@link getCommitteeApplications}) is separate and intentionally unrelated.
+   */
+  public async getMyApplication(req: Request, committeeId: string): Promise<CommitteeJoinApplication | null> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return null;
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`committee_uid:${committeeId}`, `username:${username}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { maxResults: 20 }
+    );
+
+    // Return the most recent pending application, if any.
+    const pending = applications.filter((a) => a.status === 'pending').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return pending[0] ?? null;
+  }
+
+  /**
    * Fetches join applications for a committee from the query index.
    */
   public async getCommitteeApplications(req: Request, committeeId: string, query: Record<string, unknown> = {}): Promise<CommitteeJoinApplication[]> {

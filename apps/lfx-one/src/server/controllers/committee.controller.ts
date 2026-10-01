@@ -1362,6 +1362,31 @@ export class CommitteeController {
   }
 
   /**
+   * GET /committees/:id/applications/my
+   * Returns the caller's own pending join application, or 404 when none exists.
+   * No writer guard — callers can only see their own application.
+   */
+  public async getMyApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_committee_application', { committee_id: id });
+
+    try {
+      const application = await this.committeeService.getMyApplication(req, id);
+
+      if (!application) {
+        logger.success(req, 'get_my_committee_application', startTime, { committee_id: id, found: false });
+        res.status(404).json({ message: 'No pending application found for this committee.' });
+        return;
+      }
+
+      logger.success(req, 'get_my_committee_application', startTime, { committee_id: id, found: true, application_uid: application.uid });
+      res.json(application);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /committees/:id/applications
    * Submit a join application for a committee with join_mode 'application'.
    */

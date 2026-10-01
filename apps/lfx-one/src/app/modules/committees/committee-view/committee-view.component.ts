@@ -417,6 +417,35 @@ export class CommitteeViewComponent {
         this.joinApplicationSession.clearPending(committeeUid);
       });
 
+    // When a visitor lands on a group with application join-mode, check the server for an
+    // existing pending application so the CTA reflects the real state on first load (not
+    // just what's recorded in sessionStorage for this browser session). Browser-only:
+    // SSR cannot make authenticated user-scoped API calls for this secondary enrichment.
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.committee)
+        .pipe(
+          // Fire once per distinct committee, only while the user is a visitor (no role).
+          // We re-evaluate when myRoleLoading clears so we don't pre-seed while loading.
+          filter((committee): committee is Committee => {
+            return !!committee?.uid && committee.join_mode === 'application' && this.myRole() === null && !this.myRoleLoading();
+          }),
+          map((committee) => committee.uid),
+          distinctUntilChanged(),
+          switchMap((uid) =>
+            this.committeeService.getMyApplication(uid).pipe(
+              catchError(() => of(null)),
+              map((application) => ({ uid, application }))
+            )
+          ),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe(({ uid, application }) => {
+          if (application?.status === 'pending') {
+            this.joinApplicationSession.markPending(uid);
+          }
+        });
+    }
+
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
       for (const inviteUid of [...this.pendingDeclines.keys()]) {

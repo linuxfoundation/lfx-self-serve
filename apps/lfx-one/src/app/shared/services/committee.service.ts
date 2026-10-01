@@ -30,7 +30,7 @@ import {
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -296,6 +296,18 @@ export class CommitteeService {
   public submitApplication(committeeId: string, message?: string, organization?: CommitteeOrganizationReference): Observable<CommitteeJoinApplication> {
     const body: CreateCommitteeJoinApplicationRequest = { message: message || '', ...(organization ? { organization } : {}) };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
+  }
+
+  /**
+   * Returns the caller's own pending join application for a committee.
+   * Emits `null` when no pending application exists (404 → null).
+   * Used to pre-seed application state on page load without relying on sessionStorage.
+   */
+  public getMyApplication(committeeId: string): Observable<CommitteeJoinApplication | null> {
+    return this.http.get<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications/my`).pipe(
+      take(1),
+      catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err)))
+    );
   }
 
   /** Lists join applications for a committee (from query index). */
