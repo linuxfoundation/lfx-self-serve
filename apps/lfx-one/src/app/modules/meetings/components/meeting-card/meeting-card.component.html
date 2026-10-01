@@ -118,18 +118,14 @@
             [routerLink]="meetingDetailUrl()"
             [queryParams]="meetingDetailQueryParams()">
             <lfx-tag
-              [value]="
-                (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
-              "
+              [value]="(meetingStartTime() | meetingTime: meetingDuration() : 'date') + ' • ' + (meetingStartTime() | meetingTime: meetingDuration() : 'time')"
               severity="secondary"
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
         } @else {
           <a class="hover:opacity-80 transition-opacity" data-testid="meeting-datetime" [href]="meetingDetailUrl()" target="_blank" rel="noopener noreferrer">
             <lfx-tag
-              [value]="
-                (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
-              "
+              [value]="(meetingStartTime() | meetingTime: meetingDuration() : 'date') + ' • ' + (meetingStartTime() | meetingTime: meetingDuration() : 'time')"
               severity="secondary"
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
