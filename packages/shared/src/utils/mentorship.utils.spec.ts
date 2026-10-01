@@ -58,6 +58,7 @@ import {
   buildMentorshipMenteeProfileUpdate,
   buildMentorshipMenteeOverview,
   buildMentorshipMenteeRegisterRequest,
+  buildMentorshipMentorProfileUpdate,
   buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
@@ -84,6 +85,7 @@ import {
   getMentorshipEnrollStepErrors,
   getMentorshipMenteeRegisterErrors,
   getMentorshipMenteeRegisterRequestErrors,
+  getMentorshipMentorProfileErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -96,6 +98,7 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
+  isMentorshipMentorProfileUpdateEmpty,
   isMentorshipResumeFileName,
   isMentorshipRichTextOverRawMax,
   isMentorshipTaskPastDue,
@@ -581,6 +584,31 @@ describe('program detail helpers', () => {
 
     expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Not A Skill'] }).skills).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
     expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
+  });
+
+  it('checks only the mentor profile fields present in an edit', () => {
+    expect(getMentorshipMentorProfileErrors({})).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p>Hi</p>' })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ skills: ['Kubernetes'] })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p></p>' })).toEqual({ introduction: 'Introduction is required.' });
+    expect(getMentorshipMentorProfileErrors({ skills: [] })).toEqual({ skills: 'Add at least one skill.' });
+    expect(getMentorshipMentorProfileErrors({ skills: ['Not A Skill'] })).toEqual({ skills: MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL });
+  });
+
+  it('sends only the mentor profile fields that changed', () => {
+    const seed = { aboutMe: '<p>Hi</p>', skills: ['Kubernetes', 'Angular'] };
+
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: [' Kubernetes ', 'Angular', ''] })).toEqual({});
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hello</p>', skills: ['Kubernetes', 'Angular'] })).toEqual({ introduction: '<p>Hello</p>' });
+    // Order counts, and the whole list is sent, since upstream replaces it.
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: ['Angular', 'Kubernetes'] })).toEqual({ skills: ['Angular', 'Kubernetes'] });
+    expect(buildMentorshipMentorProfileUpdate({ aboutMe: '', skills: [] }, { introduction: '', skills: [] })).toEqual({});
+  });
+
+  it('treats a mentor profile update with no field present as empty', () => {
+    expect(isMentorshipMentorProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMentorProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMentorProfileUpdateEmpty({ skills: [] })).toBe(false);
   });
 
   it('builds the mentor register request without the resume file name', () => {

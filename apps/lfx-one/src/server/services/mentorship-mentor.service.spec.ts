@@ -3,13 +3,8 @@
 
 import '@angular/compiler';
 
-import {
-  getMockMentorshipMentorProgramLists,
-  getMockMentorshipMentorPrograms,
-  MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
-  MOCK_MENTORSHIP_MENTOR_PROFILE,
-} from '@lfx-one/shared/constants';
-import type { MentorshipMentorRegisterRequest, MentorshipUpstreamProgramMembership } from '@lfx-one/shared/interfaces';
+import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms, MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE } from '@lfx-one/shared/constants';
+import type { MentorshipMentorRegisterRequest, MentorshipUpstreamMentorDetail, MentorshipUpstreamProgramMembership } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -34,6 +29,9 @@ const { MicroserviceError, ResourceNotFoundError } = await import('../errors');
 
 const PROFILES_PATH = '/mentorship/v1/me/profiles';
 const MENTOR_PROFILE_PATH = `${PROFILES_PATH}/mentor`;
+const ME_PATH = '/mentorship/v1/me';
+const MENTOR_USER_ID = '6f1c2d3e-4a5b-4c6d-8e7f-901234567890';
+const MENTOR_DETAIL_PATH = `/mentorship/v1/mentors/${MENTOR_USER_ID}`;
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
@@ -308,16 +306,193 @@ describe('MentorshipMentorService.getMentorPrograms', () => {
 });
 
 describe('MentorshipMentorService.getMentorProfile', () => {
-  it('returns the profile and history as copies, so a caller cannot change the seed', async () => {
-    const service = new MentorshipMentorService();
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
 
-    const response = await service.getMentorProfile(buildReq());
-    response.profile.skills.push('Injected');
-    response.history[0].programName = 'Injected';
+  const storedProfile = {
+    id: 'profile-1',
+    profile_type: 'mentor',
+    introduction: '<p>I mentor ingestion pipelines.</p>',
+    skill_set: { skills: ['Go', 'Kubernetes'], comments: 'kept' },
+    profile_links: { resumeLink: 'https://files.example.org/resumes/mentor-cv.pdf' },
+  };
+  const detail: MentorshipUpstreamMentorDetail = {
+    user_id: MENTOR_USER_ID,
+    skills: [],
+    joined_at: '2026-01-01T00:00:00Z',
+    programs: [
+      {
+        id: 'program-1',
+        name: 'GridFlow',
+        slug: 'gridflow',
+        skills: [],
+        mentors: [],
+        terms: [{ id: 'term-1', name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }],
+      },
+    ],
+    current_mentees: [{ user_id: 'mentee-1', program_name: 'GridFlow', term_name: 'Fall 2026', status: 'active' }],
+    graduated_mentees: [],
+    stats: { programs_mentoring: 1, current_mentees: 1, mentees_graduated: 0 },
+  };
 
-    expect(response.history).toHaveLength(MOCK_MENTORSHIP_MENTOR_PROFILE.history.length);
-    expect(MOCK_MENTORSHIP_MENTOR_PROFILE.profile.skills).not.toContain('Injected');
-    expect(MOCK_MENTORSHIP_MENTOR_PROFILE.history[0].programName).not.toBe('Injected');
+  /** Answers each upstream read by path, since the profile and history branches run in parallel. */
+  function answer(routes: Record<string, () => unknown>) {
+    proxyRequest.mockImplementation(async (_req, _service, path) => {
+      const route = routes[path];
+      if (!route) throw new Error(`unexpected upstream call to ${path}`);
+      return route() as never;
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("maps the caller's mentor row and builds the history from their mentor detail", async () => {
+    answer({ [PROFILES_PATH]: () => listOf([storedProfile]), [ME_PATH]: () => ({ id: MENTOR_USER_ID }), [MENTOR_DETAIL_PATH]: () => detail });
+
+    await expect(service.getMentorProfile(signedInReq())).resolves.toEqual({
+      profile: {
+        aboutMe: '<p>I mentor ingestion pipelines.</p>',
+        skills: ['Go', 'Kubernetes'],
+        resumeUrl: 'https://files.example.org/resumes/mentor-cv.pdf',
+        resumeFileName: 'mentor-cv.pdf',
+      },
+      history: [{ id: 'term-1', programName: 'GridFlow', term: 'Fall 2026', menteesCount: 1, status: 'in-progress' }],
+    });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentor', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', ME_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTOR_DETAIL_PATH, 'GET', undefined, undefined);
+  });
+
+  it('returns an empty profile, with the history, when the caller has no mentor row', async () => {
+    answer({ [PROFILES_PATH]: () => listOf([]), [ME_PATH]: () => ({ id: MENTOR_USER_ID }), [MENTOR_DETAIL_PATH]: () => detail });
+
+    const response = await service.getMentorProfile(signedInReq());
+
+    expect(response.profile).toEqual({ aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined });
+    expect(response.history).toHaveLength(1);
+  });
+
+  it('returns an empty history when upstream has no mentor detail for the caller (404)', async () => {
+    answer({
+      [PROFILES_PATH]: () => listOf([storedProfile]),
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => {
+        throw upstreamError(404, { error: 'mentor not found' });
+      },
+    });
+
+    const response = await service.getMentorProfile(signedInReq());
+
+    expect(response.history).toEqual([]);
+    expect(response.profile.skills).toEqual(['Go', 'Kubernetes']);
+  });
+
+  it('propagates any other failure of the mentor detail read', async () => {
+    const error = upstreamError(500, { error: 'internal server error' });
+    answer({
+      [PROFILES_PATH]: () => listOf([storedProfile]),
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => {
+        throw error;
+      },
+    });
+
+    await expect(service.getMentorProfile(signedInReq())).rejects.toBe(error);
+  });
+
+  it('refuses a user without a valid id rather than read another path', async () => {
+    answer({ [PROFILES_PATH]: () => listOf([storedProfile]), [ME_PATH]: () => ({ id: '../programs' }) });
+
+    await expect(service.getMentorProfile(signedInReq())).rejects.toMatchObject({ statusCode: 502, code: 'MENTORSHIP_INVALID_USER' });
+    expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', expect.stringContaining('/mentors/'), 'GET', undefined, undefined);
+  });
+
+  it('propagates a failed profile read', async () => {
+    const error = upstreamError(409, { error: 'multiple mentor profiles' });
+    answer({
+      [PROFILES_PATH]: () => {
+        throw error;
+      },
+      [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+      [MENTOR_DETAIL_PATH]: () => detail,
+    });
+
+    await expect(service.getMentorProfile(signedInReq())).rejects.toBe(error);
+  });
+});
+
+describe('MentorshipMentorService.updateMentorProfile', () => {
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const savedRow = {
+    id: 'profile-1',
+    profile_type: 'mentor',
+    introduction: '<p>Updated.</p>',
+    skill_set: { skills: ['Rust'], comments: 'kept' },
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it('patches only the introduction, without reading the stored row', async () => {
+    proxyRequest.mockResolvedValueOnce(savedRow);
+
+    await expect(service.updateMentorProfile(signedInReq(), { introduction: '<p>Updated.</p>' })).resolves.toEqual({
+      profile: { aboutMe: '<p>Updated.</p>', skills: ['Rust'], resumeFileName: undefined, resumeUrl: undefined },
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'PATCH', undefined, {
+      introduction: '<p>Updated.</p>',
+    });
+  });
+
+  it('layers new skills over the stored skill_set, keeping the keys the BFF does not model', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([{ id: 'profile-1', profile_type: 'mentor', skill_set: { skills: ['Go'], comments: 'kept' } }]));
+    proxyRequest.mockResolvedValueOnce(savedRow);
+
+    await service.updateMentorProfile(signedInReq(), { skills: ['Rust'] });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentor', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROFILE_PATH, 'PATCH', undefined, {
+      skill_set: { skills: ['Rust'], comments: 'kept' },
+    });
+  });
+
+  it('does not patch when the stored row cannot be read', async () => {
+    const error = upstreamError(500, { error: 'internal server error' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMentorProfile(signedInReq(), { skills: ['Rust'] })).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an upstream 404 for a caller with no mentor profile', async () => {
+    const error = upstreamError(404, { error: 'profile not found' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMentorProfile(signedInReq(), { introduction: '<p>Hi.</p>' })).rejects.toBe(error);
+  });
+
+  it('logs the changed field names only', async () => {
+    proxyRequest.mockResolvedValueOnce(savedRow);
+
+    await service.updateMentorProfile(signedInReq(), { introduction: '<p>Secret text.</p>' });
+
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('Secret text');
   });
 });
 

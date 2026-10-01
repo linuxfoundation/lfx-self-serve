@@ -8,7 +8,7 @@ import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipMentorProfileResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProfileResponse, MentorshipMentorProfileUpdateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
@@ -30,6 +30,10 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
  * fields. On failure it degrades to the empty response and surfaces a retry so a
  * transient BFF error never leaves the mentor stranded on a spinner. The shell owns
  * the page H1 and the tab bar, so nothing here renders either.
+ *
+ * Saving the edit drawer shows the saved profile in place (`savedProfile`) instead of re-reading it, so the page
+ * never flashes its loading state. The edit cannot change the history, which keeps the loaded rows. A Retry drops
+ * that override so the freshly loaded data wins.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile',
@@ -53,13 +57,18 @@ export class MentorProfileComponent {
   protected readonly loadError = signal<string | null>(null);
 
   private readonly reloadProfile = signal(0);
+  private readonly savedProfile = signal<MentorshipMentorProfileUpdateResponse | null>(null);
   private readonly profileState: Signal<MentorshipMentorProfileResponse> = this.initProfile();
 
-  protected readonly profile = computed(() => this.profileState().profile);
+  protected readonly profile = computed(() => this.savedProfile()?.profile ?? this.profileState().profile);
   protected readonly history = computed(() => this.profileState().history);
 
   protected onEditProfile(): void {
     this.drawerService.open(this.profile());
+  }
+
+  protected onProfileSaved(response: MentorshipMentorProfileUpdateResponse): void {
+    this.savedProfile.set(response);
   }
 
   protected retry(): void {
@@ -70,6 +79,7 @@ export class MentorProfileComponent {
     return toSignal(
       toObservable(this.reloadProfile).pipe(
         tap(() => {
+          this.savedProfile.set(null);
           this.hasLoaded.set(false);
           this.loadError.set(null);
         }),

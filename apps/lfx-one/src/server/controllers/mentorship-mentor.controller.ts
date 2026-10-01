@@ -5,6 +5,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
 import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
@@ -193,6 +194,25 @@ export class MentorshipMentorController {
       const profile = await this.mentorService.getMentorProfile(req);
       logger.success(req, 'get_mentorship_mentor_profile', startTime, { history_count: profile.history.length });
       res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentor/profile
+  public async updateMentorProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentor_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentor_profile' });
+      }
+
+      const request = parseMentorshipMentorProfileUpdate(req.body, 'update_mentorship_mentor_profile');
+      const response = await this.mentorService.updateMentorProfile(req, request);
+      // Field names only: the values are personal data.
+      logger.success(req, 'update_mentorship_mentor_profile', startTime, { changed_fields: Object.keys(request) });
+      res.json(response);
     } catch (error) {
       next(error);
     }

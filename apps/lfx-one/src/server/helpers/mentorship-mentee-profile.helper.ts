@@ -3,24 +3,7 @@
 
 import { MentorshipMenteeDemographics, MentorshipMenteeProfileResponse, MentorshipUpstreamUserProfile } from '@lfx-one/shared/interfaces';
 
-/** The mentorship service stores its JSON columns free-form, so each one is narrowed before use. */
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
-
-/** A blank string is an unanswered field, the same as a missing one. */
-const asString = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() !== '' ? value : undefined);
-
-const asStringArray = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => asString(item) !== undefined) : []);
-
-/** Display name for a stored resume link: the last path segment, or nothing when the URL has none. */
-const resumeFileNameFromUrl = (url: string): string | undefined => {
-  try {
-    const segment = new URL(url).pathname.split('/').filter(Boolean).pop();
-    return segment ? decodeURIComponent(segment) : undefined;
-  } catch {
-    return undefined;
-  }
-};
+import { asRecord, asString, asStringArray, mapMentorshipProfileResume } from './mentorship-profile-columns.helper';
 
 /**
  * Demographic answers split across two upstream columns: `demographics` holds age, gender and
@@ -47,7 +30,7 @@ const mapDemographics = (profile: MentorshipUpstreamUserProfile): MentorshipMent
  */
 export const mapMentorshipMenteeProfile = (profile: MentorshipUpstreamUserProfile): MentorshipMenteeProfileResponse => {
   const skillSet = asRecord(profile.skill_set);
-  const resumeUrl = asString(asRecord(profile.profile_links)?.['resumeLink']);
+  const { resumeUrl, resumeFileName } = mapMentorshipProfileResume(profile);
 
   return {
     profile: {
@@ -56,7 +39,7 @@ export const mapMentorshipMenteeProfile = (profile: MentorshipUpstreamUserProfil
       skillsWant: asStringArray(skillSet?.['improvementSkills']),
       additionalNotes: asString(skillSet?.['comments']),
       resumeUrl,
-      resumeFileName: resumeUrl ? resumeFileNameFromUrl(resumeUrl) : undefined,
+      resumeFileName,
     },
     history: [],
     demographics: mapDemographics(profile),

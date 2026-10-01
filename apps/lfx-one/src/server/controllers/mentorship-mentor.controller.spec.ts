@@ -5,7 +5,12 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import type { MentorshipMentorProfileResponse, MentorshipMentorProgramDetail, MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  MentorshipMentorProfileResponse,
+  MentorshipMentorProfileUpdateResponse,
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramsResponse,
+} from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -318,6 +323,54 @@ describe('MentorshipMentorController', () => {
       await controller.getMentorProfile(buildReq(), res, next);
 
       expect(read).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('updateMentorProfile', () => {
+    const buildUpdateReq = (requestBody: unknown): Request => ({ body: requestBody, query: {} }) as unknown as Request;
+    const response: MentorshipMentorProfileUpdateResponse = { profile: { aboutMe: '<p>Updated</p>', skills: ['Kubernetes'] } };
+
+    it('saves the parsed request and answers with the saved profile', async () => {
+      const update = vi.spyOn(MentorshipMentorService.prototype, 'updateMentorProfile').mockResolvedValue(response);
+
+      await controller.updateMentorProfile(buildUpdateReq({ introduction: '<p>Updated</p>', skills: ['Kubernetes', 'kubernetes'] }), res, next);
+
+      expect(update).toHaveBeenCalledWith(expect.anything(), { introduction: '<p>Updated</p>', skills: ['Kubernetes'] });
+      expect(res.json).toHaveBeenCalledWith(response);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, null, 'text', [], {}, { skills: [] }, { introduction: null }, { resumeFileName: 'cv.pdf' }])(
+      'rejects the body %j with a validation error before calling the service',
+      async (requestBody) => {
+        const update = vi.spyOn(MentorshipMentorService.prototype, 'updateMentorProfile');
+
+        await controller.updateMentorProfile(buildUpdateReq(requestBody), res, next);
+
+        expect(update).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+        expect(res.json).not.toHaveBeenCalled();
+      }
+    );
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'updateMentorProfile').mockRejectedValue(error);
+
+      await controller.updateMentorProfile(buildUpdateReq({ introduction: '<p>Updated</p>' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const update = vi.spyOn(MentorshipMentorService.prototype, 'updateMentorProfile');
+
+      await controller.updateMentorProfile(buildUpdateReq({ introduction: '<p>Updated</p>' }), res, next);
+
+      expect(update).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });

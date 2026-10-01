@@ -14,6 +14,7 @@ The mentor pages under `/mentorship/mentor/*` read their data from the LFX One B
 | GET    | `/api/mentorship/mentor/profile`                      | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)    |
 | GET    | `/api/mentorship/mentor/has-profile`                  | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`) |
 | POST   | `/api/mentorship/mentor/profile`                      | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                          |
+| PATCH  | `/api/mentorship/mentor/profile`                      | `updateMentorProfile`   | Save in the profile edit drawer                                 |
 | GET    | `/api/mentorship/mentor/open-programs`                | `getOpenPrograms`       | Program picker on Become a Mentor and the profile edit drawer   |
 | GET    | `/api/mentorship/mentor/requests`                     | `getMentorRequests`     | Request list in the profile edit drawer                         |
 | POST   | `/api/mentorship/mentor/requests`                     | `requestToMentor`       | Become a Mentor (after the save) and the profile edit drawer    |
@@ -46,8 +47,8 @@ The register page and the profile edit drawer read the program picker through `G
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
 - `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is blank. It accepts a program id or slug, and answers 404 (`ResourceNotFoundError`) when neither matches.
 - The app service rethrows every failure, 404 included, so each page can tell a not-found state from a retry state.
-- The read routes stay available while impersonating. The write routes (`POST /profile`, `POST /requests` and `POST /requests/:requestId/withdraw`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
-- Logs carry only ids, counts and flags (`programId`, `requestId`, `count`, `total`, `offset`, `has_search`, `dropped`, `result_count`, `history_count`, `skills_count`, `hasProfile`). Names, emails, notes and the introduction never go in logs.
+- The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests` and `POST /requests/:requestId/withdraw`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
+- Logs carry only ids, counts and flags (`programId`, `requestId`, `count`, `total`, `offset`, `has_search`, `dropped`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`). Names, emails, notes and the introduction never go in logs.
 
 ## Registration
 
@@ -75,6 +76,31 @@ MentorRegisterComponent.onSubmit()
 - **Errors.** The page maps a failure with the shared `mapMentorshipRegisterFailure` and `MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS`, by status and code only. The kinds match the mentee form, except that a `422` shows the generic retry banner: the mentor form asks no eligibility questions. The `profile-exists` banner's button goes to My Programs.
 - **After a save.** The page toasts success, sends one request per picked program (see [Program requests](#program-requests)), then navigates to `/mentorship/mentor/programs` whatever those requests answered. The resume file name stays local: there is no endpoint for it yet.
 
+## Profile and Mentoring History
+
+The Profile page (`/mentorship/mentor/profile`) reads the mentor's profile and Mentoring History through `GET /api/mentorship/mentor/profile`, and the edit drawer saves the introduction and skills through `PATCH /api/mentorship/mentor/profile` (linuxfoundation/lfx-mentorship#210).
+
+```text
+GET   /profile   → GET /mentorship/v1/me/profiles?profile_type=mentor&limit=1       mapMentorshipMentorProfileDetails
+                 ∥ GET /mentorship/v1/me                                           local user id → isUuid, else 502 MENTORSHIP_INVALID_USER
+                   → GET /mentorship/v1/mentors/{userId}                           mapMentorshipMentoringHistory · 404 → []
+                 ← { profile, history }
+PATCH /profile   → blockDuringImpersonation                                        403 IMPERSONATION_READ_ONLY
+   { introduction?, skills? }
+                 → parseMentorshipMentorProfileUpdate(body)                        allowlist, types, then the form rules → 400
+                 → GET /mentorship/v1/me/profiles?profile_type=mentor&limit=1     only when the skills change
+                 → PATCH /mentorship/v1/me/profiles/mentor                         buildMentorshipUpstreamMentorProfileUpdate
+                 ← { profile }
+```
+
+- **No profile row.** A caller with no mentor profile gets the empty profile, with the history still read, as the mentee page does.
+- **The history.** `mapMentorshipMentoringHistory` builds one row per distinct (program name, term name) pair across the mentor's current and graduated mentees, plus the term `chooseMentorshipMentorTerm` picks for each program the mentor belongs to, so a term with no mentees yet is listed with a count of zero. A program with no terms is not listed. A chosen open term reads in progress and a closed one completed. Upstream answers `/mentors/{userId}` with 404 when the caller has no active membership of a published program; that is an empty history, not a failure.
+- **Matching by name (H11).** A mentee row names its program and term but carries neither id, so the history matches it to the program's terms by program name and term name. Two terms of one program with the same name merge into one row, with a generated id. Upstream also lists each mentee at most once as current and once as graduated (its latest term of each), so a mentee who joined more than one term is counted in one of them only.
+- **What PATCH sends.** Only the fields the mentor changed: the drawer builds the request with `buildMentorshipMentorProfileUpdate`, which compares against the profile it was opened with, and Save with no change closes without a request. Upstream keeps every column the body leaves out but replaces `skill_set` whole, so when the skills change the BFF reads the stored row first and layers the new skills over its `skill_set`, keeping keys the UI does not show. A failed read fails the save. The read and the write are not atomic, so an edit made elsewhere in between can be overwritten. `profile_links` and the resume are never sent.
+- **Validation.** `parseMentorshipMentorProfileUpdate` refuses an unknown key, a null value or an empty body, drops repeated skills, then runs the rules the drawer and the register form share (`getMentorshipMentorProfileErrors`) on the present fields. The introduction HTML is stored as sent, capped but not sanitised: every render path sanitises it.
+- **App side.** `MentorProfileSaveService` sends the save, toasts `MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY` and maps a failure to `MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_MESSAGES` (400, 404, 409) or the fallback; a BFF validation 400 and the impersonation 403 show the server's message. The drawer shows that message inline and stays open with the mentor's input, makes the profile fields `inert` and blocks closing while the save is in flight. On success it emits `saved`, and the page shows the saved profile in place without re-reading it or the history; a Retry drops that override.
+- **Upstream errors.** A PATCH passes upstream's 404 (no mentor profile) and 409 (more than one) through.
+
 ## Program requests
 
 A mentor asks to join a program, and withdraws a request still waiting on the program administrator, through four routes (linuxfoundation/lfx-mentorship#209). Upstream stores a request as the caller's `program_members` row with `member_type: 'mentor'`, not as an application: a mentor joins the whole program, not a term. The routes sit on upstream's self-service `/v1/me/program-memberships` (linuxfoundation/lfx-mentorship#218), which takes the user from the token and never from the body.
@@ -98,11 +124,11 @@ POST /requests/:requestId/withdraw          → blockDuringImpersonation · isUu
 - **Upstream errors.** A request passes upstream's `404` through when the program is gone or hidden, and its `409` when the caller already has an `invited`, `requested`, `pending`, `active` or `declined` row for it. A withdraw passes its `404` through when the row is not the caller's, and its `409` when the row is no longer `requested` or `pending`. Upstream sends no invite email for a self-request.
 - **Statuses.** `mapMentorshipMentorProgramRequests` folds the upstream member status through `MENTORSHIP_MENTOR_REQUEST_STATUS_MAP`: `requested` and `pending` read as pending, `active` as accepted, and `declined` and `withdrawn` as themselves. It drops `invited` rows, which are not requests the mentor made (mentor invites are a later story); `mapMentorshipMentorInvitedProgramIds` returns their programs as `invitedProgramIds` instead. The read logs only the row counts (`count`, `invited`, `dropped`). Only a pending row offers Withdraw.
 - **App side.** `MentorshipMentorService` caches `getMentorRequests()` and bumps `mentorRequestsRevision` after every request or withdraw, so the drawer re-reads the list. A failed read is not shown as an empty list: the drawer passes `requestsFailed` to the section, which shows `MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE` with a Retry button and disables the picker until a read succeeds, and passes `requestsLoading` so the picker also waits while an open reads the list; Retry calls `clearMentorCaches()`. Two module services own the toasts, so no caller handles an error: `MentorProgramRequestService` (`request`, and `requestMany`, which sends one at a time and names each failed program) and `MentorRequestWithdrawService` (confirms first). A request's `404` or `409` shows `MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES`, and a withdraw's shows `MENTORSHIP_MENTOR_WITHDRAW_STALE_ERROR_MESSAGES`; both re-read the list. A request's `404` also calls `markProgramUnavailable`, since re-reading the requests cannot drop the program from a page of programs already read; the impersonation `403` shows the server's message.
-- **Where they run.** The register page keeps picks local until the profile saves, then calls `requestMany`, and navigates once they settle only if the page is still open. The profile edit drawer sends a pick and a confirmed withdraw right away. It mounts the programs section on its first open, not with the profile page (projected content is created even while the drawer is hidden), and keeps it mounted after a close. The drawer's Save still shows the coming-soon toast: the profile update endpoint is not wired yet.
+- **Where they run.** The register page keeps picks local until the profile saves, then calls `requestMany`, and navigates once they settle only if the page is still open. The profile edit drawer sends a pick and a confirmed withdraw right away. It mounts the programs section on its first open, not with the profile page (projected content is created even while the drawer is hidden), and keeps it mounted after a close. Its Save is separate (see [Profile and Mentoring History](#profile-and-mentoring-history)): requests never wait for it.
 
 ## Data source
 
-The has-profile check, the register save and the program request routes call the mentorship service. Every other route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
+The profile read and update, the has-profile check, the register save and the program request routes call the mentorship service. Every other route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
 
 A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end. The mentor service uses it for the published programs and the caller's mentor memberships; the mentee service uses it for the caller's applications and an application's tasks.
 

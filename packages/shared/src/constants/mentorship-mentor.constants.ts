@@ -4,7 +4,6 @@
 import type { MentorshipMenteeStatus, MentorshipMentorStatus, MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
 import type {
   MentorshipMentorTaskReviewStatus,
-  MentorshipMentoringHistoryEntry,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
@@ -519,11 +518,23 @@ export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
 /**
  * Copy for the mentor profile edit drawer — the slide-in panel opened from the
- * "Edit Mentor Profile" button on the standalone mentor profile page. Save fires
- * the coming-soon toast until the update endpoint is wired.
+ * "Edit Mentor Profile" button on the standalone mentor profile page.
  */
 export const MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL = 'Save';
 export const MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL = 'Cancel';
+
+/** The fields `PATCH /api/mentorship/mentor/profile` accepts; any other key is a 400. */
+export const MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS = ['introduction', 'skills'] as const;
+
+/** Inline message for a failed profile save, keyed by the BFF's status. Any other status gets the fallback. */
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'Some of your changes could not be saved. Review them and try again.',
+  404: 'We could not find your mentor profile. Refresh the page and try again.',
+  409: 'Your mentor profile could not be updated because of a conflict. Refresh the page and try again.',
+};
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save your changes. Please try again.';
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE = 5000;
 
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
@@ -548,29 +559,4 @@ export const MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES: Record<Mentorshi
 export const EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE: MentorshipMentorProfileResponse = {
   profile: { aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined },
   history: [],
-};
-
-/**
- * Deterministic mock backing the standalone mentor profile page while the mentorship
- * profiles endpoint is unavailable. Removed once the real read is wired up.
- */
-export const MOCK_MENTORSHIP_MENTORING_HISTORY: MentorshipMentoringHistoryEntry[] = [
-  { id: 'mh_gridflow_fall26', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' },
-  { id: 'mh_apicurio_summer26', programName: 'Apicurio Registry: Playground', term: 'Summer 2026', menteesCount: 2, status: 'completed' },
-  { id: 'mh_gridflow_spring26', programName: 'GridFlow: Metrics Exporter', term: 'Spring 2026', menteesCount: 2, status: 'completed' },
-];
-
-export const MOCK_MENTORSHIP_MENTOR_PROFILE: MentorshipMentorProfileResponse = {
-  profile: {
-    aboutMe:
-      'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
-    skills: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
-    // Synthetic filename (no real person). The mock URL below is a fragment on purpose:
-    // `isValidUrl` in the profile details component rejects it, so the mentor sees the
-    // filename without an anchor — exactly the behavior expected once the upstream
-    // service returns a real signed URL.
-    resumeFileName: 'test-mentor-resume.pdf',
-    resumeUrl: '#',
-  },
-  history: MOCK_MENTORSHIP_MENTORING_HISTORY,
 };
