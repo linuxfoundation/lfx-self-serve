@@ -103,6 +103,7 @@ describe('orgClaPreviewGroup', () => {
     claGroupName: 'Cascade CLA',
     projectSfid: 'a09410000182dD2AAI',
     projectName: 'Cascade',
+    orgUid: 'org-uuid-1',
   };
 
   it('heads the preview with the CLA Group the picker named, as an agreement nobody has signed', () => {
@@ -160,6 +161,7 @@ describe('orgClaGroupForAddress', () => {
     status: 'signed',
     needsClaManager: false,
     claManagersCount: 0,
+    viewerIsClaManager: false,
     ...over,
   });
 

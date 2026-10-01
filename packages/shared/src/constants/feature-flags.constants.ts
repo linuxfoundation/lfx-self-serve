@@ -168,18 +168,23 @@ export const FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS = 3_000;
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
  * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
  * checklist section, and the Formations queue (epic #1965). It also gates the project lens's
- * Formation-only sidebar and the `/project/overview` → `/project/formation` landing redirect for a
- * project in a Formation stage (#2754; `SidebarNavService` and `formationOverviewRedirectGuard`,
- * both on `isFormationStageGate`). Staged targeting (named users, then LF Staff, then
- * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
- * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
- * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.
+ * formation-stage sidebar (Formation, Meetings, Mailing Lists, Groups — #3059) and the
+ * `/project/overview` → `/project/formation` landing redirect for a project in a Formation stage
+ * (#2754; `SidebarNavService` and `formationOverviewRedirectGuard`, both on `isFormationStageGate`),
+ * and "Propose a project" (#3037): the My Formations CTA, the `/formations/propose` intake page, the
+ * Submitted proposals tab, and the foundation queue's Project proposals tab. Staged targeting (named
+ * users, then LF Staff, then all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users"
+ * in one step. Default false so an unflagged evaluation renders the pre-Formation UI. The checklist
+ * and queue now read the real `lfx-v2-formation-service` backend; this flag is the sole rollout gate
+ * for the UI.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: the underlying `stage`/formation fields on `/api/projects/:slugOrUid` are already
  * visible to anyone authorized to view the project regardless of this flag, and the formation
  * endpoints read/write the real `lfx-v2-formation-service` record — this flag only controls
- * whether Self Serve *renders* Formation-specific UI around already-reachable data.
+ * whether Self Serve *renders* Formation-specific UI around already-reachable data. The same holds for
+ * `/api/project-applications` (#3037): it requires a session and refuses impersonated writes, and the
+ * formation-service gateway authorizes every write, but the flag itself is not evaluated server-side.
  */
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';
 
@@ -203,3 +208,13 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
+/**
+ * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
+ * false: the group stays hidden until LaunchDarkly targeting turns it on, which also keeps it dark
+ * while `lfx-v2-pat-service` and the member-service tier endpoint roll out.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF: the
+ * `/api/profile/insights-tokens` routes stay authenticated and re-check Key Contact eligibility on
+ * create, so this flag controls visibility, never what a user may do.
+ */
+export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';

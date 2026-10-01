@@ -201,9 +201,9 @@ export class PersonaDetectionService {
    * privileged surfaces: `require-dashboard-access.middleware.ts`,
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
    * `require-marketing-access.middleware.ts`. Distinct from the Org Lens affordance in
-   * `OrgRoleGrantsService` (`LF_TEAM_IDS`), which is also staff-only since the contractor
-   * rollback but is a separate list with separate consumers — widening either does not widen the
-   * other. Neither is a read gate; that is the authorizer-backed `assertOrgLensRead`.
+   * `OrgRoleGrantsService` (`ORG_WIDE_READ_TEAM_IDS`), which is a separate list with separate
+   * consumers — widening either does not widen the other. Neither is a read gate; that is the
+   * authorizer-backed `assertOrgLensRead`.
    * Request-cached; fails closed to `false`.
    */
   public async checkLFStaff(req: Request): Promise<boolean> {

@@ -4,8 +4,10 @@
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ORG_ROLE_GRANTS_REFRESH_PARAM } from '@lfx-one/shared/constants';
-import { CascadingRoleGrant, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import { CascadingRoleGrant, OrgLensEditCheckResponse, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
+
+import { classifySectionError } from '../utils/org-lens-empty-state.utils';
 
 // Re-export the shared persona type so existing consumers can keep importing from this service module.
 export type { OrgRolePersona } from '@lfx-one/shared/interfaces';
@@ -19,7 +21,8 @@ export class OrgRoleGrantsService {
 
   // `writerSet` / `auditorSet` stay DIRECT-ONLY by design: they answer "is this grant the caller's
   // own?", which is what the selector's persona badge and its "(Original)"/"(Inherited)" copy need.
-  // Since LFXV2-3029 they are NOT the edit gate — `editorSet` below is. Widening these would erase
+  // They are NOT the edit gate — Org Lens edit affordances read `OrgEditAccessService.canEditSelected` (#3136),
+  // whose roster half is `editorSet` below. Widening these would erase
   // the direct-vs-inherited distinction the badge depends on.
   private readonly writerSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly auditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
@@ -31,9 +34,11 @@ export class OrgRoleGrantsService {
   private readonly loadingInternal: WritableSignal<boolean> = signal<boolean>(false);
   private readonly errorInternal: WritableSignal<string | null> = signal<string | null>(null);
   private readonly loadedAtMsInternal: WritableSignal<number | null> = signal<number | null>(null);
-  // Caller-level, not per-org: LF-team membership (global auditor population) carries read access to every org, so it is
-  // deliberately not folded into the sets above. Defaults false and resets to false on error.
+  // Caller-level, not per-org: membership of a company-wide team (server `ORG_WIDE_READ_TEAM_IDS`) carries read
+  // access to every org, so it is deliberately not folded into the sets above. Defaults false and resets to false on error.
   private readonly isStaffInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // #2961 — an LF contractor (not in a company-wide team). Explains an empty Org Lens only; it grants nothing and never widens the switcher.
+  private readonly isContractorInternal: WritableSignal<boolean> = signal<boolean>(false);
   // LFXV2-3029 — the server resolved fewer orgs than the caller may actually hold (roll-up
   // expansion or authoritative classification was incomplete). Without it an empty/short list is
   // indistinguishable from "you have no organizations", so an outage reads as a revocation.
@@ -41,7 +46,7 @@ export class OrgRoleGrantsService {
   // Spec 053 (FR-020) — why the sets are a lower bound: `failed` (roster never loaded — the answer is
   // unknown) vs `partial` (direct grants loaded, roll-up incomplete — every listed uid is authoritative).
   private readonly lookupOutcomeInternal: WritableSignal<OrgLensLookupOutcome> = signal<OrgLensLookupOutcome>('ok');
-  // Spec 053 (FR-011) — the LF-team check threw; `isStaff` is a fail-closed false, not a verdict.
+  // Spec 053 (FR-011) — the team-membership check threw; `isStaff` is a fail-closed false, not a verdict.
   private readonly staffCheckInternal: WritableSignal<OrgLensStaffCheck> = signal<OrgLensStaffCheck>('ok');
   private readonly correlationIdInternal: WritableSignal<string | null> = signal<string | null>(null);
 
@@ -50,11 +55,11 @@ export class OrgRoleGrantsService {
   public readonly inheritedWriterSet: Signal<Set<string>> = this.inheritedWriterSetInternal.asReadonly();
   public readonly inheritedAuditorSet: Signal<Set<string>> = this.inheritedAuditorSetInternal.asReadonly();
   /**
-   * LFXV2-3029 — "editor from any source": `writerSet` (direct) union `inheritedWriterSet`
-   * (roll-up-derived). Every organization-edit capability gate should read this, not the
-   * direct-only `writerSet` — every edit surface a direct editor can reach is meant to also open
-   * for a roll-up editor. `writerSet` itself is kept direct-only for callers that still need that
-   * narrower, direct-only answer specifically.
+   * LFXV2-3029 — the caller's roster editors: `writerSet` (direct) union `inheritedWriterSet`
+   * (roll-up-derived). This is only the roster half of the edit decision: Org Lens edit gates read
+   * `OrgEditAccessService.canEditSelected` (#3136), which answers from this set first and otherwise asks
+   * the server, so company-wide writers the roster never lists (`global_org_admin`) are included. Do not
+   * gate an edit affordance on this set directly. `writerSet` stays direct-only for the persona badge.
    */
   public readonly editorSet: Signal<Set<string>> = computed(() => new Set([...this.writerSetInternal(), ...this.inheritedWriterSetInternal()]));
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
@@ -63,8 +68,9 @@ export class OrgRoleGrantsService {
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
-  /** Caller is a member of an LF team (`lf-staff`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
+  /** Caller is in a company-wide team — one that reads every org, e.g. `lf-staff` (server `ORG_WIDE_READ_TEAM_IDS`); "LF team" in Org Lens comments. Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
+  public readonly isContractor: Signal<boolean> = this.isContractorInternal.asReadonly();
   /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */
   public readonly degraded: Signal<boolean> = this.degradedInternal.asReadonly();
   /** Spec 053 — `failed`: nothing in the sets is trustworthy; `partial`: the sets are a lower bound; `ok`: complete. Derived from `degraded` when the server predates the field. */
@@ -97,6 +103,8 @@ export class OrgRoleGrantsService {
         this.inheritedAuditorSetInternal.set(new Set((response.cascadingAuditors ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
         this.isStaffInternal.set(response.isStaff === true);
+        // Absent on an older server ⇒ false, so a rolling deploy never shows the contractor state by mistake.
+        this.isContractorInternal.set(response.isContractor === true);
         this.degradedInternal.set(response.degraded === true);
         // Absent on a pre-053 server: derive from the coarse flag so old+new deploy mixes stay safe.
         this.lookupOutcomeInternal.set(response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok'));
@@ -117,6 +125,7 @@ export class OrgRoleGrantsService {
         this.inheritedAuditorSetInternal.set(new Set());
         this.parentNameByUidInternal.set(new Map());
         this.isStaffInternal.set(false);
+        this.isContractorInternal.set(false);
         // The grants are unknown, not empty — same distinction the server's `degraded` draws.
         this.degradedInternal.set(true);
         this.lookupOutcomeInternal.set('failed');
@@ -127,6 +136,44 @@ export class OrgRoleGrantsService {
         return of(undefined);
       }),
       map(() => undefined)
+    );
+  }
+
+  /**
+   * #2961 — asks the server's Org Lens read gate whether the caller may read `orgUid`: `true` when admitted
+   * (204), `false` only for the gate's refusal (403 `FORBIDDEN`). Any other failure — the gate could not
+   * verify (503), a network error — answers `true`: an outage is not a refusal, so it must not render
+   * `contractor-no-grant`; the page's own sections report it.
+   */
+  public readCheck(orgUid: string): Observable<boolean> {
+    return this.http.get(`/api/orgs/${encodeURIComponent(orgUid)}/lens/read-check`, { observe: 'response' }).pipe(
+      map(() => true),
+      catchError((error: unknown) => {
+        if (classifySectionError(error) === 'denied') {
+          return of(false);
+        }
+        // Not a refusal: keep the page (its sections report the outage), but leave a trace.
+        console.warn('[org-lens] read-check did not answer; treating the organization as readable', error);
+        return of(true);
+      })
+    );
+  }
+
+  /**
+   * #3136 — asks the server whether the caller may edit `orgUid` (roster editor, else authorizer `writer`),
+   * so a company-wide writer the roster never lists still gets the edit affordances. Fail-closed: any error
+   * answers `false` — the answer only shows or hides controls, and every write is authorized again server-side.
+   */
+  public editCheck(orgUid: string): Observable<boolean> {
+    return this.http.get<OrgLensEditCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/edit-check`).pipe(
+      map((response) => response?.canEdit === true),
+      catchError((error: unknown) => {
+        // The read gate's own 403 is an answer (no access at all), not a failed check — only an outage is worth a trace.
+        if (classifySectionError(error) !== 'denied') {
+          console.warn('[org-lens] edit-check did not answer; hiding edit affordances', error);
+        }
+        return of(false);
+      })
     );
   }
 

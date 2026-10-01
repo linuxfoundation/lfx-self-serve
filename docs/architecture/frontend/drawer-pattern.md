@@ -221,7 +221,7 @@ export class OrgDependencyDrawerComponent {
 
 ### Key Template Conventions
 
-- **Responsive width**: `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`
+- **Responsive width**: `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`. Health Metrics L2 detail drawers (e.g. `engagement-group-attendance-drawer`, `members-movements-drawer`) use the narrower `xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full` to match the design's side panel
 - **Header**: Uses `ng-template #header` for PrimeNG drawer customization
 - **Content spacing**: `flex flex-col gap-6` between sections
 - **Loading spinner**: `fa-light fa-spinner-third fa-spin`

@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
-import { MessageService } from 'primeng/api';
+import { MentorshipMenteeProfileResponse, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
+import { By } from '@angular/platform-browser';
 import { MenteeProfileEditDrawerComponent } from './components/mentee-profile-edit-drawer/mentee-profile-edit-drawer.component';
 import { MenteeProfileEditDrawerService } from './components/mentee-profile-edit-drawer/mentee-profile-edit-drawer.service';
 import { MenteeProfileComponent } from './mentee-profile.component';
@@ -22,13 +23,17 @@ import { MenteeProfileComponent } from './mentee-profile.component';
   selector: 'lfx-mentorship-profile-card',
   template: '<div data-testid="mentorship-profile-card-stub"></div>',
 })
-class StubProfileCardComponent {}
+class StubProfileCardComponent {
+  public readonly syncMentorshipProfiles = input(false);
+}
 
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
   template: '',
 })
-class StubMenteeProfileEditDrawerComponent {}
+class StubMenteeProfileEditDrawerComponent {
+  readonly saved = output<MentorshipMenteeProfileUpdateResponse>();
+}
 
 describe('MenteeProfileComponent', () => {
   const mockProfile: MentorshipMenteeProfileResponse = {
@@ -39,12 +44,23 @@ describe('MenteeProfileComponent', () => {
       resumeFileName: 'test-mentee-resume.pdf',
       resumeUrl: 'https://example.com/resume.pdf',
     },
-    history: [{ id: 'app_pending', programName: 'GridFlow: Ingestion Pipeline', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' }],
+    history: [
+      {
+        id: 'app_pending',
+        programId: 'prog_gridflow',
+        programName: 'GridFlow: Ingestion Pipeline',
+        termName: 'Fall 2026',
+        submittedOn: 'Jun 28, 2026',
+        status: 'pending',
+      },
+    ],
   };
 
   let fixture: ComponentFixture<MenteeProfileComponent>;
   let drawerService: MenteeProfileEditDrawerService;
   let getMenteeProfile: ReturnType<typeof vi.fn>;
+  let withdrawMenteeApplication: ReturnType<typeof vi.fn>;
+  let applicationsRevision: ReturnType<typeof signal<number>>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -60,6 +76,12 @@ describe('MenteeProfileComponent', () => {
 
   beforeEach(() => {
     getMenteeProfile = vi.fn(() => of(mockProfile));
+    applicationsRevision = signal(0);
+    // The real data service bumps the revision when a withdraw succeeds.
+    withdrawMenteeApplication = vi.fn(() => {
+      applicationsRevision.update((value) => value + 1);
+      return of(undefined);
+    });
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -67,7 +89,10 @@ describe('MenteeProfileComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipService, useValue: { getMenteeProfile } },
+        {
+          provide: MentorshipMenteeService,
+          useValue: { getMenteeProfile, withdrawMenteeApplication, clearMenteeCaches: vi.fn(), menteeApplicationsRevision: applicationsRevision.asReadonly() },
+        },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
@@ -100,6 +125,14 @@ describe('MenteeProfileComponent', () => {
 
     expect(card).toBeLessThan(details);
     expect(details).toBeLessThan(history);
+  });
+
+  it('tells the profile card to copy a saved LFX profile onto the mentorship profiles', async () => {
+    await bootstrap();
+
+    expect((fixture.debugElement.query(By.directive(StubProfileCardComponent)).componentInstance as StubProfileCardComponent).syncMentorshipProfiles()).toBe(
+      true
+    );
   });
 
   it('opens the mentee profile edit drawer when the mentee asks to edit the profile', async () => {
@@ -154,5 +187,81 @@ describe('MenteeProfileComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-application-history"]')).not.toBeNull();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('omitted history'));
     warn.mockRestore();
+  });
+
+  it('withdraws a pending application from Application History after the mentee confirms, then re-reads the profile', async () => {
+    await bootstrap();
+    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
+    const confirm = vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+      confirmation.accept?.();
+      return confirmationService;
+    });
+
+    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-application-history-withdraw-app_pending"]')?.click();
+    fixture.detectChanges();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(withdrawMenteeApplication).toHaveBeenCalledWith('app_pending');
+    expect(getMenteeProfile).toHaveBeenCalledTimes(2);
+  });
+
+  describe('saving the edit drawer', () => {
+    const savedResponse: MentorshipMenteeProfileUpdateResponse = {
+      profile: { aboutMe: '<p>Saved introduction.</p>', skillsHave: ['Rust'], skillsWant: ['Zig'] },
+    };
+
+    const emitSaved = (response: MentorshipMenteeProfileUpdateResponse): void => {
+      fixture.debugElement.query(By.directive(StubMenteeProfileEditDrawerComponent)).componentInstance.saved.emit(response);
+      fixture.detectChanges();
+    };
+
+    it('replaces the profile view in place, keeps history and does not reload or flash the skeleton', async () => {
+      await bootstrap();
+
+      emitSaved(savedResponse);
+
+      expect(fixture.componentInstance['profile']()).toEqual(savedResponse.profile);
+      expect(fixture.componentInstance['history']()).toEqual(mockProfile.history);
+      expect(fixture.componentInstance['hasLoaded']()).toBe(true);
+      expect(getMenteeProfile).toHaveBeenCalledTimes(1);
+      expect(element().querySelector('[data-testid="mentorship-mentee-profile-loading"]')).toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-application-history"]')).not.toBeNull();
+    });
+
+    it('opens the drawer re-seeded from the saved profile', async () => {
+      await bootstrap();
+      emitSaved(savedResponse);
+
+      element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-profile-details-edit"] button')?.click();
+
+      expect(drawerService.context()).toEqual(savedResponse.profile);
+    });
+
+    it('drops the saved profile when the applications change, so the refetch wins', async () => {
+      await bootstrap();
+      emitSaved(savedResponse);
+      const refetched: MentorshipMenteeProfileResponse = { ...mockProfile, profile: { ...mockProfile.profile, aboutMe: 'Refetched.' } };
+      getMenteeProfile.mockReturnValue(of(refetched));
+
+      applicationsRevision.update((value) => value + 1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(getMenteeProfile).toHaveBeenCalledTimes(2);
+      expect(fixture.componentInstance['profile']()).toEqual(refetched.profile);
+    });
+
+    it('drops the saved profile on Retry', async () => {
+      await bootstrap();
+      emitSaved(savedResponse);
+      const refetched: MentorshipMenteeProfileResponse = { ...mockProfile, profile: { ...mockProfile.profile, aboutMe: 'Refetched.' } };
+      getMenteeProfile.mockReturnValue(of(refetched));
+
+      fixture.componentInstance['retry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['profile']()).toEqual(refetched.profile);
+    });
   });
 });

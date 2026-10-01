@@ -3,12 +3,16 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { FormationService } from '@services/formation.service';
+import { ProjectApplicationService } from '@services/project-application.service';
+import { ProjectService } from '@services/project.service';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import type { FormationsQueueResponse, ProjectContext } from '@lfx-one/shared/interfaces';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationsQueueComponent } from './formations-queue.component';
@@ -29,6 +33,7 @@ describe('FormationsQueueComponent — foundation scoping (GH-2367)', () => {
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
+        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
       ],
     }).compileComponents();
 
@@ -81,6 +86,7 @@ describe('FormationsQueueComponent — "In formation" tile subLine (GH-2366, GH-
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(response)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>(null) } },
+        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
       ],
     }).compileComponents();
 
@@ -128,6 +134,7 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(response)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>(null) } },
+        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
       ],
     }).compileComponents();
 
@@ -166,5 +173,103 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
 
     expect(tile('In formation')?.textContent).toContain('1 foundation · 1 project');
     expect(tile('Blocked')?.textContent).toContain('1 blocked item');
+  });
+});
+
+describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
+  let getFormationsQueue: ReturnType<typeof vi.fn>;
+
+  const render = async (options: {
+    slug: string | null;
+    isFormationTeam: boolean | Observable<boolean>;
+    tab?: string;
+  }): Promise<ComponentFixture<FormationsQueueComponent>> => {
+    TestBed.resetTestingModule();
+    getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
+    await TestBed.configureTestingModule({
+      imports: [FormationsQueueComponent],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationsQueue } },
+        {
+          provide: ProjectContextService,
+          useValue: {
+            selectedFoundation: signal<ProjectContext | null>(
+              options.slug ? ({ uid: 'f-uid', name: 'Foundation', slug: options.slug } as ProjectContext) : null
+            ),
+          },
+        },
+        {
+          provide: ProjectApplicationService,
+          useValue: {
+            getAccess: () => (typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam),
+            getApplications: () => of([]),
+            overlay: () => signal([]),
+            deletedUids: () => signal(new Set<string>()),
+            reconcile: vi.fn(),
+          },
+        },
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(options.tab ? { tab: options.tab } : {})) } },
+        { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        DialogService,
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(FormationsQueueComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  };
+
+  const query = (fixture: ComponentFixture<FormationsQueueComponent>, testId: string): HTMLElement | null =>
+    fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('offers the tab on The Linux Foundation to a formation-team member', async () => {
+    const fixture = await render({ slug: 'tlf', isFormationTeam: true });
+    expect(query(fixture, 'formations-queue-page-tabs-proposals')).not.toBeNull();
+    expect(query(fixture, 'formations-queue-proposals')).toBeNull();
+  });
+
+  it('renders the staff queue for ?tab=proposals and skips the formations read', async () => {
+    const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'proposals' });
+    expect(getFormationsQueue).not.toHaveBeenCalled();
+    expect(query(fixture, 'formations-queue-proposals')).not.toBeNull();
+    expect(query(fixture, 'project-applications-staff')).not.toBeNull();
+  });
+
+  it('holds the formations read on a cold ?tab=proposals load until the access check answers', async () => {
+    const access = new Subject<boolean>();
+    const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable(), tab: 'proposals' });
+    expect(getFormationsQueue).not.toHaveBeenCalled();
+
+    // Not on the formation team: the proposals tab isn't available, so the formations list loads now.
+    access.next(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the formations read skipped once access confirms a formation-team member', async () => {
+    const access = new Subject<boolean>();
+    const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable(), tab: 'proposals' });
+    access.next(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(getFormationsQueue).not.toHaveBeenCalled();
+  });
+
+  it('hides the tab from a caller outside the formation team, even with ?tab=proposals', async () => {
+    const fixture = await render({ slug: 'tlf', isFormationTeam: false, tab: 'proposals' });
+    expect(query(fixture, 'formations-queue-page-tabs')).toBeNull();
+    expect(query(fixture, 'formations-queue-proposals')).toBeNull();
+  });
+
+  it('hides the tab on any other foundation', async () => {
+    const fixture = await render({ slug: 'cncf', isFormationTeam: true, tab: 'proposals' });
+    expect(query(fixture, 'formations-queue-page-tabs')).toBeNull();
+    expect(query(fixture, 'formations-queue-proposals')).toBeNull();
   });
 });

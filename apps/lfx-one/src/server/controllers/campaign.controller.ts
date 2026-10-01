@@ -1,6 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Deep path, NOT the `@lfx-one/shared/utils` barrel, and deliberately so: the barrel
+// re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
+// barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
+// Verified by switching to the barrel and watching the suite fail.
+import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
+import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -23,21 +31,21 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  MAX_BULK_KEYWORD_ACTIONS,
   META_GEO_CODE_PATTERN,
-  isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
-  CAMPAIGN_EMAIL_STAGES,
-  isCanonicalGoogleAdsResourceId,
   MICROSOFT_MAX_GEO_TARGETS,
-  MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
+  isCanonicalGoogleAdsResourceId,
+  isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -572,7 +580,10 @@ export class CampaignController {
       // comment on the same path and is no longer true of the contract.
       const rawStage = (req.body as { stage?: unknown } | undefined)?.stage;
       const stage = typeof rawStage === 'string' && rawStage.trim() !== '' ? rawStage.trim() : undefined;
-      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage);
+      // `variant` follows the same forward-without-validating shape as `stage` above.
+      const rawVariant = (req.body as { variant?: unknown } | undefined)?.variant;
+      const variant = typeof rawVariant === 'string' && rawVariant.trim() !== '' ? rawVariant.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {
@@ -779,7 +790,7 @@ export class CampaignController {
     // (linuxfoundation/lfx-self-serve#2214).
     //
     // An earlier revision also narrowed an explicit typo to paid, reasoning that failing closed
-    // toward the pre-existing behaviour could not expose a brief that was hidden before. True, and
+    // toward the pre-existing behavior could not expose a brief that was hidden before. True, and
     // beside the point: `?delivery_type=emial` then returns the PAID brief under a 200, which is a
     // confident answer to a question the caller did not ask. Upstream's `find-brief` restricts this
     // param to `paid-marketing | email`, so honouring a third value was never the contract — and
@@ -1183,11 +1194,10 @@ export class CampaignController {
         const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
         const result = toUtmLookupResult(payload, eventName, clientUnderstandsTokenlessFound);
         // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
-        // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
+        // CONFIDENT enough to auto-apply -- an exact normalized match, alone in that, from a
         // result set proven complete.
         //
-        // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version
-        // of this comment said that, and it predates the confidence gate. A large gap is the
+        // Both are logged because the gap is diagnostic, but NOT as "noise". A large gap is the
         // normal shape for a weak, tied or capped search: candidates scored, none earned an
         // unattended apply. Reading it as noise would send someone tuning the scorer when the
         // right answer is that the operator picks (Copilot).
@@ -1576,8 +1586,8 @@ export class CampaignController {
     // service loads the dispatcher from the campaign ROW — so a caller could label a Microsoft
     // campaign `google-ads` and pass here. What actually enforces the narrowing is the row check
     // after the toggle returns; this one exists to refuse an obviously-unsupported request before
-    // spending a round trip. Treating it as the boundary is what made an earlier version of this
-    // comment claim an exclusion the code did not perform.
+    // spending a round trip. It is NOT the exclusion boundary -- that is `supportedPlatforms`
+    // just below.
     const supportedPlatforms = viaCampaignService ? CAMPAIGN_SERVICE_STATUS_PLATFORMS : SUPPORTED_STATUS_PLATFORMS;
     if (!body.platform || !supportedPlatforms.has(body.platform)) {
       next(
@@ -1826,9 +1836,8 @@ export class CampaignController {
    * spend the demand-gen half on Search.
    *
    * For a DEMAND-GEN-ONLY selection this returns a config carrying the FULL budget and
-   * `channel: "demand-gen"` — not null, which is what an earlier version of this comment said
-   * and what the code did before LFXV2-3257 ported `createDemandGenCampaign` into
-   * campaign-service. There is no Search campaign to split the budget with, so the whole amount
+   * `channel: "demand-gen"` — not null. Since LFXV2-3257 ported `createDemandGenCampaign` into
+   * campaign-service there is no Search campaign to split the budget with, so the whole amount
    * funds the one campaign being created.
    *
    * A MIXED selection is refused DOWNSTREAM, not before this point: the controller builds the
@@ -1839,10 +1848,9 @@ export class CampaignController {
    * schema.
    *
    * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
-   * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
-   * caller already refused; it did not. `platforms` was passed through unfiltered, and
-   * campaign-service reads an absent config key as a zero value, so google-ads dispatched with
-   * budget 0 and no headlines. The refusal is real now rather than assumed.
+   * platform lands here — see `hasPlatformConfig`. The refusal must happen HERE: the caller
+   * passes `platforms` through unfiltered, and campaign-service reads an absent config key as a
+   * zero value, so an unrefused google-ads would dispatch with budget 0 and no headlines.
    */
   private buildGoogleAdsConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.platforms?.includes('google-ads')) return null;
@@ -2120,8 +2128,8 @@ export class CampaignController {
    * refused there — the precise split this guard exists to avoid.
    *
    * `utmCampaign` is only forwarded when non-blank — canonicalization, not a correctness guard.
-   * An earlier version of this comment claimed a blank one would suppress the upstream default;
-   * that was wrong. `utm.Resolve` (`internal/utm/resolve.go:47-60`) trims the value and falls
+   * A blank value does NOT suppress the upstream default:
+   * `utm.Resolve` (`internal/utm/resolve.go:47-60`) trims the value and falls
    * through to the name-derived slug when the result is empty, so `''`, `'  '` and absent all
    * resolve identically. Omitted anyway so the envelope carries only fields that mean something,
    * and so a reader cannot mistake an empty string for a deliberate override.
@@ -2152,19 +2160,128 @@ export class CampaignController {
     //
     // Same runtime type check as `sourceEmailId` above, for the same reason: this route has no
     // body validator, so a non-string must take the "absent" exit rather than throw.
+    // SANITIZED here, not only in the component. The client strips resource-loading markup
+    // before staging, but this is a public API: a direct request never runs that code, so
+    // trusting it made the browser-side sanitizer the only guard on a value that reaches the
+    // recipient's mail client. Both HTML bodies go through `stripResourceLoadingHtml` and every
+    // display-text field through `sanitizeDisplayText`, at the boundary, once.
     const rawSubject = body.hubspotConfig?.subject;
-    const subject = typeof rawSubject === 'string' ? rawSubject.trim() : '';
-    const rawBody = body.hubspotConfig?.bodyHtml;
-    const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
+    const subject = sanitizeDisplayText(typeof rawSubject === 'string' ? rawSubject.trim() : '');
+    // The destinations this request VOUCHES FOR, computed before the bodies because both bodies
+    // are judged against them.
+    //
+    // An `<a href>` in a model-written body is a promise of a destination, and campaign-service
+    // states in its api-catalog that its "every href must be the brief's url" prompt is "NOT an
+    // enforced guarantee ... a caller needing certainty must check the returned body itself."
+    // These two fields ARE that certainty: the operator-confirmed button destination and hero
+    // link, already canonicalised. A body anchor pointing anywhere else keeps its text and loses
+    // its link -- the same answer this handler gives a button with no usable url.
+    const buttonUrl = canonicalHttpUrl(body.hubspotConfig?.buttonUrl);
+    const heroLinkUrl = canonicalHttpUrl(body.hubspotConfig?.heroLinkUrl);
+    // `buttonUrl`, which the client derives from `emailCtaDestination` -- the same signal its
+    // preview vouches against, so the two agree by construction rather than by coincidence.
+    //
+    // Not `heroLinkUrl`: that is sent only when a hero image exists, so folding it in would make
+    // this pass vouch for a host the preview did not.
+    //
+    // A request that sends no `buttonUrl` -- including one whose CTA label is empty, since the
+    // client withholds the pair together -- vouches for nothing, and body links are dropped. That
+    // is the conservative direction of the same rule: absent evidence is not permission.
+    const allowedBodyDestinations = [buttonUrl].filter((url) => url !== '');
 
-    // Each field is included only when set. Upstream treats both as OPTIONAL and leaves the
-    // template's own value in place when a field is absent, so sending "" would be a request to
-    // blank the draft's subject rather than to leave it alone.
+    const rawBody = body.hubspotConfig?.bodyHtml;
+    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '', allowedBodyDestinations).trim();
+
+    // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
+    // would stay dropped even after the AI generates one, and a staged draft would keep the
+    // clone source's own preview_text widget on a real send.
+    const rawPreheader = body.hubspotConfig?.preheader;
+    const preheader = sanitizeDisplayText(typeof rawPreheader === 'string' ? rawPreheader.trim() : '');
+
+    // Same allow-list gap as above, but for the CTA button: the frontend has always sent
+    // buttonText/buttonUrl when the AI generated a CTA, but neither was named here, so the
+    // button never reached campaign-service and no draft ever got a button widget.
+    const rawButtonText = body.hubspotConfig?.buttonText;
+    const buttonText = sanitizeDisplayText(typeof rawButtonText === 'string' ? rawButtonText.trim() : '');
+
+    // Same allow-list gap as above, but for the A/B test: the frontend has always sent these
+    // three fields when the operator opted in, but none was named here, so `cfg.ABTestEnabled`
+    // on the Go side was always false regardless of what the toggle showed in the UI.
+    const abTestEnabled = body.hubspotConfig?.abTestEnabled === true;
+    const rawSubjectB = body.hubspotConfig?.subjectB;
+    const subjectB = sanitizeDisplayText(typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '');
+    const rawBodyB = body.hubspotConfig?.bodyHtmlB;
+    // Variant B gets the SAME allow-list as A. B is not operator-authored in the general case:
+    // `onGenerateAbTestCopy` calls the same `/email-copy` endpoint and writes the result straight
+    // into the control, so a scraped page can steer a phishing href into B exactly as it can
+    // into A. The client preview judges B against this same list, so preview and draft agree.
+    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '', allowedBodyDestinations).trim();
+    const rawPreheaderB = body.hubspotConfig?.preheaderB;
+    const preheaderB = sanitizeDisplayText(typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '');
+
+    // Same allow-list gap as above, but for the hero image and sponsor logos: campaign-service's
+    // `hubspotConfig` (`internal/dispatch/hubspot.go`) has always accepted `heroImageUrl`,
+    // `heroLinkUrl`, and `sponsors` and rendered each as its own module, but none was named here,
+    // so the frontend baked their HTML into `bodyHtml` instead — HubSpot's rich-text sanitizer then
+    // stripped the `<table>`/`<hr>` wrapper, leaving only one sponsor logo and no hosted hero image.
+    const heroImageUrl = canonicalHttpUrl(body.hubspotConfig?.heroImageUrl);
+    const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
+      ? // The logo goes through the SAME validator as the other link fields: it becomes an
+        // `<img src>` in a sent email and is fetched server-side, so a non-empty check alone let
+        // `javascript:` and `data:` reach that sink from a direct campaign-manager request.
+        // preSliceFactor 2: bounds the work BEFORE the per-entry URL parse, so a direct
+        // request cannot make this parse an unbounded list. The client's input is already
+        // bounded, so it passes the default.
+        normalizeSponsors(body.hubspotConfig.sponsors, 2)
+      : [];
+
+    // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves
+    // the template's own value (or no button/variant) in place when a field is absent, so sending
+    // "" would be a request to blank the draft rather than to leave it alone.
     return {
       sourceEmailId,
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(subject ? { subject } : {}),
-      ...(bodyHtml ? { bodyHtml } : {}),
+      // `hasVisibleHtmlText`, not truthiness: `.trim()` removes only whitespace-category characters,
+      // so a body of zero-width spaces or a Hangul filler is non-empty as a STRING while
+      // rendering blank. The service layer already judges the same question this way; asking it
+      // differently here is what lets a body the service would reject still gate a hero block.
+      ...(hasVisibleHtmlText(bodyHtml) ? { bodyHtml } : {}),
+      // Sent as `previewText`, NOT `preheader`. campaign-service decodes this config into a
+      // struct whose tag is `previewText` (internal/dispatch/hubspot.go), so a `preheader` key
+      // is silently ignored by the Go decoder -- the generated preview text was dropped and the
+      // cloned draft kept the template's own. The local field keeps its name; only the wire
+      // key changes, which is the boundary this mapper exists to own.
+      ...(preheader ? { previewText: preheader } : {}),
+      // Hero, button and sponsors require a NON-BLANK bodyHtml, for the same reason the A/B gate
+      // below requires both halves: the client gate stops the UI sending them without a body, but
+      // a direct campaign-manager request bypasses it entirely — and this one is DATA LOSS rather
+      // than a dropped field. campaign-service's RebuildEmailContent replaces the whole widget
+      // tree, so a rebuild carrying a hero and no body drops the cloned template's body
+      // (internal/dispatch/hubspot.go; TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone).
+      // Same predicate as the body-forwarding gate above, not `.trim()` truthiness. These two
+      // gates ask the same question about the same value, so answering them differently is how
+      // one gets fixed and the other keeps the bug: a body of zero-width spaces would forward no
+      // `bodyHtml` yet still attach a hero and sponsors to it.
+      ...(hasVisibleHtmlText(bodyHtml)
+        ? {
+            ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
+            ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
+            ...(sponsors.length > 0 ? { sponsors } : {}),
+          }
+        : {}),
+      // BOTH halves, matching `abTestIsStageable` on the client. This is the boundary that
+      // actually matters: the client gate stops the UI from sending a half-filled variant, but a
+      // direct campaign-manager request bypasses it entirely, and upstream reads an empty string
+      // as "blank this field" — so `||` here could still stage a variant whose body was cleared
+      // by the very request meant to set it. Both are already trimmed above.
+      // Renamed `preheaderB` -> `previewTextB` for the same reason `preheader` becomes
+      // `previewText` above: the Go decoder reads the latter and silently drops the former.
+      // Rides INSIDE the A/B gate and is dropped when blank -- upstream preserves the parent's
+      // preview text for an absent value, so forwarding '' would BLANK B's preheader.
+      ...(abTestEnabled && subjectB !== '' && hasVisibleHtmlText(bodyHtmlB)
+        ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
+        : {}),
     };
   }
 }

@@ -7,6 +7,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 import { HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,6 +58,7 @@ describe('EngagementOrgParticipationComponent', () => {
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementOrgParticipation } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         // The component reads its initial segment off the URL, and writes it back.
@@ -141,6 +143,22 @@ describe('EngagementOrgParticipationComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('\u2014');
     expect(emitted).toEqual([null, null]);
+  });
+
+  // Missing caption counts must not hide organizations the view did return.
+  it('still renders the returned rows when only the caption counts are unmeasured', async () => {
+    await render(response({ counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
+  });
+
+  it('shows the not-available state when the view returns no rows for the scope', async () => {
+    await render(response({ rows: [], counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain(
+      'No organizations recorded for this foundation'
+    );
   });
 
   // Two foundations can hold the same number of orgs, so the row count cannot stand in for identity.

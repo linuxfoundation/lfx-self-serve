@@ -41,9 +41,7 @@ export class OrgNotFoundComponent {
    * has too. A caller without switcher access never triggers the list fetch and must not be held on
    * the skeleton for it.
    */
-  protected readonly settled: Signal<boolean> = computed(
-    () => this.emptyState.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded())
-  );
+  protected readonly settled: Signal<boolean> = computed(() => this.emptyState.pageReady());
 
   /** The caller's own held organizations — the same access-filtered rows the switcher shows. */
   protected readonly orgList: Signal<{ uid: string; name: string }[]> = computed(() =>
@@ -76,6 +74,8 @@ export class OrgNotFoundComponent {
    *   well hold organizations that never arrived — so it is the outage state, with Retry (a caller
    *   whose grants already show holdings is still classified as holding: the rows may simply not be
    *   here yet, and the picker renders whatever did arrive);
+   * - an LF contractor who holds nothing gets `contractor-no-grant` (#2961); one who holds other
+   *   organizations keeps FR-008, since the list is the way out;
    * - otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
    */
   protected readonly state: Signal<OrgLensEmptyStateName> = computed(() => {
@@ -88,6 +88,11 @@ export class OrgNotFoundComponent {
     const blocker = this.emptyState.classifyLookup(held);
     if (blocker || this.orgNavigation.upstreamFailed()) {
       return blocker ?? 'could-not-load';
+    }
+    // #2961: a contractor who holds nothing gets the reason that applies to them, not the employee
+    // no-access copy. One who holds other organizations keeps wrong-organization: its list is the way out.
+    if (this.orgRoleGrants.isContractor() && !held) {
+      return 'contractor-no-grant';
     }
     return held ? 'wrong-organization' : 'no-access';
   });

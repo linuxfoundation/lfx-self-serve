@@ -117,7 +117,17 @@
             </td>
             <td [attr.data-testid]="'formations-table-progress-' + row.formation_uid">
               <div class="flex flex-col gap-1.5">
-                <span class="text-sm text-gray-700 tabular-nums">{{ row.doneCount }} of {{ row.totalCount }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-gray-700 tabular-nums">{{ row.doneCount }} of {{ row.totalCount }}</span>
+                  @if (row.gates_cleared) {
+                    <!-- "Gates cleared" is the formation-level queue badge agreed on #1958 — every item required for Active is done. -->
+                    <lfx-tag
+                      value="Gates cleared"
+                      severity="success"
+                      [rounded]="true"
+                      [attr.data-testid]="'formations-table-gates-cleared-' + row.formation_uid" />
+                  }
+                </div>
                 <!-- One width-weighted segment per status bucket, resolved → open, on the readiness
                      strip's fills. gap-[2px] is exact by design (the 14px root makes gap-0.5 1.75px):
                      the 2px surface gap is what keeps two adjacent fills readable as two. Focusable so
@@ -147,22 +157,17 @@
               </div>
             </td>
             <td [attr.data-testid]="'formations-table-blocking-' + row.formation_uid">
-              @if (row.blockedCount > 0) {
-                <div class="flex flex-col gap-1 min-w-0">
-                  <div>
-                    <lfx-tag
-                      [value]="row.blockedLabel"
-                      severity="danger"
-                      [dot]="true"
-                      [rounded]="true"
-                      [tooltip]="row.blockedTitlesLabel"
-                      tooltipPosition="top" />
-                  </div>
-                  <span class="text-xs text-gray-500 truncate">{{ row.firstBlockedTitle }}</span>
-                </div>
+              <!-- One item only (#3066): the next open gate in checklist order, red when it is itself blocked. -->
+              @if (row.blockingTitle) {
+                <span class="text-sm" [class]="row.blockingClass" [attr.data-blocked]="row.blockingIsBlocked">
+                  @if (row.blockingIsBlocked) {
+                    <i class="fa-light fa-circle-exclamation" aria-hidden="true"></i>
+                    <span class="sr-only">Blocked:</span>
+                  }
+                  {{ row.blockingTitle }}
+                </span>
               } @else if (row.gates_cleared) {
-                <!-- "Gates cleared" is the formation-level queue badge agreed on #1958 — nothing blocks Active. -->
-                <lfx-tag value="Gates cleared" severity="success" [dot]="true" [rounded]="true" />
+                <span class="text-sm text-amber-600">Formation to set Active</span>
               } @else {
                 <span class="text-sm text-gray-400">—</span>
               }

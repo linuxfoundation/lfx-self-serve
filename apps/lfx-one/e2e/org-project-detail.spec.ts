@@ -22,6 +22,7 @@
  */
 
 import { expect, Page, test } from '@playwright/test';
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -40,7 +41,8 @@ test.describe('Org Project Detail — testid resolution', () => {
   });
 
   test('renders breadcrumb, hero and tab strip', async ({ page }) => {
-    await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible();
+    // The breadcrumb renders with the page content, after the page-level access verdict settles (#2961).
+    await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-hero')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-name')).toHaveText('Kubernetes');
     await expect(page.getByTestId('project-detail-first-commit')).toBeVisible();
@@ -448,7 +450,7 @@ test.describe('Org Project Detail — not found', () => {
 });
 
 test.describe('Org Project Detail — hero health popup', () => {
-  const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
+  const TEST_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
   // Partial v2 score with a consistent same-row shape: maintainer 30/40 + development 22/25 = 52,
   // security uncovered, so the max is 65 (40 + 25).
@@ -487,7 +489,7 @@ test.describe('Org Project Detail — hero health popup', () => {
           organizations: [
             {
               accountId: TEST_ACCOUNT_ID,
-              accountName: 'Acme Motors',
+              accountName: SYNTHETIC_ORG_NAME,
               membershipTier: '',
               uid: TEST_ACCOUNT_ID,
             },
@@ -509,7 +511,7 @@ test.describe('Org Project Detail — hero health popup', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           items: [
-            { uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: 'Acme Motors', logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true },
+            { uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: SYNTHETIC_ORG_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true },
           ],
           next_page_token: null,
           upstream_failed: false,
@@ -534,24 +536,53 @@ test.describe('Org Project Detail — hero health popup', () => {
     await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('project-detail-health-badge').hover();
-    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
     await expect(page.getByTestId('org-health-popup-row-maintainer')).toContainText('30/40');
-    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('-/35');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(page.getByTestId('org-health-popup-row-development')).toContainText('22/25');
-    await expect(page.getByTestId('org-health-popup-link')).toHaveAttribute('href', /\/project\/kubernetes/);
+    await expect(page.getByTestId('org-health-popup-link')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toBeVisible();
+    await expect(page.getByTestId('org-health-popup-partial-divider')).toBeVisible();
+    await expect(page.getByTestId('org-health-popup-partial-note')).toHaveText(
+      '*The Health score is partial because the Security & Supply Chain category is missing data for this project.'
+    );
   });
 
-  test('opens the hero health popup on keyboard focus with a matching accessible name', async ({ page }) => {
+  test('opens the hero health popup on keyboard focus with the asterisk headline and a matching badge accessible name', async ({ page }) => {
     await stubHeroContext(page, heroBlock());
     await gotoHero(page);
     await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
     await page.getByTestId('project-detail-health-badge').focus();
-    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy - Partial (52/65)');
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
     await expect(page.getByTestId('project-detail-health-badge')).toHaveAttribute(
       'aria-label',
-      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+      'Health: Healthy, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
+  });
+
+  test('opens the hero health popup for a full score without the asterisk, divider or footnote', async ({ page }) => {
+    await stubHeroContext(
+      page,
+      heroBlock({
+        health: 'excellent',
+        healthOverallScore: 88,
+        healthMaxScore: 100,
+        healthCoveredCategoryCount: 3,
+        healthMaintainer: 35,
+        healthSecurity: 30,
+        healthDevelopment: 23,
+      })
+    );
+    await gotoHero(page);
+    await expect(page.getByTestId('project-detail-health-badge')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await page.getByTestId('project-detail-health-badge').hover();
+    await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Excellent (88/100)');
+    await expect(page.getByTestId('org-health-popup-row-security')).toContainText('30/35');
+    await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-partial-divider')).toHaveCount(0);
+    await expect(page.getByTestId('org-health-popup-partial-note')).toHaveCount(0);
   });
 
   test('renders the unavailable badge and popup block when the hero has no v2 score', async ({ page }) => {

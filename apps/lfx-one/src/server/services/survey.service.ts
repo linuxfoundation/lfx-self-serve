@@ -12,7 +12,7 @@ import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-pro
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { resolveUserIdentity } from '../utils/auth-helper';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -261,9 +261,7 @@ export class SurveyService {
    * Queries survey_response records by email and username using filters_or.
    */
   public async getMySurveys(req: Request): Promise<Survey[]> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
+    const { email, username } = await resolveUserIdentity(req);
 
     logger.debug(req, 'get_my_surveys', 'Fetching surveys for current user', {
       username,
@@ -400,9 +398,7 @@ export class SurveyService {
    * treated as "not yet responded" and return null.
    */
   public async getMyResponse(req: Request, surveyUid: string, responseUid?: string): Promise<MySurveyResponse | null> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
+    const { email, username } = await resolveUserIdentity(req);
 
     if (!username && !email) return null;
 
@@ -443,9 +439,7 @@ export class SurveyService {
    * and surveys render as not-yet-responded (the safer default).
    */
   private async fetchRespondedSurveyUidsForUser(req: Request): Promise<Set<string>> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
+    const { email, username } = await resolveUserIdentity(req);
 
     if (!username && !email) {
       return new Set<string>();

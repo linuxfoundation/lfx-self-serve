@@ -10,6 +10,7 @@
   <!-- Associated Mailing Lists -->
   @if (associatedMailingLists().length > 0) {
     @let firstMl = associatedMailingLists()[0];
+    @let firstMlEmail = firstMl | mailingListEmail;
     @let extraCount = extraMailingListCount();
     <div class="relative flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-200" [attr.data-testid]="testIdPrefix() + '-mailing-list-row'">
       <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
@@ -17,12 +18,16 @@
       </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-1.5 flex-wrap">
-          <a
-            [href]="'mailto:' + (firstMl | mailingListEmail)"
-            class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
-            [title]="firstMl.group_name"
-            >{{ firstMl.group_name }}</a
-          >
+          @if (firstMlEmail) {
+            <a
+              [href]="'mailto:' + firstMlEmail"
+              class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
+              [title]="firstMl.group_name"
+              >{{ firstMl.group_name }}</a
+            >
+          } @else {
+            <span class="text-[12.5px] font-semibold text-gray-900">{{ firstMl.group_name }}</span>
+          }
           @if (firstMl.public) {
             <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
           } @else {
@@ -30,13 +35,17 @@
           }
         </div>
         <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
-          <a
-            [href]="'mailto:' + (firstMl | mailingListEmail)"
-            class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
-            [title]="firstMl | mailingListEmail"
-            >{{ firstMl | mailingListEmail }}</a
-          >
-          <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
+          @if (firstMlEmail) {
+            <a
+              [href]="'mailto:' + firstMlEmail"
+              class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
+              [title]="firstMlEmail"
+              >{{ firstMlEmail }}</a
+            >
+            <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
+          } @else {
+            <span class="shrink-0">{{ firstMl.subscriber_count }} subscribers</span>
+          }
         </div>
       </div>
       @if (extraCount > 0) {
@@ -55,18 +64,23 @@
       @if (mlExpanded() && extraCount > 0) {
         <div class="absolute top-full right-0 left-0 z-20 bg-white border border-gray-200 rounded-b-lg shadow-lg" (click)="$event.stopPropagation()">
           @for (ml of extraMailingLists(); track ml.uid) {
+            @let mlEmail = ml | mailingListEmail;
             <div class="flex items-center gap-2.5 px-3.5 py-2.5" [class.border-b]="!$last" [class.border-gray-200]="!$last">
               <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
                 <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <a
-                    [href]="'mailto:' + (ml | mailingListEmail)"
-                    class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
-                    [title]="ml.group_name"
-                    >{{ ml.group_name }}</a
-                  >
+                  @if (mlEmail) {
+                    <a
+                      [href]="'mailto:' + mlEmail"
+                      class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
+                      [title]="ml.group_name"
+                      >{{ ml.group_name }}</a
+                    >
+                  } @else {
+                    <span class="text-[12.5px] font-semibold text-gray-900">{{ ml.group_name }}</span>
+                  }
                   @if (ml.public) {
                     <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
                   } @else {
@@ -74,13 +88,17 @@
                   }
                 </div>
                 <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
-                  <a
-                    [href]="'mailto:' + (ml | mailingListEmail)"
-                    class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
-                    [title]="ml | mailingListEmail"
-                    >{{ ml | mailingListEmail }}</a
-                  >
-                  <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
+                  @if (mlEmail) {
+                    <a
+                      [href]="'mailto:' + mlEmail"
+                      class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
+                      [title]="mlEmail"
+                      >{{ mlEmail }}</a
+                    >
+                    <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
+                  } @else {
+                    <span class="shrink-0">{{ ml.subscriber_count }} subscribers</span>
+                  }
                 </div>
               </div>
             </div>

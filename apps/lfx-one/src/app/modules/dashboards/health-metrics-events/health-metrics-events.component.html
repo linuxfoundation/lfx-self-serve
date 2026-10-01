@@ -1,0 +1,60 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
+@if (noEvents()) {
+  <lfx-empty-state
+    icon="fa-light fa-calendar-days"
+    title="No events yet"
+    subtitle="Once an event is created in LFX Events, registrations, the forecast, revenue, sponsorship, speakers and countries all appear here."
+    data-testid="events-empty" />
+} @else {
+  <lfx-health-metrics-l2-shell
+    #shell
+    [sections]="sections"
+    [idPrefix]="idPrefix"
+    [dataSections]="dataSections"
+    [subNavItems]="subNavItems()"
+    navLabel="Events sections"
+    testIdPrefix="events"
+    [crossReference]="crossReference">
+    <ng-template lfxHealthMetricsL2Section="kpi">
+      <lfx-events-at-a-glance [glance]="glance()" [status]="glanceStatus()" (reading)="shell.sectionReading('kpi')" (settled)="shell.sectionSettled('kpi')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="forecast">
+      <lfx-events-registration-forecast
+        (countsChange)="forecastNote.set($event)"
+        (reading)="shell.sectionReading('forecast')"
+        (settled)="shell.sectionSettled('forecast')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="past">
+      <lfx-events-past-events
+        (countChange)="pastCount.set($event)"
+        (reading)="shell.sectionReading('past')"
+        (settled)="shell.sectionSettled('past')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="reg">
+      <lfx-events-registrations-growth
+        (reading)="shell.sectionReading('reg')"
+        (settled)="shell.sectionSettled('reg')"
+        (sectionPicked)="shell.scrollToSection($event)" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="rev">
+      <lfx-events-revenue (reading)="shell.sectionReading('rev')" (settled)="shell.sectionSettled('rev')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="spon">
+      <lfx-events-sponsorship (reading)="shell.sectionReading('spon')" (settled)="shell.sectionSettled('spon')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="spk">
+      <lfx-events-speakers (noteChange)="speakersNote.set($event)" (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="orgs">
+      <lfx-events-organizations (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="geo">
+      <lfx-events-geography (countChange)="geoCount.set($event)" (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo')" />
+    </ng-template>
+  </lfx-health-metrics-l2-shell>
+}

@@ -13,6 +13,7 @@ import {
   GERRIT_CONSOLE_ROUTE_PREFIX,
   GERRIT_CONTRACT_TYPE_CORPORATE,
   GERRIT_CONTRACT_TYPE_INDIVIDUAL,
+  ORG_CLA_ACTIVITY_LOG_EM_DASH,
   UNNAMED_CLA_GROUP,
 } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
@@ -30,6 +31,8 @@ import type {
   GerritContractType,
   MyClaAgreement,
   MyClasIdentitySummary,
+  OrgClaActivityLogDisplayRow,
+  OrgClaActivityLogEntry,
   SignIdentityRef,
 } from '../interfaces/cla.interface';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -190,6 +193,16 @@ export function formatClaSignedOnInstant(iso: string, timeZone?: string): string
     ...(timeZone ? { timeZone } : {}),
   });
   return `${dayLabel}, ${time}`;
+}
+
+/** Formats `when` in the viewer's time zone unless `timeZone` is given, so call it in the browser only — never during SSR. */
+export function toOrgClaActivityLogDisplayRow(entry: OrgClaActivityLogEntry, timeZone?: string): OrgClaActivityLogDisplayRow {
+  return {
+    entry,
+    actor: entry.actor?.trim() || ORG_CLA_ACTIVITY_LOG_EM_DASH,
+    summary: entry.summary?.trim() || ORG_CLA_ACTIVITY_LOG_EM_DASH,
+    whenLabel: entry.when ? formatClaSignedOnInstant(entry.when, timeZone) : ORG_CLA_ACTIVITY_LOG_EM_DASH,
+  };
 }
 
 /**

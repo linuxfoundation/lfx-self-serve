@@ -27,8 +27,8 @@ test.setTimeout(120_000);
 /**
  * Every expected string below is derived from the fixture through the same formatter the component
  * uses — never written out by hand. Three defects reached human review that this rule would have
- * caught on its own, including a benefit-cost expectation of `36.7×` for a fixture that renders
- * `37.7×`.
+ * caught on its own, including a benefit-cost expectation that differed by one whole multiple from
+ * what the fixture renders.
  */
 const EXPECTED_INVESTMENT = formatCurrency(TOTAL_INVESTMENT);
 const EXPECTED_RETURN = formatCurrency(MOCK_SUMMARY.totalReturn);
@@ -451,8 +451,8 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     const legend = page.getByTestId('org-roi-category-donut-legend');
     await expect(legend).toContainText(`Other (${SUB_THRESHOLD_CATEGORY_COUNT} categories)`);
 
-    // The smallest category is $1,190 against a $148M total — a slice too thin to see and a legend
-    // entry too small to read, which is what the display threshold exists to prevent.
+    // The smallest category is a sliver of the total — too thin to see as a slice and too small to
+    // read as a legend entry, which is what the display threshold exists to prevent.
     const smallest = MOCK_CATEGORY_ROWS.reduce((min, row) => (row.expenditure < min.expenditure ? row : min));
     await expect(legend).not.toContainText(smallest.label);
   });
@@ -495,7 +495,7 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
 
   test('carries the modelled-cost disclosure on the category breakdown', async ({ page }) => {
     // The surface the privacy audit was most concerned about: 19.4% of covered organizations have a
-    // single code contributor, so "Code Contribution: $101.9M" can read as one person's pay.
+    // single code contributor, so a lone "Code Contribution" amount can read as one person's pay.
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 

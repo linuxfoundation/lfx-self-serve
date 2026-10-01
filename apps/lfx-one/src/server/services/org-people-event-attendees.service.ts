@@ -1,8 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
+  ORG_EVENT_ATTENDEE_ROW_COLUMNS,
+  ORG_EVENT_DETAIL_COLUMNS,
+  ORG_EVENT_DICTIONARY_COLUMNS,
+  ORG_EVENT_FOUNDATION_OPTION_COLUMNS,
+  ORG_EVENT_OPTION_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
+  CompactOrgEventAttendeesRawCache,
   EventAttendeeEventOptionRow,
   EventAttendeeFoundationOptionRow,
   OrgEventAttendeeDetailRow,
@@ -13,11 +22,11 @@ import type {
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleEventRow,
 } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, normalizeToUrl, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
+import { withOrgCompactCache } from './valkey.service';
 
 /** Event Attendees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and expanded event-grain sub-table client-side. */
 export class OrgPeopleEventAttendeesService {
@@ -33,12 +42,15 @@ export class OrgPeopleEventAttendeesService {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
     }
 
-    const { attendeeRows, detailRows, foundationRows, eventRows } = await withOrgCache(
+    // `people-event-attendees:v2`: the stored value is now the compact projection below (GH-1906),
+    // with the event-level columns lifted out of the per-(person, event) detail rows — a `v1` entry
+    // is a different shape entirely and must miss.
+    const { attendeeRows, detailRows, foundationRows, eventRows } = await withOrgCompactCache(
       accountId,
-      'people-event-attendees',
+      'people-event-attendees:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendeesRaw(accountId),
-      isEventAttendeesRaw
+      { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
     );
 
     const attendees: OrgEventAttendeeRow[] = attendeeRows.map((row) => ({
@@ -171,7 +183,128 @@ export class OrgPeopleEventAttendeesService {
   }
 }
 
-function isEventAttendeesRaw(value: unknown): boolean {
-  const v = value as { attendeeRows?: unknown; detailRows?: unknown; foundationRows?: unknown; eventRows?: unknown } | null;
-  return !!v && Array.isArray(v.attendeeRows) && Array.isArray(v.detailRows) && Array.isArray(v.foundationRows) && Array.isArray(v.eventRows);
+/**
+ * Compacts the four raw reads for Valkey storage (GH-1906).
+ *
+ * `detailRows` is nearly all of the payload — 4.8 MB of a 5.69 MB value for the largest org — and
+ * almost none of it is per-row data: the grain is (person, event), so each of the ~25k rows repeats
+ * the same EVENT_NAME / LOCATION / CITY / COUNTRY / URL / START / END / FOUNDATION_ID /
+ * FOUNDATION_NAME as every other row for that event. Those nine columns are stored once per
+ * distinct event and referenced by index; what stays per row is `PERSON_KEY`, `IS_SPEAKER` and
+ * `IS_PAST_EVENT`.
+ */
+function encodeEventAttendeesRaw(raw: {
+  attendeeRows: OrgPeopleAllEventAttendeeRow[];
+  detailRows: OrgPeopleEventRow[];
+  foundationRows: EventAttendeeFoundationOptionRow[];
+  eventRows: EventAttendeeEventOptionRow[];
+}): CompactOrgEventAttendeesRawCache {
+  // Keyed on the whole event tuple, not on EVENT_ID: two rows sharing an id but disagreeing on any
+  // event column must not collapse onto the first one seen, or the rebuilt rows would differ from
+  // the uncached ones. Rows that agree — the overwhelming majority — still collapse.
+  // Keyed once per row and reused for both the dictionary and the index array: the key is the
+  // expensive part of the encode, and computing it twice per row bought nothing.
+  const keys = new Map<OrgPeopleEventRow, string>(
+    raw.detailRows.map((row) => [
+      row,
+      tupleKey([
+        row.EVENT_ID,
+        row.EVENT_NAME,
+        row.EVENT_LOCATION,
+        row.EVENT_CITY,
+        row.EVENT_COUNTRY,
+        row.EVENT_URL,
+        row.EVENT_START_DATE,
+        row.EVENT_END_DATE,
+        row.FOUNDATION_ID,
+        row.FOUNDATION_NAME,
+      ]),
+    ])
+  );
+  const events = dedupeByKey(raw.detailRows, (row) => keys.get(row)!);
+
+  return {
+    attendeeRows: toColumnar(raw.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS),
+    events: toColumnar(events.values, ORG_EVENT_DICTIONARY_COLUMNS),
+    details: toColumnar(raw.detailRows, ORG_EVENT_DETAIL_COLUMNS),
+    // Every detail row was part of the set `events` was built from, so the lookup always resolves.
+    detailEvents: raw.detailRows.map((row) => events.indexOf.get(keys.get(row)!)!),
+    foundationRows: toColumnar(raw.foundationRows, ORG_EVENT_FOUNDATION_OPTION_COLUMNS),
+    eventRows: toColumnar(raw.eventRows, ORG_EVENT_OPTION_COLUMNS),
+  };
+}
+
+/** Rebuilds the raw rows {@link encodeEventAttendeesRaw} stored, so the mapping below sees exactly what a cache miss would hand it. */
+function decodeEventAttendeesRaw(value: CompactOrgEventAttendeesRawCache): {
+  attendeeRows: OrgPeopleAllEventAttendeeRow[];
+  detailRows: OrgPeopleEventRow[];
+  foundationRows: EventAttendeeFoundationOptionRow[];
+  eventRows: EventAttendeeEventOptionRow[];
+} {
+  const events = fromColumnar<OrgPeopleEventRow>(value.events);
+  const detailRows = fromColumnar<OrgPeopleEventRow>(value.details);
+  detailRows.forEach((row, index) => Object.assign(row, events[value.detailEvents[index]]));
+  return {
+    attendeeRows: fromColumnar<OrgPeopleAllEventAttendeeRow>(value.attendeeRows),
+    detailRows,
+    foundationRows: fromColumnar<EventAttendeeFoundationOptionRow>(value.foundationRows),
+    eventRows: fromColumnar<EventAttendeeEventOptionRow>(value.eventRows),
+  };
+}
+
+function isCompactEventAttendeesRaw(value: unknown): boolean {
+  const cache = value as Partial<CompactOrgEventAttendeesRawCache> | null;
+  if (
+    !cache ||
+    typeof cache !== 'object' ||
+    !isColumnarTable(cache.attendeeRows) ||
+    !isColumnarTable(cache.events) ||
+    !isColumnarTable(cache.details) ||
+    !isColumnarTable(cache.foundationRows) ||
+    !isColumnarTable(cache.eventRows) ||
+    // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+    // "successfully" into rows missing data the writer always emits, which is worse than a miss —
+    // the tab renders with holes in it for the rest of the TTL instead of refetching.
+    !hasExactColumns(cache.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS) ||
+    !hasExactColumns(cache.events, ORG_EVENT_DICTIONARY_COLUMNS) ||
+    !hasExactColumns(cache.details, ORG_EVENT_DETAIL_COLUMNS) ||
+    !hasExactColumns(cache.foundationRows, ORG_EVENT_FOUNDATION_OPTION_COLUMNS) ||
+    !hasExactColumns(cache.eventRows, ORG_EVENT_OPTION_COLUMNS)
+  ) {
+    return false;
+  }
+  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
+  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
+  // into a row the mapper then reads, so it has to be a miss.
+  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
+  // through, so demanding a string would turn one null row into a permanent miss for that org.
+  // Absence and wrong types are still rejected — those the mapper cannot survive.
+  const personKeyIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PERSON_KEY');
+  const eventIdIndex = ORG_EVENT_DICTIONARY_COLUMNS.indexOf('EVENT_ID');
+  const attendeeKeyIndex = ORG_EVENT_ATTENDEE_ROW_COLUMNS.indexOf('PERSON_KEY');
+  if (
+    !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex])) ||
+    !cache.events.r.every((row) => isStoredNullableString(row[eventIdIndex])) ||
+    !cache.attendeeRows.r.every((row) => isStoredNullableString(row[attendeeKeyIndex]))
+  ) {
+    return false;
+  }
+  // Every reference must resolve, so the decode can rebuild each detail row in full rather than
+  // silently emitting one missing its whole event — a truncated entry is a miss, not a partial hit.
+  const eventCount = cache.events.r.length;
+  return (
+    Array.isArray(cache.detailEvents) &&
+    cache.detailEvents.length === cache.details.r.length &&
+    cache.detailEvents.every((index) => Number.isInteger(index) && index >= 0 && index < eventCount)
+  );
+}
+
+/** A required stored cell: present (not the absence marker) and a string. */
+function isStoredString(cell: unknown): boolean {
+  return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
+function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
 }

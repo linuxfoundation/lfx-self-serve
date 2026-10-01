@@ -63,6 +63,15 @@ app.use('/**', angularAppHandler); // SSR for everything else
 - **Error Context**: API errors need structured JSON responses; SSR errors need HTML pages
 - **Performance**: Avoids error handler overhead for static asset requests
 
+#### Async Handler Rejections
+
+Express 4 ignores the promise a handler returns, so on its own it never routes an `async` handler's rejection to `apiErrorHandler`. Two safeguards in `server/utils/async-route-errors.ts`, both installed from `server.ts`, close that gap:
+
+- **`installAsyncRouteErrorBridge()`** patches the router `Layer` so a rejected promise from any route handler, middleware, or error-handling middleware goes to `next(err)`, which is Express 5's behaviour. A throw before a controller's own `try` therefore gets an error response for that request instead of crashing the pod. A non-`Error` rejection reason is wrapped in an `Error`, so a string such as `'route'` is never read as a routing instruction.
+- **`installUnhandledRejectionLogger()`** logs any other unhandled rejection as `unhandled_rejection` instead of letting Node's default `throw` mode exit the process. It is installed only when the server runs standalone or under PM2, not when `server.ts` is imported by tests. Uncaught synchronous exceptions keep Node's default behaviour.
+
+Controllers still validate request shape and use `try`/`next(error)`. The bridge is a backstop, not a substitute: a handler that relies on it returns a 500 where it should have returned a 400. Remove the bridge when the server moves to Express 5, which forwards rejections natively. `resolveLayerPrototype` throws at startup if the Express 4 `Layer` API it patches is gone.
+
 ### 3. Logging Integration Architecture
 
 #### Dual Logger Pattern

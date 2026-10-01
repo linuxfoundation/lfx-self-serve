@@ -27,6 +27,7 @@ const getAccessAwareOrgs = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
+const resolveOrgLensEdit = vi.fn();
 
 // The read gate asks the authorizer for `b2b_org:<uid>#auditor` alongside the roster; unmocked, the
 // real service would hit the bare `proxyRequest` stub and turn every ungranted case into a 503.
@@ -46,6 +47,8 @@ vi.mock('../services/microservice-proxy.service', () => ({
     public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
+// #3136: the edit decision has its own unit spec; here only the route's wiring and mapping are asserted.
+vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit }));
 // `isImpersonating` is needed because the LFXV2-3288 logo route now runs `blockDuringImpersonation`
 // before its raw body parser (mirrors profile.route.ts's picture-upload gate). A partial mock that
 // omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
@@ -66,7 +69,7 @@ vi.mock('../services/logger.service', () => ({
 const orgsRouter = (await import('./orgs.route')).default;
 
 const GRANTED = '0014100000Te2ovAAB';
-const UNGRANTED = '0014100000Te2QjAAJ';
+const UNGRANTED = '0014100000BetaAAAA';
 
 let server: Server;
 let baseUrl: string;
@@ -101,10 +104,44 @@ describe('orgs router — Org Lens read gate', () => {
     ['events (:accountId)', `/lens/events`],
     ['memberships', `/lens/memberships/active`],
     ['contributions', `/lens/contributions/summary`],
+    ['the read-check probe (#2961)', `/lens/read-check`],
   ])('refuses %s for an org the caller holds no grant on', async (_label, path) => {
     const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}${path}`);
 
     expect(res.status).toBe(403);
+  });
+
+  // #2961: the page reads this probe as the server's verdict — 403 when refused, 204 when admitted (by
+  // the roster, or by the authorizer alone, e.g. a key contact that no roster lists). The FORBIDDEN code
+  // on the body is the gate helper's own contract, covered by its spec.
+  it('answers the read-check probe with 403 when refused and 204 when admitted', async () => {
+    expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/read-check`)).status).toBe(403);
+
+    const admitted = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/read-check`);
+    expect(admitted.status).toBe(204);
+    // A per-user verdict must never be reused from a cache after the grant changes.
+    expect(admitted.headers.get('cache-control')).toBe('no-store');
+
+    checkSingleAccessStrict.mockResolvedValue(true);
+    expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/read-check`)).status).toBe(204);
+  });
+
+  // #3136: the edit-affordance probe sits behind the same read gate and reports the edit decision as a
+  // fail-closed boolean — an unverifiable decision must not show controls.
+  it('answers the edit-check probe only past the read gate, mapping the edit decision to canEdit', async () => {
+    expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/edit-check`)).status).toBe(403);
+    expect(resolveOrgLensEdit).not.toHaveBeenCalled();
+
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'allowed' });
+    const allowed = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/edit-check`);
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toEqual({ canEdit: true });
+    expect(allowed.headers.get('cache-control')).toBe('no-store');
+
+    for (const decision of [{ kind: 'denied' }, { kind: 'unverifiable', path: '/access-check' }]) {
+      resolveOrgLensEdit.mockResolvedValue(decision);
+      expect(await (await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/edit-check`)).json()).toEqual({ canEdit: false });
+    }
   });
 
   it('admits a granted org past the gate', async () => {
@@ -145,6 +182,66 @@ describe('orgs router — Org Lens read gate', () => {
     const res = await fetch(`${baseUrl}/api/orgs/me/role-grants`);
 
     expect(res.status).not.toBe(403);
+  });
+});
+
+/**
+ * #3136 — the Org Lens Access write gate and the list's `canManage` both follow the edit decision. Driven
+ * over HTTP so the service mapping (`assertCanManage`) and the controller envelope are covered together:
+ * reconnecting the gate to the roster alone, or folding "unverifiable" into a 403/502, fails here.
+ */
+describe('orgs router — Org Lens Access follows the edit decision', () => {
+  const TARGET = encodeURIComponent('member@example.com');
+  const writes = (): unknown[][] => proxyRequest.mock.calls.filter((call) => call[3] !== 'GET');
+
+  beforeEach(() => {
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, method: unknown) =>
+      method === 'GET' ? { writers: [], auditors: [] } : undefined
+    );
+  });
+
+  it('lets an allowed caller remove a principal', async () => {
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'allowed' });
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users/${TARGET}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).canManage).toBe(true);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0][3]).toBe('DELETE');
+  });
+
+  it('refuses a denied caller with 403 FORBIDDEN before any write', async () => {
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'denied' });
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users/${TARGET}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe('FORBIDDEN');
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('answers an unverifiable decision with a retriable 503, not a 403 or a 502, before any write', async () => {
+    resolveOrgLensEdit.mockResolvedValue({ kind: 'unverifiable', path: '/access-check' });
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users/${TARGET}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error.code).toBe('ROLE_GRANTS_UNAVAILABLE');
+    expect(writes()).toHaveLength(0);
+  });
+
+  it('reports canManage only for an allowed decision', async () => {
+    for (const [decision, expected] of [
+      [{ kind: 'allowed' }, true],
+      [{ kind: 'denied' }, false],
+      [{ kind: 'unverifiable', path: '/access-check' }, false],
+    ] as const) {
+      resolveOrgLensEdit.mockResolvedValue(decision);
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/access/users`);
+      expect(res.status).toBe(200);
+      expect((await res.json()).canManage).toBe(expected);
+    }
   });
 });
 

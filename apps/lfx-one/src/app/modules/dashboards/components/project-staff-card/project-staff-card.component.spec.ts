@@ -3,7 +3,7 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ProjectSettings, StaffEditDialogData, UserInfo } from '@lfx-one/shared/interfaces';
+import { ProjectSettings, ProjectSettingsAccess, StaffEditDialogData, UserInfo } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -16,6 +16,7 @@ import { StaffEditDialogComponent } from './staff-edit-dialog/staff-edit-dialog.
 describe('ProjectStaffCardComponent', () => {
   let fixture: ComponentFixture<ProjectStaffCardComponent>;
   let canWrite: WritableSignal<boolean>;
+  let projectSettingsAccess: WritableSignal<ProjectSettingsAccess | null>;
   /**
    * The context's resolved project. The card's gate requires its uid to match the card's own
    * `projectUid`, so the default agrees with the rendered project and only the transition test
@@ -46,6 +47,7 @@ describe('ProjectStaffCardComponent', () => {
 
   beforeEach(() => {
     canWrite = signal(false);
+    projectSettingsAccess = signal<ProjectSettingsAccess | null>({ uid: 'project-1', canRead: true });
     activeProject = signal<{ uid: string } | null>({ uid: 'project-1' });
     getProjectSettings = vi.fn(() => of(buildSettings()));
     onClose = new Subject<unknown>();
@@ -61,7 +63,7 @@ describe('ProjectStaffCardComponent', () => {
       imports: [ProjectStaffCardComponent],
       providers: [
         { provide: PermissionsService, useValue: { getProjectSettings } },
-        { provide: ProjectContextService, useValue: { canWrite, activeProject } },
+        { provide: ProjectContextService, useValue: { canWrite, activeProject, projectSettingsAccess } },
         { provide: DialogService, useValue: { open } },
       ],
     }).compileComponents();
@@ -265,6 +267,15 @@ describe('ProjectStaffCardComponent', () => {
     await settle();
 
     expect(getProjectSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read settings for a caller who is neither writer nor auditor (GH-2794)', async () => {
+    projectSettingsAccess.set({ uid: 'project-1', canRead: false });
+    await render();
+
+    expect(getProjectSettings).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="project-staff-sidebar"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="project-staff-card-error"]')).toBeNull();
   });
 
   it('shows the error state and no rows when the settings read fails', async () => {

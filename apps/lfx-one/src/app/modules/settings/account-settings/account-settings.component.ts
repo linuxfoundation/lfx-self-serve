@@ -12,14 +12,17 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, MEETING_INVITE_PRIMARY_SENTINEL, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
+import { ACCOUNT_SETTINGS_SECTIONS, INSIGHTS_PUBLIC_API_FLAG, MEETING_INVITE_PRIMARY_SENTINEL, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
 import { emailsEqual } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
+
+import { InsightsTokensComponent } from '../components/insights-tokens/insights-tokens.component';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { clearPendingProfileSave } from '@shared/utils/pending-profile-save.util';
 import { extractErrorMessage, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { ChangePasswordRequest, EmailManagementData, EmailSettingsState, MeetingInviteEmail, PasswordStrength, UserEmail } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -45,6 +48,7 @@ import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observabl
     ToastModule,
     TooltipModule,
     DynamicDialogModule,
+    InsightsTokensComponent,
   ],
   providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',
@@ -61,9 +65,17 @@ export class AccountSettingsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly injector = inject(Injector);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Hosted inside the Profile shell (route data `embedded`), which owns the page header.
   public readonly embedded = this.route.snapshot.data['embedded'] === true;
+  // Latched in afterNextRender (a no-op on the server): the non-production localStorage override in
+  // FeatureFlagService reads synchronously, so without it a pre-seeded `true` would render the group on
+  // the first client pass and mismatch the SSR DOM (same fix as health-metrics-gate.component.ts).
+  private readonly hydrated = signal(false);
+  private readonly rawInsightsPublicApiEnabled = this.featureFlagService.getBooleanFlag(INSIGHTS_PUBLIC_API_FLAG, false);
+  /** IN-1233 — gates the LFX Insights API tokens group and its Developer Settings copy. */
+  public readonly insightsPublicApiEnabled = computed(() => this.hydrated() && this.rawInsightsPublicApiEnabled());
 
   // ── Refresh mechanisms ──
   private emailRefresh = new BehaviorSubject<void>(undefined);
@@ -211,6 +223,7 @@ export class AccountSettingsComponent {
   });
 
   public constructor() {
+    afterNextRender(() => this.hydrated.set(true));
     this.passwordForm
       .get('newPassword')
       ?.valueChanges.pipe(takeUntilDestroyed())

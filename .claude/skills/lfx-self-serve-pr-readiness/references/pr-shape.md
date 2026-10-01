@@ -3,7 +3,7 @@
 This file is the single source of truth for PR-shape sanity checks. It is consumed by:
 
 - **`/lfx-self-serve-pr-readiness`** (pre-PR) — runs every item in §§1–7 below; skips §§8–9 (PR-only).
-- **`/lfx-review-pr`** (post-PR) — runs every item, including §§8–9.
+- §§8–9 (PR-only) have no local runner since `/lfx-review-pr` was retired (2026-09-29): §8 is enforced by `.github/workflows/pr-title-lint.yml`; §9 (`pr-shape/external-refs`) currently runs nowhere — giving it a live owner (CI or the Post-PR review checklist) is a recorded follow-up for the repo owners.
 
 Each item lists its `rule:` ID (used in finding JSON), severity, the check, the failure message, and the suggested fix.
 
@@ -40,7 +40,7 @@ Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/(issue-[0-9]+|
 **Check:** the base branch is an ancestor of the head branch.
 
 - Pre-PR: `git merge-base --is-ancestor <base> HEAD` (typically `<base>` = `origin/main`).
-- Post-PR: `git merge-base --is-ancestor origin/<baseRefName> refs/pr/<N>/head` — the head ref is fetched via `git fetch origin "+pull/<N>/head:refs/pr/<N>/head"` so the check works uniformly for PRs from forks. (`origin/<headRefName>` is fork-broken; the caller `/lfx-review-pr` already mediates this — see `.claude/skills/lfx-review-pr/SKILL.md` Phase 1.)
+- Post-PR: `git merge-base --is-ancestor origin/<baseRefName> refs/pr/<N>/head` — the head ref is fetched via `git fetch origin "+pull/<N>/head:refs/pr/<N>/head"` so the check works uniformly for PRs from forks. (`origin/<headRefName>` is fork-broken; any post-PR runner must fetch the PR head ref as shown.)
 
 Non-zero exit → fail.
 
@@ -87,6 +87,8 @@ Note: `U` is acceptable (good signature with an untrusted key); GitHub's "Verifi
 ---
 
 ## PR-only checks (skipped pre-PR)
+
+Status (2026-09-29): with `/lfx-review-pr` retired, §8 is covered by `.github/workflows/pr-title-lint.yml` and §9 has no runner; see the consumer list above.
 
 ## 8. `pr-shape/pr-title` — SHOULD_FIX
 

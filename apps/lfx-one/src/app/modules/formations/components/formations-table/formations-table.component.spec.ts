@@ -29,6 +29,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     announcement_date: null,
     progress: { not_started: 1, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: [],
+    next_gate_item: null,
     assignees: [],
     ...overrides,
   };
@@ -240,21 +241,49 @@ describe('FormationsTableComponent', () => {
       expect(unset.querySelectorAll('span')).toHaveLength(1);
     });
 
-    it('summarises blockers as a count chip with every title in its tooltip and the first title beneath', async () => {
-      await render([buildRow({ formation_uid: 'formation:blocked', blocked_item_titles: ['Charter agreed', 'Contribution agreement'] })]);
+    it('names only the next open gate, in amber, even when other items are blocked (#3066)', async () => {
+      await render([
+        buildRow({
+          formation_uid: 'formation:gate',
+          blocked_item_titles: ['Membership tiers'],
+          next_gate_item: { item_key: 'charter_agreed', title: 'Charter agreed', status: 'in_progress' },
+        }),
+      ]);
 
-      const blocking = cell('formations-table-blocking-formation:blocked');
-      expect(blocking.textContent).toContain('2 blocked');
-      expect(blocking.textContent).toContain('Charter agreed');
-      expect(blocking.textContent).not.toContain('Contribution agreement');
-      expect(blocking.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain('Contribution agreement');
+      const blocking = cell('formations-table-blocking-formation:gate');
+      expect(blocking.textContent?.trim()).toBe('Charter agreed');
+      expect(blocking.querySelector('[data-blocked="false"]')?.classList).toContain('text-amber-600');
     });
 
-    it('moves the "Gates cleared" badge into the Blocking cell when nothing blocks, and shows a dash otherwise', async () => {
-      await render([buildRow({ formation_uid: 'formation:cleared', gates_cleared: true }), buildRow({ formation_uid: 'formation:plain' })]);
+    it('styles the next gate as danger when that item is itself blocked', async () => {
+      await render([
+        buildRow({ formation_uid: 'formation:blocked-gate', next_gate_item: { item_key: 'charter_agreed', title: 'Charter agreed', status: 'blocked' } }),
+      ]);
 
-      expect(text('formations-table-blocking-formation:cleared')).toBe('Gates cleared');
-      expect(text('formations-table-progress-formation:cleared')).not.toContain('Gates cleared');
+      const marker = cell('formations-table-blocking-formation:blocked-gate').querySelector('[data-blocked="true"]');
+      expect(marker?.classList).toContain('text-red-600');
+      expect(marker?.textContent).toContain('Blocked:');
+      expect(marker?.textContent).toContain('Charter agreed');
+    });
+
+    it('falls back to the first blocked title when no gate is outstanding and gates are not cleared', async () => {
+      await render([buildRow({ formation_uid: 'formation:fallback', blocked_item_titles: ['Membership tiers', 'Comms'] })]);
+
+      const blocking = cell('formations-table-blocking-formation:fallback');
+      expect(blocking.textContent).toContain('Membership tiers');
+      expect(blocking.textContent).not.toContain('Comms');
+      expect(blocking.querySelector('[data-blocked="true"]')?.classList).toContain('text-red-600');
+    });
+
+    it('reads "Formation to set Active" once gates are cleared, with the badge beside the progress count, and a dash otherwise', async () => {
+      await render([
+        buildRow({ formation_uid: 'formation:cleared', gates_cleared: true, blocked_item_titles: ['Comms'] }),
+        buildRow({ formation_uid: 'formation:plain' }),
+      ]);
+
+      expect(text('formations-table-blocking-formation:cleared')).toBe('Formation to set Active');
+      expect(text('formations-table-progress-formation:cleared')).toContain('Gates cleared');
+      expect(text('formations-table-progress-formation:plain')).not.toContain('Gates cleared');
       expect(text('formations-table-blocking-formation:plain')).toBe('—');
     });
 
