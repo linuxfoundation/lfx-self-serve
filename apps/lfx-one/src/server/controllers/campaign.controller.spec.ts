@@ -1339,9 +1339,11 @@ describe('CampaignController.createCampaign cutover', () => {
       heroImageAlt: 'KubeCon EU 2026 banner',
     });
 
-    // Nested under the image on purpose: `content.go:125` passes the alt only through
-    // `addHeroSection`, so an alt with no image is a field upstream never reads. Dropping it here
-    // keeps the envelope honest rather than sending a value that cannot take effect.
+    // Nested under the image on purpose: campaign-service's `addHeroSection` is the only place
+    // the alt is consumed, so an alt with no image is a field upstream never reads. Dropping it
+    // here keeps the envelope honest rather than sending a value that cannot take effect.
+    // NOTE: `heroImageAlt` is not on lfx-v2-campaign-service `main` yet, so an upstream built from
+    // `main` does not read it.
     createCampaigns.mockClear();
     await controller.createCampaign(
       buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageAlt: 'orphan alt' } }, { project: 'tlf', brief_id: 'b-1' }),

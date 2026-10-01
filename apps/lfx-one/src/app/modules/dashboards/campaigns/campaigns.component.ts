@@ -1155,8 +1155,9 @@ export class CampaignsComponent {
    * Whether the brief carries a registration URL the CTA and hero link can actually point at.
    *
    * One computed rather than the expression repeated at each site: the staging guard, the staging
-   * hint and the three CTA preview blocks all have to agree about this, and the three previews
-   * having drifted apart is what LFX-Campaigns-Email-QA-Report B2 reported in the first place.
+   * hint and the three CTA preview blocks all have to agree about this, so a change to the rule
+   * lands in one place. The rule itself exists because of LFX-Campaigns-Email-QA-Report B2 (a
+   * draft staged with no registration URL shipped a CTA with no real destination).
    * The payload build deliberately does NOT use this — it reads the pre-`await` brief snapshot,
    * not the live signal.
    */
@@ -1238,13 +1239,18 @@ export class CampaignsComponent {
   /**
    * Whether a send can be staged right now.
    *
-   * Each of these is REQUIRED by the upstream contract, not by preference: the brief because
-   * creation posts to `/projects/{slug}/briefs/{id}/campaigns` and there is no
-   * create-without-a-brief route; the template because `hubspot.go:281-283` refuses a blank
-   * `sourceEmailId`; the slug because briefs are project-scoped and authorised per project; the
-   * registration URL because it is the only destination the CTA and hero link have; and the
-   * audience because `resolveBuiltAudience` refuses to stage without a BUILT one. The last two
-   * carry their own comments below, where the reason is specific enough to need one.
+   * The brief, template, slug and audience are REQUIRED by the upstream contract, not by
+   * preference: the brief because creation posts to `/projects/{slug}/briefs/{id}/campaigns` and
+   * there is no create-without-a-brief route; the template because the HubSpot dispatcher refuses
+   * a campaign with no `sourceEmailId` (the template email to clone); the slug because briefs are
+   * project-scoped and authorised per project; and the audience because `resolveBuiltAudience`
+   * refuses to stage without a BUILT one.
+   *
+   * The registration URL is a PRODUCT guard, not an upstream requirement: upstream treats
+   * `ButtonURL` as optional (empty skips the button section). It blocks staging because a draft
+   * with no URL ships a CTA and hero link with nowhere to go (LFX-Campaigns-Email-QA-Report B2).
+   * The audience and URL terms carry their own comments below, where the reason is specific
+   * enough to need one.
    */
   protected readonly canStageEmail = computed(
     () =>
@@ -2488,11 +2494,11 @@ export class CampaignsComponent {
     // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
     // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
     // from HubSpot after the draft work had begun rather than from this early return.
-    // The registration URL is re-checked off `brief` -- the SNAPSHOT, not the signal. A refine or
-    // re-scrape between the click and here can replace the brief with one whose URL is blank, and
-    // the payload gates below would then quietly drop `buttonText`/`buttonUrl`/`heroLinkUrl` and
-    // stage a draft with no CTA at all. Blocking here is what makes the rule the guard states --
-    // a blank URL blocks staging, not just the CTA -- true of the value actually being sent.
+    // The registration URL is re-checked off `brief` -- the SNAPSHOT the payload below is built
+    // from, not the live signal. The disabled button is the only caller today, but the rule should
+    // not depend on that: a call that skips it would otherwise stage a draft whose payload gates
+    // quietly drop `buttonText`/`buttonUrl`/`heroLinkUrl`. Blocking here is what makes the rule the
+    // guard states -- a blank URL blocks staging, not just the CTA -- true of the value actually sent.
     if (
       brief === null ||
       sourceEmailId === '' ||

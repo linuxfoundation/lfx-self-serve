@@ -328,6 +328,9 @@ describe('PlanningTabComponent brief read-back', () => {
       briefForm: { patchValue(v: Record<string, string>): void; controls: Record<string, { value: string }> };
     };
 
+    // `loadBrief` defaults to a bare `vi.fn()` that returns undefined, and typing a url triggers a
+    // lookup whose `.pipe` would throw on it -- an unhandled error this test is not about.
+    campaignService.loadBrief.mockReturnValue(EMPTY);
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
     component.briefForm.patchValue({ targetAudience: 'platform engineers', valueProp: 'hands-on kubernetes tracks' });
 
@@ -340,7 +343,7 @@ describe('PlanningTabComponent brief read-back', () => {
     expect(component.briefForm.controls['targetAudience'].value).toBe('');
     expect(component.briefForm.controls['valueProp'].value).toBe('');
 
-    // The url is deliberately NOT cleared: `onUrlChange` only issues a lookup when the slug
+    // The url is deliberately NOT cleared: `onUrlInput` only issues a lookup when the slug
     // CHANGES, so blanking it here would strand the restore offer with no keystroke able to
     // bring it back. Asserted so a future "clear everything" does not quietly undo that.
     expect(component.briefForm.controls['url'].value).toBe('https://events.example.com/kubecon-eu-2026');

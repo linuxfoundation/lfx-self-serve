@@ -3086,7 +3086,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(true);
     });
 
-    it('refuses to stage on a blank registration url, and says why', () => {
+    it('refuses to stage on a blank registration url, and says why', async () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
       internals().selectedEmailTemplateId.set('hs-123');
@@ -3099,7 +3099,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set({
         eventDetails: { ...emailBrief.eventDetails, registrationUrl: '   ' },
       } as unknown as CampaignBriefOutput);
-      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(internals().canStageEmail()).toBe(false);
 
@@ -3110,8 +3110,32 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint?.textContent?.trim()).toContain('registration URL');
 
       internals().emailBriefOutput.set(emailBrief);
-      fixture.detectChanges();
+      await fixture.whenStable();
       expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('refuses to stage on a blank registration url even when the button is bypassed', async () => {
+      selectEmail();
+      // Whitespace, as in the gate test above. Every other precondition is satisfied, so the
+      // blank url is the only thing the early return can be reacting to.
+      internals().emailBriefOutput.set({
+        eventDetails: { ...emailBrief.eventDetails, registrationUrl: '   ' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // A cached brief id, so `ensureEmailBriefId` cannot be what stops this (see the audience
+      // test below for how a missing one passes on the hang instead of on the guard).
+      internals().emailBriefId.set('brief-77');
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+
+      // Called directly, not through the disabled button: the button's `[disabled]` binding is the
+      // only other thing enforcing the rule, and the early return is what holds it for a call that
+      // skips the button.
+      await internals().onStageEmailSend();
+
+      expect(create).not.toHaveBeenCalled();
+      // Returned before `emailStaging.set('staging')`, so nothing is left spinning.
+      expect(internals().emailStaging()).toBe('idle');
     });
 
     it('derives hero alt text from the event name, falling back to "Event"', () => {

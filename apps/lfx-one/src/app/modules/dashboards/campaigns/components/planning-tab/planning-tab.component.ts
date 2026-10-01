@@ -799,9 +799,9 @@ export class PlanningTabComponent implements OnInit {
     // named -- `totalBudget` and `driveFolderUrl` are also free-text and also survive reset(), but
     // whether they SHOULD carry across briefs is a separate question from this bug, and
     // `campaignGoal` has a non-blank default that a blind clear would break.
-    // Cleared here, not just on the New Brief button itself,
-    // so every reset() caller (New Brief, foundation switch, stage/delivery-type switch) gets a
-    // blank slate for fields that describe the brief just discarded, not the one being started.
+    // Cleared here, not just on the New Brief button itself, so every reset() caller (Cancel,
+    // New Brief, foundation switch, stage/delivery-type switch) gets a blank slate for fields
+    // that describe the brief just discarded, not the one being started.
     this.briefForm.patchValue({ targetAudience: '', valueProp: '' });
     // The restore offer is deliberately NOT cleared here, unlike everything above it.
     //
