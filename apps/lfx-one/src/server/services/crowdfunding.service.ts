@@ -61,9 +61,9 @@ function throwCfNetworkError(operation: string, error: unknown): never {
 }
 
 async function cfFetch<T>(req: Request, operation: string, path: string, options: { method?: string; body?: unknown; noBody?: boolean } = {}): Promise<T> {
-  const token = req.crowdfundingToken;
+  const token = req.bearerToken;
   if (!token) {
-    throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
+    throw new MicroserviceError(`No bearer token available for ${operation}`, 401, 'UNAUTHENTICATED', { operation, service: 'crowdfunding' });
   }
 
   const baseUrl = cfBaseUrl();
@@ -127,9 +127,9 @@ async function cfFetchAllPages<T>(req: Request, operation: string, basePath: str
 // All other errors (401, 403, 5xx, network) are rethrown so the error handler
 // can return an appropriate status rather than silently reporting "not found".
 async function cfFetchNullable<T>(req: Request, operation: string, path: string): Promise<T | null> {
-  const token = req.crowdfundingToken;
+  const token = req.bearerToken;
   if (!token) {
-    throw new MicroserviceError(`No crowdfunding token available for ${operation}`, 401, 'CF_UNAUTHENTICATED', { operation, service: 'crowdfunding' });
+    throw new MicroserviceError(`No bearer token available for ${operation}`, 401, 'UNAUTHENTICATED', { operation, service: 'crowdfunding' });
   }
 
   const baseUrl = cfBaseUrl();
