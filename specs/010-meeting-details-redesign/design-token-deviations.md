@@ -87,20 +87,22 @@ accent on its own 9% tint is only 4.27:1.
 Status hues are used as chip text on their own tinted background, so contrast is measured
 there — the stricter of the two surfaces — with the value on `--md-surface-card` alongside.
 
-| Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                | Adopt upstream?                       |
-| --------------------- | ---------------------- | ------- | ------- | ----------------------- | --------------------------------------------------------- | ------------------------------------- |
-| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                      | Yes — converge on `emerald.700`       |
-| `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
-| `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange; V2 reads as ochre         | **No** — hue; keep V2, raise upstream |
-| `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
-| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange | Yes — converge on `red.700`           |
-| `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
+| Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                | Adopt upstream?                                    |
+| --------------------- | ---------------------- | ------- | ------- | ----------------------- | --------------------------------------------------------- | -------------------------------------------------- |
+| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                      | Yes — converge on `emerald.700`                    |
+| `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
+| `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange, and 4.26:1 on its tint    | **No** — hue and contrast; keep V2, raise upstream |
+| `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
+| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange | Yes — converge on `red.700`                        |
+| `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
 
 All three hues are darkened from the prototype, which measured roughly 3.6:1 on-chip across
 good, warn and live — every status chip would have failed AA. The divergence from `lfxColors`
-that survives is **`--md-status-warn`, and the reason is hue, not contrast**: `amber.700`
-measures 5.03:1 on white and passes comfortably, it simply reads as orange where the design
-wants ochre.
+that survives is **`--md-status-warn`, for hue and contrast**. `amber.700` reads as orange where
+the design wants ochre, and while it measures 5.03:1 on white, it is only 4.26:1 on its own 12%
+tint, which is the surface these chips use and is below AA. Any future convergence must re-measure
+there: `amber.800` (`#973C00`, 5.88:1 on its tint) is the nearest step that passes, and it is
+darker and more orange still.
 
 `--md-status-good` converges on `emerald.700`, not the hue-nearer `emerald.600`: `emerald.600`
 (`#009966`) measures only 3.65:1 on white and would reintroduce the chip-text failure the
@@ -179,7 +181,7 @@ the shift reads correctly across every state, rather than doing it token by toke
 design is still moving. `--md-status-good` and `--md-status-live` converge the same way. What
 is left after that is a short, defensible list: `--md-accent`, which is the deliberate brand
 divergence the redesign exists to prove out, and `--md-status-warn`, where `amber.700` reads
-as orange rather than the ochre the design calls for. Both belong upstream in
+as orange rather than the ochre the design calls for and also fails AA on its own tint. Both belong upstream in
 `@linuxfoundation/lfx-ui-core` as a proposal, not in a per-page override — so the end state is
 that this file shrinks to radii and elevation, and its colour tokens become thin aliases of
 `lfxColors`. Because every consumer already resolves `var(--md-*)`, each of those steps is an

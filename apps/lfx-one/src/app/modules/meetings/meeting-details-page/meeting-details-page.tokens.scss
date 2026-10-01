@@ -92,7 +92,7 @@
   --md-status-good-bg: rgb(21 115 71 / 10%); // derived from --md-status-good
 
   // ── Status: warn (awaiting RSVP, pending, low attendance) ─────────────────
-  --md-status-warn: #945e10; // DIVERGENCE: lfxColors.amber.700 (#BB4D00) is far more orange; ochre. 4.62:1 on chip, 5.43:1 on card
+  --md-status-warn: #945e10; // DIVERGENCE: lfxColors.amber.700 (#BB4D00) is far more orange and only 4.26:1 on its 12% tint; ochre. 4.62:1 on chip, 5.43:1 on card
   --md-status-warn-bg: rgb(148 94 16 / 12%); // derived from --md-status-warn
 
   // ── Status: live (in progress, declined, destructive) ─────────────────────
