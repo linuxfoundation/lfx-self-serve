@@ -16,6 +16,7 @@ import {
   EMPTY_VISA_REQUESTS_RESPONSE,
   VISA_LETTER_DOWNLOADABLE_STATUS,
   VISA_LETTER_MANUAL_ERROR_CODE,
+  VISA_LETTER_NOT_ISSUED_ERROR_CODE,
 } from '@lfx-one/shared/constants';
 import { PageChangeEvent, RequestType, VisaRequestsResponse } from '@lfx-one/shared/interfaces';
 import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
@@ -132,12 +133,13 @@ export class EventRequestListComponent {
         },
         error: (error: unknown) => {
           void readBlobErrorCode(error).then((code) => {
-            const isManual = code === VISA_LETTER_MANUAL_ERROR_CODE;
-            this.messageService.add({
-              severity: isManual ? 'info' : 'error',
-              summary: isManual ? 'Visa letter' : 'Error',
-              detail: isManual ? 'The events team will email you this visa letter.' : 'Failed to download visa letter. Please try again.',
-            });
+            if (code === VISA_LETTER_MANUAL_ERROR_CODE) {
+              this.messageService.add({ severity: 'info', summary: 'Visa letter', detail: 'The events team will email you this visa letter.' });
+            } else if (code === VISA_LETTER_NOT_ISSUED_ERROR_CODE) {
+              this.messageService.add({ severity: 'info', summary: 'Visa letter', detail: 'Your visa letter is not ready yet.' });
+            } else {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to download visa letter. Please try again.' });
+            }
           });
         },
       });

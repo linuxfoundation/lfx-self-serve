@@ -6,13 +6,15 @@ import fs from 'fs';
 import { join } from 'node:path';
 import { Request } from 'express';
 
-import { VISA_LETTER_MANUAL_ERROR_CODE } from '@lfx-one/shared/constants';
+import { VISA_LETTER_MANUAL_ERROR_CODE, VISA_LETTER_NOT_ISSUED_ERROR_CODE } from '@lfx-one/shared/constants';
 import {
   VISA_LETTER_COUNTRY_ENTITIES,
   VISA_LETTER_DEFAULT_ENTITY,
   VISA_LETTER_FIXED_PAYERS,
   VISA_LETTER_ISSUED_STATUS,
   VISA_LETTER_LF_EUROPE_COUNTRIES,
+  VISA_LETTER_MEMBERS_LINK,
+  VISA_LETTER_SIGNATORY,
 } from '@lfx-one/shared/constants/pdf.constants';
 import { VisaLetterEntity, VisaLetterRequest, VisaLetterRequestsResponse, VisaLetterResult } from '@lfx-one/shared/interfaces';
 import { buildVisaLetterFileName } from '@lfx-one/shared/utils';
@@ -27,7 +29,6 @@ import { UserService } from './user.service';
 const TEMPLATE_DIR = resolvePdfTemplateDir();
 const OPERATION = 'generate_visa_letter';
 const SERVICE = 'visa_letter_service';
-const MEMBERS_LINK = 'https://www.linuxfoundation.org/about/members';
 
 export class VisaLetterService {
   private userService: UserService;
@@ -44,7 +45,11 @@ export class VisaLetterService {
     const letter = await this.getLetterRequest(req, eventId);
 
     if (letter.hsTicketStatus !== VISA_LETTER_ISSUED_STATUS) {
-      throw new AuthorizationError('Visa letter has not been issued yet', { operation: OPERATION, service: SERVICE });
+      throw new AuthorizationError('Visa letter has not been issued yet', {
+        operation: OPERATION,
+        service: SERVICE,
+        code: VISA_LETTER_NOT_ISSUED_ERROR_CODE,
+      });
     }
 
     if (letter.isManualVisaLetter) {
@@ -173,8 +178,12 @@ export class VisaLetterService {
       );
       doc.moveDown();
 
+      // PDFKit skips empty text without advancing, so moveUp would overlap the next row.
       const field = (label: string, value: string): void => {
-        doc.text(label, PAGE_START).moveUp().text(value, TAB_INDENT);
+        doc
+          .text(label, PAGE_START)
+          .moveUp()
+          .text(value || ' ', TAB_INDENT);
       };
 
       field('Event Name:', event.name ?? '');
@@ -204,7 +213,9 @@ export class VisaLetterService {
         .fillColor('blue');
 
       if (entity.showMembersLink) {
-        doc.text(` ${MEMBERS_LINK}`, { continued: true, underline: true, link: MEMBERS_LINK }).text('.', { link: null, underline: false });
+        doc
+          .text(` ${VISA_LETTER_MEMBERS_LINK}`, { continued: true, underline: true, link: VISA_LETTER_MEMBERS_LINK })
+          .text('.', { link: null, underline: false });
       } else {
         doc.text(' ', { link: null });
       }
@@ -220,7 +231,8 @@ export class VisaLetterService {
       doc.text('Yours truly,');
       doc.image(join(TEMPLATE_DIR, 'images', 'image1.png'), PAGE_START, undefined, { width: 110 });
       const signatureOrg = entity.signatureOrgFromEvent && event.name ? event.name : entity.signatureOrg;
-      doc.text(`James R. Zemlin\nExecutive Director\n${signatureOrg}\n+1.415.723.9709`);
+      const { name, title, phone } = VISA_LETTER_SIGNATORY;
+      doc.text(`${name}\n${title}\n${signatureOrg}\n${phone}`);
 
       doc.end();
     });

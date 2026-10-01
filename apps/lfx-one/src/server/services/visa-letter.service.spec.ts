@@ -89,7 +89,7 @@ vi.mock('fs', () => {
 
 import type { Request } from 'express';
 
-import { VISA_LETTER_MANUAL_ERROR_CODE } from '@lfx-one/shared/constants';
+import { VISA_LETTER_MANUAL_ERROR_CODE, VISA_LETTER_NOT_ISSUED_ERROR_CODE } from '@lfx-one/shared/constants';
 
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { VisaLetterService } from './visa-letter.service';
@@ -185,10 +185,12 @@ describe('VisaLetterService', () => {
     await expect(service.generateVisaLetter(req, EVENT_ID)).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 
-  it('refuses a letter that has not been issued', async () => {
+  it('refuses a letter that has not been issued with the not-issued error code', async () => {
     mockLetters(letter({ hsTicketStatus: 'approved' }));
 
-    await expect(service.generateVisaLetter(req, EVENT_ID)).rejects.toBeInstanceOf(AuthorizationError);
+    const result = service.generateVisaLetter(req, EVENT_ID);
+    await expect(result).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(result).rejects.toMatchObject({ code: VISA_LETTER_NOT_ISSUED_ERROR_CODE, statusCode: 403 });
   });
 
   it('refuses a manual letter with the manual error code', async () => {
@@ -220,6 +222,16 @@ describe('VisaLetterService', () => {
   });
 
   describe('letter content', () => {
+    it('keeps the row for a field with no value so the next label does not overlap it', async () => {
+      const blank = letter();
+      (blank['attendee'] as Record<string, unknown>)['jobTitle'] = '';
+      mockLetters(blank);
+
+      await service.generateVisaLetter(req, EVENT_ID);
+
+      expect(mocks.texts[mocks.texts.indexOf('Title:') + 1]).toBe(' ');
+    });
+
     it('uses the default entity and US dates outside Europe, India and China', async () => {
       mockLetters(letter());
 

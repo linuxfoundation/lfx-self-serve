@@ -59,6 +59,12 @@ export const PROJECT_TEMPLATES: Record<string, PDFTemplateDetails> = {
   },
 };
 
+/** Members page linked from the default and European visa letter body */
+export const VISA_LETTER_MEMBERS_LINK = 'https://www.linuxfoundation.org/about/members';
+
+/** Visa letter signatory; the organisation line comes from the letter entity */
+export const VISA_LETTER_SIGNATORY = { name: 'James R. Zemlin', title: 'Executive Director', phone: '+1.415.723.9709' };
+
 /** Only letters in this upstream state can be generated; the server re-checks it on every download */
 export const VISA_LETTER_ISSUED_STATUS: VisaLetterTicketStatus = 'letter_issued';
 

@@ -79,6 +79,9 @@ export const VISA_LETTER_DOWNLOADABLE_STATUS = 'Approved';
 /** Error code the visa letter download returns when the events team issues the letter by email */
 export const VISA_LETTER_MANUAL_ERROR_CODE = 'VISA_LETTER_MANUAL';
 
+/** Error code the visa letter download returns when upstream has not issued the letter yet */
+export const VISA_LETTER_NOT_ISSUED_ERROR_CODE = 'VISA_LETTER_NOT_ISSUED';
+
 /**
  * Status filter options for Foundation Lens events.
  * Values are raw EVENT_STATUS DB values except 'coming-soon', which is a sentinel

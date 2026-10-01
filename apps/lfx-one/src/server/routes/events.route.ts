@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { EventsController } from '../controllers/events.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 const eventsController = new EventsController();
@@ -18,5 +19,6 @@ router.post('/visa-applications', (req, res, next) => eventsController.submitVis
 router.post('/travel-fund-applications', (req, res, next) => eventsController.submitTravelFundApplication(req, res, next));
 router.get('/search-organizations', (req, res, next) => eventsController.searchOrganizations(req, res, next));
 router.get('/certificate', (req, res, next) => eventsController.getCertificate(req, res, next));
-router.get('/visa-letter', (req, res, next) => eventsController.getVisaLetter(req, res, next));
+// req.apiGatewayToken stays the impersonator's, so the letter would carry their passport data.
+router.get('/visa-letter', blockDuringImpersonation, (req, res, next) => eventsController.getVisaLetter(req, res, next));
 export default router;
