@@ -1002,7 +1002,7 @@ describe('members churn', () => {
       lostCount: 12,
       metaLabel: '12 of 120 memberships lost',
       heroLabel: '16%',
-      changeLabel: '+4.6pp',
+      changeLabel: '+4.6pp vs 2025',
       changeTone: 'bad',
       caption: "of last year's dues did not renew",
       trendTitle: 'Revenue churn trend',
@@ -1018,7 +1018,7 @@ describe('members churn', () => {
     const view = buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'logo');
 
     expect(view.heroLabel).toBe('10%');
-    expect(view.changeLabel).toBe('−2.5pp');
+    expect(view.changeLabel).toBe('−2.5pp vs 2025');
     expect(view.changeTone).toBe('good');
     expect(view.caption).toBe('of the memberships held at the start of the year lapsed');
     expect(view.sides[2]).toEqual({ key: 'revenue', label: 'Revenue churn', value: '16%', note: null, isLoss: false });
@@ -1076,11 +1076,21 @@ describe('members churn', () => {
     expect(buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'logo').trendRose).toBe(false);
   });
 
+  it("colours the trend off the hero's change, not the two years' rates", () => {
+    const falling: HealthMetricsMembersChurn = {
+      years: [churnYear(2026, { revenueChurnRate: 16, revenueChurnRateChangePp: -1.2 }), churnYear(2025, { revenueChurnRate: 11.4 })],
+      tiers: [],
+    };
+    expect(buildHealthMetricsMembersChurnView(falling, 'YTD', 'revenue')).toMatchObject({ changeTone: 'good', trendRose: false });
+  });
+
   it('reports no churn for a year that lost nothing, and an unread year as unmeasured', () => {
     const quiet: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: 0, openingCount: null })], tiers: [] };
     expect(buildHealthMetricsMembersChurnView(quiet, 'YTD', 'revenue')).toMatchObject({ hasChurn: false, metaLabel: '0 memberships lost' });
 
     expect(buildHealthMetricsMembersChurnView(CHURN, 'COMPLETED_YEAR_3', 'revenue').yearMeasured).toBe(true);
+    const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD', 'revenue')).toMatchObject({ yearMeasured: false, hasChurn: false });
     expect(buildHealthMetricsMembersChurnView({ years: [], tiers: [] }, 'YTD', 'revenue')).toMatchObject({
       measured: false,
       yearMeasured: false,

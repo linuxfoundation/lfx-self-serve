@@ -540,10 +540,12 @@ export function buildHealthMetricsMembersChurnView(
   const priorRate = rateOf(prior);
   const change = mode === 'revenue' ? churnRevenueChange(current, prior) : churnDifference(rate, priorRate);
   const isCurrentYear = year === getYearForRange('YTD');
+  const changeTone = churnChangeTone(change);
 
   return {
     measured: churn.years.length > 0,
-    yearMeasured: current !== null,
+    // A null count is unmeasured, so it must not read as "no churn".
+    yearMeasured: current !== null && current.lostCount !== null,
     year,
     hasChurn: lostCount > 0,
     lostCount,
@@ -552,8 +554,8 @@ export function buildHealthMetricsMembersChurnView(
         ? `${pluralize(lostCount, 'membership')} lost`
         : `${formatCount(lostCount)} of ${pluralize(Math.round(current.openingCount), 'membership')} lost`,
     heroLabel: formatChurnRate(rate),
-    changeLabel: change === null ? null : formatChurnChange(change),
-    changeTone: churnChangeTone(change),
+    changeLabel: change === null ? null : `${formatChurnChange(change)} vs ${year - 1}`,
+    changeTone,
     caption: buildChurnCaption(mode, year, isCurrentYear),
     sides: buildChurnSides(current, mode, year, isCurrentYear),
     tiers: buildChurnTierRows(churn.tiers.filter((row) => row.year === year)),
@@ -561,7 +563,8 @@ export function buildHealthMetricsMembersChurnView(
     trendTitle: mode === 'revenue' ? 'Revenue churn trend' : 'Logo churn trend',
     trendSubtitle: mode === 'revenue' ? 'share of dues not renewed, by year' : 'share of memberships lost, by year',
     trend: buildChurnTrend(churn.years, year, rateOf),
-    trendRose: rate !== null && priorRate !== null && rate > priorRate,
+    // Follows the hero's change, so the bar and the hero never disagree on direction.
+    trendRose: changeTone === 'bad',
   };
 }
 

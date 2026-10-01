@@ -143,7 +143,7 @@ describe('MembersChurnComponent', () => {
     expect(getMembersChurnDepartures).toHaveBeenCalledWith({ foundationSlug: 'acme', year: 2026, offset: 0, pageSize: 25 });
     expect(text('members-churn-meta')).toBe('12 of 120 memberships lost');
     expect(text('members-churn-rate')).toBe('16%');
-    expect(text('members-churn-change')).toBe('+4.6pp');
+    expect(text('members-churn-change')).toBe('+4.6pp vs 2025');
     expect(query('members-churn-change')?.classList).toContain('text-red-600');
     expect(text('members-churn-caption')).toBe("of last year's dues did not renew");
     expect(text('members-churn-side-dues-lost')).toBe('$1.5M');
@@ -163,7 +163,7 @@ describe('MembersChurnComponent', () => {
     expect(getMembersChurn).not.toHaveBeenCalled();
     expect(getMembersChurnDepartures).not.toHaveBeenCalled();
     expect(text('members-churn-rate')).toBe('10%');
-    expect(text('members-churn-change')).toBe('−2.5pp');
+    expect(text('members-churn-change')).toBe('−2.5pp vs 2025');
     expect(query('members-churn-change')?.classList).toContain('text-emerald-600');
     expect(text('members-churn-side-revenue')).toBe('16%');
     expect(navigate).toHaveBeenLastCalledWith(
