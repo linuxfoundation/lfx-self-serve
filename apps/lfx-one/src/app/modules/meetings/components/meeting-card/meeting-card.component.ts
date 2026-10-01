@@ -202,6 +202,7 @@ export class MeetingCardComponent implements OnInit {
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
+  public readonly meetingDuration: Signal<number> = computed(() => this.occurrence()?.duration || this.meeting().duration);
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
@@ -383,7 +384,7 @@ export class MeetingCardComponent implements OnInit {
             return;
           }
 
-          if (fresh.recurrence && this.isPinnedOccurrenceGone(fresh)) {
+          if (fresh.recurrence && this.isShownOccurrenceGone(fresh)) {
             this.messageService.add({
               severity: 'warn',
               summary: 'Occurrence changed',
@@ -685,23 +686,24 @@ export class MeetingCardComponent implements OnInit {
 
   /**
    * The occurrence a recurring-meeting edit targets, read off the just-fetched meeting.
-   * @description `occurrence()` is derived from the list payload the card rendered with, which another
-   * organizer may have moved or cancelled since. An occurrence the parent passed in explicitly still
-   * decides which slot is meant, and its current values come from `fresh`; callers rule out a pinned
-   * slot that `fresh` no longer has via `isPinnedOccurrenceGone` first.
+   * @description `occurrence()` is derived from the payload the card rendered with, which another
+   * organizer may have moved or cancelled since. It still decides which slot is meant — the one the
+   * user is looking at — and its current values come from `fresh`. Falling back to the fresh next
+   * occurrence would silently retarget the edit onto a later slot once the shown one is cancelled, so
+   * callers rule that case out via `isShownOccurrenceGone` first.
    */
   private resolveEditOccurrence(fresh: Meeting): MeetingOccurrence | null {
-    const pinned = this.occurrenceInput();
-    if (pinned) {
-      return this.findOccurrence(fresh, pinned.occurrence_id);
+    const shown = this.occurrence();
+    if (shown) {
+      return this.findOccurrence(fresh, shown.occurrence_id);
     }
     return getCurrentOrNextOccurrence(fresh);
   }
 
-  /** True when the parent pinned this card to an occurrence the fresh read no longer has. */
-  private isPinnedOccurrenceGone(fresh: Meeting): boolean {
-    const pinned = this.occurrenceInput();
-    return !!pinned && !this.findOccurrence(fresh, pinned.occurrence_id);
+  /** True when the occurrence this card shows is no longer active in the fresh read. */
+  private isShownOccurrenceGone(fresh: Meeting): boolean {
+    const shown = this.occurrence();
+    return !!shown && !this.findOccurrence(fresh, shown.occurrence_id);
   }
 
   private findOccurrence(meeting: Meeting, occurrenceId: string): MeetingOccurrence | null {

@@ -258,14 +258,35 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(refreshed).toHaveBeenCalledTimes(1);
     });
 
-    it('picks the occurrence from the fresh read, not the list payload the card rendered with', async () => {
-      const moved = { ...OCCURRENCE, occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z' };
+    it('takes the shown occurrence values from the fresh read, not the list payload the card rendered with', async () => {
       const component = await mountRecurring();
-      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [moved] }));
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [{ ...OCCURRENCE, duration: 45 }] }));
 
       component.onEditMeeting();
 
-      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893542400' }) }));
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(
+        expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000', duration: 45 }) })
+      );
+    });
+
+    it('refreshes instead of retargeting a later slot when the shown occurrence was cancelled in another tab', async () => {
+      const later = { occurrence_id: '1894060800', start_time: '2030-01-08T00:00:00.000Z', duration: 30 };
+      const component = await mountRecurring();
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [OCCURRENCE, later], cancelled_occurrences: ['1893456000'] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the occurrence duration rather than the series duration', async () => {
+      const component = await mount({ ...RECURRING, duration: 60, occurrences: [{ ...OCCURRENCE, duration: 30 }] } as unknown as Meeting);
+
+      expect(component.meetingDuration()).toBe(30);
     });
 
     it('hands both dialogs the fresh meeting, so a changed series timezone is the one the form uses', async () => {
