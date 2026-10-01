@@ -337,6 +337,29 @@ describe('MentorshipMentorService mentor requests', () => {
     expect(failure).toMatchObject({ statusCode: 400, path: '/mentorship/v1/mentor-invites/redacted/accept' });
     expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
   });
+
+  it('keeps the invite token out of the provisioning log for a first-time user', async () => {
+    const token = 'payload.SECRET-sig';
+    proxyRequest.mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }));
+    proxyRequest.mockResolvedValueOnce({});
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.respondToMentorInvite(buildReq(), token, 'decline');
+
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `/mentorship/v1/mentor-invites/${token}/decline`,
+      'POST',
+      undefined,
+      undefined
+    );
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.anything(), 'mentorship_provision_user', expect.any(String), {
+      path: '/mentorship/v1/mentor-invites/redacted/decline',
+      method: 'POST',
+    });
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain('SECRET');
+  });
 });
 
 describe('MentorshipMentorService.getMentorPrograms', () => {

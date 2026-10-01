@@ -191,7 +191,7 @@ export interface MentorshipMentorInviteResponseRequest {
 }
 
 /** What the invite page shows: the choice, the outcome, or why the link cannot be used. */
-export type MentorshipMentorInviteState = 'confirm' | 'submitting' | 'accepted' | 'declined' | 'invalid-link' | 'forbidden' | 'error';
+export type MentorshipMentorInviteState = 'confirm' | 'submitting' | 'accepted' | 'declined' | 'invalid-link' | 'forbidden' | 'read-only' | 'error';
 
 // ---------------------------------------------------------------------------
 // My Programs and program detail types

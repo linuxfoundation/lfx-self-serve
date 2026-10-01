@@ -8,6 +8,7 @@ import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/constants';
 import { MentorshipMentorInviteDecision, MentorshipMentorInviteState } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken } from '@lfx-one/shared/utils';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
@@ -87,8 +88,11 @@ export class MentorInviteComponent {
       case 400:
       case 409:
         return 'invalid-link';
-      case 403:
-        return 'forbidden';
+      case 403: {
+        // The BFF refuses writes while impersonating with its own 403; upstream's 403 means another account.
+        const code = ((error as HttpErrorResponse).error as { code?: string } | null)?.code;
+        return code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE ? 'read-only' : 'forbidden';
+      }
       default:
         return 'error';
     }

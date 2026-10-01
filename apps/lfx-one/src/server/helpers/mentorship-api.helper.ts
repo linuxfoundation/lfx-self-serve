@@ -34,7 +34,9 @@ export async function proxyMentorshipRequest<T>(
   path: string,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
   query?: Record<string, unknown>,
-  data?: unknown
+  data?: unknown,
+  /** Logged in place of `path` when the path carries a credential. */
+  logPath: string = path
 ): Promise<T> {
   try {
     return await proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
@@ -44,7 +46,7 @@ export async function proxyMentorshipRequest<T>(
     }
   }
 
-  logger.info(req, 'mentorship_provision_user', 'Mentorship user not provisioned; bootstrapping and retrying', { path, method });
+  logger.info(req, 'mentorship_provision_user', 'Mentorship user not provisioned; bootstrapping and retrying', { path: logPath, method });
   // Upstream decodes a JSON body and rejects an empty one; it fills every field from the token.
   await proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
   return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);

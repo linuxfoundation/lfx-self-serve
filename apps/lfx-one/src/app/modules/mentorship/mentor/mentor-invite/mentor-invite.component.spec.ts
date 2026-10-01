@@ -110,6 +110,15 @@ describe('MentorInviteComponent', () => {
     expect(byTestId(testId)).not.toBeNull();
   });
 
+  it('tells an impersonating admin the page is read-only rather than blaming the account', () => {
+    build({ respond: throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })) });
+
+    click('mentorship-mentor-invite-accept-button');
+
+    expect(byTestId('mentorship-mentor-invite-read-only')?.textContent).toContain('viewing as another user');
+    expect(byTestId('mentorship-mentor-invite-forbidden')).toBeNull();
+  });
+
   it('returns to the choice when Try again follows a failure, and answers again', () => {
     build({ respond: httpError(502) });
 

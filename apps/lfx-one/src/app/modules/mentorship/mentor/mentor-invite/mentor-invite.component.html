@@ -59,6 +59,14 @@
               ctaLabel="Back to Mentorship"
               [ctaRoute]="programsRoute" />
           }
+          @case ('read-only') {
+            <lfx-empty-state
+              icon="fa-light fa-user-secret"
+              title="You're viewing as another user"
+              subtitle="Answering an invitation is not available while impersonating. Stop impersonating, then open the link again."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="programsRoute" />
+          }
           @case ('invalid-link') {
             <lfx-empty-state
               icon="fa-light fa-link-slash"

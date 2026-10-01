@@ -180,7 +180,15 @@ export class MentorshipMentorService {
    */
   public async respondToMentorInvite(req: Request, token: string, decision: MentorshipMentorInviteDecision): Promise<void> {
     try {
-      await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`, 'POST');
+      await proxyMentorshipRequest<unknown>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`,
+        'POST',
+        undefined,
+        undefined,
+        `${MENTORSHIP_MENTOR_INVITES_PATH}/redacted/${decision}`
+      );
     } catch (error) {
       if (!(error instanceof MicroserviceError)) {
         throw error;
