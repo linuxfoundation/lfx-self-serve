@@ -75,6 +75,7 @@ import {
   finalize,
   firstValueFrom,
   map,
+  merge,
   Observable,
   of,
   switchMap,
@@ -863,38 +864,43 @@ export class CommitteeViewComponent {
       data: { committeeName },
     }) as DynamicDialogRef;
 
-    ref.onClose.pipe(take(1)).subscribe((result: JoinApplicationDialogResult | null) => {
-      if (!result) {
-        this.joiningOrLeaving.set(false);
-        return;
-      }
+    // PrimeNG DynamicDialog fires destroy() — not close() — when the user dismisses via the
+    // header X button (onDialogHide path). In that case onClose never emits. Merge onDestroy
+    // as a null fallback so joiningOrLeaving is always reset on every dismiss path.
+    merge(ref.onClose, ref.onDestroy.pipe(map(() => null as JoinApplicationDialogResult | null)))
+      .pipe(take(1))
+      .subscribe((result: JoinApplicationDialogResult | null) => {
+        if (!result) {
+          this.joiningOrLeaving.set(false);
+          return;
+        }
 
-      this.committeeService
-        .submitApplication(committeeUid, result.message, organization)
-        .pipe(finalize(() => this.joiningOrLeaving.set(false)))
-        .subscribe({
-          next: () => {
-            this.joinApplicationSession.markPending(committeeUid);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Application Submitted',
-              detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
-              life: 8000,
-            });
-          },
-          error: (err: HttpErrorResponse) => {
-            const upstream = err.error?.message as string | undefined;
-            let detail: string;
-            if (err.status === 409) {
+        this.committeeService
+          .submitApplication(committeeUid, result.message, organization)
+          .pipe(finalize(() => this.joiningOrLeaving.set(false)))
+          .subscribe({
+            next: () => {
               this.joinApplicationSession.markPending(committeeUid);
-              detail = 'You already have a pending application for this group.';
-            } else {
-              detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
-            }
-            this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
-          },
-        });
-    });
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Application Submitted',
+                detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
+                life: 8000,
+              });
+            },
+            error: (err: HttpErrorResponse) => {
+              const upstream = err.error?.message as string | undefined;
+              let detail: string;
+              if (err.status === 409) {
+                this.joinApplicationSession.markPending(committeeUid);
+                detail = 'You already have a pending application for this group.';
+              } else {
+                detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
+              }
+              this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
+            },
+          });
+      });
   }
 
   private async openOrganizationDialog(committeeName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
@@ -931,7 +937,11 @@ export class CommitteeViewComponent {
       return Promise.resolve(null);
     }
     return new Promise((resolve) => {
-      ref.onClose.pipe(take(1)).subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
+      // Same PrimeNG destroy()-vs-close() issue: X button fires onDestroy, not onClose.
+      // Merge onDestroy as a null fallback so resolvingOrg is always cleared on dismiss.
+      merge(ref.onClose, ref.onDestroy.pipe(map(() => null as AcceptInviteOrganizationDialogResult | null)))
+        .pipe(take(1))
+        .subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
     });
   }
 
