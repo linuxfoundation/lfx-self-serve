@@ -856,6 +856,31 @@ describe('MeetingController', () => {
       expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['start_time']);
     });
 
+    // Each of these parses, but `Date.parse` rolls it onto a different day than the one sent.
+    it.each([
+      ['2030-02-30T10:00:00Z'],
+      ['2030-04-31T10:00:00Z'],
+      ['2031-02-29T10:00:00Z'],
+      ['2030-02-28T24:00:00Z'],
+      ['2030-03-01T10:00:60Z'],
+      ['2030-03-01T10:00:00+24:00'],
+    ])('rejects the impossible calendar date-time %s', async (start) => {
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 30 }), buildRes(), next);
+
+      expect(meetingSvc.updateOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['start_time']);
+    });
+
+    it.each([['2032-02-29T10:00:00Z'], ['2030-12-31T23:59:59+05:30'], ['2030-06-01t09:30:00z']])('accepts the valid RFC3339 date-time %s', async (start) => {
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 30 }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, {
+        start_time: new Date(start).toISOString(),
+        duration: 30,
+      });
+    });
+
     it.each([[0], [4], [481], [30.5], ['30'], [undefined]])('rejects duration %s', async (duration) => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration }), buildRes(), next);
 

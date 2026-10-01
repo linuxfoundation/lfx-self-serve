@@ -2340,7 +2340,7 @@ export class MeetingController {
       return 'Start time is required';
     }
 
-    if (Number.isNaN(parsedMs)) {
+    if (Number.isNaN(parsedMs) || !this.isRfc3339CalendarDateTime(value)) {
       return 'Start time must be an RFC3339 date-time';
     }
 
@@ -2349,5 +2349,33 @@ export class MeetingController {
     }
 
     return null;
+  }
+
+  /**
+   * `Date.parse` rolls impossible components forward (`2030-02-30` becomes March 2, `T24:00` the next
+   * day), so the occurrence would silently move to a day the caller never asked for. Each component is
+   * checked against the real calendar instead.
+   */
+  private isRfc3339CalendarDateTime(value: string): boolean {
+    const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/.exec(value);
+    if (!match) {
+      return false;
+    }
+
+    const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+    const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+    const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+    const calendarDay = new Date(Date.UTC(year, month - 1, day));
+
+    return (
+      calendarDay.getUTCFullYear() === year &&
+      calendarDay.getUTCMonth() === month - 1 &&
+      calendarDay.getUTCDate() === day &&
+      hour <= 23 &&
+      minute <= 59 &&
+      second <= 59 &&
+      offsetHour <= 23 &&
+      offsetMinute <= 59
+    );
   }
 }
