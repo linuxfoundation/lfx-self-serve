@@ -511,6 +511,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-shield',
     title: 'Business Email Required',
     description: 'Require members to have a business email address',
+    note: 'Members joining this group will need to provide an organization name and URL.',
     color: lfxColors.blue[500],
   },
   {
@@ -518,6 +519,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-check-to-slot',
     title: 'Enable Voting',
     description: `Allow members to vote on ${COMMITTEE_LABEL.singular.toLowerCase()} matters`,
+    note: 'Members joining this group will need to provide an organization name and URL.',
     recommended: true,
     color: lfxColors.violet[500],
   },
