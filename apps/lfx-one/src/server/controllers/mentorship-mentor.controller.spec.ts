@@ -138,6 +138,102 @@ describe('MentorshipMentorController', () => {
     });
   });
 
+  describe('mentor requests', () => {
+    const PROGRAM_ID = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
+    const REQUEST_ID = '0c6e2d3a-8f71-4b5e-a2c9-3d4e5f6a7b8c';
+    const buildWriteReq = (requestBody: unknown, params: Record<string, unknown> = {}): Request =>
+      ({ body: requestBody, params, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('answers with the open programs', async () => {
+      const response = { data: [{ id: PROGRAM_ID, name: 'Test Program' }] };
+      vi.spyOn(MentorshipMentorService.prototype, 'getOpenPrograms').mockResolvedValue(response);
+
+      await controller.getOpenPrograms(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith(response);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('answers with the requests', async () => {
+      const response = { data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' as const }] };
+      vi.spyOn(MentorshipMentorService.prototype, 'getMentorRequests').mockResolvedValue(response);
+
+      await controller.getMentorRequests(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith(response);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('sends a request for the trimmed program id and answers 204', async () => {
+      const request = vi.spyOn(MentorshipMentorService.prototype, 'requestToMentor').mockResolvedValue(undefined);
+
+      await controller.requestToMentor(buildWriteReq({ programId: ` ${PROGRAM_ID} ` }), res, next);
+
+      expect(request).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, null, {}, { programId: '' }, { programId: 'test-program' }, { programId: 42 }])(
+      'rejects the request body %j before calling the service',
+      async (requestBody) => {
+        const request = vi.spyOn(MentorshipMentorService.prototype, 'requestToMentor');
+
+        await controller.requestToMentor(buildWriteReq(requestBody), res, next);
+
+        expect(request).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      }
+    );
+
+    it('withdraws the request and answers 204', async () => {
+      const withdraw = vi.spyOn(MentorshipMentorService.prototype, 'withdrawMentorRequest').mockResolvedValue(undefined);
+
+      await controller.withdrawMentorRequest(buildWriteReq(undefined, { requestId: REQUEST_ID }), res, next);
+
+      expect(withdraw).toHaveBeenCalledWith(expect.anything(), REQUEST_ID);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('rejects a request id that is not a UUID before calling the service', async () => {
+      const withdraw = vi.spyOn(MentorshipMentorService.prototype, 'withdrawMentorRequest');
+
+      await controller.withdrawMentorRequest(buildWriteReq(undefined, { requestId: 'request-1' }), res, next);
+
+      expect(withdraw).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'requestToMentor').mockRejectedValue(error);
+
+      await controller.requestToMentor(buildWriteReq({ programId: PROGRAM_ID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it.each(['getOpenPrograms', 'getMentorRequests', 'requestToMentor', 'withdrawMentorRequest'] as const)(
+      '%s requires an authenticated user',
+      async (method) => {
+        vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+        const call = vi.spyOn(MentorshipMentorService.prototype, method);
+
+        await controller[method](buildWriteReq({ programId: PROGRAM_ID }, { requestId: REQUEST_ID }), res, next);
+
+        expect(call).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      }
+    );
+  });
+
   describe('getMentorPrograms', () => {
     it('answers with the mentor programs', async () => {
       const programs: MentorshipMentorProgramsResponse = { data: [], total: 0 };

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MentorshipUpstreamApplicationStatus } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorStatus, MentorshipUpstreamApplicationStatus, MentorshipUpstreamProgramMemberStatus } from '@lfx-one/shared/interfaces';
 
 // ---------------------------------------------------------------------------
 // Mentorship service — Server-Only Constants
@@ -24,6 +24,12 @@ export const MENTORSHIP_ME_MENTOR_PROFILE_PATH = `${MENTORSHIP_ME_PROFILES_PATH}
 
 /** Upstream path that lists the signed-in user's own applications (filter with `role`). */
 export const MENTORSHIP_ME_APPLICATIONS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/applications`;
+
+/**
+ * Upstream path for the signed-in user's own `program_members` rows (filter with `member_type`). A
+ * mentor asks to join a program with a POST here and withdraws a request at `/{id}/withdraw`.
+ */
+export const MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/program-memberships`;
 
 /** Upstream applications collection; an application's tasks live at `/{id}/tasks`. */
 export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
@@ -51,3 +57,17 @@ export const MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES: readonly MentorshipUpstrea
 
 /** Application History lists these statuses first, in this order; every other status follows. */
 export const MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER: readonly MentorshipUpstreamApplicationStatus[] = ['graduated', 'accepted', 'pending'];
+
+/**
+ * How a mentor's own program membership status reads on their request list. `requested` is the
+ * mentor's own ask and `pending` an administrator's hold, so both are still waiting on the program,
+ * and `active` is an accepted mentor. `invited` is left out: an invitation is not a request the
+ * mentor raised, and mentor invites are their own story, so those rows are not listed.
+ */
+export const MENTORSHIP_MENTOR_REQUEST_STATUS_MAP: Readonly<Partial<Record<MentorshipUpstreamProgramMemberStatus, MentorshipMentorStatus>>> = {
+  requested: 'pending',
+  pending: 'pending',
+  active: 'accepted',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
+};

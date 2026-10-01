@@ -7,13 +7,17 @@ The mentor pages under `/mentorship/mentor/*` read their data from the LFX One B
 
 ## Routes
 
-| Method | Path                                         | Controller method       | Page                                                            |
-| ------ | -------------------------------------------- | ----------------------- | --------------------------------------------------------------- |
-| GET    | `/api/mentorship/mentor/programs`            | `getMentorPrograms`     | My Programs (`/mentorship/mentor/programs`)                     |
-| GET    | `/api/mentorship/mentor/programs/:programId` | `getMentorProgram`      | Program detail (`/mentorship/mentor/programs/:programId`)       |
-| GET    | `/api/mentorship/mentor/profile`             | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)    |
-| GET    | `/api/mentorship/mentor/has-profile`         | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`) |
-| POST   | `/api/mentorship/mentor/profile`             | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                          |
+| Method | Path                                                  | Controller method       | Page                                                            |
+| ------ | ----------------------------------------------------- | ----------------------- | --------------------------------------------------------------- |
+| GET    | `/api/mentorship/mentor/programs`                     | `getMentorPrograms`     | My Programs (`/mentorship/mentor/programs`)                     |
+| GET    | `/api/mentorship/mentor/programs/:programId`          | `getMentorProgram`      | Program detail (`/mentorship/mentor/programs/:programId`)       |
+| GET    | `/api/mentorship/mentor/profile`                      | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)    |
+| GET    | `/api/mentorship/mentor/has-profile`                  | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`) |
+| POST   | `/api/mentorship/mentor/profile`                      | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                          |
+| GET    | `/api/mentorship/mentor/open-programs`                | `getOpenPrograms`       | Program picker on Become a Mentor and the profile edit drawer   |
+| GET    | `/api/mentorship/mentor/requests`                     | `getMentorRequests`     | Request list in the profile edit drawer                         |
+| POST   | `/api/mentorship/mentor/requests`                     | `requestToMentor`       | Become a Mentor (after the save) and the profile edit drawer    |
+| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw` | `withdrawMentorRequest` | Withdraw on a pending row in the profile edit drawer            |
 
 ## Flow
 
@@ -35,15 +39,15 @@ MentorProgramsComponent · MentorProgramDetailComponent · MentorProfileComponen
 | Server service | `apps/lfx-one/src/server/services/mentorship-mentor.service.ts`                                            |
 | App service    | `apps/lfx-one/src/app/shared/services/mentorship-mentor.service.ts`                                        |
 
-The register page and the profile edit drawer still read open programs through `MentorshipService.getPrograms`.
+The register page and the profile edit drawer read the program picker through `GET /open-programs`, not the admin `MentorshipService.getPrograms`.
 
 ## Behavior
 
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
 - `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is blank. It accepts a program id or slug, and answers 404 (`ResourceNotFoundError`) when neither matches.
 - The app service rethrows every failure, 404 included, so each page can tell a not-found state from a retry state.
-- The read routes stay available while impersonating. The write route, `POST /profile`, takes `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
-- Logs carry only ids, counts and flags (`programId`, `result_count`, `history_count`, `skills_count`, `hasProfile`). Names, emails, notes and the introduction never go in logs.
+- The read routes stay available while impersonating. The write routes (`POST /profile`, `POST /requests` and `POST /requests/:requestId/withdraw`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
+- Logs carry only ids, counts and flags (`programId`, `requestId`, `count`, `dropped`, `result_count`, `history_count`, `skills_count`, `hasProfile`). Names, emails, notes and the introduction never go in logs.
 
 ## Registration
 
@@ -69,13 +73,36 @@ MentorRegisterComponent.onSubmit()
 - **Later LFX profile edits.** The Profile page's card binds `[syncMentorshipProfiles]="true"`, so an Edit LFX Profile save copies the name and picture, with the primary email the BFF reads, onto the mentor and mentee rows through `PATCH /api/mentorship/me/lfx-profile`. The register page does not sync, and makes the card `inert` while the save is in flight.
 - **The guard.** `mentorRegisterGuard` skips the check during SSR and reads it in the browser. The app service reads a failed check as "no profile", so the form still opens and the 409 pre-check is what stops a duplicate.
 - **Errors.** The page maps a failure with the shared `mapMentorshipRegisterFailure` and `MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS`, by status and code only. The kinds match the mentee form, except that a `422` shows the generic retry banner: the mentor form asks no eligibility questions. The `profile-exists` banner's button goes to My Programs.
-- **After a save.** The page toasts success and navigates to `/mentorship/mentor/programs`. Program requests and the resume file name stay local: there is no endpoint for either yet, so picked programs get a coming-soon toast after the profile saves.
+- **After a save.** The page toasts success, sends one request per picked program (see [Program requests](#program-requests)), then navigates to `/mentorship/mentor/programs` whatever those requests answered. The resume file name stays local: there is no endpoint for it yet.
+
+## Program requests
+
+A mentor asks to join a program, and withdraws a request still waiting on the program administrator, through four routes (linuxfoundation/lfx-mentorship#209). Upstream stores a request as the caller's `program_members` row with `member_type: 'mentor'`, not as an application: a mentor joins the whole program, not a term. The routes sit on upstream's self-service `/v1/me/program-memberships` (linuxfoundation/lfx-mentorship#218), which takes the user from the token and never from the body.
+
+```text
+GET  /open-programs                         → GET /mentorship/v1/programs?status=published   (paged to the end)
+                                              ← { data: [{ id, name }] }
+GET  /requests                              → GET /mentorship/v1/me/program-memberships?member_type=mentor  (paged to the end)
+                                              ← { data: [{ id, programId, programName, status }] }
+POST /requests { programId }                → blockDuringImpersonation · isUuid(programId) → 400
+                                            → POST /mentorship/v1/me/program-memberships { program_id }
+                                              ← 204
+POST /requests/:requestId/withdraw          → blockDuringImpersonation · isUuid(requestId) → 400
+                                            → POST /mentorship/v1/me/program-memberships/{id}/withdraw
+                                              ← 204
+```
+
+- **The picker.** It lists every published program from the plain program list, mapped to `{ id, name }` by `mapMentorshipMentorOpenProgram`. The public catalog is not used: the picker needs only the id and name. Programs with a pending, accepted or declined request are left out of the options (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), since upstream refuses a new request for those. A withdrawn one can be picked again: asking again reopens the same row as `requested`.
+- **Upstream errors.** A request passes upstream's `404` through when the program is gone or hidden, and its `409` when the caller already has an `invited`, `requested`, `pending`, `active` or `declined` row for it. A withdraw passes its `404` through when the row is not the caller's, and its `409` when the row is no longer `requested` or `pending`. Upstream sends no invite email for a self-request.
+- **Statuses.** `mapMentorshipMentorProgramRequests` folds the upstream member status through `MENTORSHIP_MENTOR_REQUEST_STATUS_MAP`: `requested` and `pending` read as pending, `active` as accepted, and `declined` and `withdrawn` as themselves. It drops `invited` rows, which are not requests the mentor made (mentor invites are a later story). Only a pending row offers Withdraw.
+- **App side.** `MentorshipMentorService` caches `getMentorRequests()` and bumps `mentorRequestsRevision` after every request or withdraw, so the drawer re-reads the list. Two module services own the toasts, so no caller handles an error: `MentorProgramRequestService` (`request`, and `requestMany`, which sends one at a time and names each failed program) and `MentorRequestWithdrawService` (confirms first). A request's `404` or `409` shows `MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES`, and a withdraw's shows `MENTORSHIP_MENTOR_WITHDRAW_STALE_ERROR_MESSAGES`; both re-read the list, and the impersonation `403` shows the server's message.
+- **Where they run.** The register page keeps picks local until the profile saves, then calls `requestMany`. The profile edit drawer sends a pick and a confirmed withdraw right away. The drawer's Save still shows the coming-soon toast: the profile update endpoint is not wired yet.
 
 ## Data source
 
-The has-profile check and the register save call the mentorship service. Every other route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
+The has-profile check, the register save and the program request routes call the mentorship service. Every other route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
 
-A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end. The mentee service uses it for the caller's applications and an application's tasks.
+A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end. The mentor service uses it for the published programs and the caller's mentor memberships; the mentee service uses it for the caller's applications and an application's tasks.
 
 ## Related documentation
 

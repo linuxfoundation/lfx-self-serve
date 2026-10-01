@@ -15,13 +15,17 @@ import {
   MENTORSHIP_MENTOR_RESUME_INTRO,
   MENTORSHIP_MENTOR_SKILLS_INTRO,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorProfileDetails, MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorOpenProgram, MentorshipMentorProfileDetails, MentorshipMentorProgramRequest } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, map, startWith, switchMap } from 'rxjs';
+import { catchError, filter, finalize, map, of, startWith, switchMap } from 'rxjs';
 
 import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
+import { MentorProgramRequestService } from '../../../../services/mentor-program-request.service';
+import { MentorRequestWithdrawService } from '../../../../services/mentor-request-withdraw.service';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { MentorProgramsSectionComponent } from '../../../mentor-register/components/mentor-programs-section/mentor-programs-section.component';
 import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.service';
@@ -31,17 +35,31 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
  * on the standalone mentor profile page. Mirrors the Become a Mentor registration form
  * sections — program details, introduction, skills, and resume — in a drawer layout.
  *
- * Save fires the coming-soon toast until the update endpoint is wired; the drawer does
- * not persist anything.
+ * Program requests are live: picking a program sends the request at once, and Withdraw (shown only
+ * on pending rows) confirms and withdraws at once. Both leave the toasts to their services and the
+ * refresh to `MentorshipMentorService`, whose revision signal makes the list re-read after a write.
+ * Save still fires the coming-soon toast until the profile update endpoint is wired; it persists
+ * none of the profile fields.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile-edit-drawer',
-  imports: [DrawerModule, ButtonComponent, RichEditorComponent, MentorProgramsSectionComponent, SkillsPickerComponent, ResumeSectionComponent],
+  imports: [
+    ConfirmDialogModule,
+    DrawerModule,
+    ButtonComponent,
+    RichEditorComponent,
+    MentorProgramsSectionComponent,
+    SkillsPickerComponent,
+    ResumeSectionComponent,
+  ],
+  providers: [ConfirmationService, MentorRequestWithdrawService],
   templateUrl: './mentor-profile-edit-drawer.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProfileEditDrawerComponent {
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorService = inject(MentorshipMentorService);
+  private readonly programRequests = inject(MentorProgramRequestService);
+  private readonly withdrawService = inject(MentorRequestWithdrawService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
   protected readonly drawer = inject(MentorProfileEditDrawerService);
 
@@ -59,16 +77,15 @@ export class MentorProfileEditDrawerComponent {
     resumeFileName: new FormControl('', { nonNullable: true }),
   });
 
-  /**
-   * Local program requests — starts empty on each drawer open. The mentor's current
-   * enrollments are not available in {@link MentorshipMentorProfileDetails}, and save
-   * is coming-soon anyway, so the picker behaves identically to the registration form.
-   */
-  protected readonly requests = signal<MentorshipMentorProgramRequest[]>([]);
+  /** True while a picked program's request is in flight; the picker is disabled meanwhile. */
+  protected readonly requesting = signal(false);
+  protected readonly withdrawingId = this.withdrawService.withdrawingId;
 
   private readonly programsState = this.initPrograms();
+  private readonly requestsState = this.initRequests();
   protected readonly programs = computed(() => this.programsState().programs);
-  protected readonly programsLoading = computed(() => this.programsState().loading);
+  protected readonly requests = computed(() => this.requestsState().requests);
+  protected readonly loading = computed(() => this.programsState().loading || this.requestsState().loading);
 
   public constructor() {
     toObservable(this.drawer.context)
@@ -76,13 +93,18 @@ export class MentorProfileEditDrawerComponent {
       .subscribe((profile) => this.seedForm(profile));
   }
 
-  protected onAddProgram(program: MentorshipProgram): void {
-    if (this.requests().some((request) => request.programId === program.id)) return;
-    this.requests.update((requests) => [...requests, { id: `req_${program.id}`, programId: program.id, programName: program.name, status: 'pending' }]);
+  protected onAddProgram(program: MentorshipMentorOpenProgram): void {
+    if (this.requesting()) return;
+    this.requesting.set(true);
+    // Not tied to the drawer's lifetime: the request and its toast finish even if the drawer closes first.
+    this.programRequests
+      .request(program)
+      .pipe(finalize(() => this.requesting.set(false)))
+      .subscribe();
   }
 
   protected onWithdraw(requestId: string): void {
-    this.requests.update((requests) => requests.filter((request) => request.id !== requestId));
+    this.withdrawService.confirmWithdraw(requestId);
   }
 
   protected onSave(): void {
@@ -101,18 +123,49 @@ export class MentorProfileEditDrawerComponent {
   }
 
   /**
-   * Load available programs when the drawer opens. switchMap cancels a prior open's
-   * in-flight request so a slow earlier load can't overwrite a later one.
+   * Load the programs taking mentor requests when the drawer opens. switchMap cancels a prior
+   * open's in-flight request so a slow earlier load can't overwrite a later one. A failed read
+   * (already logged by the service) leaves the picker empty.
    */
   private initPrograms() {
-    const empty = { programs: [] as MentorshipProgram[], loading: true };
+    const empty = { programs: [] as MentorshipMentorOpenProgram[], loading: true };
 
     return toSignal(
       toObservable(this.drawer.context).pipe(
         filter(Boolean),
         switchMap(() =>
-          this.mentorshipService.getPrograms({ status: 'open' }).pipe(
+          this.mentorService.getOpenPrograms().pipe(
             map((response) => ({ programs: response.data, loading: false })),
+            catchError(() => of({ programs: [] as MentorshipMentorOpenProgram[], loading: false })),
+            startWith(empty)
+          )
+        )
+      ),
+      { initialValue: empty }
+    );
+  }
+
+  /**
+   * Load the mentor's requests when the drawer opens, and again whenever a request or withdraw
+   * bumps `mentorRequestsRevision`. Only an open shows the loading state, so a refresh after a
+   * write keeps the current rows until the new ones arrive. A failed read (already logged by the
+   * service) shows no rows; a duplicate request it lets through gets upstream's 409.
+   */
+  private initRequests() {
+    const empty = { requests: [] as MentorshipMentorProgramRequest[], loading: true };
+    const revision$ = toObservable(this.mentorService.mentorRequestsRevision);
+
+    return toSignal(
+      toObservable(this.drawer.context).pipe(
+        filter(Boolean),
+        switchMap(() =>
+          revision$.pipe(
+            switchMap(() =>
+              this.mentorService.getMentorRequests().pipe(
+                map((response) => ({ requests: response.data, loading: false })),
+                catchError(() => of({ requests: [] as MentorshipMentorProgramRequest[], loading: false }))
+              )
+            ),
             startWith(empty)
           )
         )
@@ -129,6 +182,5 @@ export class MentorProfileEditDrawerComponent {
     });
     this.form.markAsPristine();
     this.form.markAsUntouched();
-    this.requests.set([]);
   }
 }

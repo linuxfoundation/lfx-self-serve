@@ -11,22 +11,28 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
+  MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramMembership,
+  MentorshipUpstreamProgramMembershipRequest,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipMentorProgramDetail } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MENTORSHIP_ME_MENTOR_PROFILE_PATH, MENTORSHIP_ME_PROFILES_PATH } from '../constants';
+import { MENTORSHIP_ME_MENTOR_PROFILE_PATH, MENTORSHIP_ME_PROFILES_PATH, MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH, MENTORSHIP_PROGRAMS_PATH } from '../constants';
 import { ConflictError, ResourceNotFoundError } from '../errors';
-import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { mapMentorshipMentorOpenProgram, mapMentorshipMentorProgramRequests } from '../helpers/mentorship-mentor-request.helper';
 import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
 import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
@@ -35,9 +41,9 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check and the register write
- * call the mentorship service with the caller's token; the program and profile reads still serve
- * the shared mock seed data.
+ * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write and
+ * the program requests call the mentorship service with the caller's token; the program and profile
+ * reads still serve the shared mock seed data.
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -81,6 +87,52 @@ export class MentorshipMentorService {
     });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentor_profile', 'Mentor profile created');
+  }
+
+  /**
+   * The programs a mentor can ask to join: every published program, read from the plain program
+   * list rather than the public catalog, since the picker needs only each program's id and name.
+   */
+  public async getOpenPrograms(req: Request): Promise<MentorshipMentorOpenProgramsResponse> {
+    logger.debug(req, 'mentorship_get_mentor_open_programs', 'Loading programs taking mentor requests');
+    const programs = await listAllMentorshipPages<MentorshipUpstreamProgram>(this.microserviceProxy, req, MENTORSHIP_PROGRAMS_PATH, { status: 'published' });
+    const data = programs.map(mapMentorshipMentorOpenProgram);
+    logger.debug(req, 'mentorship_get_mentor_open_programs', 'Programs taking mentor requests loaded', { count: data.length });
+    return { data };
+  }
+
+  /** The caller's own mentor `program_members` rows, as request rows with their status folded for the mentor. */
+  public async getMentorRequests(req: Request): Promise<MentorshipMentorProgramRequestsResponse> {
+    logger.debug(req, 'mentorship_get_mentor_requests', 'Loading mentor program requests');
+    const memberships = await listAllMentorshipPages<MentorshipUpstreamProgramMembership>(this.microserviceProxy, req, MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH, {
+      member_type: 'mentor',
+    });
+    const data = mapMentorshipMentorProgramRequests(memberships);
+    logger.debug(req, 'mentorship_get_mentor_requests', 'Mentor program requests loaded', { count: data.length, dropped: memberships.length - data.length });
+    return { data };
+  }
+
+  /**
+   * Asks to mentor a program: upstream creates the caller's `mentor` row as `requested`, or reopens a
+   * withdrawn one. Upstream's 404 passes through when the program is gone or hidden, and its 409 when the
+   * caller already has a request, invitation, membership or declined request for that program.
+   */
+  public async requestToMentor(req: Request, programId: string): Promise<void> {
+    const body: MentorshipUpstreamProgramMembershipRequest = { program_id: programId };
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH, 'POST', undefined, body);
+  }
+
+  /**
+   * Withdraws one of the caller's mentor requests. Upstream's 404 passes through when the row is not the
+   * caller's, and its 409 when the request is no longer pending.
+   */
+  public async withdrawMentorRequest(req: Request, requestId: string): Promise<void> {
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH}/${encodeURIComponent(requestId)}/withdraw`,
+      'POST'
+    );
   }
 
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {

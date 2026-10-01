@@ -152,4 +152,63 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(error).toMatchObject({ status: 409, error: { code: 'MENTOR_PROFILE_EXISTS' } });
     });
   });
+
+  describe('mentor requests', () => {
+    const programId = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
+    const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }] };
+
+    it('reads the open programs', () => {
+      let loaded: unknown;
+      service.getOpenPrograms().subscribe((response) => (loaded = response));
+
+      http.expectOne('/api/mentorship/mentor/open-programs').flush({ data: [{ id: programId, name: 'Test Program' }] });
+      expect(loaded).toEqual({ data: [{ id: programId, name: 'Test Program' }] });
+    });
+
+    it('caches the requests until a write clears them, and bumps the revision', () => {
+      service.getMentorRequests().subscribe();
+      http.expectOne('/api/mentorship/mentor/requests').flush(requests);
+      service.getMentorRequests().subscribe();
+      http.expectNone('/api/mentorship/mentor/requests');
+
+      const revision = service.mentorRequestsRevision();
+      service.requestToMentor(programId).subscribe();
+      const post = http.expectOne('/api/mentorship/mentor/requests');
+      expect(post.request.method).toBe('POST');
+      expect(post.request.body).toEqual({ programId });
+      post.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(service.mentorRequestsRevision()).toBe(revision + 1);
+      service.getMentorRequests().subscribe();
+      http.expectOne('/api/mentorship/mentor/requests').flush(requests);
+    });
+
+    it('does not cache a failed requests read', () => {
+      service.getMentorRequests().subscribe({ error: () => undefined });
+      http.expectOne('/api/mentorship/mentor/requests').flush('down', { status: 503, statusText: 'Service Unavailable' });
+
+      service.getMentorRequests().subscribe();
+      http.expectOne('/api/mentorship/mentor/requests').flush(requests);
+    });
+
+    it('withdraws with the encoded request id and clears the cache', () => {
+      const revision = service.mentorRequestsRevision();
+      service.withdrawMentorRequest('app/1').subscribe();
+
+      const req = http.expectOne('/api/mentorship/mentor/requests/app%2F1/withdraw');
+      expect(req.request.method).toBe('POST');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(service.mentorRequestsRevision()).toBe(revision + 1);
+    });
+
+    it('propagates a failed request as the raw HttpErrorResponse, without clearing the cache', () => {
+      const revision = service.mentorRequestsRevision();
+      let error: HttpErrorResponse | undefined;
+      service.requestToMentor(programId).subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http.expectOne('/api/mentorship/mentor/requests').flush({ error: 'program membership already exists' }, { status: 409, statusText: 'Conflict' });
+      expect(error?.status).toBe(409);
+      expect(service.mentorRequestsRevision()).toBe(revision);
+    });
+  });
 });

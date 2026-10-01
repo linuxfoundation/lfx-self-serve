@@ -9,7 +9,7 @@ import {
   MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
 } from '@lfx-one/shared/constants';
-import type { MentorshipMentorRegisterRequest } from '@lfx-one/shared/interfaces';
+import type { MentorshipMentorRegisterRequest, MentorshipUpstreamProgramMembership } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
@@ -183,6 +183,87 @@ describe('MentorshipMentorService.registerMentorProfile', () => {
     const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
     expect(logged).not.toContain('Test intro');
     expect(logged).not.toContain('test.user@example.com');
+  });
+});
+
+describe('MentorshipMentorService mentor requests', () => {
+  const PROGRAM_ID = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
+  const REQUEST_ID = '0c6e2d3a-8f71-4b5e-a2c9-3d4e5f6a7b8c';
+  const MEMBERSHIPS_PATH = '/mentorship/v1/me/program-memberships';
+  const membership: MentorshipUpstreamProgramMembership = {
+    id: REQUEST_ID,
+    program_id: PROGRAM_ID,
+    program_name: 'Test Program',
+    member_type: 'mentor',
+    status: 'requested',
+    created_on: '2026-06-28T10:00:00Z',
+    updated_on: '2026-06-29T10:00:00Z',
+  };
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it('lists the published programs, as id and name', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([{ id: PROGRAM_ID, name: 'Test Program', status: 'published', project_name: 'Test Project' }]));
+
+    await expect(service.getOpenPrograms(buildReq())).resolves.toEqual({ data: [{ id: PROGRAM_ID, name: 'Test Program' }] });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/programs',
+      'GET',
+      { status: 'published', limit: 100, offset: 0 },
+      undefined
+    );
+  });
+
+  it("lists the caller's mentor memberships as requests, folding the status and dropping invitations", async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([membership, { ...membership, id: 'member-invited', status: 'invited' }]));
+
+    await expect(service.getMentorRequests(buildReq())).resolves.toEqual({
+      data: [{ id: REQUEST_ID, programId: PROGRAM_ID, programName: 'Test Program', status: 'pending' }],
+    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      MEMBERSHIPS_PATH,
+      'GET',
+      { member_type: 'mentor', limit: 100, offset: 0 },
+      undefined
+    );
+  });
+
+  it('asks to join the program with only its id, leaving the user to the token', async () => {
+    proxyRequest.mockResolvedValueOnce(membership);
+
+    await expect(service.requestToMentor(buildReq(), PROGRAM_ID)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MEMBERSHIPS_PATH, 'POST', undefined, { program_id: PROGRAM_ID });
+  });
+
+  it.each([
+    [404, 'program not found'],
+    [409, 'program membership already exists'],
+  ])("passes upstream's %s through on a request", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.requestToMentor(buildReq(), PROGRAM_ID)).rejects.toBe(failure);
+  });
+
+  it('withdraws the request, and passes upstream 409 through when it is no longer pending', async () => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+    await expect(service.withdrawMentorRequest(buildReq(), REQUEST_ID)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${MEMBERSHIPS_PATH}/${REQUEST_ID}/withdraw`, 'POST', undefined, undefined);
+
+    const conflict = upstreamError(409, { error: 'invalid status transition' });
+    proxyRequest.mockRejectedValueOnce(conflict);
+    await expect(service.withdrawMentorRequest(buildReq(), REQUEST_ID)).rejects.toBe(conflict);
   });
 });
 

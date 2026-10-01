@@ -50,14 +50,18 @@
                 </span>
               </td>
               <td class="px-4 py-4">
-                <lfx-button
-                  label="Withdraw"
-                  severity="danger"
-                  size="small"
-                  [text]="true"
-                  [ariaLabel]="'Withdraw request to join ' + row.programName"
-                  (onClick)="withdraw.emit(row.id)"
-                  [attr.data-testid]="'mentorship-mentor-withdraw-' + row.id" />
+                @if (row.canWithdraw) {
+                  <lfx-button
+                    label="Withdraw"
+                    severity="danger"
+                    size="small"
+                    [text]="true"
+                    [loading]="withdrawingId() === row.id"
+                    [disabled]="withdrawingId() !== null"
+                    [ariaLabel]="'Withdraw request to join ' + row.programName"
+                    (onClick)="withdraw.emit(row.id)"
+                    [attr.data-testid]="'mentorship-mentor-withdraw-' + row.id" />
+                }
               </td>
             </tr>
           }

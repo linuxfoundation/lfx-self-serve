@@ -1,28 +1,31 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, input, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
+  MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES,
   MENTORSHIP_MENTOR_PROGRAMS_HELPER,
   MENTORSHIP_MENTOR_PROGRAMS_INTRO,
   MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lfx-one/shared/interfaces';
 
 /**
- * Program picker for the Become a Mentor form. Picking a program adds a pending row to the
- * list below — nothing reaches the program's admin until the registration endpoint exists —
- * so the select acts as a one-shot action rather than a stored value: it clears itself on
- * choose and drops programs already listed from its options.
+ * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
+ * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up,
+ * clears itself, and drops programs with a pending, accepted or declined request from its options
+ * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`). A program whose request was withdrawn stays
+ * pickable, since asking again reopens it.
  *
- * Applying is optional — a mentor may register a profile and come back for programs later
- * — so nothing here is required and the section surfaces no validation error. The parent
- * owns the request list because it, not this section, will POST the registration.
+ * Applying is optional — a mentor may register a profile and come back for programs later — so
+ * nothing here is required and the section surfaces no validation error. The parent owns the list
+ * and decides what picking and withdrawing do: the form keeps picks until submit, the drawer sends
+ * them right away. Only a pending request can be withdrawn, so only its row offers the button.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-programs-section',
@@ -31,14 +34,19 @@ import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shar
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProgramsSectionComponent {
-  public readonly programs = input.required<MentorshipProgram[]>();
+  public readonly programs = input.required<MentorshipMentorOpenProgram[]>();
   /** While true the select shows a loading state and says so, rather than looking like a program-less platform. */
   public readonly loading = input(false);
   /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
   public readonly bordered = input(true);
 
+  /** While true the parent is sending a request, so the select is disabled until it settles. */
+  public readonly requesting = input(false);
+  /** The request being withdrawn, or `null`. Its Withdraw button shows a loading state meanwhile. */
+  public readonly withdrawingId = input<string | null>(null);
+
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
-  public readonly add = output<MentorshipProgram>();
+  public readonly add = output<MentorshipMentorOpenProgram>();
   public readonly withdraw = output<string>();
 
   protected readonly intro = MENTORSHIP_MENTOR_PROGRAMS_INTRO;
@@ -61,11 +69,24 @@ export class MentorProgramsSectionComponent {
       this.pickerForm.controls.programId.setValue(null, { emitEvent: false });
       if (program) this.add.emit(program);
     });
+
+    effect(() => {
+      const control = this.pickerForm.controls.programId;
+      if (this.requesting()) {
+        control.disable({ emitEvent: false });
+      } else {
+        control.enable({ emitEvent: false });
+      }
+    });
   }
 
   private initAvailablePrograms() {
     return computed(() => {
-      const requested = new Set(this.requests().map((item) => item.programId));
+      const requested = new Set(
+        this.requests()
+          .filter((item) => MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES.includes(item.status))
+          .map((item) => item.programId)
+      );
       return this.programs()
         .filter((program) => !requested.has(program.id))
         .map((program) => ({ label: program.name, value: program.id }));
@@ -78,6 +99,7 @@ export class MentorProgramsSectionComponent {
         ...request,
         statusLabel: MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS[request.status],
         statusBadgeClass: MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES[request.status],
+        canWithdraw: request.status === 'pending',
       }))
     );
   }

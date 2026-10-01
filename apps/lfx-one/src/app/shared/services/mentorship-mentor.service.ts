@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgramDetail,
+  MentorshipMentorProgramRequestCreate,
+  MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, throwError } from 'rxjs';
+import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/mentor/*` endpoints. The page reads rethrow so each
@@ -19,6 +22,18 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class MentorshipMentorService {
   private readonly http = inject(HttpClient);
+
+  /**
+   * The signed-in mentor's program requests, kept so the register page and the profile drawer do not
+   * each re-fetch them. `shareReplay({ bufferSize: 1, refCount: false })` replays the first successful
+   * response; a failure clears the slot so the next read fetches fresh. Call `clearMentorCaches()`
+   * after any write that changes a request (request, withdraw), and on a user Retry.
+   */
+  private mentorRequests$: Observable<MentorshipMentorProgramRequestsResponse> | null = null;
+  private readonly mentorRequestsRevisionSignal = signal(0);
+
+  /** Bumped by `clearMentorCaches()`, so a view showing the requests re-reads them after a write. */
+  public readonly mentorRequestsRevision = this.mentorRequestsRevisionSignal.asReadonly();
 
   /**
    * Checks whether the signed-in user already has a mentor profile. A failed check reports no
@@ -41,6 +56,50 @@ export class MentorshipMentorService {
    */
   public registerMentorProfile(request: MentorshipMentorRegisterRequest): Observable<void> {
     return this.http.post<void>('/api/mentorship/mentor/profile', request).pipe(take(1));
+  }
+
+  public clearMentorCaches(): void {
+    this.mentorRequests$ = null;
+    this.mentorRequestsRevisionSignal.update((revision) => revision + 1);
+  }
+
+  /** Every published program, for the request picker. Rethrows so the picker can show it failed. */
+  public getOpenPrograms(): Observable<MentorshipMentorOpenProgramsResponse> {
+    return this.http.get<MentorshipMentorOpenProgramsResponse>('/api/mentorship/mentor/open-programs').pipe(catchError(this.rethrowError('getOpenPrograms')));
+  }
+
+  /** The signed-in mentor's program requests, cached for the session. Rethrows so views can show a retry. */
+  public getMentorRequests(): Observable<MentorshipMentorProgramRequestsResponse> {
+    if (!this.mentorRequests$) {
+      this.mentorRequests$ = this.http.get<MentorshipMentorProgramRequestsResponse>('/api/mentorship/mentor/requests').pipe(
+        catchError((err: HttpErrorResponse) => {
+          this.mentorRequests$ = null; // don't cache failures — the next read retries
+          return this.rethrowError('getMentorRequests')(err);
+        }),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    }
+    return this.mentorRequests$;
+  }
+
+  /**
+   * Asks to join a program as a mentor; the request is for the whole program. Failures propagate
+   * as the raw `HttpErrorResponse`. A success drops the cached requests.
+   */
+  public requestToMentor(programId: string): Observable<void> {
+    const body: MentorshipMentorProgramRequestCreate = { programId };
+    return this.http.post<void>('/api/mentorship/mentor/requests', body).pipe(
+      take(1),
+      tap(() => this.clearMentorCaches())
+    );
+  }
+
+  /** Withdraws one of the signed-in mentor's pending requests. Failures propagate raw; a success drops the cached requests. */
+  public withdrawMentorRequest(requestId: string): Observable<void> {
+    return this.http.post<void>(`/api/mentorship/mentor/requests/${encodeURIComponent(requestId)}/withdraw`, null).pipe(
+      take(1),
+      tap(() => this.clearMentorCaches())
+    );
   }
 
   public getMentorPrograms(): Observable<MentorshipMentorProgramsResponse> {

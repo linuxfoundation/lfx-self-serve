@@ -4,23 +4,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS, MENTORSHIP_MENTOR_STATUSES } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorProgramsSectionComponent } from './mentor-programs-section.component';
 
 describe('MentorProgramsSectionComponent', () => {
-  const program = (id: string, name: string): MentorshipProgram => ({
-    id,
-    slug: name.toLowerCase().replace(/\s+/g, '-'),
-    name,
-    projectName: 'LF Energy',
-    term: 'Fall 2026',
-    status: 'open',
-    stats: { mentors: 2, mentees: 1, graduated: 0 },
-    createdOn: '2026-05-01',
-    updatedOn: '2026-07-02',
-  });
+  const program = (id: string, name: string): MentorshipMentorOpenProgram => ({ id, name });
 
   const request: MentorshipMentorProgramRequest = {
     id: 'req_1',
@@ -32,6 +22,14 @@ describe('MentorProgramsSectionComponent', () => {
   let fixture: ComponentFixture<MentorProgramsSectionComponent>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const withdrawButton = (id: string): HTMLButtonElement | null =>
+    element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-mentor-withdraw-${id}"] button`);
+
+  /** Lists the default request as pending, the only status that can be withdrawn. */
+  const showPending = (): void => {
+    fixture.componentRef.setInput('requests', [{ ...request, status: 'pending' }]);
+    fixture.detectChanges();
+  };
 
   beforeEach(() => {
     TestBed.resetTestingModule();
@@ -50,8 +48,34 @@ describe('MentorProgramsSectionComponent', () => {
     expect(fixture.componentInstance['availablePrograms']().map((option) => option.value)).toEqual(['mp_gridflow']);
   });
 
+  it('offers a program again once its request is withdrawn, since asking again reopens it', () => {
+    fixture.componentRef.setInput('requests', [{ ...request, status: 'withdrawn' }]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['availablePrograms']().map((option) => option.value)).toEqual(['mp_kubernetes', 'mp_gridflow']);
+  });
+
+  it.each(['pending', 'declined'] as const)('keeps a program out of the picker while its request is %s, since upstream would refuse another', (status) => {
+    fixture.componentRef.setInput('requests', [{ ...request, status }]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['availablePrograms']().map((option) => option.value)).toEqual(['mp_gridflow']);
+  });
+
+  it('disables the select while a request is being sent, and re-enables it after', () => {
+    const control = fixture.componentInstance['pickerForm'].controls.programId;
+
+    fixture.componentRef.setInput('requesting', true);
+    fixture.detectChanges();
+    expect(control.disabled).toBe(true);
+
+    fixture.componentRef.setInput('requesting', false);
+    fixture.detectChanges();
+    expect(control.disabled).toBe(false);
+  });
+
   it('emits the picked program and clears the select, so it never looks selected', () => {
-    const added: MentorshipProgram[] = [];
+    const added: MentorshipMentorOpenProgram[] = [];
     fixture.componentInstance.add.subscribe((program) => added.push(program));
 
     fixture.componentInstance['pickerForm'].controls.programId.setValue('mp_gridflow');
@@ -81,21 +105,46 @@ describe('MentorProgramsSectionComponent', () => {
     }
   });
 
-  it('names the program in the withdraw label, since every row has the same button text', () => {
-    const withdraw = element().querySelector('[data-testid="mentorship-mentor-withdraw-req_1"]');
+  it.each(['accepted', 'declined', 'withdrawn', 'graduated'] as const)(
+    'offers no Withdraw on a %s request, since only a pending one can be withdrawn',
+    (status) => {
+      fixture.componentRef.setInput('requests', [{ ...request, status }]);
+      fixture.detectChanges();
 
-    expect(withdraw?.querySelector('button')?.getAttribute('aria-label')).toBe('Withdraw request to join Kubernetes Contributors');
+      expect(element().querySelector('[data-testid="mentorship-mentor-request-row-req_1"]')).not.toBeNull();
+      expect(withdrawButton('req_1')).toBeNull();
+    }
+  );
+
+  it('names the program in the withdraw label, since every row has the same button text', () => {
+    showPending();
+
+    expect(withdrawButton('req_1')?.getAttribute('aria-label')).toBe('Withdraw request to join Kubernetes Contributors');
   });
 
   it('emits the request id on withdraw rather than removing the row itself', () => {
+    showPending();
     const withdrawn: string[] = [];
     fixture.componentInstance.withdraw.subscribe((id) => withdrawn.push(id));
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-withdraw-req_1"] button')?.click();
+    withdrawButton('req_1')?.click();
 
     expect(withdrawn).toEqual(['req_1']);
-    // The parent owns the list, because it — not this section — will POST the registration.
+    // The parent owns the list: it decides what a withdraw does and re-reads it.
     expect(element().querySelector('[data-testid="mentorship-mentor-request-row-req_1"]')).not.toBeNull();
+  });
+
+  it('marks the row being withdrawn as loading and disables every Withdraw meanwhile', () => {
+    fixture.componentRef.setInput('requests', [
+      { ...request, status: 'pending' },
+      { id: 'req_2', programId: 'mp_gridflow', programName: 'GridFlow Ingestion', status: 'pending' },
+    ]);
+    fixture.componentRef.setInput('withdrawingId', 'req_1');
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-withdraw-req_1"]')?.getAttribute('data-loading')).toBe('true');
+    expect(withdrawButton('req_1')?.disabled).toBe(true);
+    expect(withdrawButton('req_2')?.disabled).toBe(true);
   });
 
   it('hides the request table entirely when nothing has been requested', () => {

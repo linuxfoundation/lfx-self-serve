@@ -15,8 +15,10 @@
   <div class="flex flex-col gap-6 h-full" data-testid="mentor-profile-edit-drawer-body">
     <lfx-mentorship-mentor-programs-section
       [programs]="programs()"
-      [loading]="programsLoading()"
+      [loading]="loading()"
       [requests]="requests()"
+      [requesting]="requesting()"
+      [withdrawingId]="withdrawingId()"
       [bordered]="false"
       (add)="onAddProgram($event)"
       (withdraw)="onWithdraw($event)" />
@@ -65,3 +67,5 @@
     </div>
   </div>
 </p-drawer>
+
+<p-confirmDialog />
