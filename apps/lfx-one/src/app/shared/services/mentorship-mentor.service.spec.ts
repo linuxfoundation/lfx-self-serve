@@ -157,12 +157,23 @@ describe('MentorshipMentorService — read error mapping', () => {
     const programId = '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e';
     const requests = { data: [{ id: 'app-1', programId, programName: 'Test Program', status: 'pending' as const }], invitedProgramIds: [] };
 
-    it('reads the open programs', () => {
+    it('reads the first page of open programs, sending no empty params', () => {
       let loaded: unknown;
       service.getOpenPrograms().subscribe((response) => (loaded = response));
 
-      http.expectOne('/api/mentorship/mentor/open-programs').flush({ data: [{ id: programId, name: 'Test Program' }] });
-      expect(loaded).toEqual({ data: [{ id: programId, name: 'Test Program' }] });
+      const read = http.expectOne((request) => request.url === '/api/mentorship/mentor/open-programs');
+      expect(read.request.params.keys()).toEqual([]);
+      read.flush({ data: [{ id: programId, name: 'Test Program' }], total: 1 });
+      expect(loaded).toEqual({ data: [{ id: programId, name: 'Test Program' }], total: 1 });
+    });
+
+    it('sends the search and offset of a later page', () => {
+      service.getOpenPrograms({ search: 'kube', offset: 20 }).subscribe();
+
+      const read = http.expectOne((request) => request.url === '/api/mentorship/mentor/open-programs');
+      expect(read.request.params.get('search')).toBe('kube');
+      expect(read.request.params.get('offset')).toBe('20');
+      read.flush({ data: [], total: 20 });
     });
 
     it('caches the requests until a write clears them, and bumps the revision', () => {

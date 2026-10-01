@@ -208,18 +208,43 @@ describe('MentorshipMentorService mentor requests', () => {
     service = new MentorshipMentorService();
   });
 
-  it('lists the published programs, as id and name', async () => {
-    proxyRequest.mockResolvedValueOnce(listOf([{ id: PROGRAM_ID, name: 'Test Program', status: 'published', project_name: 'Test Project' }]));
+  it('reads one page of published programs, as id and name, with the total', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      data: [{ id: PROGRAM_ID, name: 'Test Program', status: 'published', project_name: 'Test Project' }],
+      meta: { total: 45, limit: 20, offset: 0 },
+    });
 
-    await expect(service.getOpenPrograms(buildReq())).resolves.toEqual({ data: [{ id: PROGRAM_ID, name: 'Test Program' }] });
+    await expect(service.getOpenPrograms(buildReq())).resolves.toEqual({ data: [{ id: PROGRAM_ID, name: 'Test Program' }], total: 45 });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
     expect(proxyRequest).toHaveBeenCalledWith(
       expect.anything(),
       'LFX_V2_SERVICE',
       '/mentorship/v1/programs',
       'GET',
-      { status: 'published', limit: 100, offset: 0 },
+      { status: 'published', limit: 20, offset: 0 },
       undefined
     );
+  });
+
+  it('passes the offset, and the search with its wildcards escaped', async () => {
+    proxyRequest.mockResolvedValueOnce(listOf([]));
+
+    await service.getOpenPrograms(buildReq(), { search: '50%_off', offset: 40 });
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      '/mentorship/v1/programs',
+      'GET',
+      { status: 'published', limit: 20, offset: 40, search: '50\\%\\_off' },
+      undefined
+    );
+  });
+
+  it('treats a page with no usable total as the last one, so the picker stops asking', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: PROGRAM_ID, name: 'Test Program', status: 'published', project_name: 'Test Project' }] });
+
+    await expect(service.getOpenPrograms(buildReq(), { offset: 20 })).resolves.toEqual({ data: [{ id: PROGRAM_ID, name: 'Test Program' }], total: 21 });
   });
 
   it("lists the caller's mentor memberships as requests, folding the status and moving invitations to their own list", async () => {

@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgramDetail,
@@ -63,9 +64,14 @@ export class MentorshipMentorService {
     this.mentorRequestsRevisionSignal.update((revision) => revision + 1);
   }
 
-  /** Every published program, for the request picker. Rethrows; the picker's pages fall back to an empty list. */
-  public getOpenPrograms(): Observable<MentorshipMentorOpenProgramsResponse> {
-    return this.http.get<MentorshipMentorOpenProgramsResponse>('/api/mentorship/mentor/open-programs').pipe(catchError(this.rethrowError('getOpenPrograms')));
+  /** One page of published programs for the request picker, optionally narrowed by name. Rethrows; the picker shows the failure. */
+  public getOpenPrograms(query: MentorshipMentorOpenProgramsQuery = {}): Observable<MentorshipMentorOpenProgramsResponse> {
+    let params = new HttpParams();
+    if (query.search) params = params.set('search', query.search);
+    if (query.offset) params = params.set('offset', String(query.offset));
+    return this.http
+      .get<MentorshipMentorOpenProgramsResponse>('/api/mentorship/mentor/open-programs', { params })
+      .pipe(catchError(this.rethrowError('getOpenPrograms')));
   }
 
   /** The signed-in mentor's program requests, cached for the session. Rethrows so the profile drawer can show a failed state with Retry. */

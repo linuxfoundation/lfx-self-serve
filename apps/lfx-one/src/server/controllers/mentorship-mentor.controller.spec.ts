@@ -149,14 +149,24 @@ describe('MentorshipMentorController', () => {
       vi.mocked(res.status).mockReturnValue(res);
     });
 
-    it('answers with the open programs', async () => {
-      const response = { data: [{ id: PROGRAM_ID, name: 'Test Program' }] };
-      vi.spyOn(MentorshipMentorService.prototype, 'getOpenPrograms').mockResolvedValue(response);
+    it('answers with the page of open programs the query asks for', async () => {
+      const response = { data: [{ id: PROGRAM_ID, name: 'Test Program' }], total: 1 };
+      const read = vi.spyOn(MentorshipMentorService.prototype, 'getOpenPrograms').mockResolvedValue(response);
 
-      await controller.getOpenPrograms(buildReq(), res, next);
+      await controller.getOpenPrograms({ params: {}, query: { search: ' test ', offset: '20' } } as unknown as Request, res, next);
 
+      expect(read).toHaveBeenCalledWith(expect.anything(), { search: 'test', offset: 20 });
       expect(res.json).toHaveBeenCalledWith(response);
       expect(next).not.toHaveBeenCalled();
+    });
+
+    it('passes a ServiceValidationError to next for a bad offset, without reading', async () => {
+      const read = vi.spyOn(MentorshipMentorService.prototype, 'getOpenPrograms');
+
+      await controller.getOpenPrograms({ params: {}, query: { offset: '-1' } } as unknown as Request, res, next);
+
+      expect(read).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     });
 
     it('answers with the requests', async () => {

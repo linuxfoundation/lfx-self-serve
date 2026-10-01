@@ -35,6 +35,7 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
  * on the standalone mentor profile page. Mirrors the Become a Mentor registration form
  * sections — program details, introduction, skills, and resume — in a drawer layout.
  *
+ * The programs section reads the programs itself, a page at a time, each time the drawer opens.
  * Program requests are live: picking a program sends the request at once, and Withdraw (shown only
  * on pending rows) confirms and withdraws at once. Both leave the toasts to their services and the
  * refresh to `MentorshipMentorService`, whose revision signal makes the list re-read after a write.
@@ -81,13 +82,11 @@ export class MentorProfileEditDrawerComponent {
   protected readonly requesting = signal(false);
   protected readonly withdrawingId = this.withdrawService.withdrawingId;
 
-  private readonly programsState = this.initPrograms();
   private readonly requestsState = this.initRequests();
-  protected readonly programs = computed(() => this.programsState().programs);
   protected readonly requests = computed(() => this.requestsState().requests);
   protected readonly invitedProgramIds = computed(() => this.requestsState().invitedProgramIds);
   protected readonly requestsFailed = computed(() => this.requestsState().failed);
-  protected readonly loading = computed(() => this.programsState().loading || this.requestsState().loading);
+  protected readonly requestsLoading = computed(() => this.requestsState().loading);
 
   public constructor() {
     toObservable(this.drawer.context)
@@ -127,29 +126,6 @@ export class MentorProfileEditDrawerComponent {
     if (!visible) {
       this.drawer.close();
     }
-  }
-
-  /**
-   * Load the programs taking mentor requests when the drawer opens. switchMap cancels a prior
-   * open's in-flight request so a slow earlier load can't overwrite a later one. A failed read
-   * (already logged by the service) leaves the picker empty.
-   */
-  private initPrograms() {
-    const empty = { programs: [] as MentorshipMentorOpenProgram[], loading: true };
-
-    return toSignal(
-      toObservable(this.drawer.context).pipe(
-        filter(Boolean),
-        switchMap(() =>
-          this.mentorService.getOpenPrograms().pipe(
-            map((response) => ({ programs: response.data, loading: false })),
-            catchError(() => of({ programs: [] as MentorshipMentorOpenProgram[], loading: false })),
-            startWith(empty)
-          )
-        )
-      ),
-      { initialValue: empty }
-    );
   }
 
   /**

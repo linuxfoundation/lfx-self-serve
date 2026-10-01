@@ -42,7 +42,7 @@ import { buildMentorshipMentorRegisterRequest, getMentorshipMentorRegisterErrors
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, map, of, startWith } from 'rxjs';
+import { startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { ResumeSectionComponent } from '../../components/resume-section/resume-section.component';
@@ -125,12 +125,6 @@ export class MentorRegisterComponent {
   protected readonly showErrors = signal(false);
   protected readonly submitting = signal(false);
 
-  private readonly programsState = this.initPrograms();
-
-  protected readonly programs = computed(() => this.programsState().programs);
-  /** True until the first emission, so the picker shows a loading state instead of an empty list. */
-  protected readonly programsLoading = computed(() => this.programsState().loading);
-
   private readonly formSnapshot = toSignal(this.form.valueChanges.pipe(startWith(this.form.getRawValue())), {
     initialValue: this.form.getRawValue(),
   });
@@ -192,22 +186,6 @@ export class MentorRegisterComponent {
   /** The profile-exists banner's button: the profile is already there, so this goes where a save would have. */
   protected onContinue(): void {
     void this.router.navigate(['/mentorship/mentor/programs']);
-  }
-
-  /**
-   * The published programs a mentor can ask to join. A failed read (already logged by the service) leaves
-   * the picker empty rather than blocking registration, since requesting a program is optional.
-   * `loading` flips on the first emission — failure included — because either way the picker has
-   * all the options it is ever going to get.
-   */
-  private initPrograms() {
-    return toSignal(
-      this.mentorService.getOpenPrograms().pipe(
-        map((response) => ({ programs: response.data, loading: false })),
-        catchError(() => of({ programs: [] as MentorshipMentorOpenProgram[], loading: false }))
-      ),
-      { initialValue: { programs: [] as MentorshipMentorOpenProgram[], loading: true } }
-    );
   }
 
   private initVisibleFailure(): Signal<MentorshipMentorRegisterSubmitFailure | null> {

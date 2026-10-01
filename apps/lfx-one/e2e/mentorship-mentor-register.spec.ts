@@ -46,8 +46,8 @@ async function stubRegisterSave(page: Page, options: { saveStatus?: number; save
   const { saveStatus = 204, saveBody } = options;
   const saveBodies: unknown[] = [];
 
-  await page.route('**/api/mentorship/mentor/open-programs', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) })
+  await page.route('**/api/mentorship/mentor/open-programs**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], total: 0 }) })
   );
 
   await page.route('**/api/mentorship/mentor/profile', (route) => {

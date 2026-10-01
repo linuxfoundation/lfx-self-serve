@@ -1,29 +1,54 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
+  MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS,
+  MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH,
   MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES,
+  MENTORSHIP_MENTOR_PICKER_INVITED_NOTE,
+  MENTORSHIP_MENTOR_PICKER_ITEM_SIZE,
+  MENTORSHIP_MENTOR_PICKER_LIST_PADDING,
+  MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT,
+  MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS,
+  MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE,
   MENTORSHIP_MENTOR_PROGRAMS_HELPER,
   MENTORSHIP_MENTOR_PROGRAMS_INTRO,
+  MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE,
+  MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE,
   MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS,
   MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorOpenProgram,
+  MentorshipMentorOpenProgramsQuery,
+  MentorshipMentorOpenProgramsState,
+  MentorshipMentorProgramOption,
+  MentorshipMentorProgramRequest,
+} from '@lfx-one/shared/interfaces';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
+import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 /**
  * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
- * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up,
- * clears itself, and drops programs with a pending, accepted or declined request from its options
- * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitedProgramIds`).
- * A program whose request was withdrawn stays pickable, since asking again reopens it. When the
- * parent could not read the requests, the section says so with a Retry and keeps the select
- * disabled, because it cannot tell which programs are already requested.
+ * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up
+ * and clears itself. A program with a pending, accepted or declined request
+ * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitedProgramIds`),
+ * stays listed but disabled, with its status as a note. A program whose request was withdrawn stays
+ * pickable, since asking again reopens it. When the parent could not read the requests, the section
+ * says so with a Retry and keeps the select disabled, because it cannot tell which programs are
+ * already requested.
+ *
+ * The section reads the programs itself, a page at a time: typing in the select's filter searches
+ * upstream by name once typing pauses, and scrolling to the end of the list reads the next page. A
+ * failed page shows its own Retry, so it never looks like there are no programs. While a search
+ * waits on its answer, the previous programs stay listed (the select narrows them as typed) and an
+ * empty list says it is searching, since a slow read must not look like "no results".
  *
  * Applying is optional — a mentor may register a profile and come back for programs later — so
  * nothing here is required and the section surfaces no validation error. The parent owns the list
@@ -37,9 +62,8 @@ import { MentorshipMentorOpenProgram, MentorshipMentorProgramRequest } from '@lf
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProgramsSectionComponent {
-  public readonly programs = input.required<MentorshipMentorOpenProgram[]>();
-  /** While true the select shows a loading state and says so, rather than looking like a program-less platform. */
-  public readonly loading = input(false);
+  private readonly mentorService = inject(MentorshipMentorService);
+
   /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
   public readonly bordered = input(true);
 
@@ -51,6 +75,8 @@ export class MentorProgramsSectionComponent {
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
   /** Programs the mentor is already invited to; upstream refuses a request for them. */
   public readonly invitedProgramIds = input<string[]>([]);
+  /** True while the parent is still reading the requests: the select waits, since it cannot yet tell which programs are requested. */
+  public readonly requestsLoading = input(false);
   /** True when the parent could not read the requests: shows the failure and its Retry instead of the list. */
   public readonly requestsFailed = input(false);
   public readonly add = output<MentorshipMentorOpenProgram>();
@@ -60,12 +86,30 @@ export class MentorProgramsSectionComponent {
   protected readonly intro = MENTORSHIP_MENTOR_PROGRAMS_INTRO;
   protected readonly helper = MENTORSHIP_MENTOR_PROGRAMS_HELPER;
   protected readonly requestsFailedMessage = MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE;
+  protected readonly programsFailedMessage = MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE;
+  protected readonly itemSize = MENTORSHIP_MENTOR_PICKER_ITEM_SIZE;
+  protected readonly scrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
 
   protected readonly pickerForm = new FormGroup({
     programId: new FormControl<string | null>(null),
   });
 
-  protected readonly availablePrograms = this.initAvailablePrograms();
+  /** What the picker has loaded for the current search. Starts loading, since the first page is read on creation. */
+  protected readonly programsState = signal<MentorshipMentorOpenProgramsState>({ programs: [], total: 0, loading: true, loadingMore: false, failed: false });
+
+  /** True from a keystroke that changes the search until its read starts, so the debounce never looks like "no results". */
+  private readonly searchPending = signal(false);
+
+  /** Filter text, trimmed and cut to the length the BFF accepts; searched once typing pauses. */
+  private readonly filterInput$ = new Subject<string>();
+  /** Each page to read. A new search replaces any page still in flight. */
+  private readonly pageRequests$ = new Subject<Required<MentorshipMentorOpenProgramsQuery>>();
+  /** The search the loaded pages belong to, so the next page and a Retry read the same one. */
+  private search = '';
+
+  protected readonly programOptions = this.initProgramOptions();
+  protected readonly emptyMessage = this.initEmptyMessage();
+  protected readonly scrollHeight = this.initScrollHeight();
   protected readonly rows = this.initRows();
   protected readonly wrapperClass = this.initWrapperClass();
   private readonly pickerDisabled = this.initPickerDisabled();
@@ -75,7 +119,7 @@ export class MentorProgramsSectionComponent {
     // program can never look "selected" while its request is already listed below.
     this.pickerForm.controls.programId.valueChanges.pipe(takeUntilDestroyed()).subscribe((programId) => {
       if (!programId) return;
-      const program = this.programs().find((item) => item.id === programId);
+      const program = this.programsState().programs.find((item) => item.id === programId);
       this.pickerForm.controls.programId.setValue(null, { emitEvent: false });
       if (program) this.add.emit(program);
     });
@@ -90,19 +134,43 @@ export class MentorProgramsSectionComponent {
           control.enable({ emitEvent: false });
         }
       });
+
+    this.initProgramPages();
   }
 
-  private initAvailablePrograms() {
-    return computed(() => {
-      const requested = new Set([
-        ...this.requests()
-          .filter((item) => MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES.includes(item.status))
-          .map((item) => item.programId),
-        ...this.invitedProgramIds(),
-      ]);
-      return this.programs()
-        .filter((program) => !requested.has(program.id))
-        .map((program) => ({ label: program.name, value: program.id }));
+  /** The search is cut to the length the BFF accepts, so a long paste narrows rather than fails. */
+  protected onFilter(event: { filter?: string | null }): void {
+    const search = (event.filter ?? '').trim().slice(0, MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH);
+    this.searchPending.set(search !== this.search);
+    this.filterInput$.next(search);
+  }
+
+  /** Reads the next page once the list is scrolled to its last loaded row, unless a page is in flight, failed, or none is left. */
+  protected onLazyLoad(event?: { last?: number }): void {
+    const state = this.programsState();
+    if (state.loading || state.loadingMore || state.failed || state.programs.length >= state.total) return;
+    if (event?.last !== undefined && event.last < state.programs.length - 1) return;
+    this.pageRequests$.next({ search: this.search, offset: state.programs.length });
+  }
+
+  /** Re-reads the page that failed: the first page of the search, or the next one. */
+  protected onRetryPrograms(): void {
+    this.pageRequests$.next({ search: this.search, offset: this.programsState().programs.length });
+  }
+
+  /** Every loaded program as an option. One the mentor cannot request again is disabled, with the reason as its note. */
+  private initProgramOptions() {
+    return computed((): MentorshipMentorProgramOption[] => {
+      const notes = new Map<string, string>(this.invitedProgramIds().map((programId) => [programId, MENTORSHIP_MENTOR_PICKER_INVITED_NOTE]));
+      for (const request of this.requests()) {
+        if (MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES.includes(request.status)) {
+          notes.set(request.programId, MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS[request.status]);
+        }
+      }
+      return this.programsState().programs.map((program) => {
+        const note = notes.get(program.id) ?? null;
+        return { label: program.name, value: program.id, disabled: note !== null, note };
+      });
     });
   }
 
@@ -117,12 +185,67 @@ export class MentorProgramsSectionComponent {
     );
   }
 
-  /** The select is off while a request is in flight, and while the requests are unknown after a failed read. */
+  /** The select is off while a request is in flight, and while the requests are unknown: still loading, or after a failed read. */
   private initPickerDisabled() {
-    return computed(() => this.requesting() || this.requestsFailed());
+    return computed(() => this.requesting() || this.requestsLoading() || this.requestsFailed());
+  }
+
+  /** What an empty list says: searching while a search is pending or in flight, otherwise that nothing matched. */
+  private initEmptyMessage() {
+    return computed(() =>
+      this.searchPending() || this.programsState().loading ? MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE : MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE
+    );
+  }
+
+  /** One row per program, or one for the empty message, plus the list's padding; capped so a long list scrolls. */
+  private initScrollHeight() {
+    return computed(() => {
+      const rows = Math.max(1, this.programOptions().length) * this.itemSize;
+      return `min(${MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT}px, calc(${rows}px + ${MENTORSHIP_MENTOR_PICKER_LIST_PADDING}))`;
+    });
   }
 
   private initWrapperClass() {
     return computed(() => (this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'));
+  }
+
+  /**
+   * Searches on the filter text once typing pauses, starting with no search, and reads each
+   * requested page. A new search keeps the previous programs listed until its first page answers,
+   * then replaces them; if that page fails, the list empties so Retry reads the search from the start.
+   */
+  private initProgramPages(): void {
+    // Subscribed first: the search stream below asks for the first page as soon as it subscribes.
+    this.pageRequests$
+      .pipe(
+        tap(({ offset }) =>
+          this.programsState.update((state) =>
+            offset === 0 ? { ...state, loading: true, loadingMore: false, failed: false } : { ...state, loadingMore: true, failed: false }
+          )
+        ),
+        switchMap((query) =>
+          this.mentorService.getOpenPrograms(query).pipe(
+            map((page) => ({ page, offset: query.offset })),
+            catchError(() => of({ page: null, offset: query.offset }))
+          )
+        ),
+        takeUntilDestroyed()
+      )
+      .subscribe(({ page, offset }) =>
+        this.programsState.update((state) => {
+          if (!page && offset === 0) return { programs: [], total: 0, loading: false, loadingMore: false, failed: true };
+          if (!page) return { ...state, loading: false, loadingMore: false, failed: true };
+          const programs = offset === 0 ? page.data : [...state.programs, ...page.data];
+          return { programs, total: page.total, loading: false, loadingMore: false, failed: false };
+        })
+      );
+
+    this.filterInput$
+      .pipe(debounceTime(MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS), startWith(''), distinctUntilChanged(), takeUntilDestroyed())
+      .subscribe((search) => {
+        this.search = search;
+        this.searchPending.set(false);
+        this.pageRequests$.next({ search, offset: 0 });
+      });
   }
 }

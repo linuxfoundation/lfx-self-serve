@@ -9,7 +9,6 @@ import { By } from '@angular/platform-browser';
 import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_COMING_SOON_TOAST_LIFE, MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorOpenProgram,
-  MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileDetails,
   MentorshipMentorProgramRequest,
   MentorshipMentorProgramRequestsResponse,
@@ -64,13 +63,12 @@ class StubConfirmDialogComponent {}
 
 @Component({ selector: 'lfx-mentorship-mentor-programs-section', template: '' })
 class StubProgramsSectionComponent {
-  readonly programs = input<MentorshipMentorOpenProgram[]>([]);
-  readonly loading = input(false);
   readonly bordered = input(true);
   readonly requests = input<MentorshipMentorProgramRequest[]>([]);
   readonly requesting = input(false);
   readonly withdrawingId = input<string | null>(null);
   readonly invitedProgramIds = input<string[]>([]);
+  readonly requestsLoading = input(false);
   readonly requestsFailed = input(false);
   readonly add = output<MentorshipMentorOpenProgram>();
   readonly withdraw = output<string>();
@@ -120,7 +118,6 @@ describe('MentorProfileEditDrawerComponent', () => {
   let drawer: MentorProfileEditDrawerService;
   let messageAdd: ReturnType<typeof vi.fn>;
   let revision: ReturnType<typeof signal<number>>;
-  let getOpenPrograms: ReturnType<typeof vi.fn<() => Observable<MentorshipMentorOpenProgramsResponse>>>;
   let getMentorRequests: ReturnType<typeof vi.fn<() => Observable<MentorshipMentorProgramRequestsResponse>>>;
   let request: ReturnType<typeof vi.fn<(program: MentorshipMentorOpenProgram) => Observable<boolean>>>;
   let confirmWithdraw: ReturnType<typeof vi.fn>;
@@ -145,7 +142,6 @@ describe('MentorProfileEditDrawerComponent', () => {
     messageAdd = vi.fn();
     drawer = new MentorProfileEditDrawerService();
     revision = signal(0);
-    getOpenPrograms = vi.fn(() => of({ data: PROGRAMS }));
     getMentorRequests = vi.fn(() => of({ data: REQUESTS, invitedProgramIds: [] }));
     request = vi.fn(() => of(true));
     confirmWithdraw = vi.fn();
@@ -158,7 +154,7 @@ describe('MentorProfileEditDrawerComponent', () => {
       providers: [
         {
           provide: MentorshipMentorService,
-          useValue: { getOpenPrograms, getMentorRequests, clearMentorCaches, mentorRequestsRevision: revision.asReadonly() },
+          useValue: { getMentorRequests, clearMentorCaches, mentorRequestsRevision: revision.asReadonly() },
         },
         { provide: MentorProgramRequestService, useValue: { request } },
         { provide: MessageService, useValue: { add: messageAdd } },
@@ -267,12 +263,25 @@ describe('MentorProfileEditDrawerComponent', () => {
 
   // --- Program requests ---
 
-  it('passes the open programs and the mentor requests to the programs section', () => {
-    expect(getOpenPrograms).toHaveBeenCalledTimes(1);
-    expect(section().programs()).toEqual(PROGRAMS);
+  it('passes the mentor requests to the programs section, which reads the programs itself', () => {
     expect(section().requests()).toEqual(REQUESTS);
-    expect(section().loading()).toBe(false);
+    expect(section().requestsLoading()).toBe(false);
     expect(section().requestsFailed()).toBe(false);
+  });
+
+  it('tells the section the requests are loading while an open reads them, so its picker waits', async () => {
+    const pending = new Subject<MentorshipMentorProgramRequestsResponse>();
+    getMentorRequests.mockReturnValueOnce(pending);
+    drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
+    await settle();
+
+    expect(section().requestsLoading()).toBe(true);
+
+    pending.next({ data: REQUESTS, invitedProgramIds: [] });
+    pending.complete();
+    await settle();
+
+    expect(section().requestsLoading()).toBe(false);
   });
 
   it('passes the invited programs to the section so the picker can leave them out', async () => {
@@ -290,7 +299,7 @@ describe('MentorProfileEditDrawerComponent', () => {
 
     expect(section().requestsFailed()).toBe(true);
     expect(section().requests()).toEqual([]);
-    expect(section().loading()).toBe(false);
+    expect(section().requestsLoading()).toBe(false);
   });
 
   it('clears the mentor caches on Retry so the requests are read again', () => {
@@ -309,7 +318,7 @@ describe('MentorProfileEditDrawerComponent', () => {
 
     expect(getMentorRequests.mock.calls.length).toBe(callsBefore + 1);
     expect(section().requests()).toEqual(REQUESTS);
-    expect(section().loading()).toBe(false);
+    expect(section().requestsLoading()).toBe(false);
 
     const updated: MentorshipMentorProgramRequest[] = [{ ...REQUESTS[0], status: 'withdrawn' }];
     pending.next({ data: updated, invitedProgramIds: [] });

@@ -4,7 +4,14 @@
 import { MentorshipUpstreamProgramMembership, MentorshipUpstreamProgramMemberStatus } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { mapMentorshipMentorInvitedProgramIds, mapMentorshipMentorOpenProgram, mapMentorshipMentorProgramRequests } from './mentorship-mentor-request.helper';
+import { ServiceValidationError } from '../errors';
+import {
+  escapeMentorshipIlikeSearch,
+  mapMentorshipMentorInvitedProgramIds,
+  mapMentorshipMentorOpenProgram,
+  mapMentorshipMentorProgramRequests,
+  parseMentorshipMentorOpenProgramsQuery,
+} from './mentorship-mentor-request.helper';
 
 const membership: MentorshipUpstreamProgramMembership = {
   id: 'member-1',
@@ -22,6 +29,40 @@ describe('mapMentorshipMentorOpenProgram', () => {
       id: 'prog-1',
       name: 'Test Program',
     });
+  });
+});
+
+describe('parseMentorshipMentorOpenProgramsQuery', () => {
+  it('reads a trimmed search and an integer offset', () => {
+    expect(parseMentorshipMentorOpenProgramsQuery({ search: '  kube ', offset: '40' })).toEqual({ search: 'kube', offset: 40 });
+  });
+
+  it('leaves out a missing or blank value', () => {
+    expect(parseMentorshipMentorOpenProgramsQuery({})).toEqual({});
+    expect(parseMentorshipMentorOpenProgramsQuery({ search: '   ', offset: '' })).toEqual({});
+  });
+
+  it.each(['-1', '1.5', 'abc', '1e3', '99999999999999999999'])('refuses the offset %j', (offset) => {
+    expect(() => parseMentorshipMentorOpenProgramsQuery({ offset })).toThrow(ServiceValidationError);
+  });
+
+  it('refuses a search over the length limit, but takes one at it', () => {
+    expect(() => parseMentorshipMentorOpenProgramsQuery({ search: 'a'.repeat(101) })).toThrow(ServiceValidationError);
+    expect(parseMentorshipMentorOpenProgramsQuery({ search: 'a'.repeat(100) })).toEqual({ search: 'a'.repeat(100) });
+  });
+
+  it('ignores a repeated value rather than reading an array', () => {
+    expect(parseMentorshipMentorOpenProgramsQuery({ search: ['a', 'b'], offset: ['1', '2'] })).toEqual({});
+  });
+});
+
+describe('escapeMentorshipIlikeSearch', () => {
+  it('escapes the ILIKE wildcards and the escape character, so the search is literal', () => {
+    expect(escapeMentorshipIlikeSearch('100%_ok\\')).toBe('100\\%\\_ok\\\\');
+  });
+
+  it('leaves a plain search alone', () => {
+    expect(escapeMentorshipIlikeSearch('Kubernetes Contributors')).toBe('Kubernetes Contributors');
   });
 });
 

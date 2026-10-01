@@ -59,9 +59,42 @@ export interface MentorshipMentorOpenProgram {
   name: string;
 }
 
-/** Response body from `GET /api/mentorship/mentor/open-programs`. */
+/** Query for `GET /api/mentorship/mentor/open-programs`: one page of published programs, optionally narrowed by name. */
+export interface MentorshipMentorOpenProgramsQuery {
+  /** Matched anywhere in the program name, ignoring case. */
+  search?: string;
+  /** Rows to skip; the page size is fixed by the BFF. */
+  offset?: number;
+}
+
+/** Response body from `GET /api/mentorship/mentor/open-programs`: one page, and how many programs match in all. */
 export interface MentorshipMentorOpenProgramsResponse {
   data: MentorshipMentorOpenProgram[];
+  total: number;
+}
+
+/**
+ * One option in the mentor program picker. A program the mentor already asked to join, or is invited
+ * to, stays listed but disabled, with a note saying why, so the mentor can see it rather than wonder
+ * where it went.
+ */
+export interface MentorshipMentorProgramOption {
+  label: string;
+  value: string;
+  disabled: boolean;
+  note: string | null;
+}
+
+/** What the picker has loaded so far for the current search. */
+export interface MentorshipMentorOpenProgramsState {
+  programs: MentorshipMentorOpenProgram[];
+  total: number;
+  /** True while the first page of a search is in flight. */
+  loading: boolean;
+  /** True while a further page is in flight. */
+  loadingMore: boolean;
+  /** True when the last page read failed, so the list is not mistaken for "no programs". */
+  failed: boolean;
 }
 
 /**

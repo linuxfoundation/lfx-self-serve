@@ -17,6 +17,9 @@
  */
 
 import {
+  MENTORSHIP_MENTOR_PICKER_ITEM_SIZE,
+  MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE,
+  MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE,
   MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES,
   MENTORSHIP_MENTOR_REQUEST_ERROR_SUMMARY,
   MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS,
@@ -56,13 +59,18 @@ interface RequestStubOptions {
 /**
  * Stubs the profile read, the picker's read, the request list, and both writes. A sent request
  * joins the list as pending and a withdraw marks its row withdrawn, so the drawer's re-read after
- * each write sees what upstream would. Returns the request bodies and withdrawn ids sent.
+ * each write sees what upstream would. Returns the request bodies and withdrawn ids sent, and the
+ * search of each program page the picker read.
  */
-async function stubMentorRequests(page: Page, options: RequestStubOptions = {}): Promise<{ requestBodies: unknown[]; withdrawnIds: string[] }> {
+async function stubMentorRequests(
+  page: Page,
+  options: RequestStubOptions = {}
+): Promise<{ requestBodies: unknown[]; withdrawnIds: string[]; programSearches: string[] }> {
   const { requestStatus = 204, requestBody } = options;
   const requests = [...(options.requests ?? [])];
   const requestBodies: unknown[] = [];
   const withdrawnIds: string[] = [];
+  const programSearches: string[] = [];
 
   await page.route('**/api/mentorship/mentor/profile', (route) => {
     if (route.request().method() !== 'GET') {
@@ -75,9 +83,10 @@ async function stubMentorRequests(page: Page, options: RequestStubOptions = {}):
     });
   });
 
-  await page.route('**/api/mentorship/mentor/open-programs', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [ALPHA, BETA] }) })
-  );
+  await page.route('**/api/mentorship/mentor/open-programs**', (route) => {
+    programSearches.push(new URL(route.request().url()).searchParams.get('search') ?? '');
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [ALPHA, BETA], total: 2 }) });
+  });
 
   await page.route('**/api/mentorship/mentor/requests', (route) => {
     if (route.request().method() === 'GET') {
@@ -101,7 +110,7 @@ async function stubMentorRequests(page: Page, options: RequestStubOptions = {}):
     return route.fulfill({ status: 204 });
   });
 
-  return { requestBodies, withdrawnIds };
+  return { requestBodies, withdrawnIds, programSearches };
 }
 
 async function openEditDrawer(page: Page): Promise<void> {
@@ -110,8 +119,12 @@ async function openEditDrawer(page: Page): Promise<void> {
   await expect(page.getByTestId('mentor-profile-edit-drawer-body')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 }
 
-async function pickProgram(page: Page, program: MentorshipMentorOpenProgram): Promise<void> {
+async function openPicker(page: Page): Promise<void> {
   await page.locator('[data-test="mentorship-mentor-program"]').click();
+}
+
+async function pickProgram(page: Page, program: MentorshipMentorOpenProgram): Promise<void> {
+  await openPicker(page);
   await page.getByRole('option', { name: program.name, exact: true }).click();
 }
 
@@ -160,6 +173,79 @@ test.describe('Mentor program requests — request', () => {
 
     await expect(page.locator('p-toast .p-toast-message-error')).toContainText(`${BETA.name}: ${MENTORSHIP_MENTOR_REQUEST_ERROR_MESSAGES[404]}`);
     await expect(page.locator('[data-testid^="mentorship-mentor-request-row-"]')).toHaveCount(0);
+  });
+
+  test('a program with a pending request stays listed, disabled, with its status as the note', async ({ page }) => {
+    await stubMentorRequests(page, { requests: [{ id: BETA_REQUEST_ID, programId: BETA.id, programName: BETA.name, status: 'pending' }] });
+    await openEditDrawer(page);
+
+    await openPicker(page);
+
+    // PrimeNG marks a disabled option with `data-p-disabled`, not `aria-disabled`.
+    const beta = page.getByRole('option').filter({ has: page.getByTestId(`mentorship-mentor-program-option-${BETA.id}`) });
+    await expect(beta).toHaveAttribute('data-p-disabled', 'true');
+    await expect(page.getByTestId(`mentorship-mentor-program-option-note-${BETA.id}`)).toHaveText(MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS.pending);
+    await expect(page.getByRole('option', { name: ALPHA.name, exact: true })).toHaveAttribute('data-p-disabled', 'false');
+  });
+
+  test('typing in the picker searches the programs upstream', async ({ page }) => {
+    const { programSearches } = await stubMentorRequests(page);
+    await openEditDrawer(page);
+
+    await openPicker(page);
+    await page.getByPlaceholder('Search programs').fill('Alpha');
+
+    await expect.poll(() => programSearches).toContain('Alpha');
+    await expect(page.getByRole('option', { name: ALPHA.name, exact: true })).toBeVisible();
+  });
+
+  test('while a search waits on its answer, the list says it is searching rather than that nothing matched', async ({ page }) => {
+    await stubMentorRequests(page);
+    await openEditDrawer(page);
+    await openPicker(page);
+
+    // Registered after the shared stub, so it answers the searched reads; held until released.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(
+      (url) => url.pathname.endsWith('/api/mentorship/mentor/open-programs') && url.searchParams.has('search'),
+      async (route) => {
+        await held;
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], total: 0 }) }).catch(() => undefined);
+      }
+    );
+
+    await page.getByPlaceholder('Search programs').fill('Gamma');
+
+    const overlay = page.locator('.p-select-overlay');
+    await expect(overlay).toContainText(MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE);
+    release();
+    await expect(overlay).toContainText(MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE);
+    await expect(overlay).not.toContainText(MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE);
+  });
+
+  test('a search that matches after one that matched nothing lists every program it found', async ({ page }) => {
+    await stubMentorRequests(page);
+    // Registered after the shared stub, so it answers the search that matches nothing.
+    await page.route(
+      (url) => url.pathname.endsWith('/api/mentorship/mentor/open-programs') && url.searchParams.get('search') === 'Gamma',
+      (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], total: 0 }) })
+    );
+    await openEditDrawer(page);
+    await openPicker(page);
+
+    const overlay = page.locator('.p-select-overlay');
+    await page.getByPlaceholder('Search programs').fill('Gamma');
+    await expect(overlay).toContainText(MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE);
+
+    await page.getByPlaceholder('Search programs').fill('Test');
+    await expect(page.getByRole('option', { name: BETA.name, exact: true })).toBeVisible();
+
+    // The list must be tall enough to show both programs, not kept at the empty list's height,
+    // and must not scroll for two rows.
+    const scroller = overlay.locator('.p-virtualscroller');
+    await expect.poll(async () => (await scroller.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(2 * MENTORSHIP_MENTOR_PICKER_ITEM_SIZE);
+    expect(await scroller.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
   });
 });
 

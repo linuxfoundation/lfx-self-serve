@@ -6,6 +6,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
+import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMentorService } from '../services/mentorship-mentor.service';
@@ -53,8 +54,9 @@ export class MentorshipMentorController {
     }
   }
 
-  // GET /api/mentorship/mentor/open-programs
-  // Auth: logged-in user required (401 otherwise). Every published program, as id and name.
+  // GET /api/mentorship/mentor/open-programs?search=&offset=
+  // Auth: logged-in user required (401 otherwise). One page of published programs, as id and name,
+  // with the total that match. A bad offset or an over-long search is a 400.
   public async getOpenPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentor_open_programs');
 
@@ -63,8 +65,9 @@ export class MentorshipMentorController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_open_programs' });
       }
 
-      const programs = await this.mentorService.getOpenPrograms(req);
-      logger.success(req, 'get_mentorship_mentor_open_programs', startTime, { result_count: programs.data.length });
+      const query = parseMentorshipMentorOpenProgramsQuery(req.query);
+      const programs = await this.mentorService.getOpenPrograms(req, query);
+      logger.success(req, 'get_mentorship_mentor_open_programs', startTime, { result_count: programs.data.length, total: programs.total });
       res.json(programs);
     } catch (error) {
       next(error);

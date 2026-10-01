@@ -5,12 +5,14 @@ import {
   EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   getMockMentorshipMentorProgramLists,
   getMockMentorshipMentorPrograms,
+  MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE,
   MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgram,
@@ -33,6 +35,7 @@ import { ConflictError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import {
+  escapeMentorshipIlikeSearch,
   mapMentorshipMentorInvitedProgramIds,
   mapMentorshipMentorOpenProgram,
   mapMentorshipMentorProgramRequests,
@@ -94,15 +97,30 @@ export class MentorshipMentorService {
   }
 
   /**
-   * The programs a mentor can ask to join: every published program, read from the plain program
-   * list rather than the public catalog, since the picker needs only each program's id and name.
+   * One page of the programs a mentor can ask to join: published programs, optionally narrowed by
+   * name, read from the plain program list rather than the public catalog, since the picker needs
+   * only each program's id and name. A page with no usable total is treated as the last one, so the
+   * picker never asks for more than exists.
    */
-  public async getOpenPrograms(req: Request): Promise<MentorshipMentorOpenProgramsResponse> {
-    logger.debug(req, 'mentorship_get_mentor_open_programs', 'Loading programs taking mentor requests');
-    const programs = await listAllMentorshipPages<MentorshipUpstreamProgram>(this.microserviceProxy, req, MENTORSHIP_PROGRAMS_PATH, { status: 'published' });
-    const data = programs.map(mapMentorshipMentorOpenProgram);
-    logger.debug(req, 'mentorship_get_mentor_open_programs', 'Programs taking mentor requests loaded', { count: data.length });
-    return { data };
+  public async getOpenPrograms(req: Request, query: MentorshipMentorOpenProgramsQuery = {}): Promise<MentorshipMentorOpenProgramsResponse> {
+    const offset = query.offset ?? 0;
+    logger.debug(req, 'mentorship_get_mentor_open_programs', 'Loading programs taking mentor requests', { offset, has_search: !!query.search });
+    const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamProgram>>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_PROGRAMS_PATH,
+      'GET',
+      {
+        status: 'published',
+        limit: MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE,
+        offset,
+        ...(query.search ? { search: escapeMentorshipIlikeSearch(query.search) } : {}),
+      }
+    );
+    const programs = (data ?? []).map(mapMentorshipMentorOpenProgram);
+    const total = typeof meta?.total === 'number' && Number.isFinite(meta.total) ? meta.total : offset + programs.length;
+    logger.debug(req, 'mentorship_get_mentor_open_programs', 'Programs taking mentor requests loaded', { count: programs.length, total, offset });
+    return { data: programs, total };
   }
 
   /**

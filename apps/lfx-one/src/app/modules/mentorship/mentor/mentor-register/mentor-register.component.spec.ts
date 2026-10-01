@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorOpenProgram,
+  MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProgramRequest,
   MentorshipMentorRegisterRequest,
@@ -57,7 +58,7 @@ class StubRichEditorComponent {
 describe('MentorRegisterComponent', () => {
   const program = (id: string, name: string): MentorshipMentorOpenProgram => ({ id, name });
 
-  const programs: MentorshipMentorOpenProgramsResponse = { data: [program('mp_gridflow', 'GridFlow Ingestion')] };
+  const programs: MentorshipMentorOpenProgramsResponse = { data: [program('mp_gridflow', 'GridFlow Ingestion')], total: 1 };
 
   /** Stands in for requests the mentor already raised. The component itself starts empty. */
   const existingRequests: MentorshipMentorProgramRequest[] = [
@@ -69,7 +70,7 @@ describe('MentorRegisterComponent', () => {
   let toast: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
   let registerMentorProfile: ReturnType<typeof vi.fn<(request: MentorshipMentorRegisterRequest) => Observable<void>>>;
-  let getOpenPrograms: ReturnType<typeof vi.fn<() => Observable<MentorshipMentorOpenProgramsResponse>>>;
+  let getOpenPrograms: ReturnType<typeof vi.fn<(query: MentorshipMentorOpenProgramsQuery) => Observable<MentorshipMentorOpenProgramsResponse>>>;
   let requestMany: ReturnType<typeof vi.fn<(programs: MentorshipMentorOpenProgram[]) => Observable<MentorshipMentorOpenProgram[]>>>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -249,20 +250,9 @@ describe('MentorRegisterComponent', () => {
     expect(component['submitting']()).toBe(false);
   });
 
-  it('offers the programs taking mentor requests in the picker', () => {
+  it('leaves reading the programs to the programs section, which asks for the first page', () => {
     expect(getOpenPrograms).toHaveBeenCalledTimes(1);
-    expect(component['programs']()).toEqual(programs.data);
-    expect(component['programsLoading']()).toBe(false);
-  });
-
-  it('leaves the picker empty, not loading, when the open programs cannot be read', async () => {
-    getOpenPrograms.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
-    fixture = TestBed.createComponent(MentorRegisterComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-
-    expect(component['programs']()).toEqual([]);
-    expect(component['programsLoading']()).toBe(false);
+    expect(getOpenPrograms).toHaveBeenCalledWith({ search: '', offset: 0 });
   });
 
   it('sends the picked programs once the profile is saved, then lands on My Programs', async () => {

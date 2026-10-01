@@ -398,6 +398,47 @@ export const MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS: Record<MentorshipMentorSta
  */
 export const MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES: readonly MentorshipMentorStatus[] = ['pending', 'accepted', 'declined'];
 
+/** Programs per page in the mentor program picker. Upstream caps a page at 100. */
+export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE = 20;
+
+/** Longest picker search the BFF accepts. No program name needs more to be found. */
+export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH = 100;
+
+/** How long the picker waits after the last keystroke before searching. */
+export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS = 300;
+
+/** Row height in the picker's virtual scroll, in px. */
+export const MENTORSHIP_MENTOR_PICKER_ITEM_SIZE = 40;
+
+/** Tallest the picker's list grows, in px; past this it scrolls. */
+export const MENTORSHIP_MENTOR_PICKER_MAX_HEIGHT = 240;
+
+/**
+ * The select list's top and bottom padding together (the theme's `select.list.padding`, 0.25rem
+ * each). The scroller adds it to the scroll height, so the list's height must too, or a short list
+ * scrolls by that much.
+ */
+export const MENTORSHIP_MENTOR_PICKER_LIST_PADDING = '0.5rem';
+
+/**
+ * Turns off the PrimeNG scroller's auto-size. It measures the list before redrawing it for a new
+ * item count, so a search that matches after one that matched nothing kept the empty list's
+ * few-px height. The picker sizes the list itself instead.
+ */
+export const MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS = { autoSize: false };
+
+/** Note on a disabled picker option the mentor holds an invitation to. */
+export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = 'Invited';
+
+/** Shown under the picker when a page of programs cannot be read. */
+export const MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE = "We couldn't load programs.";
+
+/** Shown in the picker's list while a search waits on its answer, so a slow read never says there are no programs. */
+export const MENTORSHIP_MENTOR_PROGRAMS_SEARCHING_MESSAGE = 'Searching programs…';
+
+/** Shown in the picker's list once a read answers with no programs. */
+export const MENTORSHIP_MENTOR_PROGRAMS_EMPTY_MESSAGE = 'No results found';
+
 /** Shown in place of the request list when it cannot be read, so a failed read never looks like "no requests". */
 export const MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE = "We couldn't load your program requests.";
 
