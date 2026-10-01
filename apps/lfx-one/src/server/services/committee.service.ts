@@ -25,6 +25,7 @@ import {
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
   MyCommittee,
+  MyPendingApplication,
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
@@ -1590,6 +1591,59 @@ export class CommitteeService {
     const pending = applications.filter((a) => a.status === 'pending').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return pending[0] ?? null;
+  }
+
+  /**
+   * Returns all of the caller's own pending join applications across all committees, enriched with
+   * committee display fields (name, is_foundation, project_slug) for the My Groups page.
+   *
+   * No writer guard — callers can only see their own applications. Committee names are resolved via
+   * parallel `getCommitteeBase` calls (one per unique committee_uid). Failures to resolve a name
+   * fall back to the committee_uid string so the row is still renderable.
+   */
+  public async getMyApplications(req: Request): Promise<MyPendingApplication[]> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return [];
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`username:${username}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { maxResults: 100 }
+    );
+
+    const pending = applications.filter((a) => a.status === 'pending');
+    if (pending.length === 0) {
+      return [];
+    }
+
+    // Fetch committee names in parallel for each unique committee_uid.
+    const uniqueUids = [...new Set(pending.map((a) => a.committee_uid))];
+    const committeeMap = new Map<string, { name: string; is_foundation?: boolean; project_slug?: string }>();
+
+    await Promise.allSettled(
+      uniqueUids.map(async (uid) => {
+        const committee = await this.getCommitteeBase(req, uid);
+        committeeMap.set(uid, {
+          name: committee?.name ?? uid,
+          is_foundation: committee?.is_foundation,
+          project_slug: committee?.project_slug,
+        });
+      })
+    );
+
+    return pending.map((app) => ({
+      ...app,
+      committee_name: committeeMap.get(app.committee_uid)?.name ?? app.committee_uid,
+      is_foundation: committeeMap.get(app.committee_uid)?.is_foundation,
+      project_slug: committeeMap.get(app.committee_uid)?.project_slug,
+    }));
   }
 
   /**

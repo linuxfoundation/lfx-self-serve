@@ -57,6 +57,7 @@ import {
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeFilterBarComponent } from '../components/committee-filter-bar/committee-filter-bar.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
+import { CommitteePendingApplicationsComponent } from '../components/committee-pending-applications/committee-pending-applications.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
 
@@ -67,6 +68,7 @@ import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-
     CardComponent,
     CommitteeFilterBarComponent,
     CommitteeInvitationsComponent,
+    CommitteePendingApplicationsComponent,
     CommitteeTableComponent,
     MyGroupsCardGridComponent,
     SkeletonModule,

@@ -1362,6 +1362,23 @@ export class CommitteeController {
   }
 
   /**
+   * GET /committees/applications/my
+   * Returns all of the caller's own pending join applications across every committee.
+   * No writer guard — callers can only see their own applications.
+   */
+  public async getMyApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_committee_applications', {});
+
+    try {
+      const applications = await this.committeeService.getMyApplications(req);
+      logger.success(req, 'get_my_committee_applications', startTime, { count: applications.length });
+      res.json(applications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /committees/:id/applications/my
    * Returns the caller's own pending join application, or 404 when none exists.
    * No writer guard — callers can only see their own application.

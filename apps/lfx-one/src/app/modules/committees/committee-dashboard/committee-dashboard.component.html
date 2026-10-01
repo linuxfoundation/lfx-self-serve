@@ -88,6 +88,10 @@
         <!-- Pending invitations — distinct section above the active groups table; renders nothing when empty -->
         <lfx-committee-invitations (accepted)="reloadMyCommitteesAfterAccept($event)" data-testid="committees-me-invitations" />
 
+        <!-- Pending join applications — section above the active groups table; renders nothing when empty.
+             myCommitteeUids is passed so groups the user is already a member of are suppressed here. -->
+        <lfx-committee-pending-applications [myCommitteeUids]="myCommitteeUids()" data-testid="committees-me-pending-applications" />
+
         @if (myCommittees().length > 0 || myCommitteesLoading()) {
           <div class="flex items-center justify-end gap-2" role="group" aria-label="Groups view" data-testid="groups-view-toggle">
             <lfx-button

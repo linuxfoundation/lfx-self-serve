@@ -26,6 +26,7 @@ import {
   CreateCommitteeMemberRequest,
   GroupsEngagementStats,
   MyCommittee,
+  MyPendingApplication,
   PaginatedResponse,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
@@ -307,6 +308,19 @@ export class CommitteeService {
     return this.http.get<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications/my`).pipe(
       take(1),
       catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err)))
+    );
+  }
+
+  /**
+   * Returns all of the caller's own pending join applications across all committees,
+   * enriched with committee display fields (name, is_foundation, project_slug).
+   * Used on the My Groups page to surface the "Pending Applications" section.
+   * Errors degrade to an empty array so a transient failure never breaks the My Groups load.
+   */
+  public getMyApplications(): Observable<MyPendingApplication[]> {
+    return this.http.get<MyPendingApplication[]>('/api/committees/applications/my').pipe(
+      take(1),
+      catchError(() => of([] as MyPendingApplication[]))
     );
   }
 

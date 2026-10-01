@@ -1,0 +1,55 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (applicationRows().length > 0) {
+  <section class="flex flex-col gap-4" data-testid="committee-pending-applications-section">
+    <div class="flex items-center gap-3">
+      <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+        <i class="fa-light fa-clock text-lg" aria-hidden="true"></i>
+        <span>Pending Applications ({{ applicationRows().length }})</span>
+      </h2>
+      <div class="flex-1 border-t border-gray-200 self-center"></div>
+    </div>
+
+    <ul class="flex flex-col gap-3 list-none p-0 m-0" role="list" aria-label="Pending group applications" data-testid="committee-pending-applications-list">
+      @for (application of applicationRows(); track application.uid) {
+        <li
+          role="listitem"
+          class="flex flex-col sm:flex-row sm:items-center gap-3 bg-white rounded-2xl border border-gray-200 shadow-sm px-4 py-3"
+          data-testid="committee-pending-applications-item">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <lfx-tag value="Pending review" severity="warn" icon="fa-light fa-clock" styleClass="whitespace-nowrap shrink-0" />
+            <div class="flex flex-col gap-0.5 min-w-0">
+              <a
+                [routerLink]="application.viewCommands"
+                [queryParams]="application.viewQueryParams"
+                [state]="{ backLabel: 'My Groups' }"
+                class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate"
+                [attr.title]="application.committee_name"
+                [attr.aria-label]="'Open group ' + application.committee_name"
+                data-testid="committee-pending-applications-name">
+                {{ application.committee_name }}
+              </a>
+              <span class="text-xs text-gray-500" data-testid="committee-pending-applications-subtext">
+                Applied {{ application.created_at | date: 'mediumDate' }}
+              </span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 self-start sm:self-auto sm:shrink-0">
+            <lfx-button
+              size="small"
+              severity="secondary"
+              [text]="true"
+              label="View group"
+              icon="fa-light fa-arrow-up-right-from-square"
+              [ariaLabel]="'View group ' + application.committee_name"
+              [routerLink]="application.viewCommands"
+              [queryParams]="application.viewQueryParams"
+              [state]="{ backLabel: 'My Groups' }"
+              data-testid="committee-pending-applications-view" />
+          </div>
+        </li>
+      }
+    </ul>
+  </section>
+}

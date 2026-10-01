@@ -49,3 +49,16 @@ export interface CreateCommitteeJoinApplicationRequest {
   message: string;
   organization?: CommitteeOrganizationReference;
 }
+
+/**
+ * A pending join application enriched by the BFF with committee display fields.
+ * Returned by GET /api/committees/applications/my.
+ */
+export interface MyPendingApplication extends CommitteeJoinApplication {
+  /** Committee display name — populated by the BFF via committee base record. */
+  committee_name: string;
+  /** True when the group is a foundation; used by getEntityCommands for canonical links. */
+  is_foundation?: boolean;
+  /** Committee project slug — used by getEntityCommands / ?project= query param. */
+  project_slug?: string;
+}
