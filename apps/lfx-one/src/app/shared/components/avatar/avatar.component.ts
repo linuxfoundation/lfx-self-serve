@@ -25,6 +25,8 @@ export class AvatarComponent {
 
   // Internal state for error handling
   private readonly imageErrorSignal = signal<boolean>(false);
+  private imageSwapped = false;
+  private imageAppliedAt = 0;
 
   // Computed signals for priority logic
   public readonly displayImage = computed(() => {
@@ -60,7 +62,14 @@ export class AvatarComponent {
     // renders blank because a previous, different URL failed earlier in this component's lifetime.
     toObservable(this.image)
       .pipe(takeUntilDestroyed())
-      .subscribe(() => this.imageErrorSignal.set(false));
+      .subscribe(() => {
+        this.imageErrorSignal.set(false);
+        // Stamp swaps (not the initial value) so late errors from the previous URL can be ignored.
+        if (this.imageSwapped) {
+          this.imageAppliedAt = performance.now();
+        }
+        this.imageSwapped = true;
+      });
   }
 
   // Event handlers
@@ -69,6 +78,12 @@ export class AvatarComponent {
   }
 
   protected handleImageError(event: Event): void {
+    // Replayed/duplicate errors for a URL we already swapped away from must not hide the working fallback.
+    const img = event.target as HTMLImageElement | null;
+    if ((img?.complete && img.naturalWidth > 0) || event.timeStamp < this.imageAppliedAt) {
+      return;
+    }
+
     this.imageErrorSignal.set(true);
     this.onImageError.emit(event);
   }
