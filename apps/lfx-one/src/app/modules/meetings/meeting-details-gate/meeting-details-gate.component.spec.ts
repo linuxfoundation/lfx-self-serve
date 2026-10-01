@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, Signal, signal, WritableSignal } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { describe, expect, it } from 'vitest';
@@ -33,10 +33,17 @@ class MeetingDetailsPageStubComponent {
 describe('MeetingDetailsGateComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsGateComponent>;
 
-  async function create(authenticated: WritableSignal<boolean>, getBooleanFlag: (key: string, defaultValue: boolean) => Signal<boolean>): Promise<void> {
+  // `Playthrough` (the default) resolves the v2 `@defer` block on its own; `Manual` leaves it in its
+  // placeholder state so a test can drive it to `Error` and exercise the v1 fallback.
+  async function create(
+    authenticated: WritableSignal<boolean>,
+    getBooleanFlag: (key: string, defaultValue: boolean) => Signal<boolean>,
+    deferBlockBehavior: DeferBlockBehavior = DeferBlockBehavior.Playthrough
+  ): Promise<void> {
     mountOrder.length = 0;
 
     await TestBed.configureTestingModule({
+      deferBlockBehavior,
       imports: [MeetingDetailsGateComponent],
       providers: [
         { provide: FeatureFlagService, useValue: { getBooleanFlag } },
@@ -127,5 +134,18 @@ describe('MeetingDetailsGateComponent', () => {
     fixture.detectChanges();
 
     expect(rendered()).toEqual({ v1: true, v2: false });
+  });
+
+  // The v2 chunk can fail to load — a deploy mid-session invalidates its hash, or the connection
+  // drops. The `@error` branch renders v1 rather than leaving a targeted viewer on an empty page.
+  it('falls back to v1 when the v2 chunk fails to load', async () => {
+    await create(signal(true), flagReadsAs(signal(true)), DeferBlockBehavior.Manual);
+
+    const [v2Block] = await fixture.getDeferBlocks();
+    await v2Block.render(DeferBlockState.Error);
+
+    const v2Wrapper: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="meeting-details-gate-v2"]');
+    expect(v2Wrapper?.querySelector('[data-testid="v1-stub"]')).not.toBeNull();
+    expect(v2Wrapper?.querySelector('[data-testid="v2-stub"]')).toBeNull();
   });
 });
