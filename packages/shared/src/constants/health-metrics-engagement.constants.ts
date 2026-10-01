@@ -16,8 +16,8 @@ import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
- * Health Metrics tab bar. Overview, Engagement, Events and Members are routable today; the remaining
- * two render disabled so the bar does not reshuffle as their tabs land.
+ * Health Metrics tab bar. Overview, Engagement, Events, Members and Non-Members are routable today;
+ * Training renders disabled so the bar does not reshuffle when its tab lands.
  */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
