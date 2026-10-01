@@ -131,6 +131,7 @@ Phase 0 is the foundation.
 | V2-01   | #2873 | Feature-flag gate (shim component)     |
 | V2-02   | #2874 | V2 scaffold + V1 rename                |
 | V2-03   | #2875 | Rollout / retirement doc               |
+| —       | #2920 | SSR flag decision (V2-01 follow-up)    |
 | E0-01   | #1766 | This spec                              |
 | E0-02   | #2876 | View-model + `ActionSlotKind` resolver |
 | E0-03   | #1767 | ADR: public / admin surface boundary   |
@@ -140,6 +141,11 @@ Phase 0 is the foundation.
 Open/closed state lives on GitHub, not here. The one fact that does belong in this document is the
 dependency: **Phase 1 cannot start until V2-02 (#2874) lands**, because it is the scaffold every
 Phase 1 component hangs off.
+
+The second ordering constraint is on rollout, not on building. Until #2920 gives SSR the flag
+decision, a targeted viewer's first paint is V1 and V2 replaces it after hydration. So **the flag
+stays on a named tester list until #2920 lands**: no percentage rollout and no V1 retirement before
+it. Phase 1 work does not wait for it.
 
 ### Phase 1 — shell, header, action slot, content
 
