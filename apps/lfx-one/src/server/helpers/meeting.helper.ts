@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { HOST_KEY_EARLY_MINUTES, HOST_KEY_LATE_MINUTES } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
-import { resolveMeetingOrganizer, resolveMeetingOwner } from '@lfx-one/shared/utils';
+import { isWithinHostKeyWindow, resolveMeetingOrganizer, resolveMeetingOwner } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AccessCheckService } from '../services/access-check.service';
@@ -150,30 +149,6 @@ export function stripHostKey(meeting: Partial<Meeting> | null | undefined): void
   if (meeting) {
     delete meeting.host_key;
   }
-}
-
-/**
- * Returns true when the current wall-clock time falls inside the host-key visibility window:
- * [effective_start − 70 min, effective_start + duration + 40 min).
- *
- * Mirrors PCC's showHostKey() logic. The key is account-level and can change leading up to a
- * meeting, so surfacing it days in advance risks showing a stale value.
- *
- * For recurring meetings `start_time` is the series origin, which can be far in the past.
- * `next_occurrence_start_time` is preferred when present so the window tracks the actual
- * upcoming occurrence rather than the series root.
- *
- * Falls back to false when no usable start time is present or parseable.
- */
-export function isWithinHostKeyWindow(meeting: Pick<Meeting, 'start_time' | 'duration' | 'next_occurrence_start_time'>, now = new Date()): boolean {
-  const effectiveStart = meeting.next_occurrence_start_time || meeting.start_time;
-  if (!effectiveStart) return false;
-  const startMs = Date.parse(effectiveStart);
-  if (isNaN(startMs)) return false;
-  const windowStart = startMs - HOST_KEY_EARLY_MINUTES * 60_000;
-  const windowEnd = startMs + (meeting.duration ?? 0) * 60_000 + HOST_KEY_LATE_MINUTES * 60_000;
-  const nowMs = now.getTime();
-  return nowMs >= windowStart && nowMs < windowEnd;
 }
 
 /**

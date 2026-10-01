@@ -6,6 +6,8 @@ import type { Signal } from '@angular/core';
 import type {
   CLA_MANAGER_REQUEST_TYPES,
   ORG_CLA_APPROVAL_CRITERIA,
+  ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES,
+  ORG_CLA_DESIGNEE_REFUSALS,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_MANAGER_REFUSALS,
@@ -722,11 +724,17 @@ export interface OrgClaGroup {
    *
    * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
    * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
-   * the status slot and do not hide the toggle; the Overview shows it for a signed row that is
-   * not a preview, when the caller holds the grant. Absent from an upstream field maps to
+   * the status slot and do not hide the toggle. Absent from an upstream field maps to
    * `false` at the mapper, matching the producer's own default.
    */
   autoCreateEcla?: boolean;
+  /**
+   * Whether the signed-in viewer is on this agreement's CLA manager list. Server-decided by an
+   * exact LF username match, so the browser MUST NOT work it out itself. False when there is no
+   * list or no username, so visibility fails closed. The Approval List and Acknowledgments
+   * controls also need the loaded list's own `canEdit`.
+   */
+  viewerIsClaManager: boolean;
 }
 
 /**
@@ -1140,8 +1148,9 @@ export interface OrgClaContributorAcknowledgmentList {
   /**
    * Whether the caller may invalidate rows on this agreement.
    *
-   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
-   * producer sent no roster at all — matching the sibling approval-list posture.
+   * Server-decided from the CCLA's manager roster (LF-username match). False when the producer
+   * sent no roster at all, matching the invalidate write, which the producer does not check
+   * against the roster itself.
    */
   canEdit: boolean;
   resultCount: number;
@@ -1237,6 +1246,82 @@ export interface OrgClaInvalidateAcknowledgmentResult {
 }
 
 /**
+ * One activity log entry for the Organization Lens EasyCLA detail page (#1987).
+ *
+ * Scoped to a single `(company, CLA Group)` pair. The producer already writes one event per
+ * audited action against that pair, so the row is a lean projection of the producer's own event
+ * with no PII beyond what the tab exists to render.
+ *
+ * `summary` is opaque display copy. The tab renders it as **plain text** and MUST NOT parse it
+ * for identifiers, MUST NOT render it as HTML, and MUST NOT link off any substring of it. Some
+ * historical rows carry a project name behind the literal label "with project SFID" (a producer-
+ * side rendering bug that was later corrected and left historical rows in place); tolerating
+ * that shape here is exactly the reason the field is opaque.
+ */
+export interface OrgClaActivityLogEntry {
+  /** Stable producer event id. */
+  id: string;
+  /**
+   * Event time as the producer sent it (RFC3339 in current environments, or the producer's own
+   * string format). The client renders it in the viewer's locale — no server-side re-format.
+   */
+  when: string;
+  /**
+   * Actor display, or `null` when the producer sent neither `UserName` nor `LfUsername`. A null
+   * value renders as an em-dash in the By column; the row still appears.
+   */
+  actor: string | null;
+  /**
+   * Producer's human-readable summary of the event. Opaque display copy — see the interface
+   * comment above.
+   */
+  summary: string;
+}
+
+/**
+ * The paginated activity log for one CCLA (#1987, #2857).
+ *
+ * `signatureId` is the CCLA signature id from the route parameter (the agreement this log
+ * belongs to). `nextKey` is the producer's opaque cursor: forward it verbatim on the next call
+ * to fetch the next page, or `null` when no next page is available.
+ *
+ * The response envelope carries no `canEdit`: reading the log is a broader grant than the CCLA
+ * manager write posture, so there is no per-caller write flag to surface. Write controls live on
+ * other tabs.
+ */
+export interface OrgClaActivityLogPage {
+  signatureId: string;
+  list: OrgClaActivityLogEntry[];
+  resultCount: number;
+  /** Producer's opaque cursor for the next page, or `null` when there is no next page. */
+  nextKey: string | null;
+}
+
+export interface OrgClaActivityLogDisplayRow {
+  entry: OrgClaActivityLogEntry;
+  actor: string;
+  summary: string;
+  whenLabel: string;
+}
+
+/** `key` names the org and signature the state was read for, so a state for another agreement is never shown. */
+export type OrgClaRecentActivityState =
+  | { status: 'idle' }
+  | { status: 'loading'; key: string }
+  | { status: 'loaded'; key: string; rows: OrgClaActivityLogDisplayRow[] }
+  | { status: 'failed'; key: string };
+
+/**
+ * View-model row projection for the Activity Log table (#1987).
+ *
+ * `searchText` is a precomputed haystack of actor and summary joined with a NUL byte, so a
+ * client-side filter term cannot false-positive by spanning the two fields.
+ */
+export interface OrgClaActivityLogRow extends OrgClaActivityLogDisplayRow {
+  searchText: string;
+}
+
+/**
  * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
  *
  * The browser posts one of these, never a raw ACS string. The server interpolates the permission
@@ -1273,6 +1358,11 @@ export interface OrgClaManager {
   name?: string;
   email?: string;
   addedOn?: string;
+  /**
+   * Present, and true, on the manager list's row for the signed-in viewer. Server-decided with the
+   * same identity the roster check uses, so the browser MUST NOT work it out from its own username.
+   */
+  isViewer?: true;
 }
 
 export interface OrgClaManagerList {
@@ -1303,3 +1393,53 @@ export interface OrgClaManagerAddValidation {
 export type OrgClaManagerAddField = keyof OrgClaManagerAddRequest;
 
 export type OrgClaManagerRefusal = (typeof ORG_CLA_MANAGER_REFUSALS)[number];
+
+/**
+ * Yes on the "Are you authorized to be a CLA Manager?" question (#2780). The designee address is
+ * deliberately absent: the BFF reads it from the session, so a caller cannot assign someone else.
+ */
+export interface OrgClaDesigneeRequest {
+  /** The agreement's signing project — the same identifier the corporate signing request uses. */
+  projectSfid: string;
+}
+
+export interface OrgClaDesigneeResponse {
+  assigned: true;
+}
+
+/** No on the question: name the person who should become the initial CLA Manager designee. */
+export interface OrgClaDesigneeNominationRequest {
+  projectSfid: string;
+  fullName: string;
+  email: string;
+}
+
+/**
+ * `lf-login-required` is a success: the named person needs an LF Login before they can become
+ * designee. The CLA service does not say whether it emailed them, so nothing may claim it did.
+ */
+export type OrgClaDesigneeNominationOutcome = (typeof ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES)[number];
+
+export interface OrgClaDesigneeNominationResponse {
+  outcome: OrgClaDesigneeNominationOutcome;
+  email: string;
+}
+
+/** Field-level errors from {@link validateOrgClaDesigneeNomination}; empty keys mean valid. */
+export interface OrgClaDesigneeNominationValidation {
+  fullName?: string;
+  email?: string;
+}
+
+export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
+
+/** What the viewer answered. Dismissing the dialog closes with `undefined`, which answers neither. */
+export type OrgClaManagerAnswer = 'yes' | 'no';
+
+/** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
+export type OrgClaDesigneeNextStep = 'attest' | 'mail';
+
+export type OrgClaIdentifyManagerField = keyof OrgClaDesigneeNominationValidation;
+
+/** What the dialog closes with. The detail page adds the signing project and sends it. */
+export type OrgClaIdentifyManagerResult = Omit<OrgClaDesigneeNominationRequest, 'projectSfid'>;

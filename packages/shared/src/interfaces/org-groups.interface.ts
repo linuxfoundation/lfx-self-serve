@@ -11,9 +11,11 @@ export interface OrgLensGroupSummary {
   category: string;
   project_uid?: string;
   project_slug?: string;
-  /** Human-readable foundation/project name resolved from the project index (keyed by
-   *  project_uid) or, failing that, the committee index (keyed by committee uid) — absent when
-   *  neither resolves one; consumers should fall back to project_slug (see OrgLensGroupVm.projectLabel). */
+  /** Human-readable foundation/project name, set only for a project confirmed public (this summary
+   *  is shared across every caller of the org). Resolved from the project index (keyed by
+   *  project_uid) or, failing that, the committee index (keyed by committee uid) — absent for a
+   *  private or unconfirmed project, or when neither source resolves one; consumers should fall back
+   *  to project_slug (see OrgLensGroupVm.projectLabel). */
   project_name?: string;
   /** Distinct org employees holding seats in this committee (deduped by email). */
   org_seat_count: number;

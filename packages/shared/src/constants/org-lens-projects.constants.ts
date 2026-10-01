@@ -99,11 +99,8 @@ export const HEALTH_SCORE_LABELS: Record<HealthScore, string> = {
   unavailable: 'Unavailable',
 };
 
-/**
- * Appended to a health label when the score covers only 2 of the 3 CHAOSS categories (`healthMaxScore` is
- * 60/65/75 rather than 100), so users know the score isn't out of the usual 100.
- */
-export const HEALTH_SCORE_PARTIAL_SUFFIX = ' - Partial';
+/** Glued to the band word of a partial score (2 of 3 categories covered), as on the Insights pill. */
+export const HEALTH_SCORE_PARTIAL_MARKER = '*';
 
 export const HEALTH_SCORE_BADGE: Record<HealthScore, { bg: string; text: string }> = {
   excellent: { bg: lfxColors.emerald[100], text: lfxColors.emerald[700] },

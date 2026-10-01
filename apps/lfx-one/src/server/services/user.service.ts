@@ -10,17 +10,17 @@ import {
   PROFILE_VISIBILITY_DEFAULTS,
   PROFILE_VISIBILITY_KEYS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  SURVEY_LINK_ALLOWLIST,
   TSHIRT_SIZES,
   VISIBILITY_PREFERENCE_APP_NAME,
   VISIBILITY_PREFERENCE_NAME,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, NatsSubjects, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
   ApiGatewayUserProfile,
   IndexedVote,
-  IndexedVoteResponse,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -34,6 +34,7 @@ import {
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
+  SurveyResponseRecord,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
   UserMetadata,
@@ -41,6 +42,7 @@ import {
   UserMetadataUpdateResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
+  UserServiceEmailSyncRequest,
   UserServicePreference,
   UserServicePreferenceList,
   Vote,
@@ -50,6 +52,7 @@ import {
   buildInvitationActions,
   codePointLength,
   getCurrentOrNextOccurrence,
+  getSurveyDisplayStatus,
   hasMeetingEnded,
   isMeetingInviteResponsesEnabled,
   normalizeIndexedMeetingAiSummary,
@@ -65,6 +68,9 @@ import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchCurrentUserSurveyResponses } from '../helpers/survey-response.helper';
+import { validateAndSanitizeUrl } from '../helpers/url-validation';
+import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { getEffectiveEmail, getUsernameFromAuth, isImpersonating, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
@@ -420,8 +426,9 @@ export class UserService {
    * (project-lens / foundation-lens dashboards).
    * @param req - Express request object
    * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
-   * @param email - User email
-   * @param projectSlug - Optional project slug; omit for unscoped survey aggregation
+   * @param email - User email, or null when the auth context carries only a username (GH-2987) —
+   *   strictly email-keyed sources (pending invitations) are skipped in that case
+   * @param projectSlug - Optional project slug; supplied together with projectUid on lens-scoped calls (controller-enforced) — its presence alone gates off the Me-lens-only sources (invitations, formation items)
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
    * @returns Array of pending action items
@@ -429,7 +436,7 @@ export class UserService {
   public async getPendingActions(
     req: Request,
     projectUid: string | undefined,
-    email: string,
+    email: string | null,
     projectSlug: string | undefined,
     limit?: number
   ): Promise<PendingActionItem[]> {
@@ -1153,6 +1160,40 @@ export class UserService {
   }
 
   /**
+   * Upserts a v2-OTP-verified email into v1 as Active+IsVerified so meeting-invite resolution finds it (lfx-self-serve-ops#183).
+   * Never throws — a failed v1 write must not fail verification; failures WARN and return false (409 = merge flow owns it).
+   */
+  public async syncVerifiedEmailToUserService(req: Request, email: string): Promise<boolean> {
+    if (!req.apiGatewayToken) {
+      // No email in log metadata — the address is PII (same reason the PATCH below redacts its response body).
+      logger.warning(req, 'sync_verified_email', 'Skipping v1 verified-email sync: no API Gateway token on the request');
+      return false;
+    }
+
+    const body: UserServiceEmailSyncRequest = { Emails: [{ EmailAddress: email, IsVerified: true, Active: true }] };
+
+    try {
+      const baseUrl = getUserServiceBaseUrl('sync_verified_email', 'user_service');
+      // The PATCH echoes the user's email rows — redact the response body from logs (email PII).
+      await gatewayFetch<unknown>(req, `${baseUrl}/me/emails`, {
+        operation: 'sync_verified_email',
+        service: 'user_service',
+        errorMessage: 'Verified email sync failed',
+        errorCode: 'EMAIL_SYNC_UPSERT_FAILED',
+        method: 'PATCH',
+        body,
+        redactResponseBody: true,
+      });
+    } catch (error) {
+      logger.warning(req, 'sync_verified_email', 'v1 verified-email sync failed; verification result unaffected', { err: error });
+      return false;
+    }
+
+    logger.debug(req, 'sync_verified_email', 'v1 verified-email sync succeeded');
+    return true;
+  }
+
+  /**
    * Writes the section `visibility` preference: PATCH when it exists, else POST; a POST that races into
    * a 409 falls back to fetch + PATCH so the auto-saving client stays idempotent.
    */
@@ -1291,7 +1332,7 @@ export class UserService {
   /**
    * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
-   *   - Non-responded surveys (Snowflake)
+   *   - Non-responded surveys (query-service `survey_response` index — the same source My Surveys reads)
    *   - Upcoming meetings within the next two weeks (Review Agenda action)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
@@ -1303,7 +1344,7 @@ export class UserService {
    */
   private async getUserPendingActions(
     req: Request,
-    email: string,
+    email: string | null,
     projectSlug: string | undefined,
     projectUid: string | undefined
   ): Promise<PendingActionItem[]> {
@@ -1318,16 +1359,17 @@ export class UserService {
 
     // Pending committee invitations only belong on the unscoped Me-lens path — they're personal
     // to the user (by email) and not tied to a project lens. On a project/foundation lens, skip
-    // the lookup entirely.
+    // the lookup entirely. They're also the one strictly email-keyed source — skip when the auth
+    // context carries no email (username-only identity, GH-2987).
     const isMeLens = !projectUid && !projectSlug;
 
     // Phase 1: surveys, meetings, pending votes, and (Me-lens only) invitations are independent —
     // issue them in parallel. Each source has its own `.catch` returning [] so one flaky source
     // can't wipe the whole list.
-    const [surveys, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
-      this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
+    const [surveyRows, meetings, pendingVotes, pendingInvitations, formationItems] = await Promise.all([
+      this.fetchPendingSurveyResponses(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
-        return [];
+        return [] as SurveyResponseRecord[];
       }),
 
       this.getUserMeetings(req, projectUid, undefined, { basic: true }).catch((error) => {
@@ -1340,7 +1382,7 @@ export class UserService {
         return [] as Vote[];
       }),
 
-      isMeLens
+      isMeLens && email
         ? this.committeeService.getMyPendingInvitations(req, email).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending invitations', { err: error });
             return [] as PendingInvitation[];
@@ -1368,6 +1410,7 @@ export class UserService {
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
     const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
+    const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
@@ -1398,7 +1441,7 @@ export class UserService {
     // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
     // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
     // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
-    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+    return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
   /**
@@ -1408,16 +1451,17 @@ export class UserService {
    * `individual_vote` type was fabricated in the shared interface and the query returned zero
    * rows in practice.
    *
-   * Source rows come from `filter_grants=direct` on `vote_response` — the voting service writes
-   * a direct `owner = user:{username}` FGA tuple per invitee, so the query service pre-filters
-   * OpenSearch to exactly this user's rows. When `projectUid` is provided it is pushed
-   * server-side to drop out-of-scope rows before pagination; when omitted, the unscoped Me-lens
-   * call already gets exactly the user's vote_response rows across all their projects via
-   * `filter_grants=direct`. The remaining `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`
-   * checks stay client-side. Caveat: the FGA tuple is only emitted when the invitee has a
-   * non-empty `Username`, so users invited by email but without an Auth0 username won't appear
-   * here. We accept this trade-off — meetings already work the same way and FGA is the source
-   * of truth for invitations.
+   * Source rows come from `fetchCurrentUserVoteResponses` (GH #2985) — the same identity-resolved
+   * `filters_or` query (`user_email` / `username`) My Votes reads, so the two surfaces can never
+   * diverge. This replaced `filter_grants=direct`, which silently dropped email-only invitees:
+   * the voting service only emits the invitee FGA tuple when the invitee has a non-empty
+   * `Username` (upstream contract linked in `fetchCurrentUserVoteResponses`). The trade-off: the
+   * index no longer pre-filters to granted rows, so we paginate all of the user's vote_response
+   * rows (responded included) — per-user cardinality is assumed small (dozens; validate against
+   * the helper's `row_count` log), the same trade-off `fetchAllUserRsvps` already makes in this
+   * aggregation. When `projectUid` is provided it is pushed server-side (`filters`) to drop
+   * out-of-scope rows before pagination. The remaining client-side checks are
+   * `vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE` and `!voter_removed`.
    *
    * Parent `vote` rows are fetched in a single batched query-service call (`type=vote` + `filters_or`
    * on each pending `vote_uid`) instead of per-vote REST. The indexed `vote` doc carries `name`,
@@ -1426,26 +1470,34 @@ export class UserService {
   private async fetchPendingVotes(req: Request, projectUid?: string): Promise<Vote[]> {
     // failOnPartial: completeness matters — a truncated response can silently miss a pending
     // invitation. The caller already catches and degrades, so fail closed here.
-    const responses = await fetchAllQueryResources<IndexedVoteResponse>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote_response',
-          filter_grants: 'direct',
-          ...(projectUid && { filters: [`project_uid:${projectUid}`] }),
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, {
+      ...(projectUid && { filters: [`project_uid:${projectUid}`] }),
+      failOnPartial: true,
+    });
+
+    // Parent-vote keying per the upstream indexer contract (lfx-v2-voting-service
+    // docs/indexer-contract.md): `vote_uid` is the parent's v2 UID (what `/votes/{uid}` expects)
+    // and `poll_id` its v1 alias. `vote_id` is NOT a parent key — it is the response row's own
+    // v1 id (same value as the row's `uid`), so it can never substitute here. The rule itself is
+    // `getParentVoteId` from vote-response.helper — the single definition shared with VoteService.
+    // "Any responded row wins" — the same rule getMyVotes applies (GH #2985): the widened
+    // identity query can return both an awaiting and a responded row for the same vote (e.g. an
+    // email-only invite row plus a username-keyed re-invite row), and such a vote is cast,
+    // never pending.
+    const respondedVoteIds = new Set(
+      responses
+        .filter((r) => r.vote_status === IndexedVoteResponseStatus.RESPONDED)
+        .map(getParentVoteId)
+        .filter((uid): uid is string => !!uid)
     );
 
-    // `vote_uid` is the v2 parent poll UID (what `/votes/{uid}` expects); `vote_id` and `poll_id`
-    // are v1 fallbacks per the upstream indexer contract. None of these is the individual-response id.
     const pendingVoteUids = Array.from(
       new Set(
         responses
           .filter((r) => r.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE && !r.voter_removed)
-          .map((r) => r.vote_uid ?? r.vote_id ?? r.poll_id)
+          .map(getParentVoteId)
           .filter((uid): uid is string => !!uid)
+          .filter((uid) => !respondedVoteIds.has(uid))
       )
     );
     if (pendingVoteUids.length === 0) return [];
@@ -1497,7 +1549,7 @@ export class UserService {
    * query service may silently ignore it — filtering meeting-side in code is both reliable
    * and cheap at the typical per-user RSVP cardinality (dozens to low hundreds, paginated).
    */
-  private async fetchAllUserRsvps(req: Request, email: string, username: string | null): Promise<MeetingRsvp[]> {
+  private async fetchAllUserRsvps(req: Request, email: string | null, username: string | null): Promise<MeetingRsvp[]> {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
@@ -1531,7 +1583,7 @@ export class UserService {
    */
   private async fetchUserActiveRegistrantIdentities(
     req: Request,
-    email: string,
+    email: string | null,
     username: string | null
   ): Promise<{ uids: Set<string>; meetingIds: Set<string> }> {
     const orClauses: string[] = [];
@@ -1682,6 +1734,99 @@ export class UserService {
         date: `Closes ${formattedEnd}`,
       };
     });
+  }
+
+  /**
+   * Pending surveys from the `survey_response` index — the same identity read My Surveys uses.
+   * Unanswered comes from the helper; "still actionable" (OPEN status) is decided here.
+   */
+  private async fetchPendingSurveyResponses(req: Request, projectUid?: string): Promise<SurveyResponseRecord[]> {
+    // failOnPartial: a truncated page set can silently miss a pending survey. The caller catches
+    // and degrades the whole source, so fail closed here.
+    const rows = await fetchCurrentUserSurveyResponses(req, this.microserviceProxy, {
+      // Project scoping rides the indexer-emitted `project_uid` tag (survey-service indexer
+      // contract: "Find responses for a project") — a flat keyword term query, the same
+      // tags=project_uid: pattern committee.service and create-picker.service already use.
+      ...(projectUid && { tags: [`project_uid:${projectUid}`] }),
+      failOnPartial: true,
+    });
+
+    const openRows = rows.filter((row) => {
+      // Legacy rows can lack the denormalized title/cutoff (getMySurveys guards the same fields) —
+      // they can't be proven open or rendered meaningfully, so they're excluded ("no noise" bar, #2987).
+      if (!row.survey_title) return false;
+      // A literal 'open' status classifies OPEN without consulting the cutoff — require a parseable
+      // cutoff explicitly; transformSurveysToActions renders it as the due date.
+      if (!row.survey_cutoff_date || Number.isNaN(new Date(row.survey_cutoff_date).getTime())) return false;
+      return getSurveyDisplayStatus({ survey_status: row.survey_status, survey_cutoff_date: row.survey_cutoff_date }) === SurveyStatus.OPEN;
+    });
+
+    // One action per survey: the index holds a row per survey × committee invitation; identical
+    // rows would crowd the capped card (#2987). Links are per-invitation, so prefer a row with a
+    // usable (allowlisted) link; among equally usable rows, keep the earliest cutoff (parseable
+    // per the filter). Without the link preference, an earliest/kept row missing its link would
+    // discard a survey another invitation row could still action (index order is not stable).
+    const preferredBySurvey = new Map<string, SurveyResponseRecord>();
+    for (const row of openRows) {
+      const kept = preferredBySurvey.get(row.survey_uid);
+      if (!kept) {
+        preferredBySurvey.set(row.survey_uid, row);
+        continue;
+      }
+      const rowHasLink = this.surveyActionLink(row) !== null;
+      const keptHasLink = this.surveyActionLink(kept) !== null;
+      const rowCutoff = new Date(row.survey_cutoff_date as string).getTime();
+      const keptCutoff = new Date(kept.survey_cutoff_date as string).getTime();
+      if ((rowHasLink && !keptHasLink) || (rowHasLink === keptHasLink && rowCutoff < keptCutoff)) {
+        preferredBySurvey.set(row.survey_uid, row);
+      }
+    }
+    return [...preferredBySurvey.values()];
+  }
+
+  /**
+   * Validates a survey row's link against the allowlist — the single check shared by dedup
+   * (prefer rows with a usable link) and transform (skip rows without one), so the two can't drift.
+   */
+  private surveyActionLink(row: SurveyResponseRecord): string | null {
+    return row.survey_link ? validateAndSanitizeUrl(row.survey_link.trim(), SURVEY_LINK_ALLOWLIST) : null;
+  }
+
+  /**
+   * Maps pending survey rows to Survey pending-action items — the same shape the Snowflake source
+   * produced: "Submit Survey" opens the allowlist-validated link in a new tab.
+   */
+  private transformSurveysToActions(req: Request, rows: SurveyResponseRecord[]): PendingActionItem[] {
+    const items: PendingActionItem[] = [];
+    // Soonest cutoff first — the old Snowflake source ordered SURVEY_CUTOFF_DATE ASC and the
+    // frontend renders server order sliced to the display limit; cutoffs are parseable per the fetch filter.
+    const sorted = [...rows].sort((a, b) => new Date(a.survey_cutoff_date as string).getTime() - new Date(b.survey_cutoff_date as string).getTime());
+    for (const row of sorted) {
+      const buttonLink = this.surveyActionLink(row);
+      // A pending action without a valid link can't be acted on — skip rather than render a dead
+      // button. The row still shows in My Surveys, so the survey is not hidden altogether.
+      if (!buttonLink) {
+        logger.debug(req, 'transform_surveys_to_actions', 'Skipping survey row with missing or disallowed link', { survey_uid: row.survey_uid });
+        continue;
+      }
+
+      // The fetch filter already excluded rows without a parseable cutoff.
+      const cutoffDate = new Date(row.survey_cutoff_date as string);
+      const formattedDate = cutoffDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const displayDate = cutoffDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+      items.push({
+        type: 'Survey',
+        badge: row.project?.name ?? '',
+        text: `${row.survey_title} is due ${formattedDate}`,
+        icon: 'fa-regular fa-clipboard-list',
+        severity: PENDING_ACTION_SEVERITY.Survey,
+        buttonText: 'Submit Survey',
+        buttonLink,
+        date: `Due ${displayDate}`,
+      });
+    }
+    return items;
   }
 
   /**

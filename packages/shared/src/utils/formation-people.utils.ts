@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_ASSIGNEE_PENDING_NOTE, FORMATION_PEOPLE_GROUP_LABELS, LF_STAFF_EMAIL_DOMAIN } from '../constants/formation-people.constants';
+import {
+  FORMATION_ASSIGNEE_PENDING_NOTE,
+  FORMATION_PEOPLE_OTHER_GROUP_LABEL,
+  FORMATION_PEOPLE_STAFF_GROUP_LABEL,
+  LF_STAFF_EMAIL_DOMAIN,
+} from '../constants/formation-people.constants';
 import type {
-  FormationPeopleGroup,
-  FormationPeopleGroups,
+  FormationPeopleRowGroup,
   FormationPerson,
   FormationPersonRole,
   FormationPersonRow,
@@ -130,20 +134,76 @@ export function buildFormationPeople(settings: Pick<ProjectSettings, 'writers' |
   return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
-/** The card's group keys in render order — `FORMATION_PEOPLE_GROUP_LABELS`'s declaration order, so the constant stays the single source of truth for both the set and the order. */
-export function formationPeopleGroupKeys(): FormationPeopleGroup[] {
-  return Object.keys(FORMATION_PEOPLE_GROUP_LABELS) as FormationPeopleGroup[];
-}
-
-/** Partitions a people list into the card's groups (every key present, possibly empty), preserving order within each. */
-export function groupFormationPeople(people: readonly FormationPerson[]): FormationPeopleGroups {
-  const groups = Object.fromEntries(formationPeopleGroupKeys().map((key) => [key, [] as FormationPerson[]])) as FormationPeopleGroups;
+/**
+ * The people card's groups (#2724): LF Staff first, then one group per invited organization
+ * (A–Z by name), then Other for invitees with no known organization — email-only entries have no
+ * profile to enrich, and enrichment is best-effort. Organizations are matched on the name with
+ * case and whitespace folded, so `Contoso Ltd` and `contoso  ltd` land together under the first
+ * spelling seen while `C++` and `C` stay apart. A name with no letters or digits, or one that is
+ * literally "Other", joins the Other group rather than rendering a second heading of that name.
+ * Rows keep the input order (`buildFormationPeople` already sorts by name) and empty groups are
+ * omitted.
+ */
+export function buildFormationPeopleRowGroups(
+  people: readonly FormationPerson[],
+  assignees: ReadonlyArray<string | null | undefined>
+): FormationPeopleRowGroup[] {
+  const staff: FormationPeopleRowGroup = { key: 'staff', label: FORMATION_PEOPLE_STAFF_GROUP_LABEL, rows: [] };
+  const other: FormationPeopleRowGroup = { key: 'other', label: FORMATION_PEOPLE_OTHER_GROUP_LABEL, rows: [] };
+  const otherIdentity = FORMATION_PEOPLE_OTHER_GROUP_LABEL.toLowerCase();
+  // Keyed by the folded name (identity); the render key is assigned after sorting.
+  const organizations = new Map<string, FormationPeopleRowGroup>();
 
   for (const person of people) {
-    groups[person.group].push(person);
+    const row = toFormationPersonRow(person, assignees);
+
+    if (person.group === 'staff') {
+      staff.rows.push(row);
+      continue;
+    }
+
+    const label = (person.organization ?? '').trim().replace(/\s+/g, ' ');
+    const identity = label.toLowerCase();
+    if (!slugifyOrganization(identity) || identity === otherIdentity) {
+      other.rows.push(row);
+      continue;
+    }
+
+    const group = organizations.get(identity);
+    if (group) {
+      group.rows.push(row);
+    } else {
+      organizations.set(identity, { key: '', label, rows: [row] });
+    }
   }
 
-  return groups;
+  // Pinned locale: the card renders on the server and in the browser, and both must agree on order.
+  const byOrganization = [...organizations.values()].sort((a, b) => a.label.localeCompare(b.label, 'en', { sensitivity: 'base' }));
+
+  // `org-<slug>` for the testid/track key; names that slug alike (`C++` / `C`) get a numeric suffix so keys stay unique.
+  const used = new Set<string>();
+  for (const group of byOrganization) {
+    const base = `org-${slugifyOrganization(group.label.toLowerCase())}`;
+    let key = base;
+    for (let n = 2; used.has(key); n += 1) {
+      key = `${base}-${n}`;
+    }
+    used.add(key);
+    group.key = key;
+  }
+
+  return [staff, ...byOrganization, other].filter((group) => group.rows.length > 0);
+}
+
+/**
+ * Letters, marks and digits joined by `-` — split/join rather than a replace plus edge-trim regex,
+ * so the work stays linear on long runs of punctuation.
+ */
+function slugifyOrganization(name: string): string {
+  return name
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter((part) => part.length > 0)
+    .join('-');
 }
 
 /**
@@ -159,13 +219,14 @@ export function resolveFormationPersonStatus(person: Pick<FormationPerson, 'grou
 }
 
 /**
- * `Partner contact · Contoso · 3 items` — title and organization when known, else the email
- * (a pending invitee has no metadata to show), with the assigned-item count appended only when
- * it is non-zero so an unassigned person never reads "0 items".
+ * `Partner contact · 3 items` — the title when known, else the email (a pending invitee has no
+ * metadata to show), with the assigned-item count appended only when it is non-zero so an
+ * unassigned person never reads "0 items". The organization is left out: the card groups rows
+ * under it, so the heading already says it.
  */
-export function formatFormationPersonSubtitle(person: Pick<FormationPerson, 'job_title' | 'organization' | 'email'>, assignedItemCount: number): string {
-  const parts = [person.job_title, person.organization].filter((part): part is string => !!part && part.trim().length > 0);
-  const base = parts.length > 0 ? parts.join(' · ') : person.email;
+export function formatFormationPersonSubtitle(person: Pick<FormationPerson, 'job_title' | 'email'>, assignedItemCount: number): string {
+  const title = person.job_title?.trim();
+  const base = title || person.email;
 
   if (assignedItemCount <= 0) {
     return base;

@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-orgs">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Organizations at events unavailable"
+      subtitle="We could not load the organizations at this foundation's events. Refresh the page to try again."
+      data-testid="events-orgs-error" />
+  } @else if (!loading() && !scopeTotal()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="No organizations at events this period"
+      subtitle="No organization registered, sponsored, proposed or spoke at this foundation's events in the selected period."
+      data-testid="events-orgs-empty" />
+  } @else {
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="events-orgs-controls">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div class="w-full sm:w-64">
+          <label class="sr-only" for="events-orgs-search">Search organization</label>
+          <lfx-input-text
+            [form]="searchForm"
+            control="search"
+            inputId="events-orgs-search"
+            placeholder="Search organization..."
+            icon="fa-light fa-search"
+            size="small"
+            styleClass="w-full"
+            dataTest="events-orgs-search" />
+        </div>
+        <lfx-filter-pills [options]="segmentOptions" [selectedFilter]="segment()" (filterChange)="onSegmentChange($event)" data-testid="events-orgs-segments" />
+      </div>
+      <span class="text-[13px] text-gray-500" data-testid="events-orgs-count">
+        @if (loading()) {
+          &mdash;
+        } @else {
+          {{ countLabel() }}
+        }
+      </span>
+    </div>
+
+    @if (!loading() && totalRecords() === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-magnifying-glass"
+        title="No matching organizations"
+        subtitle="No organization matches the selected filter or search. Clear the search or pick another filter."
+        data-testid="events-orgs-no-match" />
+    } @else {
+      <lfx-table
+        [value]="rowViews()"
+        [loading]="loading()"
+        [lazy]="true"
+        [lazyLoadOnInit]="false"
+        [paginator]="totalRecords() > size()"
+        [rows]="size()"
+        [first]="first()"
+        [totalRecords]="totalRecords()"
+        [showCurrentPageReport]="true"
+        [showFirstLastIcon]="false"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+        (onPage)="onTablePage($event)"
+        data-testid="events-orgs-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Membership</span></th>
+            <th scope="col" class="w-[180px]"><span class="text-xs font-medium text-gray-500">Registrations</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Sponsorship</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Proposals</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Speakers</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Events</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-view>
+          <tr [attr.data-testid]="'events-orgs-row-' + view.accountId">
+            <td>
+              <div class="flex items-center gap-2.5">
+                <lfx-avatar [label]="view.accountName" [image]="view.logoUrl" size="normal" styleClass="shrink-0" [ariaLabel]="view.accountName + ' logo'" />
+                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'">{{ view.accountName }}</span>
+              </div>
+            </td>
+            <td>
+              <span
+                class="inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium"
+                [class]="view.memberClass"
+                [attr.data-testid]="'events-orgs-row-' + view.accountId + '-membership'"
+                >{{ view.memberLabel }}</span
+              >
+            </td>
+            <td class="w-[180px]">
+              <div class="flex items-center gap-2">
+                <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+                  <div class="h-full rounded-full" [class]="barClass" [style.width.%]="view.barWidthPct"></div>
+                </div>
+                <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-registrations'">{{
+                  view.registrationsLabel
+                }}</span>
+              </div>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-sponsorship'">{{
+                view.sponsorshipLabel
+              }}</span>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-proposals'">{{
+                view.proposalsLabel
+              }}</span>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-speakers'">{{
+                view.speakersLabel
+              }}</span>
+            </td>
+            <td class="text-right">
+              <span class="text-sm tabular-nums text-gray-800" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-events'">{{
+                view.eventsLabel
+              }}</span>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  }
+</div>

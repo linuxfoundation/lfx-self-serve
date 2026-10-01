@@ -8,10 +8,12 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
+import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, of, skip, switchMap, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import {
   DEFAULT_EVENTS_PAGE_SIZE,
   DEFAULT_ORG_EVENTS_TAB_ID,
@@ -32,6 +34,8 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventAttendeesDrawerComponent } from './components/event-attendees-drawer/event-attendees-drawer.component';
@@ -44,8 +48,10 @@ import { OrgEventsTableComponent } from './components/org-events-table/org-event
     FormsModule,
     CardComponent,
     CardTabsBarComponent,
+    OrgLensEmptyStateComponent,
     SelectModule,
     InputTextModule,
+    SkeletonModule,
     DiscoverEventsButtonComponent,
     EventAttendeesDrawerComponent,
     EventSpeakersDrawerComponent,
@@ -60,6 +66,10 @@ export class OrgEventsDashboardComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly eventsService = inject(EventsService);
   private readonly messageService = inject(MessageService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+
+  // === Public injections ===
+  public readonly emptyState = inject(OrgLensEmptyStateService);
 
   // === Template constants ===
   public readonly statusOptions = ORG_EVENTS_STATUS_OPTIONS;
@@ -83,6 +93,13 @@ export class OrgEventsDashboardComponent {
   // Debounced search feeds the server-side query so typing doesn't fire a request per keystroke.
   private readonly debouncedSearchTerm = toSignal(toObservable(this.searchTerm).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
   public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
+  // Spec 053 / #2961 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
+  // `contractor-no-grant`, `no-organization`), or null when the page renders.
+  public readonly pageState = this.emptyState.pageState;
+  public readonly correlationId = this.orgRoleGrantsService.correlationId;
+  // The page's content, its org-naming title and its fetches wait for the classifier and never appear
+  // behind a page-level state: a refused caller's reads would only fail and toast "Failed to load".
+  public readonly contentVisible = computed(() => this.emptyState.settled() && !this.emptyState.hasPageState());
   public readonly activeTab: Signal<OrgEventsTabId> = this.initActiveTab();
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
   public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({
@@ -198,7 +215,7 @@ export class OrgEventsDashboardComponent {
   }
 
   private initEventsSummary(): Signal<OrgEventsSummary | null> {
-    const accountId$ = toObservable(computed(() => this.accountContext.selectedAccount().accountId));
+    const accountId$ = toObservable(computed(() => (this.contentVisible() ? this.accountContext.selectedAccount().accountId : null)));
     return toSignal(
       accountId$.pipe(
         filter((id): id is string => !!id),
@@ -224,7 +241,7 @@ export class OrgEventsDashboardComponent {
         computed(() => {
           if (this.activeTab() !== tab) return null;
           const accountId = this.accountContext.selectedAccount().accountId;
-          if (!accountId) return null;
+          if (!accountId || !this.contentVisible()) return null;
           return {
             accountId,
             ...page(),

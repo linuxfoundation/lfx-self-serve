@@ -4,11 +4,12 @@
 // Generated with [Cursor](https://cursor.com)
 
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
-import { OrgAccessInviteRequest, OrgAccessRole, OrgAccessRoleChangeRequest } from '@lfx-one/shared/interfaces';
+import { OrgAccessInviteRequest, OrgAccessRole, OrgAccessRoleChangeRequest, OrgLensEditCheckResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { mapAccessUpstreamError } from '../helpers/access-error.helper';
+import { resolveOrgLensEdit } from '../helpers/org-lens-edit-access.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensAccessService } from '../services/org-lens-access.service';
@@ -19,6 +20,46 @@ export class OrgLensAccessController {
 
   public constructor() {
     this.service = new OrgLensAccessService();
+  }
+
+  // GET /api/orgs/:orgUid/lens/read-check
+  /**
+   * #2961 — `GET /api/orgs/:orgUid/lens/read-check`. Answers "may this caller read this organization?"
+   * with the server's own gate: `requireOrgLensAccess` has already run on the `/lens` prefix, so reaching
+   * here means admitted (204), and a refusal never gets here (403 `FORBIDDEN`). That includes FGA-only
+   * readers (key-contact auditors) that no roster lists, which is why the page asks this rather than
+   * inferring access from its own lists.
+   */
+  public readCheck(req: Request, res: Response): void {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'check_org_lens_read', { org_uid: orgUid });
+    logger.success(req, 'check_org_lens_read', startTime, { org_uid: orgUid });
+    // A per-user verdict: never reuse a cached admission after a grant changes.
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(204).end();
+  }
+
+  // GET /api/orgs/:orgUid/lens/edit-check
+  /**
+   * #3136 — answers "may this caller edit this organization?" for the Org Lens edit affordances, with
+   * the same decision the write gates use (`resolveOrgLensEdit`: roster editor, else authorizer
+   * `writer`). UX-only and fail-closed: an unverifiable answer reads `false` (the helper logs why),
+   * and every write is authorized again on its own path. The `/lens` read gate has already run.
+   */
+  public async editCheck(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'check_org_lens_edit', { org_uid: orgUid });
+    try {
+      assertOrgUid(orgUid, 'check_org_lens_edit');
+      const decision = await resolveOrgLensEdit(req, orgUid, 'check_org_lens_edit');
+      const body: OrgLensEditCheckResponse = { canEdit: decision.kind === 'allowed' };
+      logger.success(req, 'check_org_lens_edit', startTime, { org_uid: orgUid, can_edit: body.canEdit, decision: decision.kind });
+      // A per-user verdict: never reuse a cached answer after a grant changes.
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(body);
+    } catch (error) {
+      next(error);
+    }
   }
 
   // GET /api/orgs/:orgUid/lens/access/users
@@ -141,6 +182,14 @@ export class OrgLensAccessController {
       logger.warning(req, operation, 'Org access write rejected: caller is not a manager', { status: 403 });
       res.setHeader('Cache-Control', 'no-store');
       res.status(403).json({ error: { code: 'FORBIDDEN', message: error.message, conflict: false } });
+      return;
+    }
+    // #3136 — the same gate's "couldn't verify" stays a retriable 503 `ROLE_GRANTS_UNAVAILABLE`. Folding it
+    // into the upstream 5xx envelope below would report a 502 "write failed" for a write that never started.
+    if (error instanceof MicroserviceError && error.code === 'ROLE_GRANTS_UNAVAILABLE' && !error.originalMessage) {
+      logger.warning(req, operation, 'Org access write not attempted: manager permission could not be verified', { status: 503 });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(503).json({ error: { code: 'ROLE_GRANTS_UNAVAILABLE', message: error.message, conflict: false } });
       return;
     }
     const mapped = mapAccessUpstreamError(error);

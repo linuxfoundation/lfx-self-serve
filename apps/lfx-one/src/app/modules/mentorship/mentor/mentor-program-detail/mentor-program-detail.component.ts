@@ -11,7 +11,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgramDetail, MentorshipMentorProgramDetailTab, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap } from 'rxjs';
 
@@ -43,7 +43,7 @@ import { MentorTasksTabComponent } from './components/mentor-tasks-tab/mentor-ta
 })
 export class MentorProgramDetailComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorService = inject(MentorshipMentorService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -117,7 +117,7 @@ export class MentorProgramDetailComponent {
           this.loadError.set(null);
         }),
         switchMap((programId) =>
-          this.mentorshipService.getMentorProgram(programId).pipe(
+          this.mentorService.getMentorProgram(programId).pipe(
             tap(() => this.hasLoaded.set(true)),
             catchError((error: HttpErrorResponse) => {
               this.hasLoaded.set(true);

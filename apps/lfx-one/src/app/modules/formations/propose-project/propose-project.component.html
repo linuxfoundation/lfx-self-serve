@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 pb-10" data-testid="propose-project-container">
+  <nav class="text-sm text-gray-500 mb-2" aria-label="Breadcrumb" data-testid="propose-project-breadcrumb">
+    <a routerLink="/formations" class="text-gray-500 hover:text-gray-700 hover:underline">My Formations</a>
+    <span class="mx-1.5" aria-hidden="true">/</span>
+    <span class="text-gray-900" aria-current="page">Propose a project</span>
+  </nav>
+
+  <header class="flex flex-col gap-1 mb-6 max-w-3xl">
+    <h1 class="font-display font-light text-2xl m-0" data-testid="propose-project-title">Propose a project</h1>
+    <p class="text-sm text-gray-500 m-0" data-testid="propose-project-description">
+      Tell us about the project you want to bring to the Linux Foundation. This sends your proposal to the LF formation team for review. It does not commit you
+      to anything yet.
+    </p>
+  </header>
+
+  <div class="flex flex-col xl:flex-row xl:items-start gap-8">
+    <div class="flex-1 min-w-0">
+      <lfx-project-application-form
+        [submitting]="submitting()"
+        [errorMessage]="errorMessage()"
+        (submitted)="onSubmit($event)"
+        (cancelled)="onCancel()"
+        data-testid="propose-project-form" />
+    </div>
+
+    <aside class="flex flex-col gap-6 w-full shrink-0 xl:w-80" data-testid="propose-project-aside">
+      <section class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6" aria-labelledby="propose-project-next-title">
+        <h2 id="propose-project-next-title" class="text-base font-medium text-gray-900 m-0">What happens next</h2>
+        <ol class="flex flex-col gap-4 m-0 p-0 list-none">
+          <li class="flex gap-3">
+            <span class="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-blue-600 text-white text-xs font-medium" aria-hidden="true">1</span>
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-900">The formation team gets your proposal</span>
+              <span class="text-sm text-gray-500">Only you and the formation team can see it. You can revise or withdraw it while it's under review.</span>
+            </div>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" aria-hidden="true"
+              >2</span
+            >
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-900">Formation team accepts or denies</span>
+              <span class="text-sm text-gray-500">
+                Accepting creates the project in Formation and starts the checklist; contributor agreement and IP assignment are drafted from what you entered.
+              </span>
+            </div>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" aria-hidden="true"
+              >3</span
+            >
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-900">You work the checklist together</span>
+              <span class="text-sm text-gray-500">Slack, mailing list, and GitHub can be set up while legal review is in progress.</span>
+            </div>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex items-center justify-center w-6 h-6 shrink-0 rounded-full bg-gray-100 text-gray-600 text-xs font-medium" aria-hidden="true"
+              >4</span
+            >
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-900">Project becomes Active</span>
+              <span class="text-sm text-gray-500">Once agreements are signed.</span>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-6" aria-labelledby="propose-project-questions-title">
+        <h2 id="propose-project-questions-title" class="text-base font-medium text-gray-900 m-0">Questions?</h2>
+        <p class="text-sm text-gray-500 m-0">
+          The LF formation team reads every submission. For IP, trademark, or entity questions before you submit, write to
+          <a [href]="'mailto:' + contactEmail" class="text-blue-600 hover:underline" data-testid="propose-project-contact">{{ contactEmail }}</a
+          >.
+        </p>
+      </section>
+    </aside>
+  </div>
+</div>

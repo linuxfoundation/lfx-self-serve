@@ -10,8 +10,12 @@
          router-outlet wrapper `py-6` + this shell's own `p-6` = 3rem total) so the header has zero
          distance to travel before it locks — otherwise it would visibly shift up by that 3rem on the
          first bit of scroll before sticking. Page-colored, not white — the design's `.stickyhead`/`.phead`
-         match the page surface; opaque so content scrolls under. -->
-    <header #pageHeader class="mb-6 flex flex-col gap-4 lg:sticky lg:top-0 lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12">
+         match the page surface; opaque so content scrolls under. Pinned below the fixed impersonation
+         banner while impersonating, so the banner doesn't cover it. -->
+    <header
+      #pageHeader
+      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12"
+      [ngClass]="{ 'lg:top-12': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-col gap-1">
           <h1 class="text-xl font-semibold text-gray-900">Health Metrics</h1>
@@ -73,7 +77,7 @@
             <a
               [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
               queryParamsHandling="preserve"
-              routerLinkActive="border-blue-600 text-blue-700"
+              routerLinkActive="!border-blue-600 !text-blue-700"
               [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
               #rla="routerLinkActive"
               [attr.aria-current]="rla.isActive ? 'page' : null"

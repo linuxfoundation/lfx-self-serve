@@ -9,9 +9,12 @@ import type {
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgram,
+  MentorshipProgramDecisionStatus,
+  MentorshipProgramReviewDecision,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
+  MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 
 /**
@@ -66,6 +69,17 @@ export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
  * and `TermsAcknowledgementComponent` follow for their labels.
  */
 export const MENTORSHIP_REGISTER_WARN_SUMMARY = 'Check your registration';
+
+/**
+ * Failure-banner copy both register forms share, keyed by `MentorshipRegisterSubmitFailureKind`. The
+ * profile-exists and ineligible messages are role-specific and live with each role's constants.
+ */
+export const MENTORSHIP_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict with an existing record. Refresh the page and try again.';
+export const MENTORSHIP_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
+export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
+
+/** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
+export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
 /** Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot. */
 export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
@@ -348,3 +362,44 @@ export const MOCK_MENTORSHIP_PROGRAMS: MentorshipProgram[] = [
     updatedOn: '2026-07-30T00:00:00.000Z',
   },
 ];
+
+// -- Program review (approver approve/reject email link) ---------------------
+
+/**
+ * Program statuses as the mentorship service stores them (`status` on `/mentorship/v1/programs`).
+ * A program is created `pending`; approving moves it to `published` and rejecting to `rejected`.
+ * A published program can later be `hidden`.
+ */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'hidden'] as const;
+
+/** Program-review page copy for a program's current upstream status. */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
+  pending: 'Awaiting review',
+  published: 'Approved',
+  rejected: 'Rejected',
+  hidden: 'Hidden',
+};
+
+/**
+ * Accepted `?decision=` values on the approve/reject email link:
+ * `/mentorship/program-review/<program id>?decision=approve|reject`.
+ */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISIONS = ['approve', 'reject'] as const;
+
+/** The upstream status each review decision moves a `pending` program to. */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS: Record<MentorshipProgramReviewDecision, MentorshipProgramDecisionStatus> = {
+  approve: 'published',
+  reject: 'rejected',
+};
+
+/** Verb shown on the program-review confirm card and its button. */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISION_LABELS: Record<MentorshipProgramReviewDecision, string> = {
+  approve: 'Approve',
+  reject: 'Reject',
+};
+
+/** Past-tense verb shown once a review decision has been recorded. */
+export const MENTORSHIP_PROGRAM_REVIEW_DECISION_DONE_LABELS: Record<MentorshipProgramReviewDecision, string> = {
+  approve: 'approved',
+  reject: 'rejected',
+};

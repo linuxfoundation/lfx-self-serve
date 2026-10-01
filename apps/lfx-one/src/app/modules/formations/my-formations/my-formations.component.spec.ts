@@ -1,11 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import type { MyFormationSummary, MyFormationWorkResponse } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
-import { BehaviorSubject } from 'rxjs';
+import { ProjectApplicationService } from '@services/project-application.service';
+import { ProjectService } from '@services/project.service';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { BehaviorSubject, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MyFormationsComponent } from './my-formations.component';
@@ -26,6 +31,8 @@ const formation = (overrides: Partial<MyFormationSummary> = {}): MyFormationSumm
   gating_done: 0,
   gating_total: 1,
   blocking_item_title: null,
+  blocking_item_blocked: false,
+  gates_cleared: false,
   ...overrides,
 });
 
@@ -112,6 +119,29 @@ describe('MyFormationsComponent (#2753)', () => {
 
     expect(byTestId(fixture, 'my-formations-announcement-formation-1')?.textContent).toContain('Not set');
     expect(byTestId(fixture, 'my-formations-blocking-formation-1')?.textContent?.trim()).toBe('—');
+  });
+
+  it('styles the blocking item as danger with a screen-reader label only when it is itself blocked (#3066)', async () => {
+    const { fixture } = await render(
+      complete([
+        formation({ formation_uid: 'pending', blocking_item_title: 'Charter agreed' }),
+        formation({ formation_uid: 'blocked', blocking_item_title: 'Contribution agreement', blocking_item_blocked: true }),
+      ])
+    );
+
+    const pending = byTestId(fixture, 'my-formations-blocking-pending')?.querySelector('[data-blocked="false"]');
+    expect(pending?.classList).toContain('text-amber-600');
+    expect(pending?.textContent).not.toContain('Blocked:');
+    const blocked = byTestId(fixture, 'my-formations-blocking-blocked')?.querySelector('[data-blocked="true"]');
+    expect(blocked?.classList).toContain('text-red-600');
+    expect(blocked?.textContent).toContain('Blocked:');
+    expect(blocked?.textContent).toContain('Contribution agreement');
+  });
+
+  it('reads "Formation to set Active" when every gate is cleared and no item blocks (#3066)', async () => {
+    const { fixture } = await render(complete([formation({ gates_cleared: true })]));
+
+    expect(byTestId(fixture, 'my-formations-blocking-formation-1')?.textContent?.trim()).toBe('Formation to set Active');
   });
 
   it('renders the raw upstream stage verbatim when sub_stage has no queue-taxonomy equivalent', async () => {
@@ -293,5 +323,49 @@ describe('MyFormationsComponent (#2753)', () => {
 
     expect(rowIds(fixture)).toEqual(['my-formations-row-formation-1']);
     expect(byTestId(fixture, 'my-formations-error')).toBeNull();
+  });
+});
+
+describe('MyFormationsComponent — Propose a project (#3037)', () => {
+  const renderWithTab = async (tab: string | null): Promise<ComponentFixture<MyFormationsComponent>> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [MyFormationsComponent],
+      providers: [
+        provideRouter([]),
+        {
+          provide: FormationService,
+          useValue: { getMyFormationWork: () => new BehaviorSubject(complete([formation()])).asObservable(), invalidateMyFormationWork: vi.fn() },
+        },
+        {
+          provide: ProjectApplicationService,
+          useValue: { getApplications: () => of([]), overlay: () => signal([]), deletedUids: () => signal(new Set<string>()), reconcile: vi.fn() },
+        },
+        { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        DialogService,
+        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(tab ? { tab } : {})) } },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(MyFormationsComponent);
+    await settle(fixture);
+    return fixture;
+  };
+
+  it('offers the Propose a project CTA and both page tabs', async () => {
+    const fixture = await renderWithTab(null);
+    expect(byTestId(fixture, 'my-formations-propose-project')).not.toBeNull();
+    expect(byTestId(fixture, 'my-formations-page-tabs-formations')).not.toBeNull();
+    expect(byTestId(fixture, 'my-formations-page-tabs-proposals')).not.toBeNull();
+    expect(byTestId(fixture, 'my-formations-proposals')).toBeNull();
+    expect(rowIds(fixture)).toEqual(['my-formations-row-formation-1']);
+  });
+
+  it('shows the caller’s submitted proposals for ?tab=proposals', async () => {
+    const fixture = await renderWithTab('proposals');
+    expect(byTestId(fixture, 'my-formations-proposals')).not.toBeNull();
+    expect(byTestId(fixture, 'project-applications-submitter')).not.toBeNull();
+    expect(rowIds(fixture)).toEqual([]);
   });
 });

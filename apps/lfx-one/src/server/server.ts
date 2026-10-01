@@ -14,9 +14,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
-import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
-import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
@@ -38,6 +36,7 @@ import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
 import formationsRouter from './routes/formations.route';
+import projectApplicationsRouter from './routes/project-applications.route';
 import gwProxyRouter from './routes/gw-proxy.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
@@ -79,6 +78,7 @@ import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
+import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
 import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
@@ -98,6 +98,9 @@ if (process.env['NODE_ENV'] !== 'production') {
 // single-line structured JSON. Must run before any middleware or Angular SSR
 // renders so Angular component console calls are captured.
 initializeServerConsoleOverride();
+
+// Express 4 ignores the promise an async handler returns; route its rejections to apiErrorHandler.
+installAsyncRouteErrorBridge();
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
@@ -252,7 +255,7 @@ app.use(httpLogger);
 
 // LFXV2-2666: move the session bundle out of the encrypted `appSession` cookie and into Valkey,
 // keyed by an opaque session id, so cookie size stays flat as more tokens (impersonation,
-// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when
+// API-gateway, profile) are added onto req.appSession. Only wired up when
 // SESSION_STORE_ENABLED is set and VALKEY_URL is present — without VALKEY_URL every store
 // read/write would degrade to "session missing" (ValkeyService's fail-soft behavior) and silently
 // log everyone out. Note: this only gates on URL presence, not live reachability — a Valkey outage
@@ -411,6 +414,7 @@ app.use('/api/events', eventsRouter);
 // resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
 // routers above.
 app.use('/api', formationsRouter);
+app.use('/api/project-applications', projectApplicationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/impersonate', impersonationRouter);
@@ -455,11 +459,6 @@ app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallback
 // GitHub/LinkedIn OAuth redirect target. Same in-handler impersonation guard as above.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
-const crowdfundingCallbackController = new CrowdfundingController();
-app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
-
-const crowdfundingAuthService = new CrowdfundingAuthService();
-
 // Minimal frame protection for the embedded Gatewaze admin pilot pages only — NOT applied
 // globally. Scoped narrowly because the rest of the app's framing behavior is out of scope for
 // this pilot; a global change here would be a much bigger blast radius than this task calls for.
@@ -501,17 +500,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
-  }
-
-  if (
-    auth.authenticated &&
-    req.originalUrl.startsWith('/crowdfunding') &&
-    !req.query['error'] &&
-    crowdfundingAuthService.isConfigured() &&
-    !crowdfundingAuthService.hasValidToken(req)
-  ) {
-    res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
-    return;
   }
 
   if (auth.authenticated) {
@@ -816,6 +804,7 @@ const isMain = isMainModule(metaUrl);
 const isPM2 = process.env['PM2'] === 'true';
 
 if (isMain || isPM2) {
+  installUnhandledRejectionLogger();
   startServer();
   const handleSignal = (sig: string): void => {
     gracefulShutdown(sig).catch((err) => {

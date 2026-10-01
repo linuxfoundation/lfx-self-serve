@@ -8,11 +8,15 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
   OrgClaCoverageChip,
+  OrgClaDesigneeNextStep,
+  OrgClaDesigneeRefusal,
   OrgClaDetailTab,
   OrgClaDetailTabView,
   OrgClaGroup,
   OrgClaGroupList,
   OrgClaGroupPickerResult,
+  OrgClaIdentifyManagerResult,
+  OrgClaManagerAnswer,
   OrgClaSignAttestations,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
@@ -20,7 +24,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_DESIGNEE_REFUSAL_COPY,
+  ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
@@ -84,20 +91,37 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
-import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import {
+  orgClaIdentifyManagerDialogConfig,
+  OrgEasyclaIdentifyManagerDialogComponent,
+} from '../org-easycla-identify-manager-dialog/org-easycla-identify-manager-dialog.component';
+import {
+  orgClaManagerQuestionDialogConfig,
+  OrgEasyclaManagerQuestionDialogComponent,
+} from '../org-easycla-manager-question-dialog/org-easycla-manager-question-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
+import { OrgEasyclaActivityLogComponent } from './org-easycla-activity-log.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
+import { OrgEasyclaRecentActivityComponent } from './org-easycla-recent-activity.component';
+
+/** The refusal sentence for a designee write, read from the BFF's upstream code; anything else is unknown. */
+function designeeRefusalCopy(error: unknown): string {
+  const code = error instanceof HttpErrorResponse ? (error.error as { upstreamCode?: unknown } | null)?.upstreamCode : undefined;
+  return typeof code === 'string' && Object.hasOwn(ORG_CLA_DESIGNEE_REFUSAL_COPY, code)
+    ? ORG_CLA_DESIGNEE_REFUSAL_COPY[code as OrgClaDesigneeRefusal]
+    : ORG_CLA_DESIGNEE_REFUSAL_COPY.unknown;
+}
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -106,9 +130,11 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
+    OrgEasyclaRecentActivityComponent,
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
@@ -145,11 +171,10 @@ export class OrgEasyclaDetailComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
-  private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -160,7 +185,7 @@ export class OrgEasyclaDetailComponent {
   // injection context `toObservable` would otherwise take implicitly.
   private readonly injector = inject(Injector);
 
-  private autoEclaDetached = false;
+  private detached = false;
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -168,7 +193,6 @@ export class OrgEasyclaDetailComponent {
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
-
   /**
    * Lists fetched by the flagged wait, fed back into the page's own `claData`.
    *
@@ -178,6 +202,9 @@ export class OrgEasyclaDetailComponent {
    * the one the page must then render — so they arrive here instead.
    */
   private readonly retriedList$ = new Subject<OrgClaGroupList | null>();
+  private readonly rosterChanged$ = new Subject<string>();
+  /** Fires on each organization load, so a roster re-read requested before it can never land after it. */
+  private readonly listReloaded$ = new Subject<void>();
 
   /**
    * A signing trip is in flight: this address carries the flag EasyCLA was told to return with.
@@ -248,6 +275,12 @@ export class OrgEasyclaDetailComponent {
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
 
   /**
+   * The designee write holding the Start lock. A context change releases the lock and clears this,
+   * so a late response from the old group must not touch a lock a newer flow may now hold.
+   */
+  private pendingDesigneeWrite: object | null = null;
+
+  /**
    * Set by the approval tab after it writes; `null` until then, so the row's own count is used.
    *
    * Keyed on the signature rather than held as a bare number: Angular reuses this component when
@@ -268,8 +301,11 @@ export class OrgEasyclaDetailComponent {
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
-   * the page. Another agreement's flip cannot show through. A confirmed value stays until the list
-   * row itself carries it, including across a project change that does not refetch the list.
+   * the page. Another agreement's flip cannot show through. A settled value is dropped when the
+   * list row carries it, and whenever this page loads the organization's CLA list (on arrival or
+   * an organization switch — not the retry that waits for a just-signed agreement), so another
+   * manager's change shows once that list is loaded again. A running write's value is never dropped, and a
+   * project change does not refetch the list, so the value survives that.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
 
@@ -282,9 +318,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
   /** The CLA Group this page is about. The authoritative half of the address (#2364). */
   private readonly claGroupId: Signal<string> = toSignal(
@@ -481,14 +515,8 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
-   *
-   * Three conjuncts: the row is signed (the producer stores the flag on the corporate signature,
-   * so an unsigned row has nothing to update), ACS granted the write (hide-on-deny — the design
-   * withholds the control from a viewer who cannot use it, since the disabled-with-banner
-   * pattern needs #1989 to explain itself), and this page is not showing the pre-sign preview
-   * (the row it would flip does not exist yet).
    */
-  protected readonly showAutoEclaToggle = computed(() => this.claGroup()?.signed === true && !this.showingPreview() && this.autoEclaAllowed() === true);
+  protected readonly showAutoEclaToggle = computed(() => this.initShowAutoEclaToggle());
 
   /**
    * The current toggle value the template binds to.
@@ -537,6 +565,22 @@ export class OrgEasyclaDetailComponent {
    * project for, and the picker greys those rows out for the same reason.
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
+
+  protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
+
+  /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
+  private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
+
+  /** Pairs the viewer said Yes for in this session, so the question is not asked twice. */
+  private readonly assignedPairs = signal<readonly string[]>([]);
+
+  protected readonly designeeNotice = signal<string | null>(null);
+
+  /** `orgUid::projectSfid`, the pair ACS scopes the Sign grant and the designee role to; null off an unsigned agreement. */
+  private readonly designeePair = computed(() => this.initDesigneePair());
+
+  /** The viewer may already sign this pair, as designee or signatory, so Start skips the question; anything short of allowed asks it. */
+  protected readonly alreadyDesignee = computed(() => this.initAlreadyDesignee());
 
   /**
    * The preview mode restores from history / cookie change, so the selected organization can arrive
@@ -607,7 +651,7 @@ export class OrgEasyclaDetailComponent {
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
-      this.autoEclaDetached = true;
+      this.detached = true;
     });
 
     // Either arm of the context, because neither destroys this component: an organization switch
@@ -616,7 +660,35 @@ export class OrgEasyclaDetailComponent {
     // would open a session for the agreement the viewer left rather than the one on screen.
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
+      this.designeeNotice.set(null);
+      if (this.pendingDesigneeWrite) {
+        this.pendingDesigneeWrite = null;
+        this.signingOpen.set(false);
+      }
     });
+
+    // Only the latest re-read may land: an older one can still name a viewer who has since
+    // removed themselves, and it would clear that hide.
+    this.rosterChanged$
+      .pipe(
+        switchMap((uid) =>
+          this.claService.getClaGroups(uid).pipe(
+            map((list) => ({ uid, list })),
+            takeUntil(this.listReloaded$),
+            catchError((error: unknown) => {
+              console.warn('Failed to refresh organization CLA groups after a manager change:', error);
+              return of(null);
+            })
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((refreshed) => {
+        if (!refreshed || this.selectedOrgUid() !== refreshed.uid) return;
+        const stillListed = new Set((refreshed.list?.claGroups ?? []).filter((group) => group.viewerIsClaManager === true).map((group) => group.id));
+        this.selfRemovals.keepOnly(refreshed.uid, stillListed);
+        this.retriedList$.next(refreshed.list);
+      });
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
     // change, because that change does not refetch the list.
@@ -675,6 +747,19 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe((allowed) => this.autoEclaAllowed.set(allowed));
 
+    toObservable(this.designeePair)
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => this.signCheck.set(null)),
+        switchMap((pair) => {
+          if (!pair) return of(null);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'sign', projectSfid).pipe(map((allowed) => ({ pair, allowed })));
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((check) => this.signCheck.set(check));
+
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
     // `cannotPreview`, because the group address is the one a named signing overview will claim and
@@ -705,6 +790,16 @@ export class OrgEasyclaDetailComponent {
     const signatureId = this.claGroup()?.id;
     if (!signatureId) return;
     this.loadedManagerCount.set({ signatureId, count });
+  }
+
+  /**
+   * Re-reads the organization's CLA list after a manager was added or removed, so the roster flag
+   * is recomputed by the server. Fed through `retriedList$` rather than `orgUid$`, which would put
+   * the skeleton over the Managers panel that just reported the change.
+   */
+  protected onRosterChanged(): void {
+    const uid = this.selectedOrgUid();
+    if (uid) this.rosterChanged$.next(uid);
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
@@ -740,7 +835,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.confirmThenHandOff(context.orgUid, context.chosen);
+    this.continueAsManager(context.orgUid, context.chosen, 'attest');
   }
 
   /**
@@ -754,7 +849,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.openSendByEmailIfContextHeld(context.orgUid, context.chosen);
+    this.continueAsManager(context.orgUid, context.chosen, 'mail');
   }
 
   protected onDownload(): void {
@@ -837,9 +932,9 @@ export class OrgEasyclaDetailComponent {
   /**
    * Turns Auto ECLA on or off for the agreement on screen (#1988).
    *
-   * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
-   * click without a round trip. On success the override stays (the state was written), the
-   * saving flag is cleared, and a success toast names the value written. On failure the override
+   * Optimistic: the remembered value is set to `next` before the PUT lands, so the toggle answers
+   * the click without a round trip. On success the remembered value stays (the state was written),
+   * the saving flag is cleared, and a success toast names the value written. On failure the remembered value
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
@@ -848,8 +943,8 @@ export class OrgEasyclaDetailComponent {
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
-   * shown only while this page is still that agreement. A remembered value stays until the list
-   * row carries it, including after a project change that does not refetch the list.
+   * shown only while this page is still that agreement. A remembered value is dropped once the list
+   * row carries it or the page loads the organization's CLA list again, never while its write is running.
    *
    * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
    */
@@ -899,7 +994,7 @@ export class OrgEasyclaDetailComponent {
 
   /** True while the page is still the organization and agreement this write was started for. */
   private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
-    return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
+    return !this.detached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
   }
 
   /**
@@ -919,6 +1014,108 @@ export class OrgEasyclaDetailComponent {
     if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return null;
 
     return { orgUid, chosen };
+  }
+
+  /** The Start lock stays held until whichever step ends the flow. */
+  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    if (this.alreadyDesignee()) {
+      this.openChosenStep(orgUid, chosen, next);
+      return;
+    }
+
+    const questionRef = this.dialogService.open(OrgEasyclaManagerQuestionDialogComponent, orgClaManagerQuestionDialogConfig()) as DynamicDialogRef;
+    this.uncommittedSigningDialog = questionRef;
+
+    this.whenSigningDialogEnds(questionRef, (answer: OrgClaManagerAnswer) => {
+      // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
+      // the answer names no organization or agreement.
+      this.afterDialogTornDown(questionRef, () => {
+        if (!this.signingContextHeld(orgUid, chosen)) return;
+        if (answer === 'yes') this.assignDesignee(orgUid, chosen, next);
+        else this.openIdentifyManager(orgUid, chosen);
+      });
+    });
+  }
+
+  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    if (next === 'attest') this.confirmThenHandOff(orgUid, chosen);
+    else this.openSendByEmailIfContextHeld(orgUid, chosen);
+  }
+
+  /** Whether the page is still on this organization and signing pair; releases Start when it is not. */
+  private signingContextHeld(orgUid: string, chosen: OrgClaGroupPickerResult): boolean {
+    const currentChoice = this.signingChoice();
+    if (
+      this.accountContext.selectedAccount()?.uid === orgUid &&
+      currentChoice?.claGroupId === chosen.claGroupId &&
+      currentChoice.projectSfid === chosen.projectSfid
+    ) {
+      return true;
+    }
+    this.signingOpen.set(false);
+    this.leavePreviewIfContextLost();
+    return false;
+  }
+
+  /** Yes: make the viewer the designee, then continue; a refusal leaves them on the overview with the reason. */
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    const write = this.holdDesigneeWrite();
+    this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
+      next: () => {
+        this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.openChosenStep(orgUid, chosen, next);
+      },
+      error: (error: unknown) => {
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
+      },
+    });
+  }
+
+  private openIdentifyManager(orgUid: string, chosen: OrgClaGroupPickerResult): void {
+    const identifyRef = this.dialogService.open(OrgEasyclaIdentifyManagerDialogComponent, orgClaIdentifyManagerDialogConfig()) as DynamicDialogRef;
+    this.uncommittedSigningDialog = identifyRef;
+
+    this.whenSigningDialogEnds(identifyRef, (result: OrgClaIdentifyManagerResult) => {
+      if (!this.signingContextHeld(orgUid, chosen)) return;
+      this.nominateDesignee(orgUid, chosen, result);
+    });
+  }
+
+  /** No: name someone else. Either success is a notice on the overview; the viewer is granted nothing, so the flow ends here. */
+  private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgClaIdentifyManagerResult): void {
+    const write = this.holdDesigneeWrite();
+    this.claService.nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email }).subscribe({
+      next: (response) => {
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.designeeNotice.set(
+          response.outcome === 'lf-login-required'
+            ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequired(response.email)
+            : ORG_CLA_IDENTIFY_MANAGER_COPY.assigned(response.email)
+        );
+      },
+      error: (error: unknown) => {
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Request not sent', detail: designeeRefusalCopy(error) });
+      },
+    });
+  }
+
+  private holdDesigneeWrite(): object {
+    const write = {};
+    this.pendingDesigneeWrite = write;
+    return write;
+  }
+
+  /** Whether this write still owns the Start lock, i.e. no context change released it meanwhile. */
+  private releaseDesigneeWrite(write: object): boolean {
+    if (this.pendingDesigneeWrite !== write) return false;
+    this.pendingDesigneeWrite = null;
+    return true;
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -1139,7 +1336,9 @@ export class OrgEasyclaDetailComponent {
     // for an unsigned row, which carries the organization's own coverage and counts where the
     // selection carries only two names.
     const listed = this.listedGroupForAddress();
-    if (listed) return listed;
+    if (listed) {
+      return this.selfRemovals.removed(this.selectedOrgUid(), listed.id) ? { ...listed, viewerIsClaManager: false } : listed;
+    }
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.
@@ -1218,6 +1417,12 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
   }
 
+  /** Signed row, viewer on its CLA manager list, ACS grants the write, and not the pre-sign preview. */
+  private initShowAutoEclaToggle(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;
+  }
+
   private initAutoEclaValue(): boolean {
     const orgUid = this.selectedOrgUid();
     const signatureId = this.claGroup()?.id;
@@ -1259,6 +1464,19 @@ export class OrgEasyclaDetailComponent {
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.autoEclaProjectSfid();
     return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+  }
+
+  private initDesigneePair(): string | null {
+    const orgUid = this.selectedOrgUid();
+    const projectSfid = this.signingChoice()?.projectSfid;
+    return this.notStarted() && orgUid && projectSfid ? `${orgUid}::${projectSfid}` : null;
+  }
+
+  private initAlreadyDesignee(): boolean {
+    const pair = this.designeePair();
+    if (!pair) return false;
+    const check = this.signCheck();
+    return this.assignedPairs().includes(pair) || (check?.pair === pair && check.allowed);
   }
 
   /**
@@ -1396,6 +1614,8 @@ export class OrgEasyclaDetailComponent {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
         this.autoEclaWrites.forgetSettled();
+        this.selfRemovals.forgetAll();
+        this.listReloaded$.next();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(

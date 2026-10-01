@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaDesigneeRefusal, OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -523,20 +523,18 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
 };
 
 /**
- * Why the CLA Managers, Approval List, and Contributor Acknowledgments tabs hold nothing until the
- * agreement is signed, taken verbatim from the M3 prototype's locked panels.
+ * Why the Approval List, Contributor Acknowledgments, and Activity Log tabs hold nothing until
+ * the agreement is signed, taken from the M3 prototype's locked panels. CLA Managers uses its
+ * own unsigned copy.
  *
- * Only these three tabs. All three describe a role, a rule set, or an activity stream that comes
- * into existence *with* the signature — the signatory becomes the initial CLA Manager, approval
- * entries are what that manager maintains, and acknowledgments are what contributors then place
- * against the resulting rules — so on an unsigned agreement there is nothing to list rather than
- * a list that failed to load. The remaining tabs are unbuilt for every agreement, signed or not,
- * and saying "once this CLA is signed" on them would promise content signing does not produce.
+ * Each of these is a list that comes into existence with the signature: approval entries are
+ * what the manager maintains, acknowledgments are what contributors place against those rules,
+ * and the activity log is the record of that signing and of the changes after it. On an
+ * unsigned agreement there is nothing to list, so the panel says so rather than rendering blank.
  *
  * Reached only through the pre-signing preview, since upstream's list draws every row from a
  * signature its query has already filtered to signed. That makes the preview the sole place these
- * panels render — which is why they are copy rather than an empty section. This is the same gap
- * the empty Overview had.
+ * panels render — which is why they are copy rather than an empty section.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
   approval: {
@@ -546,6 +544,10 @@ export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: s
   acknowledgments: {
     title: 'No contributor acknowledgments yet',
     subtitle: 'Once this CLA is signed, contributors who match the approval list will appear here.',
+  },
+  activity: {
+    title: 'The activity log becomes available once this CLA is signed',
+    subtitle: 'Sign this CLA first. Changes to signing, CLA Managers, and the approval list will appear here.',
   },
 };
 
@@ -669,6 +671,70 @@ export const ORG_CLA_MANAGER_REMOVE_COPY = {
 /** Name-part bounds, matching what the CLA service accepts. */
 export const ORG_CLA_MANAGER_NAME_MIN = 2;
 export const ORG_CLA_MANAGER_NAME_MAX = 30;
+
+// ---------------------------------------------------------------------------
+// Initial CLA Manager designee (#2780)
+// ---------------------------------------------------------------------------
+
+export const ORG_CLA_DESIGNEE_REFUSALS = ['already-signed', 'no-lf-login', 'sanctioned', 'not-authorized', 'unknown'] as const;
+
+export const ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES = ['assigned', 'lf-login-required'] as const;
+
+/**
+ * The CLA service's `fullName` constraint on a CLA manager request: 2–60 characters of ASCII
+ * letters, digits, and underscores, separated by single spaces. Accents, hyphens, and apostrophes
+ * are refused upstream, so they are refused here with a sentence rather than as a generic failure.
+ */
+export const ORG_CLA_DESIGNEE_NAME_PATTERN = /^[a-zA-Z0-9_]+( [a-zA-Z0-9_]+)*$/;
+export const ORG_CLA_DESIGNEE_NAME_MIN = 2;
+export const ORG_CLA_DESIGNEE_NAME_MAX = 60;
+
+/**
+ * Corporate Console's question before Start, asked as the dialog's title; its "No Signed CLA Found"
+ * title is dropped because the overview already says so. Contact Company Admin is not offered.
+ */
+export const ORG_CLA_MANAGER_QUESTION_COPY = {
+  question: 'Are you authorized to be a CLA Manager for your organization?',
+  message: 'A CLA Manager is the person who manages the list of approved contributors to this project for your company.',
+  note: 'If not sure please select "No"',
+  noLabel: 'No',
+  yesLabel: 'Yes',
+} as const;
+
+/** The unsigned overview for a viewer already identified as the initial CLA Manager (Corporate Console, verbatim). */
+export const ORG_CLA_DESIGNEE_START_COPY = {
+  identified: 'Someone has identified you as the initial CLA Manager from your company for this project.',
+  role: 'The CLA Manager is the person who manages the list of approved contributors.',
+  stepsHeading: 'To proceed, click below to start the process:',
+  steps: [
+    {
+      label: 'Step 1:',
+      body: 'You will be able to either sign the CLA, or send it to someone else for signature if you are not authorized by your company to sign it.',
+    },
+    { label: 'Step 2:', body: 'Then, you will be able to start approving contributors and adding other CLA Managers.' },
+  ],
+} as const;
+
+export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
+  title: 'Identify CLA Manager',
+  message: 'Please enter the name and email address of the person from your company who will be the CLA Manager for this project',
+  nameLabel: 'Name',
+  emailLabel: 'Email address',
+  submitLabel: 'Submit Request',
+  cancelLabel: 'Cancel',
+  /** `email` is the address the viewer entered. Neither outcome confirms an email was sent. */
+  assigned: (email: string): string => `${email} is the initial CLA Manager designee.`,
+  lfLoginRequired: (email: string): string => `${email} needs an LF Login before they can become the initial CLA Manager designee.`,
+} as const;
+
+/** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */
+export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string> = {
+  'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
+  'no-lf-login': 'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Contact support.',
+  sanctioned: 'Your organization cannot sign this CLA at this time. Contact support for more information.',
+  'not-authorized': 'You are not allowed to request a CLA Manager for this organization.',
+  unknown: 'We could not complete the request. Try again, or contact support if it keeps failing.',
+};
 
 // ---------------------------------------------------------------------------
 // Contributor Acknowledgments (#1986)
@@ -807,3 +873,75 @@ export const ORG_CLA_INVALIDATE_ACTION_COPY = {
   /** Shown instead of the control when the producer sent a row with no per-ack id to address. */
   unavailableTooltip: 'This acknowledgment has no record id, so it cannot be invalidated here.',
 } as const;
+
+// ---------------------------------------------------------------------------
+// Activity Log (#1987, #2857)
+// ---------------------------------------------------------------------------
+
+/** The heading the Activity Log tab carries, matching the M3 prototype. */
+export const ORG_CLA_ACTIVITY_LOG_HEADING = 'Activity log';
+
+/**
+ * Sub-header under the tab title.
+ *
+ * Taken verbatim from the M3 prototype. Reads as an explanation of what the log covers, not a
+ * definitive list — new event types added by the producer appear alongside these categories.
+ */
+export const ORG_CLA_ACTIVITY_LOG_SUBHEADER = "Every change to this CLA's signing status, CLA Managers, and approval list.";
+
+/**
+ * Cap on the activity log page size the BFF forwards to the producer.
+ *
+ * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the
+ * viewer fetch more with the Load-more control. A page above 100 is clamped silently to protect
+ * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop. Same
+ * limits the sibling acknowledgments tab uses.
+ */
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT = 50;
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX = 100;
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN = 1;
+
+/** Column headers for the Activity Log table. */
+export const ORG_CLA_ACTIVITY_LOG_COLUMN_HEADERS = {
+  action: 'Action',
+  actor: 'By',
+  when: 'When',
+} as const;
+
+/** Placeholder for the search input above the table. */
+export const ORG_CLA_ACTIVITY_LOG_SEARCH_PLACEHOLDER = 'Search activity…';
+
+/**
+ * Empty-state copy shown when the tab's first page is empty AND the producer sent no next-page
+ * cursor. Matches the M3 prototype. Distinct from the filter-empty state below — the log is
+ * genuinely empty on this path.
+ */
+export const ORG_CLA_ACTIVITY_LOG_EMPTY_COPY = {
+  title: 'No activity yet',
+  subtitle: 'Changes to this CLA will appear here as they happen.',
+} as const;
+
+/**
+ * In-place state shown when the fetched set is non-empty but the client-side search filter
+ * matches zero rows. Deliberately different from the tab-level empty state — the log is not
+ * empty; the filter matched nothing.
+ */
+export const ORG_CLA_ACTIVITY_LOG_FILTER_EMPTY_COPY = {
+  title: 'No matching activity',
+  subtitle: 'Clear the search to see every event on this CLA.',
+} as const;
+
+/** Label and busy state for the Load-more control that follows the producer's cursor. */
+export const ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY = {
+  label: 'Load more',
+  busyLabel: 'Loading…',
+} as const;
+
+/** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
+export const ORG_CLA_ACTIVITY_LOG_EM_DASH = '—';
+
+export const ORG_CLA_RECENT_ACTIVITY_HEADING = 'Recent activity';
+
+export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
+
+export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;

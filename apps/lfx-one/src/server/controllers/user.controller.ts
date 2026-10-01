@@ -8,7 +8,7 @@ import { stripHostKey } from '../helpers/meeting.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, resolveUserIdentity } from '../utils/auth-helper';
 
 /**
  * Controller for handling user-related HTTP requests
@@ -37,10 +37,14 @@ export class UserController {
     });
 
     try {
-      // Extract user email from auth context (impersonation-aware)
-      const userEmail = getEffectiveEmail(req);
-      if (!userEmail) {
-        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
+      // Identity gate: proceed when either an effective email or a username can be resolved from
+      // the auth context. Most sources key on username/FGA grants (votes, meetings, formation) or
+      // email-OR-username (surveys, RSVPs); only pending invitations are strictly email-keyed, and
+      // the service skips that source when email is absent — a username-only identity must not
+      // 400 here (GH-2987).
+      const { email: userEmail, username } = await resolveUserIdentity(req);
+      if (!userEmail && !username) {
+        const validationError = ServiceValidationError.forField('identity', 'No email or username found in authentication context', {
           operation: 'get_pending_actions',
           service: 'user_controller',
           path: req.path,
@@ -50,10 +54,8 @@ export class UserController {
         return;
       }
 
-      // projectUid and projectSlug must be supplied together (project/foundation lens) or
-      // omitted together (Me lens). Surveys scope on projectSlug while meetings/votes scope on
-      // projectUid — a half-supplied call would silently produce inconsistent aggregation across
-      // the three sources. Reject early so the contract stays explicit.
+      // projectUid and projectSlug must be supplied together (lens-scoped) or omitted together
+      // (Me lens) — every source scopes on projectUid, so a half-supplied call would aggregate inconsistently.
       if (!!projectUid !== !!projectSlug) {
         next(
           ServiceValidationError.forField(

@@ -35,6 +35,14 @@ const buildRedistributionClause = (availableKeys: HealthScoreCategoryKey[]): str
   return ` ${names} ${verb} unavailable, so weights were redistributed.`;
 };
 
+// Mirrors Insights: the first category without a score, in maintainer, security, development order.
+export const getMissingHealthCategoryName = (maintainerScore: number | null, securityScore: number | null, developmentScore: number | null): string | null => {
+  if (maintainerScore === null) return CATEGORY_NAME.maintainer;
+  if (securityScore === null) return CATEGORY_NAME.security;
+  if (developmentScore === null) return CATEGORY_NAME.development;
+  return null;
+};
+
 /**
  * Health Score v2 summary description, ported verbatim from LFX Insights
  * (`frontend/config/health-breakdown-templates.ts`, `getHealthScoreDescription` + private helpers):

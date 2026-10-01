@@ -119,14 +119,19 @@ describe('FormationPeopleCardComponent', () => {
     expect(byTestId('formation-people-group-staff')).toBeNull();
   });
 
-  it('groups LF staff apart from invited people and keeps the group order staff-first', async () => {
+  it('groups LF staff first, then invitees by organization, then Other for those with none', async () => {
     await render();
 
     const groups = [...fixture.nativeElement.querySelectorAll('[data-testid^="formation-people-group-"]')] as HTMLElement[];
-    expect(groups.map((el) => el.dataset['testid'])).toEqual(['formation-people-group-staff', 'formation-people-group-invited']);
+    expect(groups.map((el) => el.dataset['testid'])).toEqual([
+      'formation-people-group-staff',
+      'formation-people-group-org-cascade-data',
+      'formation-people-group-other',
+    ]);
+    expect(byTestId('formation-people-group-org-cascade-data')?.textContent).toContain('Cascade Data');
     expect(byTestId('formation-people-group-staff')?.querySelector('[data-testid="formation-people-row-alex.rivera"]')).not.toBeNull();
-    expect(byTestId('formation-people-group-invited')?.querySelector('[data-testid="formation-people-row-sam.chen"]')).not.toBeNull();
-    expect(byTestId('formation-people-group-invited')?.querySelector('[data-testid="formation-people-row-jordan.lee@partner-corp.example"]')).not.toBeNull();
+    expect(byTestId('formation-people-group-org-cascade-data')?.querySelector('[data-testid="formation-people-row-sam.chen"]')).not.toBeNull();
+    expect(byTestId('formation-people-group-other')?.querySelector('[data-testid="formation-people-row-jordan.lee@partner-corp.example"]')).not.toBeNull();
   });
 
   it('labels an accepted external as Invited, a pending one as Invite Sent, and staff with no chip', async () => {
@@ -137,10 +142,11 @@ describe('FormationPeopleCardComponent', () => {
     expect(byTestId('formation-people-status-alex.rivera')).toBeNull();
   });
 
-  it('renders title · organization · item count, falling back to the email for a pending invitee', async () => {
+  it('renders title · item count without repeating the organization, falling back to the email for a pending invitee', async () => {
     await render();
 
-    expect(byTestId('formation-people-row-sam.chen')?.textContent).toContain('Partner contact · Cascade Data · 1 item');
+    expect(byTestId('formation-people-row-sam.chen')?.textContent).toContain('Partner contact · 1 item');
+    expect(byTestId('formation-people-row-sam.chen')?.textContent).not.toContain('Cascade Data');
     expect(byTestId('formation-people-row-alex.rivera')?.textContent).toContain('Program Manager · 1 item');
     expect(byTestId('formation-people-row-jordan.lee@partner-corp.example')?.textContent).toContain('jordan.lee@partner-corp.example');
   });
@@ -149,7 +155,8 @@ describe('FormationPeopleCardComponent', () => {
     await render(of<FormationPeopleResponse>({ state: 'loaded', people: [staff] }));
 
     expect(byTestId('formation-people-group-staff')).not.toBeNull();
-    expect(byTestId('formation-people-group-invited')).toBeNull();
+    expect(byTestId('formation-people-group-other')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid^="formation-people-group-org-"]')).toBeNull();
   });
 
   it('shows the empty state when the settings hold no one', async () => {

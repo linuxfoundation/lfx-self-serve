@@ -20,7 +20,7 @@
 
   <!-- Underline tab bar -->
   <div role="tablist" class="flex gap-6 border-b border-gray-200 pt-5 mb-5">
-    @for (tab of tabs(); track tab.value) {
+    @for (tab of tabs; track tab.value) {
       <button
         #tabBtn
         type="button"
@@ -44,5 +44,5 @@
   </div>
 
   <!-- Routed child content -->
-  <router-outlet (activate)="onChildActivate($event)" />
+  <router-outlet />
 </div>

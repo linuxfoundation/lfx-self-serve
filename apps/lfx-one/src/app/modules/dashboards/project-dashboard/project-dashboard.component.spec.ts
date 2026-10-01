@@ -72,7 +72,12 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
   let fixture: ComponentFixture<ProjectDashboardComponent>;
   let flagEnabled: WritableSignal<boolean>;
 
-  async function render(isFormation: boolean, settingsResult: Observable<ProjectSettings> = of(settings('2026-09-01')), subStage = 'Engaged'): Promise<void> {
+  async function render(
+    isFormation: boolean,
+    settingsResult: Observable<ProjectSettings> = of(settings('2026-09-01')),
+    subStage = 'Engaged',
+    readable = true
+  ): Promise<void> {
     flagEnabled = signal(true);
     TestBed.resetTestingModule();
 
@@ -114,6 +119,7 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
             activeProjectAnnouncementDate: announcementDate,
             activeProjectAnnouncementDateLoading: announcementDateLoading,
             activeProjectAnnouncementDateHasError: announcementDateHasError,
+            activeProjectAnnouncementDateReadable: signal(readable),
           },
         },
       ],
@@ -187,6 +193,15 @@ describe('ProjectDashboardComponent — Formation badge/subtitle (GH-1955)', () 
     expect(subtitle()).toContain('Announcement date Sep 1, 2026');
   });
 
+  it('omits the announcement date when the caller may not read settings', async () => {
+    await render(true, of(settings('2026-09-01')), 'Engaged', false);
+
+    const subtitle = () => fixture.nativeElement.querySelector('[data-testid="project-dashboard-formation-subtitle"]')?.textContent ?? '';
+    expect(subtitle()).toContain('Stage Formation · Engaged');
+    expect(subtitle()).not.toContain('Announcement date');
+    expect(subtitle()).not.toContain('Not set');
+  });
+
   it('omits the "Announcement date" clause on a failed settings fetch, rather than falsely asserting "Not set"', async () => {
     await render(
       true,
@@ -247,6 +262,7 @@ describe('ProjectDashboardComponent — formation entry card', () => {
             activeProjectAnnouncementDate: signal(null),
             activeProjectAnnouncementDateLoading: signal(false),
             activeProjectAnnouncementDateHasError: signal(false),
+            activeProjectAnnouncementDateReadable: signal(false),
           },
         },
         { provide: ProjectService, useValue: { getPendingActions: vi.fn(() => of([])) } },

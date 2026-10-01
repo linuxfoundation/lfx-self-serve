@@ -32,13 +32,21 @@
         [withCard]="false"
         (ctaClick)="retry()"
         data-testid="mentorship-mentee-apply-error" />
+    } @else if (blocked(); as state) {
+      <lfx-empty-state
+        [icon]="state.icon"
+        [title]="state.title"
+        [subtitle]="state.subtitle"
+        [withCard]="false"
+        [attr.data-reason]="blockedReason()"
+        data-testid="mentorship-mentee-apply-blocked" />
     } @else if (page(); as view) {
       <header class="flex flex-col gap-1">
         <h1 class="text-3xl font-semibold text-gray-900" data-testid="mentorship-mentee-apply-title">{{ titlePrefix }}{{ view.target.programName }}</h1>
-        <p class="text-sm text-gray-500" data-testid="mentorship-mentee-apply-subtitle">{{ view.target.projectName }} · {{ view.target.termName }}</p>
+        <p class="text-sm text-gray-500" data-testid="mentorship-mentee-apply-subtitle">{{ subtitle() }}</p>
       </header>
 
-      <lfx-mentorship-profile-card />
+      <lfx-mentorship-profile-card [syncMentorshipProfiles]="true" />
 
       <lfx-mentorship-mentee-profile-details
         [profile]="view.profile.profile"
@@ -69,7 +77,8 @@
             iconPos="left"
             severity="primary"
             size="small"
-            [disabled]="remaining() > 0 && !profileCreated()"
+            [disabled]="submitting() || (remaining() > 0 && !profileCreated())"
+            [loading]="submitting()"
             (onClick)="onSubmit()"
             data-testid="mentorship-mentee-apply-submit" />
         </div>
@@ -77,6 +86,6 @@
     }
   </div>
 
-  <lfx-mentorship-mentee-profile-edit-drawer />
-  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" />
+  <lfx-mentorship-mentee-profile-edit-drawer (saved)="onProfileSaved($event)" />
+  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" (saved)="onProfileSaved($event)" />
 </div>

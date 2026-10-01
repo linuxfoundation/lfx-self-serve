@@ -1,0 +1,104 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-at-a-glance">
+  @if (status() === 'failed') {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Events at a glance unavailable"
+      subtitle="We could not load event reach for this foundation. Refresh the page to try again."
+      data-testid="events-at-a-glance-error" />
+  } @else if (status() === 'loading') {
+    <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="events-at-a-glance-loading" aria-hidden="true" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Event reach unavailable for this period"
+      subtitle="Reach for the selected period has not been measured yet. Pick another period to see it."
+      data-testid="events-at-a-glance-unmeasured" />
+  } @else {
+    <span class="text-[13px] text-gray-500" data-testid="events-at-a-glance-control">{{ view().controlLabel }}</span>
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-at-a-glance-hero">
+      <div class="flex flex-col gap-2" data-testid="events-at-a-glance-headline">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-at-a-glance-headline-value">{{ view().headline.value }}</span>
+          @if (view().headline.delta !== null) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
+              [class.text-red-600]="view().headline.deltaDirection === 'down'"
+              [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
+              data-testid="events-at-a-glance-headline-delta">
+              {{ view().headline.delta }}
+            </span>
+          }
+        </div>
+        <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-at-a-glance-side">
+        @for (stat of view().side; track stat.key) {
+          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-at-a-glance-side-' + stat.key">
+            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
+              <span [attr.data-testid]="'events-at-a-glance-side-' + stat.key + '-value'">{{ stat.value }}</span>
+              @if (stat.delta !== null) {
+                <span
+                  class="text-[12px] font-medium"
+                  [class.text-emerald-600]="stat.deltaDirection === 'up'"
+                  [class.text-red-600]="stat.deltaDirection === 'down'"
+                  [class.text-gray-400]="stat.deltaDirection === 'neutral'"
+                  [attr.data-testid]="'events-at-a-glance-side-' + stat.key + '-delta'">
+                  {{ stat.delta }}
+                </span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    <div class="flex flex-wrap items-baseline justify-between gap-2" data-testid="events-at-a-glance-tiles-heading">
+      <span class="text-sm font-semibold text-gray-900">Headline metrics</span>
+      <span class="text-[12px] text-gray-400" data-testid="events-at-a-glance-baseline">{{ view().baselineLabel }}</span>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="events-at-a-glance-tiles">
+      @for (tile of view().tiles; track tile.key) {
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-100 p-3" [attr.data-testid]="'events-at-a-glance-tile-' + tile.key">
+          <div class="flex items-baseline gap-1.5 text-lg font-semibold tabular-nums text-gray-900">
+            <span [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-value'">{{ tile.value }}</span>
+            @if (tile.delta !== null) {
+              <span
+                class="text-[12px] font-medium"
+                [class.text-emerald-600]="tile.deltaDirection === 'up'"
+                [class.text-red-600]="tile.deltaDirection === 'down'"
+                [class.text-gray-400]="tile.deltaDirection === 'neutral'"
+                [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-delta'">
+                {{ tile.delta }}
+              </span>
+            }
+            @if (tile.warn) {
+              <i
+                class="fa-light fa-triangle-exclamation self-center text-sm text-amber-500"
+                aria-label="Steep fall"
+                role="img"
+                [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-warn'"></i>
+            }
+          </div>
+          <span class="text-[12px] text-gray-500">{{ tile.label }}</span>
+        </div>
+      }
+    </div>
+
+    <p class="flex items-start gap-1.5 border-t border-gray-100 pt-3 text-[12px] text-gray-400" data-testid="events-at-a-glance-footnote">
+      <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+      <span
+        >Registrations and attendees are both shown so the <b class="font-semibold text-gray-500">show-up rate</b> is visible. A registration is a promise; an
+        attendee is the value delivered — reporting only one hides which of the two moved.</span
+      >
+    </p>
+  }
+</div>

@@ -537,6 +537,11 @@ export interface EasyClaCompanyClaManagerList {
   list?: EasyClaCompanyClaManager[];
 }
 
+/** `GET /v4/company/external/{companySFID}` — only the field the designee writes address. */
+export interface EasyClaCompany {
+  companyID?: string;
+}
+
 export interface ManagerTarget {
   /** The CLA service's internal company id — never sent to the browser. */
   companyId: string;
@@ -651,4 +656,53 @@ export interface EasyClaEclaInvalidateResult {
   cla_group_id?: string;
   company_id?: string;
   user_id?: string;
+}
+
+/**
+ * One producer event row from `GET /v4/company/{companyID}/project/{projectSFID}/events`
+ * (`#/definitions/event`).
+ *
+ * The producer writes one event per audited action against a `(company, CLA Group)` pair. The
+ * DynamoDB partition key is `company_sfid_cla_group_id`; each event carries the CLA Group id it
+ * belongs to plus the acting user, a timestamp, and a human-readable summary.
+ *
+ * Field names match the producer swagger (`swagger/common/event.yaml`) exactly. The BFF surfaces
+ * only a lean projection of these fields — see `OrgClaActivityLogEntry`.
+ */
+export interface EasyClaEvent {
+  EventID?: string;
+  EventType?: string;
+  UserID?: string;
+  UserName?: string;
+  LfUsername?: string;
+  EventCLAGroupID?: string;
+  EventCLAGroupName?: string;
+  EventCLAGroupNameLower?: string;
+  EventProjectID?: string;
+  EventProjectSFID?: string;
+  EventProjectSFName?: string;
+  EventProjectName?: string;
+  EventParentProjectSFID?: string;
+  EventParentProjectName?: string;
+  EventCompanyID?: string;
+  EventCompanySFID?: string;
+  EventCompanyName?: string;
+  EventTime?: string;
+  EventTimeEpoch?: number;
+  EventData?: string;
+  EventSummary?: string;
+  ContainsPII?: boolean;
+}
+
+/**
+ * Response for `GET /v4/company/{companyID}/project/{projectSFID}/events`
+ * (`#/definitions/event-list`).
+ *
+ * Paginated, with an opaque cursor. `ResultCount` is the size of `Events` on this page; `NextKey`
+ * is empty on the last page.
+ */
+export interface EasyClaEventList {
+  NextKey?: string;
+  ResultCount?: number;
+  Events?: EasyClaEvent[];
 }

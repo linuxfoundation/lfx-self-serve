@@ -4,19 +4,23 @@
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_CHECKLIST_PATH, FORMATION_STAGE_TAB_OPTIONS } from '@lfx-one/shared/constants';
-import type { DecoratedMyFormation, FilterPillOption, MyFormationWorkResponse } from '@lfx-one/shared/interfaces';
+import { FORMATION_CHECKLIST_PATH, FORMATION_STAGE_TAB_OPTIONS, MY_FORMATIONS_PAGE_TAB_OPTIONS, PROJECT_APPLICATION_TABS } from '@lfx-one/shared/constants';
+import type { DecoratedMyFormation, FilterPillOption, MyFormationWorkResponse, ProjectApplicationTab } from '@lfx-one/shared/interfaces';
 import { compareMyFormationsByNeed, decorateMyFormation } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
 import type { TablePageEvent } from 'primeng/table';
-import { debounceTime, tap } from 'rxjs';
+import { debounceTime, map, tap } from 'rxjs';
+
+import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
+import { ProjectApplicationsPanelComponent } from '../components/project-applications-panel/project-applications-panel.component';
 
 /**
  * Me-lens "My Formations" page (#2753) — one row per live formation the caller is invited to (a
@@ -32,10 +36,25 @@ import { debounceTime, tap } from 'rxjs';
  * unlike the foundation queue: this is a short, self-scoped list, and "what needs me most" is the
  * one ordering a caller wants from it. A row's name lands on the project's formation checklist —
  * the same destination the Pending Actions "View item" control uses (#2732).
+ *
+ * #3037 adds a "Propose a project" header CTA and a second page tab, "Submitted proposals" (`?tab=proposals`),
+ * listing the caller's own project applications.
  */
 @Component({
   selector: 'lfx-my-formations',
-  imports: [CardComponent, CardTabsBarComponent, EmptyStateComponent, InputTextComponent, ReactiveFormsModule, RouterLink, TableComponent, TagComponent],
+  imports: [
+    ButtonComponent,
+    CardComponent,
+    CardTabsBarComponent,
+    EmptyStateComponent,
+    FormationPageTabsComponent,
+    InputTextComponent,
+    ProjectApplicationsPanelComponent,
+    ReactiveFormsModule,
+    RouterLink,
+    TableComponent,
+    TagComponent,
+  ],
   templateUrl: './my-formations.component.html',
   styleUrl: './my-formations.component.scss',
 })
@@ -43,10 +62,14 @@ export class MyFormationsComponent {
   // === Services ===
   private readonly formationService = inject(FormationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   // === Template constants ===
   protected readonly checklistPath = FORMATION_CHECKLIST_PATH;
   protected readonly stageTabOptions: FilterPillOption[] = FORMATION_STAGE_TAB_OPTIONS;
+  protected readonly pageTabOptions: FilterPillOption[] = MY_FORMATIONS_PAGE_TAB_OPTIONS;
+  protected readonly tabs = PROJECT_APPLICATION_TABS;
 
   // === Forms ===
   public readonly searchForm = new FormGroup({
@@ -69,6 +92,7 @@ export class MyFormationsComponent {
   protected readonly first = signal(0);
 
   // === Computed Signals ===
+  protected readonly pageTab: Signal<ProjectApplicationTab> = this.initPageTab();
   private readonly formationWork: Signal<MyFormationWorkResponse | null> = this.initFormationWork();
   /**
    * `'unavailable'` always; `'partial'` only when it left nothing to show. A partial read that still
@@ -104,6 +128,15 @@ export class MyFormationsComponent {
   }
 
   // === Protected Methods ===
+  protected onPageTabChange(tab: string): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab: tab === PROJECT_APPLICATION_TABS.proposals ? tab : null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
   protected onStageTabChange(tab: string): void {
     this.first.set(0);
     this.stageTab.set(tab);
@@ -129,6 +162,15 @@ export class MyFormationsComponent {
   }
 
   // === Private Initializers ===
+  private initPageTab(): Signal<ProjectApplicationTab> {
+    return toSignal(
+      this.route.queryParamMap.pipe(
+        map((params) => (params.get('tab') === PROJECT_APPLICATION_TABS.proposals ? PROJECT_APPLICATION_TABS.proposals : PROJECT_APPLICATION_TABS.formations))
+      ),
+      { initialValue: PROJECT_APPLICATION_TABS.formations }
+    );
+  }
+
   // `getMyFormationWork()` re-emits on every `invalidateMyFormationWork()` rather than completing,
   // so `finalize` would never fire — `tap` clears `loading` on each emission instead. No
   // component-level `catchError`: the service's own `catchError` already absorbs every HTTP/network
