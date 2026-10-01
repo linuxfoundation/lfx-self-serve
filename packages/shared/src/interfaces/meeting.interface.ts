@@ -1852,6 +1852,21 @@ export interface MeLensMeetingFilters {
   organizerOnly: boolean;
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
+  /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
+  showDeclined: boolean;
+}
+
+/**
+ * One face in the fixed-height attendee preview on a meeting card.
+ * @description Built from either a registrant or an RSVP row, so only display fields are carried.
+ */
+export interface MeetingAttendeePreviewPerson {
+  /** Stable key for `@for` tracking (registrant uid, RSVP id, or email). */
+  key: string;
+  /** Display name shown in the tooltip; falls back to the email. */
+  name: string;
+  /** Profile picture URL; the avatar falls back to the first initial when absent. */
+  avatarUrl: string | null;
 }
 
 /**

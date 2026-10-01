@@ -19,8 +19,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MeetingRsvp } from '../interfaces';
-import { countRegistrantAttendance, getRegistrantAttendanceStatus, isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
+import { MeetingRegistrant, MeetingRsvp } from '../interfaces';
+import {
+  buildAttendeePreviewFromRegistrants,
+  buildAttendeePreviewFromRsvps,
+  countRegistrantAttendance,
+  getRegistrantAttendanceStatus,
+  isSameOccurrenceId,
+  occurrenceIdToMs,
+  selectApplicableRsvp,
+} from './rsvp-calculator.util';
 
 /**
  * Build a MeetingRsvp with just the fields the resolver reads. Any other required
@@ -508,5 +516,52 @@ describe('countRegistrantAttendance', () => {
       maybe: 0,
       total: 3,
     });
+  });
+});
+
+describe('buildAttendeePreviewFromRegistrants', () => {
+  type PreviewRegistrant = Pick<MeetingRegistrant, 'uid' | 'email' | 'first_name' | 'last_name' | 'avatar_url' | 'rsvp' | 'invite_accepted'>;
+  const registrant = (uid: string, overrides: Partial<PreviewRegistrant> = {}): PreviewRegistrant => ({
+    uid,
+    email: `${uid}@example.com`,
+    first_name: uid.toUpperCase(),
+    last_name: 'Doe',
+    avatar_url: null,
+    rsvp: null,
+    invite_accepted: null,
+    ...overrides,
+  });
+  const rsvpOf = (response_type: MeetingRsvp['response_type']): MeetingRsvp =>
+    ({ id: 'x', meeting_id: 'm', registrant_id: 'r', username: 'u', email: 'e', response_type, scope: 'all', created_at: '' }) as MeetingRsvp;
+
+  it('puts attending people first, then maybe, no reply, and declined', () => {
+    const people = buildAttendeePreviewFromRegistrants(
+      [
+        registrant('d', { rsvp: rsvpOf('declined') }),
+        registrant('p'),
+        registrant('m', { rsvp: rsvpOf('maybe') }),
+        registrant('a', { rsvp: rsvpOf('accepted') }),
+      ],
+      { inviteResponsesEnabled: true }
+    );
+    expect(people.map((p) => p.key)).toEqual(['a', 'm', 'p', 'd']);
+  });
+
+  it('falls back to the email when the name is blank and keeps the avatar', () => {
+    const [person] = buildAttendeePreviewFromRegistrants([registrant('x', { first_name: '', last_name: '', avatar_url: 'https://img/x.png' })]);
+    expect(person).toEqual({ key: 'x', name: 'x@example.com', avatarUrl: 'https://img/x.png' });
+  });
+});
+
+describe('buildAttendeePreviewFromRsvps', () => {
+  it('orders RSVP rows by response and uses the name or email', () => {
+    const people = buildAttendeePreviewFromRsvps([
+      { id: '1', email: 'no@example.com', name: 'No One', response_type: 'declined' },
+      { id: '2', email: 'yes@example.com', name: '', response_type: 'accepted' },
+    ]);
+    expect(people).toEqual([
+      { key: '2', name: 'yes@example.com', avatarUrl: null },
+      { key: '1', name: 'No One', avatarUrl: null },
+    ]);
   });
 });
