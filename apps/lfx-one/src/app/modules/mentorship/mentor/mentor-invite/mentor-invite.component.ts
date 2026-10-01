@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -27,7 +27,6 @@ import { distinctUntilChanged, map, tap } from 'rxjs';
 })
 export class MentorInviteComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly mentorService = inject(MentorshipMentorService);
 
   protected readonly programsRoute = ['/mentorship/mentor/programs'];
@@ -50,13 +49,11 @@ export class MentorInviteComponent {
     const token = this.token();
     this.decision.set(decision);
     this.submission.set('submitting');
-    this.mentorService
-      .respondToMentorInvite(token, decision)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.settle(token, decision === 'accept' ? 'accepted' : 'declined'),
-        error: (error: unknown) => this.settle(token, this.stateForError(error)),
-      });
+    // Not tied to the page's lifetime: leaving mid-request must not cancel an answer the user gave.
+    this.mentorService.respondToMentorInvite(token, decision).subscribe({
+      next: () => this.settle(token, decision === 'accept' ? 'accepted' : 'declined'),
+      error: (error: unknown) => this.settle(token, this.stateForError(error)),
+    });
   }
 
   /** After a failed answer, go back to the choice rather than reloading the page. */

@@ -75,6 +75,16 @@ describe('MentorInviteComponent', () => {
     expect(byTestId('mentorship-mentor-invite-accept-button')?.getAttribute('data-loading')).toBe('true');
   });
 
+  it('keeps the answer in flight when the page is left', () => {
+    const pending = new Subject<void>();
+    build({ respond: pending });
+
+    click('mentorship-mentor-invite-accept-button');
+    fixture.destroy();
+
+    expect(pending.observed).toBe(true);
+  });
+
   it.each([
     ['no token', null],
     ['a blank token', '  '],

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { redactInviteToken } from '@lfx-one/shared/utils';
 import { trace } from '@opentelemetry/api';
 import { IncomingMessage, ServerResponse } from 'node:http';
 
@@ -19,7 +20,8 @@ export function reqSerializer(req: IncomingMessage & { id?: string; originalUrl?
   return {
     id: req.id,
     method: req.method,
-    url: req.originalUrl || req.url,
+    // The invite pages carry a signed credential in `?token=`; only the base matters for parsing a relative URL.
+    url: redactInviteToken(req.originalUrl || req.url || '', 'http://localhost'),
     remoteAddress: req.ip || req.socket?.remoteAddress,
     userAgent: req.headers['user-agent'],
   };

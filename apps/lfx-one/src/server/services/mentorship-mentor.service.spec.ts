@@ -314,7 +314,28 @@ describe('MentorshipMentorService mentor requests', () => {
     const failure = upstreamError(status, { error });
     proxyRequest.mockRejectedValueOnce(failure);
 
-    await expect(service.respondToMentorInvite(buildReq(), 'payload.sig', 'accept')).rejects.toBe(failure);
+    await expect(service.respondToMentorInvite(buildReq(), 'payload.sig', 'accept')).rejects.toMatchObject({ statusCode: status, errorBody: { error } });
+  });
+
+  it('keeps the invite token out of the path and operation a failure logs', async () => {
+    const token = 'payload.SECRET-sig';
+    const path = `/mentorship/v1/mentor-invites/${token}/accept`;
+    proxyRequest.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(
+        400,
+        'Bad Request',
+        { error: 'invalid invite token' },
+        'LFX_V2_SERVICE',
+        path,
+        `post_${path.replace(/\//g, '_')}`
+      )
+    );
+
+    const failure = await service.respondToMentorInvite(buildReq(), token, 'accept').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(MicroserviceError);
+    expect(failure).toMatchObject({ statusCode: 400, path: '/mentorship/v1/mentor-invites/redacted/accept' });
+    expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
   });
 });
 

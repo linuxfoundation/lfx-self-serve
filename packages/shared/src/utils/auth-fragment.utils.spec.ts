@@ -65,6 +65,12 @@ describe('redactInviteToken', () => {
   it('drops the query string when the URL cannot be parsed but still carries a token param', () => {
     expect(redactInviteToken('http://[not a url?token=SUPER_SECRET')).not.toContain('SUPER_SECRET');
   });
+
+  it('redacts the token on the mentorship mentor-invite page, keeping a relative URL relative', () => {
+    expect(redactInviteToken(`${ORIGIN}/mentorship/mentor/invites?token=SUPER.SECRET`, ORIGIN)).toBe(`${ORIGIN}/mentorship/mentor/invites?token=redacted`);
+    expect(redactInviteToken('/mentorship/mentor/invites/?token=SUPER.SECRET', ORIGIN)).toBe('/mentorship/mentor/invites/?token=redacted');
+    expect(redactInviteToken(`${ORIGIN}/mentorship/mentor/programs?token=keep-me`, ORIGIN)).toBe(`${ORIGIN}/mentorship/mentor/programs?token=keep-me`);
+  });
 });
 
 describe('hasAuthFragment', () => {

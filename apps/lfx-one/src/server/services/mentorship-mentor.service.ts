@@ -38,7 +38,7 @@ import {
   MENTORSHIP_MENTOR_INVITES_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
-import { ConflictError, ResourceNotFoundError } from '../errors';
+import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import {
@@ -175,10 +175,28 @@ export class MentorshipMentorService {
   /**
    * Accepts or declines a mentor invitation with the token from the invite email. Upstream checks the
    * token belongs to the caller (403 otherwise) and answers 400 when it is expired, malformed, or the
-   * invitation was already answered; both pass through.
+   * invitation was already answered; both pass through. Upstream takes the token in the path, so a
+   * failure is rethrown with it redacted from the path and operation the error log records.
    */
   public async respondToMentorInvite(req: Request, token: string, decision: MentorshipMentorInviteDecision): Promise<void> {
-    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`, 'POST');
+    try {
+      await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`, 'POST');
+    } catch (error) {
+      if (!(error instanceof MicroserviceError)) {
+        throw error;
+      }
+      const redact = (value?: string) => value?.split(token).join('redacted');
+      throw new MicroserviceError(error.message, error.statusCode, error.code, {
+        operation: redact(error.operation),
+        service: error.service,
+        path: redact(error.path),
+        errorBody: error.errorBody,
+        originalMessage: error.originalMessage,
+        originalError: error.originalError,
+        transportFailure: error.transportFailure,
+        clientMessage: error.clientMessage,
+      });
+    }
   }
 
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {

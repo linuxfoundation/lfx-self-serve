@@ -921,3 +921,14 @@ export function isInviteLandingPath(url: string): boolean {
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return normalized === '/invite' || normalized === '/invite/error';
 }
+
+/**
+ * Whether a URL is the mentorship mentor-invite page (`/mentorship/mentor/invites`), whose
+ * `?token=` is a signed accept/decline credential. Matched like {@link isInviteLandingPath}, but kept
+ * separate so this page does not get that landing's bootstrap shortcuts.
+ */
+export function isMentorshipMentorInvitePath(url: string): boolean {
+  const path = url.split(/[?#]/)[0];
+  const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+  return normalized === '/mentorship/mentor/invites';
+}

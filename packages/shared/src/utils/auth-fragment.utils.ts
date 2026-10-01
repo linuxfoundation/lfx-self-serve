@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AUTH_FRAGMENT_KEYS, INVITE_TOKEN_QUERY_PARAM } from '../constants/auth-fragment.constants';
-import { isInviteLandingPath } from './url.utils';
+import { isInviteLandingPath, isMentorshipMentorInvitePath } from './url.utils';
 
 /** Whether a URL fragment carries any key that counts as authentication material. */
 export function hasAuthFragment(hash: string): boolean {
@@ -41,21 +41,24 @@ export function redactAuthFragment(url: string, base?: string): string {
 }
 
 /**
- * Returns `url` with the invite-accept `token` query param replaced by a marker, or unchanged
- * when the path is not the invite landing or the param is absent.
+ * Returns `url` with the invite `token` query param replaced by a marker, or unchanged when the
+ * path is not an invite page or the param is absent. The invite pages are the LFID invite landing
+ * (`/invite?token=…`) and the mentorship mentor-invite page (`/mentorship/mentor/invites?token=…`).
  *
  * Sibling of {@link redactAuthFragment}: that helper only rewrites the hash, and the invite
- * token lives in the query string (`/invite?token=…`). Both are called from Datadog RUM
- * `beforeSend` so neither credential reaches the analytics sink (GH-2290).
+ * token lives in the query string. Both are called from Datadog RUM `beforeSend` so neither
+ * credential reaches the analytics sink (GH-2290), and the server request log uses this one too.
+ * A relative `url` comes back relative.
  */
 export function redactInviteToken(url: string, base?: string): string {
   try {
     const parsed = new URL(url, base);
-    if (!isInviteLandingPath(parsed.pathname) || !parsed.searchParams.has(INVITE_TOKEN_QUERY_PARAM)) {
+    const isInvitePath = isInviteLandingPath(parsed.pathname) || isMentorshipMentorInvitePath(parsed.pathname);
+    if (!isInvitePath || !parsed.searchParams.has(INVITE_TOKEN_QUERY_PARAM)) {
       return url;
     }
     parsed.searchParams.set(INVITE_TOKEN_QUERY_PARAM, 'redacted');
-    return parsed.toString();
+    return url.startsWith('/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.toString();
   } catch {
     const queryMarker = `?${INVITE_TOKEN_QUERY_PARAM}=`;
     const extraMarker = `&${INVITE_TOKEN_QUERY_PARAM}=`;
