@@ -204,6 +204,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation no non-member individual attended.
       call: () => service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10 }),
     },
+    {
+      name: 'getNonMembersConversion',
+      url: '/api/analytics/non-members-conversion',
+      // A swallowed failure would read as a foundation with no pipeline.
+      call: () => service.getNonMembersConversion({ foundationSlug: 'aaif', range: 'YTD' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

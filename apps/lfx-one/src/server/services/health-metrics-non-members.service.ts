@@ -3,6 +3,8 @@
 
 import {
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
@@ -18,15 +20,19 @@ import { SnowflakeService } from './snowflake.service';
 
 import type {
   HealthMetricsL2Range,
+  HealthMetricsNonMembersConversion,
+  HealthMetricsNonMembersConversionQuery,
   HealthMetricsNonMembersOrg,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsQuery,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
   HealthMetricsNonMembersPerson,
+  HealthMetricsNonMembersWarmOrg,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+const NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_CONVERSION_OPPORTUNITY';
 const NON_MEMBER_COMPANY_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_COMPANY_PARTICIPATION';
 const NON_MEMBER_FIT_SCORE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_FIT_SCORE';
 const NON_MEMBER_PEOPLE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_PEOPLE';
@@ -59,6 +65,22 @@ interface PersonRow {
   LAST_ATTENDED_DATE: Date | string | null;
   MEETINGS_ATTENDED_COUNT: number | null;
   SORT_RANK: number | null;
+}
+
+interface ConversionRow {
+  ENTRY_TIER_NAME: string | null;
+  ENTRY_TIER_FEE_USD: number | null;
+  ORGANIZATIONS_TRACKED_COUNT: number | null;
+  HIGH_FIT_ORG_COUNT: number | null;
+  NEW_ORG_COUNT: number | null;
+  ESTIMATED_PIPELINE_USD: number | null;
+}
+
+interface WarmOrgRow {
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEETINGS_ATTENDED_COUNT: number | null;
+  CONTRIBUTIONS_COUNT: number | null;
 }
 
 /** True when the Non-Members views carry columns for the range; for a controller to check before binding. */
@@ -222,6 +244,78 @@ export class HealthMetricsNonMembersService {
       scopeTotal: Number(first?.SCOPE_TOTAL ?? 0),
     };
   }
+
+  /** The period's pipeline estimate, and its warmest organizations from the same high-fit set the count uses. */
+  public async getConversion(req: Request, query: HealthMetricsNonMembersConversionQuery): Promise<HealthMetricsNonMembersConversion> {
+    // The suffix comes from a constant keyed by the validated range, never from the request, so interpolating it is safe.
+    const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
+    const options = { operation: 'get_non_members_conversion', clientMessage: 'Conversion opportunity is unavailable right now.' };
+
+    // The view holds one row per foundation, so `LIMIT 1` needs no ORDER BY.
+    const summarySql = `
+      SELECT
+        entry_tier_name,
+        entry_tier_fee_usd,
+        organizations_tracked_count_${suffix} AS organizations_tracked_count,
+        high_fit_org_count_${suffix} AS high_fit_org_count,
+        new_org_count_${suffix} AS new_org_count,
+        estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd
+      FROM ${NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW}
+      WHERE foundation_slug = ?
+      LIMIT 1
+    `;
+
+    const warmestSql = `
+      SELECT
+        account_id,
+        account_name,
+        meetings_attended_count_${suffix} AS meetings_attended_count,
+        contributions_count_${suffix} AS contributions_count
+      FROM ${NON_MEMBER_FIT_SCORE_VIEW}
+      WHERE foundation_slug = ?
+        AND is_high_fit_${suffix}
+        AND account_id IS NOT NULL
+        AND account_id <> ''
+      -- The fit model's rank; account_id breaks any tie.
+      ORDER BY sort_rank_${suffix} ASC NULLS LAST, account_id ASC
+      LIMIT ${HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT}
+    `;
+
+    const [summary, warmest] = await Promise.all([
+      executeSnowflakeViewRead<ConversionRow>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
+        ...options,
+        view: NON_MEMBER_CONVERSION_OPPORTUNITY_VIEW,
+      }),
+      executeSnowflakeViewRead<WarmOrgRow>(this.snowflakeService, req, warmestSql, [query.foundationSlug], { ...options, view: NON_MEMBER_FIT_SCORE_VIEW }),
+    ]);
+
+    const row = summary.rows[0];
+    if (!row) return HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED;
+
+    return {
+      measured: true,
+      entryTierName: row.ENTRY_TIER_NAME || null,
+      entryTierFeeUsd: toNullableNumber(row.ENTRY_TIER_FEE_USD),
+      organizationsTracked: toNullableNumber(row.ORGANIZATIONS_TRACKED_COUNT),
+      highFitCount: toNullableNumber(row.HIGH_FIT_ORG_COUNT),
+      newCount: toNullableNumber(row.NEW_ORG_COUNT),
+      estimatedPipelineUsd: toNullableNumber(row.ESTIMATED_PIPELINE_USD),
+      warmest: warmest.rows.flatMap(mapWarmOrg),
+    };
+  }
+}
+
+function mapWarmOrg(row: WarmOrgRow): HealthMetricsNonMembersWarmOrg[] {
+  if (!row.ACCOUNT_ID) return [];
+
+  return [
+    {
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      meetingsAttended: toNullableNumber(row.MEETINGS_ATTENDED_COUNT),
+      contributions: toNullableNumber(row.CONTRIBUTIONS_COUNT),
+    },
+  ];
 }
 
 // Keyed by rank position: PERSON_KEY can hold an email address, so it orders the page but is never returned.

@@ -105,6 +105,61 @@ export interface HealthMetricsNonMembersPersonRowView {
   lastAttendedLabel: string;
 }
 
+/** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest organizations. */
+export interface HealthMetricsNonMembersConversionQuery {
+  foundationSlug: string;
+  /** Picks the period columns for the counts, the estimate and the high-fit set. */
+  range: HealthMetricsL2Range;
+}
+
+/** A high-fit organization, in the fit model's rank. `null` is no feed, not zero. */
+export interface HealthMetricsNonMembersWarmOrg {
+  accountId: string;
+  accountName: string;
+  meetingsAttended: number | null;
+  contributions: number | null;
+}
+
+/** One `NON_MEMBER_CONVERSION_OPPORTUNITY` row for the period; `null` is not available, never zero. */
+export interface HealthMetricsNonMembersConversion {
+  /** False when the foundation has no conversion row, so nothing below is meaningful. */
+  measured: boolean;
+  entryTierName: string | null;
+  entryTierFeeUsd: number | null;
+  organizationsTracked: number | null;
+  highFitCount: number | null;
+  newCount: number | null;
+  /** High-fit count × entry-tier fee; `null` when the foundation has no entry-tier fee. */
+  estimatedPipelineUsd: number | null;
+  /** Top high-fit organizations from the same `is_high_fit` set as the count. */
+  warmest: HealthMetricsNonMembersWarmOrg[];
+}
+
+export interface HealthMetricsNonMembersConversionStatView {
+  key: 'high-fit' | 'new';
+  label: string;
+  value: string;
+}
+
+export interface HealthMetricsNonMembersWarmOrgBarView {
+  accountId: string;
+  label: string;
+  valueLabel: string;
+  widthPct: number;
+}
+
+/** The Conversion opportunity section as it renders. */
+export interface HealthMetricsNonMembersConversionView {
+  measured: boolean;
+  summary: string;
+  pipelineValue: string;
+  pipelineLabel: string;
+  hasEstimate: boolean;
+  side: HealthMetricsNonMembersConversionStatView[];
+  warmest: HealthMetricsNonMembersWarmOrgBarView[];
+  footnote: string;
+}
+
 /** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
 export interface HealthMetricsNonMembersQueryParams {
   nonFit?: HealthMetricsNonMembersOrgsFilter | null;

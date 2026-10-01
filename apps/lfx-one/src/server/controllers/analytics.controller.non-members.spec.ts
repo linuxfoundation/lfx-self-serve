@@ -4,12 +4,13 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getOrgs, getPeople } = vi.hoisted(() => ({ getOrgs: vi.fn(), getPeople: vi.fn() }));
+const { getConversion, getOrgs, getPeople } = vi.hoisted(() => ({ getConversion: vi.fn(), getOrgs: vi.fn(), getPeople: vi.fn() }));
 
 vi.mock('../services/health-metrics-non-members.service', () => ({
   HealthMetricsNonMembersService: class {
     public getOrgs = getOrgs;
     public getPeople = getPeople;
+    public getConversion = getConversion;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedNonMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
@@ -29,6 +30,7 @@ vi.mock('../services/logger.service', () => ({
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
@@ -46,7 +48,7 @@ import { logger } from '../services/logger.service';
 
 function call(
   queryParams: Record<string, string>,
-  handler: 'getNonMembersOrgs' | 'getNonMembersPeople' = 'getNonMembersOrgs'
+  handler: 'getNonMembersOrgs' | 'getNonMembersPeople' | 'getNonMembersConversion' = 'getNonMembersOrgs'
 ): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
   const res = { json: vi.fn() } as unknown as Response;
@@ -200,6 +202,69 @@ describe('AnalyticsController.getNonMembersPeople', () => {
     getPeople.mockRejectedValue(failure);
 
     const { next, promise } = people(valid);
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getNonMembersConversion', () => {
+  const valid = { foundationSlug: 'acme' };
+  const conversion = (query: Record<string, string>) => call(query, 'getNonMembersConversion');
+  const response = {
+    ...HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
+    measured: true,
+    highFitCount: 2,
+    warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 }],
+  };
+
+  beforeEach(() => {
+    vi.mocked(logger.success).mockClear();
+    getConversion.mockReset();
+    getConversion.mockResolvedValue(response);
+  });
+
+  it('defaults to the running year and returns the response', async () => {
+    const { res, next, promise } = conversion(valid);
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getConversion).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD' });
+    expect(res.json).toHaveBeenCalledWith(response);
+  });
+
+  it('passes the period', async () => {
+    await conversion({ ...valid, range: 'COMPLETED_YEAR_2' }).promise;
+
+    expect(getConversion).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2' });
+  });
+
+  it('logs counts only, never an organization name', async () => {
+    await conversion(valid).promise;
+
+    const metadata = vi.mocked(logger.success).mock.calls[0]?.[3];
+    expect(metadata).toEqual({ foundation_slug: 'acme', range: 'YTD', measured: true, high_fit_count: 2, warmest_count: 1 });
+    expect(JSON.stringify(metadata)).not.toContain('Acme Motors');
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ ...valid, foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = conversion(query);
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getConversion).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getConversion.mockRejectedValue(failure);
+
+    const { next, promise } = conversion(valid);
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

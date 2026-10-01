@@ -131,6 +131,8 @@ import {
   HealthMetricsMembersRenewalsQuery,
   HealthMetricsMembersTiers,
   HealthMetricsMembersTiersQuery,
+  HealthMetricsNonMembersConversion,
+  HealthMetricsNonMembersConversionQuery,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsQuery,
   HealthMetricsNonMembersPeople,
@@ -1564,6 +1566,19 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] non-members-people failed', { foundationSlug: query.foundationSlug, range: query.range, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getNonMembersConversion(query: HealthMetricsNonMembersConversionQuery): Observable<HealthMetricsNonMembersConversion> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('range', query.range);
+
+    // Errors propagate so the section shows its error state rather than an empty pipeline.
+    return this.http.get<HealthMetricsNonMembersConversion>('/api/analytics/non-members-conversion', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] non-members-conversion failed', { foundationSlug: query.foundationSlug, range: query.range, status });
         return throwError(() => error);
       })
     );
