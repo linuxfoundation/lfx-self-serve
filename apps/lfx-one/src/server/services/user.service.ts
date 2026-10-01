@@ -1333,7 +1333,7 @@ export class UserService {
    * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
    *   - Non-responded surveys (query-service `survey_response` index — the same source My Surveys reads)
-   *   - Upcoming meetings within the next two weeks (Review Agenda action)
+   *   - Upcoming meetings within the next two weeks (Review Agenda action — project/foundation lens only)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
    *
@@ -1408,14 +1408,15 @@ export class UserService {
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
-    const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
+    // Review Agenda is informational, not an action, so the Me lens omits it (#2991); project/foundation lenses keep it.
+    const meetingActions = isMeLens ? [] : this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
     const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
-    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions, but they
+    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions on project/foundation lenses, but they
     // cannot emit Set RSVP — skip the two paginated scans in that case (GH-1951).
     //
     // Fail closed on the RSVP prerequisites: if either lookup errors, we can't distinguish
@@ -1439,8 +1440,8 @@ export class UserService {
     // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
     // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
     // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
-    // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
-    // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
+    // Agenda appears only on project/foundation lenses and is informational, so it still goes last
+    // there — with the card's display cap, plentiful meetings shouldn't crowd out real responses.
     return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
