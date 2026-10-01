@@ -94,8 +94,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   MUST get a sign-in state whose copy is correct on public meetings too (V1 says
   "No primary materials available." when materials exist), until a public attachments route exists
   (E3-03).
-- **FR-032**: The people roster MUST render only for registrants and organizers, and only with
-  artifact access on an ended meeting. No viewer may be shown a registrant count the payloads no
+- **FR-032**: On an upcoming or live meeting, the people roster MUST render only for registrants
+  and organizers. On an ended meeting it MUST render for any signed-in viewer with artifact access,
+  whatever the role, and never for an anonymous viewer: the past payload carries no `invited`, so a
+  past registrant arrives as an outsider. No viewer may be shown a registrant count the payloads no
   longer carry.
 - **FR-033**: Past participants MUST show their identity tier (verified · needs review ·
   auto-matched · AI-reconciled) to the extent decided for the public surface in N-02, and MUST
