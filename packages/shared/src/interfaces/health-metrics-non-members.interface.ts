@@ -64,9 +64,52 @@ export interface HealthMetricsNonMembersOrgRowView {
   lastEngagedLabel: string;
 }
 
+/** `GET /api/analytics/non-members-people` — one page of the period's engaged non-member individuals. */
+export interface HealthMetricsNonMembersPeopleQuery {
+  foundationSlug: string;
+  /** Picks the period columns for the meeting count and rank. */
+  range: HealthMetricsL2Range;
+  /** Matches the person's name or their organization's. */
+  search: string;
+  offset: number;
+  pageSize: number;
+}
+
+/** One `NON_MEMBER_PEOPLE` row for the period; never carries an email address. The date is ISO `YYYY-MM-DD`. */
+export interface HealthMetricsNonMembersPerson {
+  /** 1-based position in the ranked result; the warehouse person key can be an email, so it stays on the server. */
+  rowKey: string;
+  displayName: string;
+  jobTitle: string | null;
+  accountId: string | null;
+  accountName: string | null;
+  lastAttendedDate: string | null;
+  meetingsAttended: number | null;
+}
+
+export interface HealthMetricsNonMembersPeople {
+  rows: HealthMetricsNonMembersPerson[];
+  /** Individuals matching the search. */
+  totalRecords: number;
+  /** Every individual who attended in the period; the sub-nav badge and the unfiltered count. */
+  scopeTotal: number;
+}
+
+/** One person row as the People table renders it; a missing title has no secondary line. */
+export interface HealthMetricsNonMembersPersonRowView {
+  rowKey: string;
+  displayName: string;
+  jobTitle: string | null;
+  organizationLabel: string;
+  meetingsLabel: string;
+  lastAttendedLabel: string;
+}
+
 /** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
 export interface HealthMetricsNonMembersQueryParams {
   nonFit?: HealthMetricsNonMembersOrgsFilter | null;
   nonSearch?: string | null;
   nonPage?: number | null;
+  nonPeopleSearch?: string | null;
+  nonPeoplePage?: number | null;
 }

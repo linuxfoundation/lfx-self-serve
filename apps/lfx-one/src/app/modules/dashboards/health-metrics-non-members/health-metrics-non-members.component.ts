@@ -14,6 +14,7 @@ import { buildHealthMetricsNonMembersSubNavItems } from '@lfx-one/shared/utils';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { NonMembersOrgsComponent } from './components/non-members-orgs/non-members-orgs.component';
+import { NonMembersPeopleComponent } from './components/non-members-people/non-members-people.component';
 
 import type { HealthMetricsNonMembersSubNavItem } from '@lfx-one/shared/interfaces';
 
@@ -23,7 +24,7 @@ import type { HealthMetricsNonMembersSubNavItem } from '@lfx-one/shared/interfac
  */
 @Component({
   selector: 'lfx-health-metrics-non-members',
-  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, NonMembersOrgsComponent],
+  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, NonMembersOrgsComponent, NonMembersPeopleComponent],
   templateUrl: './health-metrics-non-members.component.html',
 })
 export class HealthMetricsNonMembersComponent {
@@ -33,5 +34,8 @@ export class HealthMetricsNonMembersComponent {
   protected readonly crossReference = HEALTH_METRICS_NON_MEMBERS_SUB_NAV_CROSS_REFERENCE;
   protected readonly scopeNote = HEALTH_METRICS_NON_MEMBERS_SCOPE_NOTE;
   protected readonly orgsCount = signal<number | null>(null);
-  protected readonly subNavItems = computed<HealthMetricsNonMembersSubNavItem[]>(() => buildHealthMetricsNonMembersSubNavItems({ orgs: this.orgsCount() }));
+  protected readonly peopleCount = signal<number | null>(null);
+  protected readonly subNavItems = computed<HealthMetricsNonMembersSubNavItem[]>(() =>
+    buildHealthMetricsNonMembersSubNavItems({ orgs: this.orgsCount(), people: this.peopleCount() })
+  );
 }

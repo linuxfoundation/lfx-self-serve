@@ -8,6 +8,8 @@ import type {
   HealthMetricsNonMembersOrg,
   HealthMetricsNonMembersOrgChannelView,
   HealthMetricsNonMembersOrgRowView,
+  HealthMetricsNonMembersPerson,
+  HealthMetricsNonMembersPersonRowView,
   HealthMetricsNonMembersSectionKey,
   HealthMetricsNonMembersSubNavItem,
 } from '../interfaces/health-metrics-non-members.interface';
@@ -35,6 +37,23 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
 /** The unfiltered count line: "412 organizations · 37 new this period". */
 export function buildHealthMetricsNonMembersOrgsSummary(scopeTotal: number, newCount: number): string {
   return `${pluralize(scopeTotal, 'organization')} · ${newCount.toLocaleString('en-US')} new this period`;
+}
+
+/** People rows. A person with no matched organization, or no attended date, renders a dash. */
+export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMembersPerson[]): HealthMetricsNonMembersPersonRowView[] {
+  return rows.map((row) => ({
+    rowKey: row.rowKey,
+    displayName: row.displayName,
+    jobTitle: row.jobTitle?.trim() || null,
+    organizationLabel: row.accountName || row.accountId || '—',
+    meetingsLabel: formatCount(row.meetingsAttended),
+    lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+  }));
+}
+
+/** The People count line: "214 engaged individuals". */
+export function buildHealthMetricsNonMembersPeopleCountLabel(count: number): string {
+  return `${count.toLocaleString('en-US')} engaged ${count === 1 ? 'individual' : 'individuals'}`;
 }
 
 // Training, sponsorship and speaking have no non-member feed yet, so they never get a chip.

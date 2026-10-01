@@ -20,4 +20,7 @@
   <ng-template lfxHealthMetricsL2Section="orgs">
     <lfx-non-members-orgs (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="people">
+    <lfx-non-members-people (countChange)="peopleCount.set($event)" (reading)="shell.sectionReading('people')" (settled)="shell.sectionSettled('people')" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>
