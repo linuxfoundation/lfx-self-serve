@@ -398,6 +398,6 @@ app.get('/readyz', (req, res) => {
 ## 🔗 Related Documentation
 
 - [Backend Architecture Overview](./README.md)
-- [Meeting API Routes](../../CLAUDE.md#api-routes)
+- [Meeting API Routes](../../AGENTS.md#api-routes)
 - [Shared Interfaces](../shared/package-architecture.md)
 - Environment Configuration - chart values in `charts/lfx-self-serve/README.md`; deployed values in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).

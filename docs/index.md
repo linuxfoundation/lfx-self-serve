@@ -227,7 +227,7 @@ Comprehensive documentation organized by domain:
 ### Quick Start Guides
 
 - **[📋 Architecture Navigation Hub](docs/architecture/README.md)** - Complete architecture documentation guide
-- **[⚡ Development Setup](CLAUDE.md)** - Claude Code assistant instructions and patterns
+- **[⚡ Development Setup](AGENTS.md)** - Claude Code assistant instructions and patterns
 - **[🧪 Testing Guide](docs/architecture/testing/e2e-testing.md)** - Comprehensive E2E testing with Playwright
 
 ## Development Workflow

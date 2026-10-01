@@ -29,7 +29,7 @@ import { SelectableCardComponent } from '@components/selectable-card/selectable-
  *
  * A local intersection rather than a `@lfx-one/shared` interface: this is the component's own
  * view model, consumed by nothing else, so it is not part of any contract between the tiers. It
- * is also the one form both repo rules allow — CLAUDE.md prohibits a local `interface Foo {}`
+ * is also the one form both repo rules allow — AGENTS.md prohibits a local `interface Foo {}`
  * inside `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions`
  * rewrites a plain `type X = { … }` back into an interface on `--fix`. Same standoff as
  * `PlatformResultRow` in the campaigns implementation tab.

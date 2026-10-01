@@ -405,7 +405,7 @@ export class CampaignServiceClient {
    * Bounds on the lost-write reconciliation: how many times it reads, how long it waits between
    * attempts, and the WALL-CLOCK budget the whole loop may spend.
    *
-   * Instance members rather than module constants: CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule keeps shared values in
+   * Instance members rather than module constants: AGENTS.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule keeps shared values in
    * `@lfx-one/shared`, and these are neither shared nor meaningful outside this client.
    *
    * The wall-clock bound is the one that actually holds. An earlier revision counted only the

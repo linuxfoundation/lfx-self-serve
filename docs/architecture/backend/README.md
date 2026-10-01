@@ -233,7 +233,7 @@ See [Logging & Monitoring](./logging-monitoring.md) for full details.
 
 ## Quick Links
 
-- [Server Configuration](../../CLAUDE.md#backend-stack)
-- [Logging System](../../CLAUDE.md#logging-system)
+- [Server Configuration](../../AGENTS.md#backend-stack)
+- [Logging System](../../AGENTS.md#logging-system)
 - [Shared Interfaces](../shared/package-architecture.md)
 - [Frontend Integration](../frontend/README.md)
