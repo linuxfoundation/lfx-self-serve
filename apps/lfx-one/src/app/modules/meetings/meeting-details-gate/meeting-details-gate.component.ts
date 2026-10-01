@@ -39,9 +39,11 @@ import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component'
  * Two consequences of that server-side `false` which #2874 should not have to rediscover. First,
  * the pre-v2 page is what SSR renders and what runs the public meeting lookup, including for a
  * targeted viewer — so when that lookup fails it calls `router.navigate(['/meetings/not-found'])`
- * during SSR (`meeting-join.component.ts`) and the URL is decided for *both* branches. v1's lookup
- * therefore governs reachability until SSR has a flag source, which matters the moment v2 grows a
- * data flow of its own. Second, v2 is loaded through `@defer`, so the route's chunk carries only v1
+ * during SSR (`meeting-join.component.ts`) and the URL is decided for *both* branches. That holds
+ * for a full SSR navigation only. On an in-app (client-side) navigation to `/meetings/:id`, a
+ * targeted viewer's v1 mounts for one render, the hydration latch destroys it, and its in-flight
+ * lookup is aborted, so nothing validates the id. **v2 must check reachability itself** (redirect a
+ * 400 / 403 / 404 to not-found) as soon as it grows a data flow; it cannot rely on v1 for that. Second, v2 is loaded through `@defer`, so the route's chunk carries only v1
  * and the ~100% of visitors on it never download the v2 tree. This route is public, SSR-first and
  * anonymous-reachable, unlike the authenticated in-shell route that sets the static-import
  * precedent. The cost lands on targeted viewers only: v1 is torn down when the flag flips, so the

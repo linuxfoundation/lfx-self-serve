@@ -221,32 +221,51 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   });
 
   /** Boots the app with the flag pinned, holds the meeting lookup open, and SPA-navigates to the page. */
-  async function gotoMeetingDetails(page: Page, flagEnabled: boolean): Promise<() => void> {
+  // `release` lets the held meeting lookup answer 404. `settled` resolves once that answer has been
+  // delivered, or dropped because the page already aborted the request. `lookupAborted` resolves
+  // true if the browser aborted the meeting lookup — what destroying the pre-v2 page does to its
+  // in-flight request — and false if it never did. The waiter is registered before navigating so
+  // an abort that lands immediately is not missed.
+  async function gotoMeetingDetails(
+    page: Page,
+    flagEnabled: boolean
+  ): Promise<{ release: () => void; settled: Promise<void>; lookupAborted: Promise<boolean> }> {
     let release = (): void => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
+    });
+    let markSettled = (): void => {};
+    const settled = new Promise<void>((resolve) => {
+      markSettled = resolve;
     });
 
     await stubMeetingsV2Flag(page, flagEnabled);
     await page.route('**/public/api/meetings/**', async (route) => {
       await held;
-      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) });
+      // A request the page already aborted rejects here; either way the lookup is over.
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) }).catch(() => undefined);
+      markSettled();
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
+    const lookupAborted = page
+      .waitForEvent('requestfailed', { predicate: (request) => request.url().includes(`/public/api/meetings/${MEETING_UID}`), timeout: PAGE_LOAD_TIMEOUT })
+      .then(() => true)
+      .catch(() => false);
+
     await page.evaluate((url) => {
       window.history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, `/meetings/${MEETING_UID}`);
 
-    return release;
+    return { release, settled, lookupAborted };
   }
 
   test('renders the pre-v2 meeting page while the flag is off', async ({ page }) => {
-    const release = await gotoMeetingDetails(page, false);
+    const { release } = await gotoMeetingDetails(page, false);
 
     await expect(page.getByTestId('meeting-details-gate-v1')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     // Absent, not hidden — a v2 tree mounted alongside v1 would still run its own data flows.
@@ -259,7 +278,13 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   });
 
   test('renders the v2 meeting page once the flag is on', async ({ page }) => {
-    const release = await gotoMeetingDetails(page, true);
+    const { release, settled, lookupAborted } = await gotoMeetingDetails(page, true);
+    const visited: string[] = [];
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        visited.push(frame.url());
+      }
+    });
 
     await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
     // The v2 tree is behind `@defer`, so seeing the scaffold proves its lazy chunk loaded and mounted.
@@ -268,8 +293,12 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
 
     // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it
     // is destroyed at the latch and its in-flight lookup torn down with it — so releasing the held
-    // route cannot redirect this branch to not-found the way it does with the flag off.
+    // route cannot redirect this branch to not-found the way it does with the flag off. The abort is
+    // the direct proof; the URL checks after the held 404 is released confirm nothing redirected.
+    expect(await lookupAborted).toBe(true);
     release();
+    await settled;
+    expect(visited.filter((url) => url.includes('/meetings/not-found'))).toEqual([]);
     await expect(page).toHaveURL(new RegExp(`/meetings/${MEETING_UID}$`));
   });
 });

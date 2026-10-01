@@ -58,7 +58,11 @@ modules/meetings/
   when an additive change is impossible, and say in the PR what was tried.
 - **Services and data.** V2 injects the same services V1 does (`MeetingService`, `UserService`,
   `ProjectContextService`, `PlausibleService`) and seeds from the same `MeetingJoinPageState`
-  TransferState contract. It derives page state through `@lfx-one/shared/utils/meeting-view-model.utils`
+  TransferState payload. It cannot read that payload itself: the browser always mounts V1 first
+  (the gate's hydration latch), and V1 consumes the `meetingJoinState` key and removes it in its
+  constructor, so the key is gone by the time V2 mounts. **E1-01 prerequisite:** the gate reads the
+  key before either tree mounts, keeps the snapshot, and hands it to V2, without editing V1. Until
+  then, V2 starts empty and fetches. It derives page state through `@lfx-one/shared/utils/meeting-view-model.utils`
   (E0-02), not by copying V1's inline `computed` signals. V1's orchestration lives inside its
   component and cannot be extracted without editing V1, so V2 composes the services and resolvers
   itself. It does not duplicate a fetch path.

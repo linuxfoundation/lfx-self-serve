@@ -11,7 +11,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
  *
  * This is the V2-02 scaffold (#2874): a recognisable stub that every Phase 1 component hangs off.
  * It deliberately reads no meeting data yet. When the shell lands (E1-01) it consumes the same
- * services and the same `MeetingJoinPageState` TransferState seeding v1 uses, with state derived
+ * services v1 uses and the same `MeetingJoinPageState` seed, but not by reading TransferState
+ * itself: v1 mounts first and removes the `meetingJoinState` key on read, so E1-01 must have the
+ * gate snapshot the seed before either tree mounts and pass it in. State is derived
  * through the `meeting-view-model.utils` resolvers (E0-02, PR #2909) — not by lifting logic out of the v1
  * component, which stays byte-identical. Layout and conventions: `specs/010-meeting-details-redesign/v2-scaffold.md`.
  */
