@@ -122,9 +122,6 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'mentor',
     loadComponent: () => import('./mentor/mentor-page/mentor-page.component').then((m) => m.MentorPageComponent),
     children: [
-      // `/mentorship/mentor/` (trailing slash) lands here rather than 404, matching the
-      // shell's default view. Wildcard below covers unknown children the same way.
-      { path: '', pathMatch: 'full', redirectTo: 'programs' },
       {
         path: 'programs',
         title: 'My Programs',
@@ -135,6 +132,7 @@ export const MENTORSHIP_ROUTES: Routes = [
         title: 'Mentor Profile',
         loadComponent: () => import('./mentor/mentor-profile/mentor-profile.component').then((m) => m.MentorProfileComponent),
       },
+      // Unknown children, and the empty path, fall to the shell's default view rather than 404.
       { path: '**', redirectTo: 'programs' },
     ],
   },

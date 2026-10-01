@@ -53,7 +53,7 @@ export async function proxyMentorshipRequest<T>(
 }
 
 /**
- * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
+ * Reads an upstream list to the end, at the largest page size unless the route takes a smaller one, stopping once the rows read reach
  * the reported total, a page comes back empty, or the page carries no usable total. A list still
  * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
  */
@@ -61,13 +61,14 @@ export async function listAllMentorshipPages<T>(
   proxy: MicroserviceProxyService,
   req: Request,
   path: string,
-  query: Record<string, unknown> = {}
+  query: Record<string, unknown> = {},
+  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE
 ): Promise<T[]> {
   const items: T[] = [];
   for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
     const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(proxy, req, path, 'GET', {
       ...query,
-      limit: MENTORSHIP_LIST_PAGE_SIZE,
+      limit: pageSize,
       offset: items.length,
     });
     const rows = data ?? [];
