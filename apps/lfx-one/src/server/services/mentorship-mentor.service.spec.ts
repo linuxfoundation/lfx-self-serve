@@ -292,6 +292,30 @@ describe('MentorshipMentorService mentor requests', () => {
     proxyRequest.mockRejectedValueOnce(conflict);
     await expect(service.withdrawMentorRequest(buildReq(), REQUEST_ID)).rejects.toBe(conflict);
   });
+
+  it.each(['accept', 'decline'] as const)('answers the invitation with %s, the token escaped into the path', async (decision) => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.respondToMentorInvite(buildReq(), 'payload.sig-_', decision)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `/mentorship/v1/mentor-invites/payload.sig-_/${decision}`,
+      'POST',
+      undefined,
+      undefined
+    );
+  });
+
+  it.each([
+    [400, 'invalid input: no pending invite found for this user'],
+    [403, 'forbidden: invite belongs to a different user'],
+  ])("passes upstream's %s through on an invite answer", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.respondToMentorInvite(buildReq(), 'payload.sig', 'accept')).rejects.toBe(failure);
+  });
 });
 
 describe('MentorshipMentorService.getMentorPrograms', () => {

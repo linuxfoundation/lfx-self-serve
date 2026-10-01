@@ -12,6 +12,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorHasProfileResponse,
+  MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
@@ -30,7 +31,13 @@ import {
 import { buildMentorshipMentorProgramDetail } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { MENTORSHIP_ME_MENTOR_PROFILE_PATH, MENTORSHIP_ME_PROFILES_PATH, MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH, MENTORSHIP_PROGRAMS_PATH } from '../constants';
+import {
+  MENTORSHIP_ME_MENTOR_PROFILE_PATH,
+  MENTORSHIP_ME_PROFILES_PATH,
+  MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH,
+  MENTORSHIP_MENTOR_INVITES_PATH,
+  MENTORSHIP_PROGRAMS_PATH,
+} from '../constants';
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
@@ -163,6 +170,15 @@ export class MentorshipMentorService {
       `${MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH}/${encodeURIComponent(requestId)}/withdraw`,
       'POST'
     );
+  }
+
+  /**
+   * Accepts or declines a mentor invitation with the token from the invite email. Upstream checks the
+   * token belongs to the caller (403 otherwise) and answers 400 when it is expired, malformed, or the
+   * invitation was already answered; both pass through.
+   */
+  public async respondToMentorInvite(req: Request, token: string, decision: MentorshipMentorInviteDecision): Promise<void> {
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${MENTORSHIP_MENTOR_INVITES_PATH}/${encodeURIComponent(token)}/${decision}`, 'POST');
   }
 
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {

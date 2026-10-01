@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentor-invite">
+  <div class="mx-auto flex max-w-2xl flex-col gap-6 py-8">
+    @if (state() === 'confirm' || state() === 'submitting') {
+      <lfx-card data-testid="mentorship-mentor-invite-confirm">
+        <div class="flex flex-col gap-6">
+          <div class="flex flex-col gap-2">
+            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-mentor-invite-title">You've been invited to mentor</h1>
+            <p class="text-sm text-gray-500">
+              A program admin invited you to join their mentorship program as a mentor. The invitation email names the program. Accept to join it, or decline to
+              let the program admins know you can't take part.
+            </p>
+          </div>
+          <div class="flex flex-wrap justify-end gap-3">
+            <lfx-button
+              label="Decline"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="accepting()"
+              [loading]="declining()"
+              (onClick)="onRespond('decline')"
+              data-testid="mentorship-mentor-invite-decline-button" />
+            <lfx-button
+              label="Accept"
+              severity="primary"
+              [disabled]="declining()"
+              [loading]="accepting()"
+              (onClick)="onRespond('accept')"
+              data-testid="mentorship-mentor-invite-accept-button" />
+          </div>
+        </div>
+      </lfx-card>
+    } @else {
+      <div role="status" aria-live="polite" [attr.data-testid]="'mentorship-mentor-invite-' + state()">
+        @switch (state()) {
+          @case ('accepted') {
+            <lfx-empty-state
+              icon="fa-light fa-circle-check"
+              title="Invitation accepted"
+              subtitle="You're now a mentor on the program."
+              ctaLabel="Go to My Programs"
+              [ctaRoute]="programsRoute" />
+          }
+          @case ('declined') {
+            <lfx-empty-state
+              icon="fa-light fa-circle-check"
+              title="Invitation declined"
+              subtitle="We've let the program admins know."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="programsRoute" />
+          }
+          @case ('forbidden') {
+            <lfx-empty-state
+              icon="fa-light fa-lock"
+              title="This invitation is for a different account"
+              subtitle="Sign in with the LFX account the invitation email was sent to, then open the link again."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="programsRoute" />
+          }
+          @case ('invalid-link') {
+            <lfx-empty-state
+              icon="fa-light fa-link-slash"
+              title="This invitation link can't be used"
+              subtitle="It may have expired or already been answered. Ask the program admin to invite you again."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="programsRoute" />
+          }
+          @default {
+            <lfx-empty-state
+              icon="fa-light fa-triangle-exclamation"
+              title="Something went wrong"
+              subtitle="Your answer was not recorded. Please try again."
+              ctaLabel="Try again"
+              (ctaClick)="onRetry()" />
+          }
+        }
+      </div>
+    }
+  </div>
+</div>
