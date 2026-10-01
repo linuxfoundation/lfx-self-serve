@@ -31,6 +31,9 @@ import {
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
@@ -4164,6 +4167,41 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         range,
         filter,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-people` — one page of the non-member individuals who attended meetings in a period. */
+  public async getNonMembersPeople(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_people');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_people');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_people');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'People has no data for this range', { operation: 'get_non_members_people' });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsNonMembersService.getPeople(req, { foundationSlug, range, search, offset, pageSize });
+
+      // Counts only: the search text can name a person, so it stays out of this metadata.
+      logger.success(req, 'get_non_members_people', startTime, {
+        foundation_slug: foundationSlug,
+        range,
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,

@@ -133,6 +133,8 @@ import {
   HealthMetricsMembersTiersQuery,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsQuery,
+  HealthMetricsNonMembersPeople,
+  HealthMetricsNonMembersPeopleQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1543,6 +1545,25 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] non-members-orgs failed', { foundationSlug: query.foundationSlug, range: query.range, filter: query.filter, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getNonMembersPeople(query: HealthMetricsNonMembersPeopleQuery): Observable<HealthMetricsNonMembersPeople> {
+    // Strict encoding keeps a typed `+` from reaching Express as a space.
+    let params = strictHttpParams()
+      .set('foundationSlug', query.foundationSlug)
+      .set('range', query.range)
+      .set('offset', String(query.offset))
+      .set('pageSize', String(query.pageSize));
+    if (query.search) params = params.set('search', query.search);
+
+    // Errors propagate so the section shows its error state. Only the status is logged: the error's url carries the search.
+    return this.http.get<HealthMetricsNonMembersPeople>('/api/analytics/non-members-people', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] non-members-people failed', { foundationSlug: query.foundationSlug, range: query.range, status });
         return throwError(() => error);
       })
     );
