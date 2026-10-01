@@ -25,12 +25,13 @@ describe('RescheduleOccurrenceDialogComponent', () => {
   let updateOccurrence: ReturnType<typeof vi.fn>;
   let close: ReturnType<typeof vi.fn>;
   let occurrence: MeetingOccurrence;
+  let meeting: Meeting;
 
   async function mount(): Promise<RescheduleOccurrenceDialogComponent> {
     TestBed.configureTestingModule({
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { meeting: MEETING, occurrence } } },
+        { provide: DynamicDialogConfig, useValue: { data: { meeting, occurrence } } },
         { provide: MeetingService, useValue: { updateOccurrence } },
       ],
     });
@@ -46,6 +47,55 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     updateOccurrence = vi.fn().mockReturnValue(of(undefined));
     close = vi.fn();
     occurrence = OCCURRENCE;
+    meeting = MEETING;
+  });
+
+  describe('in a zone with daylight saving', () => {
+    // 2030-01-15 10:00 AM Eastern Standard Time.
+    const JANUARY = { occurrence_id: '1894719600', start_time: '2030-01-15T15:00:00.000Z', duration: 30 } as MeetingOccurrence;
+
+    beforeEach(() => {
+      meeting = { ...MEETING, timezone: 'America/New_York' } as Meeting;
+      occurrence = JANUARY;
+    });
+
+    it('prefills the series-zone wall clock on a date carrier pinned to that calendar day', async () => {
+      const component = await mount();
+      const startDate: Date = component.form.get('startDate')?.value;
+
+      expect([startDate.getFullYear(), startDate.getMonth(), startDate.getDate()]).toEqual([2030, 0, 15]);
+      expect(component.form.get('startTime')?.value).toBe('10:00 AM');
+    });
+
+    it('relabels the zone when the proposed date crosses into daylight time', async () => {
+      const component = await mount();
+      expect(component.timezoneLabel()).toBe('Eastern Standard Time');
+
+      component.form.patchValue({ startDate: new Date(2030, 6, 15, 12) });
+
+      expect(component.timezoneLabel()).toBe('Eastern Daylight Time');
+    });
+
+    it('refuses a wall time that the spring-forward gap skips', async () => {
+      const component = await mount();
+
+      // 2030-03-10 is the US spring-forward day; 2:30 AM never happens in New York.
+      component.form.patchValue({ startDate: new Date(2030, 2, 10, 12), startTime: '2:30 AM' });
+      component.form.get('startTime')?.markAsTouched();
+
+      expect(component.form.errors?.['nonexistentWallTime']).toBe(true);
+      expect(component.showNonexistentTimeError()).toBe(true);
+      expect(component.canSave()).toBe(false);
+    });
+
+    it('accepts the first real time after the gap', async () => {
+      const component = await mount();
+
+      component.form.patchValue({ startDate: new Date(2030, 2, 10, 12), startTime: '3:30 AM' });
+
+      expect(component.form.errors?.['nonexistentWallTime']).toBeUndefined();
+      expect(component.canSave()).toBe(true);
+    });
   });
 
   it('prefills the current slot in the series timezone and refuses to save it unchanged', async () => {

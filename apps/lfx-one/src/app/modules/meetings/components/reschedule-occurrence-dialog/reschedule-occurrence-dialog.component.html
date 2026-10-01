@@ -5,8 +5,8 @@
   <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 flex flex-col gap-2">
     <span class="text-sm font-medium text-gray-900">{{ occurrence.title || meeting.title || 'Untitled Meeting' }}</span>
     <span class="text-sm text-gray-600" data-testid="reschedule-occurrence-current">
-      Currently {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' }} ·
-      {{ occurrence.start_time | meetingTime: occurrence.duration : 'time' }}
+      Currently {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' : timezone }} ·
+      {{ occurrence.start_time | meetingTime: occurrence.duration : 'time' : timezone }}
     </span>
     <span class="text-xs text-gray-500 flex items-center gap-2">
       <i class="fa-light fa-repeat text-blue-500"></i>
@@ -47,6 +47,11 @@
     @if (showFutureError()) {
       <p class="text-sm text-red-600" data-testid="reschedule-occurrence-future-error">The occurrence must be rescheduled to a time in the future</p>
     }
+    @if (showNonexistentTimeError()) {
+      <p class="text-sm text-red-600" data-testid="reschedule-occurrence-nonexistent-time-error">
+        This time doesn't exist on that date in {{ timezoneLabel() }} because the clocks change. Pick another time.
+      </p>
+    }
 
     <div class="flex flex-col gap-1.5">
       <label for="reschedule-occurrence-duration" class="text-sm font-medium text-gray-900">Duration <span class="text-red-500">*</span></label>
@@ -70,7 +75,7 @@
       }
     </div>
 
-    <p class="text-xs text-gray-500" data-testid="reschedule-occurrence-timezone">Times are in the meeting's timezone: {{ timezoneLabel }}</p>
+    <p class="text-xs text-gray-500" data-testid="reschedule-occurrence-timezone">Times are in the meeting's timezone: {{ timezoneLabel() }}</p>
   </form>
 
   @if (errorMessage(); as message) {

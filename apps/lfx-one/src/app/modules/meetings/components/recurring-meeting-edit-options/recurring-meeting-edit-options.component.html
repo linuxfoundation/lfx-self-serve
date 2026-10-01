@@ -13,7 +13,7 @@
         <label for="edit-scope-occurrence" class="font-medium text-gray-900 cursor-pointer">Only this occurrence</label>
         <div class="text-sm text-gray-600 mt-1">
           @if (occurrence) {
-            Reschedule {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' }} without changing the rest of the series.
+            Reschedule {{ occurrence.start_time | meetingTime: occurrence.duration : 'date' : meeting.timezone }} without changing the rest of the series.
           } @else {
             Reschedule this occurrence without changing the rest of the series.
           }

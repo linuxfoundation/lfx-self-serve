@@ -45,6 +45,7 @@ import {
   COMMITTEE_LABEL,
   resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getActiveOccurrences,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getEntityCommands,
@@ -378,9 +379,19 @@ export class MeetingCardComponent implements OnInit {
             return;
           }
 
+          if (fresh.recurrence && this.isPinnedOccurrenceGone(fresh)) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Occurrence changed',
+              detail: 'This occurrence was moved or cancelled. The list has been refreshed.',
+            });
+            this.meetingDeleted.emit();
+            return;
+          }
+
           const occurrence = fresh.recurrence ? this.resolveEditOccurrence(fresh) : null;
           if (occurrence) {
-            this.showEditScopeModal(meeting, occurrence);
+            this.showEditScopeModal(fresh, occurrence);
             return;
           }
 
@@ -662,14 +673,25 @@ export class MeetingCardComponent implements OnInit {
    * The occurrence a recurring-meeting edit targets, read off the just-fetched meeting.
    * @description `occurrence()` is derived from the list payload the card rendered with, which another
    * organizer may have moved or cancelled since. An occurrence the parent passed in explicitly still
-   * decides which slot is meant, but its current values come from `fresh`.
+   * decides which slot is meant, and its current values come from `fresh`; callers rule out a pinned
+   * slot that `fresh` no longer has via `isPinnedOccurrenceGone` first.
    */
   private resolveEditOccurrence(fresh: Meeting): MeetingOccurrence | null {
     const pinned = this.occurrenceInput();
     if (pinned) {
-      return fresh.occurrences?.find((candidate) => candidate.occurrence_id === pinned.occurrence_id) ?? pinned;
+      return this.findOccurrence(fresh, pinned.occurrence_id);
     }
     return getCurrentOrNextOccurrence(fresh);
+  }
+
+  /** True when the parent pinned this card to an occurrence the fresh read no longer has. */
+  private isPinnedOccurrenceGone(fresh: Meeting): boolean {
+    const pinned = this.occurrenceInput();
+    return !!pinned && !this.findOccurrence(fresh, pinned.occurrence_id);
+  }
+
+  private findOccurrence(meeting: Meeting, occurrenceId: string): MeetingOccurrence | null {
+    return getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences).find((candidate) => candidate.occurrence_id === occurrenceId) ?? null;
   }
 
   private showEditScopeModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
@@ -682,7 +704,7 @@ export class MeetingCardComponent implements OnInit {
       data: { meeting, occurrence },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: RecurringMeetingEditScopeResult | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: RecurringMeetingEditScopeResult | undefined) => {
       if (!result?.proceed) {
         return;
       }
@@ -706,7 +728,7 @@ export class MeetingCardComponent implements OnInit {
       data: { meeting, occurrence },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
       if (!result?.confirmed) {
         return;
       }

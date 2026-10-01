@@ -226,16 +226,7 @@ export class MeetingJoinComponent implements OnInit {
   // Single gate for the host-key callout: BFF authorized (can_view_host_key + key sent) and inside the
   // 70-min pre / 40-min post window applied server-side. The frontend trusts the BFF's flag directly.
   protected readonly hostKeyVisible: Signal<boolean> = computed(() => isHostKeyVisible(this.meeting()));
-  // Upstream enforces `organizer` on both occurrence writes; this only decides whether to offer them.
-  protected readonly canManageOccurrence: Signal<boolean> = computed(
-    () =>
-      this.authenticated() &&
-      !!this.meeting()?.organizer &&
-      !!this.meeting()?.recurrence &&
-      !this.loadedViaPastMeetingId() &&
-      !this.isPastMeeting() &&
-      !!this.currentOccurrence()
-  );
+  protected readonly canManageOccurrence: Signal<boolean> = this.initCanManageOccurrence();
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —
@@ -561,7 +552,7 @@ export class MeetingJoinComponent implements OnInit {
       data: { meeting, occurrence },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
       if (!result?.confirmed || !result.start_time) {
         return;
       }
@@ -592,14 +583,14 @@ export class MeetingJoinComponent implements OnInit {
       data: { meeting, occurrence },
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: MeetingCancelOccurrenceResult | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingCancelOccurrenceResult | undefined) => {
       if (result?.confirmed) {
         this.messageService.add({
           severity: 'success',
           summary: 'Occurrence cancelled',
           detail: 'This occurrence was cancelled. The rest of the series is unchanged.',
         });
-        this.showOccurrenceAfterChange(null);
+        this.showOccurrenceAfterChange(this.nextLiveOccurrenceStartMs());
       } else if (result?.error) {
         this.messageService.add({ severity: 'error', summary: 'Error', detail: result.error });
       }
@@ -997,8 +988,8 @@ export class MeetingJoinComponent implements OnInit {
   /**
    * Re-reads the series after an occurrence was moved or cancelled and points the page at the right one.
    * @description The `occurrence` query param is the occurrence's start instant, and a reschedule gives
-   * the occurrence a new one — so it is rewritten to `startMs`, or dropped (`null`) after a cancel so the
-   * page falls through to the next active occurrence. The explicit refresh covers the case where the
+   * the occurrence a new one — so it is rewritten to `startMs`. A cancel passes the successor's start,
+   * or `null` when there is none so the page falls through to whatever is still active. The explicit refresh covers the case where the
    * URL does not change, which the router treats as a no-op.
    */
   private showOccurrenceAfterChange(startMs: number | null): void {
@@ -1062,6 +1053,34 @@ export class MeetingJoinComponent implements OnInit {
       ),
       { initialValue: empty }
     );
+  }
+
+  // Upstream enforces `organizer` on both occurrence writes; this only decides whether to offer them.
+  private initCanManageOccurrence(): Signal<boolean> {
+    return computed(
+      () =>
+        this.authenticated() &&
+        !!this.meeting()?.organizer &&
+        !!this.meeting()?.recurrence &&
+        !this.loadedViaPastMeetingId() &&
+        !this.isPastMeeting() &&
+        !!this.currentOccurrence()
+    );
+  }
+
+  /**
+   * Start instant (ms) of the live occurrence after the one this page is showing, or `null` if none.
+   * @description Read before a cancel lands: once the cancelled slot drops out of the timeline, clearing
+   * `?occurrence=` would fall back to the series' earliest upcoming occurrence rather than this one's
+   * successor. Past records are excluded — they are never a cancel's natural next stop.
+   */
+  private nextLiveOccurrenceStartMs(): number | null {
+    const { sorted, currentIdx } = this.occurrenceContext();
+    const next = currentIdx >= 0 ? sorted[currentIdx + 1] : undefined;
+    if (!next || next.meeting_and_occurrence_id) {
+      return null;
+    }
+    return new Date(next.start_time).getTime();
   }
 
   private initializeOccurrenceContext(): Signal<{ sorted: OccurrenceNavItem[]; currentIdx: number }> {

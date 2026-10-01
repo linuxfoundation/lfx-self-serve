@@ -454,8 +454,30 @@ describe('MeetingJoinComponent', () => {
       expect(getPublicMeetingOccurrences.mock.calls.length).toBeGreaterThan(timelineFetches);
     });
 
-    it('drops the occurrence param after a cancel so the page falls through to the next one', async () => {
+    it("moves to the cancelled occurrence's successor, not back to the series' first occurrence", async () => {
       useRecurring();
+      const OCCURRENCE_C = { occurrence_id: 'occurrence-c', start_time: '2099-01-03T00:00:00.000Z', duration: 60 } as unknown as MeetingOccurrence;
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE_A, OCCURRENCE_B, OCCURRENCE_C] }),
+          project: buildProject(),
+        })
+      );
+      queryParamMap$.next(convertToParamMap({ occurrence: String(new Date(OCCURRENCE_B.start_time).getTime()) }));
+      const { component, onClose } = await mountWithDialog();
+
+      component.cancelCurrentOccurrence();
+      onClose.next({ confirmed: true });
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { occurrence: String(new Date(OCCURRENCE_C.start_time).getTime()) } })
+      );
+    });
+
+    it('drops the occurrence param when the cancelled occurrence was the last one', async () => {
+      useRecurring();
+      queryParamMap$.next(convertToParamMap({ occurrence: String(new Date(OCCURRENCE_B.start_time).getTime()) }));
       const { component, onClose } = await mountWithDialog();
 
       component.cancelCurrentOccurrence();

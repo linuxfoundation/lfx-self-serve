@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -43,7 +43,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   const meetingsV2Enabled = signal(true);
 
   /** Mounts the card over `meeting` with an empty template — this suite exercises the handler, not the markup. */
-  async function mount(meeting: Meeting = MEETING): Promise<MeetingCardComponent> {
+  async function mount(meeting: Meeting = MEETING, pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
       providers: [
         { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
@@ -73,6 +73,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('occurrenceInput', pinned);
     fixture.detectChanges();
 
     return fixture.componentInstance;
@@ -207,7 +208,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     let dialogResults: Subject<unknown>[];
 
     /** Mounts over a recurring meeting and makes each `dialogService.open` hand back its own close stream. */
-    async function mountRecurring(): Promise<MeetingCardComponent> {
+    async function mountRecurring(pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
       getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true }));
       dialogResults = [];
       dialogOpen = vi.fn(() => {
@@ -216,7 +217,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         return { onClose };
       });
       TestBed.overrideProvider(DialogService, { useValue: { open: dialogOpen } });
-      return mount(RECURRING);
+      return mount(RECURRING, pinned);
     }
 
     it('asks which scope to edit before opening any editor', async () => {
@@ -265,6 +266,31 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       component.onEditMeeting();
 
       expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893542400' }) }));
+    });
+
+    it('hands both dialogs the fresh meeting, so a changed series timezone is the one the form uses', async () => {
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, timezone: 'America/New_York' }));
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
+
+      expect(dialogOpen.mock.calls[0][1].data.meeting.timezone).toBe('America/New_York');
+      expect(dialogOpen.mock.calls[1][1].data.meeting.timezone).toBe('America/New_York');
+    });
+
+    it('refreshes instead of opening a ghost slot when the pinned occurrence is gone from the fresh read', async () => {
+      // Parent pinned this card to an occurrence another organizer has since moved.
+      const component = await mountRecurring(OCCURRENCE as MeetingOccurrence);
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [{ ...OCCURRENCE, occurrence_id: '1893542400' }] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing when the scope dialog is dismissed', async () => {

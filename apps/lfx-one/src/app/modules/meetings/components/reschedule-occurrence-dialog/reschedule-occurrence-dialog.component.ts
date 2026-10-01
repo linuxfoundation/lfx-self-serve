@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputNumberComponent } from '@components/input-number/input-number.component';
@@ -12,11 +12,17 @@ import { MessageComponent } from '@components/message/message.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { MAX_CUSTOM_DURATION, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence, MeetingRescheduleOccurrenceResult } from '@lfx-one/shared/interfaces';
-import { combineDateTime, formatTo12HourInTimezone, getLongTimezoneName, getUserTimezone } from '@lfx-one/shared/utils';
+import {
+  combineDateTime,
+  formatTo12HourInTimezone,
+  getLongTimezoneName,
+  getUserTimezone,
+  toZonedDateCarrier,
+  wallTimeExistsInTimezone,
+} from '@lfx-one/shared/utils';
 import { futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
-import { toZonedTime } from 'date-fns-tz';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { map, startWith } from 'rxjs';
 
@@ -29,54 +35,30 @@ export class RescheduleOccurrenceDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
   private readonly meetingService = inject(MeetingService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly meeting: Meeting = this.config.data.meeting;
   public readonly occurrence: MeetingOccurrence = this.config.data.occurrence;
   // The occurrence endpoint takes no timezone, so the new time is always read in the series' own zone.
   public readonly timezone: string = this.meeting.timezone || getUserTimezone();
-  public readonly timezoneLabel: string = getLongTimezoneName(this.occurrence.start_time, this.timezone) || this.timezone;
   public readonly minDuration = MIN_CUSTOM_DURATION;
   public readonly maxDuration = MAX_CUSTOM_DURATION;
   // The picker shows the series' local calendar, so "today" has to be today in that zone, not the viewer's.
-  public readonly minDate: Date = new Date(toZonedTime(new Date(), this.timezone).setHours(0, 0, 0, 0));
+  public readonly minDate: Date = this.initMinDate();
   public readonly form: FormGroup = this.initializeForm();
 
   public readonly isSaving = signal(false);
   public readonly errorMessage = signal<string | null>(null);
 
   private readonly formRevision: Signal<number> = this.initFormRevision();
-  public readonly newStartTime: Signal<string> = computed(() => {
-    this.formRevision();
-    const { startDate, startTime } = this.form.getRawValue();
-    return startDate && startTime ? combineDateTime(startDate, startTime, this.timezone) : '';
-  });
-  public readonly isUnchanged: Signal<boolean> = computed(() => {
-    this.formRevision();
-    const start = this.newStartTime();
-    return (
-      !!start &&
-      new Date(start).getTime() === new Date(this.occurrence.start_time).getTime() &&
-      Number(this.form.get('duration')?.value) === this.occurrence.duration
-    );
-  });
-  public readonly showFutureError: Signal<boolean> = computed(() => {
-    this.formRevision();
-    return !!this.form.errors?.['futureDateTime'] && !!(this.form.get('startDate')?.touched || this.form.get('startTime')?.touched);
-  });
-  public readonly showTimeFormatError: Signal<boolean> = computed(() => {
-    this.formRevision();
-    const control = this.form.get('startTime');
-    return !!control?.touched && !!control.errors?.['invalidTimeFormat'];
-  });
-  public readonly showDurationError: Signal<boolean> = computed(() => {
-    this.formRevision();
-    const control = this.form.get('duration');
-    return !!control?.touched && control.invalid;
-  });
-  public readonly canSave: Signal<boolean> = computed(() => {
-    this.formRevision();
-    return this.form.valid && !!this.newStartTime() && !this.isUnchanged() && !this.isSaving();
-  });
+  public readonly newStartTime: Signal<string> = this.initNewStartTime();
+  public readonly timezoneLabel: Signal<string> = this.initTimezoneLabel();
+  public readonly isUnchanged: Signal<boolean> = this.initIsUnchanged();
+  public readonly showFutureError: Signal<boolean> = this.initShowFutureError();
+  public readonly showNonexistentTimeError: Signal<boolean> = this.initShowNonexistentTimeError();
+  public readonly showTimeFormatError: Signal<boolean> = this.initShowTimeFormatError();
+  public readonly showDurationError: Signal<boolean> = this.initShowDurationError();
+  public readonly canSave: Signal<boolean> = this.initCanSave();
 
   public onCancel(): void {
     const result: MeetingRescheduleOccurrenceResult = { confirmed: false };
@@ -95,17 +77,20 @@ export class RescheduleOccurrenceDialogComponent {
     this.isSaving.set(true);
     this.errorMessage.set(null);
 
-    this.meetingService.updateOccurrence(this.meeting.id, this.occurrence.occurrence_id, { start_time: startTime, duration }).subscribe({
-      next: () => {
-        this.isSaving.set(false);
-        const result: MeetingRescheduleOccurrenceResult = { confirmed: true, start_time: startTime };
-        this.dialogRef.close(result);
-      },
-      error: (error: HttpErrorResponse) => {
-        this.isSaving.set(false);
-        this.errorMessage.set(this.describeError(error));
-      },
-    });
+    this.meetingService
+      .updateOccurrence(this.meeting.id, this.occurrence.occurrence_id, { start_time: startTime, duration })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.isSaving.set(false);
+          const result: MeetingRescheduleOccurrenceResult = { confirmed: true, start_time: startTime };
+          this.dialogRef.close(result);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.isSaving.set(false);
+          this.errorMessage.set(this.describeError(error));
+        },
+      });
   }
 
   private initializeForm(): FormGroup {
@@ -113,7 +98,7 @@ export class RescheduleOccurrenceDialogComponent {
 
     const form = new FormGroup(
       {
-        startDate: new FormControl<Date | null>(toZonedTime(occurrenceStart, this.timezone), [Validators.required]),
+        startDate: new FormControl<Date | null>(toZonedDateCarrier(occurrenceStart, this.timezone), [Validators.required]),
         startTime: new FormControl(formatTo12HourInTimezone(occurrenceStart, this.timezone), [Validators.required, timeFormatValidator()]),
         duration: new FormControl<number | null>(this.occurrence.duration, [
           Validators.required,
@@ -124,7 +109,7 @@ export class RescheduleOccurrenceDialogComponent {
         // Not user-editable; present only because `futureDateTimeValidator` reads the zone off the group.
         timezone: new FormControl(this.timezone),
       },
-      { validators: futureDateTimeValidator() }
+      { validators: [futureDateTimeValidator(), this.wallTimeExistsValidator()] }
     );
 
     // An occurrence created elsewhere can carry a duration outside what this form accepts; show why
@@ -137,6 +122,29 @@ export class RescheduleOccurrenceDialogComponent {
     return form;
   }
 
+  /**
+   * Rejects a wall-clock time that falls in the series zone's spring-forward gap.
+   * @description `combineDateTime` silently normalizes such a time (2:30 AM on a spring-forward day
+   * becomes 3:30 AM), so it would pass the future check and move the occurrence to an instant the
+   * organizer never picked.
+   */
+  private wallTimeExistsValidator(): ValidatorFn {
+    return (group: AbstractControl): ValidationErrors | null => {
+      const startDate: Date | null = group.get('startDate')?.value;
+      const startTime: string | null = group.get('startTime')?.value;
+      if (!startDate || !startTime || group.get('startTime')?.invalid) {
+        return null;
+      }
+      return wallTimeExistsInTimezone(startDate, startTime, this.timezone) ? null : { nonexistentWallTime: true };
+    };
+  }
+
+  private initMinDate(): Date {
+    const carrier = toZonedDateCarrier(new Date(), this.timezone);
+    carrier.setHours(0, 0, 0, 0);
+    return carrier;
+  }
+
   private initFormRevision(): Signal<number> {
     let revision = 0;
     return toSignal(
@@ -146,6 +154,72 @@ export class RescheduleOccurrenceDialogComponent {
       ),
       { initialValue: 0 }
     );
+  }
+
+  private initNewStartTime(): Signal<string> {
+    return computed(() => {
+      this.formRevision();
+      const { startDate, startTime } = this.form.getRawValue();
+      return startDate && startTime ? combineDateTime(startDate, startTime, this.timezone) : '';
+    });
+  }
+
+  // Standard vs daylight naming depends on the instant, so it follows the proposed start, not the original.
+  private initTimezoneLabel(): Signal<string> {
+    return computed(() => getLongTimezoneName(this.newStartTime() || this.occurrence.start_time, this.timezone) || this.timezone);
+  }
+
+  private initIsUnchanged(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      const start = this.newStartTime();
+      return (
+        !!start &&
+        new Date(start).getTime() === new Date(this.occurrence.start_time).getTime() &&
+        Number(this.form.get('duration')?.value) === this.occurrence.duration
+      );
+    });
+  }
+
+  private initShowFutureError(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      return !!this.form.errors?.['futureDateTime'] && this.isStartTouched();
+    });
+  }
+
+  private initShowNonexistentTimeError(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      return !!this.form.errors?.['nonexistentWallTime'] && this.isStartTouched();
+    });
+  }
+
+  private initShowTimeFormatError(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      const control = this.form.get('startTime');
+      return !!control?.touched && !!control.errors?.['invalidTimeFormat'];
+    });
+  }
+
+  private initShowDurationError(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      const control = this.form.get('duration');
+      return !!control?.touched && control.invalid;
+    });
+  }
+
+  private initCanSave(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      return this.form.valid && !!this.newStartTime() && !this.isUnchanged() && !this.isSaving();
+    });
+  }
+
+  private isStartTouched(): boolean {
+    return !!(this.form.get('startDate')?.touched || this.form.get('startTime')?.touched);
   }
 
   private describeError(error: HttpErrorResponse): string {
