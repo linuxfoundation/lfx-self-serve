@@ -75,7 +75,11 @@ describe('MentorProfileSaveService', () => {
       expect(updateMentorProfile).toHaveBeenCalledWith(request);
       expect(saved).toEqual(response);
       expect(add).toHaveBeenCalledTimes(1);
-      expect(add).toHaveBeenCalledWith({ severity: 'success', summary: MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY, life: MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE });
+      expect(add).toHaveBeenCalledWith({
+        severity: 'success',
+        summary: MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY,
+        life: MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE,
+      });
     });
 
     it('does not toast a failure', () => {

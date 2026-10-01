@@ -43,7 +43,11 @@ export class MentorProfileSaveService {
     this.savingSignal.set(true);
     return this.mentorService.updateMentorProfile(request).pipe(
       tap(() =>
-        this.messageService.add({ severity: 'success', summary: MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY, life: MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE })
+        this.messageService.add({
+          severity: 'success',
+          summary: MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY,
+          life: MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE,
+        })
       ),
       finalize(() => this.savingSignal.set(false))
     );

@@ -46,7 +46,11 @@ describe('chooseMentorshipMentorTerm', () => {
   });
 
   it('picks the closed term that started most recently when no term is open', () => {
-    const terms = [term('old', 'closed', '2025-03-01T00:00:00Z'), term('recent', 'closed', '2026-03-01T00:00:00Z'), term('gone', 'deleted', '2026-08-01T00:00:00Z')];
+    const terms = [
+      term('old', 'closed', '2025-03-01T00:00:00Z'),
+      term('recent', 'closed', '2026-03-01T00:00:00Z'),
+      term('gone', 'deleted', '2026-08-01T00:00:00Z'),
+    ];
 
     expect(chooseMentorshipMentorTerm(terms, NOW)?.id).toBe('recent');
   });
