@@ -24,7 +24,7 @@ export const HEALTH_METRICS_TABS = [
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
   { key: 'events', label: 'Events', route: 'events' },
   { key: 'members', label: 'Members', route: 'members' },
-  { key: 'non-members', label: 'Non-Members', route: null },
+  { key: 'non-members', label: 'Non-Members', route: 'non-members' },
   { key: 'training', label: 'Training', route: null },
 ] as const;
 
