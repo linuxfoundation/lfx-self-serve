@@ -867,13 +867,9 @@ export class CampaignServiceClient {
       // `hubspotConfig`) so it renders as its own native HubSpot button widget, matching the hero
       // image/sponsors treatment. Baking it into `body` as well as an anchor tag used to render
       // the CTA twice — once inline in the rich text, once as the native button — in both the
-      // operator preview and the live HubSpot draft.
-      const sections = copy.sections ?? [];
-      const body = sections
-        .filter((section) => section.type === 'rich_text' && section.html)
-        .map((section) => section.html)
-        .join('');
-      const cta = sections.find((section) => section.type === 'button')?.text ?? '';
+      // operator preview and the live HubSpot draft. How the `rich_text` sections are joined is
+      // `foldEmailSections()`'s concern: it is what keeps one section from running into the next.
+      const { body, cta } = this.foldEmailSections(copy.sections ?? []);
 
       return {
         enabled: true,
@@ -896,9 +892,10 @@ export class CampaignServiceClient {
    *
    * `previous_draft` is sent in this app's own flat `subject`/`preheader`/`body`/`cta` shape
    * rather than reconstructed into upstream's `sections[]` — the flattening in
-   * `generateEmailCopy()` above is lossy (it drops section boundaries), so there is no faithful
-   * `sections[]` to rebuild from what this layer stored. The response is still parsed as
-   * `sections[]`, matching generate's own contract.
+   * `generateEmailCopy()` above is lossy (it keeps only the `rich_text` html, merged into one
+   * `body`, and the button's text), so there is no faithful `sections[]` to rebuild from what
+   * this layer stored. The response is still parsed as `sections[]`, matching generate's own
+   * contract.
    */
   public async refineEmailCopy(
     req: Request,
@@ -937,12 +934,7 @@ export class CampaignServiceClient {
 
       // Same reconstruction as `generateEmailCopy()` above — see its comment for why `body` folds
       // only the `rich_text` sections and `cta` is pulled from the `button` section separately.
-      const sections = copy.sections ?? [];
-      const body = sections
-        .filter((section) => section.type === 'rich_text' && section.html)
-        .map((section) => section.html)
-        .join('');
-      const cta = sections.find((section) => section.type === 'button')?.text ?? '';
+      const { body, cta } = this.foldEmailSections(copy.sections ?? []);
 
       return {
         enabled: true,
@@ -1232,6 +1224,20 @@ export class CampaignServiceClient {
           enabled: true,
           jobId: null,
           error: 'Could not reach the campaign service, so nothing was created. Please try again.',
+        };
+      }
+      // The one refusal whose cause the user CAN act on, so it is the exception to "generic about
+      // the cause" above. campaign-service answers 409 `ab_test_unsupported_send_type` before it
+      // creates anything, when the chosen template is set to send based on recipients' time zones
+      // — HubSpot does not allow an A/B test on such an email, and without this check the clone
+      // would proceed as a single email with no explanation. The wording is owned HERE rather than
+      // taken from the upstream message, for the same reason as every other branch in this catch.
+      if (this.isABTestUnsupportedSendType(error)) {
+        return {
+          enabled: true,
+          jobId: null,
+          error:
+            "A/B testing isn't available for emails sent based on recipients' time zones. Choose a different template, or turn the A/B test off. Nothing was created.",
         };
       }
       const definitelyRejected = error instanceof MicroserviceError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408;
@@ -1684,6 +1690,46 @@ export class CampaignServiceClient {
       'GET',
       window ? { window } : undefined
     );
+  }
+
+  /**
+   * Fold upstream's `sections[]` into the flat `body`/`cta` this app declares.
+   *
+   * `body` is the `rich_text` sections only, each wrapped in a `<div>` and joined by a newline;
+   * `cta` is the `button` section's text.
+   *
+   * The wrapper is what stops one section running into the next. campaign-service asks the model
+   * for each `rich_text` section as "inline HTML, no outer <div>", and its urgency-fomo structure
+   * makes every numbered part a `rich_text` of its own, so a section routinely ends mid-line (an
+   * emoji-led list item, a closing sentence) while the next one opens on a `<strong>` heading.
+   * Joined with nothing between them, as this used to do, the heading landed on the same line as
+   * the text before it ("...premier cloud native event.Why attend KubeCon + CloudNativeCon:"), in
+   * the operator preview and the HubSpot draft alike (LFX-Campaigns-Email-QA-Report B1). A `<div>`
+   * is block-level, so each section starts on a fresh line whatever its own html ends with.
+   */
+  private foldEmailSections(sections: CampaignServiceEmailCopy['sections']): { body: string; cta: string } {
+    const body = sections
+      .filter((section) => section.type === 'rich_text' && section.html)
+      .map((section) => `<div>${section.html}</div>`)
+      .join('\n');
+    const cta = sections.find((section) => section.type === 'button')?.text ?? '';
+    return { body, cta };
+  }
+
+  /**
+   * Whether `error` is campaign-service's up-front refusal to A/B test a time-zone email.
+   *
+   * Identified by the BODY's `reason`, not by the 409 alone: 409 is campaign-service's general
+   * conflict status, and answering this message for any other conflict would tell the user to
+   * change a template when the template is not the problem. `reason` is the enumerated
+   * discriminator on campaign-service's `ConflictError`, so a match means this exact refusal.
+   */
+  private isABTestUnsupportedSendType(error: unknown): boolean {
+    if (!(error instanceof MicroserviceError) || error.statusCode !== 409) {
+      return false;
+    }
+    const body: unknown = error.errorBody;
+    return typeof body === 'object' && body !== null && (body as { reason?: unknown }).reason === 'ab_test_unsupported_send_type';
   }
 
   /**

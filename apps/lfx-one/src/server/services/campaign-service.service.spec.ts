@@ -1738,6 +1738,54 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('try again');
   });
 
+  /**
+   * The one 4xx that names its own cause. campaign-service answers 409 `ab_test_unsupported_send_type`
+   * before any job exists, when an A/B test is requested on a template set to send based on
+   * recipients' time zones. Folded into the generic "rejected" copy, the user could not tell that
+   * the template was the problem; the BFF masks every other 4xx because the upstream message can
+   * name a connection or an account, so this branch is keyed on the discriminator and owns its
+   * own wording.
+   */
+  it('names the cause when an A/B test is refused on a time-zone template', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('conflict', 409, 'campaign_service', {
+        errorBody: { code: '409', message: 'upstream wording that must not be shown', reason: 'ab_test_unsupported_send_type' },
+      })
+    );
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['hubspot'], {
+      hubspotConfig: { sourceEmailId: 'email-123', abTestEnabled: true },
+    });
+
+    expect(res.enabled).toBe(true);
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain("recipients' time zones");
+    expect(res.error).toContain('turn the A/B test off');
+    expect(res.error).toContain('Nothing was created');
+    // The BFF owns the wording; the upstream message is never forwarded.
+    expect(res.error).not.toContain('upstream wording');
+  });
+
+  it.each([
+    ['a 409 with a different reason', 409, { code: '409', message: 'stale', reason: 'stale_approval' }],
+    ['a 409 with no reason', 409, { code: '409', message: 'conflict' }],
+    ['a 409 with no body', 409, undefined],
+    ['a 409 whose body is not an object', 409, 'conflict'],
+    ['the A/B reason on a status other than 409', 400, { code: '400', message: 'bad', reason: 'ab_test_unsupported_send_type' }],
+  ])('keeps the generic rejection copy for %s', async (_label, status, errorBody) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('refused', status, 'campaign_service', { errorBody }));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['hubspot'], {
+      hubspotConfig: { sourceEmailId: 'email-123', abTestEnabled: true },
+    });
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('rejected and nothing was created');
+    expect(res.error).not.toContain('time zones');
+  });
+
   it('does NOT tell the user to retry after an indeterminate failure', async () => {
     bothFlagsOn();
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream exploded', 502, 'campaign_service'));
@@ -2413,7 +2461,9 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.subject).toBe('Join us in Nairobi');
-    expect(result.copy?.body).toBe('<p>Hello</p><p><a href="https://example.com/">Register</a></p>');
+    // The button rides along as `cta` only; it is NOT baked into `body` as an anchor as well, or
+    // the operator preview and the HubSpot draft would render the CTA twice.
+    expect(result.copy?.body).toBe('<div><p>Hello</p></div>');
     expect(result.copy?.cta).toBe('Register');
   });
 
@@ -2431,7 +2481,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
-    expect(result.copy?.body).toBe('<p>Hello</p>');
+    expect(result.copy?.body).toBe('<div><p>Hello</p></div>');
   });
 
   it('joins multiple rich_text sections into one body, in order', async () => {
@@ -2449,8 +2499,32 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
-    expect(result.copy?.body).toBe('<p>First</p><p>Second</p>');
+    // The divider is dropped, and each rich_text section keeps its own block.
+    expect(result.copy?.body).toBe('<div><p>First</p></div>\n<div><p>Second</p></div>');
     expect(result.copy?.cta).toBe('');
+  });
+
+  /**
+   * LFX-Campaigns-Email-QA-Report B1. campaign-service asks for each rich_text section as inline
+   * html, so a section can end mid-line while the next one opens on a heading. Joined with
+   * nothing between them the heading landed on the same line as the sentence before it.
+   */
+  it('keeps an inline section from running into the next section heading', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: 'Join the premier cloud native event.' },
+          { type: 'rich_text', html: '<strong>Why attend KubeCon + CloudNativeCon:</strong>' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toBe('<div>Join the premier cloud native event.</div>\n<div><strong>Why attend KubeCon + CloudNativeCon:</strong></div>');
+    expect(result.copy?.body).not.toContain('event.<strong>');
   });
 
   it('treats a response with no subject as a failure', async () => {
@@ -2470,6 +2544,63 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     expect(result.enabled).toBe(true);
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe('CampaignServiceClient.refineEmailCopy', () => {
+  const previousDraft = { subject: 'Join us', preheader: 'Two days', body: '<div><p>Hello</p></div>', cta: 'Register' };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('sends the previous draft and the instruction in the request body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', sections: [] }));
+
+    await new CampaignServiceClient().refineEmailCopy(req, 'tlf', 'b-1', previousDraft, 'Make it shorter');
+
+    // Same argument-position hazard as generate: query is fifth, data sixth, both loosely typed.
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/email-copy/refine');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ previous_draft: previousDraft, instruction: 'Make it shorter' });
+  });
+
+  it('answers enabled:false without calling upstream when the flag is off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await expect(new CampaignServiceClient().refineEmailCopy(req, 'tlf', 'b-1', previousDraft, 'x')).resolves.toEqual({ enabled: false });
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('folds the refined sections the same way generate does, one block per rich_text section', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'Shorter',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: 'Join the premier cloud native event.' },
+          { type: 'rich_text', html: '<strong>Why attend:</strong>' },
+          { type: 'button', text: 'Register', url: 'https://example.com' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().refineEmailCopy(req, 'tlf', 'b-1', previousDraft, 'Make it shorter');
+
+    expect(result.copy?.subject).toBe('Shorter');
+    expect(result.copy?.body).toBe('<div>Join the premier cloud native event.</div>\n<div><strong>Why attend:</strong></div>');
+    expect(result.copy?.cta).toBe('Register');
+  });
+
+  it('treats a response with no subject as a failure', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: '', preheader: 'p', sections: [] }));
+
+    const result = await new CampaignServiceClient().refineEmailCopy(req, 'tlf', 'b-1', previousDraft, 'x');
+
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
   });
 });
 
