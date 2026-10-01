@@ -38,7 +38,7 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
   MENTORSHIP_TASKS_PATH,
 } from '../constants';
-import { ConflictError, InvalidRequestError } from '../errors';
+import { ConflictError, InvalidRequestError, MicroserviceError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
   mapMentorshipMenteeApplication,
@@ -189,21 +189,20 @@ export class MentorshipMenteeService {
   }
 
   /**
-   * The signed-in user's mentee profile and application history. Upstream lists only the
-   * caller's own rows, off their token, so no other user's profile is reachable from here. A
-   * user has at most one profile, so the read asks for `limit: 1`, the same as the has-profile
-   * check. The history comes from the caller's applications, which embed the program and term
-   * names it shows, so it needs no task or program reads.
+   * The signed-in user's mentee profile and application history. Upstream reads only the
+   * caller's own row, off their token, so no other user's profile is reachable from here. The
+   * history comes from the caller's applications, which embed the program and term names it
+   * shows, so it needs no task or program reads.
    *
-   * An empty list returns an empty profile rather than an error: the apply page is reachable
-   * before a profile exists, and it reads the profile that `POST /api/mentorship/mentee/profile`
-   * writes. A failed profile read propagates; a failed applications
+   * Upstream's 404 (no mentee profile) returns an empty profile rather than an error: the apply page
+   * is reachable before a profile exists, and it reads the profile that `POST /api/mentorship/mentee/profile`
+   * writes. Any other failed profile read propagates, including upstream's 409 for more than one; a failed applications
    * read logs a warning and leaves the history empty, since the apply page reads this profile too
    * and never shows the history.
    */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
-    const [[profile], applications] = await Promise.all([this.listMenteeProfiles(req), this.listMenteeApplicationsForHistory(req)]);
+    const [profile, applications] = await Promise.all([this.findStoredMenteeProfile(req), this.listMenteeApplicationsForHistory(req)]);
     const history = mapMentorshipMenteeApplicationHistory(applications);
     if (!profile) {
       logger.debug(req, 'mentorship_get_mentee_profile', 'No mentee profile for the signed-in user, returning an empty profile', {
@@ -234,7 +233,7 @@ export class MentorshipMenteeService {
     // Group names only: the values are personal data.
     logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
     const writesJsonColumn = request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined;
-    const [stored] = writesJsonColumn ? await this.listMenteeProfiles(req) : [];
+    const stored = writesJsonColumn ? await this.getStoredMenteeProfile(req) : undefined;
     const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
       this.microserviceProxy,
       req,
@@ -292,7 +291,10 @@ export class MentorshipMenteeService {
     logger.debug(req, 'mentorship_apply_to_mentee_term', 'Applied to mentee term', { programId, programTermId });
   }
 
-  /** The caller's own mentee `user_profiles` rows; at most one, since a user has one mentee profile. */
+  /**
+   * The caller's own mentee `user_profiles` rows, for checking whether one exists; `limit: 1` is enough for that.
+   * Upstream can send `data` as null for none.
+   */
   private async listMenteeProfiles(req: Request): Promise<MentorshipUpstreamUserProfile[]> {
     const { data } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamUserProfile>>(
       this.microserviceProxy,
@@ -301,7 +303,25 @@ export class MentorshipMenteeService {
       'GET',
       { profile_type: 'mentee', limit: 1 }
     );
-    return data;
+    return data ?? [];
+  }
+
+  /**
+   * The caller's mentee profile through upstream's typed read, which answers 409 when there is more than one
+   * rather than pick one, and 404 when there is none.
+   */
+  private async getStoredMenteeProfile(req: Request): Promise<MentorshipUpstreamUserProfile> {
+    return proxyMentorshipRequest<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH);
+  }
+
+  /** As `getStoredMenteeProfile`, with upstream's 404 (no mentee profile) read as none. */
+  private async findStoredMenteeProfile(req: Request): Promise<MentorshipUpstreamUserProfile | undefined> {
+    try {
+      return await this.getStoredMenteeProfile(req);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) return undefined;
+      throw error;
+    }
   }
 
   /** The caller's applications for the profile's history, or none when the read fails. */
