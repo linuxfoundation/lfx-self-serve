@@ -126,7 +126,7 @@ import type {
   MentorshipMenteeUpdatableTaskStatus,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
-import { escapeHtml, stripHtml } from './html-utils';
+import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
 const MENTORSHIP_ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -223,33 +223,6 @@ export function isMentorshipRichTextOverRawMax(html: string): boolean {
   return html.length > MENTORSHIP_RICH_TEXT_RAW_MAX;
 }
 
-/**
- * Plain text as the rich editor's HTML: `''` for blank input; otherwise CRLF and lone CR are
- * normalised, the text is trimmed, each non-blank line becomes an escaped `<p>` and a run of blank
- * lines becomes ONE `<p><br></p>`. That shape round-trips through `htmlClipboardToText`, which
- * turns `<br>` and `</p>` into newlines and collapses three or more to two. Escaping means a
- * caller can never store markup through this path.
- */
-export function mentorshipPlainTextToHtml(text: string | null | undefined): string {
-  const normalized = normalizeMentorshipPlainText(text);
-  if (!normalized) return '';
-
-  const paragraphs: string[] = [];
-  let previousBlank = false;
-  for (const line of normalized.split('\n')) {
-    const blank = isBlank(line);
-    if (blank && !previousBlank) paragraphs.push('<p><br></p>');
-    if (!blank) paragraphs.push(`<p>${escapeHtml(line)}</p>`);
-    previousBlank = blank;
-  }
-  return paragraphs.join('');
-}
-
-/** CRLF and lone CR to LF, then trimmed. Both sides of the introduction comparison go through it. */
-function normalizeMentorshipPlainText(text: string | null | undefined): string {
-  return (text ?? '').replace(/\r\n?/g, '\n').trim();
-}
-
 function cleanMentorshipSkillList(skills: readonly string[] | null | undefined): string[] {
   return (skills ?? []).map((skill) => skill.trim()).filter((skill) => skill !== '');
 }
@@ -259,23 +232,21 @@ function isSameMentorshipList(a: readonly string[], b: readonly string[]): boole
 }
 
 /**
- * The changed groups of a mentee profile edit, or `{}` when nothing changed. `introduction` is
- * omitted when it equals `seededIntroduction` once both go through the same CRLF and trim
- * normalisation, so an untouched introduction is never sent (and its stored rich text is never
- * rewritten as plain paragraphs). `skillSet` is present when the skills (trimmed, blanks dropped,
- * order-sensitive) or the trimmed notes differ from `seed`, and then always carries all three
- * fields, since upstream replaces the whole column. Never emits demographics or socioeconomics.
+ * The changed groups of a mentee profile edit, or `{}` when nothing changed. `introduction` is the
+ * editor's HTML and is sent when it differs from the stored `seed.aboutMe`: the editor writes to the
+ * form only when the mentee types, so an untouched introduction is never sent. `skillSet` is present
+ * when the skills (trimmed, blanks dropped, order-sensitive) or the trimmed notes differ from `seed`,
+ * and then always carries all three fields, since upstream replaces the whole column. Never emits
+ * demographics or socioeconomics.
  */
 export function buildMentorshipMenteeProfileUpdate(
   seed: MentorshipMenteeProfileDetails,
-  seededIntroduction: string,
   value: MentorshipMenteeProfileFormValue
 ): MentorshipMenteeProfileUpdateRequest {
   const request: MentorshipMenteeProfileUpdateRequest = {};
 
-  const introduction = normalizeMentorshipPlainText(value.introduction);
-  if (introduction !== normalizeMentorshipPlainText(seededIntroduction)) {
-    request.introduction = introduction;
+  if (value.introduction !== (seed.aboutMe ?? '')) {
+    request.introduction = value.introduction;
   }
 
   const skillsHave = cleanMentorshipSkillList(value.skillsHave);
@@ -682,6 +653,19 @@ export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegister
 }
 
 /**
+ * The rule a mentee introduction (the rich editor's HTML) is held to, on register and in the profile
+ * edit drawer, in the browser and in the BFF. Returns the message, or `undefined` when valid.
+ */
+export function getMentorshipMenteeIntroductionError(html: string): string | undefined {
+  return mentorshipRichTextError(
+    html,
+    MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+    'Introduction is required.',
+    `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`
+  );
+}
+
+/**
  * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
  * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
  * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
@@ -697,12 +681,7 @@ export function getMentorshipMenteeRegisterRequestErrors(
 ): MentorshipMenteeRegisterFieldErrors {
   const errors: MentorshipMenteeRegisterFieldErrors = {};
 
-  const introductionError = mentorshipRichTextError(
-    input.introduction,
-    MENTORSHIP_MENTEE_INTRODUCTION_MAX,
-    'Introduction is required.',
-    `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`
-  );
+  const introductionError = getMentorshipMenteeIntroductionError(input.introduction);
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
   else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;

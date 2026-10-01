@@ -5,13 +5,13 @@ import { afterNextRender, ChangeDetectionStrategy, Component, computed, ElementR
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE,
+  MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS,
   MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL,
   MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL,
@@ -24,19 +24,9 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL,
-  MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
-import {
-  buildMentorshipMenteeProfileUpdate,
-  capCodePointEdit,
-  codePointLength,
-  htmlClipboardToText,
-  isMentorshipMenteeProfileUpdateEmpty,
-  isMentorshipRichTextOverRawMax,
-  mentorshipPlainTextToHtml,
-} from '@lfx-one/shared/utils';
-import { maxCodePointsValidator } from '@lfx-one/shared/validators';
+import { buildMentorshipMenteeProfileUpdate, getMentorshipMenteeIntroductionError, isMentorshipMenteeProfileUpdateEmpty } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, merge, startWith } from 'rxjs';
 
@@ -63,14 +53,15 @@ function boundedStringList(): ValidatorFn {
  * Right-side mentee profile edit drawer, opened from the "Edit Mentee Profile" button
  * on the standalone mentee profile page. Fields map to `user_profiles`: About Me ←
  * `introduction`, skills ← `skill_set.skills` / `improvementSkills`, additional notes
- * ← `skill_set.comments`.
+ * ← `skill_set.comments`. About Me uses the register form's rich editor and rule, so the stored HTML
+ * round-trips unchanged.
  *
  * Save sends only the groups the mentee changed (see `buildMentorshipMenteeProfileUpdate`) and
  * emits `saved` with the response, so the host can show it in place. On a failure the drawer stays open with the mentee's input and shows the message inline.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
-  imports: [DrawerModule, ButtonComponent, TextareaComponent, SkillsPickerComponent],
+  imports: [DrawerModule, ButtonComponent, RichEditorComponent, TextareaComponent, SkillsPickerComponent],
   templateUrl: './mentee-profile-edit-drawer.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -91,29 +82,27 @@ export class MenteeProfileEditDrawerComponent {
   protected readonly cancelLabel = MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL;
   protected readonly aboutIntro = MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO;
   protected readonly aboutPrompts = MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS;
-  protected readonly aboutMeMax = MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX;
+  protected readonly introductionPlaceholder = MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER;
   protected readonly skillsIntro = MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO;
   protected readonly skillsHaveLabel = MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL;
   protected readonly skillsWantLabel = MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL;
   protected readonly additionalNotesLabel = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
 
-  // Code-point cap (not Validators.maxLength, which counts UTF-16 units). Native maxlength
-  // is omitted on the About Me textarea for the same reason.
+  // The introduction is checked by `getMentorshipMenteeIntroductionError` on Save rather than by a validator,
+  // so a stored introduction the mentee leaves untouched never blocks a skills-only save.
   protected readonly form = new FormGroup({
-    introduction: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX)] }),
+    introduction: new FormControl('', { nonNullable: true }),
     skillsHave: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList(), boundedStringList()] }),
     skillsWant: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList(), boundedStringList()] }),
     additionalNotes: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX)] }),
   });
 
-  protected readonly aboutMeLength = signal(0);
   /** The message for the last failed Save, shown inline. Cleared on the next Save, on any edit and on re-seed. */
   protected readonly errorMessage = signal('');
-  private lastValidIntroduction = '';
-  private seededIntroduction = '';
-  private seedProfile: MentorshipMenteeProfileDetails | null = null;
+  private readonly seedProfile = signal<MentorshipMenteeProfileDetails | null>(null);
   private readonly saveAttempted = signal(false);
+  private readonly introductionValue = toSignal(this.form.controls.introduction.valueChanges, { initialValue: '' });
   // Per-control ticks: parent `form.statusChanges` does not emit when overall
   // status stays INVALID, so filling one required picker would leave its error up.
   private readonly skillPickerTick = toSignal(
@@ -128,6 +117,13 @@ export class MenteeProfileEditDrawerComponent {
 
   protected readonly skillsHaveError = computed(() => this.skillPickerError('skillsHave', 'Add at least one skill you currently have.'));
   protected readonly skillsWantError = computed(() => this.skillPickerError('skillsWant', 'Add at least one skill you would like to improve.'));
+  /** Shown after a Save attempt, and only for an edited introduction: the stored one is never sent unless changed. */
+  protected readonly introductionError = computed(() => {
+    const introduction = this.introductionValue();
+    const seed = this.seedProfile();
+    if (!this.saveAttempted() || !seed || introduction === (seed.aboutMe ?? '')) return undefined;
+    return getMentorshipMenteeIntroductionError(introduction);
+  });
 
   public constructor() {
     toObservable(this.drawer.context)
@@ -135,22 +131,6 @@ export class MenteeProfileEditDrawerComponent {
       .subscribe((profile) => this.seedForm(profile));
 
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.errorMessage.set(''));
-
-    this.form.controls.introduction.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      const next = value ?? '';
-      if (codePointLength(next) > MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX) {
-        const capped = capCodePointEdit(this.lastValidIntroduction, next, MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
-        this.form.controls.introduction.setValue(capped, { emitEvent: false });
-        this.lastValidIntroduction = capped;
-        this.aboutMeLength.set(codePointLength(capped));
-        if (capped === this.seededIntroduction) {
-          this.form.controls.introduction.markAsPristine();
-        }
-        return;
-      }
-      this.lastValidIntroduction = next;
-      this.aboutMeLength.set(codePointLength(next));
-    });
   }
 
   protected onSave(): void {
@@ -161,21 +141,19 @@ export class MenteeProfileEditDrawerComponent {
     this.errorMessage.set('');
     this.form.markAllAsTouched();
     this.saveAttempted.set(true);
-    const profile = this.seedProfile;
+    const profile = this.seedProfile();
     if (this.form.invalid || !profile) {
       return;
     }
 
-    const request = buildMentorshipMenteeProfileUpdate(profile, this.seededIntroduction, this.form.getRawValue());
+    const request = buildMentorshipMenteeProfileUpdate(profile, this.form.getRawValue());
     if (isMentorshipMenteeProfileUpdateEmpty(request)) {
       this.drawer.close();
       return;
     }
 
-    // The BFF escapes the text into paragraphs, which can outgrow the raw cap for a long, markup-heavy
-    // or blank-line-heavy introduction. Say so here rather than round-trip a 400.
-    if (request.introduction !== undefined && isMentorshipRichTextOverRawMax(mentorshipPlainTextToHtml(request.introduction))) {
-      this.showError(MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE);
+    // The same rule the BFF applies; `introductionError` already shows the message under the editor.
+    if (request.introduction !== undefined && getMentorshipMenteeIntroductionError(request.introduction)) {
       return;
     }
 
@@ -211,43 +189,19 @@ export class MenteeProfileEditDrawerComponent {
   }
 
   private seedForm(profile: MentorshipMenteeProfileDetails): void {
-    // Register and the drawer share the 3000 code-point cap. Convert block boundaries
-    // to newlines, then cap, *before* patching so the control, counter, and baselines
-    // share one value. patchValue must emit so the skills pickers (which snapshot
-    // `valueChanges`) pick up the seeded skills.
-    const introduction = capCodePointEdit('', htmlClipboardToText(this.boundStoredAboutMe(profile.aboutMe ?? '')), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
-    this.lastValidIntroduction = introduction;
-    this.seededIntroduction = introduction;
-    this.seedProfile = profile;
+    // The stored HTML seeds the editor as is, so an untouched introduction equals `aboutMe` and is not sent.
+    // patchValue must emit so the skills pickers (which snapshot `valueChanges`) pick up the seeded skills.
+    this.seedProfile.set(profile);
     this.saveAttempted.set(false);
     this.form.patchValue({
-      introduction,
+      introduction: profile.aboutMe ?? '',
       skillsHave: profile.skillsHave ?? [],
       skillsWant: profile.skillsWant ?? [],
       additionalNotes: profile.additionalNotes ?? '',
     });
-    this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
     this.errorMessage.set('');
-  }
-
-  /**
-   * The stored `aboutMe` comes from the API, so it is cut to the raw cap before
-   * `htmlClipboardToText`, whose tag strip is quadratic on adversarial input
-   * (lfx-self-serve-ops#37). A cut can land inside a surrogate pair, a tag or an entity,
-   * which the converter would keep as a stray `�` or literal text, so a trailing partial one
-   * is dropped. The editor escapes a typed `<` and `&` as `&lt;` and `&amp;`, so a raw `<`
-   * after the last `>`, or a trailing `&` with no `;`, can only be something the cut split.
-   */
-  private boundStoredAboutMe(html: string): string {
-    if (html.length <= MENTORSHIP_RICH_TEXT_RAW_MAX) return html;
-    const lastUnit = html.charCodeAt(MENTORSHIP_RICH_TEXT_RAW_MAX - 1);
-    const splitsPair = lastUnit >= 0xd800 && lastUnit <= 0xdbff;
-    const sliced = html.slice(0, splitsPair ? MENTORSHIP_RICH_TEXT_RAW_MAX - 1 : MENTORSHIP_RICH_TEXT_RAW_MAX);
-    const lastOpen = sliced.lastIndexOf('<');
-    const tagSafe = lastOpen > sliced.lastIndexOf('>') ? sliced.slice(0, lastOpen) : sliced;
-    return tagSafe.replace(/&#?\w*$/, '');
   }
 
   private skillPickerError(control: 'skillsHave' | 'skillsWant', message: string): string | undefined {

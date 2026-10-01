@@ -366,7 +366,7 @@ export interface MentorshipMenteeSocioeconomicsGroupUpdate {
 
 /** Body of `PATCH /api/mentorship/mentee/profile`. Only changed groups are present; at least one is required. */
 export interface MentorshipMenteeProfileUpdateRequest {
-  /** PLAIN TEXT. The BFF converts it to HTML. `''` clears the introduction. Omitted means unchanged. */
+  /** The rich editor's HTML, stored as sent; held to the register rule (`getMentorshipMenteeIntroductionError`). Omitted means unchanged. */
   introduction?: string;
   skillSet?: MentorshipMenteeSkillSetUpdate;
   demographics?: MentorshipMenteeDemographicsGroupUpdate;

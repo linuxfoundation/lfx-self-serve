@@ -40,7 +40,6 @@ import {
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
-import { htmlClipboardToText } from './html-utils';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationTask,
@@ -83,6 +82,7 @@ import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
+  getMentorshipMenteeIntroductionError,
   getMentorshipMenteeRegisterErrors,
   getMentorshipMenteeRegisterRequestErrors,
   getMentorshipMentorProfileErrors,
@@ -116,7 +116,6 @@ import {
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
-  mentorshipPlainTextToHtml,
   mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -1837,35 +1836,19 @@ describe('rich-text fields over MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
   });
 });
 
-describe('mentorshipPlainTextToHtml', () => {
-  it('returns an empty string for null, undefined, empty and whitespace-only input', () => {
-    expect(mentorshipPlainTextToHtml(null)).toBe('');
-    expect(mentorshipPlainTextToHtml(undefined)).toBe('');
-    expect(mentorshipPlainTextToHtml('')).toBe('');
-    expect(mentorshipPlainTextToHtml(' \n\t \r\n ')).toBe('');
+describe('getMentorshipMenteeIntroductionError', () => {
+  it('requires text, not just markup', () => {
+    expect(getMentorshipMenteeIntroductionError('')).toBe('Introduction is required.');
+    expect(getMentorshipMenteeIntroductionError('<p></p>')).toBe('Introduction is required.');
   });
 
-  it('wraps each non-blank line in a paragraph and turns a blank line into an empty paragraph', () => {
-    expect(mentorshipPlainTextToHtml('First\nSecond')).toBe('<p>First</p><p>Second</p>');
-    expect(mentorshipPlainTextToHtml('First\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
+  it('counts the visible text against the max, not the markup', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p><strong>${'a'.repeat(3000)}</strong></p>`)).toBeUndefined();
+    expect(getMentorshipMenteeIntroductionError(`<p>${'a'.repeat(3001)}</p>`)).toBe('Introduction must be 3000 characters or fewer.');
   });
 
-  it('collapses a run of blank lines into one empty paragraph', () => {
-    expect(mentorshipPlainTextToHtml('First\n\n \n\t\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
-  });
-
-  it('escapes markup so a caller can never store tags', () => {
-    expect(mentorshipPlainTextToHtml(`<script>alert("x")</script> & 'y'`)).toBe('<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;</p>');
-  });
-
-  it('normalizes CRLF and lone CR line endings', () => {
-    expect(mentorshipPlainTextToHtml('One\r\nTwo\rThree')).toBe('<p>One</p><p>Two</p><p>Three</p>');
-  });
-
-  it('round-trips through htmlClipboardToText to the same text', () => {
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\nTwo'))).toBe('One\nTwo');
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\n\nTwo'))).toBe('One\n\nTwo');
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml(`A & B <c> "d" 'e'\n\n\n\nF`))).toBe(`A & B <c> "d" 'e'\n\nF`);
+  it('reports formatting as the problem over the raw max', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p>a</p>${'<p></p>'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}`)).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
   });
 });
 
@@ -1876,60 +1859,58 @@ describe('buildMentorshipMenteeProfileUpdate', () => {
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
   };
-  const seededIntroduction = 'Hello world';
   const unchanged: MentorshipMenteeProfileFormValue = {
-    introduction: seededIntroduction,
+    introduction: '<p>Hello world</p>',
     skillsHave: ['Go', 'Python'],
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
   };
 
   it('returns an empty request when nothing changed', () => {
-    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, unchanged);
+    const request = buildMentorshipMenteeProfileUpdate(seed, unchanged);
     expect(request).toEqual({});
     expect(isMentorshipMenteeProfileUpdateEmpty(request)).toBe(true);
   });
 
-  it('omits the introduction when it equals the seeded text, ignoring surrounding whitespace and CRLF', () => {
-    const multiline = 'Line one\nLine two';
-    expect(buildMentorshipMenteeProfileUpdate(seed, multiline, { ...unchanged, introduction: '  Line one\r\nLine two\r\n' })).toEqual({});
-    expect(buildMentorshipMenteeProfileUpdate(seed, '  Line one\r\nLine two \n', { ...unchanged, introduction: multiline })).toEqual({});
+  it('sends the introduction HTML as is, only when it differs from the stored HTML', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '<p>Hello <strong>there</strong></p>' })).toEqual({
+      introduction: '<p>Hello <strong>there</strong></p>',
+    });
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '' })).toEqual({ introduction: '' });
   });
 
-  it('sends the introduction only when it was edited, and an empty string when it was cleared', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: ' Hello there\r\n' })).toEqual({
-      introduction: 'Hello there',
-    });
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: '  ' })).toEqual({ introduction: '' });
+  it('leaves an empty stored introduction out while the editor stays empty', () => {
+    const withoutAbout: MentorshipMenteeProfileDetails = { ...seed, aboutMe: '' };
+    expect(buildMentorshipMenteeProfileUpdate(withoutAbout, { ...unchanged, introduction: '' })).toEqual({});
   });
 
   it('sends the whole skill set when only the additional notes changed', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
       skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'], additionalNotes: 'Weekends too' },
     });
   });
 
   it('compares skills after trimming and detects a reorder', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
       skillSet: { skillsHave: ['Python', 'Go'], skillsWant: ['Kubernetes'], additionalNotes: 'Evenings only' },
     });
   });
 
   it('omits additional notes when the trimmed notes are blank', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: '   ' })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: '   ' })).toEqual({
       skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'] },
     });
   });
 
   it('treats missing stored notes and blank notes as the same', () => {
     const withoutNotes: MentorshipMenteeProfileDetails = { ...seed, additionalNotes: undefined };
-    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, seededIntroduction, { ...unchanged, additionalNotes: '' })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, { ...unchanged, additionalNotes: '' })).toEqual({});
   });
 
   it('never emits demographics or socioeconomics', () => {
-    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, {
-      introduction: 'New',
+    const request = buildMentorshipMenteeProfileUpdate(seed, {
+      introduction: '<p>New</p>',
       skillsHave: ['Rust'],
       skillsWant: ['Go'],
       additionalNotes: 'x',

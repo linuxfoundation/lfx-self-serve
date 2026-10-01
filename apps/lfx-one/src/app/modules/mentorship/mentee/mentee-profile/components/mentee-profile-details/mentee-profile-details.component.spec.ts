@@ -73,6 +73,16 @@ describe('MenteeProfileDetailsComponent', () => {
     expect(rendered?.innerHTML).not.toContain('<script>');
   });
 
+  it('strips event handlers and javascript: links from the stored HTML the profile drawer now saves as sent', () => {
+    setup({ ...baseProfile, aboutMe: '<p>Safe intro</p><img src="x" onerror="alert(1)"><p><a href="javascript:alert(1)">link</a></p>' });
+
+    const rendered = element().querySelector<HTMLElement>('[data-testid="mentorship-mentee-profile-details-about-text"]');
+    expect(rendered?.textContent).toContain('Safe intro');
+    expect(rendered?.innerHTML).not.toContain('onerror');
+    // Angular neutralises an unsafe URL by prefixing it with `unsafe:`, so the link can no longer run script.
+    expect(rendered?.querySelector('a')?.getAttribute('href')).not.toMatch(/^javascript:/i);
+  });
+
   it.each([
     ['   ', 'whitespace-only string'],
     ['<p></p>', 'empty editor paragraph'],

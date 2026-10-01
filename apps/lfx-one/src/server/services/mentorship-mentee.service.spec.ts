@@ -675,17 +675,17 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('converts the introduction to HTML and maps demographics keys on the way upstream', async () => {
+  it('sends the introduction HTML as is and maps demographics keys on the way upstream', async () => {
     proxyRequest.mockResolvedValueOnce(bareStoredRow).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), {
-      introduction: 'Hello & welcome',
+      introduction: '<p>Hello &amp; <strong>welcome</strong></p>',
       demographics: { age: '20-39', raceEthnicity: 'asian' },
       socioeconomics: { education: 'college' },
     });
 
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
-      introduction: '<p>Hello &amp; welcome</p>',
+      introduction: '<p>Hello &amp; <strong>welcome</strong></p>',
       demographics: { age: '20-39', race: 'asian' },
       socioeconomics: { educationLevel: 'college' },
     });
@@ -694,11 +694,11 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
   it('never sends profile_links or a key for a group the caller did not change, and skips the stored read', async () => {
     proxyRequest.mockResolvedValueOnce(updatedRow);
 
-    await service.updateMenteeProfile(buildReq(), { introduction: '' });
+    await service.updateMenteeProfile(buildReq(), { introduction: '<p>Hello</p>' });
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     const body = proxyRequest.mock.calls[0][5] as Record<string, unknown>;
-    expect(body).toEqual({ introduction: '' });
+    expect(body).toEqual({ introduction: '<p>Hello</p>' });
     expect(Object.keys(body)).not.toContain('profile_links');
   });
 
@@ -747,7 +747,7 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     );
     proxyRequest.mockRejectedValueOnce(notProvisioned).mockResolvedValueOnce({}).mockResolvedValueOnce(updatedRow);
 
-    await expect(service.updateMenteeProfile(buildReq(), { introduction: 'x' })).resolves.toMatchObject({ profile: { skillsHave: ['Go'] } });
+    await expect(service.updateMenteeProfile(buildReq(), { introduction: '<p>x</p>' })).resolves.toMatchObject({ profile: { skillsHave: ['Go'] } });
 
     expect(proxyRequest).toHaveBeenCalledTimes(3);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
