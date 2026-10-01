@@ -3,7 +3,7 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_updated: 2026-08-19
+last_updated: 2026-10-01
 intercom_collection: Meetings
 ---
 
@@ -31,9 +31,11 @@ The **Invite Guests** step (in the create/edit meeting form) is where you contro
 
 The invitation list shows a running count split as "X from committees" and "Y direct guests."
 
+From a meeting card in the list, **Invite people** opens the guest list with the **Add Guest** form already open, and **View all** opens it for browsing. A guest added there is invited to every occurrence of a recurring meeting.
+
 ## Manage meeting materials
 
-On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones.
+On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones. On a meeting card in the list, the same drawer opens from **Edit materials**. Upcoming materials belong to the whole series, so they appear on every occurrence of a recurring meeting.
 
 ## Delete a meeting
 
