@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { redactInviteToken } from '@lfx-one/shared/utils';
+// A deep import: the utils barrel reaches Angular, which specs that load the logger do not compile.
+import { redactInviteToken } from '@lfx-one/shared/utils/auth-fragment.utils';
 import { trace } from '@opentelemetry/api';
 import { IncomingMessage, ServerResponse } from 'node:http';
 
