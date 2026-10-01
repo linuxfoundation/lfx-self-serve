@@ -4,7 +4,7 @@
 import type { MentorshipUpstreamMentorProgramTerm } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { chooseMentorshipMentorTerm, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
+import { chooseMentorshipMentorTerm, isMentorshipMentorTermUnderway, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
 
 const NOW = new Date('2026-09-17T12:00:00.000Z');
 
@@ -20,6 +20,15 @@ describe('mentorshipMentorTermStartMs', () => {
     expect(mentorshipMentorTermStartMs({ start_date_time: '2026-09-01T00:00:00Z' })).toBe(Date.parse('2026-09-01T00:00:00Z'));
     expect(mentorshipMentorTermStartMs({})).toBeUndefined();
     expect(mentorshipMentorTermStartMs({ start_date_time: 'soon' })).toBeUndefined();
+  });
+});
+
+describe('isMentorshipMentorTermUnderway', () => {
+  it('holds only for an open term that has started', () => {
+    expect(isMentorshipMentorTermUnderway(term('now', 'open', '2026-09-01T00:00:00Z'), NOW)).toBe(true);
+    expect(isMentorshipMentorTermUnderway(term('later', 'open', '2026-12-01T00:00:00Z'), NOW)).toBe(false);
+    expect(isMentorshipMentorTermUnderway(term('undated', 'open'), NOW)).toBe(false);
+    expect(isMentorshipMentorTermUnderway(term('past', 'closed', '2026-01-01T00:00:00Z'), NOW)).toBe(false);
   });
 });
 

@@ -116,6 +116,47 @@ describe('mapMentorshipMentoringHistory', () => {
     expect(history).toEqual([{ id: 'spring', programName: 'Ledger', term: 'Spring 2026', menteesCount: 0, status: 'completed' }]);
   });
 
+  it('does not list a cohort that has not begun even when upstream already lists its accepted mentees as current', () => {
+    const history = mapMentorshipMentoringHistory(
+      detail({
+        programs: [
+          program('Ledger', [
+            { id: 'winter', name: 'Winter 2026', status: 'open', start_date_time: '2026-12-01T00:00:00Z' },
+            { id: 'spring', name: 'Spring 2026', status: 'closed', start_date_time: '2026-03-01T00:00:00Z' },
+          ]),
+          program('Undated', [{ id: 'tbd', name: 'Next', status: 'open' }]),
+        ],
+        current_mentees: [mentee('m1', 'Ledger', 'Winter 2026', 'accepted'), mentee('m2', 'Undated', 'Next', 'accepted')],
+        graduated_mentees: [mentee('m3', 'Ledger', 'Spring 2026', 'graduated')],
+      }),
+      NOW
+    );
+
+    expect(history).toEqual([{ id: 'spring', programName: 'Ledger', term: 'Spring 2026', menteesCount: 1, status: 'completed' }]);
+  });
+
+  it('marks a row in progress when one of its same-named terms is underway, and completed when only a future one is open', () => {
+    const history = mapMentorshipMentoringHistory(
+      detail({
+        programs: [
+          program('Twin', [{ id: 'a', name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }]),
+          { ...program('Twin', [{ id: 'b', name: 'Fall 2026', status: 'open', start_date_time: '2026-12-01T00:00:00Z' }]), id: 'program-twin-2' },
+          program('Mixed', [
+            { id: 'c', name: 'Winter 2026', status: 'closed', start_date_time: '2025-12-01T00:00:00Z' },
+            { id: 'd', name: 'Winter 2026', status: 'open', start_date_time: '2026-12-01T00:00:00Z' },
+          ]),
+        ],
+        current_mentees: [mentee('m1', 'Mixed', 'Winter 2026', 'accepted')],
+      }),
+      NOW
+    );
+
+    expect(history.map(({ programName, status }) => ({ programName, status }))).toEqual([
+      { programName: 'Twin', status: 'in-progress' },
+      { programName: 'Mixed', status: 'completed' },
+    ]);
+  });
+
   it('falls back to the mentees for the status, and a generated id, when no term matches', () => {
     const history = mapMentorshipMentoringHistory(
       detail({
