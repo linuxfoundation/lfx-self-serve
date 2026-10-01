@@ -183,3 +183,103 @@ describe('PendingActionsDrawerComponent — Survey row click (GH-2987)', () => {
     expect(hiddenActions.hideAction).toHaveBeenCalledTimes(1);
   });
 });
+
+// Section grouping: rows render under fixed-order section headers (label + count badge + gray divider),
+// sections with no visible rows are omitted, and the drawer title keeps the grand total.
+describe('PendingActionsDrawerComponent — section grouping', () => {
+  let fixture: ComponentFixture<PendingActionsDrawerComponent>;
+
+  // p-drawer renders into document.body — query the global document like the blocks above.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+  });
+
+  const row = (type: PendingActionItem['type'], text: string, overrides: Partial<PendingActionItem> = {}): PendingActionItem => ({
+    type,
+    badge: 'Acme Project',
+    text,
+    icon: 'fa-light fa-list-check',
+    severity: 'warn',
+    buttonText: 'Open',
+    ...overrides,
+  });
+
+  const render = async (actions: PendingActionItem[]): Promise<void> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [PendingActionsDrawerComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: HiddenActionsService, useValue: { isActionHidden: () => false } },
+        { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
+        { provide: MeetingService, useValue: {} },
+        MessageService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(PendingActionsDrawerComponent);
+    fixture.componentRef.setInput('pendingActions', actions);
+    fixture.detectChanges();
+    fixture.componentInstance.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const byTestId = (id: string): HTMLElement | null => document.body.querySelector(`[data-testid="${id}"]`);
+  // Only the <section> wrappers — the title (h2) and count (lfx-badge) testids share the same prefix.
+  const sectionIds = (): (string | null)[] =>
+    Array.from(document.body.querySelectorAll('section[data-testid^="pending-actions-drawer-section-"]')).map((el) => el.getAttribute('data-testid'));
+
+  it('renders sections in fixed order with per-section counts, skipping empty sections', async () => {
+    await render([row('Survey', 'Survey A'), row('RSVP', 'RSVP A'), row('Vote', 'Vote A'), row('RSVP', 'RSVP B')]);
+
+    expect(sectionIds()).toEqual(['pending-actions-drawer-section-meetings', 'pending-actions-drawer-section-votes', 'pending-actions-drawer-section-surveys']);
+    expect(byTestId('pending-actions-drawer-section-count-meetings')?.textContent?.trim()).toBe('2');
+    expect(byTestId('pending-actions-drawer-section-count-votes')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-section-count-surveys')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-section-title-meetings')?.textContent).toContain('Meetings');
+    expect(byTestId('pending-actions-drawer-section-title-votes')?.textContent).toContain('Votes');
+    expect(byTestId('pending-actions-drawer-section-title-surveys')?.textContent).toContain('Surveys');
+    // No Invitation/FormationItem rows fed — their sections stay out of the DOM entirely.
+    expect(byTestId('pending-actions-drawer-section-invitations')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-formation')).toBeNull();
+    // The drawer title keeps the grand total across sections.
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(4)');
+  });
+
+  it('nests each row under its own section, preserving feed order within the section', async () => {
+    await render([row('RSVP', 'RSVP A'), row('Agenda', 'Agenda A'), row('Vote', 'Vote A')]);
+
+    const meetings = byTestId('pending-actions-drawer-section-meetings');
+    // Agenda groups with the meeting RSVPs.
+    expect(meetings?.querySelectorAll('[data-testid="pending-actions-drawer-item-RSVP"]').length).toBe(1);
+    expect(meetings?.querySelectorAll('[data-testid="pending-actions-drawer-item-Agenda"]').length).toBe(1);
+    const titles = Array.from(meetings?.querySelectorAll('[data-testid="pending-actions-drawer-title"]') ?? []).map((el) => el.textContent?.trim());
+    expect(titles).toEqual(['RSVP A', 'Agenda A']);
+
+    const votes = byTestId('pending-actions-drawer-section-votes');
+    expect(votes?.querySelectorAll('[data-testid="pending-actions-drawer-item-Vote"]').length).toBe(1);
+  });
+
+  it('maps the remaining types to their sections', async () => {
+    await render([row('Invitation', 'Invite A'), row('FormationItem', 'Formation A'), row('Submitted', 'Submitted A'), row('BriefAction', 'Brief A')]);
+
+    // Surveys leads: 'Submitted' (completed-survey acknowledgement) joins the surveys section ahead of invitations.
+    expect(sectionIds()).toEqual([
+      'pending-actions-drawer-section-surveys',
+      'pending-actions-drawer-section-invitations',
+      'pending-actions-drawer-section-formation',
+      'pending-actions-drawer-section-other',
+    ]);
+    expect(byTestId('pending-actions-drawer-section-other')?.querySelectorAll('[data-testid="pending-actions-drawer-item-BriefAction"]').length).toBe(1);
+  });
+
+  it('renders the empty state and no sections when nothing is visible', async () => {
+    await render([]);
+
+    expect(byTestId('pending-actions-drawer-empty')).not.toBeNull();
+    expect(document.body.querySelector('section[data-testid^="pending-actions-drawer-section-"]')).toBeNull();
+  });
+});

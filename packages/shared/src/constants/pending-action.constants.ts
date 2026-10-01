@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PendingActionType, TagSeverity } from '../interfaces/components.interface';
+import { PendingActionSection, PendingActionType, TagSeverity } from '../interfaces/components.interface';
 
 /**
  * Per-type tag severity for "My Pending Actions" rows. Read entries directly
@@ -42,6 +42,35 @@ export const PENDING_ACTION_LABEL: Record<PendingActionType, string> = {
   BriefAction: 'From Weekly Brief',
   FormationItem: 'Formation item',
 };
+
+/**
+ * Maps each pending-action type to its drawer section. Total over `PendingActionType` —
+ * `Submitted`/`BriefAction` never reach the dashboard drawer today (they're committee-overview
+ * surfaces) but stay mapped so the grouping computed never needs a fallback.
+ */
+export const PENDING_ACTION_SECTION: Record<PendingActionType, PendingActionSection> = {
+  RSVP: 'meetings',
+  Agenda: 'meetings', // informational read-before-meeting cue groups with the meeting RSVPs
+  Vote: 'votes',
+  Survey: 'surveys',
+  Submitted: 'surveys', // completed-survey acknowledgement; closest kin if it ever reaches the drawer
+  Invitation: 'invitations',
+  FormationItem: 'formation',
+  BriefAction: 'other',
+};
+
+/** Section header labels for the pending-actions drawer. */
+export const PENDING_ACTION_SECTION_LABEL: Record<PendingActionSection, string> = {
+  meetings: 'Meetings',
+  votes: 'Votes',
+  surveys: 'Surveys',
+  invitations: 'Invitations',
+  formation: 'Formation',
+  other: 'Other',
+};
+
+/** Fixed render order of the drawer sections; sections with no visible rows are skipped. */
+export const PENDING_ACTION_SECTION_ORDER: PendingActionSection[] = ['meetings', 'votes', 'surveys', 'invitations', 'formation', 'other'];
 
 /**
  * Pending-action fade-out + collapse animation duration in milliseconds. MUST match the CSS
