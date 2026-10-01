@@ -3126,7 +3126,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       // A cached brief id, so `ensureEmailBriefId` cannot be what stops this (see the audience
       // test below for how a missing one passes on the hang instead of on the guard).
       internals().emailBriefId.set('brief-77');
-      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign');
+      // Mocked to succeed so a regressed guard fails on the assertion below, not by hanging on an
+      // unanswered request.
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
 
       // Called directly, not through the disabled button: the button's `[disabled]` binding is the
       // only other thing enforcing the rule, and the early return is what holds it for a call that

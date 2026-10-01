@@ -1227,11 +1227,13 @@ export class CampaignServiceClient {
         };
       }
       // The one refusal whose cause the user CAN act on, so it is the exception to "generic about
-      // the cause" above. campaign-service answers 409 `ab_test_unsupported_send_type` before it
-      // creates anything, when the chosen template is set to send based on recipients' time zones
-      // — HubSpot does not allow an A/B test on such an email, and without this check the clone
-      // would proceed as a single email with no explanation. The wording is owned HERE rather than
-      // taken from the upstream message, for the same reason as every other branch in this catch.
+      // the cause" above. A campaign-service build that has the A/B pre-check answers 409
+      // `ab_test_unsupported_send_type` before it creates anything, when the chosen template is set
+      // to send based on recipients' time zones — HubSpot does not allow an A/B test on such an
+      // email, and without the check the clone would proceed as a single email with no
+      // explanation. A build without the pre-check never sends that reason, so this branch is not
+      // taken for it. The wording is owned HERE rather than taken from the upstream message, for
+      // the same reason as every other branch in this catch.
       if (this.isABTestUnsupportedSendType(error)) {
         return {
           enabled: true,
