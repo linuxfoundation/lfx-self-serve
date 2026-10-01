@@ -331,6 +331,8 @@ export interface HealthMetricsMembersQueryParams {
   boardCohort: string;
   boardPage: string;
   npsAudience: string;
+  churnMode: string;
+  churnPage: string;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
