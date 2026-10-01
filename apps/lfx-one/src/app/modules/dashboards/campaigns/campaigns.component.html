@@ -693,7 +693,7 @@
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                       [innerHTML]="copy.body"
                       data-testid="campaigns-email-preview-body"></div>
-                    @if (copy.cta && (emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '') {
+                    @if (copy.cta && hasRegistrationUrl()) {
                       <div class="px-4 pb-4">
                         <span
                           class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
@@ -799,9 +799,13 @@
                     <!--
                       LFX-Campaigns-Email-QA-Report B3: the textarea above holds raw HTML/merge-tag
                       source for editing, but with no rendered companion the operator saw only that
-                      markup, never what HubSpot will actually render. This mirrors the dual-variant
-                      preview lower on the page, scoped to variant B alone so it updates live while
-                      typing above, before the operator scrolls down to compare both variants.
+                      markup, never the STRUCTURE it renders as. Structure, not layout fidelity:
+                      `[innerHTML]` sanitizes through `SecurityContext.HTML`, which strips `style`
+                      attributes and `<style>` blocks, and HubSpot email HTML is almost entirely
+                      inline-styled — so the real send will look different, and the HubSpot draft
+                      itself stays the only faithful proof. This mirrors the dual-variant preview
+                      lower on the page (same sanitizer limitation), scoped to variant B alone so it
+                      updates live while typing above, before the operator scrolls down to compare.
                     -->
                     <div class="flex flex-col gap-1">
                       <span class="text-xs font-medium text-gray-700">Variant B rendered preview</span>
@@ -841,7 +845,7 @@
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                           [innerHTML]="emailCopy()?.body || '(template body)'"
                           data-testid="campaigns-email-abtest-preview-a"></div>
-                        @if (emailCopy()?.cta && (emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '') {
+                        @if (emailCopy()?.cta && hasRegistrationUrl()) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ emailCopy()?.cta }}</span>
                           </div>
@@ -868,7 +872,7 @@
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                           [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
                           data-testid="campaigns-email-abtest-preview-b"></div>
-                        @if (emailCopy()?.cta && (emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '') {
+                        @if (emailCopy()?.cta && hasRegistrationUrl()) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ emailCopy()?.cta }}</span>
                           </div>
@@ -904,6 +908,8 @@
                         {{ briefRequiredHint }}
                       } @else if (selectedEmailTemplateId() === '') {
                         Choose a template to clone.
+                      } @else if (!hasRegistrationUrl()) {
+                        Add a registration URL to the brief on the Planning tab — the CTA and hero link have nowhere to point without one.
                       } @else if (emailAudience() === null) {
                         Build the send audience first.
                       } @else if (emailAudience()?.status === 'building') {

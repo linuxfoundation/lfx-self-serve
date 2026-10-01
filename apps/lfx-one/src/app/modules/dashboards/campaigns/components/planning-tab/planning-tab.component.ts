@@ -795,8 +795,11 @@ export class PlanningTabComponent implements OnInit {
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
     // LFX-Campaigns-Email-QA-Report B5: these two free-text fields leaked from one brief into the
-    // next New Brief click because reset() never touched briefForm -- only the url field is
-    // read/written elsewhere in this flow. Cleared here, not just on the New Brief button itself,
+    // next New Brief click because reset() never touched briefForm. Scoped to the two the report
+    // named -- `totalBudget` and `driveFolderUrl` are also free-text and also survive reset(), but
+    // whether they SHOULD carry across briefs is a separate question from this bug, and
+    // `campaignGoal` has a non-blank default that a blind clear would break.
+    // Cleared here, not just on the New Brief button itself,
     // so every reset() caller (New Brief, foundation switch, stage/delivery-type switch) gets a
     // blank slate for fields that describe the brief just discarded, not the one being started.
     this.briefForm.patchValue({ targetAudience: '', valueProp: '' });

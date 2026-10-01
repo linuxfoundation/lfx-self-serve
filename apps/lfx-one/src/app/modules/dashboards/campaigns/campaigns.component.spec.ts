@@ -1875,6 +1875,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
     emailStagingMessage: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
+    heroImageAlt: Signal<string>;
     onStageEmailSend(): Promise<void>;
     abTestEnabled: WritableSignal<boolean>;
     abTestSubjectB: WritableSignal<string>;
@@ -3083,6 +3084,48 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       fixture.detectChanges();
       expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('refuses to stage on a blank registration url, and says why', () => {
+      selectEmail();
+      internals().selectedEmailTab.set('implementation');
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+
+      // Whitespace, not '' -- `registrationUrl` is what both `buttonUrl` and `heroLinkUrl` send,
+      // and a space-only value shipped a CTA pointing nowhere just as an empty one did
+      // (LFX-Campaigns-Email-QA-Report B2). Every other precondition is satisfied here, so this
+      // is the only thing the gate can be reacting to.
+      internals().emailBriefOutput.set({
+        eventDetails: { ...emailBrief.eventDetails, registrationUrl: '   ' },
+      } as unknown as CampaignBriefOutput);
+      fixture.detectChanges();
+
+      expect(internals().canStageEmail()).toBe(false);
+
+      // Disabling is only half of it: the field lives back on the Planning tab, so with no hint
+      // the operator has nothing on THIS panel to act on -- a disabled button with no reason
+      // reads as a broken panel.
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-stage-hint"]');
+      expect(hint?.textContent?.trim()).toContain('registration URL');
+
+      internals().emailBriefOutput.set(emailBrief);
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(true);
+    });
+
+    it('derives hero alt text from the event name, falling back to "Event"', () => {
+      selectEmail();
+
+      internals().emailBriefOutput.set(emailBrief);
+      expect(internals().heroImageAlt()).toBe('KubeCon EU 2026 banner');
+
+      // A blank scraped name must not send the bare " banner" a screen-reader listener learns
+      // nothing from. The same helper backs the staged payload, so both stay in agreement.
+      internals().emailBriefOutput.set({
+        eventDetails: { ...emailBrief.eventDetails, name: '  ' },
+      } as unknown as CampaignBriefOutput);
+      expect(internals().heroImageAlt()).toBe('Event banner');
     });
 
     it('does not announce a failed audience as built', () => {

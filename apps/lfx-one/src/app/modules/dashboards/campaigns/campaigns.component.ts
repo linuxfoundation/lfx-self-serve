@@ -1152,6 +1152,17 @@ export class CampaignsComponent {
   protected readonly heroImageAlt = computed(() => this.heroBannerAlt(this.emailBriefOutput()?.eventDetails?.name));
 
   /**
+   * Whether the brief carries a registration URL the CTA and hero link can actually point at.
+   *
+   * One computed rather than the expression repeated at each site: the staging guard, the staging
+   * hint and the three CTA preview blocks all have to agree about this, and the three previews
+   * having drifted apart is what LFX-Campaigns-Email-QA-Report B2 reported in the first place.
+   * The payload build deliberately does NOT use this — it reads the pre-`await` brief snapshot,
+   * not the live signal.
+   */
+  protected readonly hasRegistrationUrl = computed(() => (this.emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '');
+
+  /**
    * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
    * ONLY supplied event facts and has nothing to work from otherwise; and that brief's event must
    * have a name, or the backend rejects the request outright (see `emailBriefMissingEventName`).
@@ -1227,10 +1238,13 @@ export class CampaignsComponent {
   /**
    * Whether a send can be staged right now.
    *
-   * All three are REQUIRED by the upstream contract, not by preference: the brief because
+   * Each of these is REQUIRED by the upstream contract, not by preference: the brief because
    * creation posts to `/projects/{slug}/briefs/{id}/campaigns` and there is no
    * create-without-a-brief route; the template because `hubspot.go:281-283` refuses a blank
-   * `sourceEmailId`; the slug because briefs are project-scoped and authorised per project.
+   * `sourceEmailId`; the slug because briefs are project-scoped and authorised per project; the
+   * registration URL because it is the only destination the CTA and hero link have; and the
+   * audience because `resolveBuiltAudience` refuses to stage without a BUILT one. The last two
+   * carry their own comments below, where the reason is specific enough to need one.
    */
   protected readonly canStageEmail = computed(
     () =>
@@ -1240,7 +1254,7 @@ export class CampaignsComponent {
       // LFX-Campaigns-Email-QA-Report B2: staging with no registration URL shipped a CTA button
       // with no real destination. `registrationUrl` is what `hubspotConfig.buttonUrl` and
       // `heroLinkUrl` both send downstream, so a blank one must block staging, not just the CTA.
-      (this.emailBriefOutput()?.eventDetails?.registrationUrl ?? '').trim() !== '' &&
+      this.hasRegistrationUrl() &&
       // The audience is a real upstream precondition, not just UI copy: campaign-service's
       // `resolveBuiltAudience` refuses to stage when the brief has no BUILT audience. Without
       // this the Stage button is enabled, the HubSpot draft work begins, and the refusal comes
@@ -2474,7 +2488,18 @@ export class CampaignsComponent {
     // precondition upstream actively refuses on (`resolveBuiltAudience`), so omitting it here
     // would let the enumeration drift from the guard it mirrors -- and the failure would arrive
     // from HubSpot after the draft work had begun rather than from this early return.
-    if (brief === null || sourceEmailId === '' || projectSlug === '' || this.emailAudience()?.status !== 'built') {
+    // The registration URL is re-checked off `brief` -- the SNAPSHOT, not the signal. A refine or
+    // re-scrape between the click and here can replace the brief with one whose URL is blank, and
+    // the payload gates below would then quietly drop `buttonText`/`buttonUrl`/`heroLinkUrl` and
+    // stage a draft with no CTA at all. Blocking here is what makes the rule the guard states --
+    // a blank URL blocks staging, not just the CTA -- true of the value actually being sent.
+    if (
+      brief === null ||
+      sourceEmailId === '' ||
+      projectSlug === '' ||
+      brief.eventDetails.registrationUrl.trim() === '' ||
+      this.emailAudience()?.status !== 'built'
+    ) {
       return;
     }
 
@@ -3668,6 +3693,16 @@ export class CampaignsComponent {
   }
 
   /**
+   * Shared by the live preview's `heroImageAlt` computed and the staged HubSpot payload, which
+   * reads a brief snapshot taken before an `await` rather than the signal — so a helper, not the
+   * computed, is what keeps the two in agreement. The "Event" fallback replaces the bare
+   * `" banner"` a blank scraped name would otherwise send.
+   */
+  private heroBannerAlt(eventName: string | undefined): string {
+    return `${eventName?.trim() || 'Event'} banner`;
+  }
+
+  /**
    * The message an email action shows when the save produced no brief id.
    *
    * Prefers the conflict's own copy, which names the actual obstacle and the way out. Falls back
@@ -3679,16 +3714,6 @@ export class CampaignsComponent {
    * save failed but not which action died with it, which matters most for staging: "not staged" is
    * the part they need in order to know nothing reached HubSpot.
    */
-  /**
-   * Shared by the live preview's `heroImageAlt` computed and the staged HubSpot payload, which
-   * reads a brief snapshot taken before an `await` rather than the signal — so a helper, not the
-   * computed, is what keeps the two in agreement. The "Event" fallback replaces the bare
-   * `" banner"` a blank scraped name would otherwise send.
-   */
-  private heroBannerAlt(eventName: string | undefined): string {
-    return `${eventName?.trim() || 'Event'} banner`;
-  }
-
   private emailSaveFailureMessage(consequence: string): string {
     const conflict = this.emailBriefConflict;
 

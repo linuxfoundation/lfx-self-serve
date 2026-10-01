@@ -1317,6 +1317,41 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
   });
 
+  it('forwards heroImageAlt with the hero, and drops it without one', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl: 'https://cdn.example.com/banner.png', heroImageAlt: 'KubeCon EU 2026 banner' },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({
+      sourceEmailId: 'e-1',
+      heroImageUrl: 'https://cdn.example.com/banner.png',
+      heroImageAlt: 'KubeCon EU 2026 banner',
+    });
+
+    // Nested under the image on purpose: `content.go:125` passes the alt only through
+    // `addHeroSection`, so an alt with no image is a field upstream never reads. Dropping it here
+    // keeps the envelope honest rather than sending a value that cannot take effect.
+    createCampaigns.mockClear();
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageAlt: 'orphan alt' } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
+  });
+
   it('forwards utmCampaign only when it is set', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
