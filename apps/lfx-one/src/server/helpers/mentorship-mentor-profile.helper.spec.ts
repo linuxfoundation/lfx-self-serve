@@ -85,7 +85,7 @@ describe('mapMentorshipMentoringHistory', () => {
     const history = mapMentorshipMentoringHistory(
       detail({
         programs: [
-          program('Ledger', [{ id: 'winter', name: 'Winter 2026', status: 'open', start_date_time: '2026-12-01T00:00:00Z' }]),
+          program('Ledger', [{ id: 'fall', name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }]),
           program('Archive', [{ id: 'old', name: 'Fall 2025', status: 'closed', start_date_time: '2025-09-01T00:00:00Z' }]),
           program('Empty', []),
         ],
@@ -94,9 +94,26 @@ describe('mapMentorshipMentoringHistory', () => {
     );
 
     expect(history).toEqual([
-      { id: 'winter', programName: 'Ledger', term: 'Winter 2026', menteesCount: 0, status: 'in-progress' },
+      { id: 'fall', programName: 'Ledger', term: 'Fall 2026', menteesCount: 0, status: 'in-progress' },
       { id: 'old', programName: 'Archive', term: 'Fall 2025', menteesCount: 0, status: 'completed' },
     ]);
+  });
+
+  it('does not list an open term that has not started as in progress', () => {
+    const history = mapMentorshipMentoringHistory(
+      detail({
+        programs: [
+          program('Ledger', [
+            { id: 'winter', name: 'Winter 2026', status: 'open', start_date_time: '2026-12-01T00:00:00Z' },
+            { id: 'spring', name: 'Spring 2026', status: 'closed', start_date_time: '2026-03-01T00:00:00Z' },
+          ]),
+          program('Upcoming', [{ id: 'next', name: 'Winter 2026', status: 'open', start_date_time: '2026-12-01T00:00:00Z' }]),
+        ],
+      }),
+      NOW
+    );
+
+    expect(history).toEqual([{ id: 'spring', programName: 'Ledger', term: 'Spring 2026', menteesCount: 0, status: 'completed' }]);
   });
 
   it('falls back to the mentees for the status, and a generated id, when no term matches', () => {

@@ -166,6 +166,12 @@ describe('MentorRegisterComponent', () => {
     expect(sections.indexOf('mentorship-profile-card')).toBeLessThan(sections.indexOf('mentorship-mentor-programs'));
   });
 
+  it('lets the profile card sync its fields, so a mentee profile the user already holds picks up the edit', () => {
+    const card = fixture.debugElement.query(By.directive(ProfileCardComponent)).componentInstance as ProfileCardComponent;
+
+    expect(card.syncMentorshipProfiles()).toBe(true);
+  });
+
   it('starts with no program requests, rather than showing requests the mentor never made', () => {
     expect(component['requests']()).toEqual([]);
     expect(element().querySelector('[data-testid^="mentorship-mentor-request-row-"]')).toBeNull();

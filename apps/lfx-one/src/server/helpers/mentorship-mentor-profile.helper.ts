@@ -31,7 +31,8 @@ export const mapMentorshipMentorProfileDetails = (profile: MentorshipUpstreamUse
 /**
  * The Mentoring History rows from the mentor's public detail: one row per distinct (program name, term
  * name) pair across the current and graduated mentees, plus the chosen term (`chooseMentorshipMentorTerm`)
- * of each program the mentor belongs to, so a term with no mentees yet is listed with a count of zero.
+ * of each program the mentor belongs to, so a term with no mentees yet is listed with a count of zero. An
+ * open term that has not started is never chosen, so a cohort that has not begun is not listed as in progress.
  *
  * A mentee row names its program and term but carries neither id, so it is matched to the program's
  * terms by program name and term name. A row is in progress when a matching term is open and completed

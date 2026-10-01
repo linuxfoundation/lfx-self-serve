@@ -13,19 +13,15 @@ export const mentorshipMentorTermStartMs = (term: Pick<MentorshipUpstreamMentorP
 const latestStart = (terms: MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
   terms.reduce((best, term) => ((mentorshipMentorTermStartMs(term) ?? -Infinity) > (mentorshipMentorTermStartMs(best) ?? -Infinity) ? term : best));
 
-/** The term that starts first; a term with no start loses to any term with one. Ties keep the first. */
-const earliestStart = (terms: MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
-  terms.reduce((best, term) => ((mentorshipMentorTermStartMs(term) ?? Infinity) < (mentorshipMentorTermStartMs(best) ?? Infinity) ? term : best));
-
 /**
- * The one term a mentor's program is shown by:
+ * The one term a mentor's program is shown by in the Mentoring History:
  *
  * - an open term that has started: the one that started most recently;
- * - otherwise an open term that starts later (or has no start yet): the one that starts first;
  * - otherwise a closed term: the one that started most recently;
- * - otherwise nothing, since the program has no terms.
+ * - otherwise nothing.
  *
- * Deleted terms are never chosen. `now` is passed in so the choice can be tested.
+ * An open term that starts later, or has no start yet, is never chosen, so a cohort that has not begun is
+ * not listed as in progress. Deleted terms are never chosen. `now` is passed in so the choice can be tested.
  */
 export const chooseMentorshipMentorTerm = (
   terms: readonly MentorshipUpstreamMentorProgramTerm[],
@@ -38,7 +34,6 @@ export const chooseMentorshipMentorTerm = (
     return start !== undefined && start <= nowMs;
   });
   if (started.length > 0) return latestStart(started);
-  if (open.length > 0) return earliestStart(open);
 
   const closed = terms.filter((term) => term.status === 'closed');
   return closed.length > 0 ? latestStart(closed) : undefined;

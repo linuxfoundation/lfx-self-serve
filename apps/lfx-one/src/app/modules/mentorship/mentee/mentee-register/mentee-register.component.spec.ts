@@ -105,7 +105,7 @@ describe('MenteeRegisterComponent', () => {
         provideRouter([]),
         { provide: MessageService, useValue: { add: toast } },
         { provide: MentorshipMenteeService, useValue: { registerMenteeProfile } },
-        // The profile card injects it for its save-time copy, which the register page leaves off.
+        // The profile card injects it for its save-time copy onto any mentorship profile the user already holds.
         { provide: MentorshipService, useValue: { syncLfxProfileFields: vi.fn(() => of(undefined)) } },
         // The profile card at the top of the page fetches these three itself, off the refresh
         // subject it shares with the profile shell.
@@ -155,6 +155,12 @@ describe('MenteeRegisterComponent', () => {
     const sections = [...element().querySelectorAll('[data-testid]')].map((node) => node.getAttribute('data-testid'));
 
     expect(sections.indexOf('mentorship-profile-card')).toBeLessThan(sections.indexOf('mentorship-mentee-introduction'));
+  });
+
+  it('lets the profile card sync its fields, so a mentor profile the user already holds picks up the edit', () => {
+    const card = fixture.debugElement.query(By.directive(ProfileCardComponent)).componentInstance as ProfileCardComponent;
+
+    expect(card.syncMentorshipProfiles()).toBe(true);
   });
 
   it('keeps errors hidden until the mentee tries to submit', () => {

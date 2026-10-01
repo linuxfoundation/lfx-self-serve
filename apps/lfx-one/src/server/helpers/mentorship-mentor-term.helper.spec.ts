@@ -35,14 +35,19 @@ describe('chooseMentorshipMentorTerm', () => {
     expect(chooseMentorshipMentorTerm(terms, NOW)?.id).toBe('fall');
   });
 
-  it('picks the open term that starts first when none has started', () => {
-    const terms = [term('later', 'open', '2027-03-01T00:00:00Z'), term('undated', 'open'), term('next', 'open', '2026-12-01T00:00:00Z')];
+  it('skips open terms that have not started or have no start, and falls back to the latest closed term', () => {
+    const terms = [
+      term('next', 'open', '2026-12-01T00:00:00Z'),
+      term('undated', 'open'),
+      term('old', 'closed', '2025-01-01T00:00:00Z'),
+      term('past', 'closed', '2026-01-01T00:00:00Z'),
+    ];
 
-    expect(chooseMentorshipMentorTerm(terms, NOW)?.id).toBe('next');
+    expect(chooseMentorshipMentorTerm(terms, NOW)?.id).toBe('past');
   });
 
-  it('picks an undated open term when it is the only open one', () => {
-    expect(chooseMentorshipMentorTerm([term('undated', 'open'), term('past', 'closed', '2025-01-01T00:00:00Z')], NOW)?.id).toBe('undated');
+  it('chooses nothing when the only open terms have not started and none is closed', () => {
+    expect(chooseMentorshipMentorTerm([term('next', 'open', '2026-12-01T00:00:00Z'), term('undated', 'open')], NOW)).toBeUndefined();
   });
 
   it('picks the closed term that started most recently when no term is open', () => {

@@ -112,8 +112,9 @@ export class ProfileCardComponent implements OnInit {
   /**
    * Whether an Edit LFX Profile save also copies the name, email and picture onto the user's mentor
    * and mentee profiles, and a connected account copies the GitHub link; the BFF resolves the email
-   * and the link itself. On for the pages that show an existing mentorship profile. Off on the
-   * register pages: there is no profile to update yet, and the registration sends `lfxProfileFields`
+   * and the link itself. On for every mentorship page that shows the card, the register pages too:
+   * someone registering in one role may already hold the other role's profile, and the BFF answers
+   * 204 without writing when they hold none. The registration itself still sends `lfxProfileFields`
    * as it stands at submit, with the BFF adding the email and the GitHub link.
    */
   public readonly syncMentorshipProfiles = input(false);

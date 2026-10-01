@@ -15,7 +15,7 @@
       navigation on success. `inert` also covers the rich editor's contenteditable, which a disabled
       form control would not reach.
     -->
-    <lfx-mentorship-profile-card [attr.inert]="submitting() ? '' : null" />
+    <lfx-mentorship-profile-card [syncMentorshipProfiles]="true" [attr.inert]="submitting() ? '' : null" />
 
     <div class="flex flex-col gap-6" [attr.inert]="submitting() ? '' : null" data-testid="mentorship-mentor-register-fields">
       <lfx-mentorship-mentor-programs-section [requests]="requests()" (add)="onAddProgram($event)" (withdraw)="onWithdraw($event)" />

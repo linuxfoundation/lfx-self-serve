@@ -452,7 +452,7 @@ describe('ProfileCardComponent', () => {
       });
     });
 
-    it('copies nothing on a save by default, as on the register pages, where there is no profile yet', () => {
+    it('copies nothing on a save unless the page turns the sync on', () => {
       save({ given_name: 'Updated' });
 
       expect(syncLfxProfileFields).not.toHaveBeenCalled();
@@ -588,7 +588,7 @@ describe('ProfileCardComponent', () => {
       });
     });
 
-    it('copies nothing after a link on the register pages, which have no mentorship profile yet', () => {
+    it('copies nothing after a link unless the page turns the sync on', () => {
       render(profile, { success: 'identity_linked' });
 
       expect(syncLfxProfileFields).not.toHaveBeenCalled();
