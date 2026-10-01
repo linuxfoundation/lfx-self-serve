@@ -61,6 +61,11 @@ function briefWithSlug(slug: string): CampaignBriefOutput {
       speakers: [],
       slug,
       formatNotes: '',
+      description: '',
+      agendaUrl: '',
+      cfpUrl: '',
+      venueUrl: '',
+      sponsorshipUrl: '',
     },
     structuredCopy: { headline: 'Register now' },
     keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
@@ -2489,11 +2494,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
       apiResponse({
         subject: 's',
         preheader: 'p',
-        sections: [
-          { type: 'rich_text', html: '<p>First</p>' },
-          { type: 'divider' },
-          { type: 'rich_text', html: '<p>Second</p>' },
-        ],
+        sections: [{ type: 'rich_text', html: '<p>First</p>' }, { type: 'divider' }, { type: 'rich_text', html: '<p>Second</p>' }],
       })
     );
 

@@ -62,6 +62,7 @@ import { firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
+import { EmailBodyPreviewComponent } from '../../../shared/components/email-body-preview/email-body-preview.component';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
@@ -85,6 +86,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
     OptimizationTabComponent,
     HubSpotUpdatedAtPipe,
     HubSpotTemplateLabelPipe,
+    EmailBodyPreviewComponent,
   ],
   templateUrl: './campaigns.component.html',
   styleUrl: './campaigns.component.scss',
@@ -2426,11 +2428,10 @@ export class CampaignsComponent {
       }
 
       // `segment` composes additively (it narrows content blocks, it does not restyle the draft),
-      // so variant B applies the same chosen segment as variant A even though it omits `variant`
-      // itself to keep the two drafts contrasting in structure.
+      // so variant B applies the same chosen segment as variant A — only the `variant` differs.
       const abTestSegment = this.selectedEmailSegment();
       const result = await firstValueFrom(
-        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), undefined, abTestSegment || undefined)
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), this.contrastingEmailVariant(), abTestSegment || undefined)
       );
       if (!isCurrent()) {
         return;
@@ -2569,9 +2570,7 @@ export class CampaignsComponent {
           // same registration URL the rest of the brief already points at. Sent only when the AI
           // actually produced a CTA AND a real destination exists (LFX-Campaigns-Email-QA-Report
           // B2) — a button with no `buttonUrl` still rendered in production with nowhere to go.
-          ...(copy !== null && copy.cta !== '' && details.registrationUrl.trim() !== ''
-            ? { buttonText: copy.cta, buttonUrl: details.registrationUrl }
-            : {}),
+          ...(copy !== null && copy.cta !== '' && details.registrationUrl.trim() !== '' ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered
@@ -3706,6 +3705,27 @@ export class CampaignsComponent {
    */
   private heroBannerAlt(eventName: string | undefined): string {
     return `${eventName?.trim() || 'Event'} banner`;
+  }
+
+  /**
+   * The variant to generate the A/B test's variant B with: whichever recognised variant variant A
+   * is NOT using.
+   *
+   * Variant B used to send no `variant` at all. Upstream treats that as "no variant requested",
+   * so B received only the stage's plain copy while A received the variant's full ordered section
+   * structure — the two drafts differed in LENGTH, not in framing, which is why B read as a few
+   * words next to A. Whichever draft then won the test, the result would only have said that a
+   * structured email beats an unstructured one.
+   *
+   * Derived from the variant A selection rather than pinned to a literal, so the pair cannot
+   * collapse into two drafts of the same angle. In this build that derivation is latent: no
+   * template renders a control for `selectorForm.controls.emailVariant`, so `selectedEmailVariant`
+   * never leaves its `'urgency-fomo'` default and this always returns `'community-story'`. Written
+   * as a derivation anyway because the alternative is a literal that silently becomes a duplicate
+   * the day that selector is added.
+   */
+  private contrastingEmailVariant(): CampaignEmailVariant {
+    return this.selectedEmailVariant() === 'community-story' ? 'urgency-fomo' : 'community-story';
   }
 
   /**

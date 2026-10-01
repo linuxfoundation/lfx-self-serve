@@ -25,6 +25,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
 - **[Public Meeting Join](./frontend/public-meeting-join.md)** - Anonymous and authenticated join flows, access model, attachment gating
+- **[Untrusted HTML Preview](./frontend/untrusted-html-preview.md)** - Sandboxed-iframe email preview, why the sanitizer bypass is required, the two forbidden sandbox tokens
 
 ### 🖥 Backend Architecture
 

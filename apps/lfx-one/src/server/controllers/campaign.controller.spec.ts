@@ -1304,10 +1304,7 @@ describe('CampaignController.createCampaign cutover', () => {
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
-      buildReq(
-        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ', preheader: '   ' } },
-        { project: 'tlf', brief_id: 'b-1' }
-      ),
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ', preheader: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );

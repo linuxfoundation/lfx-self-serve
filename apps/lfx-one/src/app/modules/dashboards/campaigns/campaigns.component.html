@@ -314,19 +314,29 @@
                     <div class="flex flex-col gap-1">
                       <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
                       <!--
-                        innerHTML is the point: the generator returns HTML sections and the operator
-                        needs to see the rendered email, not its markup.
+                        Rendering the body is the point: the generator returns HTML sections and the
+                        operator needs to see the email, not its markup.
 
-                        Safe because NOTHING here bypasses Angular's sanitiser -- there is no
-                        `bypassSecurityTrustHtml` anywhere in this module, so the default
-                        DomSanitizer strips scripts and event handlers on this binding.
+                        This used `[innerHTML]`, which sanitises through `SecurityContext.HTML` and
+                        so STRIPS every `style` attribute. Campaign-service now styles each
+                        `rich_text` section inline (`internal/service/email_body_style.go`), which
+                        `[innerHTML]` would have thrown away -- the operator would still have been
+                        approving layout they had never seen. `lfx-email-body-preview` renders it in
+                        a sandboxed iframe instead; that component's docstring carries the full
+                        security argument, including why its `bypassSecurityTrustHtml` is sound and
+                        which two sandbox tokens must never be added.
 
-                        That is the load-bearing fact, NOT "we wrote the prompt": the model is fed
-                        scraped third-party event-page HTML, so `copy.body` is not purely
-                        first-party content. If a `bypassSecurityTrust*` is ever added to this
-                        module, this binding must be re-reviewed before it lands.
+                        The load-bearing fact is unchanged in substance: `copy.body` is NOT purely
+                        first-party content -- the model is fed scraped third-party event-page HTML --
+                        so it still reaches a sink under a hard control. The control is now the
+                        browser's iframe sandbox (no script execution, opaque origin) on top of the
+                        server-side rewrite that already drops every attribute the model wrote.
                       -->
-                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.body" data-testid="campaigns-email-copy-body"></div>
+                      <lfx-email-body-preview
+                        [html]="copy.body"
+                        [heightPx]="360"
+                        testId="campaigns-email-copy-body"
+                        class="overflow-hidden rounded-md border border-gray-200" />
                     </div>
                   </div>
                 }
@@ -689,15 +699,10 @@
                     @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
                       <img [src]="heroUrl" [alt]="heroImageAlt()" class="block w-full" data-testid="campaigns-email-preview-hero" />
                     }
-                    <div
-                      class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                      [innerHTML]="copy.body"
-                      data-testid="campaigns-email-preview-body"></div>
+                    <lfx-email-body-preview [html]="copy.body" [heightPx]="480" testId="campaigns-email-preview-body" />
                     @if (copy.cta && hasRegistrationUrl()) {
                       <div class="px-4 pb-4">
-                        <span
-                          class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
-                          data-testid="campaigns-email-preview-cta">
+                        <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white" data-testid="campaigns-email-preview-cta">
                           {{ copy.cta }}
                         </span>
                       </div>
@@ -799,20 +804,23 @@
                     <!--
                       LFX-Campaigns-Email-QA-Report B3: the textarea above holds raw HTML/merge-tag
                       source for editing, but with no rendered companion the operator saw only that
-                      markup, never the STRUCTURE it renders as. Structure, not layout fidelity:
-                      `[innerHTML]` sanitizes through `SecurityContext.HTML`, which strips `style`
-                      attributes and `<style>` blocks, and HubSpot email HTML is almost entirely
-                      inline-styled — so the real send will look different, and the HubSpot draft
-                      itself stays the only faithful proof. This mirrors the dual-variant preview
-                      lower on the page (same sanitizer limitation), scoped to variant B alone so it
-                      updates live while typing above, before the operator scrolls down to compare.
+                      markup, never what it renders as. This is now layout-faithful as well as
+                      structural: `lfx-email-body-preview` frames the HTML instead of binding it
+                      through `[innerHTML]`, so the inline styles campaign-service writes survive
+                      and this shows what the recipient gets. Merge tags still render as their
+                      literal `{{...}}` source — only HubSpot resolves those, so the draft remains
+                      the proof for personalisation specifically, not for layout.
+
+                      Scoped to variant B alone so it updates live while typing above, before the
+                      operator scrolls down to the side-by-side comparison.
                     -->
                     <div class="flex flex-col gap-1">
                       <span class="text-xs font-medium text-gray-700">Variant B rendered preview</span>
-                      <div
-                        class="prose prose-sm max-w-none rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
-                        [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
-                        data-testid="campaigns-email-abtest-body-b-preview"></div>
+                      <lfx-email-body-preview
+                        [html]="abTestBodyHtmlB()"
+                        [heightPx]="300"
+                        testId="campaigns-email-abtest-body-b-preview"
+                        class="overflow-hidden rounded-md border border-gray-200" />
                     </div>
 
                     @if (abTestSubjectB() === '' && abTestBodyHtmlB() === '') {
@@ -841,10 +849,15 @@
                         @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
                           <img [src]="heroUrl" [alt]="heroImageAlt()" class="block w-full" />
                         }
-                        <div
-                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                          [innerHTML]="emailCopy()?.body || '(template body)'"
-                          data-testid="campaigns-email-abtest-preview-a"></div>
+                        <!-- Both columns are fixed at the same height so the comparison is of the
+                             copy, not of two differently-sized frames. The frames scroll
+                             independently; the component's `heightPx` docstring says why the
+                             sandbox makes auto-sizing impossible. -->
+                        <lfx-email-body-preview
+                          [html]="emailCopy()?.body || ''"
+                          emptyText="(template body)"
+                          [heightPx]="420"
+                          testId="campaigns-email-abtest-preview-a" />
                         @if (emailCopy()?.cta && hasRegistrationUrl()) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ emailCopy()?.cta }}</span>
@@ -868,10 +881,7 @@
                         @if (emailBriefOutput()?.eventDetails?.heroImageUrl; as heroUrl) {
                           <img [src]="heroUrl" [alt]="heroImageAlt()" class="block w-full" />
                         }
-                        <div
-                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                          [innerHTML]="abTestBodyHtmlB() || '(no body yet)'"
-                          data-testid="campaigns-email-abtest-preview-b"></div>
+                        <lfx-email-body-preview [html]="abTestBodyHtmlB()" [heightPx]="420" testId="campaigns-email-abtest-preview-b" />
                         @if (emailCopy()?.cta && hasRegistrationUrl()) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ emailCopy()?.cta }}</span>

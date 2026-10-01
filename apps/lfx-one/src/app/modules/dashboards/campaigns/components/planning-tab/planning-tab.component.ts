@@ -8,7 +8,7 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
-import { normaliseForMatch } from '@lfx-one/shared/utils';
+import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
@@ -20,7 +20,6 @@ import type {
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
-  CampaignEventSponsor,
   CampaignGoal,
   CampaignKeyword,
   CampaignPlatform,
@@ -1290,18 +1289,12 @@ export class PlanningTabComponent implements OnInit {
     //
     // Empty instead. `countryNameFor` maps an unknown code to '' rather than a raw code, so the
     // builder receives no country filter rather than the wrong one.
-    const details: CampaignEventDetails = this.eventDetails() ?? {
-      name: fallbackName,
-      dates: '',
-      city: '',
-      countryCode: '',
-      audience: '',
-      themes: [],
-      registrationUrl: url,
-      speakers: [],
-      slug: fallbackSlug,
-      formatNotes: '',
-    };
+    //
+    // Built through the shared coercion rather than as a full literal so that the three stated
+    // fields are the ONLY ones this site has to know about: every other field gets the same empty
+    // value the normaliser gives an absent scrape, and a field added to `CampaignEventDetails`
+    // later cannot leave a plausible-looking default behind here the way `countryCode: 'US'` did.
+    const details: CampaignEventDetails = this.eventDetails() ?? coerceCampaignEventDetails({ name: fallbackName, registrationUrl: url, slug: fallbackSlug });
     const budgetRaw2 = this.briefForm.controls.totalBudget.value;
     const budgetStr = typeof budgetRaw2 === 'string' ? budgetRaw2.trim() : String(budgetRaw2 ?? '');
     this.proceedToImplementation.emit({
@@ -2257,36 +2250,11 @@ export class PlanningTabComponent implements OnInit {
  * paid card, the read view, the edit form), so a per-site fix is one grep away from missing the
  * next one. One conversion at the boundary makes the declared type true for every reader.
  *
- * Empty string, not a dash: this value is also persisted and fed to copy generation. A dash is a
- * DISPLAY choice, and storing it would put a literal "—" into an email body. The read view keeps
- * its own `|| '—'` for presentation; the unguarded card interpolations now render blank instead of
- * "undefined", which is the honest rendering of a field the scrape could not find.
+ * The coercion itself moved to `@lfx-one/shared` because the server performs the same conversion
+ * when it reads a saved brief back (`asEventDetails` in `campaign-service.service.ts`), and the two
+ * hand-written copies had already drifted — the server's dropped `heroImageUrl` and `sponsors`.
+ * This wrapper stays so the SSE handler reads as what it is and this rationale has a home.
  */
 function normalizeEventDetails(data: unknown): CampaignEventDetails {
-  const raw = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
-  const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
-  const list = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
-  const sponsors: CampaignEventSponsor[] = Array.isArray(raw['sponsors'])
-    ? (raw['sponsors'] as unknown[])
-        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          name: typeof entry['name'] === 'string' ? entry['name'] : '',
-          logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
-        }))
-        .filter((sponsor) => sponsor.logoUrl)
-    : [];
-  return {
-    name: text('name'),
-    dates: text('dates'),
-    city: text('city'),
-    countryCode: text('countryCode'),
-    audience: text('audience'),
-    themes: list('themes'),
-    registrationUrl: text('registrationUrl'),
-    speakers: list('speakers'),
-    slug: text('slug'),
-    formatNotes: text('formatNotes'),
-    heroImageUrl: text('heroImageUrl'),
-    sponsors,
-  };
+  return coerceCampaignEventDetails(data);
 }

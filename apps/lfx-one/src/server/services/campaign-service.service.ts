@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { coerceCampaignEventDetails } from '@lfx-one/shared/utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -2568,10 +2569,6 @@ function asText(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function asTextList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
-}
-
 /**
  * `event_details` as a `CampaignEventDetails`, or `null` when there is nothing usable.
  *
@@ -2583,6 +2580,13 @@ function asTextList(value: unknown): string[] {
  * The one thing that IS required is a name or a slug. With neither, the object carries no
  * identity: the Implementation tab's campaign names are built from them, and the reload would
  * present an unnamed event the user cannot recognise as theirs.
+ *
+ * The field-by-field coercion is `coerceCampaignEventDetails`, shared with the planning tab's
+ * `normalizeEventDetails`. It used to be written out here, and the two copies drifted: this one
+ * listed ten of the twelve fields and dropped `heroImageUrl` and `sponsors`, so a campaign
+ * dispatched from a RELOADED brief had no hero image and no sponsor logos while the same brief
+ * dispatched without a reload had both. Nothing failed — the dispatch just rebuilt the email
+ * without those sections, which is indistinguishable from a hero that could not be uploaded.
  */
 function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDetails | null {
   const details = asRecord(value);
@@ -2590,6 +2594,7 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     return null;
   }
 
+  // Read before coercing, because these two decide whether there is anything to return at all.
   const name = asText(details['name']);
   const slug = asText(details['slug']);
   // The top-level slug counts as identity: it is the required column this row was found by, so a
@@ -2598,18 +2603,7 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     return null;
   }
 
-  return {
-    name,
-    slug,
-    dates: asText(details['dates']),
-    city: asText(details['city']),
-    countryCode: asText(details['countryCode']),
-    audience: asText(details['audience']),
-    themes: asTextList(details['themes']),
-    registrationUrl: asText(details['registrationUrl']),
-    speakers: asTextList(details['speakers']),
-    formatNotes: asText(details['formatNotes']),
-  };
+  return coerceCampaignEventDetails(details);
 }
 
 /**

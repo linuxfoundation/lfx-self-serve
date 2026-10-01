@@ -34,6 +34,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
+import { extractPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -652,6 +653,20 @@ function getLinkedInStrategySystemPrompt(programType?: CampaignProgramType): str
   return programType === 'education' ? LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION : LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS;
 }
 
+/**
+ * What the URL rule in both extraction prompts is defending against.
+ *
+ * Asked for "the agenda URL", a model reads the site's URL shape and composes a plausible one —
+ * `/schedule/`, `/agenda-2026/` — when the page states none. These values are printed as
+ * hyperlinks into a marketing email sent under a real foundation's name, so a confident wrong URL
+ * is worse than an absent one. The instruction is belt; `verifyPageLink` is braces, and it is the
+ * part that actually holds: anything not present as an `href` in the fetched HTML is dropped
+ * server-side no matter how the model justifies it.
+ */
+const LINK_EXTRACTION_RULE = `For every *_url field: copy the URL exactly as it appears in an href attribute in the HTML above.
+Never construct, complete, guess or "correct" a URL, and never derive one from the site's URL
+pattern. If the page does not link to it, use null.`;
+
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:
 {
   "name": "event name",
@@ -662,8 +677,16 @@ const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML
   "themes": ["theme1", "theme2"],
   "registration_url": "URL",
   "slug": "url-friendly-slug",
-  "format_notes": "in-person/virtual/hybrid"
+  "format_notes": "in-person/virtual/hybrid",
+  "description": "how the event describes itself, 1-3 sentences, in its own words",
+  "speakers": ["speaker name, or 'Name, Title, Company' when the page states them"],
+  "agenda_url": "URL of the agenda/schedule/program page",
+  "cfp_url": "URL of the call-for-proposals or speaker-submission page",
+  "venue_url": "URL of the venue/travel/hotel page",
+  "sponsorship_url": "URL of the sponsorship or become-a-sponsor page"
 }
+
+${LINK_EXTRACTION_RULE}
 
 If a field cannot be determined, use null.`;
 
@@ -680,8 +703,16 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
   "format_notes": "self-paced/instructor-led/hybrid",
   "price": "price or price range if found",
   "certification_code": "e.g. CKA, LFCS, CKAD if applicable",
-  "prerequisites": "prerequisites if listed"
+  "prerequisites": "prerequisites if listed",
+  "description": "how the course describes itself, 1-3 sentences, in its own words",
+  "speakers": ["instructor name, or 'Name, Title, Company' when the page states them"],
+  "agenda_url": "URL of the syllabus/curriculum/course-outline page",
+  "cfp_url": null,
+  "venue_url": "URL of the training-location or delivery-details page, if any",
+  "sponsorship_url": null
 }
+
+${LINK_EXTRACTION_RULE}
 
 If a field cannot be determined, use null.`;
 
@@ -1451,6 +1482,11 @@ export class CampaignProxyService {
     let html = '';
     let heroImageUrl = '';
     let sponsors: CampaignEventSponsor[] = [];
+    // Both are needed by the extraction block below, which is a SEPARATE `if (!isRefinement)` —
+    // `safeUrl` is scoped to the fetch block and the extraction cannot reach it. An empty set
+    // fails every link check, which is the right default for a refinement that never scraped.
+    let pageLinks = new Set<string>();
+    let pageBaseUrl = '';
 
     if (!isRefinement) {
       yield { type: 'status', data: `Scraping ${body.url}...` };
@@ -1471,6 +1507,10 @@ export class CampaignProxyService {
         }
         html = scrapedHtml;
         ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, safeUrl));
+        pageBaseUrl = safeUrl;
+        // Collected from the FULL page, not `extractableHtml(html)`: the extraction model sees a
+        // 60k-char excerpt, but a link it reports is legitimate if the page carries it anywhere.
+        pageLinks = extractPageLinks(html, safeUrl);
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
@@ -1486,6 +1526,12 @@ export class CampaignProxyService {
         const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
+        //
+        // `registration_url` is passed through UNVERIFIED while the four below go through
+        // `verifyPageLink`. That asymmetry is deliberate and documented at the helper: it is the
+        // primary CTA's href, event pages commonly drive registration from a scripted button
+        // rather than an `<a href>`, and verifying it would strip working CTAs from briefs that
+        // work today.
         yield {
           type: 'event',
           data: {
@@ -1499,6 +1545,11 @@ export class CampaignProxyService {
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',
+            description: eventDetails['description'] ?? '',
+            agendaUrl: verifyPageLink(eventDetails['agenda_url'], pageLinks, pageBaseUrl),
+            cfpUrl: verifyPageLink(eventDetails['cfp_url'], pageLinks, pageBaseUrl),
+            venueUrl: verifyPageLink(eventDetails['venue_url'], pageLinks, pageBaseUrl),
+            sponsorshipUrl: verifyPageLink(eventDetails['sponsorship_url'], pageLinks, pageBaseUrl),
             heroImageUrl,
             sponsors,
           },

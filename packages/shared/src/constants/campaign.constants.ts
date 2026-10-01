@@ -1223,13 +1223,27 @@ export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Re
 /**
  * Recognised `variant` values for `generate-email-copy`: differently styled drafts of the same
  * stage's copy instead of the stage's normal copy. Like `stage`, campaign-service treats an
- * unrecognised or absent value as "no variant requested" rather than an error, so this list is
- * for the UI's own selector rather than wire validation.
+ * unrecognised or absent value as "no variant requested" rather than an error, so this list
+ * describes what the wire accepts rather than validating it.
+ *
+ * It holds exactly the variants campaign-service has a prompt block for, and that is the whole
+ * reason it is this short. It previously also offered `value-focused`, `social-proof` and
+ * `b2b-sponsorship`, none of which upstream has ever recognised — and because an unrecognised
+ * variant is silently "no variant requested" rather than an error, sending one of those three
+ * would have produced the stage's plain unstructured copy with no indication that the choice had
+ * done nothing. A value belongs here once `urgencyFomoVariant`/`communityStoryVariant` in
+ * campaign-service's `internal/service/email_copy.go` has a sibling for it, and not before.
+ *
+ * Nothing renders a picker over this list today: `campaigns.component.ts` holds an `emailVariant`
+ * form control but no template binds it, so the only values that reach the wire are that control's
+ * `'urgency-fomo'` default for variant A and `contrastingEmailVariant()`'s `'community-story'` for
+ * variant B.
  */
-export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo', 'value-focused', 'social-proof', 'b2b-sponsorship'] as const;
+export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo', 'community-story'] as const;
 
 /**
- * The selector's visible label per variant.
+ * The human-readable label per variant, for a picker. No consumer reads it yet — see
+ * `CAMPAIGN_EMAIL_VARIANTS` above on why no variant picker is rendered today.
  *
  * Keyed on `CampaignEmailVariant` rather than on a re-spelled literal union so this map cannot
  * drift from the type `CAMPAIGN_EMAIL_VARIANTS` derives -- a member added to or renamed in the
@@ -1237,9 +1251,7 @@ export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo', 'value-focused', 'social
  */
 export const CAMPAIGN_EMAIL_VARIANT_LABELS: Readonly<Record<CampaignEmailVariant, string>> = {
   'urgency-fomo': 'Urgency / FOMO',
-  'value-focused': 'Value-Focused',
-  'social-proof': 'Social Proof',
-  'b2b-sponsorship': 'B2B Sponsorship',
+  'community-story': 'Community Story',
 };
 
 /**

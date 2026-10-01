@@ -218,6 +218,26 @@ export interface CampaignEventDetails {
   speakers: string[];
   slug: string;
   formatNotes: string;
+  /**
+   * The event's own summary of itself, 1-3 sentences.
+   *
+   * This is the single richest fact the scrape produces, and email copy generation is its main
+   * consumer: campaign-service's generator refuses to invent facts, so without a description it
+   * can only write from the name, dates and location and the resulting email is three lines long.
+   */
+  description: string;
+  /**
+   * Links the event page itself publishes, beyond `registrationUrl`.
+   *
+   * Empty string means "the page did not state one", which is NOT the same as "the model could
+   * not find one": every value here survived `verifyPageLink`, so it is a URL the fetched HTML
+   * actually links to. A link the extraction invented is dropped before it reaches this type.
+   * See `event-links.helper.ts` for why that check exists rather than trusting the extraction.
+   */
+  agendaUrl: string;
+  cfpUrl: string;
+  venueUrl: string;
+  sponsorshipUrl: string;
   heroImageUrl?: string;
   sponsors?: CampaignEventSponsor[];
 }
@@ -2537,9 +2557,13 @@ export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
  * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
- * currently just `'urgency-fomo'`, an urgency/FOMO-forward structure instead of the stage's normal
- * copy. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an unrecognised
- * or absent value produces the normal stage-based copy under a 200 rather than an error.
+ * `'urgency-fomo'` (deadline pressure and scarcity) or `'community-story'` (narrative and
+ * community proof, and forbidden upstream from using urgency at all). The two are deliberately
+ * opposed so that an A/B test between them measures framing; both carry their own full section
+ * structure upstream. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an
+ * unrecognised or absent value produces the normal stage-based copy under a 200 rather than an
+ * error -- which is exactly why `CAMPAIGN_EMAIL_VARIANTS` must list only implemented values, since
+ * an unimplemented one fails silently into thin copy.
  *
  * Derived from `CAMPAIGN_EMAIL_VARIANTS` rather than restated, so the UI's selector and this type
  * cannot drift apart.
