@@ -856,6 +856,18 @@ describe('MeetingController', () => {
       expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['start_time']);
     });
 
+    // `Date.parse` accepts each of these, reading the missing zone with server semantics, so the instant
+    // forwarded would depend on where the BFF runs.
+    it.each([['2030-01-02'], ['2030-01-02T03:04:05'], ['2030-01-02 03:04:05Z'], ['2030-01-02T03:04Z'], ['Wed, 02 Jan 2030 03:04:05 GMT']])(
+      'rejects the non-RFC3339 date-time %s',
+      async (start) => {
+        await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 30 }), buildRes(), next);
+
+        expect(meetingSvc.updateOccurrence).not.toHaveBeenCalled();
+        expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['start_time']);
+      }
+    );
+
     // Each of these parses, but `Date.parse` rolls it onto a different day than the one sent.
     it.each([
       ['2030-02-30T10:00:00Z'],
