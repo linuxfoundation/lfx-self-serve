@@ -3,29 +3,14 @@
 
 <div class="flex flex-col gap-5 px-1" data-testid="add-member-dialog">
   @if (isDirectAdd()) {
-    <div class="flex flex-col gap-2">
-      <p class="text-sm text-gray-500">
-        As a group admin you're adding members directly — they're in immediately, no acceptance needed. A notification email is sent by default; uncheck the
-        option below to suppress it.
-      </p>
-      <p class="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-2">
-        <i class="fa-light fa-circle-info mt-0.5 flex-none" aria-hidden="true"></i>
-        <span
-          >Anyone without an LF Account will receive a separate email to create one — they must complete that step before they can access the group. You can
-          check whether someone already has an LF Account by searching for them above.</span
-        >
-      </p>
-    </div>
+    <p class="text-sm text-gray-500">
+      As a group admin you're adding members directly — they're in immediately, no acceptance needed. A notification email is sent by default; uncheck the
+      option below to suppress it.
+    </p>
   } @else {
-    <div class="flex flex-col gap-2">
-      <p class="text-sm text-gray-500">
-        Your role lets you invite people to join the group. Each person receives an invitation email and appears as "Pending" until they accept.
-      </p>
-      <p class="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 flex items-start gap-2">
-        <i class="fa-light fa-circle-info mt-0.5 flex-none" aria-hidden="true"></i>
-        <span>Recipients without an LF Account will be prompted to create one as part of accepting the invitation.</span>
-      </p>
-    </div>
+    <p class="text-sm text-gray-500">
+      Your role lets you invite people to join the group. Each person receives an invitation email and appears as "Pending" until they accept.
+    </p>
   }
 
   <!-- ── Import from a meeting (optional) ─────────────────────────────────────── -->
