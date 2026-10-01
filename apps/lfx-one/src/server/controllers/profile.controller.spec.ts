@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Real values, not hand-copied literals — so a future TTL retune (see LFXV2 #2241) can't leave
 // this spec's assertions asserting a value the product no longer uses.
@@ -16,7 +16,9 @@ const {
   isImpersonatingMock,
   getLinuxForwardDomainMock,
   withMeetingInviteLockMock,
+  populateApiGatewayTokenMock,
   objectStoreSvc,
+  cdpSvc,
   userSvc,
   profileAuthSvc,
   emailVerificationSvc,
@@ -33,6 +35,7 @@ const {
   isImpersonatingMock: vi.fn(() => false),
   getLinuxForwardDomainMock: vi.fn(() => 'linux.com'),
   withMeetingInviteLockMock: vi.fn((_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => fn()),
+  populateApiGatewayTokenMock: vi.fn(),
   meetingPrefSvc: {
     getMeetingInviteEmail: vi.fn(),
     setMeetingInviteEmail: vi.fn(),
@@ -42,9 +45,14 @@ const {
     ensureBucket: vi.fn(),
     readiness: vi.fn(),
   },
+  cdpSvc: {
+    getIdentitiesForUser: vi.fn(),
+    verifyIdentityForUser: vi.fn(),
+  },
   userSvc: {
     updateUserMetadata: vi.fn(),
     getUserInfo: vi.fn(),
+    syncVerifiedEmailToUserService: vi.fn(),
   },
   profileAuthSvc: {
     isProfileAuthConfigured: vi.fn(() => false),
@@ -58,6 +66,7 @@ const {
     getUserEmails: vi.fn(),
     setPrimaryEmail: vi.fn(),
     sendPasswordResetLink: vi.fn(),
+    verifyOtp: vi.fn(),
     linkIdentity: vi.fn(),
   },
   forwardsSvc: {
@@ -125,6 +134,9 @@ vi.mock('../utils/auth-helper', () => ({
   isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
+// The callback path populates the gateway audience token through the shared helper (the helper owns
+// the API_GW_AUDIENCE/env wiring and the session cache) — mocked so no real Auth0 call leaves the unit test.
+vi.mock('../utils/refresh-token-exchange.util', () => ({ populateApiGatewayToken: populateApiGatewayTokenMock }));
 // Unit-tested separately in meeting-invite-lock.spec.ts — here it's a passthrough so controller specs exercise
 // the wrapped logic without needing a real/mocked Valkey backend.
 vi.mock('../utils/meeting-invite-lock', () => ({
@@ -149,7 +161,7 @@ vi.mock('../services/auth0.service', () => ({
 }));
 vi.mock('../services/cdp.service', () => ({
   CdpService: vi.fn(function () {
-    return {};
+    return cdpSvc;
   }),
 }));
 vi.mock('../services/email-verification.service', () => ({
@@ -1203,5 +1215,160 @@ describe('ProfileController.getCurrentUserProfile — created_at (#2837)', () =>
 
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// lfx-self-serve-ops#183: after a successful OTP verify + identity link the BFF upserts the address
+// into v1 as Active+IsVerified — awaited, but fail-open so verification never breaks on a v1 error.
+describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-self-serve-ops#183)', () => {
+  const verifiedEmail = 'secondary@example.com';
+  let controller: ProfileController;
+
+  function buildVerifyReq(): any {
+    return buildReq({
+      path: '/api/profile/identities/email/verify',
+      body: { email: verifiedEmail, otp: '123456' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', '');
+    controller = new ProfileController();
+
+    getUsernameFromAuthMock.mockResolvedValue('auth0|user-1');
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'id-token' } });
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([]);
+    userSvc.syncVerifiedEmailToUserService.mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('syncs the verified address to v1 after a successful identity link', async () => {
+    const req = buildVerifyReq();
+    const res = buildRes();
+
+    await controller.verifyAndLinkEmail(req, res, vi.fn());
+
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, verifiedEmail);
+    expect(res.json).toHaveBeenCalledWith({ success: true, message: 'Email identity verified and linked successfully' });
+  });
+
+  it('still returns 200 success when the v1 sync reports failure (fail-open)', async () => {
+    userSvc.syncVerifiedEmailToUserService.mockResolvedValue(false);
+    const res = buildRes();
+
+    await controller.verifyAndLinkEmail(buildVerifyReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, message: 'Email identity verified and linked successfully' });
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('holds the success response until the v1 sync settles (awaited, not fire-and-forget)', async () => {
+    let resolveSync!: (synced: boolean) => void;
+    userSvc.syncVerifiedEmailToUserService.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSync = resolve;
+        })
+    );
+    const res = buildRes();
+
+    const pending = controller.verifyAndLinkEmail(buildVerifyReq(), res, vi.fn());
+    // One macrotask drains the already-resolved upstream mocks, so execution has reached the sync call.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+
+    resolveSync(true);
+    await pending;
+
+    expect(res.json).toHaveBeenCalledWith({ success: true, message: 'Email identity verified and linked successfully' });
+  });
+
+  it('callback path: populates the gateway token via the shared helper, then syncs the pending verification email', async () => {
+    populateApiGatewayTokenMock.mockImplementation(async (req: any) => {
+      req.apiGatewayToken = 'fresh-gw-token';
+    });
+    authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    const req = buildReq({
+      path: '/api/profile/auth/callback',
+      query: { state: 'state-1', code: 'code-1' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+      appSession: { pendingEmailVerification: { email: 'pending@example.com', otp: '654321' } },
+    });
+    const res = buildRes();
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(populateApiGatewayTokenMock).toHaveBeenCalledWith(req);
+    // The v1 sync needs the populated token — the helper must run before it.
+    expect(populateApiGatewayTokenMock.mock.invocationCallOrder[0]).toBeLessThan(userSvc.syncVerifiedEmailToUserService.mock.invocationCallOrder[0]);
+    expect(req.apiGatewayToken).toBe('fresh-gw-token');
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
+  });
+
+  it('callback path: holds the redirect until the v1 sync settles (awaited, not fire-and-forget)', async () => {
+    authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    let resolveSync!: (synced: boolean) => void;
+    userSvc.syncVerifiedEmailToUserService.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveSync = resolve;
+        })
+    );
+    const req = buildReq({
+      path: '/api/profile/auth/callback',
+      query: { state: 'state-1', code: 'code-1' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+      appSession: { pendingEmailVerification: { email: 'pending@example.com', otp: '654321' } },
+    });
+    const res = buildRes();
+
+    const pending = controller.handleProfileAuthCallback(req, res);
+    // One macrotask drains the already-resolved upstream mocks, so execution has reached the sync call.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
+    expect(res.redirect).not.toHaveBeenCalled();
+
+    resolveSync(true);
+    await pending;
+
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
+  });
+
+  it('callback path: delegates to the shared helper even when the request already carries a token', async () => {
+    // The helper owns the skip-when-present decision (covered in refresh-token-exchange.util.spec.ts);
+    // the controller always delegates so both call sites share one wiring.
+    authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/profile/emails' });
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    const req = buildReq({
+      path: '/api/profile/auth/callback',
+      query: { state: 'state-1', code: 'code-1' },
+      oidc: { user: { sub: 'auth0|user-1', username: 'user-1' } },
+      appSession: { pendingEmailVerification: { email: 'pending@example.com', otp: '654321' } },
+      apiGatewayToken: 'existing-gw-token',
+    });
+    const res = buildRes();
+
+    await controller.handleProfileAuthCallback(req, res);
+
+    expect(populateApiGatewayTokenMock).toHaveBeenCalledWith(req);
+    expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, 'pending@example.com');
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('success=profile_token_obtained'));
   });
 });

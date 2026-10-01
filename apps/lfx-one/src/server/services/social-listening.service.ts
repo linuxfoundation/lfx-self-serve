@@ -36,7 +36,7 @@ import { Request } from 'express';
 
 import { socialListeningFeedTable } from '../helpers/snowflake-schema.helper';
 import { encodeMentionFeedPageToken, MAX_ANALYTICS_LIMIT, MAX_FEED_LIMIT } from '../helpers/social-listening-params.helper';
-import { escapeSqlLikePattern } from '../helpers/validation.helper';
+import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { withSocialListeningCache } from './valkey.service';
@@ -123,7 +123,7 @@ export class SocialListeningService {
   public async getMentionsFeed(req: Request, params: SocialListeningFeedParams): Promise<SocialListeningFeedResponse> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
-    const pageSize = this.clampInteger(params.pageSize, 1, MAX_FEED_LIMIT);
+    const pageSize = clampInteger(params.pageSize, 1, MAX_FEED_LIMIT, 1);
     const keyset = this.buildFeedKeysetPredicate(params.cursor);
 
     const sql = `
@@ -248,7 +248,7 @@ export class SocialListeningService {
     const scope = this.buildScope(params, 'm');
     const filters = this.buildFilters(req, params, 'm');
     // Analytics wants the top slice; the filter panel asks for the whole vocabulary it lets users select from.
-    const limit = this.clampInteger(params.limit ?? MENTION_TOP_TAGS_LIMIT, 1, MENTION_FILTER_MAX_VALUES);
+    const limit = clampInteger(params.limit ?? MENTION_TOP_TAGS_LIMIT, 1, MENTION_FILTER_MAX_VALUES, 1);
 
     const sql = `
       SELECT LOWER(TRIM(f.VALUE::STRING)) AS TAG, COUNT(*) AS TOTAL_COUNT
@@ -463,7 +463,7 @@ export class SocialListeningService {
   public async getAnalyticsTopProjects(req: Request, params: SocialListeningAnalyticsParams): Promise<SocialListeningTopProject[]> {
     const scope = this.buildScope(params);
     const filters = this.buildFilters(req, params);
-    const limit = this.clampInteger(params.limit ?? ANALYTICS_TOP_PROJECTS_LIMIT, 1, MAX_ANALYTICS_LIMIT);
+    const limit = clampInteger(params.limit ?? ANALYTICS_TOP_PROJECTS_LIMIT, 1, MAX_ANALYTICS_LIMIT, 1);
 
     const sql = `
       SELECT SOURCE_PROJECT_NAME, COUNT(*) AS TOTAL_MENTIONS
@@ -723,14 +723,5 @@ export class SocialListeningService {
 
   private placeholders(count: number): string {
     return Array(count).fill('?').join(', ');
-  }
-
-  /** Snowflake rejects binds in `LIMIT`/`OFFSET`, so they are interpolated as literals — this clamp (plus the HTTP layer's bounds) is what makes that safe. */
-  private clampInteger(value: number, min: number, max: number): number {
-    if (!Number.isFinite(value)) {
-      return min;
-    }
-
-    return Math.min(Math.max(Math.trunc(value), min), max);
   }
 }

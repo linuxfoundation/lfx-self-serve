@@ -10,6 +10,7 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { GroupsIOMailingList, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
+import { getMailingListEmail } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -47,7 +48,7 @@ export class MailingListPickerDialogComponent {
 
   public filteredMailingLists = computed(() => {
     const query = this.mlSearchQuery().toLowerCase().trim();
-    const lists = this.mailingLists.filter((ml) => !!ml.service?.domain);
+    const lists = this.mailingLists.filter((ml) => !!getMailingListEmail(ml));
     if (!query) return lists;
     return lists.filter((ml) => ml.group_name.toLowerCase().includes(query) || ml.title?.toLowerCase().includes(query));
   });

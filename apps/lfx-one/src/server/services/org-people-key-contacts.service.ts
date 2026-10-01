@@ -161,7 +161,7 @@ export class OrgPeopleKeyContactsService {
       }
     }
 
-    // LFXV2-2067: writer-FGA computed client-side via OrgRoleGrantsService.writerSet(); BFF re-enforces on write.
+    // LFXV2-2067: the edit gate is computed client-side (`OrgEditAccessService.canEditSelected`, #3136); writes are re-enforced upstream.
     return {
       assignments: rawAssignments,
       stats: this.computeStats(rawAssignments),

@@ -11,13 +11,15 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE,
-  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
   filterHealthMetricsEngagementRepRows,
+  formatHealthMetricsEngagementRatio,
   formatIsoDateLabel,
   selectHealthMetricsEngagementRepCounts,
   selectHealthMetricsEngagementRepPeriod,
@@ -65,7 +67,7 @@ export class EngagementRepresentativesComponent {
   public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
-  /** Fires as a read starts, so the container knows this section's height is about to move again. */
+  /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
   protected readonly filterOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_REP_FILTERS.map((filter) => ({
@@ -103,6 +105,9 @@ export class EngagementRepresentativesComponent {
   protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
   protected readonly totalRecords = computed(() => this.rowViews().length);
   protected readonly countLabel: Signal<string> = this.initCountLabel();
+  /** The whole foundation's scope is empty when the read carried no rows at all — a filtered cut
+   * with zero matches over a non-empty scope is a real measured zero. */
+  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -158,7 +163,7 @@ export class EngagementRepresentativesComponent {
             {
               row,
               period,
-              attendedLabel: `${period?.meetingsAttended ?? 0} / ${period?.meetingsInvited ?? 0}`,
+              attendedLabel: formatHealthMetricsEngagementRatio(period?.meetingsAttended ?? null, period?.meetingsInvited ?? null),
               lastAttendedLabel: dateLabels.get(row) ?? '—',
             },
           ];
@@ -233,7 +238,7 @@ export class EngagementRepresentativesComponent {
                 query.foundationSlug && !this.loadFailed() ? selectHealthMetricsEngagementRepCounts(response.counts, this.chrome.selectedRange()) : null
               );
               // Held until a foundation has been seen: settling an unread section releases the
-              // container's pending deep link before any real read can re-arm it.
+              // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) this.settled.emit();
             })
           )
@@ -255,7 +260,7 @@ export class EngagementRepresentativesComponent {
   private syncUrl(filter: HealthMetricsEngagementRepFilter): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { repFilter: filter === 'all' ? null : filter },
+      queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: filter === 'all' ? null : filter },
       queryParamsHandling: 'merge',
       preserveFragment: true,
       replaceUrl: true,
@@ -263,7 +268,7 @@ export class EngagementRepresentativesComponent {
   }
 
   private parseInitialFilter(): HealthMetricsEngagementRepFilter {
-    return this.toFilter(this.initialParams.get('repFilter') ?? 'all');
+    return this.toFilter(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter) ?? 'all');
   }
 
   private toFilter(key: string): HealthMetricsEngagementRepFilter {

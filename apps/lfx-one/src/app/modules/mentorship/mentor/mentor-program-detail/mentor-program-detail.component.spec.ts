@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, Observable, of, throwError } from 'rxjs';
@@ -76,7 +76,7 @@ describe('MentorProgramDetailComponent', () => {
           provide: MentorshipTaskDialogService,
           useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
         },
-        { provide: MentorshipService, useValue: { getMentorProgram } },
+        { provide: MentorshipMentorService, useValue: { getMentorProgram } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });
@@ -187,7 +187,7 @@ describe('MentorProgramDetailComponent', () => {
           provide: MentorshipTaskDialogService,
           useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
         },
-        { provide: MentorshipService, useValue: { getMentorProgram } },
+        { provide: MentorshipMentorService, useValue: { getMentorProgram } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });

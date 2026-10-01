@@ -33,7 +33,10 @@
       <!-- Page head -->
       <div>
         <h1 class="text-[22px] font-bold tracking-tight text-slate-900" data-testid="profile-page-title">Profile &amp; Account</h1>
-        <p class="mt-1 text-sm text-slate-500">Manage your profile and account settings.</p>
+        <div class="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <p class="text-sm text-slate-500">Manage your profile and account settings</p>
+          <lfx-open-profile-banner (linkClick)="trackOpenProfileBannerClick()" />
+        </div>
       </div>
 
       <!-- Profile panel — capped at max-w-md below sm (stacked card, matches the design's "stacked

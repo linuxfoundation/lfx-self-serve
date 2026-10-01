@@ -7,6 +7,7 @@
  * for the content-based coverage.
  */
 
+import { buildFormationPeopleRowGroups } from '@lfx-one/shared/utils/formation-people.utils';
 import { expect, test } from '@playwright/test';
 
 import { mockFormationPeopleResponse } from './fixtures/mock-data';
@@ -22,6 +23,8 @@ import {
 test.setTimeout(60_000);
 
 const PEOPLE = mockFormationPeopleResponse.people;
+// Staff, one group per invited organization, then Other — derived from the fixture by the same helper the card uses.
+const GROUPS = buildFormationPeopleRowGroups(PEOPLE, []);
 
 test.describe('Formation people card — structural contract', () => {
   test.beforeEach(async ({ page }) => {
@@ -43,13 +46,17 @@ test.describe('Formation people card — structural contract', () => {
     const card = page.getByTestId('formation-people-card');
     await expect(card.locator('[data-testid^="formation-people-row-"]')).toHaveCount(PEOPLE.length, { timeout: DATA_LOAD_TIMEOUT });
 
-    for (const person of PEOPLE) {
-      const group = card.getByTestId(`formation-people-group-${person.group}`);
-      await expect(group.getByTestId(`formation-people-row-${person.key}`)).toBeAttached();
+    for (const { key, rows } of GROUPS) {
+      const group = card.getByTestId(`formation-people-group-${key}`);
+      for (const row of rows) {
+        await expect(group.getByTestId(`formation-people-row-${row.key}`)).toBeAttached();
+      }
     }
 
-    const groupKeys = [...new Set(PEOPLE.map((person) => person.group))];
-    await expect(card.locator('[data-testid^="formation-people-group-"]')).toHaveCount(groupKeys.length);
+    const groupTestIds = await card.locator('[data-testid^="formation-people-group-"]').evaluateAll((els) => els.map((el) => el.getAttribute('data-testid')));
+    expect(groupTestIds).toEqual(GROUPS.map(({ key }) => `formation-people-group-${key}`));
+    // Pinned independently of the helper, so a grouping regression can't move both sides together.
+    expect(groupTestIds).toEqual(['formation-people-group-staff', 'formation-people-group-org-cascade-data', 'formation-people-group-other']);
   });
 
   test('renders a status chip for every invited row and none for staff', async ({ page }) => {

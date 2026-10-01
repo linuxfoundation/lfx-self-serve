@@ -11,7 +11,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { MentorProgramCardComponent } from './components/mentor-program-card/mentor-program-card.component';
@@ -29,7 +29,7 @@ import { MentorProgramCardComponent } from './components/mentor-program-card/men
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProgramsComponent {
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorService = inject(MentorshipMentorService);
   private readonly router = inject(Router);
 
   protected readonly hasLoaded = signal(false);
@@ -56,7 +56,7 @@ export class MentorProgramsComponent {
           this.loadError.set(null);
         }),
         switchMap(() =>
-          this.mentorshipService.getMentorPrograms().pipe(
+          this.mentorService.getMentorPrograms().pipe(
             map((response) => {
               this.hasLoaded.set(true);
               return response;

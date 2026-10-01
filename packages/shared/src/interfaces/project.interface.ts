@@ -54,6 +54,23 @@ export interface Project {
 
 export type ProjectQueryResponse = Project[];
 
+/**
+ * project-service `POST /projects` body (`CreateProjectRequestBody`) — only the fields the BFF sends when a
+ * project application is accepted (#1995). `name`, `slug`, `description` and `parent_uid` are required upstream.
+ */
+export interface CreateProjectRequest {
+  name: string;
+  slug: string;
+  description: string;
+  parent_uid: string;
+  mission_statement?: string;
+  repository_url?: string;
+  website_url?: string;
+  stage?: ProjectStage;
+  legal_entity_type?: string;
+  category?: string;
+}
+
 export interface UserInfo {
   name: string;
   email: string;
@@ -79,6 +96,17 @@ export interface ProjectSettings {
   opportunity_owner?: UserInfo | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Whether the caller may read `GET /projects/:uid/settings` for one project.
+ * `canRead` is true for a writer or a confirmed auditor. False is a denial or a failed
+ * check, not an empty settings document. The uid tags the answer so a previous project's
+ * grant cannot authorize the next project's settings read (GH-2794).
+ */
+export interface ProjectSettingsAccess {
+  uid: string;
+  canRead: boolean;
 }
 
 export interface ProjectStaffRowConfig {

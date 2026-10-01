@@ -1,0 +1,152 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="members-tiers">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Membership by tier unavailable"
+      subtitle="We could not load membership by tier for this foundation. Refresh the page to try again."
+      data-testid="members-tiers-error" />
+  } @else if (loading()) {
+    <p-skeleton height="28rem" borderRadius="0.5rem" data-testid="members-tiers-loading" aria-hidden="true" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-layer-group"
+      title="No membership tiers recorded yet"
+      subtitle="Once this foundation has members, each tier's members and revenue by year appear here."
+      data-testid="members-tiers-empty" />
+  } @else {
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-tiers-controls">
+      <lfx-filter-pills [options]="modeOptions" [selectedFilter]="mode()" (filterChange)="onModeChange($event)" data-testid="members-tiers-mode-pills" />
+      <span class="text-[13px] text-gray-500" data-testid="members-tiers-meta">{{ view().metaLabel }}</span>
+    </div>
+
+    @if (view().yearMeasured) {
+      <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-tiers-hero">
+        <div class="flex flex-col gap-2" data-testid="members-tiers-headline">
+          <div class="flex items-baseline gap-2">
+            <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="members-tiers-headline-value">{{ view().headline.value }}</span>
+            @if (view().headline.delta !== null) {
+              <span
+                class="text-[13px] font-medium tabular-nums"
+                [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
+                [class.text-red-600]="view().headline.deltaDirection === 'down'"
+                [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
+                data-testid="members-tiers-headline-delta">
+                {{ view().headline.delta }}
+              </span>
+            }
+            @if (view().headline.baseline) {
+              <span class="text-[12px] text-gray-400" data-testid="members-tiers-headline-baseline">{{ view().headline.baseline }}</span>
+            }
+          </div>
+          <span class="text-[12.5px] text-gray-500" data-testid="members-tiers-headline-label">{{ view().headline.label }}</span>
+        </div>
+
+        <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-tiers-side">
+          @for (stat of view().side; track stat.key) {
+            <div class="flex flex-col gap-0.5" [attr.data-testid]="'members-tiers-side-' + stat.key">
+              <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+              <dd
+                class="text-[17px] font-semibold tabular-nums"
+                [class.text-emerald-600]="stat.positive"
+                [class.text-gray-900]="!stat.positive"
+                [attr.data-testid]="'members-tiers-side-' + stat.key + '-value'">
+                {{ stat.value }}
+              </dd>
+            </div>
+          }
+        </dl>
+      </div>
+    } @else {
+      <p class="text-sm text-gray-500" data-testid="members-tiers-year-unmeasured">
+        No tier figures are recorded for the selected period. Pick another period to see them.
+      </p>
+    }
+
+    <div class="flex flex-col gap-2" data-testid="members-tiers-matrix">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Membership breakdown by tier</h4>
+        <span class="text-[12px] text-gray-400">exact counts</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm" data-testid="members-tiers-table">
+          <caption class="sr-only">
+            Members per tier by year, with each year's total members and revenue
+          </caption>
+          <thead>
+            <tr class="border-b border-gray-100">
+              <th scope="col" class="py-2 pr-4 text-left text-xs font-medium text-gray-500">Tier</th>
+              @for (year of view().years; track year.year) {
+                <th
+                  scope="col"
+                  class="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-500"
+                  [class.bg-gray-50]="year.isCurrent"
+                  [class.font-semibold]="year.isCurrent"
+                  [attr.data-testid]="'members-tiers-year-' + year.year">
+                  {{ year.year }}
+                </th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (tier of view().tiers; track tier.tier; let tierIndex = $index) {
+              <tr class="border-b border-gray-50" [attr.data-testid]="'members-tiers-row-' + tierIndex">
+                <th scope="row" class="py-2 pr-4 text-left font-medium text-gray-900">
+                  <span class="inline-flex items-center gap-2">
+                    <span class="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" [style.background-color]="tier.color" aria-hidden="true"></span>
+                    {{ tier.tier }}
+                  </span>
+                </th>
+                @for (cell of tier.cells; track cell.year; let yearIndex = $index) {
+                  <td
+                    class="px-3 py-2 text-right tabular-nums"
+                    [class.bg-gray-50]="view().years[yearIndex].isCurrent"
+                    [class.font-semibold]="view().years[yearIndex].isCurrent"
+                    [class.text-gray-300]="!cell.count"
+                    [class.text-gray-800]="!!cell.count"
+                    [attr.data-testid]="'members-tiers-cell-' + tierIndex + '-' + cell.year">
+                    {{ cell.label }}
+                  </td>
+                }
+              </tr>
+            }
+            <tr class="border-t border-gray-200" data-testid="members-tiers-total-members">
+              <th scope="row" class="py-2 pr-4 text-left font-semibold text-gray-900">Total members</th>
+              @for (year of view().years; track year.year) {
+                <td class="px-3 py-2 text-right font-semibold tabular-nums text-gray-900" [class.bg-gray-50]="year.isCurrent">{{ year.totalMembersLabel }}</td>
+              }
+            </tr>
+            <tr data-testid="members-tiers-total-revenue">
+              <th scope="row" class="py-2 pr-4 text-left font-semibold text-gray-900">Total revenue</th>
+              @for (year of view().years; track year.year) {
+                <td class="px-3 py-2 text-right font-semibold tabular-nums text-gray-900" [class.bg-gray-50]="year.isCurrent">{{ year.totalRevenueLabel }}</td>
+              }
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-2" data-testid="members-tiers-composition">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Tier composition by year</h4>
+        <span class="text-[12px] text-gray-400">the same table as shares, so a shifting mix is visible</span>
+      </div>
+      <!-- The matrix above carries the same figures for screen readers. -->
+      <div class="h-72" aria-hidden="true" data-testid="members-tiers-chart">
+        <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+      </div>
+      <ul class="flex flex-wrap gap-3.5 text-[11.5px] text-gray-600" data-testid="members-tiers-legend">
+        @for (tier of view().tiers; track tier.tier) {
+          <li class="inline-flex items-center gap-1.5">
+            <span class="inline-block h-2.5 w-2.5 rounded-full" [style.background-color]="tier.color" aria-hidden="true"></span>
+            {{ tier.tier }}
+          </li>
+        }
+      </ul>
+    </div>
+  }
+</div>

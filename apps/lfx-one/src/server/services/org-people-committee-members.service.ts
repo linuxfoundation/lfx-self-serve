@@ -36,14 +36,36 @@ export class OrgPeopleCommitteeMembersService {
 
   /** Org-wide non-Board roster (FR-001/003/004): drain → exclude Board → enrich foundation names → map → stats. */
   public async getCommitteeMembers(req: Request, orgUid: string): Promise<OrgPeopleCommitteeMembersResponse> {
+    const startedAt = Date.now();
+    let seatsDrained = false;
     // Org-wide drain: no project filter → committee-service's organization-only scope (every
     // foundation the org holds seats on); the shared drain enforces the 200-page fail-closed cap.
-    const seats = await this.boardCommitteeService.fetchAllOrgSeats(req, orgUid);
+    const seats = await this.boardCommitteeService.fetchAllOrgSeats(req, orgUid, () => {
+      seatsDrained = true;
+    });
+    const seatsDurationMs = Date.now() - startedAt;
     const nonBoard = seats.filter((s) => !isBoardCategory(s.committee_category));
 
-    const foundationNames = await enrichFoundationNames(req, nonBoard, this.projectService);
+    const enrichStartedAt = Date.now();
+    const { names: foundationNames, cachedHits, requested, resolved } = await enrichFoundationNames(req, nonBoard, this.projectService);
+    const enrichDurationMs = Date.now() - enrichStartedAt;
     const assignments = nonBoard.map((s) => toAssignment(s, foundationNames));
     const stats = this.computeStats(assignments);
+
+    // Read endpoints log success at DEBUG, so this is the one production-visible line that splits
+    // the tab's latency into the seat read and the foundation-name lookup.
+    logger.info(req, 'get_org_people_committee_members', 'Committee roster built', {
+      org_uid: orgUid,
+      seat_count: seats.length,
+      assignment_count: assignments.length,
+      seats_drained: seatsDrained,
+      seats_duration_ms: seatsDurationMs,
+      name_enrichment_duration_ms: enrichDurationMs,
+      names_cached_hits: cachedHits,
+      names_requested: requested,
+      names_resolved: resolved,
+      total_duration_ms: Date.now() - startedAt,
+    });
 
     return { orgUid, assignments, stats };
   }
@@ -79,10 +101,12 @@ export class OrgPeopleCommitteeMembersService {
     // it. The seat-reassign paths already operate at org grain, so the discard is a single key
     // delete rather than a fan-out. Best-effort and deliberately not awaited-for-success: `del`
     // never throws, and a cache fault just leaves the entry to age out. The Memberships-page
-    // reassign carries the same hook, since it reassigns non-board seats too.
-    await invalidateOrgGroupsCache(orgUid);
+    // reassign carries the same hook, since it reassigns non-board seats too. The caller's own
+    // per-user seat roster and directory are dropped too, so the tab's post-reassign re-fetch
+    // doesn't serve the old seat from the 30-second per-user entry.
+    await Promise.all([invalidateOrgGroupsCache(orgUid), this.boardCommitteeService.invalidateCallerSeatCaches(req, orgUid)]);
 
-    const foundationNames = await enrichFoundationNames(req, [upstream], this.projectService);
+    const { names: foundationNames } = await enrichFoundationNames(req, [upstream], this.projectService);
     const seat = toAssignment(upstream, foundationNames);
     logger.debug(req, 'reassign_committee_member_proxy', 'committee-service returned reassigned seat', {
       org_uid: orgUid,

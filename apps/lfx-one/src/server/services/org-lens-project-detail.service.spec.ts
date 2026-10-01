@@ -37,7 +37,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 
 import { OrgLensProjectDetailService } from './org-lens-project-detail.service';
 
-const ORG = '0014100000Te2QjAAJ';
+const ORG = '0014100000AcmeAAAA';
 const SLUG = 'k8s';
 
 const heroRow = {
@@ -282,7 +282,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
 
   const breakdownRow = {
     ACCOUNT_ID: ORG,
-    ORGANIZATION_NAME: 'Red Hat',
+    ORGANIZATION_NAME: 'Acme Motors',
     TECHNICAL_INFLUENCE_SCORE: 42,
     TECHNICAL_INFLUENCE_LEVEL: 'Leading',
     ECOSYSTEM_INFLUENCE_SCORE: 17,
@@ -296,7 +296,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   // NOT at one, which is what pins the drawer's total to its own column of points.
   const populatedBreakdownRow = {
     ACCOUNT_ID: ORG,
-    ORGANIZATION_NAME: 'Red Hat',
+    ORGANIZATION_NAME: 'Acme Motors',
     TECHNICAL_INFLUENCE_SCORE: 42.5,
     TECHNICAL_INFLUENCE_LEVEL: 'Leading',
     ECOSYSTEM_INFLUENCE_SCORE: 6.25,
@@ -521,5 +521,68 @@ describe('OrgLensProjectDetailService board cache contract', () => {
 
     expect(page!.rows).toEqual([]);
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensProjectDetailService.getCardRoster paging', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('COUNT(*)') ? [{ N: 0 }] : [] }));
+  });
+
+  function rosterSql(): string {
+    const call = execute.mock.calls.find(([sql]) => typeof sql === 'string' && sql.includes('OFFSET'));
+    expect(call).toBeDefined();
+    return call![0] as string;
+  }
+
+  it('caps an oversized page at the deepest allowed page', async () => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 1e25, 10);
+
+    const sql = rosterSql();
+    expect(sql).toContain('LIMIT 10 OFFSET 1000000');
+    expect(sql).not.toContain('e+');
+  });
+
+  it('truncates a fractional page', async () => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 2.7, 10);
+
+    expect(rosterSql()).toContain('LIMIT 10 OFFSET 20');
+  });
+});
+
+describe('OrgLensProjectDetailService.getTechnicalBoard paging', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return { rows: sql.includes('COUNT(*)') ? [{ N: 0 }] : [] };
+    });
+  });
+
+  function boardSql(): string {
+    const call = execute.mock.calls.find(([sql]) => typeof sql === 'string' && sql.includes('OFFSET'));
+    expect(call).toBeDefined();
+    return call![0] as string;
+  }
+
+  it('caps an oversized page at the deepest allowed page', async () => {
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 1e25, 10, '');
+
+    const sql = boardSql();
+    expect(sql).toContain('LIMIT 10 OFFSET 1000000');
+    expect(sql).not.toContain('e+');
+  });
+
+  it('truncates a fractional page', async () => {
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 2.7, 10, '');
+
+    expect(boardSql()).toContain('LIMIT 10 OFFSET 20');
   });
 });

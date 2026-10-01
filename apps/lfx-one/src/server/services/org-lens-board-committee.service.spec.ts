@@ -1,0 +1,511 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import type { CommitteeServiceOrgSeat, CommitteeServiceOrgSeatPage } from '@lfx-one/shared/interfaces';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Mirrors org-lens-groups.service.spec.ts: the collaborators are constructed in
+// `OrgLensBoardCommitteeService`'s constructor, so they must be mocked at module level.
+const { proxyRequest, getEffectiveUsername, getKeyContactEmployees } = vi.hoisted(() => ({
+  proxyRequest: vi.fn(),
+  getEffectiveUsername: vi.fn(() => 'tester' as string | null),
+  getKeyContactEmployees: vi.fn(async () => [] as unknown[]),
+}));
+
+vi.mock('./microservice-proxy.service', () => ({
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequest;
+  },
+}));
+vi.mock('./org-lens-key-contacts.service', () => ({
+  OrgLensKeyContactsService: class {
+    public getEmployees = getKeyContactEmployees;
+  },
+}));
+vi.mock('./org-lens-memberships.service', () => ({ OrgLensMembershipsService: class {} }));
+vi.mock('./project.service', () => ({ ProjectService: class {} }));
+vi.mock('./logger.service', () => ({
+  logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../helpers/avatar.helper', () => ({ resolveSeatAvatar: vi.fn(() => null) }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
+
+// A miniature Valkey rather than a pass-through: JSON in, JSON out, with the service's own `accept`
+// guard deciding whether a stored entry is a hit. That is what makes a "cache hit" here the real
+// thing — encoded, serialized, guarded and decoded — instead of the fetcher's own object handed
+// straight back, which would test nothing about the stored shape.
+const cache = vi.hoisted(() => ({ entry: null as string | null, accept: null as ((value: unknown) => boolean) | null, readThroughs: 0 }));
+// Discarding the caller's seat entry empties the miniature store, so a post-reassign read is a real
+// miss that re-drains — the behaviour the Board/Committee tabs' `retry()` depends on.
+const invalidatePerUserCache = vi.hoisted(() =>
+  vi.fn(async (namespace: string) => {
+    if (namespace === 'org-seats:v2') cache.entry = null;
+    return true;
+  })
+);
+vi.mock('./valkey.service', () => ({
+  invalidateOrgGroupsCache: vi.fn(),
+  invalidatePerUserCache,
+  withPerUserCache: async (
+    _ns: string,
+    _user: string,
+    _org: string,
+    _ttl: number,
+    fetcher: () => Promise<unknown>,
+    accept?: (value: unknown) => boolean,
+    storable?: (value: unknown) => boolean
+  ) => {
+    cache.readThroughs += 1;
+    cache.accept = accept ?? null;
+    if (cache.entry !== null) {
+      const stored = JSON.parse(cache.entry);
+      if (!accept || accept(stored)) return stored;
+    }
+    const fresh = await fetcher();
+    if (!storable || storable(fresh)) cache.entry = JSON.stringify(fresh);
+    return fresh;
+  },
+}));
+// The People services' foundation-name enrichment reaches project-service; the seat mapping itself
+// is not what these tests are about.
+vi.mock('./committee-seat-assignment.mapper', () => ({
+  enrichFoundationNames: vi.fn(async () => ({
+    names: new Map(),
+    publicUids: new Set(),
+    cachedHits: 0,
+    requested: 0,
+    resolved: 0,
+    privateUids: new Set(),
+    confirmedByDirectRead: 0,
+  })),
+  toAssignment: (s: CommitteeServiceOrgSeat) => ({ seatId: s.uid, committeeUid: s.committee_uid, person: { email: s.email } }),
+}));
+
+// The `@lfx-one/shared/*` barrels pull Angular into this node-environment suite. The compact-cache
+// helpers and the filter-safety predicates are re-exported from their REAL modules: the whole point
+// of these tests is that a seat survives the actual encoder, not a restatement of it.
+vi.mock('@lfx-one/shared/interfaces', () => ({}));
+// The stored column lists are re-exported from their REAL module, so the guard tests run against
+// the writer's actual contract rather than a copy that could silently drift from it.
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
+  isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
+  isVotingStatus: () => true,
+  VALKEY_CACHE: { ORG_SEATS_NAMESPACE: 'org-seats:v2', ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
+}));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/utils/compact-cache.utils')),
+  ...(await vi.importActual<object>('@lfx-one/shared/utils/org-selector.utils')),
+}));
+
+import type { Request } from 'express';
+
+import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
+import { resetSingleFlightForTests } from '../utils/single-flight';
+import { enrichFoundationNames } from './committee-seat-assignment.mapper';
+import { logger } from './logger.service';
+import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
+import { OrgPeopleBoardMembersService } from './org-people-board-members.service';
+import { OrgPeopleCommitteeMembersService } from './org-people-committee-members.service';
+
+const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
+const req = {} as unknown as Request;
+
+/** A promise the test settles by hand, so a second caller can arrive while the first drain is still pending. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+/** A fully populated seat, as committee-service returns one. */
+function seat(over: Partial<CommitteeServiceOrgSeat> = {}): CommitteeServiceOrgSeat {
+  return {
+    uid: 'seat-1',
+    committee_uid: 'c-1',
+    committee_name: 'WG Identity & Trust',
+    committee_category: 'Working Group',
+    project_uid: 'p-1',
+    project_slug: 'identity',
+    first_name: 'Devon',
+    last_name: 'Clarke',
+    email: 'dclarke@lfx-partner.example',
+    job_title: 'VP Product',
+    role_name: 'Member',
+    voting_status: 'Voting Rep',
+    appointed_by: 'Membership Entitlement',
+    organization_id: ORG,
+    is_org_editable: true,
+    reason: null,
+    avatar: 'https://avatars.lfx-partner.example/dclarke.png',
+    username: 'dclarke',
+    ...over,
+  };
+}
+
+/**
+ * A seat whose optional fields never arrived at all — the case the cache has to reproduce exactly,
+ * since `JSON.stringify` drops an undefined-valued key on the uncached path.
+ */
+function sparseSeat(): CommitteeServiceOrgSeat {
+  return {
+    uid: 'seat-3',
+    committee_uid: 'c-2',
+    committee_name: 'Governing Board',
+    committee_category: 'Board',
+    first_name: 'Rowan',
+    last_name: 'Vega',
+    email: 'rvega@lfx-partner.example',
+    role_name: 'Director',
+    voting_status: 'Voting Rep',
+    appointed_by: 'Membership Entitlement',
+    organization_id: ORG,
+    is_org_editable: false,
+  };
+}
+
+function page(seats: CommitteeServiceOrgSeat[]): CommitteeServiceOrgSeatPage {
+  return { seats, page_token: null };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetSingleFlightForTests();
+  cache.entry = null;
+  cache.accept = null;
+  cache.readThroughs = 0;
+  getEffectiveUsername.mockReturnValue('tester');
+});
+
+describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — cache round trip (GH-1906)', () => {
+  // The invariant the compaction rests on: what a cache hit returns has to be what the drain
+  // returned. Seats share a committee (so the dictionary is exercised) and one arrives without its
+  // optional fields (so the absent-vs-null distinction is exercised).
+  it('returns seats deep-equal to the uncached drain, including avatar and organization_id', async () => {
+    const drained = [seat(), seat({ uid: 'seat-2', email: 'mrivas@lfx-partner.example', username: 'mrivas' }), sparseSeat()];
+    proxyRequest.mockResolvedValue(page(drained));
+    const service = new OrgLensBoardCommitteeService();
+    const onMissDrain = vi.fn();
+    const onHitDrain = vi.fn();
+
+    const miss = await service.fetchAllOrgSeats(req, ORG, onMissDrain);
+    const hit = await service.fetchAllOrgSeats(req, ORG, onHitDrain);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    // `onDrain` reports only the call that actually drained committee-service.
+    expect(onMissDrain).toHaveBeenCalledOnce();
+    expect(onHitDrain).not.toHaveBeenCalled();
+    // Against the DRAINED roster, not hit-vs-miss: the miss path returns the decoded envelope too, so
+    // comparing the two only proves the encoder is self-consistent, not that it is faithful.
+    expect(miss).toStrictEqual(drained);
+    expect(hit).toStrictEqual(drained);
+    expect(hit[0].avatar).toBe('https://avatars.lfx-partner.example/dclarke.png');
+    expect(hit[0].organization_id).toBe(ORG);
+    expect(hit[0].committee_name).toBe('WG Identity & Trust');
+  });
+
+  // committee-service copies committee/project fields onto each member record, so members of one
+  // committee can disagree — a pre-backfill member with no `project_uid`, or one a failed re-sync left
+  // in another category. The dictionary must not collapse them: with the stale member FIRST, a
+  // uid-keyed dictionary stamped its values onto the whole committee, dropping every member's
+  // foundation and moving seats between the Board and Committee tabs.
+  it('keeps each seat’s own committee fields when members of one committee disagree', async () => {
+    const stale = seat({ uid: 'seat-0' });
+    delete stale.project_uid;
+    delete stale.project_slug;
+    // …and `organization_id` is no exception: it rides in the same dictionary, so a seat that
+    // disagrees keeps its own value instead of inheriting the first seat's.
+    const drained = [stale, seat(), seat({ uid: 'seat-4', committee_category: 'Board' }), seat({ uid: 'seat-5', organization_id: '0014100000OtherAAA' })];
+    proxyRequest.mockResolvedValue(page(drained));
+    const service = new OrgLensBoardCommitteeService();
+
+    const miss = await service.fetchAllOrgSeats(req, ORG);
+    const hit = await service.fetchAllOrgSeats(req, ORG);
+
+    expect(miss).toStrictEqual(drained);
+    expect(hit).toStrictEqual(drained);
+  });
+
+  // `toEqual` ignores keys whose value is `undefined`, so field PRESENCE is asserted
+  // directly: a seat that arrived without `job_title`/`avatar` must come back without them, not
+  // carrying nulls the uncached response never had.
+  it('reproduces which fields were absent, not just their values', async () => {
+    proxyRequest.mockResolvedValue(page([sparseSeat()]));
+    const service = new OrgLensBoardCommitteeService();
+
+    const miss = await service.fetchAllOrgSeats(req, ORG);
+    const hit = await service.fetchAllOrgSeats(req, ORG);
+
+    expect(Object.keys(hit[0]).sort()).toEqual(Object.keys(miss[0]).sort());
+    expect('job_title' in hit[0]).toBe(false);
+    expect('avatar' in hit[0]).toBe(false);
+    expect('project_uid' in hit[0]).toBe(false);
+  });
+
+  // A pre-compaction (`org-seats:v1`) entry is a plain seat array. It must miss and be re-drained,
+  // never decoded — the namespace bump is the first line of defence, this guard is the second.
+  it('rejects a legacy seat-array entry as a miss', async () => {
+    proxyRequest.mockResolvedValue(page([seat()]));
+    const service = new OrgLensBoardCommitteeService();
+    await service.fetchAllOrgSeats(req, ORG);
+
+    expect(cache.accept).toBeTypeOf('function');
+    expect(cache.accept!([seat()])).toBe(false);
+    expect(cache.accept!(JSON.parse(cache.entry!))).toBe(true);
+  });
+
+  // An out-of-range committee index would otherwise decode into a seat with no committee identity
+  // at all, which the Board/Committee split then silently misfiles.
+  it('rejects an entry whose committee index points past the dictionary', async () => {
+    proxyRequest.mockResolvedValue(page([seat()]));
+    const service = new OrgLensBoardCommitteeService();
+    await service.fetchAllOrgSeats(req, ORG);
+    const stored = JSON.parse(cache.entry!);
+
+    stored.s.r[0][stored.s.k.indexOf('c')] = 7;
+
+    expect(cache.accept!(stored)).toBe(false);
+  });
+
+  // Corrupt or foreign entries that fromColumnar would otherwise decode "successfully" into seats
+  // silently missing their committee: a duplicated `c` column lets a later out-of-range index
+  // overwrite the valid first one, and an empty committee row decodes to no committee fields at all.
+  it.each([
+    [
+      'a duplicated committee-index column',
+      (stored: { s: { k: string[]; r: unknown[][] } }) => {
+        stored.s.k = [...stored.s.k, 'c'];
+        stored.s.r = stored.s.r.map((row) => [...row, 99]);
+      },
+    ],
+    [
+      'an empty committee row',
+      (stored: { c: { k: string[]; r: unknown[][] } }) => {
+        stored.c.r = [[]];
+      },
+    ],
+    [
+      'a committee table missing a column',
+      (stored: { c: { k: string[]; r: unknown[][] } }) => {
+        stored.c.k = stored.c.k.slice(1);
+        stored.c.r = stored.c.r.map((row) => row.slice(1));
+      },
+    ],
+  ])('rejects an entry with %s', async (_label, corrupt) => {
+    proxyRequest.mockResolvedValue(page([seat()]));
+    const service = new OrgLensBoardCommitteeService();
+    await service.fetchAllOrgSeats(req, ORG);
+    const stored = JSON.parse(cache.entry!);
+
+    corrupt(stored);
+
+    expect(cache.accept!(stored)).toBe(false);
+  });
+});
+
+describe('OrgLensBoardCommitteeService org seat paging (GH-3050)', () => {
+  const cursorPage = (seats: CommitteeServiceOrgSeat[], token: string | null): CommitteeServiceOrgSeatPage => ({ seats, page_token: token });
+
+  it('drains in 5000-row pages, following page_token until committee-service stops returning one', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(cursorPage([seat()], 'next-1'))
+      .mockResolvedValueOnce(cursorPage([seat({ uid: 'seat-2' })], 'next-2'))
+      .mockResolvedValueOnce(cursorPage([seat({ uid: 'seat-3' })], null));
+    const service = new OrgLensBoardCommitteeService();
+
+    const seats = await service.fetchAllOrgSeatsUncached(req, ORG);
+
+    expect(seats.map((s) => s.uid)).toEqual(['seat-1', 'seat-2', 'seat-3']);
+    const params = proxyRequest.mock.calls.map((call) => call[4]);
+    expect(params).toEqual([
+      { v: '1', page_size: '5000' },
+      { v: '1', page_size: '5000', page_token: 'next-1' },
+      { v: '1', page_size: '5000', page_token: 'next-2' },
+    ]);
+  });
+
+  it('reads one 5000-row page for the Reassign picker and returns it even though the cursor still advances', async () => {
+    proxyRequest.mockResolvedValue(cursorPage([seat()], 'more'));
+    const service = new OrgLensBoardCommitteeService();
+
+    const employees = await service.getOrgEmployees(req, ORG);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ v: '1', page_size: '5000' });
+    expect(employees.map((e) => e.email)).toEqual(['dclarke@lfx-partner.example']);
+  });
+});
+
+describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — coalescing (GH-1906)', () => {
+  // Two tabs opening at once must not drain committee-service twice; the drain outlives the 30s
+  // entry it produces, so the cache alone cannot prevent this.
+  it('drains once for concurrent callers with the same principal', async () => {
+    const gate = deferred<CommitteeServiceOrgSeatPage>();
+    proxyRequest.mockReturnValue(gate.promise);
+    const service = new OrgLensBoardCommitteeService();
+
+    const both = Promise.all([service.fetchAllOrgSeats(req, ORG), service.fetchAllOrgSeats(req, ORG)]);
+    gate.resolve(page([seat()]));
+    const [first, second] = await both;
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    // One burst is one read-through: a single cache read and a single serialized write, not one per
+    // joined caller on the connection the session store shares.
+    expect(cache.readThroughs).toBe(1);
+    expect(first).toEqual(second);
+    // Each caller rebuilds its own array from the shared stored envelope, so no consumer can
+    // mutate another's roster.
+    expect(first).not.toBe(second);
+  });
+
+  // The fail-closed rule: `withPerUserCache` refuses to build a key for an unresolvable principal
+  // and fetches directly, and the coalescing must refuse on exactly the same terms — a shared
+  // bucket keyed on a blank username would serve one caller's filtered roster to another.
+  it('does not coalesce callers with no resolvable username', async () => {
+    getEffectiveUsername.mockReturnValue(null);
+    const gate = deferred<CommitteeServiceOrgSeatPage>();
+    proxyRequest.mockReturnValueOnce(gate.promise).mockResolvedValueOnce(page([seat({ uid: 'seat-2' })]));
+    const service = new OrgLensBoardCommitteeService();
+
+    const both = Promise.all([service.fetchAllOrgSeats(req, ORG), service.fetchAllOrgSeats(req, ORG)]);
+    gate.resolve(page([seat()]));
+    const [first, second] = await both;
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(first[0].uid).toBe('seat-1');
+    expect(second[0].uid).toBe('seat-2');
+  });
+});
+
+describe('People Board/Committee roster timing log', () => {
+  const enrichment = {
+    names: new Map([['p-1', 'Identity Foundation']]),
+    publicUids: new Set(['p-1']),
+    cachedHits: 1,
+    requested: 2,
+    resolved: 1,
+    privateUids: new Set<string>(),
+    confirmedByDirectRead: 0,
+  };
+  const timingFields = (seatsDrained: boolean, assignmentCount: number) => ({
+    org_uid: ORG,
+    seat_count: 2,
+    assignment_count: assignmentCount,
+    seats_drained: seatsDrained,
+    seats_duration_ms: expect.any(Number),
+    name_enrichment_duration_ms: expect.any(Number),
+    names_cached_hits: 1,
+    names_requested: 2,
+    names_resolved: 1,
+    total_duration_ms: expect.any(Number),
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockResolvedValue(page([seat(), sparseSeat()]));
+    vi.mocked(enrichFoundationNames).mockResolvedValue(enrichment);
+  });
+
+  it('logs the Board roster split into seats and name enrichment, draining only on the first read', async () => {
+    const service = new OrgPeopleBoardMembersService();
+
+    await service.getBoardMembers(req, ORG);
+    await service.getBoardMembers(req, ORG);
+
+    const lines = vi.mocked(logger.info).mock.calls.filter(([, operation]) => operation === 'get_org_people_board_members');
+    expect(lines).toEqual([
+      [req, 'get_org_people_board_members', 'Board roster built', timingFields(true, 1)],
+      [req, 'get_org_people_board_members', 'Board roster built', timingFields(false, 1)],
+    ]);
+  });
+
+  it('logs the Committee roster split into seats and name enrichment, draining only on the first read', async () => {
+    const service = new OrgPeopleCommitteeMembersService();
+
+    await service.getCommitteeMembers(req, ORG);
+    await service.getCommitteeMembers(req, ORG);
+
+    const lines = vi.mocked(logger.info).mock.calls.filter(([, operation]) => operation === 'get_org_people_committee_members');
+    expect(lines).toEqual([
+      [req, 'get_org_people_committee_members', 'Committee roster built', timingFields(true, 1)],
+      [req, 'get_org_people_committee_members', 'Committee roster built', timingFields(false, 1)],
+    ]);
+  });
+});
+
+describe('seat reassign — caller cache invalidation', () => {
+  const body = { committeeUid: 'c-1', firstName: 'Ana', lastName: 'Silva', email: 'asilva@lfx-partner.example' };
+  // Every BFF reassign path: the Memberships page, and the People → Committee / Board tabs.
+  const paths: [string, () => Promise<unknown>][] = [
+    ['Memberships reassign', () => new OrgLensBoardCommitteeService().reassignSeat(req, ORG, 'foundation-1', 'seat-1', body)],
+    ['People Committee reassign', () => new OrgPeopleCommitteeMembersService().reassignSeat(req, ORG, 'seat-1', body)],
+    ['People Board reassign', () => new OrgPeopleBoardMembersService().reassignSeat(req, ORG, 'seat-1', body)],
+  ];
+
+  /** Drain answers with `roster`; the reassign PUT resolves with `reassigned` or rejects with `failure`. */
+  function upstream(roster: () => CommitteeServiceOrgSeat[], reassign: () => Promise<CommitteeServiceOrgSeat>): void {
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, method: string) => (method === 'PUT' ? reassign() : page(roster())));
+  }
+
+  it.each(paths)('%s: the caller’s next roster read reflects the reassignment', async (_label, reassign) => {
+    let current = seat({ first_name: 'Devon', email: 'dclarke@lfx-partner.example' });
+    const updated = seat({ first_name: 'Ana', email: 'asilva@lfx-partner.example' });
+    upstream(
+      () => [current],
+      async () => {
+        current = updated;
+        return updated;
+      }
+    );
+    const service = new OrgLensBoardCommitteeService();
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('dclarke@lfx-partner.example');
+
+    await reassign();
+
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-seats:v2', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v3', 'tester', ORG);
+  });
+
+  it.each(paths)('%s: an upstream failure leaves the caller’s caches alone', async (_label, reassign) => {
+    upstream(
+      () => [seat()],
+      async () => {
+        throw new Error('committee-service 403');
+      }
+    );
+
+    await expect(reassign()).rejects.toThrow('committee-service 403');
+    expect(invalidatePerUserCache).not.toHaveBeenCalled();
+  });
+
+  // The post-reassign read must not join a drain that started before the reassign (e.g. the All
+  // Employees live merge draining seats in the background), and that drain must not write the old
+  // roster back over the fresh one when it finally lands.
+  it.each(paths)('%s: a drain in flight before the reassign neither answers the next read nor overwrites it', async (_label, reassign) => {
+    const before = seat({ first_name: 'Devon', email: 'dclarke@lfx-partner.example' });
+    const after = seat({ first_name: 'Ana', email: 'asilva@lfx-partner.example' });
+    const staleDrain = deferred<CommitteeServiceOrgSeatPage>();
+    let drains = 0;
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, method: string) => {
+      if (method === 'PUT') return after;
+      drains += 1;
+      return drains === 1 ? staleDrain.promise : page([after]);
+    });
+    const service = new OrgLensBoardCommitteeService();
+
+    const stale = service.fetchAllOrgSeats(req, ORG);
+    await vi.waitFor(() => expect(drains).toBe(1));
+    await reassign();
+
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
+
+    staleDrain.resolve(page([before]));
+    // The caller that started the old drain still gets the answer it asked for...
+    expect((await stale)[0].email).toBe('dclarke@lfx-partner.example');
+    // ...but it was not stored: the next read is a cache hit on the post-reassign roster.
+    expect((await service.fetchAllOrgSeats(req, ORG))[0].email).toBe('asilva@lfx-partner.example');
+    expect(drains).toBe(2);
+  });
+});

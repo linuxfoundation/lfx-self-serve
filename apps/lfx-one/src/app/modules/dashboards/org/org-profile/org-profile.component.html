@@ -7,7 +7,15 @@
   [attr.data-state]="state()"
   [attr.data-mode]="editMode() ? 'edit' : 'view'">
   <p-toast position="top-right" data-testid="org-profile-success-toast" />
-  @if (state() === 'loading') {
+  <!-- Aliased `pageStateName`, not `state`, so it cannot shadow the component's load `state()` signal. -->
+  @if (pageState(); as pageStateName) {
+    <lfx-org-lens-empty-state
+      [state]="pageStateName"
+      [testId]="'org-profile-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
+  } @else if (!emptyState.settled() || state() === 'loading') {
     <!-- Skeleton loaders (FR-015) — mirror the loaded card layout so the page doesn't jump. -->
     <section class="rounded-lg border border-gray-200 bg-white p-6" data-testid="org-profile-skeleton">
       <div class="flex items-start gap-6">

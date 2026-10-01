@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The service's URL checks come from `validation.helper`, whose shared utils barrel pulls in
+// Angular-dependent siblings. Without the compiler the suite fails to collect at all.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Runtime collaborators are mocked (the `@lfx-one/shared/*` alias isn't wired into this app's
-// vitest config; cla.service imports only type-only symbols from it, which esbuild elides).
+// Runtime collaborators are mocked; the `@lfx-one/shared/*` alias resolves to the real sources via
+// this app's vitest config.
 const { gatewayFetch } = vi.hoisted(() => ({ gatewayFetch: vi.fn() }));
 const { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } = vi.hoisted(() => ({
   getEffectiveEmail: vi.fn<() => string | null>(() => null),
@@ -35,6 +39,7 @@ import type { Request } from 'express';
 
 import type { EasyClaMyCla, EasyClaSearchResult, ResolvedClaIdentity } from '../types/cla.types';
 import { MicroserviceError } from '../errors';
+import { logger } from './logger.service';
 import {
   ClaService,
   claReturnUrl,
@@ -178,8 +183,8 @@ describe('claReturnUrl', () => {
   });
 
   it('names the organization on the address, so the page does not have to guess it', () => {
-    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toBe(
-      'https://app.lfx.dev/org/easycla?org=0014100000Te0OKAAZ'
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000AcmeAAAA' })).toBe(
+      'https://app.lfx.dev/org/easycla?org=0014100000AcmeAAAA'
     );
   });
 
@@ -187,8 +192,8 @@ describe('claReturnUrl', () => {
   // stores the value and later redirects to it verbatim, so a value that could close the query and
   // append its own path would turn the hand-off into an open redirect a second way.
   it.each([
-    ['0014100000Te0OKAAZ#@evil.example.com', 'evil.example.com'],
-    ['0014100000Te0OKAAZ&next=https://evil.example.com', 'evil.example.com'],
+    ['0014100000AcmeAAAA#@evil.example.com', 'evil.example.com'],
+    ['0014100000AcmeAAAA&next=https://evil.example.com', 'evil.example.com'],
     ['../../evil', 'evil'],
   ])('encodes %p so it cannot break out of the query string', (value, smuggled) => {
     const url = claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: value });
@@ -200,7 +205,7 @@ describe('claReturnUrl', () => {
   });
 
   it('still refuses an untrusted host when a query is supplied', () => {
-    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toThrow(MicroserviceError);
+    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000AcmeAAAA' })).toThrow(MicroserviceError);
   });
 });
 
@@ -950,6 +955,33 @@ describe('ClaService.getPdfUrl', () => {
       expect.stringContaining('/v4/my-clas/sig-1/pdf?'),
       expect.objectContaining({ bearerToken: 'target-token' })
     );
+  });
+
+  it.each([
+    ['javascript:alert(1)'],
+    ['  javascript:alert(1)'],
+    ['JaVaScRiPt:alert(1)'],
+    ['data:text/html,<p>x</p>'],
+    ['http://s3.example.org/signed.pdf'],
+    ['/signed.pdf'],
+    [['https://s3.example.org/signed.pdf']],
+    [{ href: 'https://s3.example.org/signed.pdf' }],
+    [0],
+    [false],
+  ])('refuses a signed document address of %p with a 502', async (url) => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url, expiresInSeconds: 900 });
+
+    await expect(new ClaService().getPdfUrl(req, 'sig-1', identity)).rejects.toMatchObject({ statusCode: 502, code: 'CLA_PDF_URL_INVALID' });
+  });
+
+  it('keeps a refused document address out of the logs, recording only its scheme', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url: 'javascript:alert(document.cookie)', expiresInSeconds: 900 });
+
+    await expect(new ClaService().getPdfUrl(req, 'sig-1', identity)).rejects.toThrow();
+
+    const logged = JSON.stringify(vi.mocked(logger.warning).mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('"pdf_url_scheme":"javascript"');
   });
 });
 

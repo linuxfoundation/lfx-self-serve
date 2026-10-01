@@ -6,7 +6,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import type { Account, OrgDropdownOption, OrgLensEmptyStateName, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
@@ -16,6 +16,7 @@ import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
+import { MessageService } from 'primeng/api';
 import { Tooltip } from 'primeng/tooltip';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,7 @@ import { OrgGroupsComponent } from './org-groups.component';
 interface RenderOptions {
   accountName?: string;
   orgNavigationLoaded?: boolean;
+  pageState?: OrgLensEmptyStateName | null;
   getGroups?: () => ReturnType<OrgLensGroupsService['getGroups']>;
   queryParams?: Record<string, string>;
 }
@@ -64,7 +66,13 @@ function personDrawerStub() {
 }
 
 async function render(options: RenderOptions = {}): Promise<Rendered> {
-  const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
+  const {
+    accountName = 'Acme Motors, Inc.',
+    orgNavigationLoaded = true,
+    pageState = null,
+    getGroups = () => of(emptyGroupsResponse()),
+    queryParams = {},
+  } = options;
 
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   // Derived exactly as AccountContextService derives it, so the stub can't hold a segment the real service never would.
@@ -82,7 +90,19 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
-      { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+      // lfxOpenIntercom (the empty state's contact-support link) injects the app-root MessageService.
+      MessageService,
+      {
+        provide: OrgLensEmptyStateService,
+        useValue: {
+          pageState: signal(pageState),
+          hasPageState: signal(pageState !== null),
+          settled: signal(true),
+          pageReady: signal(orgNavigationLoaded),
+          retrying: signal(false),
+          retry: vi.fn(),
+        },
+      },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
       // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
@@ -338,6 +358,24 @@ describe('OrgGroupsComponent', () => {
 
     const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
 
+    expect(title?.textContent?.trim()).toBe('Groups');
+  });
+
+  // #2961: the H1 names the organization only once the content renders.
+  it('keeps the bare H1 while the page is not ready yet', async () => {
+    const { fixture } = await render({ orgNavigationLoaded: false });
+
+    const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
+
+    expect(title?.textContent?.trim()).toBe('Groups');
+  });
+
+  it('keeps the bare H1 beside a page-level state', async () => {
+    const { fixture } = await render({ pageState: 'contractor-no-grant' });
+
+    const title = fixture.nativeElement.querySelector('[data-testid="org-groups-title"]');
+
+    expect(fixture.nativeElement.querySelector('[data-state="contractor-no-grant"]')).not.toBeNull();
     expect(title?.textContent?.trim()).toBe('Groups');
   });
 
@@ -944,7 +982,17 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
-        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+        {
+          provide: OrgLensEmptyStateService,
+          useValue: {
+            pageState: signal(null),
+            hasPageState: signal(false),
+            settled: signal(orgLoaded),
+            pageReady: signal(orgLoaded),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
+        },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
         { provide: PersonDetailDrawerService, useValue: personDrawerStub() },

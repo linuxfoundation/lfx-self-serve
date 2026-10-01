@@ -1,0 +1,88 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-3 border-t border-gray-100 pt-5" data-testid="members-bridge">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Membership bridge unavailable"
+      subtitle="We could not load how the member base changed. Refresh the page to try again."
+      data-testid="members-bridge-error" />
+  } @else if (loading()) {
+    <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="members-bridge-loading" aria-hidden="true" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-chart-waterfall"
+      title="No membership movement recorded yet"
+      subtitle="Once this foundation has members, how the base changed each year appears here."
+      data-testid="members-bridge-empty" />
+  } @else {
+    <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500" data-testid="members-bridge-heading">{{ view().heading }}</h4>
+
+    @if (view().yearMeasured) {
+      <ul class="grid grid-cols-6 gap-2" aria-label="Membership bridge" data-testid="members-bridge-chart">
+        @for (bar of view().bars; track bar.movementType) {
+          <li class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'members-bridge-bar-' + bar.movementType">
+            <!-- The labels under each column carry the same figures for screen readers. -->
+            <div class="relative h-[200px]" aria-hidden="true">
+              <div class="absolute inset-x-0 flex flex-col items-center gap-0.5 pb-1" [style.bottom.%]="bar.bottomPct + bar.heightPct">
+                <span
+                  class="text-[13px] font-semibold tabular-nums"
+                  [class.text-gray-900]="bar.tone === 'neutral'"
+                  [class.text-emerald-600]="bar.tone === 'gain'"
+                  [class.text-red-600]="bar.tone === 'loss'"
+                  [attr.data-testid]="'members-bridge-count-' + bar.movementType"
+                  >{{ bar.countLabel }}</span
+                >
+                @if (bar.duesLabel) {
+                  <span class="text-[11px] tabular-nums text-gray-500" [attr.data-testid]="'members-bridge-dues-' + bar.movementType">{{ bar.duesLabel }}</span>
+                }
+              </div>
+              <div
+                class="absolute inset-x-[15%] min-h-[2px] rounded-sm"
+                [class.bg-gray-700]="bar.tone === 'neutral'"
+                [class.bg-emerald-600]="bar.tone === 'gain'"
+                [class.bg-red-600]="bar.tone === 'loss'"
+                [style.bottom.%]="bar.bottomPct"
+                [style.height.%]="bar.heightPct"
+                [attr.data-testid]="'members-bridge-fill-' + bar.movementType"></div>
+            </div>
+            @if (bar.listType || bar.opensChurn) {
+              <button
+                type="button"
+                class="rounded text-center text-[12px] font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                [attr.aria-label]="bar.ariaLabel"
+                (click)="onBarPicked(bar)"
+                [attr.data-testid]="'members-bridge-action-' + bar.movementType">
+                {{ bar.label }} <span aria-hidden="true">→</span>
+              </button>
+            } @else {
+              <span class="text-center text-[12px] font-medium text-gray-600" [attr.data-testid]="'members-bridge-label-' + bar.movementType">
+                <span aria-hidden="true">{{ bar.label }}</span>
+                <span class="sr-only">{{ bar.ariaLabel }}</span>
+              </span>
+            }
+          </li>
+        }
+      </ul>
+
+      @if (view().reconcileNote; as note) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800" role="note" data-testid="members-bridge-reconcile-note">{{ note }}</p>
+      }
+    } @else {
+      <p class="text-sm text-gray-500" data-testid="members-bridge-year-unmeasured">
+        No membership movement is recorded for the selected period. Pick another period to see it.
+      </p>
+    }
+
+    <p class="text-[12px] text-gray-400" data-testid="members-bridge-footer">{{ footer }}</p>
+  }
+</div>
+
+<lfx-members-movements-drawer
+  [(visible)]="drawerVisible"
+  [listType]="drawerListType()"
+  [year]="view().year"
+  [foundationSlug]="query().foundationSlug"
+  [barCount]="drawerBarCount()" />

@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// meeting-privacy.utils (deep-imported into the shared-utils mock below) transitively imports
+// @angular/common/http — the JIT facade must be present in this plain-Node environment.
+import '@angular/compiler';
+
 import { PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
@@ -69,9 +73,12 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // Real too, for the same reason: the field-length assertions are about what the controller sends
   // upstream, and a stub would make them assert nothing.
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+  // Real too, so the kept-real helper's host-key gate runs the actual window check. Deep import —
+  // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
+  isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
 }));
-// meeting.helper imports HOST_KEY_* from shared/constants; stub the barrel so the full constants
-// module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
+// The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
+// the full constants module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
 vi.mock('@lfx-one/shared/constants', async () => ({
   // The real allowlist rather than a hand-copy, on the same reasoning as `joinAsSentenceList`
   // below: a duplicate here would let the leak test further down go green against a list the

@@ -1,0 +1,141 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="members-at-risk">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Members at risk unavailable"
+      subtitle="We could not load this foundation's overdue balances. Refresh the page to try again."
+      data-testid="members-at-risk-error" />
+  } @else if (firstRead()) {
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-at-risk-loading" aria-hidden="true" />
+  } @else if (!loading() && noneAtRisk()) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-check"
+      title="No members at risk"
+      subtitle="No member is 60 or more days overdue on dues. At-risk members appear here as balances age past 60 days."
+      data-testid="members-at-risk-empty" />
+  } @else {
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
+      <lfx-filter-pills [options]="filterOptions" [selectedFilter]="bucket()" (filterChange)="onBucketChange($event)" data-testid="members-at-risk-pills" />
+      <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-at-risk-count">
+        @if (loading()) {
+          &mdash;
+        } @else {
+          {{ countLabel() }}
+        }
+      </span>
+    </div>
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
+      <div class="flex flex-col gap-2">
+        <span class="text-3xl font-semibold tabular-nums text-red-600" data-testid="members-at-risk-outstanding">{{ summary().outstandingLabel }}</span>
+        <span class="text-[12.5px] text-gray-500">Outstanding balance</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-at-risk-side">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">High risk</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-high">{{ summary().highRiskLabel }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">Medium risk</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-medium">{{ summary().mediumRiskLabel }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-400">Members at risk</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-red-600" data-testid="members-at-risk-members">{{ summary().memberCountLabel }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    @if (aging().length) {
+      <div class="flex flex-col gap-3" data-testid="members-at-risk-aging">
+        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Aging</h4>
+        <ul class="flex flex-col gap-2.5">
+          @for (bar of aging(); track bar.bucket) {
+            <li class="flex flex-col gap-1" [attr.data-testid]="'members-at-risk-aging-' + bar.bucket">
+              <div class="flex items-baseline justify-between gap-2 text-[13px]">
+                <span class="text-gray-700">{{ bar.label }}</span>
+                <span class="tabular-nums text-gray-900" [attr.data-testid]="'members-at-risk-aging-' + bar.bucket + '-value'">{{ bar.balanceLabel }}</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
+                <div class="h-full rounded-full" [class]="barClass" [style.width.%]="bar.widthPct"></div>
+              </div>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+
+    <lfx-table
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > size"
+      [rows]="size"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      [scrollable]="true"
+      [tableStyle]="{ 'min-width': '640px' }"
+      (onPage)="onTablePage($event)"
+      data-testid="members-at-risk-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Overdue</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Age</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'members-at-risk-row-' + view.accountId">
+          <td>
+            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
+              view.accountName
+            }}</span>
+          </td>
+          <td>
+            <span
+              class="rounded-full px-2 py-0.5 text-[12px] font-medium"
+              [class]="tierPillClass"
+              [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-tier'"
+              >{{ view.tierLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-overdue'">{{
+              view.overdueLabel
+            }}</span>
+          </td>
+          <td class="text-right">
+            <span class="text-sm tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
+          </td>
+          <td class="text-right">
+            <span class="text-sm tabular-nums text-amber-700" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-last-engaged'">{{
+              view.lastEngagedLabel
+            }}</span>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="py-6 text-center text-sm text-gray-500" data-testid="members-at-risk-no-match">
+            @if (!loading()) {
+              No member is in this aging bucket.
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+</div>

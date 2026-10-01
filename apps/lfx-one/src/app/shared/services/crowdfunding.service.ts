@@ -3,9 +3,8 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { isPlatformBrowser, DOCUMENT } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 
 import {
   EMPTY_CROWDFUNDING_STATS,
@@ -32,15 +31,13 @@ import {
   UpdateAnnouncementInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { catchError, EMPTY, Observable, of, throwError } from 'rxjs';
+import { catchError, Observable, of } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
 })
 export class CrowdfundingService {
   private readonly http = inject(HttpClient);
-  private readonly platformId = inject(PLATFORM_ID);
-  private readonly document = inject(DOCUMENT);
 
   public getMyInitiatives(params?: { pageSize?: number; offset?: number }): Observable<InitiativesResponse> {
     let httpParams = new HttpParams();
@@ -70,7 +67,7 @@ export class CrowdfundingService {
 
   // POST /api/crowdfunding/payment-method — mirrors the crowdfunding-app BFF payload: { paymentMethodId }.
   public savePaymentMethod(paymentMethodId: string): Observable<PaymentMethod> {
-    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId }).pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId });
   }
 
   public getMyDonationStats(): Observable<DonationStats> {
@@ -101,13 +98,11 @@ export class CrowdfundingService {
   }
 
   public getPresignedUrl(contentType: string): Observable<PresignedURLResult> {
-    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType }).pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType });
   }
 
   public updateInitiative(id: string, input: UpdateInitiativeInput): Observable<InitiativeDetail> {
-    return this.http
-      .patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input);
   }
 
   public getAnnouncements(initiativeId: string): Observable<AnnouncementList> {
@@ -117,29 +112,26 @@ export class CrowdfundingService {
   }
 
   public createAnnouncement(initiativeId: string, input: CreateAnnouncementInput): Observable<Announcement> {
-    return this.http
-      .post<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`, input)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.post<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`, input);
   }
 
   public updateAnnouncement(initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Observable<Announcement> {
-    return this.http
-      .put<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`, input)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.put<Announcement>(
+      `/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      input
+    );
   }
 
   public deleteAnnouncement(initiativeId: string, announcementId: string): Observable<void> {
-    return this.http
-      .delete<void>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.delete<void>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`);
   }
 
   public deletePaymentMethod(): Observable<void> {
-    return this.http.delete<void>('/api/crowdfunding/payment-method').pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.delete<void>('/api/crowdfunding/payment-method');
   }
 
   public cancelSubscription(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`).pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
   }
 
   public getInitiativeTransactions(
@@ -174,46 +166,10 @@ export class CrowdfundingService {
 
   private handleCfError<T>(fallback: T, label: string) {
     return (err: HttpErrorResponse): Observable<T> => {
-      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
-        if (isPlatformBrowser(this.platformId)) {
-          this.redirectToCfAuth();
-          return EMPTY; // navigating away — don't emit fallback so loading state persists
-        }
-        return of(fallback);
-      }
       if (err.status !== 404) {
         console.error(`[CrowdfundingService] ${label} failed`, err);
       }
       return of(fallback);
     };
-  }
-
-  /**
-   * Error handler for mutation endpoints (POST / DELETE).
-   * Redirects to the CF auth flow on CF_UNAUTHENTICATED (expired/missing token),
-   * and rethrows all other errors so the caller's error callback can surface a toast.
-   */
-  private redirectIfCfUnauthenticated() {
-    return (err: HttpErrorResponse): Observable<never> => {
-      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
-        if (isPlatformBrowser(this.platformId)) {
-          this.redirectToCfAuth();
-        }
-        return EMPTY; // navigating away — don't surface a toast
-      }
-      return throwError(() => err);
-    };
-  }
-
-  /**
-   * Redirects to the CF auth-start endpoint, but only if the current URL does not
-   * already carry an `error` query param. An existing error param means the auth
-   * flow already failed (e.g. auth not configured) and we should not loop.
-   */
-  private redirectToCfAuth(): void {
-    const params = new URLSearchParams(this.document.location.search);
-    if (params.has('error')) return; // already errored — don't loop
-    const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
-    this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
   }
 }

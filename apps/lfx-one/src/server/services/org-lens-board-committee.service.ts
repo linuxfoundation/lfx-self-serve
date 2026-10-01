@@ -1,38 +1,50 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isBoardCategory, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { isBoardCategory, ORG_SEATS_CACHE_COMMITTEE_KEYS, ORG_SEATS_CACHE_SEAT_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   BoardSeat,
   CommitteeSeat,
   CommitteeServiceOrgSeat,
   CommitteeServiceOrgSeatPage,
+  CompactOrgSeatsEntry,
+  CompactSeatRow,
   KeyContactEmployee,
   OrgMembershipKeyContactPerson,
   OrgMembershipReassignSeatResponse,
   OrgMembershipSeatsResponse,
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
+  SeatCommittee,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { coalescePerUserOrgFetch, evictPerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensMembershipsService } from './org-lens-memberships.service';
 import { ProjectService } from './project.service';
-import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
+import { invalidateOrgGroupsCache, invalidatePerUserCache, withPerUserCache } from './valkey.service';
+
+/**
+ * committee-service org-seat page size. committee-service 0.4.52 (lfx-v2-committee-service#216) accepts
+ * up to 5000 (above that it returns 400). Each request is a full server-side org read whatever the page
+ * size, so a larger page is strictly cheaper upstream: it turns ~6 requests into 1 for the largest org.
+ */
+const ORG_SEAT_PAGE_SIZE = 5000;
 
 /**
  * Picker roster bound (FR-006 typeahead): cap the org-wide seat drain so opening the Reassign modal
- * doesn't pull the full cross-foundation roster (up to the 200-page × 500 = 100k safety cap) just to
- * feed a client-filtered typeahead. Key contacts are always included in full; committee members beyond
- * this bound are omitted from the suggestions (manual entry still works).
+ * doesn't pull the full cross-foundation roster (up to the 200-page × 5000 = 1M safety cap) just to
+ * feed a client-filtered typeahead. One page of up to 5000 rows for one full server-side read (it was
+ * 4 × 500 = 2000 rows for four full reads). Key contacts are always included in full; committee members
+ * beyond this bound are omitted from the suggestions (manual entry still works).
  */
-const PICKER_MAX_SEAT_PAGES = 4;
+const PICKER_MAX_SEAT_PAGES = 1;
 
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
@@ -155,7 +167,7 @@ export class OrgLensBoardCommitteeService {
     // well as on the People-tab reassign. Unconditional rather than gated on category: a board
     // reassign discarding the entry costs one rebuild, whereas missing a non-board one serves
     // wrong counts for the whole retention window.
-    await invalidateOrgGroupsCache(accountId);
+    await Promise.all([invalidateOrgGroupsCache(accountId), this.invalidateCallerSeatCaches(req, accountId)]);
 
     logger.debug(req, 'reassign_committee_seat_proxy', 'committee-service returned reassigned seat', {
       org_uid: accountId,
@@ -165,17 +177,75 @@ export class OrgLensBoardCommitteeService {
     return { accountId, foundationId, seat };
   }
 
-  /** Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory picker, cached per caller + org so the single full-roster drain is shared across consumers; only the full, non-truncated drain is cached here — the bounded picker and project-scoped `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as the full roster. */
-  public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
+  /**
+   * Best-effort discard of the caller's own per-user seat roster and People directory for one org,
+   * after a successful seat write. The Board/Committee tabs re-fetch immediately after a reassign,
+   * and without this the caller's 30-second entries would serve the pre-reassign seat back to them.
+   * Keyed by the same effective username `fetchAllOrgSeats` / `OrgPeopleDirectoryService.getLive`
+   * build their keys from; other callers' entries are left to their TTL. `del` never throws.
+   *
+   * Evicting the in-process flights first matters as much as the delete: a fill that started before
+   * the reassign (e.g. the All Employees live merge draining seats in the background) would
+   * otherwise be joined by the post-reassign read and write the old roster back after the delete.
+   * Once evicted, that fill skips its write (`isCurrent` is false) and the next read starts fresh.
+   *
+   * Residual, not covered: this fence is per process. A fill already in flight on ANOTHER replica
+   * for the same caller and org can still write the pre-reassign roster after this delete, and a
+   * local fill that passed its `isCurrent` check just before eviction can land its write a few
+   * milliseconds after it. Either is bounded by the 30-second per-user TTL.
+   */
+  public async invalidateCallerSeatCaches(req: Request, orgUid: string): Promise<void> {
     const username = getEffectiveUsername(req) ?? '';
-    return withPerUserCache(
-      VALKEY_CACHE.ORG_SEATS_NAMESPACE,
-      username,
-      orgUid,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.fetchOrgSeats(req, orgUid),
-      isOrgSeatArray
+    evictPerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid);
+    evictPerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid);
+    await Promise.all([
+      invalidatePerUserCache(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid),
+      invalidatePerUserCache(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, orgUid),
+    ]);
+  }
+
+  /**
+   * Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory
+   * picker, cached per caller + org so the single full-roster drain is shared across consumers;
+   * only the full, non-truncated drain is cached here — the bounded picker and project-scoped
+   * `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as
+   * the full roster.
+   *
+   * The whole read-through is coalesced in-process (GH-1906): on a large org the drain takes longer
+   * than the 30-second entry it produces is allowed to live, so N concurrent tabs would otherwise
+   * each run it. Coalescing around `withPerUserCache` — not just its fetcher — means one burst does
+   * one cache read, one drain, one serialization and one write, instead of every joined caller
+   * re-serializing and re-writing the same ~1 MB value on the connection the session store shares.
+   * A consequence for monitoring: an oversize warning now counts a burst, not a caller.
+   *
+   * What is shared is the COMPACT envelope; each caller rebuilds its own seat objects from it.
+   *
+   * `onDrain` fires only when THIS call runs the committee-service drain (a Valkey miss on the
+   * flight it started). It stays silent on a Valkey hit, and also when this request joined an
+   * in-flight drain started by the same user — so the timing log's `seats_drained: false` covers
+   * both, and `seats_duration_ms` tells them apart.
+   */
+  public async fetchAllOrgSeats(req: Request, orgUid: string, onDrain?: () => void): Promise<CommitteeServiceOrgSeat[]> {
+    const username = getEffectiveUsername(req) ?? '';
+    // Same effective principal (impersonation honoured) + org the cache key is built from, and
+    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+    // bucket per blank principal would hand the first caller's permission-filtered roster to every
+    // other caller that happened to arrive without a resolvable identity.
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, (isCurrent) =>
+      withPerUserCache<CompactOrgSeatsEntry>(
+        VALKEY_CACHE.ORG_SEATS_NAMESPACE,
+        username,
+        orgUid,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        async () => {
+          onDrain?.();
+          return toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid));
+        },
+        isCompactOrgSeatsEntry,
+        isCurrent
+      )
     );
+    return fromCompactOrgSeats(entry);
   }
 
   /**
@@ -240,7 +310,7 @@ export class OrgLensBoardCommitteeService {
 
     // committee-service returns a paginated page { seats, page_token } (LFXV2-1865). The grouped view and CSV
     // export need the org's FULL (foundation-scoped) roster, so they drain every page by following the opaque
-    // cursor up to `maxPages` (default 200 × 500 = 100k safety stop against a pathological cursor loop). The
+    // cursor up to `maxPages` (default 200 × 5000 = 1M safety stop against a pathological cursor loop). The
     // picker passes a much smaller bound and tolerates truncation (see below).
     const seats: CommitteeServiceOrgSeat[] = [];
     let pageToken: string | undefined;
@@ -248,7 +318,7 @@ export class OrgLensBoardCommitteeService {
     do {
       // ApiClientService serializes array params as repeated keys (project_uids=a&project_uids=b), which
       // the committee-service read contract accepts (filters organization_id + project_uid ∈ {family}).
-      const params: Record<string, string | string[]> = { v: '1', page_size: '500' };
+      const params: Record<string, string | string[]> = { v: '1', page_size: String(ORG_SEAT_PAGE_SIZE) };
       if (projectUids?.length) {
         params['project_uids'] = projectUids;
       }
@@ -383,7 +453,90 @@ export class OrgLensBoardCommitteeService {
   }
 }
 
-/** Rejects a corrupt/legacy seat entry whose elements aren't non-null objects (degrades to a miss before seat fields are read). */
-function isOrgSeatArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+/**
+ * Projects a drained roster onto the stored cache shape (GH-1906).
+ *
+ * Two sources of repetition go away: the per-seat field names (stored once in each columnar table)
+ * and the committee context — committee, project and organization — that the seats of one
+ * committee usually share.
+ */
+function toCompactOrgSeats(seats: readonly CommitteeServiceOrgSeat[]): CompactOrgSeatsEntry {
+  const keys = seats.map(seatCommitteeKey);
+  const committees = dedupeByKey(
+    seats.map((seat, index) => ({ seat, key: keys[index] })),
+    (item) => item.key
+  );
+  const rows = seats.map<CompactSeatRow>((seat, index) => {
+    const committee = committees.indexOf.get(keys[index]);
+    if (committee === undefined) {
+      // Unreachable by construction — the dictionary was built from these exact keys. Failing loud
+      // beats a silent default, which would attach the seat to the wrong committee.
+      throw new Error('seat committee missing from its own compaction dictionary');
+    }
+    return {
+      c: committee,
+      uid: seat.uid,
+      first_name: seat.first_name,
+      last_name: seat.last_name,
+      email: seat.email,
+      job_title: seat.job_title,
+      role_name: seat.role_name,
+      voting_status: seat.voting_status,
+      appointed_by: seat.appointed_by,
+      is_org_editable: seat.is_org_editable,
+      reason: seat.reason,
+      avatar: seat.avatar,
+      username: seat.username,
+    };
+  });
+  return {
+    c: toColumnar(
+      committees.values.map((item) => item.seat),
+      ORG_SEATS_CACHE_COMMITTEE_KEYS
+    ),
+    s: toColumnar(rows, ORG_SEATS_CACHE_SEAT_KEYS),
+  };
+}
+
+/**
+ * Dictionary identity of a seat's committee context — EVERY field the dictionary stores, so two
+ * seats of one committee that disagree (see `CompactOrgSeatsEntry.c`) get separate entries instead
+ * of one being rewritten to the other's values.
+ *
+ * An absent field maps to `''` and a present one to its `JSON.stringify` form, so absent, `null`
+ * (`'null'`) and the empty string (`'""'`) stay three different keys. The `\u0001` separator is
+ * unambiguous because `JSON.stringify` escapes every control character inside a string.
+ */
+function seatCommitteeKey(seat: CommitteeServiceOrgSeat): string {
+  return ORG_SEATS_CACHE_COMMITTEE_KEYS.map((key) => (seat[key] === undefined ? '' : JSON.stringify(seat[key]))).join('\u0001');
+}
+
+/** Rebuilds the drained roster from {@link toCompactOrgSeats}: every seat regains its committee context. */
+function fromCompactOrgSeats(entry: CompactOrgSeatsEntry): CommitteeServiceOrgSeat[] {
+  const committees = fromColumnar<SeatCommittee>(entry.c);
+  return fromColumnar<CompactSeatRow>(entry.s).map(({ c, ...seat }) => ({ ...seat, ...committees[c] }));
+}
+
+/**
+ * Rejects anything that is not a well-formed compact seats entry — including every pre-compaction
+ * (`org-seats:v1`) value, a plain seat array — so it degrades to a miss rather than decoding.
+ *
+ * Both tables must carry exactly the writer's column lists with every row at full width
+ * ({@link hasExactColumns}); a duplicated `c` column or a short committee row would otherwise
+ * decode into a seat silently missing its committee identity. Each seat's committee index is then
+ * checked against the dictionary, since an out-of-range index is the other way to reach that
+ * result, and costs one integer comparison against a value the JSON parse already built.
+ */
+function isCompactOrgSeatsEntry(value: unknown): boolean {
+  const entry = value as Partial<CompactOrgSeatsEntry> | null;
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (!isColumnarTable(entry.c) || !isColumnarTable(entry.s)) return false;
+  if (!hasExactColumns(entry.c, ORG_SEATS_CACHE_COMMITTEE_KEYS) || !hasExactColumns(entry.s, ORG_SEATS_CACHE_SEAT_KEYS)) return false;
+
+  const committees = entry.c.r.length;
+  const column = ORG_SEATS_CACHE_SEAT_KEYS.indexOf('c');
+  return entry.s.r.every((row) => {
+    const index = row[column];
+    return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < committees;
+  });
 }

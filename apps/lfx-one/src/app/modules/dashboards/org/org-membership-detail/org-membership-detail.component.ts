@@ -5,12 +5,15 @@ import { Component, computed, DestroyRef, inject, signal, type Signal } from '@a
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import type {
@@ -44,6 +47,7 @@ import { EditKeyContactModalComponent } from './components/edit-key-contact-moda
     RouterLink,
     CardComponent,
     EmptyStateComponent,
+    OrgLensEmptyStateComponent,
     PersonAvatarComponent,
     PersonDetailDrawerComponent,
     TooltipModule,
@@ -59,12 +63,18 @@ export class OrgMembershipDetailComponent {
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
+
+  // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.roleGrants.correlationId;
 
   // Two-way sync with URL fragment; switchTab() writes, route.fragment subscription reads back.
   protected readonly activeTab = signal<MembershipDetailTab>(fragmentToTab(this.route.snapshot.fragment));
@@ -117,24 +127,19 @@ export class OrgMembershipDetailComponent {
     })
   );
 
-  // Subscribe via toSignal so the observable runs (read in template indirectly via pageState/foundation/keyContacts)
+  // Subscribe via toSignal so the observable runs (read in template indirectly via detailState/foundation/keyContacts)
   protected readonly detailData = toSignal<OrgMembershipDetailResponse | null>(this.detail$, { initialValue: null });
 
   // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
   protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
-  protected readonly pageState: Signal<OrgMembershipDetailPageState> = computed(() => this.initPageState());
+  protected readonly detailState: Signal<OrgMembershipDetailPageState> = computed(() => this.initDetailState());
 
   protected readonly memberSinceFormatted = computed(() => this.formatDateShort(this.foundation()?.memberSince ?? null));
 
-  // Writer-only edit gating (UX), widened to roll-up-derived editors (LFXV2-3029). The selected
-  // org's uid keys the role-grants editor set. When the uid is unknown we stay permissive — the
-  // backend still enforces (Constitution I).
-  protected readonly canEdit = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return true;
-    return this.roleGrants.editorSet().has(uid);
-  });
+  // Edit gating (UX, #3136): roster editor or authorizer `writer`. When the uid is unknown we stay
+  // permissive — the backend still enforces (Constitution I).
+  protected readonly canEdit = computed(() => !this.accountContext.selectedAccount()?.uid || this.orgEditAccess.canEditSelected());
 
   protected readonly editDisabledTooltip = 'Only admins can edit. To view a list of admins, visit the Access page.';
 
@@ -318,7 +323,7 @@ export class OrgMembershipDetailComponent {
     });
   }
 
-  private initPageState(): OrgMembershipDetailPageState {
+  private initDetailState(): OrgMembershipDetailPageState {
     if (this.fetchLoading()) return 'loading';
     if (this.fetchError()) return 'error';
     const data = this.detailData();

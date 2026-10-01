@@ -1,0 +1,16 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The inner card owns the tooltip surface, so PrimeNG's own border, shadow, padding and caret are removed.
+::ng-deep .org-health-popover {
+  @apply border-0 bg-transparent shadow-none;
+
+  &::before,
+  &::after {
+    @apply hidden;
+  }
+
+  .p-popover-content {
+    @apply p-0;
+  }
+}

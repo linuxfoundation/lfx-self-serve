@@ -13,7 +13,7 @@ import { isFormationChecklistProject, resolveFormationFlag } from '../utils/form
 
 /**
  * CanActivate guard for `/project/overview` (#2754). A project in a Formation stage gets a
- * Formation-only sidebar (`SidebarNavService`), so its lens landing page is the checklist, not the
+ * checklist-led sidebar (`SidebarNavService`), so its lens landing page is the checklist, not the
  * dashboard: this redirects to `/project/formation` exactly when `formationProjectEnabledGuard`
  * would admit it — the same shared gate, so the two routes can never disagree and bounce.
  *
@@ -35,7 +35,7 @@ import { isFormationChecklistProject, resolveFormationFlag } from '../utils/form
  * to. Every fail-open for a Formation-stage project is recorded on
  * `ProjectContextService.formationOverviewAllowedSlug`, which `SidebarNavService` reads to keep the
  * full nav in step with the dashboard it stands on — without that, a provider becoming ready after
- * the budget (or a flag flipped on live) would collapse the nav to Formation-only under a page this
+ * the budget (or a flag flipped on live) would collapse the nav to the formation-stage set under a page this
  * guard had already admitted. The record describes that one dashboard and never outlives it: every
  * browser run of this guard clears it before deciding, so only the fail-open branch can leave one
  * (a project this guard never admitted cannot inherit an earlier project's record), and
@@ -79,7 +79,7 @@ export const formationOverviewRedirectGuard: CanActivateFn = async (route) => {
 
   if (!(await resolveFormationFlag(featureFlagService, 'formationOverviewRedirectGuard', FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS))) {
     // Fail open — and record it: the sidebar keeps this project's full nav while this overview
-    // stands, so a flag that only arrives after the budget cannot collapse the nav to Formation-only
+    // stands, so a flag that only arrives after the budget cannot collapse the nav to the formation-stage set
     // under the dashboard this guard already admitted. The next run of this guard, or leaving the
     // overview (`formationOverviewReleaseGuard`), clears it.
     projectContextService.setFormationOverviewAllowedSlug(slug);

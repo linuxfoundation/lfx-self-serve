@@ -2,13 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 // Unit tests for vote.service.ts — upstream path encoding (GH-1568), X-Sync removal, poll budgets,
-// the enableVote FGA-gap retry (GH-1637), and the enable grace hint (GH-2826). All fixtures use
-// synthetic placeholder identities — never real user data.
+// the enableVote FGA-gap retry (GH-1637), the enable grace hint (GH-2826), and the GH-1558
+// drain-sort-paginate canonical vote list ordering. All fixtures use synthetic placeholder
+// identities — never real user data.
+
+// `@angular/compiler` before everything: the GH-1558 ordering specs wire the REAL
+// compareVotesByRecency through the mocked utils barrel via importActual of vote.utils, which
+// statically imports @angular/forms — the JIT compiler shim lets that graph load in plain Node.
+import '@angular/compiler';
 
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { IndexedVoteResponseStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
+import type { IndexedVote, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
 // meeting.utils), which can't JIT-compile in this plain-Node env. Enums/constants resolve for real via the alias.
@@ -21,6 +28,7 @@ const {
   getProjectsByIds,
   fetchAllQueryResources,
   getEffectiveEmail,
+  getRawEffectiveEmail,
   getUsernameFromAuth,
   stripAuthPrefix,
   computeIsFoundation,
@@ -35,15 +43,24 @@ const {
   getProjectsByIds: vi.fn(),
   fetchAllQueryResources: vi.fn(),
   getEffectiveEmail: vi.fn(),
+  getRawEffectiveEmail: vi.fn(),
   getUsernameFromAuth: vi.fn(),
   stripAuthPrefix: vi.fn((username: string) => username),
   computeIsFoundation: vi.fn(() => false),
 }));
 
-vi.mock('@lfx-one/shared/utils', () => ({
-  computeIsFoundation,
-  sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
-}));
+vi.mock('@lfx-one/shared/utils', async () => {
+  // The real GH-1558 comparator — the ordering specs must exercise the service's actual sort, not
+  // a stub. Deep importActual avoids the barrel's @angular/common/http graph (compiler shim above).
+  const { compareVotesByRecency } = await vi.importActual<typeof import('@lfx-one/shared/utils/vote.utils')>('@lfx-one/shared/utils/vote.utils');
+  const { maskIdentifierForLogs } = await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils');
+  return {
+    computeIsFoundation,
+    compareVotesByRecency,
+    maskIdentifierForLogs,
+    sortCommentResponsesByRecency: vi.fn((responses: unknown[]) => responses),
+  };
+});
 vi.mock('./logger.service', () => ({
   logger: {
     debug: vi.fn(),
@@ -74,8 +91,14 @@ vi.mock('../helpers/poll-endpoint.helper', () => ({ pollEndpoint }));
 vi.mock('../helpers/query-service.helper', () => ({ fetchAllQueryResources }));
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail,
+  getRawEffectiveEmail,
   getUsernameFromAuth,
   stripAuthPrefix,
+  // Composed from the mocks above, as in vote-response.helper.spec.ts, so per-test identity control is unchanged.
+  resolveUserIdentity: async (req: Request) => {
+    const raw: string | null = await getUsernameFromAuth(req);
+    return { email: getEffectiveEmail(req), username: raw ? stripAuthPrefix(raw) : raw };
+  },
 }));
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
@@ -665,14 +688,28 @@ describe('VoteService', () => {
     };
     const project = { uid: PROJECT_UID, slug: 'acme-project', name: 'Acme Project', parent_uid: 'p0000000-0000-0000-0000-00000000d000' };
 
+    /** Drives the captured fetchPage callback the way the real fetchAllQueryResources loop would. */
+    const drainPages = () =>
+      fetchAllQueryResources.mockImplementation(
+        async (_req: unknown, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<IndexedVote>>): Promise<IndexedVote[]> => {
+          const collected: IndexedVote[] = [];
+          let page = await fetchPage();
+          collected.push(...page.resources.map((r) => r.data));
+          while (page.page_token) {
+            page = await fetchPage(page.page_token);
+            collected.push(...page.resources.map((r) => r.data));
+          }
+          return collected;
+        }
+      );
+
     it('enriches an index row carrying only project_uid with the canonical project fields', async () => {
-      proxyRequest.mockResolvedValue({ resources: [{ data: indexRow }], page_token: undefined });
+      fetchAllQueryResources.mockResolvedValue([indexRow]);
       getProjectsByIds.mockResolvedValue(new Map([[PROJECT_UID, project]]));
       computeIsFoundation.mockReturnValue(true);
 
       const result = await service.getVotes(req);
 
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote' });
       expect(getProjectsByIds).toHaveBeenCalledWith(req, [PROJECT_UID]);
       expect(computeIsFoundation).toHaveBeenCalledWith(project);
       expect(result.data).toHaveLength(1);
@@ -689,7 +726,7 @@ describe('VoteService', () => {
     });
 
     it('leaves the row unenriched when the project lookup misses, preserving the flat-URL fallback', async () => {
-      proxyRequest.mockResolvedValue({ resources: [{ data: indexRow }], page_token: undefined });
+      fetchAllQueryResources.mockResolvedValue([indexRow]);
       getProjectsByIds.mockResolvedValue(new Map());
 
       const result = await service.getVotes(req);
@@ -699,7 +736,7 @@ describe('VoteService', () => {
     });
 
     it('skips project enrichment entirely when includeProject is false', async () => {
-      proxyRequest.mockResolvedValue({ resources: [{ data: indexRow }], page_token: undefined });
+      fetchAllQueryResources.mockResolvedValue([indexRow]);
 
       const result = await service.getVotes(req, {}, { includeProject: false });
 
@@ -708,6 +745,223 @@ describe('VoteService', () => {
       expect(result.data[0]).not.toHaveProperty('project_slug');
       expect(result.data[0]).not.toHaveProperty('is_foundation');
       expect(result.data[0]).not.toHaveProperty('parent_project_uid');
+    });
+
+    it('assembles the canonical active-first, creation_time-desc order across multiple upstream pages', async () => {
+      // Upstream returns its default name_asc order (Alpha, Middling, Zebra) split across two pages.
+      drainPages();
+      proxyRequest
+        .mockResolvedValueOnce({
+          resources: [
+            {
+              data: {
+                vote_uid: 'alpha-active',
+                name: 'Alpha Active',
+                status: 'active',
+                creation_time: '2025-06-01T00:00:00Z',
+                project_uid: PROJECT_UID,
+                end_time: '2099-01-01T00:00:00Z',
+              },
+            },
+            {
+              data: {
+                vote_uid: 'middling-ended',
+                name: 'Middling Ended',
+                status: 'ended',
+                creation_time: '2025-06-10T00:00:00Z',
+                project_uid: PROJECT_UID,
+                end_time: '2025-07-01T00:00:00Z',
+              },
+            },
+          ],
+          page_token: 'upstream-cursor-2',
+        })
+        .mockResolvedValueOnce({
+          resources: [
+            {
+              data: {
+                vote_uid: 'zebra-active',
+                name: 'Zebra Active',
+                status: 'active',
+                creation_time: '2025-05-01T00:00:00Z',
+                project_uid: PROJECT_UID,
+                end_time: '2099-01-01T00:00:00Z',
+              },
+            },
+          ],
+          page_token: undefined,
+        });
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getVotes(req, { parent: `project:${PROJECT_UID}` });
+
+      // Active tier first (newest creation_time first within it), then ended — the drained
+      // name_asc order (alpha, middling, zebra) must not leak through.
+      expect(result.data.map((v) => v.uid)).toEqual(['alpha-active', 'zebra-active', 'middling-ended']);
+      // The drain loop threads the upstream cursor and pins the GH-1558 fixed upstream page size.
+      expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        parent: `project:${PROJECT_UID}`,
+        type: 'vote',
+        page_size: 1000,
+      });
+      expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        parent: `project:${PROJECT_UID}`,
+        type: 'vote',
+        page_size: 1000,
+        page_token: 'upstream-cursor-2',
+      });
+    });
+
+    it('forwards filters/name/parent/tags upstream while stripping client page_size, page_token, and order', async () => {
+      drainPages();
+      proxyRequest.mockResolvedValue({ resources: [], page_token: undefined });
+
+      await service.getVotes(req, {
+        parent: 'project:abc',
+        tags: 'committee_uid:c1',
+        name: 'steering',
+        filters: ['status:active'],
+        filters_or: ['user_email:a@example.org'],
+        page_size: '10',
+        page_token: 'offset:20',
+        order: 'updated_at.desc',
+      });
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        parent: 'project:abc',
+        tags: 'committee_uid:c1',
+        name: 'steering',
+        filters: ['status:active'],
+        filters_or: ['user_email:a@example.org'],
+        type: 'vote',
+        page_size: 1000,
+      });
+    });
+
+    it('slices the sorted set by the client page_size and round-trips the opaque offset token', async () => {
+      const rows = ['2025-06-04', '2025-06-03', '2025-06-02', '2025-06-01'].map((day, i) => ({
+        vote_uid: `v-${i}`,
+        name: `Vote ${i}`,
+        status: 'ended',
+        creation_time: `${day}T00:00:00Z`,
+        project_uid: PROJECT_UID,
+        end_time: '2025-07-01T00:00:00Z',
+      }));
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const first = await service.getVotes(req, { page_size: '2' });
+      expect(first.data.map((v) => v.uid)).toEqual(['v-0', 'v-1']);
+      expect(first.page_token).toBe('offset:2');
+
+      const second = await service.getVotes(req, { page_size: '2', page_token: first.page_token });
+      expect(second.data.map((v) => v.uid)).toEqual(['v-2', 'v-3']);
+      expect(second.page_token).toBeUndefined();
+    });
+
+    it('defaults to a 50-row page when the client omits page_size', async () => {
+      const rows = Array.from({ length: 51 }, (_, i) => ({
+        vote_uid: `v-${String(i).padStart(2, '0')}`,
+        name: `Vote ${i}`,
+        status: 'ended',
+        creation_time: `2025-06-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`,
+        project_uid: PROJECT_UID,
+        end_time: '2025-07-01T00:00:00Z',
+      }));
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getVotes(req);
+
+      expect(result.data).toHaveLength(50);
+      expect(result.page_token).toBe('offset:50');
+    });
+
+    it('rejects an explicit-but-malformed page_token with a 400 instead of silently restarting at page 1', async () => {
+      const rows = [
+        { vote_uid: 'v-0', name: 'A', status: 'ended', creation_time: '2025-06-02T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
+        { vote_uid: 'v-1', name: 'B', status: 'ended', creation_time: '2025-06-01T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
+      ];
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      await expect(service.getVotes(req, { page_size: '1', page_token: 'not-an-offset' })).rejects.toThrow(ServiceValidationError);
+    });
+
+    it('rejects an offset page_token whose digits overflow a safe integer instead of answering an empty terminal page', async () => {
+      const rows = [
+        { vote_uid: 'v-0', name: 'A', status: 'ended', creation_time: '2025-06-02T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
+      ];
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      // 400 nines: parseInt overflows float64 to Infinity — slice() would return [] with no continuation.
+      await expect(service.getVotes(req, { page_token: `offset:${'9'.repeat(400)}` })).rejects.toThrow(ServiceValidationError);
+    });
+
+    it('caps a client page_size at the upstream max so one response cannot pull an unbounded slice', async () => {
+      const rows = Array.from({ length: 1001 }, (_, i) => ({
+        vote_uid: `v-${String(i).padStart(4, '0')}`,
+        name: `Vote ${i}`,
+        status: 'ended',
+        creation_time: `2025-06-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`,
+        project_uid: PROJECT_UID,
+        end_time: '2025-07-01T00:00:00Z',
+      }));
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getVotes(req, { page_size: '5000' });
+
+      expect(result.data).toHaveLength(1000);
+      expect(result.page_token).toBe('offset:1000');
+    });
+
+    it('drains with failOnPartial so a failed later page surfaces as an error instead of a silently truncated list', async () => {
+      drainPages();
+      proxyRequest.mockRejectedValueOnce(new Error('upstream 500'));
+
+      await expect(service.getVotes(req)).rejects.toThrow('upstream 500');
+      // The behavioral contract is the helper's own (tested there); here we pin the wiring.
+      expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
+    });
+
+    it('enriches only the returned slice, not the full drained set', async () => {
+      const rows = [
+        { vote_uid: 'v-0', name: 'A', status: 'ended', creation_time: '2025-06-03T00:00:00Z', project_uid: 'p-0', end_time: '2025-07-01T00:00:00Z' },
+        { vote_uid: 'v-1', name: 'B', status: 'ended', creation_time: '2025-06-02T00:00:00Z', project_uid: 'p-1', end_time: '2025-07-01T00:00:00Z' },
+        { vote_uid: 'v-2', name: 'C', status: 'ended', creation_time: '2025-06-01T00:00:00Z', project_uid: 'p-2', end_time: '2025-07-01T00:00:00Z' },
+      ];
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      await service.getVotes(req, { page_size: '2' });
+
+      expect(getProjectsByIds).toHaveBeenCalledWith(req, ['p-0', 'p-1']);
+    });
+  });
+
+  describe('getVotesUpstreamPage', () => {
+    it('forwards caller params verbatim and returns the raw upstream cursor (committee-activity contract)', async () => {
+      const row = { vote_uid: 'v-0', name: 'A', status: 'ended', project_uid: 'p-0', end_time: '2025-07-01T00:00:00Z' };
+      proxyRequest.mockResolvedValue({ resources: [{ data: row }], page_token: 'upstream-cursor' });
+
+      const result = await service.getVotesUpstreamPage(
+        req,
+        { tags: 'committee_uid:c1', page_size: 40, sort: 'updated_desc', date_field: 'last_modified_time', date_to: '2025-06-01T00:00:00Z' },
+        { includeProject: false }
+      );
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        tags: 'committee_uid:c1',
+        page_size: 40,
+        sort: 'updated_desc',
+        date_field: 'last_modified_time',
+        date_to: '2025-06-01T00:00:00Z',
+        type: 'vote',
+      });
+      expect(result.page_token).toBe('upstream-cursor');
+      expect(result.data[0].uid).toBe('v-0');
     });
   });
 
@@ -729,7 +983,9 @@ describe('VoteService', () => {
     });
 
     it('enriches the per-uid vote details with the same canonical project fields', async () => {
-      fetchAllQueryResources.mockResolvedValue([{ vote_uid: MY_VOTE_UID, vote_status: IndexedVoteResponseStatus.RESPONDED }]);
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: MY_VOTE_UID, vote_status: IndexedVoteResponseStatus.RESPONDED, user_email: 'spec-user@example.org' },
+      ]);
       proxyRequest.mockResolvedValue(detailVote);
       getProjectsByIds.mockResolvedValue(new Map([[PROJECT_UID, project]]));
       computeIsFoundation.mockReturnValue(true);
@@ -746,6 +1002,213 @@ describe('VoteService', () => {
         is_foundation: true,
         parent_project_uid: project.parent_uid,
       });
+    });
+
+    it('orders by the canonical recency comparator — active tier first, creation_time desc within it (GH-1558)', async () => {
+      // end_time desc (the pre-GH-1558 inline sort) would put UID_B before UID_A; creation_time desc must win.
+      const UID_A = 'v0000000-0000-0000-0000-00000000d201';
+      const UID_B = 'v0000000-0000-0000-0000-00000000d202';
+      const UID_C = 'v0000000-0000-0000-0000-00000000d203';
+      const details: Record<string, object> = {
+        [UID_A]: {
+          uid: UID_A,
+          name: 'Active Newer',
+          status: 'active',
+          creation_time: '2025-06-01T00:00:00Z',
+          end_time: '2099-01-01T00:00:00Z',
+          project_uid: PROJECT_UID,
+        },
+        [UID_B]: {
+          uid: UID_B,
+          name: 'Active Older',
+          status: 'active',
+          creation_time: '2025-01-01T00:00:00Z',
+          end_time: '2099-12-01T00:00:00Z',
+          project_uid: PROJECT_UID,
+        },
+        [UID_C]: {
+          uid: UID_C,
+          name: 'Ended Newest',
+          status: 'ended',
+          creation_time: '2025-12-01T00:00:00Z',
+          end_time: '2025-12-31T00:00:00Z',
+          project_uid: PROJECT_UID,
+        },
+      };
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: UID_A, username: 'spec-user' },
+        { vote_uid: UID_B, username: 'spec-user' },
+        { vote_uid: UID_C, username: 'spec-user' },
+      ]);
+      proxyRequest.mockImplementation((_req: unknown, _service: string, path: string) => Promise.resolve(details[path.replace('/votes/', '')]));
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const votes = await service.getMyVotes(req);
+
+      expect(votes.map((v) => v.uid)).toEqual([UID_A, UID_B, UID_C]);
+    });
+
+    it('keys legacy poll_id-only rows by the v1 parent alias, matching Pending Actions (GH #2985)', async () => {
+      // vote_uid absent on a legacy row: poll_id (parent v1 alias) must key both the detail list
+      // and the responded set, or My Votes and Pending Actions diverge on the same row.
+      fetchAllQueryResources.mockResolvedValue([
+        { poll_id: 'poll-v1-9', vote_status: IndexedVoteResponseStatus.RESPONDED, user_email: 'spec-user@example.org' },
+      ]);
+      proxyRequest.mockResolvedValue(detailVote);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const votes = await service.getMyVotes(req);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/poll-v1-9', 'GET');
+      expect(votes[0]).toMatchObject({ response_status: VoteResponseStatus.RESPONDED });
+    });
+
+    it('returns [] without any upstream call when the request carries neither username nor email', async () => {
+      getUsernameFromAuth.mockResolvedValue(null);
+      getEffectiveEmail.mockReturnValue(null);
+
+      const votes = await service.getMyVotes(req);
+
+      expect(votes).toEqual([]);
+      // The helper short-circuits before the paginator, so neither the vote_response query nor
+      // any per-vote detail fetch may fire.
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyVoteResponse', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000d301';
+
+    beforeEach(() => {
+      getUsernameFromAuth.mockResolvedValue('spec-user');
+      getEffectiveEmail.mockReturnValue('spec-user@example.org');
+      // Drive the helper's fetchPage callback through the mocked paginator (mirrors getVotes'
+      // drainPages) so the outgoing query params stay observable on proxyRequest.
+      fetchAllQueryResources.mockImplementation(
+        async (_req: unknown, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<unknown>>): Promise<unknown[]> => {
+          const page = await fetchPage();
+          return page.resources.map((r) => r.data);
+        }
+      );
+    });
+
+    it('narrows on vote_uid via filters, ANDed with the identity filters_or disjunction', async () => {
+      proxyRequest.mockResolvedValue({
+        resources: [
+          { data: { uid: 'vr-1', vote_uid: VOTE_UID, vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE, user_email: 'spec-user@example.org' } },
+        ],
+      });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'vote_response',
+        filters: [`vote_uid:${VOTE_UID}`],
+        filters_or: ['user_email:spec-user@example.org', 'username:spec-user'],
+      });
+      expect(result).toMatchObject({ uid: 'vr-1', vote_uid: VOTE_UID });
+    });
+
+    it('returns null when the only indexed row belongs to a different vote', async () => {
+      // Row carries the mocked identity so the helper's ownership re-check keeps it — the null
+      // must come from the vote_uid mismatch, not from the row being filtered out.
+      proxyRequest.mockResolvedValue({ resources: [{ data: { uid: 'vr-1', vote_uid: 'v0000000-0000-0000-0000-00000000d999', username: 'spec-user' } }] });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+    });
+
+    it('falls back to a poll_id-scoped query for legacy rows carrying no vote_uid (GH #2985)', async () => {
+      // The vote_uid-scoped query finds nothing; the poll_id-scoped retry returns the legacy
+      // row — the same parent-key fallback getMyVotes applies, one list/drawer level down.
+      proxyRequest.mockResolvedValueOnce({ resources: [] }).mockResolvedValueOnce({
+        resources: [
+          { data: { uid: 'vr-legacy-1', poll_id: VOTE_UID, vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE, user_email: 'spec-user@example.org' } },
+        ],
+      });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        1,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`vote_uid:${VOTE_UID}`] })
+      );
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        2,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`poll_id:${VOTE_UID}`] })
+      );
+      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID, vote_uid: VOTE_UID });
+    });
+
+    it('returns null after exactly two scoped queries when neither vote_uid nor poll_id matches', async () => {
+      // The double-empty outcome (genuinely nonexistent/foreign vote) is the most common real
+      // path — pin the bounded two-call contract so the fallback can never silently loop or
+      // widen (companion to the poll_id fallback spec above).
+      proxyRequest.mockResolvedValue({ resources: [] });
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        1,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`vote_uid:${VOTE_UID}`] })
+      );
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        2,
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ filters: [`poll_id:${VOTE_UID}`] })
+      );
+    });
+
+    it('falls back to poll_id when the vote_uid query returns only non-matching rows', async () => {
+      // Owned but foreign-vote rows (loosely-analyzed vote_uid filter) must not suppress the
+      // legacy fallback — the trigger is "no match", not "no rows".
+      proxyRequest
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-other', vote_uid: 'v0000000-0000-0000-0000-00000000d999', username: 'spec-user' } }] })
+        .mockResolvedValueOnce({ resources: [{ data: { uid: 'vr-legacy-1', poll_id: VOTE_UID, user_email: 'spec-user@example.org' } }] });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(result).toMatchObject({ uid: 'vr-legacy-1', poll_id: VOTE_UID, vote_uid: VOTE_UID });
+    });
+
+    it('falls back to vote_id when the indexer left uid empty, logging the drift', async () => {
+      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_id: 'v1-row-9', vote_uid: VOTE_UID, username: 'spec-user' } }] });
+
+      const result = await service.getMyVoteResponse(req, VOTE_UID);
+
+      expect(result).toMatchObject({ uid: 'v1-row-9', vote_uid: VOTE_UID });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'get_my_vote_response',
+        'vote_response row missing uid; falling back to vote_id',
+        expect.objectContaining({ vote_uid: VOTE_UID, vote_id: 'v1-row-9' })
+      );
+    });
+
+    it('returns null without any upstream call when the request carries neither username nor email', async () => {
+      getUsernameFromAuth.mockResolvedValue(null);
+      getEffectiveEmail.mockReturnValue(null);
+
+      await expect(service.getMyVoteResponse(req, VOTE_UID)).resolves.toBeNull();
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
     });
   });
 });

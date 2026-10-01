@@ -545,6 +545,30 @@ export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: Meeti
 }
 
 /**
+ * Duration (minutes) for the start {@link getUpcomingMeetingStartTime} resolves.
+ *
+ * An explicit occurrence's duration wins. Otherwise the occurrence whose start instant matches
+ * that upcoming start, so an extended or shortened slot is not measured with the series length.
+ * The series `duration` is the fallback when the list has no matching occurrence:
+ * `next_occurrence_start_time` carries no duration, and the list `occurrences` array is not
+ * always usable (LFXV2-2054), so it must not override the upcoming start.
+ */
+export function resolveUpcomingMeetingDurationMinutes(meeting: Meeting, occurrence?: MeetingOccurrence | null): number {
+  if (occurrence) {
+    return occurrence.duration ?? meeting?.duration ?? 0;
+  }
+  const start = getUpcomingMeetingStartTime(meeting);
+  const startMs = start ? Date.parse(start) : Number.NaN;
+  if (!Number.isNaN(startMs)) {
+    const matched = meeting?.occurrences?.find((item) => Date.parse(item.start_time) === startMs);
+    if (matched && Number.isFinite(matched.duration)) {
+      return matched.duration;
+    }
+  }
+  return meeting?.duration ?? 0;
+}
+
+/**
  * Check if a meeting can be joined based on current time
  * @param meeting The meeting object
  * @param occurrence Optional specific occurrence (for recurring meetings)
@@ -613,6 +637,49 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
 
 /** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
 export const MEETING_END_BUFFER_MS = 40 * 60_000;
+
+/**
+ * Picks the meeting a "Next Meeting" card should show: the one whose upcoming start is soonest.
+ *
+ * Recurring series keep their origin in `start_time`, which is often months in the past. Sorting
+ * on that field both ranks the oldest series first and, when the card also reads `start_time`,
+ * paints a past date on a series that still has a future occurrence (GH-2907). The effective
+ * start comes from {@link getUpcomingMeetingStartTime} (`next_occurrence_start_time`, then the
+ * series origin) so the card matches the meeting-details page.
+ *
+ * A meeting stays eligible until that effective start, plus duration, plus {@link MEETING_END_BUFFER_MS}
+ * has passed, so an in-progress occurrence still counts. A series with no remaining occurrence is dropped.
+ *
+ * @param meetings Candidate meetings (typically one committee's upcoming list)
+ * @param now Clock used for the ended check; defaults to the current time
+ * @returns The soonest still-current meeting, or null when none qualify
+ */
+export function selectNextUpcomingMeeting(meetings: Meeting[], now = new Date()): Meeting | null {
+  const nowMs = now.getTime();
+  let selected: Meeting | null = null;
+  let selectedStartMs = Number.POSITIVE_INFINITY;
+
+  for (const meeting of meetings) {
+    const start = getUpcomingMeetingStartTime(meeting);
+    if (!start) {
+      continue;
+    }
+    const startMs = Date.parse(start);
+    if (Number.isNaN(startMs)) {
+      continue;
+    }
+    const endMs = startMs + resolveUpcomingMeetingDurationMinutes(meeting) * 60_000 + MEETING_END_BUFFER_MS;
+    if (nowMs > endMs) {
+      continue;
+    }
+    if (startMs < selectedStartMs) {
+      selected = meeting;
+      selectedStartMs = startMs;
+    }
+  }
+
+  return selected;
+}
 
 /**
  * Returns true when an occurrence's end time plus buffer has passed.

@@ -12,6 +12,7 @@ import { GetMyMeetupsOptions, MeetupSortField, MeetupSortOrder, MeetupStatusFilt
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
+import { parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MeetupsService } from '../services/meetups.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
@@ -84,8 +85,7 @@ export class MeetupsController {
   }
 
   private parseMeetupsOptions(req: Request): GetMyMeetupsOptions {
-    const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_MEETUPS_PAGE_SIZE), 10);
-    const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+    const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_MEETUPS_PAGE_SIZE, maxPageSize: MAX_MEETUPS_PAGE_SIZE });
     const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC')
       .trim()
       .toUpperCase();
@@ -93,8 +93,6 @@ export class MeetupsController {
     const rawIsPast = req.query['isPast'];
     const rawStatus = req.query['status'] ? String(req.query['status']).trim().toLowerCase() : undefined;
 
-    const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_MEETUPS_PAGE_SIZE ? rawPageSize : DEFAULT_MEETUPS_PAGE_SIZE;
-    const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
     const sortOrder: MeetupSortOrder = this.isMeetupSortOrder(rawSortOrder) ? rawSortOrder : 'ASC';
     const sortField = rawSortField && this.isMeetupSortField(rawSortField) ? rawSortField : undefined;
     const status = rawStatus && this.isMeetupStatusFilter(rawStatus) ? rawStatus : undefined;

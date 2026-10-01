@@ -43,20 +43,25 @@
               </td>
               <td class="py-4">
                 <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-600"
-                    [attr.aria-label]="viewLabel"
-                    [attr.data-testid]="'mentorship-application-history-view-' + row.id"
-                    (click)="onView(row)">
-                    <i class="fa-light fa-eye" aria-hidden="true"></i>
-                  </button>
+                  @if (row.programUrl) {
+                    <a
+                      class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+                      [href]="row.programUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.aria-label]="viewLabel"
+                      [attr.data-testid]="'mentorship-application-history-view-' + row.id">
+                      <i class="fa-light fa-eye" aria-hidden="true"></i>
+                    </a>
+                  }
                   @if (row.canWithdraw) {
                     <button
                       type="button"
-                      class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+                      class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                       [attr.aria-label]="withdrawLabel"
                       [attr.data-testid]="'mentorship-application-history-withdraw-' + row.id"
+                      [disabled]="withdrawingId() !== null"
+                      [attr.aria-busy]="withdrawingId() === row.id"
                       (click)="onWithdraw(row)">
                       <i class="fa-light fa-trash-can" aria-hidden="true"></i>
                     </button>

@@ -13,11 +13,13 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
+
 export const GROUPS_URL = '/org/groups';
 export const DATA_LOAD_TIMEOUT = 30_000;
 
-export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-export const MOCK_ACCOUNT_NAME = 'Acme Motors';
+export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
+export const MOCK_ACCOUNT_NAME = SYNTHETIC_ORG_NAME;
 
 export const GROUP_UID = 'c-transport';
 export const PROJECT_SLUG = 'uepf';

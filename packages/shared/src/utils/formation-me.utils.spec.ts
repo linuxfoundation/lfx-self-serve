@@ -32,6 +32,8 @@ const formationSummary = (overrides: Partial<MyFormationSummary> = {}): MyFormat
   gating_done: 0,
   gating_total: 1,
   blocking_item_title: null,
+  blocking_item_blocked: false,
+  gates_cleared: false,
   ...overrides,
 });
 

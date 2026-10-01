@@ -26,7 +26,7 @@ Patterns where Snowflake query results don't match TypeScript interface declarat
 
 **Detect:** for any direct Snowflake SQL invocation, count `?` occurrences in the SQL string and compare against the binds array length.
 
-**Empirical citation:** general pattern surfaced in CodeRabbit comments on PRs touching `snowflake.service.ts` callers. The `lfx-skills:lfx-self-serve-code-reviewer` subagent also flags this in its Snowflake direct-SQL check, but pre-PR catching it is cheaper.
+**Empirical citation:** general pattern surfaced in CodeRabbit comments on PRs touching `snowflake.service.ts` callers. The `/lfx-skills:lfx-general-code-review` reviewer also covers this via the repo's Snowflake rules, but pre-PR catching it is cheaper.
 
 **Failure message:** SQL placeholder count doesn't match binds-array length.
 
