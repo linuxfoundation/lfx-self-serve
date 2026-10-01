@@ -46,7 +46,7 @@
         <p class="text-sm text-gray-500" data-testid="mentorship-mentee-apply-subtitle">{{ subtitle() }}</p>
       </header>
 
-      <lfx-mentorship-profile-card />
+      <lfx-mentorship-profile-card [syncMentorshipProfiles]="true" />
 
       <lfx-mentorship-mentee-profile-details
         [profile]="view.profile.profile"
@@ -86,6 +86,6 @@
     }
   </div>
 
-  <lfx-mentorship-mentee-profile-edit-drawer />
-  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" />
+  <lfx-mentorship-mentee-profile-edit-drawer (saved)="onProfileSaved($event)" />
+  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" (saved)="onProfileSaved($event)" />
 </div>

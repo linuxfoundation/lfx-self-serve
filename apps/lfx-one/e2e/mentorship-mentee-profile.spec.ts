@@ -130,12 +130,12 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
     await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
   });
 
-  test('Save Changes closes the drawer and shows the coming-soon toast', async ({ page }) => {
+  test('Resume Browse shows the coming-soon toast', async ({ page }) => {
     await page.getByTestId('mentorship-mentee-profile-details-edit').click();
     await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
 
-    await page.getByTestId('mentee-profile-edit-drawer-save').click();
-    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
+    await page.getByTestId('mentee-profile-edit-resume-browse').click();
     await expect(page.getByText(MENTORSHIP_COMING_SOON_DETAIL)).toBeVisible();
+    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
   });
 });

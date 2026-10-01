@@ -32,6 +32,11 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
+  HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
   lfxColors,
@@ -184,6 +189,14 @@ export default {
     HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
     // Events top-countries bar fill (HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+    // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES).flatMap((c) => c.split(' ')),
+    ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES),
+    // Members at-risk aging bar fill (HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
+    // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { Component, computed, signal } from '@angular/core';
 import {
   HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
   HEALTH_METRICS_MEMBERS_SCOPE_NOTE,
@@ -13,6 +13,12 @@ import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
+import { MembersBoardAttendanceComponent } from './components/members-board-attendance/members-board-attendance.component';
+import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
+import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersNpsComponent } from './components/members-nps/members-nps.component';
+import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 
 import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces';
@@ -23,7 +29,17 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
  */
 @Component({
   selector: 'lfx-health-metrics-members',
-  imports: [HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, MembersTiersComponent],
+  imports: [
+    HealthMetricsL2SectionDirective,
+    HealthMetricsL2ShellComponent,
+    MembersAtRiskComponent,
+    MembersBoardAttendanceComponent,
+    MembersBridgeComponent,
+    MembersDirectoryComponent,
+    MembersNpsComponent,
+    MembersRenewalsComponent,
+    MembersTiersComponent,
+  ],
   templateUrl: './health-metrics-members.component.html',
 })
 export class HealthMetricsMembersComponent {
@@ -32,5 +48,11 @@ export class HealthMetricsMembersComponent {
   protected readonly dataSections = HEALTH_METRICS_MEMBERS_DATA_SECTIONS;
   protected readonly crossReference = HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE;
   protected readonly scopeNote = HEALTH_METRICS_MEMBERS_SCOPE_NOTE;
-  protected readonly subNavItems: HealthMetricsMembersSubNavItem[] = buildHealthMetricsMembersSubNavItems();
+  protected readonly listCount = signal<number | null>(null);
+  protected readonly riskNote = signal<string>('');
+  protected readonly renewalsCount = signal<number | null>(null);
+  protected readonly boardNote = signal<string>('');
+  protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() =>
+    buildHealthMetricsMembersSubNavItems({ list: this.listCount(), renewals: this.renewalsCount() }, { risk: this.riskNote(), board: this.boardNote() })
+  );
 }

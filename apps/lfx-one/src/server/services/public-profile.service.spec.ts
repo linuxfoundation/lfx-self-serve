@@ -119,10 +119,14 @@ describe('projectPublicProfile', () => {
             ID: 'proj-1',
             Name: 'Kubernetes',
             Slug: 'k8s',
-            commits: 12,
+            commits: 0,
             docs: 3,
             affiliations: [{ Organization: { Name: 'Acme' }, StartDate: '2020', EndDate: '2022' }],
-            contributions: [{ date: '2024-01-01', commits: 2 }],
+            contributions: [
+              { date: 'current_year', commits: 3, prs: 2, issues: 1, added: 10, deleted: 4, docs: 9, count: 6 },
+              { date: 'last_year', commits: 5, prs: 1, issues: 0, added: 0, deleted: 2, count: 2 },
+              { date: 'not_a_year', commits: 99 },
+            ],
           },
         ],
       },
@@ -139,7 +143,20 @@ describe('projectPublicProfile', () => {
     expect(projected.isPublic).toBe(true);
     expect(projected.basic).toMatchObject({ Name: 'Jane', Title: 'Engineer', Identities: [{ Username: 'jane-gh' }] });
     expect(projected.About).toBe('Hello');
-    expect(projected.technical_contribution?.projects[0]).toEqual({ Name: 'Kubernetes', Slug: 'k8s', commits: 12, deleted: 0, added: 0, prs: 0, issues: 0 });
+    const year = new Date().getUTCFullYear();
+    expect(projected.technical_contribution?.projects[0]).toEqual({
+      Name: 'Kubernetes',
+      Slug: 'k8s',
+      commits: 8,
+      deleted: 6,
+      added: 10,
+      prs: 3,
+      issues: 1,
+      years: [
+        { year, commits: 3, deleted: 4, added: 10, prs: 2, issues: 1 },
+        { year: year - 1, commits: 5, deleted: 2, added: 0, prs: 1, issues: 0 },
+      ],
+    });
     expect(projected.certification_activities).toEqual([{ Name: 'CKA', Type: 'cert', StartDate: '2024', EndDate: '2025' }]);
     expect(projected.training_activities).toEqual([{ Name: 'Intro', Type: 'E-Learning' }]);
     expect(projected.badges).toEqual([{ Image: 'https://img.example/b.png', Url: 'https://b.example' }]);
@@ -153,12 +170,49 @@ describe('projectPublicProfile', () => {
     expect(wire).not.toContain('jane-twitter'); // only the first non-empty identity username projected
     expect(wire).not.toContain('avatar.example'); // Identities[].Avatar
     expect(wire).not.toContain('affiliations');
-    expect(wire).not.toContain('contributions');
+    expect(wire).not.toContain('current_year'); // raw relative date labels
     expect(wire).not.toContain('Acme'); // employment history
     expect(wire).not.toContain('proj-1'); // project.ID
     expect(wire).not.toContain('"docs"'); // project.docs
     expect(wire).not.toContain('Springfield'); // presentation location
     expect(wire).not.toContain('Status'); // neither certification nor training Status is projected
+  });
+
+  it('falls back to top-level project counts when there are no recognised yearly rows', () => {
+    const projectWith = (contributions: unknown[]) =>
+      projectPublicProfile({
+        isPublic: true,
+        technical_contribution: { projects: [{ Name: 'Legacy', Slug: 'legacy', commits: 7, prs: 2, issues: 1, added: 5, deleted: 3, contributions }] },
+      }).technical_contribution?.projects[0];
+
+    const expected = { Name: 'Legacy', Slug: 'legacy', commits: 7, deleted: 3, added: 5, prs: 2, issues: 1, years: [] };
+    expect(projectWith([])).toEqual(expected);
+    expect(projectWith([{ date: 'not_a_year', commits: 99 }])).toEqual(expected);
+  });
+
+  it('merges yearly rows that resolve to the same calendar year', () => {
+    const year = new Date().getUTCFullYear();
+    const projected = projectPublicProfile({
+      isPublic: true,
+      technical_contribution: {
+        projects: [
+          {
+            Name: 'Dup',
+            contributions: [
+              { date: 'current_year', commits: 2, prs: 1 },
+              { date: String(year), commits: 3, issues: 4 },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(projected.technical_contribution?.projects[0]).toMatchObject({
+      commits: 5,
+      prs: 1,
+      issues: 4,
+      years: [{ year, commits: 5, deleted: 0, added: 0, prs: 1, issues: 4 }],
+    });
   });
 
   it('fails closed to isPublic false and omits absent optional sections', () => {

@@ -92,6 +92,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
@@ -173,6 +174,7 @@ export class OrgEasyclaDetailComponent {
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -191,7 +193,6 @@ export class OrgEasyclaDetailComponent {
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
-
   /**
    * Lists fetched by the flagged wait, fed back into the page's own `claData`.
    *
@@ -201,6 +202,9 @@ export class OrgEasyclaDetailComponent {
    * the one the page must then render — so they arrive here instead.
    */
   private readonly retriedList$ = new Subject<OrgClaGroupList | null>();
+  private readonly rosterChanged$ = new Subject<string>();
+  /** Fires on each organization load, so a roster re-read requested before it can never land after it. */
+  private readonly listReloaded$ = new Subject<void>();
 
   /**
    * A signing trip is in flight: this address carries the flag EasyCLA was told to return with.
@@ -511,14 +515,8 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
-   *
-   * Three conjuncts: the row is signed (the producer stores the flag on the corporate signature,
-   * so an unsigned row has nothing to update), ACS granted the write (hide-on-deny — the design
-   * withholds the control from a viewer who cannot use it, since the disabled-with-banner
-   * pattern needs #1989 to explain itself), and this page is not showing the pre-sign preview
-   * (the row it would flip does not exist yet).
    */
-  protected readonly showAutoEclaToggle = computed(() => this.claGroup()?.signed === true && !this.showingPreview() && this.autoEclaAllowed() === true);
+  protected readonly showAutoEclaToggle = computed(() => this.initShowAutoEclaToggle());
 
   /**
    * The current toggle value the template binds to.
@@ -669,6 +667,29 @@ export class OrgEasyclaDetailComponent {
       }
     });
 
+    // Only the latest re-read may land: an older one can still name a viewer who has since
+    // removed themselves, and it would clear that hide.
+    this.rosterChanged$
+      .pipe(
+        switchMap((uid) =>
+          this.claService.getClaGroups(uid).pipe(
+            map((list) => ({ uid, list })),
+            takeUntil(this.listReloaded$),
+            catchError((error: unknown) => {
+              console.warn('Failed to refresh organization CLA groups after a manager change:', error);
+              return of(null);
+            })
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((refreshed) => {
+        if (!refreshed || this.selectedOrgUid() !== refreshed.uid) return;
+        const stillListed = new Set((refreshed.list?.claGroups ?? []).filter((group) => group.viewerIsClaManager === true).map((group) => group.id));
+        this.selfRemovals.keepOnly(refreshed.uid, stillListed);
+        this.retriedList$.next(refreshed.list);
+      });
+
     // Drop a remembered value once the list row carries it. Until then it survives a project
     // change, because that change does not refetch the list.
     toObservable(computed(() => this.initAutoEclaSettledRow()))
@@ -769,6 +790,16 @@ export class OrgEasyclaDetailComponent {
     const signatureId = this.claGroup()?.id;
     if (!signatureId) return;
     this.loadedManagerCount.set({ signatureId, count });
+  }
+
+  /**
+   * Re-reads the organization's CLA list after a manager was added or removed, so the roster flag
+   * is recomputed by the server. Fed through `retriedList$` rather than `orgUid$`, which would put
+   * the skeleton over the Managers panel that just reported the change.
+   */
+  protected onRosterChanged(): void {
+    const uid = this.selectedOrgUid();
+    if (uid) this.rosterChanged$.next(uid);
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
@@ -1305,7 +1336,9 @@ export class OrgEasyclaDetailComponent {
     // for an unsigned row, which carries the organization's own coverage and counts where the
     // selection carries only two names.
     const listed = this.listedGroupForAddress();
-    if (listed) return listed;
+    if (listed) {
+      return this.selfRemovals.removed(this.selectedOrgUid(), listed.id) ? { ...listed, viewerIsClaManager: false } : listed;
+    }
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.
@@ -1382,6 +1415,12 @@ export class OrgEasyclaDetailComponent {
 
   private initTabs(): OrgClaDetailTabView[] {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
+  }
+
+  /** Signed row, viewer on its CLA manager list, ACS grants the write, and not the pre-sign preview. */
+  private initShowAutoEclaToggle(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true && !this.showingPreview() && this.autoEclaAllowed() === true;
   }
 
   private initAutoEclaValue(): boolean {
@@ -1575,6 +1614,8 @@ export class OrgEasyclaDetailComponent {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
         this.autoEclaWrites.forgetSettled();
+        this.selfRemovals.forgetAll();
+        this.listReloaded$.next();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(

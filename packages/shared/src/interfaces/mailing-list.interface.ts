@@ -80,6 +80,8 @@ export interface GroupsIOMailingList {
   uid: string;
   /** Groups.io group name (3-34 chars) */
   group_name: string;
+  /** Parent service domain copied onto the indexed mailing list (may be absent on older records) */
+  domain?: string;
   /** Whether the mailing list is publicly accessible */
   public: boolean;
   /** Origin: api, webhook, or mock */

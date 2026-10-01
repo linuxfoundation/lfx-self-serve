@@ -4,6 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplication } from '@lfx-one/shared/interfaces';
+import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { menteeTestApplication, menteeTestCards, menteeTestTask } from '@shared/testing/mentorship-mentee-test-data';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,7 +22,10 @@ describe('MenteeApplicantTasksComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MenteeApplicantTasksComponent],
-      providers: [{ provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } }],
+      providers: [
+        { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
+        { provide: MenteeTaskStatusService, useValue: { changeStatus: vi.fn() } },
+      ],
     });
 
     await TestBed.compileComponents();

@@ -1,20 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, input, output, signal } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_COMING_SOON_TOAST_LIFE, MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL } from '@lfx-one/shared/constants';
-import { MentorshipMentorProfileDetails, MentorshipMentorProgramRequest, MentorshipProgram } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import {
+  MentorshipMentorOpenProgram,
+  MentorshipMentorProfileDetails,
+  MentorshipMentorProgramRequest,
+  MentorshipMentorProgramRequestsResponse,
+} from '@lfx-one/shared/interfaces';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ButtonComponent } from '../../../../../../shared/components/button/button.component';
 import { RichEditorComponent } from '../../../../../../shared/components/rich-editor/rich-editor.component';
 import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
+import { MentorProgramRequestService } from '../../../../services/mentor-program-request.service';
+import { MentorRequestWithdrawService } from '../../../../services/mentor-request-withdraw.service';
 import { MentorProgramsSectionComponent } from '../../../mentor-register/components/mentor-programs-section/mentor-programs-section.component';
 import { DrawerModule } from 'primeng/drawer';
 import { MentorProfileEditDrawerComponent } from './mentor-profile-edit-drawer.component';
@@ -27,30 +37,12 @@ const PROFILE: MentorshipMentorProfileDetails = {
   resumeUrl: 'https://example.com/resume.pdf',
 };
 
-const PROGRAMS: MentorshipProgram[] = [
-  {
-    id: 'p1',
-    slug: 'gridflow',
-    name: 'GridFlow',
-    projectName: 'LF Energy',
-    term: 'Fall 2026',
-    status: 'open',
-    stats: { mentors: 2, mentees: 5, graduated: 0 },
-    createdOn: '2026-01-01T00:00:00Z',
-    updatedOn: '2026-09-01T00:00:00Z',
-  },
-  {
-    id: 'p2',
-    slug: 'apicurio',
-    name: 'Apicurio',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    status: 'open',
-    stats: { mentors: 1, mentees: 3, graduated: 0 },
-    createdOn: '2026-01-01T00:00:00Z',
-    updatedOn: '2026-09-01T00:00:00Z',
-  },
+const PROGRAMS: MentorshipMentorOpenProgram[] = [
+  { id: 'p1', name: 'GridFlow' },
+  { id: 'p2', name: 'Apicurio' },
 ];
+
+const REQUESTS: MentorshipMentorProgramRequest[] = [{ id: 'app-1', programId: 'p1', programName: 'GridFlow', status: 'pending' }];
 
 // --- Lightweight stubs for expensive child components ---
 
@@ -66,14 +58,21 @@ class StubDrawerComponent {
   readonly styleClass = input('');
 }
 
+@Component({ selector: 'p-confirmDialog', template: '' })
+class StubConfirmDialogComponent {}
+
 @Component({ selector: 'lfx-mentorship-mentor-programs-section', template: '' })
 class StubProgramsSectionComponent {
-  readonly programs = input<MentorshipProgram[]>([]);
-  readonly loading = input(false);
   readonly bordered = input(true);
   readonly requests = input<MentorshipMentorProgramRequest[]>([]);
-  readonly add = output<MentorshipProgram>();
+  readonly requesting = input(false);
+  readonly withdrawingId = input<string | null>(null);
+  readonly invitedProgramIds = input<string[]>([]);
+  readonly requestsLoading = input(false);
+  readonly requestsFailed = input(false);
+  readonly add = output<MentorshipMentorOpenProgram>();
   readonly withdraw = output<string>();
+  readonly retry = output<void>();
 }
 
 @Component({ selector: 'lfx-rich-editor', template: '' })
@@ -118,35 +117,65 @@ describe('MentorProfileEditDrawerComponent', () => {
   let comp: MentorProfileEditDrawerComponent;
   let drawer: MentorProfileEditDrawerService;
   let messageAdd: ReturnType<typeof vi.fn>;
+  let revision: ReturnType<typeof signal<number>>;
+  let getMentorRequests: ReturnType<typeof vi.fn<() => Observable<MentorshipMentorProgramRequestsResponse>>>;
+  let request: ReturnType<typeof vi.fn<(program: MentorshipMentorOpenProgram) => Observable<boolean>>>;
+  let confirmWithdraw: ReturnType<typeof vi.fn>;
+  let clearMentorCaches: ReturnType<typeof vi.fn>;
+  let withdrawingId: ReturnType<typeof signal<string | null>>;
 
   function element(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
   }
 
+  function section(): StubProgramsSectionComponent {
+    return fixture.debugElement.query(By.directive(StubProgramsSectionComponent)).componentInstance as StubProgramsSectionComponent;
+  }
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
   beforeEach(async () => {
     messageAdd = vi.fn();
     drawer = new MentorProfileEditDrawerService();
+    revision = signal(0);
+    getMentorRequests = vi.fn(() => of({ data: REQUESTS, invitedProgramIds: [] }));
+    request = vi.fn(() => of(true));
+    confirmWithdraw = vi.fn();
+    clearMentorCaches = vi.fn();
+    withdrawingId = signal<string | null>(null);
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [MentorProfileEditDrawerComponent],
       providers: [
         {
-          provide: MentorshipService,
-          useValue: {
-            getPrograms: vi.fn(() => of({ data: PROGRAMS, total: PROGRAMS.length })),
-          },
+          provide: MentorshipMentorService,
+          useValue: { getMentorRequests, clearMentorCaches, mentorRequestsRevision: revision.asReadonly() },
         },
+        { provide: MentorProgramRequestService, useValue: { request } },
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: MentorProfileEditDrawerService, useValue: drawer },
       ],
     })
       .overrideComponent(MentorProfileEditDrawerComponent, {
         remove: {
-          imports: [DrawerModule, ButtonComponent, RichEditorComponent, MentorProgramsSectionComponent, SkillsPickerComponent, ResumeSectionComponent],
+          imports: [
+            ConfirmDialogModule,
+            DrawerModule,
+            ButtonComponent,
+            RichEditorComponent,
+            MentorProgramsSectionComponent,
+            SkillsPickerComponent,
+            ResumeSectionComponent,
+          ],
         },
         add: {
           imports: [
+            StubConfirmDialogComponent,
             StubDrawerComponent,
             StubProgramsSectionComponent,
             StubRichEditorComponent,
@@ -156,13 +185,14 @@ describe('MentorProfileEditDrawerComponent', () => {
           ],
         },
       })
+      // The withdraw service is provided by the drawer itself; its confirm and toasts have their own spec.
+      .overrideProvider(MentorRequestWithdrawService, { useValue: { confirmWithdraw, withdrawingId: withdrawingId.asReadonly() } })
       .compileComponents();
 
     fixture = TestBed.createComponent(MentorProfileEditDrawerComponent);
     comp = fixture.componentInstance;
     drawer.open(PROFILE);
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await settle();
   });
 
   // --- Form seeding ---
@@ -173,16 +203,6 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(raw.introduction).toBe(PROFILE.aboutMe);
     expect(raw.skills).toEqual(PROFILE.skills);
     expect(raw.resumeFileName).toBe(PROFILE.resumeFileName);
-  });
-
-  it('resets program requests on each open', () => {
-    comp['onAddProgram'](PROGRAMS[0]);
-    expect(comp['requests']().length).toBe(1);
-
-    drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
-    fixture.detectChanges();
-
-    expect(comp['requests']().length).toBe(0);
   });
 
   // --- Save / Cancel ---
@@ -234,6 +254,21 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(actions?.querySelector('[data-testid="mentor-profile-edit-drawer-cancel"]')).toBeTruthy();
   });
 
+  it('mounts the programs section on the first open only, and keeps it after a close', async () => {
+    drawer.close();
+    fixture = TestBed.createComponent(MentorProfileEditDrawerComponent);
+    await settle();
+    expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).toBeNull();
+
+    drawer.open(PROFILE);
+    await settle();
+    expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).not.toBeNull();
+
+    drawer.close();
+    await settle();
+    expect(fixture.debugElement.query(By.directive(StubProgramsSectionComponent))).not.toBeNull();
+  });
+
   it('renders all four content sections', () => {
     expect(element().querySelector('lfx-mentorship-mentor-programs-section')).toBeTruthy();
     expect(element().querySelector('[data-testid="mentor-profile-edit-introduction"]')).toBeTruthy();
@@ -243,21 +278,100 @@ describe('MentorProfileEditDrawerComponent', () => {
 
   // --- Program requests ---
 
-  it('adds a program request and prevents duplicates', () => {
-    comp['onAddProgram'](PROGRAMS[0]);
-    comp['onAddProgram'](PROGRAMS[0]);
-
-    expect(comp['requests']().length).toBe(1);
-    expect(comp['requests']()[0].programId).toBe('p1');
+  it('passes the mentor requests to the programs section, which reads the programs itself', () => {
+    expect(section().requests()).toEqual(REQUESTS);
+    expect(section().requestsLoading()).toBe(false);
+    expect(section().requestsFailed()).toBe(false);
   });
 
-  it('withdraws a program request by id', () => {
+  it('tells the section the requests are loading while an open reads them, so its picker waits', async () => {
+    const pending = new Subject<MentorshipMentorProgramRequestsResponse>();
+    getMentorRequests.mockReturnValueOnce(pending);
+    drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
+    await settle();
+
+    expect(section().requestsLoading()).toBe(true);
+
+    pending.next({ data: REQUESTS, invitedProgramIds: [] });
+    pending.complete();
+    await settle();
+
+    expect(section().requestsLoading()).toBe(false);
+  });
+
+  it('passes the invited programs to the section so the picker can leave them out', async () => {
+    getMentorRequests.mockReturnValue(of({ data: REQUESTS, invitedProgramIds: ['p2'] }));
+    drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
+    await settle();
+
+    expect(section().invitedProgramIds()).toEqual(['p2']);
+  });
+
+  it('marks the requests failed, not empty, when they cannot be read', async () => {
+    getMentorRequests.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+    drawer.open({ ...PROFILE, aboutMe: 'Reopen' });
+    await settle();
+
+    expect(section().requestsFailed()).toBe(true);
+    expect(section().requests()).toEqual([]);
+    expect(section().requestsLoading()).toBe(false);
+  });
+
+  it('clears the mentor caches on Retry so the requests are read again', () => {
+    section().retry.emit();
+
+    expect(clearMentorCaches).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads the requests when a write bumps the revision, keeping the rows meanwhile', async () => {
+    const pending = new Subject<MentorshipMentorProgramRequestsResponse>();
+    getMentorRequests.mockReturnValueOnce(pending);
+    const callsBefore = getMentorRequests.mock.calls.length;
+
+    revision.update((value) => value + 1);
+    await settle();
+
+    expect(getMentorRequests.mock.calls.length).toBe(callsBefore + 1);
+    expect(section().requests()).toEqual(REQUESTS);
+    expect(section().requestsLoading()).toBe(false);
+
+    const updated: MentorshipMentorProgramRequest[] = [{ ...REQUESTS[0], status: 'withdrawn' }];
+    pending.next({ data: updated, invitedProgramIds: [] });
+    pending.complete();
+    await settle();
+
+    expect(section().requests()).toEqual(updated);
+  });
+
+  it('sends a picked program right away and disables the picker until it settles', async () => {
+    const pending = new Subject<boolean>();
+    request.mockReturnValueOnce(pending);
+
+    section().add.emit(PROGRAMS[1]);
+    await settle();
+
+    expect(request).toHaveBeenCalledWith(PROGRAMS[1]);
+    expect(section().requesting()).toBe(true);
+
+    // A second pick while the first is in flight is ignored.
     comp['onAddProgram'](PROGRAMS[0]);
-    comp['onAddProgram'](PROGRAMS[1]);
+    expect(request).toHaveBeenCalledTimes(1);
 
-    comp['onWithdraw']('req_p1');
+    pending.next(true);
+    pending.complete();
+    await settle();
 
-    expect(comp['requests']().length).toBe(1);
-    expect(comp['requests']()[0].programId).toBe('p2');
+    expect(section().requesting()).toBe(false);
+  });
+
+  it('hands Withdraw to the withdraw service and passes its busy row to the section', async () => {
+    section().withdraw.emit('app-1');
+
+    expect(confirmWithdraw).toHaveBeenCalledWith('app-1');
+
+    withdrawingId.set('app-1');
+    await settle();
+
+    expect(section().withdrawingId()).toBe('app-1');
   });
 });

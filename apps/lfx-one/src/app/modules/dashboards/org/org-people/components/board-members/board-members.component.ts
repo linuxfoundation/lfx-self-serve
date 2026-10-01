@@ -13,8 +13,8 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import {
   EMPTY_ORG_PEOPLE_BOARD_MEMBERS_RESPONSE,
@@ -73,7 +73,7 @@ import { buildBoardPersonGroups, decorateBoardPersonGroup } from './helpers/boar
 export class BoardMembersComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(BoardMembersService);
-  private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -127,8 +127,8 @@ export class BoardMembersComponent {
 
   protected readonly isFiltering = computed(() => this.initIsFiltering());
 
-  // Writer-FGA gate (UX); BFF + Heimdall still re-enforce on write.
-  protected readonly canEdit = computed(() => this.initCanEdit());
+  // Edit gate (UX, #3136): roster editor or authorizer `writer`; BFF + Heimdall still re-enforce on write.
+  protected readonly canEdit = this.orgEditAccess.canEditSelected;
 
   protected readonly ariaSortMap = computed(() => this.initAriaSortMap());
   protected readonly sortIconMap = computed(() => this.initSortIconMap());
@@ -451,13 +451,6 @@ export class BoardMembersComponent {
   private initDecoratedGroups(): BoardMemberPersonGroupVm[] {
     const opts = { canEdit: this.canEdit(), editDisabledTooltip: this.editDisabledTooltip };
     return this.sortedGroups().map((g) => decorateBoardPersonGroup(g, opts));
-  }
-
-  private initCanEdit(): boolean {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return false;
-    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
-    return this.roleGrants.editorSet().has(uid);
   }
 
   private initAriaSortMap(): Record<BoardMembersSortColumn, 'ascending' | 'descending' | 'none'> {

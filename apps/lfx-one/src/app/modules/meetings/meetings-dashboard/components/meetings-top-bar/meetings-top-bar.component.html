@@ -2,26 +2,56 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-  <!-- Time Filter Pills -->
-  <lfx-filter-pills [options]="timeTabOptions" [selectedFilter]="timeFilter()" (filterChange)="onTimeTabChange($event)" data-testid="time-filter-tabs" />
+  <!-- Time range: one either/or control, kept visually apart from the on/off filters beside it -->
+  <lfx-filter-pills
+    variant="segmented"
+    ariaLabel="Time range"
+    [options]="timeTabOptions"
+    [selectedFilter]="timeFilter()"
+    (filterChange)="onTimeTabChange($event)"
+    data-testid="time-filter-tabs" />
 
-  <!-- Pending RSVP Filter Pills (Me lens, upcoming only) -->
-  @if (showPendingRsvpFilter()) {
-    <lfx-filter-pills
-      [options]="pendingRsvpPillOptions"
-      [selectedFilter]="pendingRsvpOnly() ? 'pending' : ''"
-      (filterChange)="onPendingRsvpPillChange()"
-      data-testid="pending-rsvp-filter-pills" />
+  @if (showPendingRsvpFilter() || showOrganizerFilter() || showDeclinedFilter()) {
+    <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
+      <!-- Pending RSVP (Me lens, upcoming only) -->
+      @if (showPendingRsvpFilter()) {
+        <div data-testid="pending-rsvp-filter-pills">
+          <ng-container
+            *ngTemplateOutlet="toggleChip; context: { id: 'pending', label: 'Pending RSVP', count: pendingRsvpCount(), active: pendingRsvpOnly() }" />
+        </div>
+      }
+
+      <!-- Organized by me (Me lens, upcoming + past) -->
+      @if (showOrganizerFilter()) {
+        <div data-testid="organizer-filter-pills">
+          <ng-container
+            *ngTemplateOutlet="toggleChip; context: { id: 'organizer', label: 'Organized by me', count: organizerCount(), active: organizerOnly() }" />
+        </div>
+      }
+
+      <!-- Show declined (Me lens, upcoming only): meetings declined for every date are hidden by default -->
+      @if (showDeclinedFilter()) {
+        <div data-testid="declined-filter-pills">
+          <ng-container *ngTemplateOutlet="toggleChip; context: { id: 'declined', label: 'Show declined', count: declinedCount(), active: showDeclined() }" />
+        </div>
+      }
+    </div>
   }
 
-  <!-- Organized by me Filter Pills (Me lens, upcoming + past) -->
-  @if (showOrganizerFilter()) {
-    <lfx-filter-pills
-      [options]="organizerPillOptions"
-      [selectedFilter]="organizerOnly() ? 'organizer' : ''"
-      (filterChange)="onOrganizerPillChange()"
-      data-testid="organizer-filter-pills" />
-  }
+  <ng-template #toggleChip let-id="id" let-label="label" let-count="count" let-active="active">
+    <button
+      type="button"
+      class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm border transition-colors"
+      [class]="active ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100'"
+      [attr.aria-pressed]="active"
+      [attr.aria-label]="label + ', ' + count"
+      [attr.data-testid]="'filter-pill-' + id"
+      (click)="onToggleChip(id)">
+      <i class="fa-light text-xs" [class]="active ? 'fa-square-check' : 'fa-square'" aria-hidden="true"></i>
+      <span>{{ label }}</span>
+      <span class="text-xs" [class]="active ? 'text-blue-600' : 'text-gray-500'" [attr.data-testid]="'filter-pill-count-' + id">{{ count }}</span>
+    </button>
+  </ng-template>
 
   <!-- Search Input -->
   <div class="flex-1">

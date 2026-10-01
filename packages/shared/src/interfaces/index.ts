@@ -186,6 +186,8 @@ export * from './my-document.interface';
 
 // API Gateway user profile interfaces
 export * from './api-gateway-user-profile.interface';
+// v1 user-service email sync (upsert) payload interfaces
+export * from './user-service-email-sync.interface';
 // Impersonation interfaces
 export * from './impersonation.interface';
 
@@ -317,6 +319,7 @@ export * from './crowdfunding.interface';
 // Mentorship interfaces
 export * from './mentorship.interface';
 export * from './mentorship-mentee.interface';
+export * from './mentorship-mentor.interface';
 export * from './mentorship-lfx-profile-card.interface';
 
 // EasyCLA "CLAs" interfaces (Me lens)

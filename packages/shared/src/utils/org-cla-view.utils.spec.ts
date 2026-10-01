@@ -161,6 +161,7 @@ describe('orgClaGroupForAddress', () => {
     status: 'signed',
     needsClaManager: false,
     claManagersCount: 0,
+    viewerIsClaManager: false,
     ...over,
   });
 

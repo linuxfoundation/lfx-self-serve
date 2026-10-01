@@ -5,12 +5,9 @@ import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenE
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
-import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
 import { clearImpersonationSession, decodeJwtPayload, hasActiveImpersonationSession } from '../utils/auth-helper';
-import { exchangeRefreshTokenForAudience } from '../utils/refresh-token-exchange.util';
-
-const crowdfundingAuthService = new CrowdfundingAuthService();
+import { populateApiGatewayToken } from '../utils/refresh-token-exchange.util';
 
 // OIDC middleware already provides req.oidc with authentication context
 
@@ -74,9 +71,6 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
 
   // Profile auth start — needs auth but no bearer token (initiates redirect)
   { pattern: '/api/profile/auth/start', type: 'api', auth: 'required', tokenRequired: false },
-
-  // Crowdfunding auth start — needs session auth but no bearer token (initiates CF auth-code redirect)
-  { pattern: '/api/crowdfunding/auth/start', type: 'api', auth: 'required', tokenRequired: false },
 
   // Protected API routes - require authentication and token. `classifyRoute`'s `apiFallback` mirrors this row's
   // shape so a malformed/undecodable API path fails closed the same way — keep the two in sync.
@@ -308,56 +302,6 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
 }
 
 /**
- * Silently fetches a second access token scoped to the API Gateway audience.
- * Uses the existing refresh token from the OIDC session — no user interaction required.
- * Result is cached in the session (with a 5-minute expiry buffer) and stored on req.apiGatewayToken.
- * Failures are non-blocking; the request continues without the token.
- */
-async function extractApiGatewayToken(req: Request): Promise<void> {
-  const apiGatewayAudience = process.env['API_GW_AUDIENCE'];
-  if (!apiGatewayAudience) {
-    logger.warning(req, 'api_gateway_token', 'API_GW_AUDIENCE env var is not set, skipping secondary token fetch');
-    return;
-  }
-
-  const token = await exchangeRefreshTokenForAudience(req, {
-    issuerBaseUrl: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '',
-    clientId: process.env['PCC_AUTH0_CLIENT_ID'] || '',
-    clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || '',
-    audience: apiGatewayAudience,
-    sessionKey: 'apiGatewayToken',
-  });
-
-  if (token) {
-    req.apiGatewayToken = token;
-    logger.debug(req, 'api_gateway_token', 'API Gateway token ready');
-  }
-}
-
-/**
- * Loads the LFX Crowdfunding API token onto req.crowdfundingToken.
- * If the session token is valid, uses it directly. If it is expired or absent but a
- * refresh token is stored, attempts a silent refresh before falling through — avoiding
- * the auth-code redirect round-trip on token expiry.
- */
-async function extractCrowdfundingToken(req: Request): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
-    req.crowdfundingToken = req.appSession.crowdfundingToken;
-    logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
-    return;
-  }
-
-  if (crowdfundingAuthService.isConfigured() && req.appSession?.crowdfundingRefreshToken) {
-    const refreshed = await crowdfundingAuthService.tryRefreshToken(req);
-    if (refreshed && req.appSession?.crowdfundingToken) {
-      req.crowdfundingToken = req.appSession.crowdfundingToken;
-      logger.debug(req, 'crowdfunding_token', 'Crowdfunding token silently refreshed');
-    }
-  }
-}
-
-/**
  * Makes authentication decision based on route config and auth status
  */
 function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecision {
@@ -570,10 +514,9 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
         needsLogout = tokenResult.needsLogout;
       }
 
-      // 4. Silently fetch secondary tokens when the user is authenticated
+      // 4. Silently fetch the API-gateway token when the user is authenticated
       if (hasToken) {
-        await extractApiGatewayToken(req);
-        await extractCrowdfundingToken(req);
+        await populateApiGatewayToken(req);
       }
 
       // 5. Build result for decision making

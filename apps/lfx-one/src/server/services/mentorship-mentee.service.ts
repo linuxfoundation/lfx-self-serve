@@ -1,45 +1,64 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
+} from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
   MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeProfileResponse,
+  MentorshipMenteeRegisterRequest,
+  MentorshipMenteeProfileUpdateRequest,
+  MentorshipMenteeProfileUpdateResponse,
+  MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTaskSubmissionUpdate,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
+import { isMentorshipTaskPastDue } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
   MENTORSHIP_APPLICATIONS_PATH,
-  MENTORSHIP_LIST_MAX_PAGES,
-  MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
+  MENTORSHIP_ME_MENTEE_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_TASKS_PATH,
 } from '../constants';
-import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { ConflictError, InvalidRequestError } from '../errors';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
   mapMentorshipMenteeApplication,
   mapMentorshipMenteeApplicationHistory,
   mapMentorshipMenteeApplyTarget,
+  resolveMentorshipMenteeTaskDueDate,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
+import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { buildMentorshipUpstreamMenteeProfile } from '../helpers/mentorship-mentee-register.helper';
+import { buildMentorshipUpstreamMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /** BFF for the mentee pages at `/mentorship/mentee/*`. Every read and write calls the mentorship service with the caller's token. */
 export class MentorshipMenteeService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
 
   /**
    * Whether the signed-in user has a mentee profile. A user has at most one, so the check
@@ -52,6 +71,33 @@ export class MentorshipMenteeService {
     const hasProfile = (await this.listMenteeProfiles(req)).length > 0;
     logger.debug(req, 'mentorship_has_mentee_profile', 'Mentee profile existence checked', { hasProfile });
     return { hasProfile };
+  }
+
+  /**
+   * Creates the signed-in user's mentee profile. Upstream's `PUT` is an upsert that replaces every
+   * column, so a second registration would wipe the first one's answers; the caller's own mentee
+   * rows are listed first and an existing profile is refused with a 409 the register page reads.
+   * A failed check propagates rather than falling through to the write. Upstream's own 400, 403
+   * and 422 also pass through. The check and the write are two requests, so two simultaneous
+   * registrations by the same user can both pass the check; the later write wins. The email is
+   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
+   */
+  public async registerMenteeProfile(req: Request, request: MentorshipMenteeRegisterRequest): Promise<void> {
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Checking for an existing mentee profile');
+    if ((await this.listMenteeProfiles(req)).length > 0) {
+      throw new ConflictError(MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS, MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE, {
+        operation: 'mentorship_register_mentee_profile',
+      });
+    }
+
+    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
+    const body = buildMentorshipUpstreamMenteeProfile(request, email);
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', {
+      has_demographics: body.demographics !== undefined,
+      has_email: body.email !== undefined,
+    });
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH, 'PUT', undefined, body);
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Mentee profile created');
   }
 
   /**
@@ -105,6 +151,39 @@ export class MentorshipMenteeService {
   }
 
   /**
+   * Changes the status of one of the signed-in user's tasks through the assignee route,
+   * `PATCH /tasks/{id}/submission`. The body is only the status: upload is not wired, so `file` is never
+   * sent, and upstream checks a required file against the one already stored on the task. Its 400 (a
+   * required file is missing), 403 (the gateway or the service refuses a non-assignee; the assignee grant
+   * is written asynchronously, so a fresh task can briefly answer 403), 404 and 409 (not a legal move
+   * from the task's status) propagate so the row can say why. The returned task is dropped and the pages
+   * re-read their applications instead.
+   *
+   * Upstream enforces no deadline, so a `submitted` request reads the task first and is refused with a 400
+   * (`TASK_PAST_DUE`) once the end of its due date's UTC day has passed. The due date resolves as it does on
+   * the page: the task's own `due_date`, else, for a prerequisite, its term's application close, read from the
+   * caller's applications because a task carries no term dates. A failed read propagates rather than skip the
+   * check.
+   */
+  public async updateMenteeTaskStatus(req: Request, taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Promise<void> {
+    logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    if (status === 'submitted') {
+      const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
+      const applicationEndDate = await this.getTaskApplicationEndDate(req, task);
+      if (isMentorshipTaskPastDue(resolveMentorshipMenteeTaskDueDate(task, applicationEndDate), Date.now())) {
+        throw new InvalidRequestError(MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, {
+          operation: 'mentorship_update_mentee_task_status',
+        });
+      }
+    }
+
+    const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
+    await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/submission`, 'PATCH', undefined, body);
+    logger.debug(req, 'mentorship_update_mentee_task_status', 'Mentee task status updated', { taskId, status });
+  }
+
+  /**
    * The signed-in user's mentee profile and application history. Upstream lists only the
    * caller's own rows, off their token, so no other user's profile is reachable from here. A
    * user has at most one profile, so the read asks for `limit: 1`, the same as the has-profile
@@ -112,8 +191,8 @@ export class MentorshipMenteeService {
    * names it shows, so it needs no task or program reads.
    *
    * An empty list returns an empty profile rather than an error: the apply page is reachable
-   * straight after registering, and registration does not save a profile yet
-   * (linuxfoundation/lfx-mentorship#187). A failed profile read propagates; a failed applications
+   * before a profile exists, and it reads the profile that `POST /api/mentorship/mentee/profile`
+   * writes. A failed profile read propagates; a failed applications
    * read logs a warning and leaves the history empty, since the apply page reads this profile too
    * and never shows the history.
    */
@@ -134,6 +213,34 @@ export class MentorshipMenteeService {
       history_count: history.length,
     });
     return response;
+  }
+
+  /**
+   * Saves the changed groups of the signed-in user's mentee profile. Upstream keeps every column the body
+   * omits and replaces a JSON column whole, so only the groups the caller changed are forwarded, and never
+   * `profile_links` (the resume is not editable yet). When a JSON column is among them, the stored row is
+   * read first and each column is layered over its stored value, so keys this BFF does not model survive;
+   * a failed read propagates rather than risk dropping them. The two calls are not atomic, so an edit made
+   * elsewhere in between can be overwritten. The response is the re-mapped row: no history, since the caller
+   * layers it over the profile it already has. Upstream's 404 (no mentee profile) and 409 (more than one)
+   * propagate.
+   */
+  public async updateMenteeProfile(req: Request, request: MentorshipMenteeProfileUpdateRequest): Promise<MentorshipMenteeProfileUpdateResponse> {
+    // Group names only: the values are personal data.
+    logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
+    const writesJsonColumn = request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined;
+    const [stored] = writesJsonColumn ? await this.listMenteeProfiles(req) : [];
+    const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_ME_MENTEE_PROFILE_PATH,
+      'PATCH',
+      undefined,
+      buildMentorshipUpstreamMenteeProfileUpdate(request, stored)
+    );
+    const { profile, demographics } = mapMentorshipMenteeProfile(upstream);
+    logger.debug(req, 'mentorship_update_mentee_profile', 'Mentee profile updated', { has_demographics: demographics !== undefined });
+    return { profile, demographics };
   }
 
   /**
@@ -204,39 +311,26 @@ export class MentorshipMenteeService {
 
   /** The caller's own mentee applications, every page. */
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
-    return this.listAllPages<MentorshipUpstreamApplication>(req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+    return listAllMentorshipPages<MentorshipUpstreamApplication>(this.microserviceProxy, req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+  }
+
+  /**
+   * The term's application close for a prerequisite task with no due date of its own, from the caller's
+   * applications, since a task carries no term dates. Nothing is read for any other task, and a task whose
+   * application is not among the caller's gets no fallback date.
+   */
+  private async getTaskApplicationEndDate(req: Request, task: MentorshipUpstreamTask): Promise<string | undefined> {
+    if (task.due_date || task.category !== 'prerequisite' || !task.application_id) return undefined;
+    const applications = await this.listMenteeApplications(req);
+    return applications.find((application) => application.id === task.application_id)?.term?.application_end_date ?? undefined;
   }
 
   /** Every task on one of the caller's applications; upstream lets an applicant list their own. */
   private listApplicationTasks(req: Request, applicationId: string): Promise<MentorshipUpstreamTask[]> {
-    return this.listAllPages<MentorshipUpstreamTask>(req, `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`);
-  }
-
-  /**
-   * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
-   * the reported total, a page comes back empty, or the page carries no usable total. A list still
-   * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
-   */
-  private async listAllPages<T>(req: Request, path: string, query: Record<string, unknown> = {}): Promise<T[]> {
-    const items: T[] = [];
-    for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
-      const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(this.microserviceProxy, req, path, 'GET', {
-        ...query,
-        limit: MENTORSHIP_LIST_PAGE_SIZE,
-        offset: items.length,
-      });
-      const rows = data ?? [];
-      items.push(...rows);
-      const total = meta?.total;
-      if (rows.length === 0 || typeof total !== 'number' || !Number.isFinite(total) || items.length >= total) {
-        return items;
-      }
-    }
-    logger.warning(req, 'mentorship_list_all_pages', 'Upstream list exceeded the page cap, returning the rows read so far', {
-      path,
-      max_pages: MENTORSHIP_LIST_MAX_PAGES,
-      count: items.length,
-    });
-    return items;
+    return listAllMentorshipPages<MentorshipUpstreamTask>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`
+    );
   }
 }

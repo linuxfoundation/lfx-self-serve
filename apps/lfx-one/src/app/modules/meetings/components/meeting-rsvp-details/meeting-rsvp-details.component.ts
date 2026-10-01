@@ -4,11 +4,13 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { MeetingAttendeePreviewComponent } from '@app/modules/meetings/components/meeting-attendee-preview/meeting-attendee-preview.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   calculateRsvpCounts,
   countRegistrantAttendance,
   Meeting,
+  MeetingAttendeePreviewPerson,
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRsvp,
@@ -17,14 +19,19 @@ import {
   Project,
   RsvpCounts,
 } from '@lfx-one/shared';
-import { isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
+import {
+  buildAttendeePreviewFromRegistrants,
+  buildAttendeePreviewFromRsvps,
+  isMeetingInviteResponsesEnabled,
+  resolveRsvpOccurrenceId,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-rsvp-details',
-  imports: [NgClass, ButtonComponent],
+  imports: [NgClass, ButtonComponent, MeetingAttendeePreviewComponent],
   templateUrl: './meeting-rsvp-details.component.html',
 })
 export class MeetingRsvpDetailsComponent {
@@ -36,6 +43,8 @@ export class MeetingRsvpDetailsComponent {
   public readonly currentOccurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
   public readonly showAddButton: InputSignal<boolean> = input<boolean>(false);
+  /** Fixed-height faces row with "View all"; off where the page already lists guests (join page). */
+  public readonly showAttendeePreview: InputSignal<boolean> = input<boolean>(false);
 
   public readonly backgroundColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly borderColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
@@ -46,6 +55,7 @@ export class MeetingRsvpDetailsComponent {
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
   public readonly addClicked = output<void>();
+  public readonly viewAllClicked = output<void>();
   // Emits whether the current user has any RSVP on this meeting, derived from the already-fetched
   // registrants/rsvps data. Parent card uses this to flip "Set My RSVP" → "Update My RSVP".
   public readonly currentUserHasRsvpChanged = output<boolean>();
@@ -76,6 +86,15 @@ export class MeetingRsvpDetailsComponent {
     return this.upcomingData().rsvps;
   });
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
+  // Registrants when the roster was fetched (Me lens); otherwise the RSVP rows the project and
+  // foundation lens cards load, which still name the people who responded.
+  public readonly previewPeople: Signal<MeetingAttendeePreviewPerson[]> = computed(() => {
+    const registrants = this.registrants();
+    if (registrants.length > 0) {
+      return buildAttendeePreviewFromRegistrants(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
+    }
+    return buildAttendeePreviewFromRsvps(this.rsvps());
+  });
   // Tracks across both rsvps data AND user identity; re-emits whenever either changes so the
   // parent card's "Set My RSVP" / "Update My RSVP" label stays in sync with login/impersonation.
   public readonly currentUserHasRsvp: Signal<boolean> = computed(() => {

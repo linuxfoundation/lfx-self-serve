@@ -230,7 +230,12 @@ export class OrgLensProjectsController {
     return value;
   }
 
-  /** Read-only gate: mirrors `OrgLensAccessService.resolveCanManage`; write endpoints stay guarded by Heimdall. */
+  /**
+   * Switches `getWorkspaces` between a pure read and its default-workspace bootstrap + seed writes.
+   * Deliberately the caller's own roster (direct or roll-up admin), NOT `resolveOrgLensEdit`: a
+   * company-wide writer (`global_org_admin`, #3136) may edit workspaces explicitly, but merely opening
+   * Projects on any organization must not write to it. Write endpoints stay guarded by Heimdall.
+   */
   private async resolveCanEdit(req: Request, orgUid: string): Promise<boolean> {
     const username = getEffectiveUsername(req);
     if (!username) return false;

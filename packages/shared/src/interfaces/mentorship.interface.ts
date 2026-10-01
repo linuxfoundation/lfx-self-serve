@@ -14,7 +14,6 @@ import type {
   MENTORSHIP_TERM_ROW_STATUSES,
   MENTORSHIP_UPSTREAM_PROGRAM_STATUSES,
 } from '../constants/mentorship.constants';
-import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
 
 /**
  * Enrollment / graduation counters shown on the admin program card.
@@ -136,43 +135,6 @@ export interface MentorshipEnrollFieldErrors {
   terms?: string;
   prerequisites?: string;
   challengeUrl?: string;
-  termsAccepted?: string;
-}
-
-/**
- * One program a mentor has asked to join, as listed on the Become a Mentor form. Carries
- * the same `MentorshipMentorStatus` the admin Mentors tab shows for that person, since it
- * is the same fact viewed from the mentor's side.
- */
-export interface MentorshipMentorProgramRequest {
-  id: string;
-  programId: string;
-  programName: string;
-  status: MentorshipMentorStatus;
-}
-
-/**
- * Become a Mentor form state. Name, email, and avatar are not here — they come from the
- * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
- * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
- */
-export interface MentorshipMentorRegisterForm {
-  introduction: string;
-  skills: string[];
-  resumeFileName: string;
-  complianceAccepted: boolean;
-  termsAccepted: boolean;
-}
-
-/**
- * Field-keyed validation errors for the Become a Mentor form. Program requests have no
- * entry: applying to a program is optional, so a mentor can register a profile and pick
- * programs later.
- */
-export interface MentorshipMentorRegisterFieldErrors {
-  introduction?: string;
-  skills?: string;
-  complianceAccepted?: string;
   termsAccepted?: string;
 }
 
@@ -461,116 +423,6 @@ export interface MentorshipProgramDetail extends MentorshipProgramLists {
   tabCounts: MentorshipProgramTabCounts;
 }
 
-/** Counters shown on the mentor My Programs card. */
-export interface MentorshipMentorProgramStats {
-  mentees: number;
-  tasksToReview: number;
-  applicants: number;
-}
-
-/** Term lifecycle badge on the mentor My Programs card. */
-export type MentorshipMentorProgramTermStatus = 'active-term' | 'upcoming' | 'completed';
-
-/** Program row on the mentor My Programs list. */
-export interface MentorshipMentorProgram {
-  id: string;
-  slug: string;
-  name: string;
-  projectName: string;
-  term: string;
-  termStatus: MentorshipMentorProgramTermStatus;
-  stats: MentorshipMentorProgramStats;
-  logoUrl?: string;
-  /** ISO `YYYY-MM-DD` term bounds, shown on the mentor program-detail page subtitle. */
-  termStartDate?: string;
-  termEndDate?: string;
-}
-
-export type MentorshipMentorProgramsResponse = {
-  data: MentorshipMentorProgram[];
-  total: number;
-};
-
-export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS)[number]['value'];
-
-/**
- * One mentee task on the mentor program-detail Tasks tab. Flattened from current
- * mentees' assigned `tasks` where status is `submitted` (awaiting review) or
- * `completed` (approved). Pending / in-progress work is not listed here.
- */
-export type MentorshipMentorTaskReviewStatus = Extract<MentorshipApplicantTaskStatus, 'submitted' | 'completed'>;
-
-export interface MentorshipMentorReviewTask {
-  id: string;
-  menteeId: string;
-  menteeName: string;
-  menteeEmail: string;
-  avatarUrl?: string;
-  taskName: string;
-  description: string;
-  status: MentorshipMentorTaskReviewStatus;
-  termName: string;
-  updatedOn: string;
-  hasSubmission: boolean;
-}
-
-/**
- * Count badges shown next to each mentor program-detail tab label. `tasks` is the
- * number of current-mentee tasks with status `submitted` (Awaiting Review).
- */
-export interface MentorshipMentorProgramTabCounts {
-  tasks: number;
-  mentees: number;
-  applicants: number;
-}
-
-/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. */
-export interface MentorshipMentorProgramLists {
-  mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
-}
-
-/** Full mentor program-detail payload from `GET /api/mentorship/mentor/programs/:programId`. */
-export interface MentorshipMentorProgramDetail extends MentorshipMentorProgramLists {
-  program: MentorshipMentorProgram;
-  tabCounts: MentorshipMentorProgramTabCounts;
-}
-
-/** Underline tabs on `/mentorship/mentor/programs`. */
-export type MentorshipMentorPageTab = 'programs' | 'profile';
-
-/** Mentoring history entry lifecycle on `/mentorship/mentor/profile`. */
-export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
-
-/** One row on the Mentoring History section of the mentor profile page. */
-export interface MentorshipMentoringHistoryEntry {
-  id: string;
-  /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
-  programName: string;
-  /** Term the mentor supported, e.g. "Fall 2026". */
-  term: string;
-  /** Number of mentees the mentor supported during the term. */
-  menteesCount: number;
-  status: MentorshipMentoringHistoryStatus;
-}
-
-/** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
-export interface MentorshipMentorProfileDetails {
-  /** Rich-text HTML or plain text authored on the Become a Mentor form. */
-  aboutMe: string;
-  skills: string[];
-  /** Optional resume file name, matching the picker on the register form. */
-  resumeFileName?: string;
-  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
-  resumeUrl?: string;
-}
-
-/** Full response body from `GET /api/mentorship/mentor/profile`. */
-export interface MentorshipMentorProfileResponse {
-  profile: MentorshipMentorProfileDetails;
-  history: MentorshipMentoringHistoryEntry[];
-}
-
 // -- Program review (approver approve/reject email link) ---------------------
 
 /**
@@ -646,4 +498,27 @@ export interface MentorshipProgramReviewLink {
 export interface MentorshipProgramReviewConfirmation {
   program: MentorshipProgramReview;
   decision: MentorshipProgramReviewDecision;
+}
+
+/** How a failed mentor or mentee registration submit is shown. */
+export type MentorshipRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
+
+/** Result of `mapMentorshipRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
+export interface MentorshipRegisterSubmitFailure<TFieldErrors extends object> {
+  kind: MentorshipRegisterSubmitFailureKind;
+  /** Banner / toast copy. For 'field-errors' this is the first field message. */
+  message: string;
+  /** Present only for kind 'field-errors'; contains only keys listed in the caller's `fieldKeys`. */
+  fieldErrors?: TFieldErrors;
+}
+
+/** What differs between the mentor and mentee register pages when a save fails. */
+export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
+  /** The code the BFF puts on its 409 when the profile already exists. */
+  profileExistsCode: string;
+  profileExistsMessage: string;
+  /** The form fields a server 400 can name; any other field in `errors[]` is ignored. */
+  fieldKeys: readonly (keyof TFieldErrors)[];
+  /** Copy for a 422. Without it a 422 gets the fallback message, since the page has no eligibility statements to point at. */
+  ineligibleMessage?: string;
 }

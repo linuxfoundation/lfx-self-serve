@@ -273,6 +273,18 @@ router.get('/events-geography', requireDashboardAccess, (req, res, next) => anal
 // Health Metrics Members "Membership & revenue by tier" section (#3100)
 router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
 
+// Health Metrics Members "Membership bridge" and its movement lists (#3101)
+router.get('/members-bridge', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBridge(req, res, next));
+router.get('/members-movements', requireDashboardAccess, (req, res, next) => analyticsController.getMembersMovements(req, res, next));
+
+// Health Metrics Members "All members" (#3102)
+router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));
+router.get('/members-directory-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectoryTiers(req, res, next));
+router.get('/members-at-risk', requireDashboardAccess, (req, res, next) => analyticsController.getMembersAtRisk(req, res, next));
+router.get('/members-renewals', requireDashboardAccess, (req, res, next) => analyticsController.getMembersRenewals(req, res, next));
+router.get('/members-board-attendance', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBoardAttendance(req, res, next));
+router.get('/members-nps', requireDashboardAccess, (req, res, next) => analyticsController.getMembersNps(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

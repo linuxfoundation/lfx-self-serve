@@ -72,7 +72,9 @@ vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch: vi.fn() }));
 vi.mock('../helpers/api-gateway.helper', () => ({ getUserServiceBaseUrl: vi.fn(() => 'https://gw.test/user-service/v1') }));
 
 import { MicroserviceError } from '../errors';
+import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { logger } from './logger.service';
 import { UserService } from './user.service';
 
 describe('UserService.validateUserMetadata', () => {
@@ -401,6 +403,82 @@ describe('UserService profile visibility', () => {
   });
 });
 
+// lfx-self-serve-ops#183: the v1 upsert must never break email verification — every failure mode
+// (missing gateway token, upstream 4xx/5xx, transport throw) resolves false + WARN, never throws.
+describe('UserService.syncVerifiedEmailToUserService', () => {
+  const req = { apiGatewayToken: 'gw-token' } as unknown as Request;
+  const gw = gatewayFetch as unknown as ReturnType<typeof vi.fn>;
+  const baseUrl = getUserServiceBaseUrl as unknown as ReturnType<typeof vi.fn>;
+  const warn = logger.warning as unknown as ReturnType<typeof vi.fn>;
+
+  let service: UserService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new UserService();
+  });
+
+  it('PATCHes the address as Active+IsVerified with a redacted response and returns true on success', async () => {
+    gw.mockResolvedValue(null);
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(true);
+    expect(gw).toHaveBeenCalledWith(req, 'https://gw.test/user-service/v1/me/emails', {
+      operation: 'sync_verified_email',
+      service: 'user_service',
+      errorMessage: 'Verified email sync failed',
+      errorCode: 'EMAIL_SYNC_UPSERT_FAILED',
+      method: 'PATCH',
+      body: { Emails: [{ EmailAddress: 'secondary@example.com', IsVerified: true, Active: true }] },
+      redactResponseBody: true,
+    });
+  });
+
+  it('skips with a warning and returns false when the request carries no API Gateway token', async () => {
+    const result = await service.syncVerifiedEmailToUserService({} as unknown as Request, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(gw).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it.each([409, 500])('returns false with a warning when the upstream upsert fails (%i)', async (statusCode) => {
+    gw.mockRejectedValue(new MicroserviceError('boom', statusCode, 'EMAIL_SYNC_UPSERT_FAILED', { operation: 'sync_verified_email', service: 'user_service' }));
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('returns false with a warning when the fetch layer throws', async () => {
+    gw.mockRejectedValue(new Error('socket hangup'));
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  // Pins the never-throws contract against API_GW_AUDIENCE misconfiguration — getUserServiceBaseUrl
+  // throws when the env var is unset, and every sibling method calls it outside any try.
+  it('returns false with a warning when the gateway base URL cannot resolve (API_GW_AUDIENCE unset)', async () => {
+    baseUrl.mockImplementationOnce(() => {
+      throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', {
+        operation: 'sync_verified_email',
+        service: 'user_service',
+      });
+    });
+
+    const result = await service.syncVerifiedEmailToUserService(req, 'secondary@example.com');
+
+    expect(result).toBe(false);
+    expect(gw).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
 function queryPage<T>(items: T[]): QueryServiceResponse<T> {
   return { resources: items.map((data, index) => ({ id: `item:${index}`, data })) } as QueryServiceResponse<T>;
 }
@@ -465,10 +543,7 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     expect(rsvpActions).toHaveLength(1);
     expect(rsvpActions[0].meetingUid).toBe('tracked-meeting');
     expect(rsvpActions[0].buttonText).toBe('Set RSVP');
-    expect(actions.filter((action) => action.type === 'Agenda').map((action) => action.text)).toEqual([
-      'Review Legacy Board Agenda and Materials',
-      'Review Tracked Board Agenda and Materials',
-    ]);
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).toEqual(expect.arrayContaining(['v1_meeting', 'v1_meeting_registrant', 'v1_meeting_rsvp']));
   });
 
@@ -491,9 +566,52 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
     expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(0);
-    expect(actions.some((action) => action.type === 'Agenda')).toBe(true);
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).not.toContain('v1_meeting_registrant');
     expect(queriedTypes()).not.toContain('v1_meeting_rsvp');
+  });
+});
+
+describe('UserService.getPendingActions Review Agenda lens scoping (GH-2991)', () => {
+  const req = {} as unknown as Request;
+  const email = 'invitee@example.com';
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getMyPendingInvitations.mockReset();
+    getUsernameFromAuth.mockReset();
+    getMyFormationWork.mockReset();
+
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'v1_meeting'
+        ? queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false } satisfies Partial<Meeting>])
+        : queryPage([])
+    );
+
+    service = new UserService();
+  });
+
+  it('omits Review Agenda rows on the Me lens while still fetching meetings for RSVP', async () => {
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
+    expect(queriedTypes()).toContain('v1_meeting');
+  });
+
+  it('keeps Review Agenda rows on a project/foundation lens', async () => {
+    const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
+    const agendaActions = actions.filter((action) => action.type === 'Agenda');
+
+    expect(agendaActions).toHaveLength(1);
+    expect(agendaActions[0].buttonText).toBe('Review Agenda');
+    expect(agendaActions[0].text).toBe('Review Board Agenda and Materials');
   });
 });
 
@@ -774,7 +892,7 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
       return queryPage([]);
     });
 
-    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
 
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
     expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
@@ -796,7 +914,7 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
       return queryPage([]);
     });
 
-    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
 
     expect(surveyCalls).toBe(2);
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);

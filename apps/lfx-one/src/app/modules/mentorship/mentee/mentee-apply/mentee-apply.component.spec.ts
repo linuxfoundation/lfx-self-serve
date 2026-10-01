@@ -3,7 +3,7 @@
 
 import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -15,7 +15,7 @@ import {
   MENTORSHIP_MENTEE_APPLY_SUCCESS_SUMMARY,
   MENTORSHIP_MENTEE_PROFILE_CREATED_STATE,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeApplyTarget, MentorshipMenteeProfileResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeApplyTarget, MentorshipMenteeProfileResponse, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
@@ -23,6 +23,8 @@ import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { MenteeProfileEditDrawerComponent } from '../mentee-profile/components/mentee-profile-edit-drawer/mentee-profile-edit-drawer.component';
+import { MenteeProfileEditDrawerService } from '../mentee-profile/components/mentee-profile-edit-drawer/mentee-profile-edit-drawer.service';
+import { MenteeDemographicsEditDrawerComponent } from './components/mentee-demographics-edit-drawer/mentee-demographics-edit-drawer.component';
 import { MenteeBeforeYouApplyComponent } from './components/mentee-before-you-apply/mentee-before-you-apply.component';
 import { MenteeApplyComponent } from './mentee-apply.component';
 
@@ -30,13 +32,17 @@ import { MenteeApplyComponent } from './mentee-apply.component';
   selector: 'lfx-mentorship-profile-card',
   template: '<div data-testid="mentorship-profile-card-stub"></div>',
 })
-class StubProfileCardComponent {}
+class StubProfileCardComponent {
+  public readonly syncMentorshipProfiles = input(false);
+}
 
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
   template: '',
 })
-class StubMenteeProfileEditDrawerComponent {}
+class StubMenteeProfileEditDrawerComponent {
+  readonly saved = output<MentorshipMenteeProfileUpdateResponse>();
+}
 
 const target: MentorshipMenteeApplyTarget = {
   programName: 'Apicurio Registry: Prompt Template Playground',
@@ -125,6 +131,14 @@ describe('MenteeApplyComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentee-apply-missing"]')?.textContent).toContain('This application link is incomplete');
     expect(getMenteeApplyTarget).not.toHaveBeenCalled();
     expect(getMenteeProfile).not.toHaveBeenCalled();
+  });
+
+  it('tells the profile card to copy a saved LFX profile onto the mentorship profiles', async () => {
+    await bootstrap(applyParams);
+
+    expect((fixture.debugElement.query(By.directive(StubProfileCardComponent)).componentInstance as StubProfileCardComponent).syncMentorshipProfiles()).toBe(
+      true
+    );
   });
 
   it('renders the header, back link, and the four review sections', async () => {
@@ -266,5 +280,81 @@ describe('MenteeApplyComponent', () => {
 
     expect(applyToMenteeTerm).toHaveBeenCalledWith(applyParams);
     expect(navigate).toHaveBeenCalledWith(['/mentorship/mentee/overview']);
+  });
+
+  describe('saving an edit drawer', () => {
+    const savedResponse: MentorshipMenteeProfileUpdateResponse = {
+      profile: { aboutMe: '<p>Saved introduction.</p>', skillsHave: ['Rust'], skillsWant: ['Zig'] },
+      demographics: { age: '40-59' },
+    };
+
+    const emitFromProfileDrawer = (response: MentorshipMenteeProfileUpdateResponse): void => {
+      fixture.debugElement.query(By.directive(StubMenteeProfileEditDrawerComponent)).componentInstance.saved.emit(response);
+      fixture.detectChanges();
+    };
+
+    const emitFromDemographicsDrawer = (response: MentorshipMenteeProfileUpdateResponse): void => {
+      fixture.debugElement.query(By.directive(MenteeDemographicsEditDrawerComponent)).componentInstance.saved.emit(response);
+      fixture.detectChanges();
+    };
+
+    it('updates the profile and demographics in place, keeping the target and never reloading', async () => {
+      await bootstrap(applyParams);
+
+      emitFromProfileDrawer(savedResponse);
+
+      const page = fixture.componentInstance['page']();
+      expect(page?.profile.profile).toEqual(savedResponse.profile);
+      expect(page?.profile.demographics).toEqual(savedResponse.demographics);
+      expect(page?.target).toEqual(target);
+      expect(fixture.componentInstance['hasLoaded']()).toBe(true);
+      expect(getMenteeProfile).toHaveBeenCalledTimes(1);
+      expect(getMenteeApplyTarget).toHaveBeenCalledTimes(1);
+      expect(element().querySelector('[data-testid="mentorship-mentee-apply-loading"]')).toBeNull();
+    });
+
+    it('applies a demographics drawer save the same way', async () => {
+      await bootstrap(applyParams);
+
+      emitFromDemographicsDrawer(savedResponse);
+
+      expect(fixture.componentInstance['page']()?.profile.demographics).toEqual(savedResponse.demographics);
+      expect(getMenteeProfile).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens both drawers re-seeded from the saved state', async () => {
+      await bootstrap(applyParams);
+      emitFromProfileDrawer(savedResponse);
+
+      fixture.componentInstance['onEditProfile']();
+      fixture.componentInstance['onEditDemographics']();
+
+      expect(fixture.debugElement.injector.get(MenteeProfileEditDrawerService).context()).toEqual(savedResponse.profile);
+      const demographicsDrawer = fixture.debugElement.query(By.directive(MenteeDemographicsEditDrawerComponent))
+        .componentInstance as MenteeDemographicsEditDrawerComponent;
+      expect(demographicsDrawer['form'].controls.age.value).toBe('40-59');
+    });
+
+    it('clears the demographics summary when the saved response has none', async () => {
+      getMenteeProfile.mockReturnValue(of({ ...menteeProfile, demographics: { age: '20-39' } }));
+      await bootstrap(applyParams);
+
+      emitFromProfileDrawer({ profile: savedResponse.profile });
+
+      expect(fixture.componentInstance['page']()?.profile.demographics).toBeUndefined();
+    });
+
+    it('drops the saved state on Retry so freshly loaded data wins', async () => {
+      await bootstrap(applyParams);
+      emitFromProfileDrawer(savedResponse);
+      const refetched: MentorshipMenteeProfileResponse = { profile: { ...menteeProfile.profile, aboutMe: 'Refetched.' }, history: [] };
+      getMenteeProfile.mockReturnValue(of(refetched));
+
+      fixture.componentInstance['retry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['page']()?.profile).toEqual(refetched);
+    });
   });
 });

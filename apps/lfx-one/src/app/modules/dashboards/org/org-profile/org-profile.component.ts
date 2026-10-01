@@ -16,6 +16,7 @@ import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org
 import { DisplayValuePipe } from '@pipes/display-value.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgProfileService } from '@services/org-profile.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -44,6 +45,7 @@ export class OrgProfileComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgProfileService = inject(OrgProfileService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -63,11 +65,8 @@ export class OrgProfileComponent {
   private readonly retryTrigger = signal(0);
   private readonly loadState = signal<'loading' | 'loaded' | 'error'>('loading');
 
-  /** Writer detection, widened to roll-up-derived editors (LFXV2-3029) — uses the existing role-grants signal seeded at bootstrap. */
-  protected readonly canEdit = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    return !!uid && this.orgRoleGrants.editorSet().has(uid);
-  });
+  /** Edit gate (UX, #3136): roster editor (direct or roll-up, LFXV2-3029) or authorizer `writer`. */
+  protected readonly canEdit = this.orgEditAccess.canEditSelected;
 
   /** Auto-prepend `https://` when the stored value lacks a protocol (FR-003). */
   protected readonly websiteHref = computed(() => this.computeUrlHref(this.record()?.website ?? null));

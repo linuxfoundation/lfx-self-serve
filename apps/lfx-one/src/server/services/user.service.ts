@@ -42,6 +42,7 @@ import {
   UserMetadataUpdateResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
+  UserServiceEmailSyncRequest,
   UserServicePreference,
   UserServicePreferenceList,
   Vote,
@@ -1159,6 +1160,40 @@ export class UserService {
   }
 
   /**
+   * Upserts a v2-OTP-verified email into v1 as Active+IsVerified so meeting-invite resolution finds it (lfx-self-serve-ops#183).
+   * Never throws — a failed v1 write must not fail verification; failures WARN and return false (409 = merge flow owns it).
+   */
+  public async syncVerifiedEmailToUserService(req: Request, email: string): Promise<boolean> {
+    if (!req.apiGatewayToken) {
+      // No email in log metadata — the address is PII (same reason the PATCH below redacts its response body).
+      logger.warning(req, 'sync_verified_email', 'Skipping v1 verified-email sync: no API Gateway token on the request');
+      return false;
+    }
+
+    const body: UserServiceEmailSyncRequest = { Emails: [{ EmailAddress: email, IsVerified: true, Active: true }] };
+
+    try {
+      const baseUrl = getUserServiceBaseUrl('sync_verified_email', 'user_service');
+      // The PATCH echoes the user's email rows — redact the response body from logs (email PII).
+      await gatewayFetch<unknown>(req, `${baseUrl}/me/emails`, {
+        operation: 'sync_verified_email',
+        service: 'user_service',
+        errorMessage: 'Verified email sync failed',
+        errorCode: 'EMAIL_SYNC_UPSERT_FAILED',
+        method: 'PATCH',
+        body,
+        redactResponseBody: true,
+      });
+    } catch (error) {
+      logger.warning(req, 'sync_verified_email', 'v1 verified-email sync failed; verification result unaffected', { err: error });
+      return false;
+    }
+
+    logger.debug(req, 'sync_verified_email', 'v1 verified-email sync succeeded');
+    return true;
+  }
+
+  /**
    * Writes the section `visibility` preference: PATCH when it exists, else POST; a POST that races into
    * a 409 falls back to fetch + PATCH so the auto-saving client stays idempotent.
    */
@@ -1298,7 +1333,7 @@ export class UserService {
    * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
    *   - Non-responded surveys (query-service `survey_response` index — the same source My Surveys reads)
-   *   - Upcoming meetings within the next two weeks (Review Agenda action)
+   *   - Upcoming meetings within the next two weeks (Review Agenda action — project/foundation lens only)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
    *
@@ -1373,14 +1408,15 @@ export class UserService {
     ]);
 
     const inWindowMeetings = this.filterMeetingsInWindow(meetings);
-    const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
+    // Review Agenda is informational, not an action, so the Me lens omits it (#2991); project/foundation lenses keep it.
+    const meetingActions = isMeLens ? [] : this.transformMeetingsToActions(inWindowMeetings);
     const voteActions = this.transformVotesToActions(pendingVotes);
     const surveyActions = this.transformSurveysToActions(req, surveyRows);
     const invitationActions = this.transformInvitationsToActions(pendingInvitations);
     const formationItemActions = this.transformFormationItemsToActions(formationItems);
 
     // Phase 2: RSVP + registrant lookups only pay off when at least one in-window meeting
-    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions, but they
+    // collects LFX RSVPs. Pre-feature series still produce Review Agenda actions on project/foundation lenses, but they
     // cannot emit Set RSVP — skip the two paginated scans in that case (GH-1951).
     //
     // Fail closed on the RSVP prerequisites: if either lookup errors, we can't distinguish
@@ -1404,8 +1440,8 @@ export class UserService {
     // the user to join) and only ever appear on the Me lens, so they lead. Formation checklist
     // items come next — assigned work with a due date is more actionable than an RSVP (GH-1956).
     // RSVPs and votes have closing windows next. Surveys are time-bounded by their cutoff. Review
-    // Agenda is informational (read-before-meeting) and goes last — with the 5-item display cap,
-    // plentiful meetings shouldn't crowd out the rows the user actually has to respond to.
+    // Agenda appears only on project/foundation lenses and is informational, so it still goes last
+    // there — with the card's display cap, plentiful meetings shouldn't crowd out real responses.
     return [...invitationActions, ...formationItemActions, ...rsvpActions, ...voteActions, ...surveyActions, ...meetingActions];
   }
 
