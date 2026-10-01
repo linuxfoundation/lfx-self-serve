@@ -208,6 +208,68 @@ describe('EventsService.getMyEvents past-event SQL', () => {
   });
 });
 
+describe('EventsService.getMyEvents co-located exclusion', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function queryFor(options: Record<string, unknown>): Promise<{ sql: string; binds: string[] }> {
+    await service.getMyEvents({} as never, USER_EMAIL, { pageSize: 10, offset: 0, ...options } as never);
+    const [sql, binds] = snowflakeMocks.execute.mock.calls[0] as [string, string[]];
+    return { sql, binds };
+  }
+
+  function placeholderCount(sql: string): number {
+    return (sql.match(/\?/g) ?? []).length;
+  }
+
+  it('hides co-located events inside affiliated_upcoming only, so registered events are never hidden', async () => {
+    const { sql } = await queryFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
+    const affiliatedStart = sql.indexOf('affiliated_upcoming AS (');
+    const registeredStart = sql.indexOf('registered_events AS (');
+    const exclusion = sql.indexOf('AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE');
+
+    for (const landmark of [affiliatedStart, registeredStart, exclusion]) {
+      expect(landmark).toBeGreaterThanOrEqual(0);
+    }
+    expect(affiliatedStart).toBeLessThan(exclusion);
+    expect(exclusion).toBeLessThan(registeredStart);
+    expect(sql.slice(registeredStart)).not.toContain('IS_COLOCATED_EVENT');
+  });
+
+  it('reads the flag from EVENT_REGISTRATIONS without a dimension subquery', async () => {
+    const { sql } = await queryFor({ isPast: false, affiliatedProjectSlugs: ['example'] });
+
+    expect(sql).not.toContain('SILVER_DIM.EVENTS');
+    expect(sql).not.toContain('NOT IN (SELECT');
+  });
+
+  it('adds no binds between the affiliated slugs and the user email', async () => {
+    const { binds } = await queryFor({ isPast: false, affiliatedProjectSlugs: ['a', 'b'] });
+
+    expect(binds.slice(0, 3)).toEqual(['a', 'b', USER_EMAIL]);
+  });
+
+  it.each([
+    ['no affiliated slugs', {}],
+    ['an eventId and slugs', { eventId: 'evt-1', affiliatedProjectSlugs: ['a', 'b'] }],
+  ])('keeps the bind count equal to the placeholder count with %s', async (_label, options) => {
+    const { sql, binds } = await queryFor({ isPast: false, ...options });
+
+    expect(binds).toHaveLength(placeholderCount(sql));
+  });
+
+  it('leaves the past branch unfiltered', async () => {
+    const { sql } = await queryFor({ isPast: true });
+
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+  });
+});
+
 describe('EventsService filter options use the same past-event predicate', () => {
   let service: InstanceType<typeof EventsService>;
 

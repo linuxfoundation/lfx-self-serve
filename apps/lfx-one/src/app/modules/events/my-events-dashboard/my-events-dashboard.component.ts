@@ -77,6 +77,8 @@ export class MyEventsDashboardComponent {
   protected readonly selectedSearchQuery = signal('');
 
   protected readonly isPast = computed(() => this.activeTab() === 'past');
+  /** Upcoming swaps the Status dropdown for its My Registrations / All Upcoming pills. */
+  protected readonly showStatusFilter = computed(() => this.activeTab() !== 'upcoming');
 
   /** True when the active tab uses request-style filters (no role, no foundation, different statuses). */
   protected readonly isRequestTab = computed(() => MY_EVENTS_REQUEST_TAB_IDS.has(this.activeTab()));

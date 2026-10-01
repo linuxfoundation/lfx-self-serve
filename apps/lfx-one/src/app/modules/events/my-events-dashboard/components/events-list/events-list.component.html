@@ -4,6 +4,11 @@
 <div data-testid="events-list">
   <!-- Tab Content -->
   @if (activeTab() === 'upcoming') {
+    @if (showUpcomingViewPills()) {
+      <div class="mb-4" data-testid="events-upcoming-view-pills">
+        <lfx-filter-pills [options]="upcomingViewOptions" [selectedFilter]="upcomingView()" (filterChange)="onUpcomingViewChange($event)" />
+      </div>
+    }
     @if (!upcomingEventsLoading() && upcomingEvents().data.length === 0) {
       @if (isFiltered()) {
         <lfx-empty-state
@@ -15,6 +20,15 @@
           ctaIcon="fa-light fa-arrow-rotate-left"
           (ctaClick)="resetFilters.emit()"
           data-testid="events-upcoming-empty-state" />
+      } @else if (upcomingView() === 'registered') {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-ticket"
+          title="No upcoming registrations"
+          subtitle="Events you register for will appear here."
+          ctaLabel="Browse all upcoming events"
+          (ctaClick)="onUpcomingViewChange('all')"
+          data-testid="events-upcoming-registered-empty-state" />
       } @else {
         <lfx-empty-state
           [withCard]="false"

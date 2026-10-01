@@ -4,7 +4,7 @@ description: How to find and view LFX events in LFX Self Serve.
 audience: [all]
 product_area: Events
 tags: [events, browse, attendance]
-last_updated: 2026-05-22
+last_updated: 2026-10-01
 intercom_collection: Events
 ---
 
@@ -28,11 +28,18 @@ The events table shows the following columns:
 - **Role**
 - **Status**
 
-Registration is handled externally. The Events page displays events you are already registered for.
+Registration is handled externally. The **Upcoming** tab lists the events you are registered for, plus upcoming events from the projects you are affiliated with. A check icon on the **Status** tag marks the events you are registered for.
 
 ## Filter events
 
-Filter by **All Foundations**, **All Roles**, **All Statuses** using the dropdown menus. Use the tabs to switch between **Upcoming**, **Past**, [**Visa Letters**](../visa-letters/), and [**Travel Funding**](../travel-funding/).
+Use the tabs to switch between **Upcoming**, **Past**, [**Visa Letters**](../visa-letters/), and [**Travel Funding**](../travel-funding/).
+
+On the **Upcoming** tab, choose a view:
+
+- **My Registrations** — only the events you are registered for. This view is selected by default when you have at least one upcoming registration.
+- **All Upcoming** — your registrations plus upcoming events from your affiliated projects. Co-located events are left out of this list unless you are registered for them.
+
+Filter by **All Foundations** and **All Roles** using the dropdown menus. The **All Statuses** filter is available on the **Past**, **Visa Letters**, and **Travel Funding** tabs.
 
 ## Register for an event
 

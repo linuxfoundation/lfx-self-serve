@@ -6,7 +6,7 @@ import { EventsService } from '@app/shared/services/events.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MY_EVENT_STATUS } from '@lfx-one/shared/constants';
+import { MY_EVENT_STATUS, MY_EVENT_STATUS_ICON_MAP } from '@lfx-one/shared/constants';
 import { MyEventsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
 import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
@@ -46,6 +46,8 @@ export class EventsTableComponent {
     Waitlisted: 'warn',
     Cancelled: 'danger',
   };
+
+  protected readonly statusIconMap = MY_EVENT_STATUS_ICON_MAP;
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
 

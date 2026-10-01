@@ -19,6 +19,9 @@ export type EventStatusFilter = 'Active' | 'Planned' | 'Pending' | 'Completed' |
  */
 export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS];
 
+/** Registration view on the My Events Upcoming tab: only the user's registrations, or every upcoming event. */
+export type MyEventsUpcomingView = 'registered' | 'all';
+
 /**
  * Event item for the My Events dashboard
  */
