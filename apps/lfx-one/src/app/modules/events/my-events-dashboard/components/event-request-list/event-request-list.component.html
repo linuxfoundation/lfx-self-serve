@@ -101,11 +101,25 @@
           </td>
         }
         <td>
-          <div class="flex justify-end">
+          <div class="flex items-center justify-end gap-3">
             <lfx-tag
               [value]="request.status"
               [severity]="request.status | eventRequestStatusSeverity"
               [attr.data-testid]="config().testIdPrefix + '-status-' + request.id" />
+            @if (downloadableLetterIds().has(request.id)) {
+              <lfx-button
+                label="Download"
+                icon="fa-light fa-download"
+                severity="primary"
+                [outlined]="true"
+                size="small"
+                styleClass="whitespace-nowrap"
+                [loading]="downloadingLetterId() === request.id"
+                [disabled]="downloadingLetterId() !== null"
+                [ariaLabel]="'Download visa letter for ' + request.name"
+                (onClick)="downloadVisaLetter(request.id)"
+                [attr.data-testid]="config().testIdPrefix + '-download-letter-button-' + request.id" />
+            }
           </div>
         </td>
       </tr>

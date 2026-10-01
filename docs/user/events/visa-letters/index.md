@@ -42,6 +42,12 @@ Enter your details exactly as they appear on your passport so the letter is issu
 
 Your request appears on the **Visa Letters** tab with its current **Status**, along with the event, location, and application date. The Linux Foundation events team reviews your request and follows up with your visa support letter.
 
+## Download your visa letter
+
+When your request shows **Approved**, a **Download** button appears next to the status. Select it to save your visa support letter as a PDF. The button is available until the event ends.
+
+Some letters are prepared by hand. If yours is one of them, Download tells you the events team will email the letter to you instead.
+
 ## Questions
 
 For questions about visa support letters, contact the events team at [visaletters@linuxfoundation.org](mailto:visaletters@linuxfoundation.org).

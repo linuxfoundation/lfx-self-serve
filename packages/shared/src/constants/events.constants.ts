@@ -71,6 +71,15 @@ export const EVENT_REQUEST_STATUS_SEVERITY_MAP: Partial<Record<string, TagSeveri
 };
 
 /**
+ * Snowflake label on visa rows whose letter can be downloaded. Upstream renames `letter_issued` to
+ * `Approved` today (see #2740), so this moves to `Issued` once that mapping lands.
+ */
+export const VISA_LETTER_DOWNLOADABLE_STATUS = 'Approved';
+
+/** Error code the visa letter download returns when the events team issues the letter by email */
+export const VISA_LETTER_MANUAL_ERROR_CODE = 'VISA_LETTER_MANUAL';
+
+/**
  * Status filter options for Foundation Lens events.
  * Values are raw EVENT_STATUS DB values except 'coming-soon', which is a sentinel
  * that the server maps to `IN ('Pending', 'Planned')` rather than a parameterized bind.

@@ -10,6 +10,7 @@ import { contentDispositionAttachment } from '../helpers/content-disposition.hel
 import { parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
+import { VisaLetterService } from '../services/visa-letter.service';
 import {
   DEFAULT_EVENTS_PAGE_SIZE,
   MAX_EVENTS_PAGE_SIZE,
@@ -37,6 +38,7 @@ import { getEffectiveEmail, getEffectiveName } from '../utils/auth-helper';
 export class EventsController {
   private readonly eventsService = new EventsService();
   private readonly certificateService = new CertificateService();
+  private readonly visaLetterService = new VisaLetterService();
   private readonly personaDetectionService = new PersonaDetectionService();
 
   /**
@@ -316,6 +318,40 @@ export class EventsController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
       res.setHeader('Content-Length', pdf.length);
+      res.send(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/events/visa-letter
+   * Download the authenticated user's issued visa support letter as a PDF
+   * Query params: eventId (string, required)
+   */
+  public async getVisaLetter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
+
+    const startTime = logger.startOperation(req, 'get_visa_letter', { event_id: eventId });
+
+    try {
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_visa_letter',
+          service: 'events_controller',
+          path: req.path,
+        });
+      }
+
+      const { pdf, fileName } = await this.visaLetterService.generateVisaLetter(req, eventId);
+
+      logger.success(req, 'get_visa_letter', startTime, { event_id: eventId });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+      res.setHeader('Content-Length', pdf.length);
+      // The letter carries passport details, so keep it out of shared and browser caches.
+      res.setHeader('Cache-Control', 'no-store');
       res.send(pdf);
     } catch (error) {
       next(error);

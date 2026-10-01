@@ -4,12 +4,12 @@
 // Generated with [Claude Code](https://claude.ai/code)
 
 import PDFDocument from 'pdfkit';
-import fs, { existsSync } from 'fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import fs from 'fs';
+import { join } from 'node:path';
 import { Request } from 'express';
 
 import { AuthorizationError, ResourceNotFoundError } from '../errors';
+import { resolvePdfTemplateDir } from '../helpers/pdf-template.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { PDFTemplateDetails, CertificateData, CertificateEventRow, CertificateResult } from '@lfx-one/shared/interfaces';
@@ -22,21 +22,7 @@ import {
 } from '@lfx-one/shared/constants/pdf.constants';
 import { buildCertificateFileName, isBackfillEventSource } from '@lfx-one/shared/utils';
 
-// In production, import.meta.url points to the server bundle (dist/lfx-one/server/server.mjs)
-// and pdf-templates are copied there by the build script.
-// In dev (ng serve), import.meta.url resolves to Vite's virtual root, so we fall back
-// to the source tree via process.cwd() (which is apps/lfx-one/ when running ng serve).
-function resolveTemplateDir(): string {
-  const bundlePath = join(dirname(fileURLToPath(import.meta.url)), 'pdf-templates', 'visa-letter-manual');
-  if (existsSync(bundlePath)) return bundlePath;
-
-  const devPath = join(process.cwd(), 'src', 'server', 'pdf-templates', 'visa-letter-manual');
-  if (existsSync(devPath)) return devPath;
-
-  return bundlePath; // will produce a clear ENOENT if neither exists
-}
-
-const TEMPLATE_DIR = resolveTemplateDir();
+const TEMPLATE_DIR = resolvePdfTemplateDir();
 
 export class CertificateService {
   private snowflakeService: SnowflakeService;

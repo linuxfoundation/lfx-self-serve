@@ -335,6 +335,87 @@ export interface CertificateResult {
 }
 
 /**
+ * Upstream letter-system state for a visa letter request (user-service `hsTicketStatus`).
+ * Snowflake collapses these into four labels, so this is the authoritative value — see #2740.
+ */
+export type VisaLetterTicketStatus = 'submitted' | 'approved' | 'denied' | 'letter_issued' | 'letter_issued_archived' | 'expired';
+
+/** Who pays for the delegate's travel and accommodation, as recorded on the letter request */
+export type VisaLetterPaidBy = 'delegate' | 'delegates_company' | 'the_linux_foundation' | 'cncf';
+
+/** Attendee block of a user-service visa letter request (only the fields the letter prints) */
+export interface VisaLetterAttendee {
+  nameAsPerPassport?: string;
+  passportNumber?: string;
+  birthDate?: string;
+  birthCountry?: string;
+  jobTitle?: string;
+  contactNumber?: string;
+  Account?: { Name?: string };
+  Address?: {
+    Street?: string;
+    City?: string;
+    State?: string;
+    PostalCode?: string;
+    Country?: string;
+  };
+}
+
+/** Event block of a user-service visa letter request */
+export interface VisaLetterEvent {
+  id?: string;
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  location?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
+/** One entry of `GET /user-service/v1/users/{salesforceID}/visaletterrequests` */
+export interface VisaLetterRequest {
+  id: string;
+  hsTicketID?: number;
+  hsTicketStatus?: VisaLetterTicketStatus;
+  isManualVisaLetter?: boolean;
+  visaLetterIssuedDate?: string;
+  CreatedDate?: string;
+  attendeeType?: 'attendee' | 'speaker';
+  attendeeAccommodationPaidBy?: VisaLetterPaidBy;
+  attendee?: VisaLetterAttendee;
+  event?: VisaLetterEvent;
+}
+
+/** Envelope of the user-service visa letter request list */
+export interface VisaLetterRequestsResponse {
+  Data?: VisaLetterRequest[];
+}
+
+/** Legal entity whose letterhead and wording a visa letter carries, chosen by event country */
+export interface VisaLetterEntity {
+  name: string;
+  address: string;
+  link: string;
+  logo: string;
+  logoWidth: number;
+  /** Organization printed under the signature */
+  signatureOrg: string;
+  /** Print the event name under the signature instead of `signatureOrg` (LF Open Source letters) */
+  signatureOrgFromEvent: boolean;
+  /** Whether the body links the LF members page (omitted for LF Open Source) */
+  showMembersLink: boolean;
+  /** Day-first long dates (e.g. "05 March 2026") instead of "Mar 05, 2026" */
+  dayFirstDates: boolean;
+}
+
+/** Result of generating a visa support letter PDF: the buffer plus its download filename */
+export interface VisaLetterResult {
+  pdf: Uint8Array;
+  fileName: string;
+}
+
+/**
  * Raw row returned from ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS for visa letter requests
  */
 export interface VisaRequestRow {
@@ -351,6 +432,8 @@ export interface VisaRequestRow {
   TOTAL_RECORDS: number;
   /** Cutoff timestamp (TIMESTAMP) after which travel fund applications are no longer accepted for this event; null when not set. Carried on visa request rows for shape parity but suppressed in rendering (travel-fund only). */
   TRAVEL_FUND_END_TS: Date | string | null;
+  /** True once the event has ended (end date, falling back to start date); null when both dates are missing */
+  EVENT_ENDED: boolean | null;
 }
 
 /**
@@ -371,6 +454,8 @@ export interface VisaRequest {
   status: string;
   /** ISO 8601 absolute timestamp (with offset) for the cutoff after which travel fund applications are no longer accepted; null when not set. Present on visa request rows but suppressed in rendering (travel-fund only). */
   travelFundEnd: string | null;
+  /** True once the event has ended; gates the visa letter download (presentational only, the server re-checks issuance) */
+  eventEnded: boolean;
 }
 
 /**
