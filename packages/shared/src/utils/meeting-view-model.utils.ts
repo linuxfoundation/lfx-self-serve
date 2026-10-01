@@ -155,9 +155,13 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     // Deliberately not gated on artifact access: the occurrence strip is navigation, not content,
     // and a viewer locked out of one past occurrence may still open the upcoming ones.
     occurrences: input.recurring,
-    // Gated with the rest of the past-meeting content, not only on membership: a registrant who
-    // cannot see the agenda or the recording has no business seeing who attended either.
-    people: onTheMeeting && contentVisible,
+    // Upcoming: registrants and organizers only — nobody else has a roster or count source.
+    // Ended: any signed-in viewer with artifact access, not keyed on the role. The past payload never
+    // carries `invited` (the BFF folds registrant status into `full_access` instead), so a past
+    // registrant resolves as `outsider`; keying on the role would hide the roster from exactly the
+    // people it is for. This matches v1, which loads past participants for any authenticated viewer
+    // with access, and still withholds it from anonymous viewers, who get no participant list.
+    people: ended ? input.viewerRole !== 'visitor' && hasArtifactAccess(input.viewerRole, input.fullAccess) : onTheMeeting,
     rsvpAvatarBadges: rsvpVisible,
     rsvpRosterFilter: rsvpVisible,
     rsvpSummary: rsvpVisible,

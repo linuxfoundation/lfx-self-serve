@@ -443,6 +443,27 @@ describe('resolveVisibleSections', () => {
     expect(sections.people).toBe(false);
   });
 
+  // The past payload never sets `invited`, so a past registrant arrives as an outsider. The roster
+  // must still show for them when they have access, and never for an anonymous viewer.
+  it('shows the past roster to any signed-in viewer with artifact access, whatever the role', () => {
+    const outsiderWithAccess = resolveVisibleSections({
+      fullAccess: true,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'outsider',
+    });
+    const visitorWithAccess = resolveVisibleSections({
+      fullAccess: true,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'visitor',
+    });
+    expect(outsiderWithAccess.people).toBe(true);
+    expect(visitorWithAccess.people).toBe(false);
+  });
+
   it('gates past agenda and materials on artifact access', () => {
     const withAccess = resolveVisibleSections({
       fullAccess: true,

@@ -70,7 +70,12 @@ export interface MeetingPrivacyState {
 export interface MeetingViewerContext {
   /** Whether a user session exists at all. */
   authenticated: boolean;
-  /** `Meeting.invited` — the viewer is on the registrant list. */
+  /**
+   * `Meeting.invited` — the viewer is on the registrant list. Populated only by the upcoming detail
+   * endpoint: the past endpoint folds registrant status into `full_access` and never sets
+   * `invited`, so on a past meeting a registrant resolves as `outsider`. Past-meeting sections key
+   * on `fullAccess`, not on the role, for that reason.
+   */
   invited: boolean;
   /** `Meeting.organizer` — the viewer has write access. */
   organizer: boolean;
