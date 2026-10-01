@@ -292,6 +292,74 @@ describe('MentorshipMentorService mentor requests', () => {
     proxyRequest.mockRejectedValueOnce(conflict);
     await expect(service.withdrawMentorRequest(buildReq(), REQUEST_ID)).rejects.toBe(conflict);
   });
+
+  it.each(['accept', 'decline'] as const)('answers the invitation with %s, the token escaped into the path', async (decision) => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.respondToMentorInvite(buildReq(), 'payload.sig-_', decision)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `/mentorship/v1/mentor-invites/payload.sig-_/${decision}`,
+      'POST',
+      undefined,
+      undefined
+    );
+  });
+
+  it.each([
+    [400, 'invalid input: no pending invite found for this user'],
+    [403, 'forbidden: invite belongs to a different user'],
+  ])("passes upstream's %s through on an invite answer", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.respondToMentorInvite(buildReq(), 'payload.sig', 'accept')).rejects.toMatchObject({ statusCode: status, errorBody: { error } });
+  });
+
+  it('keeps the invite token out of the path and operation a failure logs', async () => {
+    const token = 'payload.SECRET-sig';
+    const path = `/mentorship/v1/mentor-invites/${token}/accept`;
+    proxyRequest.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(
+        400,
+        'Bad Request',
+        { error: 'invalid invite token' },
+        'LFX_V2_SERVICE',
+        path,
+        `post_${path.replace(/\//g, '_')}`
+      )
+    );
+
+    const failure = await service.respondToMentorInvite(buildReq(), token, 'accept').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(MicroserviceError);
+    expect(failure).toMatchObject({ statusCode: 400, path: '/mentorship/v1/mentor-invites/redacted/accept' });
+    expect(JSON.stringify((failure as InstanceType<typeof MicroserviceError>).getLogContext())).not.toContain('SECRET');
+  });
+
+  it('keeps the invite token out of the provisioning log for a first-time user', async () => {
+    const token = 'payload.SECRET-sig';
+    proxyRequest.mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }));
+    proxyRequest.mockResolvedValueOnce({});
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.respondToMentorInvite(buildReq(), token, 'decline');
+
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `/mentorship/v1/mentor-invites/${token}/decline`,
+      'POST',
+      undefined,
+      undefined
+    );
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(expect.anything(), 'mentorship_provision_user', expect.any(String), {
+      path: '/mentorship/v1/mentor-invites/redacted/decline',
+      method: 'POST',
+    });
+    expect(JSON.stringify(vi.mocked(logger.info).mock.calls)).not.toContain('SECRET');
+  });
 });
 
 describe('MentorshipMentorService.getMentorPrograms', () => {

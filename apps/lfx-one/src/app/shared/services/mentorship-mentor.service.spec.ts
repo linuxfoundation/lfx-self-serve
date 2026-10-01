@@ -238,5 +238,16 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(error?.status).toBe(409);
       expect(service.mentorRequestsRevision()).toBe(revision);
     });
+
+    it.each(['accept', 'decline'] as const)('answers an invitation with %s, the token in the body, and clears the cache', (decision) => {
+      const revision = service.mentorRequestsRevision();
+      service.respondToMentorInvite('payload.sig', decision).subscribe();
+
+      const req = http.expectOne(`/api/mentorship/mentor/invites/${decision}`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'payload.sig' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(service.mentorRequestsRevision()).toBe(revision + 1);
+    });
   });
 });
