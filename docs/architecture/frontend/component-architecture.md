@@ -211,6 +211,7 @@ Reach for **child routes** only when each tab is a page in its own right — its
     { path: 'engagement', title: '...', loadComponent: ... },      // Engagement (Level 2)
     { path: 'events', title: '...', loadComponent: ... },          // Events (Level 2)
     { path: 'members', title: '...', loadComponent: ... },         // Members (Level 2)
+    { path: 'non-members', title: '...', loadComponent: ... },     // Non-Members (Level 2)
   ],
 }
 ```

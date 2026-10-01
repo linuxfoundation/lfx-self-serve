@@ -206,6 +206,9 @@ export * from './health-metrics-l2.interface';
 // Health Metrics Members page interfaces
 export * from './health-metrics-members.interface';
 
+// Health Metrics Non-Members page interfaces
+export * from './health-metrics-non-members.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
 
