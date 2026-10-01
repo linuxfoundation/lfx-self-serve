@@ -3,6 +3,7 @@
 
 import { inject } from '@angular/core';
 import { RedirectFunction, Router } from '@angular/router';
+import { LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
 
 import { LensService } from '../services/lens.service';
 
@@ -11,7 +12,8 @@ import { LensService } from '../services/lens.service';
  *
  * - Foundation / project lens: land on `/foundation/documents` or `/project/documents`,
  *   keeping the query string so an old project-scoped link still opens the right context.
- * - Me / org lens: send the visitor to the dashboard. There is no personal documents page.
+ * - Me / org lens: land on that lens's home. `/` carries `data.lens: 'me'`, so sending an org
+ *   user there would switch them to the Me lens.
  */
 export const flatDocumentsRedirect: RedirectFunction = ({ queryParams, fragment }) => {
   const lens = inject(LensService).activeLens();
@@ -24,5 +26,5 @@ export const flatDocumentsRedirect: RedirectFunction = ({ queryParams, fragment 
     });
   }
 
-  return router.createUrlTree(['/']);
+  return router.createUrlTree([LENS_DEFAULT_ROUTES[lens]]);
 };

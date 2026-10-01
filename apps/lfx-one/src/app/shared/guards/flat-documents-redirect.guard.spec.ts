@@ -41,11 +41,18 @@ describe('flatDocumentsRedirect', () => {
     });
   });
 
-  it.each(['me', 'org'] as const)('sends the %s lens to the dashboard', (lens) => {
-    activeLens = lens;
+  it('sends the me lens to My Dashboard', () => {
+    activeLens = 'me';
 
     expect(runRedirect()).toEqual({ redirected: '/' });
     expect(router.createUrlTree).toHaveBeenCalledWith(['/']);
+  });
+
+  it('keeps an org-lens user on the org lens instead of switching them to me', () => {
+    activeLens = 'org';
+
+    expect(runRedirect()).toEqual({ redirected: '/org' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/org']);
   });
 
   it.each(['foundation', 'project'] as const)('keeps the %s documents page, including the query string', (lens) => {

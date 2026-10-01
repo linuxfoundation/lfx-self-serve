@@ -13,19 +13,14 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 ## Browse documents
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Documents** from the left navigation sidebar.
-3. The documents dashboard shows all documents available for your current project context.
-4. Select a document to view its details.
+2. Use the lens switcher to choose a project or foundation.
+3. Select **Documents** from the left navigation sidebar.
+4. The documents dashboard lists the folders, files, and links for that project or foundation.
+5. Select a folder to open it, open a link, or download a file.
 
 ## Filter and search documents
 
-Use the **All Sources**, **Links**, **Meetings**, and **Mailing Lists** tabs to filter documents by source.
-
-## View document details
-
-Select a document from the list to open its detail view. The detail view shows:
-
-- Document name and description
+Use the search box to find documents by name. Use the **All Sources** dropdown to show only links or only files.
 
 ## Upload a document
 
