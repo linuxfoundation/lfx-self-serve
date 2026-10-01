@@ -58,7 +58,7 @@ export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectI
 
 /**
  * Resolves an `eng.*` `link_target` to its in-app Engagement section: the tab route, the section key
- * as the fragment, and the arrival filters. `undefined` for every other target, which stays on PCC.
+ * as the fragment, and the arrival filters. `undefined` for every other target.
  */
 export function buildHealthMetricsOverviewEngagementRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
   if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS, linkTarget)) {
