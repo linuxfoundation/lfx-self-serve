@@ -56,6 +56,30 @@ describe('MeetingInviteeAttendeesComponent', () => {
     expect(component()['drawerRegistrants']()).toEqual(full);
   });
 
+  it('trusts an empty full roster over the cached preview', async () => {
+    getMyMeetingRegistrants.mockImplementation((_id: string, _rsvp: boolean, _occ: string | undefined, isPreview: boolean) => of(isPreview ? preview : []));
+    await fixture.whenStable();
+
+    component()['drawerVisible'].set(true);
+    await fixture.whenStable();
+
+    expect(component()['drawerRegistrants']()).toEqual([]);
+  });
+
+  it('keeps the preview roster when the full fetch fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    getMyMeetingRegistrants.mockImplementation((_id: string, _rsvp: boolean, _occ: string | undefined, isPreview: boolean) =>
+      isPreview ? of(preview) : throwError(() => new Error('boom'))
+    );
+    await fixture.whenStable();
+
+    component()['drawerVisible'].set(true);
+    await fixture.whenStable();
+
+    expect(component()['drawerRegistrants']()).toEqual(preview);
+    expect(component()['fullRosterLoading']()).toBe(false);
+  });
+
   it('reports loading as soon as the drawer opens, until the full roster lands', async () => {
     const full$ = new Subject<MeetingRegistrant[]>();
     getMyMeetingRegistrants.mockImplementation((_id: string, _rsvp: boolean, _occ: string | undefined, isPreview: boolean) =>

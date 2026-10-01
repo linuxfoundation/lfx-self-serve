@@ -37,11 +37,9 @@ export class MeetingInviteeAttendeesComponent {
   protected readonly loading = signal(true);
   protected readonly registrants = this.initPreviewRegistrants();
   protected readonly fullRegistrants = this.initFullRegistrants();
-  // Until the full roster lands, or if its fetch fails, the drawer shows the preview roster.
-  protected readonly drawerRegistrants = computed<MeetingRegistrant[]>(() => {
-    const full = this.fullRegistrants();
-    return full && full.length > 0 ? full : this.registrants();
-  });
+  // The drawer shows the preview roster until the full one lands. A successful full fetch is
+  // authoritative even when empty; only a failed one falls back to the preview.
+  protected readonly drawerRegistrants = computed<MeetingRegistrant[]>(() => this.fullRegistrants() ?? this.registrants());
   // True from the first render after the drawer opens until the full roster for the current
   // meeting and occurrence lands.
   protected readonly fullRosterLoading = computed(() => this.drawerVisible() && this.fullRegistrants() === null);
@@ -54,7 +52,7 @@ export class MeetingInviteeAttendeesComponent {
       combineLatest([toObservable(this.meeting), toObservable(this.occurrence)]).pipe(
         switchMap(([meeting, occurrence]) => {
           this.loading.set(true);
-          return this.fetchRegistrants(meeting, occurrence, true).pipe(finalize(() => this.loading.set(false)));
+          return this.fetchRegistrants(meeting, occurrence, true, () => []).pipe(finalize(() => this.loading.set(false)));
         })
       ),
       { initialValue: [] as MeetingRegistrant[] }
@@ -65,18 +63,23 @@ export class MeetingInviteeAttendeesComponent {
     const firstOpen$ = toObservable(this.drawerVisible).pipe(filter(Boolean), take(1));
     return toSignal(
       combineLatest([toObservable(this.meeting), toObservable(this.occurrence), firstOpen$]).pipe(
-        switchMap(([meeting, occurrence]) => this.fetchRegistrants(meeting, occurrence, false).pipe(startWith(null)))
+        switchMap(([meeting, occurrence]) => this.fetchRegistrants(meeting, occurrence, false, () => this.registrants()).pipe(startWith(null)))
       ),
       { initialValue: null }
     );
   }
 
-  private fetchRegistrants(meeting: Meeting, occurrence: MeetingOccurrence | null, preview: boolean): Observable<MeetingRegistrant[]> {
+  private fetchRegistrants(
+    meeting: Meeting,
+    occurrence: MeetingOccurrence | null,
+    preview: boolean,
+    onError: () => MeetingRegistrant[]
+  ): Observable<MeetingRegistrant[]> {
     const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
     return this.meetingService.getMyMeetingRegistrants(meeting.id, isMeetingInviteResponsesEnabled(meeting), occurrenceId, preview).pipe(
       catchError((error) => {
         console.error('Failed to fetch my meeting registrants:', error);
-        return of([] as MeetingRegistrant[]);
+        return of(onError());
       })
     );
   }
