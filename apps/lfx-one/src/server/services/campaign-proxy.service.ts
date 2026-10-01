@@ -1483,9 +1483,9 @@ export class CampaignProxyService {
     let heroImageUrl = '';
     let sponsors: CampaignEventSponsor[] = [];
     // Both are needed by the extraction block below, which is a SEPARATE `if (!isRefinement)` —
-    // `safeUrl` is scoped to the fetch block and the extraction cannot reach it. An empty set
+    // `safeUrl` is scoped to the fetch block and the extraction cannot reach it. An empty map
     // fails every link check, which is the right default for a refinement that never scraped.
-    let pageLinks = new Set<string>();
+    let pageLinks = new Map<string, string>();
     let pageBaseUrl = '';
 
     if (!isRefinement) {

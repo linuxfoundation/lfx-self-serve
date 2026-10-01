@@ -48,14 +48,28 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
  * pages. Do not add it. Granting `allow-same-origin` alongside it would be worse still — together
  * they let the framed document remove its own sandbox attribute.
  *
- * Server-side sanitization still happens first and is unchanged: `styleEmailBodyHTML` drops every
- * attribute the model wrote, every tag outside its allowlist, and the content of `<script>` and
- * `<style>`. This sandbox is the second of two independent controls, not the only one.
+ * For GENERATED copy, server-side sanitization happens first and is unchanged: `styleEmailBodyHTML`
+ * drops every attribute the model wrote, every tag outside its allowlist, and the content of
+ * `<script>` and `<style>`. For those bindings this sandbox is the second of two independent
+ * controls.
+ *
+ * It is NOT always the second. The A/B variant-B body is also previewed here, and that string is
+ * whatever the operator typed into a textarea (`onAbTestBodyHtmlBInput`) — it never reaches
+ * campaign-service before it is framed, so no server-side pass has touched it. On that path the
+ * sandbox is the ONLY control. Treat it that way when changing the frame: there is no second layer
+ * to fall back on, and "the server sanitizes it anyway" is false for at least one call site.
  */
 @Component({
   selector: 'lfx-email-body-preview',
   imports: [],
   templateUrl: './email-body-preview.component.html',
+  // Two of the five call sites in `campaigns.component.html` put
+  // `overflow-hidden rounded-md border border-gray-200` on this element itself (the `:339` and
+  // `:823` bindings), and the template's only child is a `block w-full` iframe. On an inline host
+  // box those utilities do not clip a block child, so the frame renders with square corners
+  // escaping the rounded border. A block host is what makes the classes the call sites already
+  // wrote behave as written.
+  host: { class: 'block' },
 })
 export class EmailBodyPreviewComponent {
   private readonly sanitizer = inject(DomSanitizer);

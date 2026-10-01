@@ -68,14 +68,23 @@ of the `Referer` header of any request the frame makes.
   own `sandbox` attribute.
 
 `email-body-preview.component.spec.ts` asserts the exact sandbox string and asserts the absence of
-both tokens, so this cannot regress silently. (Note that vitest is not runnable on every dev
-machine — see the testing docs — so treat that spec as a CI guard.)
+both tokens, so this cannot regress silently in CI. It may not run for you locally: vitest needs
+Node >= 22.19 here, because `jsdom@30` pulls an `undici` that calls
+`worker_threads.markAsUncloneable`, and a Node 20 machine cannot run the suite at all. That is a
+machine constraint, not repo policy — `yarn test` is an ordinary local command on a supported Node.
 
-## This is the second of two independent controls
+## The second of two controls — except where it is the only one
 
-Server-side sanitization happens first and is unchanged. The campaign service's `styleEmailBodyHTML`
-drops every attribute the model wrote, every tag outside its allowlist, and the content of `<script>`
-and `<style>`. The sandbox is defence in depth, not the only barrier.
+For **generated** copy, server-side sanitization happens first and is unchanged. The campaign
+service's `styleEmailBodyHTML` drops every attribute the model wrote, every tag outside its
+allowlist, and the content of `<script>` and `<style>`. For those bindings the sandbox is defence in
+depth rather than the only barrier.
+
+For the **A/B variant-B body** it is the only barrier. That string comes from an operator textarea
+(`onAbTestBodyHtmlBInput` in `campaigns.component.ts`) and is framed without ever being sent to
+campaign-service, so no server-side pass has run on it. Of the five bindings of
+`lfx-email-body-preview` in `campaigns.component.html`, two are that signal. Anyone weakening the
+sandbox on the assumption that the server already sanitized the string is wrong for those two.
 
 The content is **not** purely first-party: the model is fed scraped third-party event-page HTML, so
 it must be treated as untrusted even though the service generated the final string.

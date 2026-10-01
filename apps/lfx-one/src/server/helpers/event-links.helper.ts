@@ -22,6 +22,12 @@ const MAX_PAGE_LINKS = 5000;
  *
  * The query string is KEPT. `?utm_source=…` and `?year=2026` are not interchangeable, and a page
  * that links to one of them has not linked to the other.
+ *
+ * This form is a LOOKUP KEY ONLY and is never emitted. Its two lossy steps — dropping the
+ * fragment and the trailing slash — are what make matching tolerant, and they are exactly what
+ * must not reach a recipient: `/program#day-2` would arrive as a link to the page top, and
+ * `/agenda/` as `/agenda`, which 404s on a static host that only has `/agenda/index.html`.
+ * `pageHref` below builds what is actually sent.
  */
 function normalizeForCompare(candidate: string, baseUrl: string): string | null {
   try {
@@ -38,28 +44,53 @@ function normalizeForCompare(candidate: string, baseUrl: string): string | null 
 }
 
 /**
- * Every absolute http(s) destination the page's own anchors point at, in comparable form.
+ * The page's own destination, in the form a recipient should be sent to.
+ *
+ * Reassembled from the parsed `URL` rather than returned as the raw href, so the guarantees
+ * `normalizeForCompare` provides still hold on the emitted value: the scheme has been checked, a
+ * relative href is resolved against the page, and `userinfo` — the `https://evil.example@host/x`
+ * shape — is discarded because it is simply not one of the parts read back out. Path, query and
+ * fragment are preserved verbatim; only the host is lower-cased, which hosts are anyway.
+ */
+function pageHref(resolved: URL): string {
+  return `${resolved.protocol}//${resolved.host.toLowerCase()}${resolved.pathname}${resolved.search}${resolved.hash}`;
+}
+
+/**
+ * Every absolute http(s) destination the page's own anchors point at: comparison key -> real href.
+ *
+ * A map rather than a set because the two forms differ and both are needed — the key makes
+ * matching tolerant of how a model rewrites a URL, the value is what the page actually published
+ * and therefore what may be emailed. The FIRST href to claim a key wins, so when a page links
+ * both `/agenda` and `/agenda/` the one it published earlier is the one used, in document order.
  *
  * Best-effort and never throws, mirroring `extractHeroAndSponsors`: a page this cannot parse
- * yields an empty set, which makes every candidate link fail verification and be dropped. That is
+ * yields an empty map, which makes every candidate link fail verification and be dropped. That is
  * the safe direction — a brief with no agenda link is correct, a brief with a wrong one is not.
  */
-export function extractPageLinks(html: string, baseUrl: string): Set<string> {
-  const links = new Set<string>();
+export function extractPageLinks(html: string, baseUrl: string): Map<string, string> {
+  const links = new Map<string, string>();
   try {
     for (const match of html.matchAll(ANCHOR_HREF_RE)) {
       if (links.size >= MAX_PAGE_LINKS) break;
       const normalized = normalizeForCompare(match[1], baseUrl);
-      if (normalized) links.add(normalized);
+      if (!normalized || links.has(normalized)) continue;
+      links.set(normalized, pageHref(new URL(match[1], baseUrl)));
     }
   } catch {
-    return new Set<string>();
+    return new Map<string, string>();
   }
   return links;
 }
 
 /**
- * `candidate` resolved against the page, but ONLY if the page actually links to it.
+ * The page's own href for `candidate`, or `''` when the page does not link to it.
+ *
+ * What comes back is the PAGE's URL, not the candidate's — they agree only up to
+ * `normalizeForCompare`, and the difference is the point. A model that writes `/agenda` for a
+ * page that published `/agenda/`, or that drops `#day-2` from `/program#day-2`, has named the
+ * right link in the wrong form; returning the page's form sends the recipient where the page
+ * sends its own readers. The candidate's spelling is never emitted.
  *
  * The extraction that produces these candidates is an LLM reading page prose, and a model asked
  * for "the agenda URL" will happily compose a plausible one — `/schedule/`, `/agenda-2026/` —
@@ -73,13 +104,13 @@ export function extractPageLinks(html: string, baseUrl: string): Set<string> {
  * button rather than an `<a href>` — so verifying it would strip working CTAs from existing
  * campaigns. That is a known gap, not an oversight.
  */
-export function verifyPageLink(candidate: unknown, pageLinks: Set<string>, baseUrl: string): string {
+export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string>, baseUrl: string): string {
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
     return '';
   }
   const normalized = normalizeForCompare(candidate, baseUrl);
-  if (!normalized || !pageLinks.has(normalized)) {
+  if (!normalized) {
     return '';
   }
-  return normalized;
+  return pageLinks.get(normalized) ?? '';
 }

@@ -15,15 +15,38 @@ describe('extractPageLinks', () => {
     expect(links.has('https://other.example/cfp')).toBe(true);
   });
 
+  // The key is tolerant so matching works; the value is exact because it is what gets emailed.
+  it("maps the tolerant key to the page's own href", () => {
+    const links = extractPageLinks(`<a href="/agenda/">Agenda</a>`, BASE_URL);
+    expect(links.get('https://example.com/agenda')).toBe('https://example.com/agenda/');
+  });
+
   it('ignores non-http(s) hrefs', () => {
     const html = `<a href="mailto:hi@example.com">Mail</a><a href="javascript:alert(1)">X</a><a href="tel:+15550100">Call</a>`;
     expect(extractPageLinks(html, BASE_URL).size).toBe(0);
   });
 
-  it('keeps the query string but drops the fragment', () => {
+  it('keeps the query string but drops the fragment from the key', () => {
     const html = `<a href="/agenda?day=2#morning">Day 2</a>`;
     const links = extractPageLinks(html, BASE_URL);
     expect(links.has('https://example.com/agenda?day=2')).toBe(true);
+  });
+
+  it('keeps the fragment on the stored href', () => {
+    const links = extractPageLinks(`<a href="/program#day-2">Day 2</a>`, BASE_URL);
+    expect(links.get('https://example.com/program')).toBe('https://example.com/program#day-2');
+  });
+
+  it('keeps the first href when two hrefs share one key', () => {
+    const links = extractPageLinks(`<a href="/agenda/">A</a><a href="/agenda">B</a>`, BASE_URL);
+    expect(links.size).toBe(1);
+    expect(links.get('https://example.com/agenda')).toBe('https://example.com/agenda/');
+  });
+
+  // `userinfo` is discarded because the href is rebuilt from the parsed parts, not passed through.
+  it('drops userinfo from the stored href', () => {
+    const links = extractPageLinks(`<a href="https://evil.example@example.com/agenda">A</a>`, BASE_URL);
+    expect(links.get('https://example.com/agenda')).toBe('https://example.com/agenda');
   });
 
   it('reads hrefs when other attributes come first', () => {
@@ -31,7 +54,7 @@ describe('extractPageLinks', () => {
     expect(extractPageLinks(html, BASE_URL).has('https://example.com/venue')).toBe(true);
   });
 
-  it('returns an empty set for markup with no anchors', () => {
+  it('returns an empty map for markup with no anchors', () => {
     expect(extractPageLinks('<p>Nothing here</p>', BASE_URL).size).toBe(0);
   });
 
@@ -41,15 +64,17 @@ describe('extractPageLinks', () => {
 });
 
 describe('verifyPageLink', () => {
-  const html = `<a href="/agenda/">Agenda</a><a href="https://example.com/sponsor-us">Sponsor</a>`;
+  const html = `<a href="/agenda/">Agenda</a><a href="https://example.com/sponsor-us">Sponsor</a><a href="https://other.example/cfp">CFP</a>`;
   const links = extractPageLinks(html, BASE_URL);
 
-  it('accepts a link the page actually carries', () => {
-    expect(verifyPageLink('https://example.com/agenda/', links, BASE_URL)).toBe('https://example.com/agenda');
+  // The page published `/agenda/`; the candidate omits the slash. What comes back is the PAGE's
+  // form, because that is the URL the page sends its own readers to.
+  it("returns the page's own href rather than the normalized key", () => {
+    expect(verifyPageLink('https://example.com/agenda', links, BASE_URL)).toBe('https://example.com/agenda/');
   });
 
   it('accepts a relative candidate by resolving it first', () => {
-    expect(verifyPageLink('/agenda', links, BASE_URL)).toBe('https://example.com/agenda');
+    expect(verifyPageLink('/agenda', links, BASE_URL)).toBe('https://example.com/agenda/');
   });
 
   it('ignores a trailing-slash or host-case difference', () => {
@@ -61,7 +86,14 @@ describe('verifyPageLink', () => {
     expect(verifyPageLink('https://example.com/schedule', links, BASE_URL)).toBe('');
   });
 
-  it('drops a link on a different host', () => {
+  // These two are a PAIR. The contract is page membership, not same-origin: an event page
+  // legitimately links its CFP off-host, and nothing here checks the host. Deleting the first
+  // test would leave the second reading like a host check that does not exist.
+  it('accepts an off-host URL the page does link to', () => {
+    expect(verifyPageLink('https://other.example/cfp', links, BASE_URL)).toBe('https://other.example/cfp');
+  });
+
+  it('drops an off-host URL the page does not link to', () => {
     expect(verifyPageLink('https://evil.example/agenda', links, BASE_URL)).toBe('');
   });
 
@@ -76,6 +108,6 @@ describe('verifyPageLink', () => {
   });
 
   it('drops everything when the page yielded no links', () => {
-    expect(verifyPageLink('https://example.com/agenda', new Set<string>(), BASE_URL)).toBe('');
+    expect(verifyPageLink('https://example.com/agenda', new Map<string, string>(), BASE_URL)).toBe('');
   });
 });
