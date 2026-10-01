@@ -359,10 +359,12 @@
             </div>
           }
         } @else if (!pastMeeting()) {
-          <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
-          @if (effectivelyInvited() && inviteResponsesEnabled()) {
+          <!-- RSVP selection and attendee preview for authenticated invited non-organizers (upcoming meetings only) -->
+          @if (effectivelyInvited() && (inviteResponsesEnabled() || meeting().show_meeting_attendees)) {
             @defer (on viewport) {
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              @if (inviteResponsesEnabled()) {
+                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              }
               @if (meeting().show_meeting_attendees) {
                 <lfx-meeting-invitee-attendees [meeting]="meeting()" [occurrence]="occurrence()" />
               }

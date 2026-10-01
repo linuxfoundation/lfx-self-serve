@@ -9,14 +9,18 @@ import { Meeting, MeetingAttendeePreviewPerson, MeetingOccurrence, MeetingRegist
 import { buildAttendeePreviewFromRegistrants, isMeetingInviteResponsesEnabled, resolveRsvpOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, Observable, of, switchMap, take } from 'rxjs';
 
 /**
  * Attendee preview for an invitee's meeting card, plus the read-only guest drawer behind "View all".
- * @description Uses `GET /api/meetings/:uid/my-meeting-registrants`, which only answers registrants of
- * meetings with `show_meeting_attendees` on — the parent renders this only in that case, and inside
- * `@defer (on viewport)` so the roster is fetched per visible card rather than for the whole list.
- * A refused or failed fetch renders nothing.
+ * @description Uses `GET /api/meetings/:uid/my-meeting-registrants`, which only checks that the
+ * caller is a registrant or organizer of the meeting. It does NOT check `show_meeting_attendees`:
+ * the parent card enforces that by rendering this component only when the flag is on, inside
+ * `@defer (on viewport)` so only visible cards fetch.
+ *
+ * The card fetches a `preview` roster (no committee enrichment, partial roster tolerated). The
+ * full enriched roster is fetched once, the first time the drawer opens. A refused or failed
+ * preview fetch renders nothing.
  */
 @Component({
   selector: 'lfx-meeting-invitee-attendees',
@@ -31,24 +35,50 @@ export class MeetingInviteeAttendeesComponent {
 
   protected readonly drawerVisible = signal(false);
   protected readonly loading = signal(true);
-  protected readonly registrants = this.initRegistrants();
+  protected readonly fullRosterLoading = signal(false);
+  protected readonly registrants = this.initPreviewRegistrants();
+  protected readonly fullRegistrants = this.initFullRegistrants();
+  // Until the full roster lands, or if its fetch fails, the drawer shows the preview roster.
+  protected readonly drawerRegistrants = computed<MeetingRegistrant[]>(() => {
+    const full = this.fullRegistrants();
+    return full && full.length > 0 ? full : this.registrants();
+  });
   protected readonly previewPeople = computed<MeetingAttendeePreviewPerson[]>(() =>
     buildAttendeePreviewFromRegistrants(this.registrants(), { inviteResponsesEnabled: isMeetingInviteResponsesEnabled(this.meeting()) })
   );
 
-  private initRegistrants(): Signal<MeetingRegistrant[]> {
+  private initPreviewRegistrants(): Signal<MeetingRegistrant[]> {
     return toSignal(
       combineLatest([toObservable(this.meeting), toObservable(this.occurrence)]).pipe(
         switchMap(([meeting, occurrence]) => {
           this.loading.set(true);
-          const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
-          return this.meetingService.getMyMeetingRegistrants(meeting.id, isMeetingInviteResponsesEnabled(meeting), occurrenceId).pipe(
-            catchError(() => of([] as MeetingRegistrant[])),
-            finalize(() => this.loading.set(false))
-          );
+          return this.fetchRegistrants(meeting, occurrence, true).pipe(finalize(() => this.loading.set(false)));
         })
       ),
       { initialValue: [] as MeetingRegistrant[] }
+    );
+  }
+
+  private initFullRegistrants(): Signal<MeetingRegistrant[] | null> {
+    const firstOpen$ = toObservable(this.drawerVisible).pipe(filter(Boolean), take(1));
+    return toSignal(
+      combineLatest([toObservable(this.meeting), toObservable(this.occurrence), firstOpen$]).pipe(
+        switchMap(([meeting, occurrence]) => {
+          this.fullRosterLoading.set(true);
+          return this.fetchRegistrants(meeting, occurrence, false).pipe(finalize(() => this.fullRosterLoading.set(false)));
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private fetchRegistrants(meeting: Meeting, occurrence: MeetingOccurrence | null, preview: boolean): Observable<MeetingRegistrant[]> {
+    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
+    return this.meetingService.getMyMeetingRegistrants(meeting.id, isMeetingInviteResponsesEnabled(meeting), occurrenceId, preview).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch my meeting registrants:', error);
+        return of([] as MeetingRegistrant[]);
+      })
     );
   }
 }

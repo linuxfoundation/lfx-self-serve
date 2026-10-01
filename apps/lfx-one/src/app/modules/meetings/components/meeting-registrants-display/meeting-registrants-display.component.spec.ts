@@ -89,3 +89,55 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
     expect(emitted).toEqual([]);
   });
 });
+
+describe('MeetingRegistrantsDisplayComponent — open add form on show', () => {
+  async function mount(openAddFormOnShow: boolean) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1' });
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.componentRef.setInput('showAddRegistrant', true);
+    fixture.componentRef.setInput('openAddFormOnShow', openAddFormOnShow);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  const showAddForm = (fixture: Awaited<ReturnType<typeof mount>>): boolean => fixture.componentInstance.showAddForm();
+
+  it('opens the add form once the drawer becomes visible', async () => {
+    const fixture = await mount(true);
+    expect(showAddForm(fixture)).toBe(false);
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(showAddForm(fixture)).toBe(true);
+  });
+
+  it('leaves the add form closed when not asked to open it', async () => {
+    const fixture = await mount(false);
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(showAddForm(fixture)).toBe(false);
+  });
+});

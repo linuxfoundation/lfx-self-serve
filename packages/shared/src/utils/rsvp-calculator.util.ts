@@ -323,11 +323,21 @@ export function buildAttendeePreviewFromRegistrants(
  * RSVP-only fallback for surfaces that have responses but no registrant roster (the project and
  * foundation lens cards, whose counts come from the meeting record). Same ordering as
  * {@link buildAttendeePreviewFromRegistrants}; RSVP rows carry no profile picture.
+ *
+ * A recurring series returns several rows per registrant (`all`, `single`, `this_and_following`),
+ * so rows are grouped by registrant and each person shows once, with the response that applies to
+ * `occurrenceId` — the same resolution {@link calculateRsvpCounts} uses for the counts beside it.
  */
-export function buildAttendeePreviewFromRsvps(
-  rsvps: ReadonlyArray<Pick<MeetingRsvp, 'id' | 'email' | 'name' | 'response_type'>>
-): MeetingAttendeePreviewPerson[] {
-  return [...rsvps]
-    .sort((a, b) => ATTENDEE_PREVIEW_STATUS_ORDER[a.response_type] - ATTENDEE_PREVIEW_STATUS_ORDER[b.response_type])
-    .map((rsvp) => ({ key: rsvp.id || rsvp.email, name: rsvp.name?.trim() || rsvp.email, avatarUrl: null }));
+export function buildAttendeePreviewFromRsvps(rsvps: ReadonlyArray<MeetingRsvp>, occurrenceId?: string | null): MeetingAttendeePreviewPerson[] {
+  const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
+  for (const rsvp of rsvps) {
+    const key = rsvp.registrant_id || rsvp.email;
+    rsvpsByRegistrant.set(key, [...(rsvpsByRegistrant.get(key) ?? []), rsvp]);
+  }
+
+  return [...rsvpsByRegistrant.entries()]
+    .map(([key, rows]) => ({ key, rsvp: selectApplicableRsvp(occurrenceId, rows) }))
+    .filter((entry): entry is { key: string; rsvp: MeetingRsvp } => entry.rsvp !== null)
+    .sort((a, b) => ATTENDEE_PREVIEW_STATUS_ORDER[a.rsvp.response_type] - ATTENDEE_PREVIEW_STATUS_ORDER[b.rsvp.response_type])
+    .map(({ key, rsvp }) => ({ key, name: rsvp.name?.trim() || rsvp.email, avatarUrl: null }));
 }

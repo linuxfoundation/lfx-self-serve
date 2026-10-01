@@ -715,6 +715,21 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC', committee_uid: V2_COMMITTEE_UID })]);
     });
 
+    // Card avatar previews only draw a few faces, so they skip the committee fan-out and accept a
+    // partial roster instead of failing the whole preview.
+    it('skips enrichment and tolerates a partial roster for a preview', async () => {
+      const res = buildRes();
+
+      await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+      expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_ID, false, undefined, false, undefined, {
+        bearerToken: M2M_TOKEN,
+      });
+      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([registrant]);
+    });
+
     // Group attribution is decoration; the guest list is not. The v2 → v1 mapping goes over NATS, so a
     // transient committee-service problem must not turn this listing into a 500 — and this is the
     // degradation `MeetingRegistrant.committee_uid`'s docstring promises on both read paths.

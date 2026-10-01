@@ -93,7 +93,7 @@ export class MeetingRsvpDetailsComponent {
     if (registrants.length > 0) {
       return buildAttendeePreviewFromRegistrants(registrants, { inviteResponsesEnabled: this.inviteResponsesEnabled() });
     }
-    return buildAttendeePreviewFromRsvps(this.rsvps());
+    return buildAttendeePreviewFromRsvps(this.rsvps(), this.currentOccurrence()?.occurrence_id);
   });
   // Tracks across both rsvps data AND user identity; re-emits whenever either changes so the
   // parent card's "Set My RSVP" / "Update My RSVP" label stays in sync with login/impersonation.

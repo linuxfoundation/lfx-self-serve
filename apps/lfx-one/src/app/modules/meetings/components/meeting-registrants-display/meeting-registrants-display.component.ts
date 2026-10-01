@@ -199,11 +199,9 @@ export class MeetingRegistrantsDisplayComponent {
       this.refresh$.next(true);
     });
 
-    effect(() => {
-      if (this.visible() && this.openAddFormOnShow() && this.showAddRegistrant() && !this.pastMeeting()) {
-        this.showAddForm.set(true);
-      }
-    });
+    toObservable(computed(() => this.visible() && this.openAddFormOnShow() && this.showAddRegistrant() && !this.pastMeeting()))
+      .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.showAddForm.set(true));
 
     // Reset inline add form when drawer closes (open → closed transition)
     toObservable(this.visible)
