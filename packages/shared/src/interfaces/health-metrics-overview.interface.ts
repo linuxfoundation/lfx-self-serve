@@ -9,12 +9,14 @@ import type {
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsEngagementQueryParams, HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
 import type { HealthMetricsEventsQueryParams, HealthMetricsEventsSectionKey } from './health-metrics-events.interface';
 import type { HealthMetricsMembersQueryParams, HealthMetricsMembersSectionKey } from './health-metrics-members.interface';
+import type { HealthMetricsNonMembersQueryParams, HealthMetricsNonMembersSectionKey } from './health-metrics-non-members.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -31,6 +33,7 @@ export type HealthMetricsOverviewLinkTarget =
   | keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS
   | keyof typeof HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS
   | keyof typeof HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS
+  | keyof typeof HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS
   | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
 
 /** One entry of `HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS`: the owning section and its arrival filters. */
@@ -54,6 +57,13 @@ export interface HealthMetricsOverviewMembersLinkSpec {
   queryParams: Readonly<HealthMetricsMembersQueryParams>;
 }
 
+/** One entry of `HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS`: the owning section and its arrival filters. */
+export interface HealthMetricsOverviewNonMembersLinkSpec {
+  section: HealthMetricsNonMembersSectionKey;
+  /** Merged into the current query string; `null` clears a filter the URL already carries. */
+  queryParams: Readonly<HealthMetricsNonMembersQueryParams>;
+}
+
 /** One entry of `HEALTH_METRICS_OVERVIEW_TILE_LINKS`: the in-app target a tile opens and the link's text. */
 export interface HealthMetricsOverviewTileLinkSpec {
   linkTarget: HealthMetricsOverviewLinkTarget;
@@ -63,8 +73,12 @@ export interface HealthMetricsOverviewTileLinkSpec {
 /** An in-app Overview link into a Level 2 tab, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
 export interface HealthMetricsOverviewFindingRoute {
   commands: readonly string[];
-  fragment: HealthMetricsEngagementSectionKey | HealthMetricsEventsSectionKey | HealthMetricsMembersSectionKey;
-  queryParams: Readonly<HealthMetricsEngagementQueryParams> | Readonly<HealthMetricsEventsQueryParams> | Readonly<HealthMetricsMembersQueryParams>;
+  fragment: HealthMetricsEngagementSectionKey | HealthMetricsEventsSectionKey | HealthMetricsMembersSectionKey | HealthMetricsNonMembersSectionKey;
+  queryParams:
+    | Readonly<HealthMetricsEngagementQueryParams>
+    | Readonly<HealthMetricsEventsQueryParams>
+    | Readonly<HealthMetricsMembersQueryParams>
+    | Readonly<HealthMetricsNonMembersQueryParams>;
 }
 
 /**
@@ -224,7 +238,7 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
-  /** Set for the `eng` and `evt` areas while they carry a figure — the tile links into its Level 2 tab. */
+  /** Set for each area in `HEALTH_METRICS_OVERVIEW_TILE_LINKS` while it carries a figure — the tile links into its Level 2 tab. */
   route?: HealthMetricsOverviewFindingRoute;
   /** The tile link's text, set with {@link route}. */
   routeLabel?: string;
