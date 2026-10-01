@@ -33,7 +33,7 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   `/meetings/not-found`), with the triggers listed in the state matrix. SSR responses MUST keep
   `Cache-Control: private, no-store`.
 - **FR-007**: A viewer who is not invited, not an organizer, not matched by email and holds no valid
-  `?password=` MUST reach `/meetings/not-found` for any meeting that is not public-open. The same
+  meeting password (from `?password=` or from the composer's router navigation state) MUST reach `/meetings/not-found` for any meeting that is not public-open. The same
   viewer holding the password MUST get the page. V2 MUST NOT design an in-page state for the first
   case.
 
@@ -87,8 +87,11 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 - **FR-030**: The agenda MUST render for every viewer except an ended meeting without `full_access`.
   Structured agenda items MUST wait for upstream U-07 (#2933).
-- **FR-031**: Materials MUST render for signed-in viewers, with the organizer's Manage control. An
-  anonymous viewer MUST get a sign-in state whose copy is correct on public meetings too (V1 says
+- **FR-031**: Wherever content is visible (every upcoming or live meeting, and an ended meeting with
+  artifact access), materials MUST render for signed-in viewers, with the organizer's Manage
+  control. An ended meeting without artifact access MUST keep materials hidden for every viewer,
+  signed in or not (state matrix: `ended` / `none`). Where content is visible, an anonymous viewer
+  MUST get a sign-in state whose copy is correct on public meetings too (V1 says
   "No primary materials available." when materials exist), until a public attachments route exists
   (E3-03).
 - **FR-032**: The people roster MUST render only for registrants and organizers, and only with
@@ -105,8 +108,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   (E4-03).
 - **FR-041**: `no-access` MUST explain why, and MAY show feature badges (Recording, Transcripts, AI
   Summary) that have nothing behind them for this viewer.
-- **FR-042**: The host key MUST render only for an organizer holding it, only inside
-  start − 70 min to end + 40 min, and never on a past meeting.
+- **FR-042**: The host key MUST render for any signed-in viewer the BFF returns `host_key` to — the
+  FGA `host` relation, which includes co-hosts who are not organizers — only inside start − 70 min
+  to end + 40 min, and never on a past meeting. Its visibility MUST NOT depend on the viewer role or
+  on the join-details section.
 - **FR-043**: Join details MUST NOT show a passcode or dial-in numbers until upstream U-04 (#2930) / U-05
   (#2931) provide them.
 - **FR-044**: The occurrence strip MUST honour both cancellation sources (`cancelled_occurrences[]`

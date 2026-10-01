@@ -43,9 +43,10 @@ loaded non-open page implies the viewer holds the password. That is why joining 
 What `meeting-view-model.interface.ts` defines, and the rule behind each piece:
 
 - **`MeetingTimeState`** — `before | live | ended`.
-- **`MeetingViewerRole`** — `visitor | outsider | registrant | organizer`. There is no `host` role:
-  nothing on the payload distinguishes a host from an organizer; the host key is a property of an
-  organizer inside the host-key window.
+- **`MeetingViewerRole`** — `visitor | outsider | registrant | organizer`. There is no `host` role.
+  Host-key access is orthogonal to the role: the BFF returns `host_key` (with `can_view_host_key`)
+  to whoever holds the FGA `host` relation, including co-hosts who are not organizers, inside the
+  host-key window. V2 reads those two fields directly rather than inferring them from the role.
 - **`MeetingPrivacyState`** — the header chip's `label` and `icon` (from the shared helpers),
   `visibility`, `restricted`, and `openToPublic` (public **and** unrestricted). `openToPublic` gates
   self-registration only.

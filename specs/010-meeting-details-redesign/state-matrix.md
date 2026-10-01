@@ -17,16 +17,16 @@ what V2 renders. This is the matrix #1766 defers; the `FR-###` requirements are 
 
 ## Axes
 
-| Axis                      | Values                                                                      | Source of truth                                                                                         |
-| ------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **A. Time**               | `before` · `live` · `ended`                                                 | `canJoinMeeting` / `hasMeetingEnded` (window: start − `early_join_time_minutes ?? 10` to end + 40 min)  |
-| **B. Viewer**             | `visitor` (anonymous) · `outsider` · `registrant` · `organizer`             | session + `meeting.invited` / `meeting.organizer`. **Host = organizer + host key**; not a separate role |
-| **C. Privacy**            | `public-open` · `public-restricted` · `private-open` · `private-restricted` | `visibility` × `restricted`; labels from `getMeetingPrivacyLabel`                                       |
-| **D. Past access**        | `full` · `none` — meaningful only when A = `ended`                          | `full_access` from `GET /public/api/meetings/past/:id` (`checkPastMeetingAccess`)                       |
-| **E. Cadence**            | `series` · `single`                                                         | `meeting.recurrence !== null`                                                                           |
-| **F. RSVP tracking**      | `on` · `off` (pre-January-2024 meetings)                                    | normalized `Meeting.is_invite_responses_enabled` — never the raw `use_new_invite_email_address` alias   |
-| **G. Arrival credential** | `none` · `password` (`?password=` on the link) · ~~`magic-link`~~           | query string. Magic link is blocked on upstream **U-08** (#2934) and out of scope until it exists       |
-| **Page status**           | `loading` · `loaded` · `error` · `not-found`                                | V1's three-way chain (error / page / skeleton) plus the `/meetings/not-found` redirect                  |
+| Axis                      | Values                                                                      | Source of truth                                                                                                                                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Time**               | `before` · `live` · `ended`                                                 | `canJoinMeeting` / `hasMeetingEnded` (window: start − `early_join_time_minutes ?? 10` to end + 40 min)                                                                                                                                             |
+| **B. Viewer**             | `visitor` (anonymous) · `outsider` · `registrant` · `organizer`             | session + `meeting.invited` / `meeting.organizer`. **host key is orthogonal** to the role: any viewer holding the FGA `host` relation, co-hosts included                                                                                           |
+| **C. Privacy**            | `public-open` · `public-restricted` · `private-open` · `private-restricted` | `visibility` × `restricted`; labels from `getMeetingPrivacyLabel`                                                                                                                                                                                  |
+| **D. Past access**        | `full` · `none` — meaningful only when A = `ended`                          | `full_access` from `GET /public/api/meetings/past/:id` (`checkPastMeetingAccess`)                                                                                                                                                                  |
+| **E. Cadence**            | `series` · `single`                                                         | `meeting.recurrence !== null`                                                                                                                                                                                                                      |
+| **F. RSVP tracking**      | `on` · `off` (pre-January-2024 meetings)                                    | normalized `Meeting.is_invite_responses_enabled` — never the raw `use_new_invite_email_address` alias                                                                                                                                              |
+| **G. Arrival credential** | `none` · `password` · ~~`magic-link`~~                                      | the meeting password, from `?password=` on the link **or** from router navigation state when the composer opens a meeting it just created (`statePassword()`). Magic link is blocked on upstream **U-08** (#2934) and out of scope until it exists |
+| **Page status**           | `loading` · `loaded` · `error` · `not-found`                                | V1's three-way chain (error / page / skeleton) plus the `/meetings/not-found` redirect                                                                                                                                                             |
 
 Axis **G** is not in the plan's axis list, and it is the one that decides reachability. It is
 added here because the verification showed that every "outsider on a restricted meeting" state
@@ -46,7 +46,9 @@ as page states.
 1. privacy is `public-open`;
 2. the caller is `invited` or `organizer`;
 3. an authenticated caller matches a registrant by email;
-4. `?password=` matches the meeting password.
+4. the meeting password matches. It comes from `?password=`, or from router navigation state
+   when the composer hands off a meeting it just created (V1 `statePassword()`); both count as
+   credential `password`.
 
 Otherwise it returns **400 "Invalid password"**, and the client redirects 400/403 to
 `/meetings/not-found` (V1 TS:883). A **404** is different: it first falls back to the past-meeting
@@ -80,8 +82,6 @@ So every ended combination is legal. Anonymous + `full` happens only for `public
 
 ### Other illegal combinations
 
-- **Host without organizer.** Not a distinction the app makes; host key visibility is a property
-  of an organizer inside the host-key window (−70 / +40 min), never on a past meeting.
 - **Axis D on a non-ended meeting.** `full_access` only exists on the past payload.
 - **Axis F × any RSVP state when F = `off`.** F = `off` removes the RSVP dimension; it is not an
   RSVP state.
@@ -172,18 +172,18 @@ before: organizer | registrant → RSVP tracking on ? rsvp : (registrant ? rsvp-
 Per viewer, for a `loaded` page. `ended/none` hides the agenda and materials row for everyone,
 anonymous included (V1 HTML:585).
 
-| Section                        | visitor          | outsider | registrant | organizer   | Notes                                                                                       |
-| ------------------------------ | ---------------- | -------- | ---------- | ----------- | ------------------------------------------------------------------------------------------- |
-| Header: title, badges, time    | ✅               | ✅       | ✅         | ✅          | single 4-way privacy chip in V2 (E1-04); V1 shows separate Private / Restricted badges      |
-| "Organized by"                 | ❌               | ✅       | ✅         | ✅          | `created_by` / `owner` / `organizers` deleted for anonymous (BFF:140–142)                   |
-| Agenda                         | ✅               | ✅       | ✅         | ✅          | hidden when `ended/none`                                                                    |
-| Materials                      | ❌ sign-in state | ✅       | ✅         | ✅ + Manage | fetch is auth-gated; V1's anonymous copy is wrong on public meetings. Public route is E3-03 |
-| People / roster                | ❌               | ❌       | ✅         | ✅          | no count source for non-registrants (GH-1731); hidden when `ended/none`                     |
-| RSVP summary, filter, badges   | ❌               | ❌       | F=`on`     | F=`on`      | F=`off` removes all three; invitee count only                                               |
-| Join details                   | ❌               | ❌       | ✅         | ✅          | not once the meeting has ended (`joinDetails: !ended && onTheMeeting`)                      |
-| Host key (inside join details) | ❌               | ❌       | ❌         | in window   | only inside −70 / +40 min, never on a past meeting                                          |
-| Meeting Tools                  | D-4              | `full`   | `full`     | ✅          | per-tool unavailable states; unapproved AI summaries currently shown "Pending"              |
-| Occurrence strip               | series           | series   | series     | series      | cancelled occurrences are filtered out silently today; E6-05 designs the state              |
+| Section                      | visitor          | outsider | registrant | organizer   | Notes                                                                                                                                                                                                                                                    |
+| ---------------------------- | ---------------- | -------- | ---------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Header: title, badges, time  | ✅               | ✅       | ✅         | ✅          | single 4-way privacy chip in V2 (E1-04); V1 shows separate Private / Restricted badges                                                                                                                                                                   |
+| "Organized by"               | ❌               | ✅       | ✅         | ✅          | `created_by` / `owner` / `organizers` deleted for anonymous (BFF:140–142)                                                                                                                                                                                |
+| Agenda                       | ✅               | ✅       | ✅         | ✅          | hidden when `ended/none`                                                                                                                                                                                                                                 |
+| Materials                    | ❌ sign-in state | ✅       | ✅         | ✅ + Manage | fetch is auth-gated; V1's anonymous copy is wrong on public meetings. Public route is E3-03                                                                                                                                                              |
+| People / roster              | ❌               | ❌       | ✅         | ✅          | no count source for non-registrants (GH-1731); hidden when `ended/none`                                                                                                                                                                                  |
+| RSVP summary, filter, badges | ❌               | ❌       | F=`on`     | F=`on`      | F=`off` removes all three; invitee count only                                                                                                                                                                                                            |
+| Join details                 | ❌               | ❌       | ✅         | ✅          | not once the meeting has ended (`joinDetails: !ended && onTheMeeting`)                                                                                                                                                                                   |
+| Host key                     | ❌               | if host  | if host    | if host     | any signed-in viewer the BFF returns `host_key` to (FGA `host` relation, which includes co-hosts who are not organizers), inside −70 / +40 min, never on a past meeting. Must not depend on the join-details row, which a non-organizer host may not see |
+| Meeting Tools                | D-4              | `full`   | `full`     | ✅          | per-tool unavailable states; unapproved AI summaries currently shown "Pending"                                                                                                                                                                           |
+| Occurrence strip             | series           | series   | series     | series      | cancelled occurrences are filtered out silently today; E6-05 designs the state                                                                                                                                                                           |
 
 ## Page status
 
