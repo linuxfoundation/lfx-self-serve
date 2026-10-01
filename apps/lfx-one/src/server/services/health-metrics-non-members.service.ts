@@ -251,6 +251,7 @@ export class HealthMetricsNonMembersService {
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
     const options = { operation: 'get_non_members_conversion', clientMessage: 'Conversion opportunity is unavailable right now.' };
 
+    // The view holds one row per foundation, so `LIMIT 1` needs no ORDER BY.
     const summarySql = `
       SELECT
         entry_tier_name,

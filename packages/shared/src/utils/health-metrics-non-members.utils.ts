@@ -63,7 +63,8 @@ export function buildHealthMetricsNonMembersPeopleCountLabel(count: number): str
 
 /** Conversion opportunity. The estimate always carries its qualifier, and a NULL figure reads "not available", never 0. */
 export function buildHealthMetricsNonMembersConversionView(conversion: HealthMetricsNonMembersConversion): HealthMetricsNonMembersConversionView {
-  const hasEstimate = conversion.estimatedPipelineUsd !== null;
+  const pipeline = conversion.estimatedPipelineUsd;
+  const hasEstimate = pipeline !== null;
   const tier = conversion.entryTierName?.trim();
   return {
     measured: conversion.measured,
@@ -71,7 +72,7 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
       conversion.organizationsTracked === null
         ? `Organizations tracked ${HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE}`
         : `${pluralize(conversion.organizationsTracked, 'organization')} tracked`,
-    pipelineValue: conversion.estimatedPipelineUsd === null ? '—' : formatCurrency(conversion.estimatedPipelineUsd),
+    pipelineValue: hasEstimate ? formatCurrency(pipeline) : '—',
     pipelineLabel: hasEstimate ? 'Estimated pipeline' : 'Estimated pipeline · not enough data',
     hasEstimate,
     side: [
