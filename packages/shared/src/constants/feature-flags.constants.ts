@@ -213,8 +213,15 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  * false: the group stays hidden until LaunchDarkly targeting turns it on, which also keeps it dark
  * while `lfx-v2-pat-service` and the member-service tier endpoint roll out.
  *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF: the
- * `/api/profile/insights-tokens` routes stay authenticated and re-check Key Contact eligibility on
- * create, so this flag controls visibility, never what a user may do.
+ * Evaluated in the browser (`FeatureFlagService.getBooleanFlag`) for visibility and again on the
+ * server (`LaunchDarklyServerService`) for access: users the flag targets are treated as Key
+ * Contacts by `/api/profile/insights-tokens`, so they can do everything a Key Contact can there.
  */
 export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
+
+/**
+ * How long the server's LaunchDarkly SDK may take to connect on first use, in seconds. The request
+ * that triggers initialization waits at most this long, then falls back to the flag's default
+ * (fail closed) and the SDK keeps connecting in the background.
+ */
+export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;

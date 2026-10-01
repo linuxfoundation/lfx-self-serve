@@ -163,6 +163,10 @@ async function initializeOpenFeature(): Promise<void> {
 | `DD_RUM_APPLICATION_ID` | DataDog RUM application ID (future) | `app-uuid-here`            |
 | `INTERCOM_APP_ID`       | Intercom Messenger workspace App ID | `mxl90k6y`                 |
 
+### Server-Side LaunchDarkly Variable
+
+`LD_SDK_KEY` is the LaunchDarkly **server-side** SDK key. It is a secret, read by the Express server only and never exposed to the browser (unlike `LD_CLIENT_ID`). `LaunchDarklyServerService` uses it to evaluate per-user flags for access checks, such as `insights-public-api` for Insights API tokens. Without it, server evaluations return their default (`false`), so access falls back to the normal checks. Store it in a secret, for example `valueFrom.secretKeyRef` in Kubernetes.
+
 ### Server-Side Cache Variables
 
 These configure the shared Valkey read-through cache (read by the Express server only; not exposed to the browser):

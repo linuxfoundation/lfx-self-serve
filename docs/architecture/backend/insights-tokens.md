@@ -48,7 +48,18 @@ List, create and revoke all run the same check, `InsightsTokensService.assertKey
 
 A user who loses Key Contact status therefore loses access to their existing tokens too: they can no longer list or revoke them. This is a product decision. The tokens stay valid at the PAT service until revoked some other way (the PAT service, or an admin), but they stop working against the Insights API. The Insights Worker re-checks org and tier on every exchange and fails closed with a `403` once its tier cache expires (about 10 minutes), per [Insights ADR-0010](https://github.com/linuxfoundation/insights/pull/1879). That ADR also expects Self-Serve to revoke a user's PATs when their membership lapses; nothing does that automatically yet.
 
-The `insights-public-api` LaunchDarkly flag is enforced in the UI only. The server has only env-var flags (`server-feature-flag.helper.ts`), which cannot target individual users, so the server gate is Key Contact status alone.
+The `insights-public-api` LaunchDarkly flag is evaluated in the browser for visibility and on the server for access.
+
+### Flag bypass
+
+Users the flag targets can do anything a Key Contact can in this group. `InsightsTokensService.getEligibility` first asks `LaunchDarklyServerService.isFlagEnabled` (`@launchdarkly/node-server-sdk`) whether the flag is on for the session user. If it is, it returns `INSIGHTS_TOKEN_FLAG_ELIGIBLE` (`canCreate: true`, no orgs) without calling member-service, so every `assertKeyContact` call passes.
+
+- The context is `{ kind: 'user', key: <session username> }`, the same key the browser uses, so a flag targeted at named users answers the same on both sides. Nothing from the client is trusted; there is no request header.
+- It needs the **server-side** SDK key in `LD_SDK_KEY`. `LD_CLIENT_ID` is client-side only and cannot be used.
+- It fails closed. With no `LD_SDK_KEY`, no username, LaunchDarkly not ready within `LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS`, or an evaluation error, the answer is `false` and the normal Key Contact check runs.
+- The SDK connects lazily on the first evaluation and is closed on server shutdown.
+
+The PAT service still scopes the token to the caller, and the Insights Worker re-checks org and tier on every exchange, so a token minted by a flagged user who is not a Key Contact of a member org does not work against the Insights API.
 
 ## Related Documentation
 

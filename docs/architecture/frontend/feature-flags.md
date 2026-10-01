@@ -916,6 +916,7 @@ env:
 - Use **different client IDs** for each environment via environment variables
 - Client-side IDs are safe to use in runtime configuration (they're public)
 - Server-side SDK keys should **never** be in client code
+- The server has its own LaunchDarkly connection for per-user access checks (`LaunchDarklyServerService`). It reads the secret server-side SDK key from `LD_SDK_KEY`, never from `LD_CLIENT_ID`, and fails closed (returns the flag default) when the key is missing or LaunchDarkly is unreachable. See [Insights API Tokens](../backend/insights-tokens.md#flag-bypass)
 - See [Runtime Configuration](../../runtime-configuration.md) for complete architecture details
 
 ### LaunchDarkly Provider Options

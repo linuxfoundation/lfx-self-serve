@@ -80,6 +80,7 @@ import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
+import { LaunchDarklyServerService } from './services/launchdarkly-server.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
 import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
@@ -787,6 +788,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
         }
       )
     ),
+    // Closes the LaunchDarkly streaming connection only if a flag was ever evaluated on this pod.
+    raceDrain('launchdarkly', LaunchDarklyServerService.shutdownIfInitialized()),
   ]);
 
   logger.success(undefined, 'graceful_shutdown', startTime, {});

@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  INSIGHTS_PUBLIC_API_FLAG,
   INSIGHTS_TOKEN_AUDIENCE,
   INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE,
   INSIGHTS_TOKEN_ERROR_CODES,
+  INSIGHTS_TOKEN_FLAG_ELIGIBLE,
   INSIGHTS_TOKEN_INELIGIBLE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -24,6 +26,7 @@ import { getDefaultMessageForStatus } from '../helpers/http-status.helper';
 import { MicroserviceError } from '../errors/microservice.error';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { LaunchDarklyServerService } from './launchdarkly-server.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -118,6 +121,11 @@ export class InsightsTokensService {
    * token is scoped to this single call via `options.bearerToken`.
    */
   public async getEligibility(req: Request): Promise<InsightsTokenEligibility> {
+    if (await this.hasFlagAccess(req)) {
+      logger.debug(req, 'get_insights_token_eligibility', 'User targeted by insights-public-api flag; skipping Key Contact check');
+      return INSIGHTS_TOKEN_FLAG_ELIGIBLE;
+    }
+
     const username = await getUsernameFromAuth(req);
     if (!username) {
       logger.warning(req, 'get_insights_token_eligibility', 'No username on session; treating as ineligible');
@@ -199,6 +207,17 @@ export class InsightsTokensService {
         errorBody: { error: INSIGHTS_TOKEN_ERROR_CODES.NOT_KEY_CONTACT },
       });
     }
+  }
+
+  /**
+   * Users targeted by the `insights-public-api` flag may do anything a Key Contact can. The server
+   * evaluates the flag itself against the session's username, never from anything the client sends.
+   * It fails closed: with no SDK key, or LaunchDarkly unreachable, the answer is `false` and the
+   * normal Key Contact check runs. The PAT service still scopes every token to the caller's own
+   * principal.
+   */
+  private hasFlagAccess(req: Request): Promise<boolean> {
+    return LaunchDarklyServerService.getInstance().isFlagEnabled(req, INSIGHTS_PUBLIC_API_FLAG, false);
   }
 
   private toInsightsToken(token: PatServiceToken): InsightsToken {
