@@ -642,6 +642,12 @@ export interface CommitteeTableRowVm extends Committee {
    * or the role is `'None'` so the template can `@if (committee.roleChip)` without a method call.
    */
   roleChip: { bgColor: string; color: string } | null;
+  /**
+   * True when the viewing user is a member of this committee. Derived from `myCommitteeUids` in
+   * the table component so the template can render the membership badge without a method call.
+   * Used in the Project/Foundation lens where `my_role` is not available on the row.
+   */
+  isMember: boolean;
 }
 
 /**

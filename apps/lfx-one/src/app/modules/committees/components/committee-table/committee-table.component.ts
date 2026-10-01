@@ -100,6 +100,7 @@ export class CommitteeTableComponent {
       joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
       typeDisplay: resolveTypeDisplay(committee),
       roleChip: resolveRoleChip(committee.my_role),
+      isMember: this.myCommitteeUids().has(committee.uid),
     }))
   );
 

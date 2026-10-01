@@ -79,6 +79,16 @@
                       {{ committee.name || '-' }}
                     </a>
                   }
+                  @if (!isMeLens() && committee.isMember) {
+                    <span
+                      class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                      pTooltip="You are a member of this group"
+                      tooltipPosition="top"
+                      [attr.data-testid]="'member-badge-' + committee.uid">
+                      <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                      Member
+                    </span>
+                  }
                   @if (committee.public) {
                     <button
                       type="button"
