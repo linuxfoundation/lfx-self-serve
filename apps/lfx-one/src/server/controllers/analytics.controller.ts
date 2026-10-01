@@ -3848,7 +3848,7 @@ export class AnalyticsController {
         pageSize,
       });
 
-      // The search text is left out of the log; member names are the only thing it can match.
+      // The search text stays out of this metadata; it can only match member names, which the request URL also logs.
       logger.success(req, 'get_members_directory', startTime, {
         foundation_slug: foundationSlug,
         range,
@@ -4109,7 +4109,7 @@ export class AnalyticsController {
         pageSize,
       });
 
-      // The search text is left out of the log; organization names are the only thing it can match.
+      // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
       logger.success(req, 'get_events_organizations', startTime, {
         foundation_slug: foundationSlug,
         range,
@@ -4159,7 +4159,7 @@ export class AnalyticsController {
         pageSize,
       });
 
-      // The search text is left out of the log; organization names are the only thing it can match.
+      // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
       logger.success(req, 'get_non_members_orgs', startTime, {
         foundation_slug: foundationSlug,
         range,
