@@ -4,12 +4,18 @@
 import '@angular/compiler';
 
 import { MENTORSHIP_LFX_PROFILE_EMAIL_MAX } from '@lfx-one/shared/constants';
-import type { EmailManagementData } from '@lfx-one/shared/interfaces';
+import type { Auth0Identity, EmailManagementData } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { EmailVerificationService } from '../services/email-verification.service';
-import { buildMentorshipUpstreamLfxProfileFields, readMentorshipLfxProfileFields, resolveMentorshipPrimaryEmail } from './mentorship-lfx-profile.helper';
+import {
+  buildMentorshipUpstreamLfxProfileFields,
+  buildMentorshipUpstreamProfileLinks,
+  readMentorshipLfxProfileFields,
+  resolveMentorshipGithubProfileLink,
+  resolveMentorshipPrimaryEmail,
+} from './mentorship-lfx-profile.helper';
 
 const VALID_FIELDS = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
 
@@ -20,6 +26,16 @@ function buildReq(sub: string | null = 'auth0|test-user-1'): Request {
 function emailServiceReturning(data: Partial<EmailManagementData> | null) {
   const getUserEmails = vi.fn().mockResolvedValue(data);
   return { service: { getUserEmails } as unknown as EmailVerificationService, getUserEmails };
+}
+
+function identity(provider: string, profileData: Auth0Identity['profileData']): Auth0Identity {
+  return { provider, user_id: `${provider}-1`, connection: provider, isSocial: true, profileData };
+}
+
+/** `listIdentitiesSafe` resolves `[]` on a failed lookup, so a failure is an empty list here. */
+function identityServiceReturning(identities: Auth0Identity[]) {
+  const listIdentitiesSafe = vi.fn().mockResolvedValue(identities);
+  return { service: { listIdentitiesSafe } as unknown as EmailVerificationService, listIdentitiesSafe };
 }
 
 describe('readMentorshipLfxProfileFields', () => {
@@ -82,6 +98,69 @@ describe('resolveMentorshipPrimaryEmail', () => {
     const { service } = emailServiceReturning(data);
 
     await expect(resolveMentorshipPrimaryEmail(buildReq(), service)).resolves.toBeUndefined();
+  });
+});
+
+describe('resolveMentorshipGithubProfileLink', () => {
+  it("builds the GitHub URL from the caller's connected GitHub login, looked up by their sub", async () => {
+    const { service, listIdentitiesSafe } = identityServiceReturning([
+      identity('linkedin', { email: 'test.user@example.com' }),
+      identity('github', { nickname: 'test-user' }),
+    ]);
+    const req = buildReq();
+
+    await expect(resolveMentorshipGithubProfileLink(req, service)).resolves.toBe('https://github.com/test-user');
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(req, 'auth0|test-user-1');
+  });
+
+  it('returns nothing, without a lookup, when there is no signed-in user', async () => {
+    const { service, listIdentitiesSafe } = identityServiceReturning([identity('github', { nickname: 'test-user' })]);
+
+    await expect(resolveMentorshipGithubProfileLink(buildReq(null), service)).resolves.toBeUndefined();
+    expect(listIdentitiesSafe).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a failed lookup or no accounts', []],
+    ['only a LinkedIn account, which carries no profile URL', [identity('linkedin', { email: 'test.user@example.com' })]],
+    ['a GitHub account with no login', [identity('github', { name: 'Test User' })]],
+    ['a login with a path in it', [identity('github', { nickname: 'test-user/../evil' })]],
+    ['a login with a leading hyphen', [identity('github', { nickname: '-test-user' })]],
+    ['a login past 39 characters', [identity('github', { nickname: 'a'.repeat(40) })]],
+  ])('returns nothing for %s, so the stored link is left as it is', async (_label, identities) => {
+    const { service } = identityServiceReturning(identities as Auth0Identity[]);
+
+    await expect(resolveMentorshipGithubProfileLink(buildReq(), service)).resolves.toBeUndefined();
+  });
+});
+
+describe('buildMentorshipUpstreamProfileLinks', () => {
+  it('lays the GitHub link over the stored links, so the keys LFX One does not write survive', () => {
+    expect(
+      buildMentorshipUpstreamProfileLinks(
+        {
+          githubProfileLink: 'https://github.com/old-login',
+          linkedinProfileLink: 'https://linkedin.com/in/test-user',
+          resumeLink: 'https://example.com/r.pdf',
+        },
+        'https://github.com/test-user'
+      )
+    ).toEqual({
+      githubProfileLink: 'https://github.com/test-user',
+      linkedinProfileLink: 'https://linkedin.com/in/test-user',
+      resumeLink: 'https://example.com/r.pdf',
+    });
+  });
+
+  it('writes only the GitHub link when nothing usable is stored', () => {
+    expect(buildMentorshipUpstreamProfileLinks(undefined, 'https://github.com/test-user')).toEqual({ githubProfileLink: 'https://github.com/test-user' });
+    expect(buildMentorshipUpstreamProfileLinks(['not', 'a', 'record'], 'https://github.com/test-user')).toEqual({
+      githubProfileLink: 'https://github.com/test-user',
+    });
+  });
+
+  it('returns nothing without a link, so the column is left as it is', () => {
+    expect(buildMentorshipUpstreamProfileLinks({ resumeLink: 'https://example.com/r.pdf' })).toBeUndefined();
   });
 });
 

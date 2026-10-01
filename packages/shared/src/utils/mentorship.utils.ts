@@ -47,7 +47,7 @@ import {
 import {
   MENTORSHIP_MENTOR_INTRODUCTION_MAX,
   MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH,
-  MENTORSHIP_MENTOR_RESUME_EXTENSIONS,
+  MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS,
 } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
@@ -90,6 +90,9 @@ import type {
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipMentorProfileDetails,
+  MentorshipMentorProfileFieldErrors,
+  MentorshipMentorProfileUpdateRequest,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
@@ -510,37 +513,20 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   return errors;
 }
 
-export function isMentorshipResumeFileName(fileName: string): boolean {
-  const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
-  return (MENTORSHIP_MENTOR_RESUME_EXTENSIONS as readonly string[]).includes(ext);
-}
-
 /**
  * Validates the Become a Mentor form, and the `POST /api/mentorship/mentor/profile` body the BFF
  * receives, so the two are held to one rule set.
  *
- * Two things a mentor supplies are deliberately unvalidated. Program requests are
- * optional: a mentor may register a profile now and apply to programs later, so the
- * request list is not checked here and does not reach this function at all. The resume
- * is optional too, and its picker rejects a bad type or an oversized file at selection
- * time rather than letting either reach submit. A skill outside `MENTORSHIP_SKILL_OPTIONS`
+ * Program requests are deliberately unvalidated. They are optional: a mentor may register
+ * a profile now and apply to programs later, so the request list is not checked here and
+ * does not reach this function at all. A skill outside `MENTORSHIP_SKILL_OPTIONS`
  * can only come from a tampered request (the picker offers nothing else), so it gets its
  * own message after the required check.
  */
 export function getMentorshipMentorRegisterErrors(
   form: Pick<MentorshipMentorRegisterForm, 'introduction' | 'skills' | 'complianceAccepted' | 'termsAccepted'>
 ): MentorshipMentorRegisterFieldErrors {
-  const errors: MentorshipMentorRegisterFieldErrors = {};
-
-  const introductionError = mentorshipRichTextError(
-    form.introduction,
-    MENTORSHIP_MENTOR_INTRODUCTION_MAX,
-    'Introduction is required.',
-    `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
-  );
-  if (introductionError) errors.introduction = introductionError;
-  if (!form.skills.length) errors.skills = 'Add at least one skill.';
-  else if (hasUnknownMentorshipSkill(form.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  const errors: MentorshipMentorRegisterFieldErrors = getMentorshipMentorProfileErrors({ introduction: form.introduction, skills: form.skills });
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
@@ -548,8 +534,64 @@ export function getMentorshipMentorRegisterErrors(
 }
 
 /**
- * Builds the `POST /api/mentorship/mentor/profile` body from the register form. `resumeFileName` is
- * never read: resume upload is coming soon and no file metadata is sent.
+ * The introduction and skills rules a mentor profile is held to, on register and on edit, in the browser
+ * and in the BFF. Only the fields present are checked, so an edit that leaves one out is not refused for
+ * what is already stored. A skill outside `MENTORSHIP_SKILL_OPTIONS` can only come from a stored legacy
+ * value or a tampered request (the picker offers nothing else), so it gets its own message after the
+ * required check.
+ */
+export function getMentorshipMentorProfileErrors(input: MentorshipMentorProfileUpdateRequest): MentorshipMentorProfileFieldErrors {
+  const errors: MentorshipMentorProfileFieldErrors = {};
+
+  if (input.introduction !== undefined) {
+    const introductionError = mentorshipRichTextError(
+      input.introduction,
+      MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+      'Introduction is required.',
+      `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
+    );
+    if (introductionError) errors.introduction = introductionError;
+  }
+  if (input.skills !== undefined) {
+    if (!input.skills.length) errors.skills = 'Add at least one skill.';
+    else if (hasUnknownMentorshipSkill(input.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  }
+
+  return errors;
+}
+
+/**
+ * The changed fields of a mentor profile edit, or `{}` when nothing changed. `introduction` is the
+ * editor's HTML and is sent when it differs from the stored one: the editor writes to the form only
+ * when the mentor types, so an untouched introduction is never sent. `skills` is sent when the list
+ * (trimmed, blanks dropped, order-sensitive) differs from `seed`, and then whole, since upstream
+ * replaces the list.
+ */
+export function buildMentorshipMentorProfileUpdate(
+  seed: MentorshipMentorProfileDetails,
+  value: { introduction: string; skills: readonly string[] }
+): MentorshipMentorProfileUpdateRequest {
+  const request: MentorshipMentorProfileUpdateRequest = {};
+
+  if (value.introduction !== (seed.aboutMe ?? '')) {
+    request.introduction = value.introduction;
+  }
+
+  const skills = cleanMentorshipSkillList(value.skills);
+  if (!isSameMentorshipList(skills, cleanMentorshipSkillList(seed.skills))) {
+    request.skills = skills;
+  }
+
+  return request;
+}
+
+/** True when no field of the mentor profile update is present, so there is nothing to send. */
+export function isMentorshipMentorProfileUpdateEmpty(request: MentorshipMentorProfileUpdateRequest): boolean {
+  return MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS.every((key) => request[key] === undefined);
+}
+
+/**
+ * Builds the `POST /api/mentorship/mentor/profile` body from the register form.
  */
 export function buildMentorshipMentorRegisterRequest(
   form: MentorshipMentorRegisterForm,
@@ -607,7 +649,6 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
     skillsHave: [],
     skillsWant: [],
     additionalNotes: '',
-    resumeFileName: '',
     ageConsent: false,
     age: '',
     raceEthnicityConsent: false,
@@ -634,8 +675,7 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
  * `skillsWant` describes what they want to grow, and both sides feed the mentor-match.
  * The demographic fields (age, gender, income, education) are never checked here: each
  * is optional and gated behind its own consent checkbox, so declining one is a valid
- * answer rather than an error. The resume is optional too, and validated at selection
- * time by its picker, same as the mentor form.
+ * answer rather than an error.
  */
 export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
   return getMentorshipMenteeRegisterRequestErrors(form);
@@ -686,8 +726,7 @@ function hasUnknownMentorshipSkill(skills: string[]): boolean {
 /**
  * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
  * sent only when its consent box is checked and it is not blank, so declining a question never leaves
- * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
- * file metadata is sent. `lfxProfile` is the profile card's name and avatar, sent only when it has
+ * a stale answer on the wire. `lfxProfile` is the profile card's name and avatar, sent only when it has
  * at least one of them; the BFF adds the primary email itself.
  */
 export function buildMentorshipMenteeRegisterRequest(

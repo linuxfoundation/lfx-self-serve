@@ -41,8 +41,6 @@ describe('MenteeProfileComponent', () => {
       aboutMe: 'Student working on telemetry.',
       skillsHave: ['Python', 'Go'],
       skillsWant: ['Kubernetes'],
-      resumeFileName: 'test-mentee-resume.pdf',
-      resumeUrl: 'https://example.com/resume.pdf',
     },
     history: [
       {

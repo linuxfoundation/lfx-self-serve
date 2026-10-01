@@ -10,6 +10,8 @@ import {
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorProfileResponse,
+  MentorshipMentorProfileUpdateRequest,
+  MentorshipMentorProfileUpdateResponse,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramRequestCreate,
   MentorshipMentorProgramRequestsResponse,
@@ -139,6 +141,13 @@ export class MentorshipMentorService {
 
   public getMentorProfile(): Observable<MentorshipMentorProfileResponse> {
     return this.http.get<MentorshipMentorProfileResponse>('/api/mentorship/mentor/profile').pipe(catchError(this.rethrowError('getMentorProfile')));
+  }
+
+  /** PATCHes the changed profile fields and emits the saved profile once. Rethrows so the edit drawer can show the failure inline. */
+  public updateMentorProfile(request: MentorshipMentorProfileUpdateRequest): Observable<MentorshipMentorProfileUpdateResponse> {
+    return this.http
+      .patch<MentorshipMentorProfileUpdateResponse>('/api/mentorship/mentor/profile', request)
+      .pipe(take(1), catchError(this.rethrowError('updateMentorProfile')));
   }
 
   /** Loads a mentor program by id (default URL) or slug. */

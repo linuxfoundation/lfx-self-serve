@@ -39,10 +39,6 @@ export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL = 'Anything else you want 
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other context that would help a mentor get to know you.';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
-export const MENTORSHIP_MENTEE_RESUME_INTRO = 'Optional, but mentors often look you up before accepting a mentee.';
-/** Passed to the resume section's `comingSoonSummary`: upload stays inert and toasts this feature name. */
-export const MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
-
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO =
   'Optional and purely voluntary. Answers are confidential, are not shared with mentors, and are used only for aggregate diversity reporting.';
@@ -439,17 +435,10 @@ export const MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL = 'About Me';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_LABEL = 'Skills';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL = 'Areas to Improve';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_LABEL = 'Additional Notes';
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY = 'No areas to improve added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY = 'No additional notes added yet.';
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
-/**
- * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
- * the two fields are independently optional in `MentorshipMenteeProfileDetails`.
- */
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
 // ---------------------------------------------------------------------------
 // Mentee apply page — `/mentorship/mentee/apply?programId=&programTermId=`
@@ -588,7 +577,6 @@ export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save 
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_SAVE_SUCCESS_SUMMARY = 'Demographics updated';
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_TOAST_LIFE = 5000;
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';

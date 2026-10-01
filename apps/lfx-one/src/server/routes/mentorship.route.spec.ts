@@ -277,6 +277,34 @@ describe('mentorship router — mentor endpoints', () => {
     expect(res.status).toBe(403);
   });
 
+  it('routes PATCH /api/mentorship/mentor/profile (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ introduction: 'Test intro' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a mentor profile update while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: JSON.stringify({ introduction: 'Test intro' }),
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
+  it('still allows reading the mentor profile while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentor/profile`, { headers: { 'x-test-impersonating': 'true' } });
+
+    // 401 rather than 403: reads skip the impersonation guard and reach the controller's auth check.
+    expect(res.status).toBe(401);
+  });
+
   const withdrawPath = '/api/mentorship/mentor/requests/0c6e2d3a-8f71-4b5e-a2c9-3d4e5f6a7b8c/withdraw';
   const requestBody = JSON.stringify({ programId: '7b0f2a52-55a4-4a3e-9d8c-1f3a2b4c5d6e' });
 

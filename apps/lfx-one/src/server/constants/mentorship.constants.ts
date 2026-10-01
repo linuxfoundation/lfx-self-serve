@@ -7,7 +7,7 @@ import { MentorshipMentorStatus, MentorshipUpstreamApplicationStatus, Mentorship
 // Mentorship service — Server-Only Constants
 // ---------------------------------------------------------------------------
 
-/** Upstream path that creates (or refreshes) the signed-in user's local mentorship record. */
+/** Upstream path that creates (or refreshes) the signed-in user's local mentorship record with a PUT, and reads it with a GET. */
 export const MENTORSHIP_BOOTSTRAP_PATH = '/mentorship/v1/me';
 
 /**
@@ -45,6 +45,9 @@ export const MENTORSHIP_TASKS_PATH = '/mentorship/v1/tasks';
  * applications at `.../applications`; each needs the program's UUID, since the gateway denies a slug.
  */
 export const MENTORSHIP_PROGRAMS_PATH = '/mentorship/v1/programs';
+
+/** Upstream public mentor profiles; `/{userId}` is one mentor's programs, mentees and counts, keyed by local user id. */
+export const MENTORSHIP_MENTORS_PATH = '/mentorship/v1/mentors';
 
 /** Page size for upstream mentorship list reads: the largest `limit` the service accepts. */
 export const MENTORSHIP_LIST_PAGE_SIZE = 100;

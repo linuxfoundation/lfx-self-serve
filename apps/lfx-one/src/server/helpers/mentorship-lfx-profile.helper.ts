@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_LFX_PROFILE_EMAIL_MAX } from '@lfx-one/shared/constants';
-import { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_GITHUB_LOGIN_PATTERN, MENTORSHIP_GITHUB_PROFILE_URL_BASE, MENTORSHIP_LFX_PROFILE_EMAIL_MAX } from '@lfx-one/shared/constants';
+import { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields, MentorshipUpstreamProfileLinks } from '@lfx-one/shared/interfaces';
 import { getMentorshipLfxProfileFieldErrors, isValidEmail } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { EmailVerificationService } from '../services/email-verification.service';
 import { getEffectiveSub } from '../utils/auth-helper';
+import { asRecord } from './mentorship-profile-columns.helper';
 
 /**
  * Reads an LFX profile object: the name and avatar a mentorship profile copies from the browser.
@@ -57,6 +58,34 @@ export const resolveMentorshipPrimaryEmail = async (req: Request, emailService: 
   const email = (await emailService.getUserEmails(req, userSub))?.primary_email?.trim();
   return email && email.length <= MENTORSHIP_LFX_PROFILE_EMAIL_MAX && isValidEmail(email) ? email : undefined;
 };
+
+/**
+ * The caller's GitHub profile URL, for the mentorship profile's `profile_links.githubProfileLink`.
+ * Built from the login of the GitHub account connected to the caller's LFID, read from the auth
+ * service, never from the browser: upstream stores the link as sent, and program admins read it as
+ * the applicant's own account. `undefined` when there is no signed-in user, no GitHub account, the
+ * lookup fails, or the login is not one GitHub allows, so the stored link is left as it is rather
+ * than cleared. LinkedIn is not resolved: the identity carries only the account email, not a
+ * profile URL.
+ */
+export const resolveMentorshipGithubProfileLink = async (req: Request, emailService: EmailVerificationService): Promise<string | undefined> => {
+  const userSub = getEffectiveSub(req);
+  if (!userSub) return undefined;
+
+  const identities = await emailService.listIdentitiesSafe(req, userSub);
+  const login = identities.find((identity) => identity.provider === 'github')?.profileData?.nickname;
+  return typeof login === 'string' && MENTORSHIP_GITHUB_LOGIN_PATTERN.test(login)
+    ? `${MENTORSHIP_GITHUB_PROFILE_URL_BASE}${encodeURIComponent(login)}`
+    : undefined;
+};
+
+/**
+ * The `profile_links` to write: the stored column, when there is one, with `githubProfileLink` laid
+ * over it, so the keys LFX One does not write survive upstream's whole-column replace. `undefined`
+ * when there is no link to write, so the column is left as it is.
+ */
+export const buildMentorshipUpstreamProfileLinks = (stored: unknown, githubProfileLink?: string): MentorshipUpstreamProfileLinks | undefined =>
+  githubProfileLink === undefined ? undefined : { ...asRecord(stored), githubProfileLink };
 
 /**
  * The same fields in the upstream profile's column names, with the resolved primary `email`. An

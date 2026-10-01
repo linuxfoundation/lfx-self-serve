@@ -16,8 +16,6 @@ describe('MenteeProfileDetailsComponent', () => {
     skillsHave: ['Python', 'Go'],
     skillsWant: ['Kubernetes', 'Observability'],
     additionalNotes: 'Comfortable working asynchronously.',
-    resumeFileName: 'test-mentee-resume.pdf',
-    resumeUrl: 'https://example.com/resume.pdf',
   };
 
   let fixture: ComponentFixture<MenteeProfileDetailsComponent>;
@@ -47,7 +45,7 @@ describe('MenteeProfileDetailsComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-skills"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-areas"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-notes"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume"]')).toBeNull();
   });
 
   it('shows the introduction when the mentee has authored one', () => {
@@ -141,70 +139,6 @@ describe('MenteeProfileDetailsComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-notes-text"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-notes-empty"]')).not.toBeNull();
-  });
-
-  it('renders the resume as a link when a URL is provided, so the file downloads on click', () => {
-    setup();
-
-    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-mentee-profile-details-resume-link"]');
-    expect(link).not.toBeNull();
-    expect(link?.getAttribute('href')).toBe('https://example.com/resume.pdf');
-    expect(link?.getAttribute('rel')).toContain('noopener');
-    expect(link?.textContent).toContain('test-mentee-resume.pdf');
-  });
-
-  it('upgrades a scheme-less resume URL to the normalized https:// value before binding [href]', () => {
-    setup({ ...baseProfile, resumeUrl: 'example.com/resume.pdf' });
-
-    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-mentee-profile-details-resume-link"]');
-    expect(link?.getAttribute('href')).toBe('https://example.com/resume.pdf');
-  });
-
-  it('shows the file name without a link when no URL is available', () => {
-    setup({ ...baseProfile, resumeUrl: '' });
-
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-link"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-name"]')?.textContent).toContain('test-mentee-resume.pdf');
-  });
-
-  it('renders the resume link with a "View resume" fallback label when the URL is present but the filename is not', () => {
-    setup({ ...baseProfile, resumeFileName: undefined });
-
-    const link = element().querySelector<HTMLAnchorElement>('[data-testid="mentorship-mentee-profile-details-resume-link"]');
-    expect(link).not.toBeNull();
-    expect(link?.getAttribute('href')).toBe('https://example.com/resume.pdf');
-    expect(link?.textContent?.trim()).toBe('View resume');
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-empty"]')).toBeNull();
-  });
-
-  it('allows a long resume filename to break rather than overflow the card', () => {
-    setup({ ...baseProfile, resumeFileName: 'this-is-a-deliberately-extremely-long-single-token-filename-that-would-otherwise-overflow.pdf' });
-
-    const label = element().querySelector<HTMLElement>('[data-testid="mentorship-mentee-profile-details-resume-link"] span:last-child');
-    expect(label?.className).toContain('break-all');
-    expect(label?.className).toContain('min-w-0');
-  });
-
-  it.each([
-    ['javascript:alert(1)', 'javascript: URL'],
-    ['data:text/html,<script>alert(1)</script>', 'data: URL'],
-    ['vbscript:msgbox(1)', 'vbscript: URL'],
-    ['#', 'fragment identifier'],
-    ['/relative/path.pdf', 'relative path'],
-    ['ftp://example.com/resume.pdf', 'non-http protocol'],
-  ])('rejects %s (%s) and falls back to the non-link display', (untrustedUrl) => {
-    setup({ ...baseProfile, resumeUrl: untrustedUrl });
-
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-link"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-name"]')?.textContent).toContain('test-mentee-resume.pdf');
-  });
-
-  it('renders the resume empty label when the mentee has not uploaded one', () => {
-    setup({ ...baseProfile, resumeFileName: undefined, resumeUrl: undefined });
-
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-link"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-name"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-profile-details-resume-empty"]')).not.toBeNull();
   });
 
   it('emits editClick when the Edit Mentee Profile button is pressed', () => {

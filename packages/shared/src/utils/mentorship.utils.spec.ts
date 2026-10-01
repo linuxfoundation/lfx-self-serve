@@ -58,6 +58,7 @@ import {
   buildMentorshipMenteeProfileUpdate,
   buildMentorshipMenteeOverview,
   buildMentorshipMenteeRegisterRequest,
+  buildMentorshipMentorProfileUpdate,
   buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
@@ -84,6 +85,7 @@ import {
   getMentorshipEnrollStepErrors,
   getMentorshipMenteeRegisterErrors,
   getMentorshipMenteeRegisterRequestErrors,
+  getMentorshipMentorProfileErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -96,7 +98,7 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
-  isMentorshipResumeFileName,
+  isMentorshipMentorProfileUpdateEmpty,
   isMentorshipRichTextOverRawMax,
   isMentorshipTaskPastDue,
   isMentorshipTermsAccepted,
@@ -545,12 +547,11 @@ describe('program detail helpers', () => {
     });
   });
 
-  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
-    // Both are optional: a mentor can register a profile now and apply to programs later.
+  it('registers a mentor who has not applied to a program', () => {
+    // Requests are optional: a mentor can register a profile now and apply to programs later.
     const complete: MentorshipMentorRegisterForm = {
       introduction: '<p>Maintainer on two CNCF projects.</p>',
       skills: ['Kubernetes'],
-      resumeFileName: '',
       complianceAccepted: true,
       termsAccepted: true,
     };
@@ -584,11 +585,39 @@ describe('program detail helpers', () => {
     expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
   });
 
-  it('builds the mentor register request without the resume file name', () => {
+  it('checks only the mentor profile fields present in an edit', () => {
+    expect(getMentorshipMentorProfileErrors({})).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p>Hi</p>' })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ skills: ['Kubernetes'] })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p></p>' })).toEqual({ introduction: 'Introduction is required.' });
+    expect(getMentorshipMentorProfileErrors({ skills: [] })).toEqual({ skills: 'Add at least one skill.' });
+    expect(getMentorshipMentorProfileErrors({ skills: ['Not A Skill'] })).toEqual({ skills: MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL });
+  });
+
+  it('sends only the mentor profile fields that changed', () => {
+    const seed = { aboutMe: '<p>Hi</p>', skills: ['Kubernetes', 'Angular'] };
+
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: [' Kubernetes ', 'Angular', ''] })).toEqual({});
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hello</p>', skills: ['Kubernetes', 'Angular'] })).toEqual({
+      introduction: '<p>Hello</p>',
+    });
+    // Order counts, and the whole list is sent, since upstream replaces it.
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: ['Angular', 'Kubernetes'] })).toEqual({
+      skills: ['Angular', 'Kubernetes'],
+    });
+    expect(buildMentorshipMentorProfileUpdate({ aboutMe: '', skills: [] }, { introduction: '', skills: [] })).toEqual({});
+  });
+
+  it('treats a mentor profile update with no field present as empty', () => {
+    expect(isMentorshipMentorProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMentorProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMentorProfileUpdateEmpty({ skills: [] })).toBe(false);
+  });
+
+  it('builds the mentor register request from the form', () => {
     const request = buildMentorshipMentorRegisterRequest({
       introduction: '<p>Hi</p>',
       skills: ['Kubernetes'],
-      resumeFileName: 'resume.pdf',
       complianceAccepted: true,
       termsAccepted: true,
     });
@@ -597,22 +626,12 @@ describe('program detail helpers', () => {
   });
 
   it('adds the LFX profile fields to the mentor register request only when there are some', () => {
-    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], resumeFileName: '', complianceAccepted: true, termsAccepted: true };
+    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
     const lfxProfile = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
 
     expect(buildMentorshipMentorRegisterRequest(form, lfxProfile).lfxProfile).toEqual(lfxProfile);
     expect(buildMentorshipMentorRegisterRequest(form, {})).not.toHaveProperty('lfxProfile');
     expect(buildMentorshipMentorRegisterRequest(form)).not.toHaveProperty('lfxProfile');
-  });
-
-  it('accepts only document extensions for a resume', () => {
-    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
-    // No extension at all, and a name that only looks like one.
-    expect(isMentorshipResumeFileName('resume')).toBe(false);
-    expect(isMentorshipResumeFileName('')).toBe(false);
   });
 
   it('tints an avatar deterministically, and survives an empty name', () => {
@@ -877,10 +896,9 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     });
   });
 
-  it('accepts a fully populated form — additional notes, resume, and demographic answers stay optional', () => {
-    // `additionalNotes`, `resumeFileName`, and every demographic control are optional
-    // by design: declining a demographic is a valid answer, and the resume is
-    // validated by its picker at selection time.
+  it('accepts a fully populated form — additional notes and demographic answers stay optional', () => {
+    // `additionalNotes` and every demographic control are optional by design:
+    // declining a demographic is a valid answer.
     const complete = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
@@ -1061,13 +1079,6 @@ describe('buildMentorshipMenteeRegisterRequest', () => {
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, lfxProfile).lfxProfile).toEqual(lfxProfile);
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, {})).not.toHaveProperty('lfxProfile');
     expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM)).not.toHaveProperty('lfxProfile');
-  });
-
-  it('never includes the resume, even when the form holds a file name', () => {
-    const request = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, resumeFileName: 'test-resume.pdf' });
-
-    expect(request).not.toHaveProperty('resumeFileName');
-    expect(JSON.stringify(request)).not.toContain('test-resume.pdf');
   });
 
   it('coerces the five flags with isMentorshipTermsAccepted', () => {

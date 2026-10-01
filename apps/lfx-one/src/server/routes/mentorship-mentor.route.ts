@@ -23,5 +23,7 @@ router.post('/invites/decline', blockDuringImpersonation, (req, res, next) => me
 router.get('/programs', (req, res, next) => mentorController.getMentorPrograms(req, res, next));
 router.get('/programs/:programId', (req, res, next) => mentorController.getMentorProgram(req, res, next));
 router.get('/profile', (req, res, next) => mentorController.getMentorProfile(req, res, next));
+// Refused while impersonating: upstream would edit the impersonated user's profile.
+router.patch('/profile', blockDuringImpersonation, (req, res, next) => mentorController.updateMentorProfile(req, res, next));
 
 export default router;

@@ -14,7 +14,7 @@
       navigation on success. `inert` also covers the rich editor's contenteditable, which a disabled
       form control would not reach.
     -->
-    <lfx-mentorship-profile-card [attr.inert]="submitting() ? '' : null" />
+    <lfx-mentorship-profile-card [syncMentorshipProfiles]="true" [attr.inert]="submitting() ? '' : null" />
 
     <div class="flex flex-col gap-6" [attr.inert]="submitting() ? '' : null" data-testid="mentorship-mentee-register-fields">
       <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-introduction">
@@ -63,8 +63,7 @@
         <div class="flex flex-col gap-1">
           <!--
             `for` matches the textarea's `inputId` so a screen reader announces the labelled
-            field, mirroring how the resume section's file input is wired to its own label —
-            `<lfx-textarea>` forwards `inputId` to the rendered `<textarea>`'s `id`.
+            field — `<lfx-textarea>` forwards `inputId` to the rendered `<textarea>`'s `id`.
           -->
           <label for="mentorship-mentee-additional-notes" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
           <lfx-textarea
@@ -78,8 +77,6 @@
             dataTest="mentorship-mentee-additional-notes" />
         </div>
       </section>
-
-      <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" idPrefix="mentorship-mentee-resume" [comingSoonSummary]="resumeComingSoonSummary" />
 
       <lfx-mentorship-mentee-demographics-section [form]="form" />
 

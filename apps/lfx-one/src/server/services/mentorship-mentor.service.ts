@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE,
   EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
   getMockMentorshipMentorProgramLists,
   getMockMentorshipMentorPrograms,
   MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE,
   MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
-  MOCK_MENTORSHIP_MENTOR_PROFILE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
+  MentorshipMentoringHistoryEntry,
   MentorshipMentorProfileResponse,
+  MentorshipMentorProfileUpdateRequest,
+  MentorshipMentorProfileUpdateResponse,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
@@ -23,24 +26,30 @@ import {
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamMentorDetail,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramMembership,
   MentorshipUpstreamProgramMembershipRequest,
+  MentorshipUpstreamUser,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMentorProgramDetail } from '@lfx-one/shared/utils';
+import { buildMentorshipMentorProgramDetail, isUuid } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
+  MENTORSHIP_BOOTSTRAP_PATH,
   MENTORSHIP_ME_MENTOR_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH,
+  MENTORSHIP_MENTORS_PATH,
   MENTORSHIP_MENTOR_INVITES_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
-import { resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
+import { mapMentorshipMentoringHistory, mapMentorshipMentorProfileDetails } from '../helpers/mentorship-mentor-profile.helper';
+import { buildMentorshipUpstreamMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import {
   escapeMentorshipIlikeSearch,
   mapMentorshipMentorInvitedProgramIds,
@@ -55,9 +64,9 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write and
- * the program requests call the mentorship service with the caller's token; the program and profile
- * reads still serve the shared mock seed data.
+ * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write, the
+ * program requests and the profile read and edit call the mentorship service with the caller's token;
+ * the program reads still serve the shared mock seed data.
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -82,8 +91,9 @@ export class MentorshipMentorService {
    * rows are listed first and an existing profile is refused with a 409 the register page reads.
    * A failed check propagates rather than falling through to the write. Upstream's own 400 and 403
    * also pass through. The check and the write are two requests, so two simultaneous
-   * registrations by the same user can both pass the check; the later write wins. The email is
-   * the caller's verified primary email, looked up here, and is left out when the lookup fails.
+   * registrations by the same user can both pass the check; the later write wins. The email and the
+   * GitHub link are the caller's verified primary email and connected GitHub account, looked up
+   * here, and each is left out when its lookup fails.
    */
   public async registerMentorProfile(req: Request, request: MentorshipMentorRegisterRequest): Promise<void> {
     logger.debug(req, 'mentorship_register_mentor_profile', 'Checking for an existing mentor profile');
@@ -93,11 +103,15 @@ export class MentorshipMentorService {
       });
     }
 
-    const email = await resolveMentorshipPrimaryEmail(req, this.emailVerificationService);
-    const body = buildMentorshipUpstreamMentorProfile(request, email);
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamMentorProfile(request, email, githubProfileLink);
     logger.debug(req, 'mentorship_register_mentor_profile', 'Creating mentor profile', {
       skills_count: body.skill_set.skills.length,
       has_email: body.email !== undefined,
+      has_github: body.profile_links !== undefined,
     });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentor_profile', 'Mentor profile created');
@@ -214,14 +228,54 @@ export class MentorshipMentorService {
     return { data, total: data.length };
   }
 
+  /**
+   * The signed-in user's mentor profile and Mentoring History. The profile is their own mentor row; with
+   * none, the profile is empty, as the mentee page does, and upstream's 409 for more than one propagates.
+   * The history comes from their public mentor detail, which is keyed by their local user id, so the user is
+   * read first; the two branches run in parallel. A failed read propagates, except upstream's 404 for a
+   * mentor with no active membership of a published program, which is an empty history.
+   */
   public async getMentorProfile(req: Request): Promise<MentorshipMentorProfileResponse> {
     logger.debug(req, 'mentorship_get_mentor_profile', 'Loading mentor profile');
-    const response: MentorshipMentorProfileResponse = {
-      profile: { ...MOCK_MENTORSHIP_MENTOR_PROFILE.profile, skills: [...MOCK_MENTORSHIP_MENTOR_PROFILE.profile.skills] },
-      history: MOCK_MENTORSHIP_MENTOR_PROFILE.history.map((entry) => ({ ...entry })),
-    };
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
+    const [profile, history] = await Promise.all([this.findStoredMentorProfile(req), this.getMentoringHistory(req)]);
+    if (!profile) {
+      logger.debug(req, 'mentorship_get_mentor_profile', 'No mentor profile for the signed-in user, returning an empty profile', {
+        history_count: history.length,
+      });
+      return { profile: { ...EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE.profile, skills: [] }, history };
+    }
+
+    const response: MentorshipMentorProfileResponse = { profile: mapMentorshipMentorProfileDetails(profile), history };
+    logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', {
+      skills_count: response.profile.skills.length,
+      history_count: history.length,
+    });
     return response;
+  }
+
+  /**
+   * Saves the changed fields of the signed-in user's mentor profile. Upstream keeps every column the body omits
+   * and replaces `skill_set` whole, so when the skills change the stored row is read first and the skills are
+   * layered over its `skill_set`, keeping keys this BFF does not model; a failed read propagates rather than
+   * risk dropping them. The two calls are not atomic, so an edit made elsewhere in between can be overwritten.
+   * The response is the re-mapped row without the history, which the caller already has. Upstream's 404 (no
+   * mentor profile) and 409 (more than one) propagate.
+   */
+  public async updateMentorProfile(req: Request, request: MentorshipMentorProfileUpdateRequest): Promise<MentorshipMentorProfileUpdateResponse> {
+    // Field names only: the values are personal data.
+    logger.debug(req, 'mentorship_update_mentor_profile', 'Updating mentor profile', { changed_fields: Object.keys(request) });
+    const stored = request.skills !== undefined ? await this.getStoredMentorProfile(req) : undefined;
+    const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
+      this.microserviceProxy,
+      req,
+      MENTORSHIP_ME_MENTOR_PROFILE_PATH,
+      'PATCH',
+      undefined,
+      buildMentorshipUpstreamMentorProfileUpdate(request, stored)
+    );
+    const profile = mapMentorshipMentorProfileDetails(upstream);
+    logger.debug(req, 'mentorship_update_mentor_profile', 'Mentor profile updated', { skills_count: profile.skills.length });
+    return { profile };
   }
 
   public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
@@ -240,7 +294,41 @@ export class MentorshipMentorService {
     return detail;
   }
 
-  /** The caller's own mentor profile rows. A user has at most one, so `limit: 1` is enough. */
+  /**
+   * The Mentoring History from the caller's public mentor detail. Upstream answers 404 when the caller has no
+   * active membership of a published program, which is no history rather than a failure.
+   */
+  private async getMentoringHistory(req: Request): Promise<MentorshipMentoringHistoryEntry[]> {
+    const user = await proxyMentorshipRequest<MentorshipUpstreamUser>(this.microserviceProxy, req, MENTORSHIP_BOOTSTRAP_PATH);
+    const userId = typeof user?.id === 'string' ? user.id.trim() : '';
+    if (!isUuid(userId)) {
+      throw new MicroserviceError('The mentorship service returned a user without a valid id', 502, 'MENTORSHIP_INVALID_USER', {
+        operation: 'mentorship_get_mentor_profile',
+        service: 'mentorship',
+      });
+    }
+
+    let detail: MentorshipUpstreamMentorDetail;
+    try {
+      detail = await proxyMentorshipRequest<MentorshipUpstreamMentorDetail>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_MENTORS_PATH}/${encodeURIComponent(userId)}`
+      );
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        logger.debug(req, 'mentorship_get_mentor_profile', 'No mentor detail for the signed-in user, returning an empty history');
+        return [];
+      }
+      throw error;
+    }
+    return mapMentorshipMentoringHistory(detail, new Date());
+  }
+
+  /**
+   * The caller's own mentor profile rows, for checking whether one exists; `limit: 1` is enough for that.
+   * Upstream can send `data` as null for none.
+   */
   private async listMentorProfiles(req: Request): Promise<MentorshipUpstreamUserProfile[]> {
     const { data } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamUserProfile>>(
       this.microserviceProxy,
@@ -249,7 +337,25 @@ export class MentorshipMentorService {
       'GET',
       { profile_type: 'mentor', limit: 1 }
     );
-    return data;
+    return data ?? [];
+  }
+
+  /**
+   * The caller's mentor profile through upstream's typed read, which answers 409 when there is more than one
+   * rather than pick one, and 404 when there is none.
+   */
+  private async getStoredMentorProfile(req: Request): Promise<MentorshipUpstreamUserProfile> {
+    return proxyMentorshipRequest<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_MENTOR_PROFILE_PATH);
+  }
+
+  /** As `getStoredMentorProfile`, with upstream's 404 (no mentor profile) read as none. */
+  private async findStoredMentorProfile(req: Request): Promise<MentorshipUpstreamUserProfile | undefined> {
+    try {
+      return await this.getStoredMentorProfile(req);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) return undefined;
+      throw error;
+    }
   }
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */

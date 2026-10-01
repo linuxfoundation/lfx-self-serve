@@ -153,9 +153,10 @@ describe('MentorRegisterComponent', () => {
   });
 
   it('renders every section of the registration form', () => {
-    for (const section of ['programs', 'introduction', 'skills', 'resume', 'compliance']) {
+    for (const section of ['programs', 'introduction', 'skills', 'compliance']) {
       expect(element().querySelector(`[data-testid="mentorship-mentor-${section}"]`)).not.toBeNull();
     }
+    expect(element().querySelector('[data-testid="mentorship-mentor-resume"]')).toBeNull();
     expect(element().querySelector('#mentorship-mentor-terms-text')).not.toBeNull();
   });
 
@@ -163,6 +164,12 @@ describe('MentorRegisterComponent', () => {
     const sections = [...element().querySelectorAll('[data-testid]')].map((node) => node.getAttribute('data-testid'));
 
     expect(sections.indexOf('mentorship-profile-card')).toBeLessThan(sections.indexOf('mentorship-mentor-programs'));
+  });
+
+  it('lets the profile card sync its fields, so a mentee profile the user already holds picks up the edit', () => {
+    const card = fixture.debugElement.query(By.directive(ProfileCardComponent)).componentInstance as ProfileCardComponent;
+
+    expect(card.syncMentorshipProfiles()).toBe(true);
   });
 
   it('starts with no program requests, rather than showing requests the mentor never made', () => {
@@ -197,10 +204,9 @@ describe('MentorRegisterComponent', () => {
     expect(registerMentorProfile).not.toHaveBeenCalled();
   });
 
-  it('sends the built request once, without the resume file name that has no upload yet', async () => {
+  it('sends the built request once', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fillValidForm();
-    component['form'].controls.resumeFileName.setValue('resume.pdf');
 
     await submit();
 
