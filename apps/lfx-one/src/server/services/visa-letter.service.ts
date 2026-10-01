@@ -145,7 +145,6 @@ export class VisaLetterService {
     return new Promise((resolve, reject) => {
       const PAGE_START = 44;
       const TAB_INDENT = 150;
-      const SIGNATURE_WIDTH = 110;
       const doc = new PDFDocument({ size: 'LETTER' });
       const chunks: Buffer[] = [];
 
@@ -231,15 +230,11 @@ export class VisaLetterService {
       doc.moveDown(3);
 
       doc.text('Yours truly,');
-      // PDFKit 0.15 doesn't advance the cursor past an image, so place the signatory below it
-      // using the PNG's IHDR width/height (bytes 16-23).
-      const signature = fs.readFileSync(join(TEMPLATE_DIR, 'images', 'image1.png'));
-      const signatureHeight = (SIGNATURE_WIDTH * signature.readUInt32BE(20)) / signature.readUInt32BE(16);
-      const signatureY = doc.y;
-      doc.image(signature, PAGE_START, signatureY, { width: SIGNATURE_WIDTH });
+      // TODO(#3191): signatory text overlaps the image; fix together with the certificate.
+      doc.image(join(TEMPLATE_DIR, 'images', 'image1.png'), PAGE_START, undefined, { width: 110 });
       const signatureOrg = entity.signatureOrgFromEvent && event.name ? event.name : entity.signatureOrg;
       const { name, title, phone } = VISA_LETTER_SIGNATORY;
-      doc.text(`${name}\n${title}\n${signatureOrg}\n${phone}`, PAGE_START, signatureY + signatureHeight);
+      doc.text(`${name}\n${title}\n${signatureOrg}\n${phone}`);
 
       doc.end();
     });

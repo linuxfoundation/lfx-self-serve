@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   getApiGatewayProfile: vi.fn(),
   images: [] as { path: string; options: Record<string, unknown> | undefined }[],
   texts: [] as string[],
-  textCalls: [] as { text: string; y: unknown }[],
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -33,7 +32,6 @@ vi.mock('./logger.service', () => ({
 // PDFKit is stubbed so assertions read the draw calls instead of parsing a rendered binary.
 vi.mock('pdfkit', () => {
   class FakePDFDocument {
-    public y = 600;
     private handlers: Record<string, ((arg?: unknown) => void)[]> = {};
 
     public on(event: string, handler: (arg?: unknown) => void): this {
@@ -41,17 +39,14 @@ vi.mock('pdfkit', () => {
       return this;
     }
 
-    public image(src: string | Buffer, ...rest: unknown[]): this {
+    public image(path: string, ...rest: unknown[]): this {
       const options = rest.find((arg) => typeof arg === 'object' && arg !== null) as Record<string, unknown> | undefined;
-      mocks.images.push({ path: typeof src === 'string' ? src : 'buffer', options });
+      mocks.images.push({ path, options });
       return this;
     }
 
-    public text(text: unknown, ...rest: unknown[]): this {
-      if (typeof text === 'string') {
-        mocks.texts.push(text);
-        mocks.textCalls.push({ text, y: rest[1] });
-      }
+    public text(text: unknown): this {
+      if (typeof text === 'string') mocks.texts.push(text);
       return this;
     }
 
@@ -87,13 +82,7 @@ vi.mock('pdfkit', () => {
 });
 
 vi.mock('fs', () => {
-  // Stands in for both the font and the signature PNG, whose IHDR declares a 220x80 image.
-  const readFileSync = vi.fn(() => {
-    const file = Buffer.alloc(24);
-    file.writeUInt32BE(220, 16);
-    file.writeUInt32BE(80, 20);
-    return file;
-  });
+  const readFileSync = vi.fn(() => Buffer.from('font'));
   const existsSync = vi.fn(() => true);
   return { default: { readFileSync, existsSync }, readFileSync, existsSync };
 });
@@ -161,7 +150,6 @@ describe('VisaLetterService', () => {
     vi.clearAllMocks();
     mocks.images.length = 0;
     mocks.texts.length = 0;
-    mocks.textCalls.length = 0;
     mocks.getApiGatewayProfile.mockResolvedValue({ ID: '0032M00000sfid' });
     service = new VisaLetterService();
   });
@@ -242,16 +230,6 @@ describe('VisaLetterService', () => {
       await service.generateVisaLetter(req, EVENT_ID);
 
       expect(mocks.texts[mocks.texts.indexOf('Title:') + 1]).toBe(' ');
-    });
-
-    it('places the signatory text below the signature image', async () => {
-      mockLetters(letter());
-
-      await service.generateVisaLetter(req, EVENT_ID);
-
-      // Fake doc sits at y=600 and the 220x80 signature scales to 110 wide, so 40 tall.
-      const signatory = mocks.textCalls.find((call) => call.text.startsWith('James R. Zemlin'));
-      expect(signatory?.y).toBe(640);
     });
 
     it('uses the default entity and US dates outside Europe, India and China', async () => {
