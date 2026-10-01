@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, InputSignal, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, InputSignal, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -60,14 +60,14 @@ export class CommitteePendingApplicationsComponent {
     this.applications().map((app) => ({
       ...app,
       viewCommands: getEntityCommands('groups', app.committee_uid, app.is_foundation) ?? ['/groups', app.committee_uid],
-      viewQueryParams: app.project_slug ? { project: app.project_slug } : null,
+      viewQueryParams: app.project_slug ? { project: app.project_slug } : ({} as Record<string, string>),
     }))
   );
 
   // ── Private helpers ───────────────────────────────────────────────────────
   private initApplications(): Signal<MyPendingApplication[]> {
     if (!isPlatformBrowser(this.platformId)) {
-      return () => [];
+      return signal([]);
     }
 
     // Load once when the component first renders in the browser. The parent dashboard already
