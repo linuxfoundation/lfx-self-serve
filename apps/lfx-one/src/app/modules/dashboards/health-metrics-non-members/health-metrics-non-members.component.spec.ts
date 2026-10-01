@@ -12,11 +12,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 import { NonMembersOrgsComponent } from './components/non-members-orgs/non-members-orgs.component';
+import { NonMembersPeopleComponent } from './components/non-members-people/non-members-people.component';
 import { HealthMetricsNonMembersComponent } from './health-metrics-non-members.component';
 
 /** Stands in for Company participation, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-non-members-orgs', template: '<div data-testid="non-members-orgs-stub"></div>' })
 class OrgsStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+/** Stands in for Engaged people, whose read its own spec covers. */
+@Component({ selector: 'lfx-non-members-people', template: '<div data-testid="non-members-people-stub"></div>' })
+class PeopleStubComponent {
   public readonly countChange = output<number | null>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
@@ -38,8 +47,8 @@ describe('HealthMetricsNonMembersComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsNonMembersComponent, {
-        remove: { imports: [NonMembersOrgsComponent] },
-        add: { imports: [OrgsStubComponent] },
+        remove: { imports: [NonMembersOrgsComponent, NonMembersPeopleComponent] },
+        add: { imports: [OrgsStubComponent, PeopleStubComponent] },
       })
       .compileComponents();
 
@@ -75,8 +84,8 @@ describe('HealthMetricsNonMembersComponent', () => {
     rendered.forEach((element, index) => {
       const key = HEALTH_METRICS_NON_MEMBERS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_NON_MEMBERS_SECTIONS[index].heading);
-      if (key === 'orgs') {
-        expect(element.querySelector('[data-testid="non-members-orgs-stub"]')).not.toBeNull();
+      if (key === 'orgs' || key === 'people') {
+        expect(element.querySelector(`[data-testid="non-members-${key}-stub"]`)).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
       } else {
         expect(element.textContent).toContain('Awaiting data');
@@ -108,18 +117,20 @@ describe('HealthMetricsNonMembersComponent', () => {
     );
   });
 
-  it('re-lands a held deep link when Company participation settles, then releases it', async () => {
+  it('re-lands a held deep link once both data sections settle, then releases it', async () => {
     await setup('conversion');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
 
     stub(OrgsStubComponent).settled.emit();
+    stub(PeopleStubComponent).settled.emit();
     await flush();
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('non-members-sub-nav-conversion');
 
     scrollIntoView.mockClear();
     stub(OrgsStubComponent).settled.emit();
+    stub(PeopleStubComponent).settled.emit();
     await flush();
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
@@ -133,6 +144,19 @@ describe('HealthMetricsNonMembersComponent', () => {
     expect(item()).toContain('412');
 
     stub(OrgsStubComponent).countChange.emit(null);
+    await flush();
+    expect(item()).not.toMatch(/\d/);
+  });
+
+  it('badges Engaged people with the individuals count once it reports one', async () => {
+    await setup();
+    const item = () => fixture.nativeElement.querySelector('[data-testid="non-members-sub-nav-people"]').textContent;
+
+    stub(PeopleStubComponent).countChange.emit(388);
+    await flush();
+    expect(item()).toContain('388');
+
+    stub(PeopleStubComponent).countChange.emit(null);
     await flush();
     expect(item()).not.toMatch(/\d/);
   });
