@@ -533,8 +533,8 @@ export interface ProgressItemWithChart extends ProgressItem {
 export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction' | 'FormationItem';
 
 /**
- * Pending-actions drawer section discriminator. String union (not enum) so it round-trips through JSON
- * without value-vs-key reverse-mapping footguns.
+ * Pending-actions drawer section discriminator. String union for consistency with `PendingActionType`;
+ * derived client-side by the drawer's grouping computed — it never crosses a serialization boundary.
  */
 export type PendingActionSection = 'meetings' | 'votes' | 'surveys' | 'invitations' | 'formation' | 'other';
 

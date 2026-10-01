@@ -69,8 +69,24 @@ export const PENDING_ACTION_SECTION_LABEL: Record<PendingActionSection, string> 
   other: 'Other',
 };
 
+/**
+ * Section render order as a rank per section — meetings first, the catch-all last. A rank map rather
+ * than the exported array so the order is exhaustiveness-checked like its sibling maps: a section added
+ * to {@link PendingActionSection} fails the build here instead of silently dropping its rows.
+ */
+const PENDING_ACTION_SECTION_RANK = {
+  meetings: 0,
+  votes: 1,
+  surveys: 2,
+  invitations: 3,
+  formation: 4,
+  other: 5,
+} as const satisfies Record<PendingActionSection, number>;
+
 /** Fixed render order of the drawer sections; sections with no visible rows are skipped. */
-export const PENDING_ACTION_SECTION_ORDER: PendingActionSection[] = ['meetings', 'votes', 'surveys', 'invitations', 'formation', 'other'];
+export const PENDING_ACTION_SECTION_ORDER: PendingActionSection[] = (Object.keys(PENDING_ACTION_SECTION_RANK) as PendingActionSection[]).sort(
+  (a, b) => PENDING_ACTION_SECTION_RANK[a] - PENDING_ACTION_SECTION_RANK[b]
+);
 
 /**
  * Pending-action fade-out + collapse animation duration in milliseconds. MUST match the CSS

@@ -238,7 +238,9 @@ export class PendingActionsDrawerComponent {
     return computed(() => {
       const rowsBySection = new Map<PendingActionSection, DrawerActionRow[]>();
       for (const row of this.visibleRows()) {
-        const section = PENDING_ACTION_SECTION[row.type];
+        // Totality is compile-time only — a `type` this bundle doesn't know would otherwise drop the row
+        // from every section while the header still counts it; land it in the catch-all instead.
+        const section = PENDING_ACTION_SECTION[row.type] ?? 'other';
         const bucket = rowsBySection.get(section);
         if (bucket) {
           bucket.push(row);
