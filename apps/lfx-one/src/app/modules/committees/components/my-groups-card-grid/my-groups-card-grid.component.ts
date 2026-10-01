@@ -7,15 +7,14 @@ import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_LABELS, JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_LABELS } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveJoinModeSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
-import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
+import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-my-groups-card-grid',
-  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, JoinModeLabelPipe, RouterLink, TagComponent, TooltipModule],
+  imports: [BadgeComponent, ButtonComponent, EmptyStateComponent, RouterLink, TagComponent, TooltipModule],
   templateUrl: './my-groups-card-grid.component.html',
 })
 export class MyGroupsCardGridComponent {
@@ -79,9 +78,6 @@ export class MyGroupsCardGridComponent {
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
           ariaLabel: parts.join(', '),
-          // Pre-computed so the template stays binding-only (frontend-checklist §63-65).
-          joinModeSeverity: resolveJoinModeSeverity(committee.join_mode),
-          joinModeTooltip: committee.join_mode ? JOIN_MODE_TOOLTIPS[committee.join_mode] : undefined,
           typeDisplay,
         };
       })

@@ -69,14 +69,7 @@
 
         <div class="flex flex-wrap items-center gap-3 mt-auto pt-3 border-t border-gray-100">
           <lfx-badge [value]="item.committee.my_role || 'Member'" [severity]="item.roleBadgeSeverity"></lfx-badge>
-          @if (item.committee.join_mode) {
-            <lfx-tag
-              [value]="item.committee.join_mode | joinModeLabel"
-              [severity]="item.joinModeSeverity"
-              [tooltip]="item.joinModeTooltip"
-              tooltipPosition="top"
-              [attr.data-testid]="'card-join-mode-' + item.committee.uid" />
-          }
+
           <span class="inline-flex items-center gap-1 text-xs text-gray-500">
             <i class="fa-light fa-users" aria-hidden="true"></i>
             {{ item.committee.total_members }}

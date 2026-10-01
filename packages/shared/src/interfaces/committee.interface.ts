@@ -607,10 +607,6 @@ export interface MyGroupsCardVm {
    * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
    */
   ariaLabel: string;
-  /** Pre-computed tag severity for the join-mode chip. Avoids per-render method calls. */
-  joinModeSeverity: TagSeverity;
-  /** Pre-computed tooltip text for the join-mode chip; `undefined` when `join_mode` is absent. */
-  joinModeTooltip: string | undefined;
   /**
    * Merged type label for the single "Type" chip (replaces the former separate "Type" and "Class"
    * columns). SIGs show `"SIG | {raw category}"` to expose the sub-type; every other class shows
