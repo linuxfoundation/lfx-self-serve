@@ -70,6 +70,7 @@ export class NonMembersOrgsComponent {
   protected readonly filterOptions: FilterPillOption[] = [...HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE_OPTIONS];
   protected readonly provisionalNote = HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE;
+  protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH;
   protected readonly size = signal<number>(HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE);
   protected readonly filter = signal<HealthMetricsNonMembersOrgsFilter>(
     this.toFilter(this.initialParams.get(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter))

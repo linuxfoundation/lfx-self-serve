@@ -23,6 +23,7 @@
           [form]="searchForm"
           control="search"
           inputId="non-members-orgs-search"
+          [maxlength]="maxSearchLength"
           placeholder="Search organizations…"
           icon="fa-light fa-search"
           size="small"
@@ -68,7 +69,7 @@
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">People</span></th>
           <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Contributions</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged (all time)</span></th>
         </tr>
       </ng-template>
 

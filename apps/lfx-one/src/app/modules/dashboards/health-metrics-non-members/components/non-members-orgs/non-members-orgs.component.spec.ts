@@ -118,6 +118,14 @@ describe('NonMembersOrgsComponent', () => {
     expect(cell('last-engaged')).toBe('Mar 14, 2026');
   });
 
+  it('caps the search box at the length the read honours and marks Last engaged as all time', async () => {
+    await render();
+    const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
+
+    expect((fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement).maxLength).toBe(100);
+    expect(headers).toContain('Last engaged (all time)');
+  });
+
   it('renders a contributions-only organization with dashes and only the code chip', async () => {
     await render(response({ rows: [org({ meetingsAttended: null, distinctPeople: null })] }));
     const meetings = query(`non-members-orgs-row-${ACCOUNT_ID}-meetings`);
