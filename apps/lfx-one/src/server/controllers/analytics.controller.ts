@@ -4213,6 +4213,35 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest high-fit organizations. */
+  public async getNonMembersConversion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_conversion');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_conversion');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_conversion');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Conversion opportunity has no data for this range', { operation: 'get_non_members_conversion' });
+      }
+
+      const response = await this.healthMetricsNonMembersService.getConversion(req, { foundationSlug, range });
+
+      // Counts only: the warmest list names organizations, so it stays out of this metadata.
+      logger.success(req, 'get_non_members_conversion', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        measured: response.measured,
+        high_fit_count: response.highFitCount,
+        warmest_count: response.warmest.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');

@@ -4,6 +4,7 @@
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsNonMembersConversion,
   HealthMetricsNonMembersOrgs,
   HealthMetricsNonMembersOrgsFilter,
   HealthMetricsNonMembersPeople,
@@ -119,3 +120,24 @@ export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE = 100;
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS = 200;
+
+/** Read-failed / no-foundation value: nothing measured, so the section renders its empty state. */
+export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED: HealthMetricsNonMembersConversion = {
+  measured: false,
+  entryTierName: null,
+  entryTierFeeUsd: null,
+  organizationsTracked: null,
+  highFitCount: null,
+  newCount: null,
+  estimatedPipelineUsd: null,
+  warmest: [],
+};
+
+/** How many high-fit organizations the warmest list shows. */
+export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 10;
+
+/** A NULL count or estimate is not zero; the section says so in words. */
+export const HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE = 'not available';
+
+/** Opportunity styling only: this section carries no risk colours. */
+export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS = 'bg-blue-600';

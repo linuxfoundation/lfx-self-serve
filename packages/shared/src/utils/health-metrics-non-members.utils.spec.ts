@@ -4,7 +4,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
+import { HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '../constants/health-metrics-non-members.constants';
 import {
+  buildHealthMetricsNonMembersConversionView,
   buildHealthMetricsNonMembersOrgRows,
   buildHealthMetricsNonMembersOrgsSummary,
   buildHealthMetricsNonMembersPeopleCountLabel,
@@ -12,7 +14,11 @@ import {
   buildHealthMetricsNonMembersSubNavItems,
 } from './health-metrics-non-members.utils';
 
-import type { HealthMetricsNonMembersOrg, HealthMetricsNonMembersPerson } from '../interfaces/health-metrics-non-members.interface';
+import type {
+  HealthMetricsNonMembersConversion,
+  HealthMetricsNonMembersOrg,
+  HealthMetricsNonMembersPerson,
+} from '../interfaces/health-metrics-non-members.interface';
 
 const ORG: HealthMetricsNonMembersOrg = {
   accountId: '0014100000AcmeAAAA',
@@ -22,6 +28,20 @@ const ORG: HealthMetricsNonMembersOrg = {
   distinctPeople: 3,
   contributions: 1840,
   isNew: false,
+};
+
+const CONVERSION: HealthMetricsNonMembersConversion = {
+  measured: true,
+  entryTierName: 'Silver',
+  entryTierFeeUsd: 25000,
+  organizationsTracked: 412,
+  highFitCount: 2,
+  newCount: 37,
+  estimatedPipelineUsd: 50000,
+  warmest: [
+    { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
+    { accountId: '0014100000VendAAAA', accountName: 'Vendor Corp', meetingsAttended: 1, contributions: 100 },
+  ],
 };
 
 const PERSON: HealthMetricsNonMembersPerson = {
@@ -120,5 +140,61 @@ describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
   it('counts the engaged individuals', () => {
     expect(buildHealthMetricsNonMembersPeopleCountLabel(1412)).toBe('1,412 engaged individuals');
     expect(buildHealthMetricsNonMembersPeopleCountLabel(1)).toBe('1 engaged individual');
+  });
+});
+
+describe('buildHealthMetricsNonMembersConversionView', () => {
+  it('qualifies the estimate, counts the side stats and names the tier in the footnote', () => {
+    const view = buildHealthMetricsNonMembersConversionView(CONVERSION);
+
+    expect(view).toMatchObject({
+      measured: true,
+      summary: '412 organizations tracked',
+      pipelineValue: '$50K',
+      pipelineLabel: 'Estimated pipeline',
+      hasEstimate: true,
+      footnote: 'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only.',
+    });
+    expect(view.side).toEqual([
+      { key: 'high-fit', label: 'High-fit organizations', value: '2' },
+      { key: 'new', label: 'New this period', value: '37' },
+    ]);
+  });
+
+  it('sizes the warmest bars by contributions, labelled with meetings', () => {
+    expect(buildHealthMetricsNonMembersConversionView(CONVERSION).warmest).toEqual([
+      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions', widthPct: 100 },
+      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions', widthPct: 25 },
+    ]);
+  });
+
+  it('says not enough data, never $0, when the foundation has no entry-tier fee', () => {
+    const view = buildHealthMetricsNonMembersConversionView({ ...CONVERSION, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null });
+
+    expect(view.pipelineValue).toBe('—');
+    expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
+    expect(view.hasEstimate).toBe(false);
+    expect(view.footnote).toBe('Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only.');
+  });
+
+  it('renders a NULL count as not available but keeps a real zero', () => {
+    const view = buildHealthMetricsNonMembersConversionView({
+      ...CONVERSION,
+      organizationsTracked: null,
+      highFitCount: 0,
+      newCount: null,
+      warmest: [{ accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: null, contributions: null }],
+    });
+
+    expect(view.summary).toBe('Organizations tracked not available');
+    expect(view.side.map((stat) => stat.value)).toEqual(['0', 'not available']);
+    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available', widthPct: 0 }]);
+  });
+
+  it('marks the unmeasured value as not measured with no bars', () => {
+    const view = buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+
+    expect(view.measured).toBe(false);
+    expect(view.warmest).toEqual([]);
   });
 });

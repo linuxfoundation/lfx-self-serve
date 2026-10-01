@@ -21,6 +21,7 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -322,5 +323,100 @@ describe('HealthMetricsNonMembersService.getPeople', () => {
     const response = await new HealthMetricsNonMembersService().getPeople(req, { ...query, offset: 500 });
 
     expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 214 });
+  });
+});
+
+describe('HealthMetricsNonMembersService.getConversion', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const };
+
+  const summaryRow = {
+    ENTRY_TIER_NAME: 'Silver',
+    ENTRY_TIER_FEE_USD: 25000,
+    ORGANIZATIONS_TRACKED_COUNT: 412,
+    HIGH_FIT_ORG_COUNT: 2,
+    NEW_ORG_COUNT: 37,
+    ESTIMATED_PIPELINE_USD: 50000,
+  };
+
+  const warmRow = { ACCOUNT_ID: '0014100000AcmeAAAA', ACCOUNT_NAME: 'Acme Motors', MEETINGS_ATTENDED_COUNT: 12, CONTRIBUTIONS_COUNT: 400 };
+
+  // The two reads run in parallel; route each mock result by the view it reads.
+  function mockReads(summary: unknown[], warmest: unknown[]) {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('NON_MEMBER_CONVERSION_OPPORTUNITY') ? summary : warmest }));
+  }
+
+  function readFor(view: string): [string, unknown[]] {
+    return execute.mock.calls.find(([sql]) => (sql as string).includes(view)) as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReads([summaryRow], [warmRow]);
+  });
+
+  it('reads the period columns for the range, binding only the foundation', async () => {
+    for (const [range, suffix] of [
+      ['YTD', 'ytd'],
+      ['COMPLETED_YEAR', 'last_completed_year'],
+      ['COMPLETED_YEAR_2', 'prev_completed_year'],
+      ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
+    ] as const) {
+      execute.mockClear();
+      await new HealthMetricsNonMembersService().getConversion(req, { ...query, range });
+
+      const [summarySql, summaryBinds] = readFor('NON_MEMBER_CONVERSION_OPPORTUNITY');
+      expect(summarySql).toContain(`high_fit_org_count_${suffix} AS high_fit_org_count`);
+      expect(summarySql).toContain(`estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd`);
+      expect(summarySql).toContain('LIMIT 1');
+      expect(summaryBinds).toEqual(['acme']);
+
+      const [warmSql, warmBinds] = readFor('NON_MEMBER_FIT_SCORE');
+      expect(warmSql).toContain(`AND is_high_fit_${suffix}`);
+      expect(warmSql).toContain(`ORDER BY sort_rank_${suffix} ASC NULLS LAST, account_id ASC`);
+      expect(warmSql).toContain('LIMIT 10');
+      expect(warmBinds).toEqual(['acme']);
+    }
+  });
+
+  it('maps the summary and the warmest organizations, dropping a row without an account', async () => {
+    mockReads([summaryRow], [warmRow, { ...warmRow, ACCOUNT_ID: null }, { ...warmRow, ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: null }]);
+
+    const response = await new HealthMetricsNonMembersService().getConversion(req, query);
+
+    expect(response).toEqual({
+      measured: true,
+      entryTierName: 'Silver',
+      entryTierFeeUsd: 25000,
+      organizationsTracked: 412,
+      highFitCount: 2,
+      newCount: 37,
+      estimatedPipelineUsd: 50000,
+      warmest: [
+        { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
+        { accountId: '0014100000VendAAAA', accountName: '0014100000VendAAAA', meetingsAttended: 12, contributions: 400 },
+      ],
+    });
+  });
+
+  it('keeps a NULL fee and estimate as NULL, never zero', async () => {
+    mockReads([{ ...summaryRow, ENTRY_TIER_NAME: null, ENTRY_TIER_FEE_USD: null, ESTIMATED_PIPELINE_USD: null }], []);
+
+    const response = await new HealthMetricsNonMembersService().getConversion(req, query);
+
+    expect(response).toMatchObject({ measured: true, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null, warmest: [] });
+  });
+
+  it('reports a foundation with no conversion row as not measured', async () => {
+    mockReads([], [warmRow]);
+
+    const response = await new HealthMetricsNonMembersService().getConversion(req, query);
+
+    expect(response).toEqual(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+  });
+
+  it('rethrows a failed read', async () => {
+    execute.mockRejectedValue(new Error('warehouse down'));
+
+    await expect(new HealthMetricsNonMembersService().getConversion(req, query)).rejects.toThrow();
   });
 });

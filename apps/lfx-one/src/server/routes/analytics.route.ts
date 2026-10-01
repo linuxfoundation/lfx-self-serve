@@ -290,6 +290,7 @@ router.get('/members-churn-departures', requireDashboardAccess, (req, res, next)
 // Health Metrics Non-Members sections: company participation (#3180) and people (#3181)
 router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersOrgs(req, res, next));
 router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
+router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
