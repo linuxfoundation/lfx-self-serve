@@ -68,6 +68,26 @@ export const NAV_LENSES: readonly NavLens[] = ['foundation', 'project'] as const
 export const NAV_SEARCH_DEBOUNCE_MS = 300;
 
 /**
+ * Favorite foundations/projects (GH-2995): a single global per-user preference (not scoped per
+ * foundation/project like Social Listening's), keyed by `AppName` on the shared v1 user-preference
+ * API. A new app name rather than reusing Social Listening's `'PCC'` — this preference has no PCC
+ * heritage to stay compatible with.
+ */
+export const FAVORITE_PROJECTS_PREFERENCE_APP_NAME = 'LFX One';
+
+/** Fixed preference name — there is exactly one favorites list per user, so no per-scope suffix is needed. */
+export const FAVORITE_PROJECTS_PREFERENCE_NAME = 'Favorite Projects';
+
+/** Favorited-item cap — bounds the preference doc payload and keeps the "favorites first" sort cheap. */
+export const FAVORITE_PROJECTS_MAX_VALUES = 200;
+
+/** Preference value size cap (stringified JSON array of uids). */
+export const FAVORITE_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH = 16_000;
+
+/** Fixed `PreferenceContext.projectId` — favorites are one global per-user list, not scoped per foundation/project. */
+export const FAVORITE_PROJECTS_PREFERENCE_CONTEXT_ID = 'global';
+
+/**
  * Resource segments the lens-redirect endpoint may forward to. Every entry MUST have both a
  * `/foundation/<x>` and `/project/<x>` route in app.routes.ts and accept a `?project=<slug>`
  * context (projectQueryParamGuard). The endpoint forwards ONLY to segments in this set — the

@@ -133,6 +133,18 @@
               }
             </div>
 
+            <span
+              role="button"
+              tabindex="0"
+              class="shrink-0 flex items-center justify-center size-5 cursor-pointer"
+              (click)="toggleFavorite($event, displayItem.item.uid)"
+              (keydown.enter)="toggleFavorite($event, displayItem.item.uid)"
+              (keydown.space)="toggleFavorite($event, displayItem.item.uid)"
+              [attr.aria-pressed]="displayItem.isFavorited"
+              [attr.aria-label]="displayItem.isFavorited ? 'Remove from favorites' : 'Add to favorites'">
+              <i [ngClass]="displayItem.isFavorited ? 'fa-solid fa-star text-amber-400' : 'fa-light fa-star text-gray-300'" aria-hidden="true"></i>
+            </span>
+
             <i
               class="fa-light fa-check text-blue-500 shrink-0 transition-opacity"
               [class.opacity-100]="displayItem.isSelected"
