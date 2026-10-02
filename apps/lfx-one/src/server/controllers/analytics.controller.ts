@@ -4262,6 +4262,28 @@ export class AnalyticsController {
     }
   }
 
+  /** `GET /api/analytics/training-enrollment` — every period's enrollment, certification and revenue KPIs, by-type split and yearly trend. */
+  public async getTrainingEnrollment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_enrollment');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_enrollment');
+
+      const response = await this.healthMetricsTrainingService.getEnrollment(req, { foundationSlug });
+
+      logger.success(req, 'get_training_enrollment', startTime, {
+        foundation_slug: foundationSlug,
+        measured: response.measured,
+        delivery_type_count: response.periods.YTD.byType.length,
+        trend_year_count: response.trend.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** A required, well-formed `foundationSlug` query param for the Events handlers. */
   private getValidatedFoundationSlug(req: Request, operation: string): string {
     const foundationSlug = getStringQueryParam(req, 'foundationSlug');

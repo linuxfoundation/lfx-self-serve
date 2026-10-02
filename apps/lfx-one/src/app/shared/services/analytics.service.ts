@@ -137,6 +137,8 @@ import {
   HealthMetricsNonMembersOrgsQuery,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
+  HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingPresence,
   HealthMetricsTrainingPresenceQuery,
 } from '@lfx-one/shared/interfaces';
@@ -1594,6 +1596,19 @@ export class AnalyticsService {
       catchError((error: unknown) => {
         const status = error instanceof HttpErrorResponse ? error.status : undefined;
         console.error('[analytics] training-presence failed', { foundationSlug: query.foundationSlug, status });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getTrainingEnrollment(query: HealthMetricsTrainingEnrollmentQuery): Observable<HealthMetricsTrainingEnrollment> {
+    const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
+
+    // Errors propagate so the section shows its error state rather than claiming zero enrollments.
+    return this.http.get<HealthMetricsTrainingEnrollment>('/api/analytics/training-enrollment', { params }).pipe(
+      catchError((error: unknown) => {
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        console.error('[analytics] training-enrollment failed', { foundationSlug: query.foundationSlug, status });
         return throwError(() => error);
       })
     );

@@ -19,7 +19,9 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
+import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { TrainingEnrollComponent } from './components/training-enroll/training-enroll.component';
 
 import type { HealthMetricsTrainingPresenceState, HealthMetricsTrainingSubNavItem } from '@lfx-one/shared/interfaces';
 
@@ -29,7 +31,7 @@ import type { HealthMetricsTrainingPresenceState, HealthMetricsTrainingSubNavIte
  */
 @Component({
   selector: 'lfx-health-metrics-training',
-  imports: [EmptyStateComponent, HealthMetricsL2ShellComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, Skeleton, TrainingEnrollComponent],
   templateUrl: './health-metrics-training.component.html',
 })
 export class HealthMetricsTrainingComponent {

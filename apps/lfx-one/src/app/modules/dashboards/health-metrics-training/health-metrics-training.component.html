@@ -9,14 +9,20 @@
       {{ scopeNote }}
     </p>
 
+    <!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
     <lfx-health-metrics-l2-shell
+      #shell
       [sections]="sections"
       [idPrefix]="idPrefix"
       [dataSections]="dataSections"
       [subNavItems]="subNavItems"
       navLabel="Training sections"
       testIdPrefix="training"
-      [crossReference]="crossReference" />
+      [crossReference]="crossReference">
+      <ng-template lfxHealthMetricsL2Section="enroll">
+        <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll')" />
+      </ng-template>
+    </lfx-health-metrics-l2-shell>
   }
   @case ('absent') {
     <div class="flex flex-col gap-3" data-testid="training-no-programme">

@@ -16,8 +16,12 @@ describe('HEALTH_METRICS_TRAINING_SECTIONS', () => {
     expect(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.key)).toEqual(['enroll', 'courses']);
   });
 
-  it('holds no data section until a section issue wires one', () => {
-    expect(HEALTH_METRICS_TRAINING_DATA_SECTIONS).toEqual([]);
+  it('marks the sections that read data', () => {
+    expect(HEALTH_METRICS_TRAINING_DATA_SECTIONS).toEqual(['enroll']);
+  });
+
+  it('badges the enrollment figures provisional until LF Education signs them off', () => {
+    expect(HEALTH_METRICS_TRAINING_SECTIONS.find((section) => section.key === 'enroll')?.headingBadge).toBe('Provisional');
   });
 });
 

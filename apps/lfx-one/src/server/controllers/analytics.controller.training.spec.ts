@@ -4,11 +4,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getPresence } = vi.hoisted(() => ({ getPresence: vi.fn() }));
+const { getPresence, getEnrollment } = vi.hoisted(() => ({ getPresence: vi.fn(), getEnrollment: vi.fn() }));
 
 vi.mock('../services/health-metrics-training.service', () => ({
   HealthMetricsTrainingService: class {
     public getPresence = getPresence;
+    public getEnrollment = getEnrollment;
   },
 }));
 // The controller constructs eight unrelated domain services; none of them are exercised here.
@@ -31,13 +32,16 @@ import { AnalyticsController } from './analytics.controller';
 
 import { logger } from '../services/logger.service';
 
-function call(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+function call(
+  queryParams: Record<string, string>,
+  handler: 'getTrainingPresence' | 'getTrainingEnrollment' = 'getTrainingPresence'
+): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
   const res = { json: vi.fn() } as unknown as Response;
   const next = vi.fn() as unknown as NextFunction;
   const req = { query: queryParams } as unknown as Request;
 
-  return { res, next, promise: controller.getTrainingPresence(req, res, next) };
+  return { res, next, promise: controller[handler](req, res, next) };
 }
 
 describe('AnalyticsController.getTrainingPresence', () => {
@@ -71,6 +75,58 @@ describe('AnalyticsController.getTrainingPresence', () => {
     getPresence.mockRejectedValue(failure);
 
     const { next, promise } = call({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getTrainingEnrollment', () => {
+  const period = {
+    totals: { enrollments: 10, certifications: 2, revenueUsd: 500 },
+    baseline: null,
+    byType: [{ deliveryType: 'E-Learning', enrollments: 10, revenueUsd: 500 }],
+  };
+  const enrollment = {
+    measured: true,
+    periods: { YTD: period, COMPLETED_YEAR: period, COMPLETED_YEAR_2: period, COMPLETED_YEAR_3: period },
+    trend: [{ year: 2025, enrollments: 10 }],
+  };
+
+  beforeEach(() => {
+    vi.mocked(logger.success).mockClear();
+    getEnrollment.mockReset();
+    getEnrollment.mockResolvedValue(enrollment);
+  });
+
+  it('reads every period for the foundation and logs counts only', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getTrainingEnrollment');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getEnrollment).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(enrollment);
+    expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toEqual({
+      foundation_slug: 'acme',
+      measured: true,
+      delivery_type_count: 1,
+      trend_year_count: 1,
+    });
+  });
+
+  it('rejects a malformed foundationSlug', async () => {
+    const { next, promise } = call({ foundationSlug: 'Acme Corp' }, 'getTrainingEnrollment');
+    await promise;
+
+    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError | undefined;
+    expect(error?.validationErrors?.[0]?.field).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getEnrollment.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getTrainingEnrollment');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);
