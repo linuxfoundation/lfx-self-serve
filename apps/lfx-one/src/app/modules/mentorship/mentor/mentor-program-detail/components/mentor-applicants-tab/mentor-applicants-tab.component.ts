@@ -24,7 +24,6 @@ import {
   formatIsoDateLabel,
   matchesMentorshipPersonSearch,
   mentorshipApplicantDisplayStatus,
-  mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
@@ -132,7 +131,9 @@ export class MentorApplicantsTabComponent {
           programUrl: application.programId ? buildMentorshipProgramsUrl(environment.urls.mentorship, application.programId) : null,
         })),
       ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
-      hasTasks: mentorshipApplicantHasTasks(person),
+      // Only the tasks the server read: when it reads them per mentee, the other applicants arrive without
+      // `tasks` but with upstream's `tasksTotal`, and View Tasks would open an empty panel.
+      hasTasks: !!person.tasks?.length,
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
     };
   }

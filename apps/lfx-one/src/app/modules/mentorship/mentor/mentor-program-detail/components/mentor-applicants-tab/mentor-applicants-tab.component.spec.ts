@@ -182,6 +182,13 @@ describe('MentorApplicantsTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-applicant-view-tasks-app_no_tasks"]')).toBeNull();
   });
 
+  it('does not render View Tasks for an applicant whose tasks were not read, whatever upstream counts', () => {
+    // When the server reads tasks per mentee, the other applicants keep upstream's counts but carry no tasks.
+    setup([applicant({ id: 'app_unread', tasks: undefined, tasksSubmitted: 1, tasksTotal: 3 })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-applicant-view-tasks-app_unread"]')).toBeNull();
+  });
+
   it('lists only still-active other applications, dropping the rejections', () => {
     setup([
       applicant({
