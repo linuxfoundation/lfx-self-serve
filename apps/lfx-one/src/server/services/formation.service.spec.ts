@@ -2104,7 +2104,9 @@ describe('FormationService', () => {
         if (params.tags?.some((tag) => tag.startsWith('formation_uid:'))) {
           if (options.gates instanceof Error) return Promise.reject(options.gates);
           const asked = new Set(params.tags.map((tag) => tag.slice('formation_uid:'.length)));
-          const rows = (options.gates ?? []).filter((row) => asked.has(row.formation_uid));
+          // A document with no string `formation_uid` rides along on every batch — the shape a
+          // malformed index row would arrive in.
+          const rows = (options.gates ?? []).filter((row) => typeof row.formation_uid !== 'string' || asked.has(row.formation_uid));
           return Promise.resolve({ resources: rows.map((row) => ({ type: 'formation_item', id: row.object_id, data: row })) });
         }
         return Promise.resolve({ resources: (options.assigned ?? []).map((row) => ({ type: 'formation_item', id: row.object_id, data: row })) });
@@ -2189,19 +2191,29 @@ describe('FormationService', () => {
       expect(result.rows.every((row) => row.next_gate_item === null)).toBe(true);
     });
 
-    it('degrades instead of throwing when an item document is malformed past the fetch', async () => {
+    it('confines a malformed gate document to its own formation, never promoting a later gate to next', async () => {
       mockGateReads({
-        formations: [formationIndexRow({ blocked_item_titles: ['Legal review'] })],
+        formations: [
+          formationIndexRow({ formation_uid: 'formation:good', project_uid: 'good' }),
+          formationIndexRow({ formation_uid: 'formation:bad', project_uid: 'bad', blocked_item_titles: ['Legal review'] }),
+        ],
         gates: [
-          gateItem({ object_id: 'bad-1', item_key: 'unknown_a', title: undefined as unknown as string }),
-          gateItem({ object_id: 'bad-2', item_key: 'unknown_b', title: undefined as unknown as string }),
+          gateItem({ object_id: 'good-1', formation_uid: 'formation:good', item_key: 'charter_agreed', title: 'Charter agreed' }),
+          // An earlier gate is malformed; the later valid one must not be named as next.
+          gateItem({ object_id: 'bad-1', formation_uid: 'formation:bad', item_key: 'formation_review_packet', title: undefined as unknown as string }),
+          gateItem({ object_id: 'bad-2', formation_uid: 'formation:bad', item_key: 'contribution_agreement', title: 'Contribution agreement' }),
+          // Unattributable: no usable formation_uid, so it is dropped without touching any row.
+          gateItem({ object_id: 'orphan', formation_uid: undefined as unknown as string, item_key: 'formation_review_packet', title: 'Orphan gate' }),
         ],
       });
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows).toHaveLength(1);
-      expect(result.rows[0].next_gate_item).toBeNull();
+      const byUid = new Map(result.rows.map((row) => [row.formation_uid, row]));
+      expect(byUid.get('formation:good')?.next_gate_item?.title).toBe('Charter agreed');
+      expect(byUid.get('formation:bad')?.next_gate_item).toBeNull();
+      // The poisoned row keeps its aggregate blockers, which is what the Blocking cell falls back to.
+      expect(byUid.get('formation:bad')?.blocked_item_titles).toEqual(['Legal review']);
     });
 
     it('reads gates only for the rows it serves, after search filtering', async () => {

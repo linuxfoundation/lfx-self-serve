@@ -15,6 +15,7 @@ import {
   DELTA_DIRECTION_TEXT_CLASS,
   DOCS_ANCHOR_SCROLL_OFFSET_PX,
   FORMATION_ANNOUNCEMENT_TIMING_CLASS,
+  FORMATION_BLOCKING_CLASS,
   FORMATION_CHECKLIST_GRID_CLASSES,
   FORMATION_ITEM_SEGMENT_COLORS,
   FORMATION_ITEM_STATUS_GLYPHS,
@@ -139,6 +140,8 @@ export default {
     ...Object.values(FORMATION_PROGRESS_RING_SIZE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Formations queue — announcement countdown tone per timing (FORMATION_ANNOUNCEMENT_TIMING_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ANNOUNCEMENT_TIMING_CLASS),
+    // Formation tables — Blocking cell tone (FORMATION_BLOCKING_CLASS in @lfx-one/shared, not scanned here)
+    ...Object.values(FORMATION_BLOCKING_CLASS),
     // Behavioral-class tints — org-groups stat tiles, committee dashboard/table chips, my-groups
     // cards, and the public group pages all key off this map (BEHAVIORAL_CLASS_CONFIG in
     // @lfx-one/shared, not scanned here). `.split(' ')` guards against a future multi-token value.

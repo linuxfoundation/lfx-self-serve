@@ -123,7 +123,7 @@ export function selectNextFormationGateItem(items: Pick<UpstreamFormationItemRow
   const candidates = openGates.length > 0 ? openGates : outstandingGates;
   if (candidates.length === 0) return null;
   const orderOf = (key: string): number => FORMATION_TEMPLATE_ITEM_ORDER.get(key) ?? Number.MAX_SAFE_INTEGER;
-  const [next] = [...candidates].sort((a, b) => orderOf(a.item_key) - orderOf(b.item_key) || a.title.localeCompare(b.title));
+  const [next] = [...candidates].sort((a, b) => orderOf(a.item_key) - orderOf(b.item_key) || (a.title ?? '').localeCompare(b.title ?? ''));
   return { item_key: next.item_key, title: next.title, status: next.status };
 }
 

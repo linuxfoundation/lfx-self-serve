@@ -887,7 +887,7 @@ export interface MyFormationSummary {
   gating_total: number;
   /** `resolveFormationBlockingItem(...)?.title` (#3066) — the next outstanding gate, else the first `blocked` title while gates aren't cleared. */
   blocking_item_title: string | null;
-  /** Whether {@link blocking_item_title}'s item is itself `blocked` — always `true` for the degraded `blocked_item_titles` fallback. Styles the cell as danger, matching the queue table. */
+  /** Whether {@link blocking_item_title}'s item is itself `blocked` — always `true` for the `blocked_item_titles` fallback (a degraded item read, or the item index lagging the projection). Styles the cell as danger, matching the queue table. */
   blocking_item_blocked: boolean;
   /** The projection's own {@link FormationQueueRow.gates_cleared} — lets the Blocking column read "Formation to set Active" once every gate is done. */
   gates_cleared: boolean;
@@ -931,4 +931,6 @@ export interface DecoratedMyFormation extends MyFormationSummary {
   /** `getFormationQueueStageDisplay(sub_stage, sub_stage_raw)`'s label — mirrors `FormationTableRow.stageLabel` (GH-1956, same #2370/#2373 gap fixed here). */
   stageLabel: string;
   stageSeverity: TagSeverity;
+  /** `FORMATION_BLOCKING_CLASS` for the Blocking cell — mirrors `FormationTableRow.blockingClass` (#3070). */
+  blockingClass: string;
 }
