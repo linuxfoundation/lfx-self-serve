@@ -196,6 +196,26 @@
             <div class="border border-blue-200 rounded-lg p-4 bg-blue-50/30 flex flex-col gap-3" data-testid="inline-add-registrant-form">
               <lfx-registrant-form [form]="addRegistrantForm" (onUserSelected)="onUserSelectedFromSearch()" data-testid="inline-registrant-form">
               </lfx-registrant-form>
+              @if (scopeOccurrence(); as scopeOccurrence) {
+                <fieldset class="flex flex-col gap-2" data-testid="inline-add-registrant-scope">
+                  <legend class="text-sm font-medium text-gray-900 mb-2">Invite to</legend>
+                  <div class="flex items-center gap-2">
+                    <lfx-radio-button [form]="inviteScopeForm" control="scope" name="guest-invite-scope" value="all" inputId="guest-invite-scope-all" />
+                    <label for="guest-invite-scope-all" class="text-sm text-gray-700 cursor-pointer">All occurrences</label>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <lfx-radio-button
+                      [form]="inviteScopeForm"
+                      control="scope"
+                      name="guest-invite-scope"
+                      value="occurrence"
+                      inputId="guest-invite-scope-occurrence" />
+                    <label for="guest-invite-scope-occurrence" class="text-sm text-gray-700 cursor-pointer">
+                      Only {{ scopeOccurrence.start_time | meetingTime: scopeOccurrence.duration : 'date' : meeting().timezone }}
+                    </label>
+                  </div>
+                </fieldset>
+              }
               <div class="flex items-center justify-end gap-2 pt-2 border-t border-blue-100">
                 <lfx-button
                   label="Add Guest"

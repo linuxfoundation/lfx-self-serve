@@ -312,12 +312,8 @@ export class MeetingService {
     );
   }
 
-  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<void> {
-    let params = new HttpParams();
-    if (editType) {
-      params = params.set('editType', editType);
-    }
-    return this.http.put<void>(`/api/meetings/${id}`, meeting, { params }).pipe(
+  public updateMeeting(id: string, meeting: UpdateMeetingRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${id}`, meeting).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(id)),
       catchError((error) => {
