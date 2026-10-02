@@ -831,15 +831,46 @@ describe('MeetingController', () => {
       meetingSvc.updateOccurrence.mockResolvedValue(undefined);
     });
 
-    it('forwards only the normalized start time and duration and answers 204', async () => {
+    it('forwards the normalized start time and duration, never a recurrence, and answers 204', async () => {
       const start = futureStart();
       const res = buildRes();
 
-      await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 45, recurrence: { type: 2 }, title: 'x' }), res, next);
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 45, recurrence: { type: 2 } }), res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, { start_time: start, duration: 45 });
       expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it('forwards a trimmed title and agenda when they are sent', async () => {
+      const start = futureStart();
+
+      await controller.updateOccurrence(
+        buildOccurrenceReq({ start_time: start, duration: 45, title: '  Special session ', description: ' Demo day ' }),
+        buildRes(),
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, {
+        start_time: start,
+        duration: 45,
+        title: 'Special session',
+        description: 'Demo day',
+      });
+    });
+
+    // Upstream drops an empty agenda, so accepting one would answer 204 for a change that never happens.
+    it.each([
+      [{ title: '   ' }, 'title'],
+      [{ title: 42 }, 'title'],
+      [{ description: '' }, 'description'],
+      [{ description: 'x'.repeat(MEETING_AGENDA_MAX_LENGTH + 1) }, 'description'],
+    ])('rejects %o without calling upstream', async (extra, field) => {
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration: 30, ...extra }), buildRes(), next);
+
+      expect(meetingSvc.updateOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual([field]);
     });
 
     it('rejects a start time in the past without calling upstream', async () => {

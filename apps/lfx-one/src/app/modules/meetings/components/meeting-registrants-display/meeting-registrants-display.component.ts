@@ -8,12 +8,15 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   CommitteeMember,
   EnrichedPastMeetingParticipant,
+  GuestInviteScope,
   Meeting,
   MeetingHostCandidate,
+  MeetingOccurrence,
   MeetingRegistrant,
   PastMeeting,
   PastMeetingParticipant,
@@ -32,6 +35,7 @@ import {
 } from '@lfx-one/shared/utils';
 import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
@@ -43,7 +47,18 @@ type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: Registra
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
-  imports: [AvatarComponent, BadgeComponent, ButtonComponent, TooltipModule, ReactiveFormsModule, RegistrantFormComponent, SelectComponent, NgTemplateOutlet],
+  imports: [
+    AvatarComponent,
+    BadgeComponent,
+    ButtonComponent,
+    TooltipModule,
+    ReactiveFormsModule,
+    RadioButtonComponent,
+    RegistrantFormComponent,
+    SelectComponent,
+    NgTemplateOutlet,
+    MeetingTimePipe,
+  ],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
@@ -61,6 +76,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
+  /** The occurrence the host is showing; lets a guest be invited to that date only. */
+  public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
   public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
@@ -89,6 +106,13 @@ export class MeetingRegistrantsDisplayComponent {
 
   // Add registrant form
   public addRegistrantForm: FormGroup;
+  public readonly inviteScopeForm: FormGroup = new FormGroup({
+    scope: new FormControl<GuestInviteScope>('all', { nonNullable: true }),
+  });
+  // Only a recurring series has dates to choose between, and only a known occurrence can be targeted.
+  public readonly scopeOccurrence: Signal<MeetingOccurrence | null> = computed(() =>
+    !this.pastMeeting() && (this.meeting() as Meeting).recurrence ? this.occurrence() : null
+  );
 
   // Search and filter controls
   public readonly searchControl: FormControl<string> = new FormControl<string>('', { nonNullable: true });
@@ -215,6 +239,7 @@ export class MeetingRegistrantsDisplayComponent {
       .subscribe(() => {
         this.showAddForm.set(false);
         this.addRegistrantForm.reset();
+        this.inviteScopeForm.reset();
         this.optimisticRegistrants.set([]);
       });
   }
@@ -229,6 +254,7 @@ export class MeetingRegistrantsDisplayComponent {
     this.showAddForm.set(!isShowing);
     if (isShowing) {
       this.addRegistrantForm.reset();
+      this.inviteScopeForm.reset();
     }
   }
 
@@ -238,7 +264,11 @@ export class MeetingRegistrantsDisplayComponent {
     if (this.addRegistrantForm.valid) {
       this.submitting.set(true);
       const formValue = this.addRegistrantForm.value;
-      const createData = this.meetingService.stripMetadata(this.meeting().id, formValue);
+      const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? (this.scopeOccurrence()?.occurrence_id ?? null) : null;
+      const createData = {
+        ...this.meetingService.stripMetadata(this.meeting().id, formValue),
+        ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),
+      };
 
       this.meetingService
         .addMeetingRegistrants(this.meeting().id, [createData])
@@ -264,7 +294,7 @@ export class MeetingRegistrantsDisplayComponent {
                   job_title: formValue.job_title || null,
                   org_name: formValue.org_name || null,
                   linkedin_profile: formValue.linkedin_profile || null,
-                  occurrence_id: null,
+                  occurrence_id: occurrenceId,
                   org_is_member: false,
                   org_is_project_member: false,
                   avatar_url: null,

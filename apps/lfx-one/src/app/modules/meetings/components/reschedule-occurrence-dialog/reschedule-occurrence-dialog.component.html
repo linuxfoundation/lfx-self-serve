@@ -10,11 +10,35 @@
     </span>
     <span class="text-xs text-gray-500 flex items-center gap-2">
       <i class="fa-light fa-repeat text-blue-500"></i>
-      Only this occurrence changes. The rest of the series keeps its schedule.
+      Only this occurrence changes. The rest of the series keeps its schedule and details.
     </span>
   </div>
 
   <form [formGroup]="form" class="flex flex-col gap-4" (ngSubmit)="onConfirm()">
+    <div class="flex flex-col gap-1.5">
+      <label for="reschedule-occurrence-title" class="text-sm font-medium text-gray-900">Title <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        [form]="form"
+        control="title"
+        size="small"
+        inputId="reschedule-occurrence-title"
+        styleClass="w-full"
+        [maxlength]="titleMaxLength"
+        [required]="true"
+        [describedBy]="showTitleError() ? 'reschedule-occurrence-title-error' : null"
+        [invalid]="showTitleError()"
+        dataTest="reschedule-occurrence-title" />
+      @if (showTitleError()) {
+        <p id="reschedule-occurrence-title-error" class="text-sm text-red-600" data-testid="reschedule-occurrence-title-error">
+          @if (titleMaxLength) {
+            Title is required and can be up to {{ titleMaxLength }} characters
+          } @else {
+            Title is required
+          }
+        </p>
+      }
+    </div>
+
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div class="flex flex-col gap-1.5">
         <label for="reschedule-occurrence-date" class="text-sm font-medium text-gray-900">Date <span class="text-red-500">*</span></label>
@@ -45,9 +69,7 @@
     </div>
 
     @if (showFutureError()) {
-      <p class="text-sm text-red-600" role="alert" data-testid="reschedule-occurrence-future-error">
-        The occurrence must be rescheduled to a time in the future
-      </p>
+      <p class="text-sm text-red-600" role="alert" data-testid="reschedule-occurrence-future-error">The occurrence must be moved to a time in the future</p>
     }
     @if (showNonexistentTimeError()) {
       <p class="text-sm text-red-600" role="alert" data-testid="reschedule-occurrence-nonexistent-time-error">
@@ -77,6 +99,27 @@
       }
     </div>
 
+    <div class="flex flex-col gap-1.5">
+      <label for="reschedule-occurrence-agenda" class="text-sm font-medium text-gray-900">Agenda</label>
+      <lfx-textarea
+        [form]="form"
+        control="description"
+        inputId="reschedule-occurrence-agenda"
+        [rows]="4"
+        styleClass="w-full"
+        [maxlength]="agendaMaxLength"
+        [ariaDescribedBy]="showAgendaError() ? 'reschedule-occurrence-agenda-error' : 'reschedule-occurrence-agenda-hint'"
+        [invalid]="showAgendaError()"
+        dataTest="reschedule-occurrence-agenda" />
+      @if (showAgendaError()) {
+        <p id="reschedule-occurrence-agenda-error" class="text-sm text-red-600" data-testid="reschedule-occurrence-agenda-error">
+          The agenda can be changed but not cleared, and can be up to {{ agendaMaxLength }} characters
+        </p>
+      } @else {
+        <p id="reschedule-occurrence-agenda-hint" class="text-xs text-gray-500">Changes the agenda for this date only.</p>
+      }
+    </div>
+
     <p class="text-xs text-gray-500" data-testid="reschedule-occurrence-timezone">Times are in the meeting's timezone: {{ timezoneLabel() }}</p>
   </form>
 
@@ -97,7 +140,7 @@
     </lfx-button>
 
     <lfx-button
-      [label]="isSaving() ? 'Saving...' : 'Reschedule Occurrence'"
+      [label]="isSaving() ? 'Saving...' : 'Save changes'"
       severity="info"
       size="small"
       type="button"

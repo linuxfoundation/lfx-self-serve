@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
@@ -23,6 +23,13 @@ export class CancelOccurrenceConfirmationComponent {
   public readonly meeting: Meeting = this.config.data.meeting;
   public readonly occurrence: MeetingOccurrence = this.config.data.occurrence;
   public readonly isCanceling = signal(false);
+
+  public constructor() {
+    // Closing mid-request would drop the result, so the parent never refreshes past the cancelled date.
+    effect(() => {
+      this.config.closable = !this.isCanceling();
+    });
+  }
 
   public onCancel(): void {
     this.dialogRef.close({ confirmed: false });

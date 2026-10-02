@@ -249,13 +249,11 @@ export class MeetingController {
   public async updateMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const meetingData: UpdateMeetingRequest = req.body;
-    const { editType } = req.query;
     const startTime = logger.startOperation(req, 'update_meeting', {
       meeting_id: uid,
       project_uid: meetingData?.project_uid,
       start_time: meetingData?.start_time,
       timezone: meetingData?.timezone,
-      edit_type: editType,
       body_size: JSON.stringify(req.body).length,
     });
 
@@ -271,12 +269,11 @@ export class MeetingController {
       }
 
       // Update the meeting
-      const response = await this.meetingService.updateMeeting(req, uid, meetingData, editType as 'single' | 'future');
+      const response = await this.meetingService.updateMeeting(req, uid, meetingData);
 
       // Log the success
       logger.success(req, 'update_meeting', startTime, {
         meeting_id: uid,
-        edit_type: editType || 'single',
         status_code: response.status,
       });
 
@@ -377,9 +374,9 @@ export class MeetingController {
   /**
    * PUT /meetings/:uid/occurrences/:occurrenceId
    *
-   * Reschedules one occurrence of a recurring meeting. Only `start_time` and `duration` are forwarded:
-   * upstream rejects a recurrence here unless `all_following_occurrences` is set, which would widen
-   * the change from this occurrence to every later one.
+   * Edits one occurrence of a recurring meeting: its start time and duration, and optionally its title
+   * and agenda. No recurrence is forwarded: upstream rejects one here unless `all_following_occurrences`
+   * is set, which would widen the change from this occurrence to every later one.
    */
   public async updateOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, occurrenceId } = req.params;
@@ -417,6 +414,17 @@ export class MeetingController {
         fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_CUSTOM_DURATION}`;
       }
 
+      const title = typeof body.title === 'string' ? body.title.trim() : body.title;
+      if (title !== undefined && (typeof title !== 'string' || title.length === 0)) {
+        fieldErrors['title'] = 'Title must be a non-empty string';
+      }
+
+      // Upstream drops an empty agenda, so an empty value would report success and change nothing.
+      const description = typeof body.description === 'string' ? body.description.trim() : body.description;
+      if (description !== undefined && (typeof description !== 'string' || description.length === 0 || description.length > MEETING_AGENDA_MAX_LENGTH)) {
+        fieldErrors['description'] = `Agenda must be between 1 and ${MEETING_AGENDA_MAX_LENGTH} characters`;
+      }
+
       if (Object.keys(fieldErrors).length > 0) {
         return next(
           ServiceValidationError.fromFieldErrors(fieldErrors, 'Occurrence update validation failed', {
@@ -428,13 +436,20 @@ export class MeetingController {
       }
 
       const normalizedStartTime = new Date(newStartMs).toISOString();
-      await this.meetingService.updateOccurrence(req, uid, occurrenceId, { start_time: normalizedStartTime, duration: duration as number });
+      await this.meetingService.updateOccurrence(req, uid, occurrenceId, {
+        start_time: normalizedStartTime,
+        duration: duration as number,
+        ...(title !== undefined && { title: title as string }),
+        ...(description !== undefined && { description: description as string }),
+      });
 
       logger.success(req, 'update_occurrence', startTime, {
         meeting_id: uid,
         occurrence_id: occurrenceId,
         start_time: normalizedStartTime,
         duration,
+        title_changed: title !== undefined,
+        agenda_changed: description !== undefined,
         status_code: 204,
       });
 
