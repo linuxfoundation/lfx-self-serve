@@ -198,6 +198,39 @@
               tooltip="Open"
               tooltipPosition="top">
             </lfx-button>
+          } @else if (doc.source === 'meeting' && doc.downloadUrl) {
+            <lfx-button
+              icon="fa-solid fa-arrow-down-to-line"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="downloadDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-download-' + doc.id"
+              tooltip="Download"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if (doc.source === 'committee' && doc.downloadUrl) {
+            <lfx-button
+              icon="fa-solid fa-arrow-down-to-line"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="downloadDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-download-' + doc.id"
+              tooltip="Download"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if (doc.source === 'committee' && doc.url) {
+            <lfx-button
+              icon="fa-solid fa-arrow-up-right-from-square"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="openDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-open-' + doc.id"
+              tooltip="Open link"
+              tooltipPosition="top">
+            </lfx-button>
           } @else if (doc.url) {
             <lfx-button
               icon="fa-solid fa-arrow-down-to-line"
