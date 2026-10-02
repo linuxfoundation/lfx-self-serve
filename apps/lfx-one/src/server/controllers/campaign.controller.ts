@@ -36,6 +36,7 @@ import {
   CAMPAIGN_PLATFORMS,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MICROS_PER_UNIT,
   ISO_CALENDAR_DATE_PATTERN,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
@@ -406,12 +407,26 @@ export class CampaignController {
         // share, so a zero (or absent) budget — or a share that multiplies out to zero — produces
         // exactly that refusal, reported as the opaque "platform campaign creation failed".
         // Named here so the operator sees the field instead.
+        // Compared in MICROS, not as the raw float, because micros is the denomination upstream
+        // actually judges: it scales by GOOGLE_ADS_MICROS_PER_UNIT, ROUNDS, and refuses a zero.
+        // A positive budget below half a micro therefore survives a naive `> 0` test and is still
+        // refused upstream — reachable here because `buildGoogleAdsConfig` derives this value from
+        // `budgetUsd` TIMES the Search share, so a small budget on a small share multiplies down
+        // into exactly that gap. Rounding the same way upstream does makes the refused set
+        // identical to upstream's rather than a subset of it.
+        //
+        // `Math.round(NaN)` is `NaN` and every comparison against it is false, so a NaN budget
+        // passes through rather than being refused here — deliberate, and the same choice the
+        // LinkedIn guard below makes with its explicit `Number.isFinite` test. Meta's guard does
+        // refuse a NaN, because its `!(budget > 0)` form mirrors the `> 0` test Meta itself
+        // applies; that is the upstream contract differing, not these two guards disagreeing.
+        // Either way no guard may be the only reason a create fails.
         const googleBudget = (configEnvelope['googleAdsConfig'] as { budget?: unknown } | undefined)?.budget;
-        if (typeof googleBudget === 'number' && !(googleBudget > 0)) {
+        if (typeof googleBudget === 'number' && Math.round(googleBudget * GOOGLE_ADS_MICROS_PER_UNIT) < 1) {
           next(
             ServiceValidationError.forField(
               'budgetUsd',
-              'the Google Ads budget resolved to 0, which cannot fund a campaign. Set a budget above 0 and create again.',
+              'the Google Ads budget must be greater than 0 — this one resolves to no spend at all once the Search share is applied. Set a larger budget and create again.',
               { operation: 'campaign_create', service: 'campaign_controller' }
             )
           );
@@ -508,10 +523,25 @@ export class CampaignController {
         const metaBudget = (configEnvelope['metaConfig'] as { budget?: unknown } | undefined)?.budget;
         if (typeof metaBudget === 'number' && !(metaBudget > 0)) {
           next(
-            ServiceValidationError.forField('budgetUsd', 'the Meta Ads budget is 0, which cannot fund a campaign. Set a budget above 0 and create again.', {
-              operation: 'campaign_create',
-              service: 'campaign_controller',
-            })
+            // States the CONSTRAINT rather than reporting the submitted value. This route has no
+            // body validator, so a direct caller can reach this branch with a negative budget,
+            // and a message asserting it "is 0" would then describe a value the caller did not
+            // send and hand them a remedy that does not match what they did.
+            //
+            // Judged as a raw float, where google-ads above is judged in micros. Meta's own floor
+            // is one MINOR currency unit, whose scale depends on the ad account's currency — 100
+            // for USD, 1 for JPY — and this application cannot see that currency (same gap the
+            // builder's FX note describes). Mirroring the arithmetic would mean guessing the
+            // offset, and guessing high refuses creates Meta accepts. Non-positive is the part
+            // that is refused under every currency, so it is the only part asserted here.
+            ServiceValidationError.forField(
+              'budgetUsd',
+              'the Meta Ads budget must be greater than 0 to fund a campaign. Set a budget above 0 and create again.',
+              {
+                operation: 'campaign_create',
+                service: 'campaign_controller',
+              }
+            )
           );
           return;
         }

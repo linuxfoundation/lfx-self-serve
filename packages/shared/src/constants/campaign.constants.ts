@@ -860,6 +860,18 @@ export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
 export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
 
 /**
+ * Micros per whole currency unit, the denomination google-ads bills budgets in.
+ *
+ * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
+ * SAME integer campaign-service computes and refuse exactly what it refuses. campaign-service
+ * scales the budget by this factor, rounds, and rejects a campaign whose rounded budget is zero
+ * micros ("campaign budget must be > 0"). A guard that compared the raw float against zero
+ * instead would pass a positive-but-sub-micro budget straight into that refusal, where the
+ * orchestrator reports it as the opaque "platform campaign creation failed".
+ */
+export const GOOGLE_ADS_MICROS_PER_UNIT = 1_000_000;
+
+/**
  * LinkedIn's per-campaign budget floors, in USD.
  *
  * Mirrored from `internal/platform/linkedin/config.go` (`minDailyBudgetUSD` / `minLifetimeBudgetUSD`),

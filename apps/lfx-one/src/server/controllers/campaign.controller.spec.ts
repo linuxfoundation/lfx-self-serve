@@ -2068,6 +2068,36 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.message).toContain('31');
   });
 
+  it.each([
+    ['a zero budget', 0],
+    ['a negative budget, which no body validator on this route stops', -50],
+    ['a positive budget that rounds to zero micros, the denomination Google bills in', 0.0000004],
+  ])('names %s rather than letting Google refuse it before any mutate', async (_label, budgetUsd) => {
+    await controller.createCampaign(buildReq(googleBody({ budgetUsd }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    // States the CONSTRAINT. A negative budget reported as "is 0" would describe a value the
+    // caller did not send, so the message must not assert one.
+    expect(error.message).not.toContain('is 0');
+  });
+
+  it('dispatches a budget of exactly one micro, which is the smallest Google accepts', async () => {
+    // The boundary that makes the rounding deliberate, and the contrast without which the three
+    // refusals above would pass on a controller that refused every Google create. 0.0000004
+    // rounds DOWN to zero micros and is refused; 0.000001 is one whole micro and is dispatched.
+    // Comparing the raw float against zero would accept both — which is the defect this pins.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ budgetUsd: 0.000001 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
   const linkedInBody = (overrides: Record<string, unknown> = {}) => ({
     platforms: ['linkedin-ads'],
     linkedInConfig: { budgetUsd: 100, ...overrides },
@@ -2114,6 +2144,59 @@ describe('CampaignController.createCampaign cutover', () => {
     const error = refusalFrom();
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('endDate');
+  });
+
+  it.each([
+    ['a zero budget', 0],
+    ['a negative budget, which no body validator on this route stops', -250],
+  ])('names %s rather than letting Meta refuse it before any mutate', async (_label, budgetUsd) => {
+    await controller.createCampaign(buildReq(metaBody({ budgetUsd }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    expect(error.message).not.toContain('is 0');
+  });
+
+  it('dispatches a sub-dollar Meta budget, which the account currency may well accept', async () => {
+    // The contrast for the pair above, and the reason Meta is judged as a raw float where Google
+    // is judged in micros: Meta's floor is one MINOR currency unit, and the offset depends on the
+    // ad account's currency — 0.50 is 50 minor units under USD and refused under JPY. This app
+    // cannot see that currency, so anything above zero is passed through for Meta to judge.
+    // Mirroring Google's arithmetic here would refuse creates Meta accepts.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(metaBody({ budgetUsd: 0.5 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const redditBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['reddit-ads'],
+    redditConfig: { budgetUsd: 300, geoTargets: ['US'], ...overrides },
+  });
+
+  it('refuses a reversed Reddit flight, which Reddit compares as strictly as Meta does', async () => {
+    // The Reddit half of the same guard. Without this the loop could be narrowed to meta-ads
+    // alone and the suite would stay green, leaving Reddit's identical refusal opaque again.
+    await controller.createCampaign(buildReq(redditBody({ startDate: '2026-03-10', endDate: '2026-03-04' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('endDate');
+    expect(error.message).toContain('Reddit');
+  });
+
+  it('dispatches a Reddit flight that ends one day after it starts, the nearest window upstream takes', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(redditBody({ startDate: '2026-03-04', endDate: '2026-03-05' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
   });
 
   it.each([
