@@ -447,7 +447,10 @@ export class CommitteeViewComponent {
           distinctUntilChanged(),
           switchMap((uid) =>
             this.committeeService.getMyApplication(uid).pipe(
-              catchError(() => of(null)),
+              // getMyApplication already converts 404 → null; any other error is re-thrown.
+              // Use EMPTY so transient 5xx / network failures do not emit and therefore
+              // do not trigger clearPending (which would re-enable Apply-to-Join prematurely).
+              catchError(() => EMPTY),
               map((application) => ({ uid, application }))
             )
           ),
