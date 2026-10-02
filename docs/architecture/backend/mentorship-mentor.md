@@ -7,18 +7,19 @@ The mentor pages under `/mentorship/mentor/*` read their data from the LFX One B
 
 ## Routes
 
-| Method | Path                                                  | Controller method       | Page                                                            |
-| ------ | ----------------------------------------------------- | ----------------------- | --------------------------------------------------------------- |
-| GET    | `/api/mentorship/mentor/programs`                     | `getMentorPrograms`     | My Programs (`/mentorship/mentor/programs`)                     |
-| GET    | `/api/mentorship/mentor/programs/:programId`          | `getMentorProgram`      | Program detail (`/mentorship/mentor/programs/:programId`)       |
-| GET    | `/api/mentorship/mentor/profile`                      | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)    |
-| GET    | `/api/mentorship/mentor/has-profile`                  | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`) |
-| POST   | `/api/mentorship/mentor/profile`                      | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                          |
-| PATCH  | `/api/mentorship/mentor/profile`                      | `updateMentorProfile`   | Save in the profile edit drawer                                 |
-| GET    | `/api/mentorship/mentor/open-programs`                | `getOpenPrograms`       | Program picker on Become a Mentor and the profile edit drawer   |
-| GET    | `/api/mentorship/mentor/requests`                     | `getMentorRequests`     | Request list in the profile edit drawer                         |
-| POST   | `/api/mentorship/mentor/requests`                     | `requestToMentor`       | Become a Mentor (after the save) and the profile edit drawer    |
-| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw` | `withdrawMentorRequest` | Withdraw on a pending row in the profile edit drawer            |
+| Method | Path                                                      | Controller method       | Page                                                                        |
+| ------ | --------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------- |
+| GET    | `/api/mentorship/mentor/programs`                         | `getMentorPrograms`     | My Programs (`/mentorship/mentor/programs`)                                 |
+| GET    | `/api/mentorship/mentor/programs/:programId`              | `getMentorProgram`      | Program detail (`/mentorship/mentor/programs/:programId`)                   |
+| GET    | `/api/mentorship/mentor/profile`                          | `getMentorProfile`      | Profile and Mentoring History (`/mentorship/mentor/profile`)                |
+| GET    | `/api/mentorship/mentor/has-profile`                      | `hasMentorProfile`      | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`)             |
+| POST   | `/api/mentorship/mentor/profile`                          | `registerMentorProfile` | Become a Mentor (`/mentorship/mentor`)                                      |
+| PATCH  | `/api/mentorship/mentor/profile`                          | `updateMentorProfile`   | Save in the profile edit drawer                                             |
+| GET    | `/api/mentorship/mentor/open-programs`                    | `getOpenPrograms`       | Program picker on Become a Mentor and the profile edit drawer               |
+| GET    | `/api/mentorship/mentor/requests`                         | `getMentorRequests`     | Request list in the profile edit drawer                                     |
+| POST   | `/api/mentorship/mentor/requests`                         | `requestToMentor`       | Become a Mentor (after the save) and the profile edit drawer                |
+| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw`     | `withdrawMentorRequest` | Withdraw on a pending row in the profile edit drawer                        |
+| PUT    | `/api/mentorship/mentor/applications/:applicationId/note` | `updateApplicationNote` | Save in the note dialog on the program detail's Mentees and Applicants tabs |
 
 ## Flow
 
@@ -47,8 +48,8 @@ The register page and the profile edit drawer read the program picker through `G
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
 - `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is not a UUID, so a slug is refused before any upstream read. It answers 404 (`ResourceNotFoundError`) when the program is not one of the caller's (see [Program detail](#program-detail)).
 - The app service rethrows every failure, 404 included, so each page can tell a not-found state from a retry state.
-- The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests` and `POST /requests/:requestId/withdraw`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
-- Logs carry only ids, counts and flags (`programId`, `requestId`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `tasks_read_by_application`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, a card's `mentees`, `tasksToReview` and `applicants`, and a detail's `tasks`, `mentees` and `applicants` tab counts). Names, emails, notes and the introduction never go in logs.
+- The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests`, `POST /requests/:requestId/withdraw` and `PUT /applications/:applicationId/note`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
+- Logs carry only ids, counts and flags (`programId`, `requestId`, `applicationId`, `cleared`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `tasks_read_by_application`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, a card's `mentees`, `tasksToReview` and `applicants`, and a detail's `tasks`, `mentees` and `applicants` tab counts). Names, emails, notes and the introduction never go in logs.
 
 ## Registration
 
@@ -120,6 +121,22 @@ GET /programs/:programId → isUuid(programId), else 400
 - **The fallback.** When the gateway refuses the term task listing with 403, the BFF logs a warning and reads each mentee's tasks from `/applications/{id}/tasks` instead, at most `MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY` at once. Applicants who are not mentees then carry no tasks and show no View Tasks; the counts still match, since only `accepted` mentees' submissions are counted. Any other failure fails the page.
 - **Other applications.** An applicant's other applications carry the program id, name and status (`MentorshipMentorOtherApplication`). The Applicants tab links each program name, in a new tab, to that program's public page on the mentorship site (`buildMentorshipProgramsUrl` with `environment.urls.mentorship`), never to an in-app page the mentor may not be able to open. A program id that is not a UUID is dropped, and that name shows as plain text.
 
+## Reviewer notes
+
+A mentor saves a reviewer note on an application from the note dialog on the program detail's Mentees and Applicants tabs, through `PUT /api/mentorship/mentor/applications/:applicationId/note` (linuxfoundation/lfx-mentorship#213).
+
+```text
+PUT /applications/:applicationId/note { note } → isUuid(applicationId), else 400
+                                               → note a string of at most MENTORSHIP_MENTEE_NOTE_MAX after trimming, else 400
+                                               → PUT /mentorship/v1/applications/{id}/note { reviewer_note }
+                                               ← 204
+```
+
+- **Access.** Upstream decides who may write: the gateway lets a program's managers and mentors through, and the service then needs an active mentor or program administrator, else 403. An application that no longer exists answers 404. Both pass through unchanged.
+- **The note.** The BFF trims the note and sends it as `reviewer_note`. An empty note clears it. The note text never goes in a log: the controller logs the application id and a `cleared` flag.
+- **Reading it back.** The program's applications listing returns the note, so the rows carry it (`note`) and a saved note survives a reload.
+- **App side.** `MentorProgramDetailComponent` saves the note when its dialog closes with a changed value, through `MentorNoteSaveService`, which owns the toasts: `MENTORSHIP_MENTOR_NOTE_SAVE_SUCCESS_SUMMARY`, or `MENTORSHIP_MENTOR_NOTE_CLEAR_SUCCESS_SUMMARY` for an empty note, and on failure `MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_MESSAGES` for a 403 or 404, the server's message for the impersonation 403, else the fallback. A saved note is written into the page's rows (`linkedSignal` over the loaded detail, so a reload replaces it), on both tabs, since an accepted or graduated mentee is listed on each under one application id. A row's dialog does not reopen while its save is in flight. The save is not tied to the page, so it and its toast finish if the mentor leaves first. A failed save keeps the row as it was and does not keep the typed note.
+
 ## Profile and Mentoring History
 
 The Profile page (`/mentorship/mentor/profile`) reads the mentor's profile and Mentoring History through `GET /api/mentorship/mentor/profile`, and the edit drawer saves the introduction and skills through `PATCH /api/mentorship/mentor/profile` (linuxfoundation/lfx-mentorship#210).
@@ -172,7 +189,7 @@ POST /requests/:requestId/withdraw          → blockDuringImpersonation · isUu
 
 ## Data source
 
-Every mentor route calls the mentorship service: My Programs, the program detail, the profile read and update, the has-profile check, the register save and the program requests. Story linuxfoundation/lfx-mentorship#206 replaced the mock seed data one screen at a time.
+Every mentor route calls the mentorship service: My Programs, the program detail, the profile read and update, the has-profile check, the register save, the program requests and the reviewer notes. Story linuxfoundation/lfx-mentorship#206 replaced the mock seed data one screen at a time.
 
 A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end, at the largest page size unless the caller passes a smaller one. The mentor service uses it for the published programs, the caller's mentor memberships, and each program's applications (at 50) and submitted tasks; the mentee service uses it for the caller's applications and an application's tasks.
 

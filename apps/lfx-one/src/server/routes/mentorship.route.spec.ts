@@ -363,6 +363,26 @@ describe('mentorship router — mentor endpoints', () => {
     expect(res.status).toBe(403);
   });
 
+  const notePath = '/api/mentorship/mentor/applications/5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f/note';
+  const noteBody = JSON.stringify({ note: 'Strong screening call.' });
+
+  it('routes PUT /api/mentorship/mentor/applications/:applicationId/note (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}${notePath}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: noteBody });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a reviewer note save while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}${notePath}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: noteBody,
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
   it('still allows reading the mentor requests while impersonating', async () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentor/requests`, { headers: { 'x-test-impersonating': 'true' } });
 

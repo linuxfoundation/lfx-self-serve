@@ -8,6 +8,7 @@ import {
   MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
 } from '@lfx-one/shared/constants';
 import {
+  MentorshipMentorApplicationNoteUpdate,
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgramsQuery,
@@ -21,6 +22,7 @@ import {
   MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
+  MentorshipUpstreamApplicationNoteUpdate,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMentorDetail,
   MentorshipUpstreamMentorProgram,
@@ -230,6 +232,25 @@ export class MentorshipMentorService {
         clientMessage: error.clientMessage,
       });
     }
+  }
+
+  /**
+   * Saves the reviewer note on one application of a program the caller mentors. The note is the application's
+   * own, so every mentor of the program sees and edits the same one; an empty note clears it. Upstream checks
+   * the caller is an active mentor or administrator of the program (403 otherwise) and answers 404 for an
+   * application that is gone; both pass through. The note is never logged.
+   */
+  public async updateApplicationNote(req: Request, applicationId: string, request: MentorshipMentorApplicationNoteUpdate): Promise<void> {
+    const body: MentorshipUpstreamApplicationNoteUpdate = { reviewer_note: request.note };
+    logger.debug(req, 'mentorship_update_application_note', 'Saving reviewer note', { applicationId, cleared: request.note === '' });
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/note`,
+      'PUT',
+      undefined,
+      body
+    );
   }
 
   /**

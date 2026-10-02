@@ -51,8 +51,6 @@ export class MentorMenteesTabComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
-  /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
-  public readonly noteDrafts = input<Record<string, string>>({});
   public readonly noteRequested = output<MentorshipNoteRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
@@ -128,7 +126,8 @@ export class MentorMenteesTabComponent {
       progressPercent: progress.percent,
       progressLabel: progressMeasured ? `${progress.percent}%` : '—',
       progressAriaLabel: progressMeasured ? `${progress.percent}% of tasks completed` : MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED,
-      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      // No drafts: the page saves a note before it shows, so the row's own note is the saved one.
+      ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
       hasTasks: mentorshipApplicantHasTasks(person),
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
     };

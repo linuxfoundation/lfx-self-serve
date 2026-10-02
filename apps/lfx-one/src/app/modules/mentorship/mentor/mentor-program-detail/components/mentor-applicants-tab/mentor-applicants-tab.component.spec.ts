@@ -147,11 +147,11 @@ describe('MentorApplicantsTabComponent', () => {
     expect(fixture.componentInstance['first']()).toBe(0);
   });
 
-  it('renders the parent note draft in place of the note the row arrived with', () => {
-    fixture.componentRef.setInput('noteDrafts', { app_2: 'a saved draft' });
+  it("renders the row's saved note, and the add label for a row without one", () => {
+    fixture.componentRef.setInput('applicants', [applicant(), applicant({ id: 'app_2', name: 'Diego Souza', note: 'a saved note' })]);
     fixture.detectChanges();
 
-    expect(element().querySelector('[data-testid="mentorship-mentor-applicant-note-app_2"]')?.textContent?.trim()).toBe('a saved draft');
+    expect(element().querySelector('[data-testid="mentorship-mentor-applicant-note-app_2"]')?.textContent?.trim()).toBe('a saved note');
     expect(element().querySelector('[data-testid="mentorship-mentor-applicant-note-app_1"]')?.textContent?.trim()).toBe('Add note');
   });
 

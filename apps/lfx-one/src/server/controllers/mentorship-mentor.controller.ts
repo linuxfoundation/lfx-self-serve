@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -188,6 +189,45 @@ export class MentorshipMentorController {
       const program = await this.mentorService.getMentorProgram(req, programId);
       logger.success(req, 'get_mentorship_mentor_program', startTime, { programId, ...program.tabCounts });
       res.json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PUT /api/mentorship/mentor/applications/:applicationId/note  { note } -> 204
+  // Auth: logged-in user required (401 otherwise). A note that is blank once trimmed clears it; one over
+  // MENTORSHIP_MENTEE_NOTE_MAX characters is a 400. Upstream's 403 (not a mentor of the program) and 404
+  // (no such application) pass through. The note is never logged.
+  public async updateApplicationNote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_application_note');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_application_note' });
+      }
+
+      // A program row is an application, which upstream addresses only by UUID.
+      const applicationId = parseTrimmedString(req.params['applicationId']);
+      if (!applicationId || !isUuid(applicationId)) {
+        throw ServiceValidationError.forField('applicationId', 'applicationId must be an application UUID', {
+          operation: 'update_mentorship_application_note',
+        });
+      }
+
+      const raw: unknown = req.body?.note;
+      if (typeof raw !== 'string') {
+        throw ServiceValidationError.forField('note', 'note must be a string', { operation: 'update_mentorship_application_note' });
+      }
+      const note = raw.trim();
+      if (note.length > MENTORSHIP_MENTEE_NOTE_MAX) {
+        throw ServiceValidationError.forField('note', `note must be at most ${MENTORSHIP_MENTEE_NOTE_MAX} characters`, {
+          operation: 'update_mentorship_application_note',
+        });
+      }
+
+      await this.mentorService.updateApplicationNote(req, applicationId, { note });
+      logger.success(req, 'update_mentorship_application_note', startTime, { applicationId, cleared: note === '' });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

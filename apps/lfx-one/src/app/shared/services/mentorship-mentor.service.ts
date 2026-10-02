@@ -4,6 +4,7 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
+  MentorshipMentorApplicationNoteUpdate,
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
   MentorshipMentorInviteResponseRequest,
@@ -155,6 +156,15 @@ export class MentorshipMentorService {
     return this.http
       .get<MentorshipMentorProgramDetail>(`/api/mentorship/mentor/programs/${encodeURIComponent(programId)}`)
       .pipe(catchError(this.rethrowError('getMentorProgram')));
+  }
+
+  /**
+   * Saves the reviewer note on one application of a program the mentor mentors; an empty note clears it.
+   * Failures propagate as the raw `HttpErrorResponse`.
+   */
+  public updateApplicationNote(applicationId: string, note: string): Observable<void> {
+    const body: MentorshipMentorApplicationNoteUpdate = { note };
+    return this.http.put<void>(`/api/mentorship/mentor/applications/${encodeURIComponent(applicationId)}/note`, body).pipe(take(1));
   }
 
   private rethrowError(label: string) {

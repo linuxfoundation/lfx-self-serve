@@ -185,6 +185,19 @@ export interface MentorshipUpstreamProgramMembershipRequest {
   program_id: string;
 }
 
+/**
+ * Body of `PUT /api/mentorship/mentor/applications/:applicationId/note`: the application's reviewer note,
+ * shared by every mentor of the program. A note that is blank once trimmed clears it.
+ */
+export interface MentorshipMentorApplicationNoteUpdate {
+  note: string;
+}
+
+/** Body of `PUT /mentorship/v1/applications/{id}/note`. An empty string clears the note. */
+export interface MentorshipUpstreamApplicationNoteUpdate {
+  reviewer_note: string;
+}
+
 /** What an invited mentor does with the invitation on `/mentorship/mentor/invites`. */
 export type MentorshipMentorInviteDecision = 'accept' | 'decline';
 
