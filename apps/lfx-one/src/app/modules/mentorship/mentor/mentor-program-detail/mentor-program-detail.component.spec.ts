@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProgramDetail, MentorshipMentorTaskCreateRequest, MentorshipMentorTaskCreateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
+import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
@@ -57,6 +58,7 @@ describe('MentorProgramDetailComponent', () => {
   let dialogOpen: ReturnType<typeof vi.fn>;
   let getMentorProgram: ReturnType<typeof vi.fn>;
   let saveNote: ReturnType<typeof vi.fn>;
+  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse | null>>>;
 
   /**
    * Takes the dialog `onClose` observable (not the value) — a dismissed dialog emits
@@ -71,6 +73,7 @@ describe('MentorProgramDetailComponent', () => {
     dialogOpen = vi.fn(() => (onClose ? { onClose } : null));
     getMentorProgram = vi.fn(() => program$);
     saveNote = vi.fn(() => save$);
+    createTasks = vi.fn(() => of<MentorshipMentorTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -86,6 +89,7 @@ describe('MentorProgramDetailComponent', () => {
         },
         { provide: MentorshipMentorService, useValue: { getMentorProgram } },
         { provide: MentorNoteSaveService, useValue: { save: saveNote } },
+        { provide: MentorTaskCreateService, useValue: { create: createTasks } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });
@@ -287,5 +291,65 @@ describe('MentorProgramDetailComponent', () => {
 
     expect(() => requestNote()).not.toThrow();
     expect(saveNote).not.toHaveBeenCalled();
+  });
+
+  describe('task create', () => {
+    const request: MentorshipMentorTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
+    const withNewTask = (tasksTotal = 1): MentorshipMentorProgramDetail => {
+      const value = detail();
+      value.mentees = [{ ...value.mentees[0], tasksTotal }];
+      return value;
+    };
+
+    it('creates the tasks, then re-reads the detail without the loading state', () => {
+      build();
+      getMentorProgram.mockReturnValueOnce(of(withNewTask()));
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.detectChanges();
+
+      expect(createTasks).toHaveBeenCalledWith(request, expect.objectContaining({ mnt_1: 'Alex Rivera' }));
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+      expect(getMentorProgram).toHaveBeenLastCalledWith('mp_gridflow_fall26');
+      expect(shownDetail()?.mentees[0].tasksTotal).toBe(1);
+      expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-loading"]')).toBeNull();
+    });
+
+    it.each([
+      ['no task was created', { created: [], failed: ['mnt_1'] }],
+      ['the create failed', null],
+    ])('still re-reads when %s, since the task may exist upstream', (_label, result) => {
+      build();
+      createTasks.mockReturnValueOnce(of(result));
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the latest re-read when two finish out of order', () => {
+      build();
+      const earlier = new Subject<MentorshipMentorProgramDetail>();
+      const later = new Subject<MentorshipMentorProgramDetail>();
+      getMentorProgram.mockReturnValueOnce(earlier).mockReturnValueOnce(later);
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      later.next(withNewTask(2));
+      earlier.next(withNewTask(1));
+
+      expect(shownDetail()?.mentees[0].tasksTotal).toBe(2);
+    });
+
+    it('keeps the rows on screen when the re-read fails', () => {
+      build();
+      getMentorProgram.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.detectChanges();
+
+      expect(shownDetail()?.mentees[0].id).toBe('mnt_1');
+      expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
+    });
   });
 });

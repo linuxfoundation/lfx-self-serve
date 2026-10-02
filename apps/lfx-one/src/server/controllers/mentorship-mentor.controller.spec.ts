@@ -494,4 +494,61 @@ describe('MentorshipMentorController', () => {
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });
+
+  describe('createMenteeTasks', () => {
+    const APPLICATION_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+    const OTHER_APPLICATION_ID = '7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d';
+    const buildTaskReq = (requestBody: unknown): Request => ({ body: requestBody, params: {}, query: {} }) as unknown as Request;
+    const body = { applicationIds: [APPLICATION_ID, OTHER_APPLICATION_ID], name: '  Write a design doc  ', description: 'One page on the plan.' };
+
+    it('creates the parsed task and answers with the outcome, logging only counts', async () => {
+      const create = vi
+        .spyOn(MentorshipMentorService.prototype, 'createMenteeTasks')
+        .mockResolvedValue({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] });
+
+      await controller.createMenteeTasks(buildTaskReq(body), res, next);
+
+      expect(create).toHaveBeenCalledWith(expect.anything(), {
+        applicationIds: [APPLICATION_ID, OTHER_APPLICATION_ID],
+        name: 'Write a design doc',
+        description: 'One page on the plan.',
+      });
+      expect(res.json).toHaveBeenCalledWith({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] });
+      expect(next).not.toHaveBeenCalled();
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_mentor_tasks', expect.anything(), {
+        application_count: 2,
+        created_count: 1,
+        failed_count: 1,
+      });
+    });
+
+    it('rejects an invalid body before calling the service', async () => {
+      const create = vi.spyOn(MentorshipMentorService.prototype, 'createMenteeTasks');
+
+      await controller.createMenteeTasks(buildTaskReq({ ...body, applicationIds: ['application-1'] }), res, next);
+
+      expect(create).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'createMenteeTasks').mockRejectedValue(error);
+
+      await controller.createMenteeTasks(buildTaskReq(body), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const create = vi.spyOn(MentorshipMentorService.prototype, 'createMenteeTasks');
+
+      await controller.createMenteeTasks(buildTaskReq(body), res, next);
+
+      expect(create).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
 });

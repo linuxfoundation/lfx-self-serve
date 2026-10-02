@@ -39,7 +39,10 @@
             <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" (noteRequested)="onNoteRequested($event)" />
           }
           @case ('mentees') {
-            <lfx-mentorship-mentor-mentees-tab [mentees]="mentees()" (noteRequested)="onNoteRequested($event)" />
+            <lfx-mentorship-mentor-mentees-tab
+              [mentees]="mentees()"
+              (noteRequested)="onNoteRequested($event)"
+              (taskCreateRequested)="onTaskCreateRequested($event)" />
           }
           @case ('tasks') {
             <lfx-mentorship-mentor-tasks-tab [mentees]="mentees()" />

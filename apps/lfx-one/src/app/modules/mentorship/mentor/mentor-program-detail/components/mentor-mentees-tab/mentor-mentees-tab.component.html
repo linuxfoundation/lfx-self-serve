@@ -97,14 +97,16 @@
                   (onClick)="toggleTasksExpanded(row.id)"
                   [attr.data-testid]="'mentorship-mentor-mentee-view-tasks-' + row.id" />
               }
-              <lfx-button
-                icon="fa-light fa-plus"
-                severity="primary"
-                size="small"
-                [outlined]="true"
-                [ariaLabel]="'Create a task for ' + row.name"
-                (onClick)="onCreateTask(row)"
-                [attr.data-testid]="'mentorship-mentor-mentee-create-task-' + row.id" />
+              @if (row.canCreateTask) {
+                <lfx-button
+                  icon="fa-light fa-plus"
+                  severity="primary"
+                  size="small"
+                  [outlined]="true"
+                  [ariaLabel]="'Create a task for ' + row.name"
+                  (onClick)="onCreateTask(row)"
+                  [attr.data-testid]="'mentorship-mentor-mentee-create-task-' + row.id" />
+              }
             </div>
           </td>
         </tr>

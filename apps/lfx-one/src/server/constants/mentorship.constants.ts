@@ -78,6 +78,9 @@ export const MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES: readonly MentorshipUpstr
 /** Most application task reads the mentee applications read, and the mentor program detail's fallback, run at once. */
 export const MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY = 5;
 
+/** Most applications a mentor's task create reads and writes at once; upstream has no batch create. */
+export const MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY = 3;
+
 /**
  * How an application's status reads on a mentor's program detail. `hold` is an administrator's hold on an
  * application still under review, so the mentor sees it as pending.
