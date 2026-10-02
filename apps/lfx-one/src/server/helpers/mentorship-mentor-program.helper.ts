@@ -15,7 +15,7 @@ import {
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils/string.utils';
+import { isUuid } from '@lfx-one/shared/utils';
 
 import {
   MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP,
