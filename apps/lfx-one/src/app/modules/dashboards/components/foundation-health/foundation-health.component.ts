@@ -286,7 +286,7 @@ export class FoundationHealthComponent {
       ...metric,
       loading: this.totalMembersLoading(),
       value: data.totalMembers.toLocaleString(),
-      subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} members`,
+      subtitle: `Active ${this.projectContextService.selectedFoundation()?.name} members`,
       trend,
       changePercentage,
       chartData: {
@@ -313,7 +313,7 @@ export class FoundationHealthComponent {
               title: (context) => context[0]?.label ?? '',
               label: (context) => {
                 const count = context.parsed.y ?? 0;
-                return `Total members: ${count}`;
+                return `Active members: ${count}`;
               },
             },
           },
