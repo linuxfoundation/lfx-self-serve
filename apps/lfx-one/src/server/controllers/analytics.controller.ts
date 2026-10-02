@@ -61,7 +61,7 @@ import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../s
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
-import { HealthMetricsTrainingService } from '../services/health-metrics-training.service';
+import { HealthMetricsTrainingService, isSupportedTrainingRange } from '../services/health-metrics-training.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -4255,6 +4255,34 @@ export class AnalyticsController {
       const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
 
       logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-enrollment` — the period's enrollment, certification and revenue KPIs, by-type split and yearly trend. */
+  public async getTrainingEnrollment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_enrollment');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_enrollment');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_training_enrollment');
+      if (!isSupportedTrainingRange(range)) {
+        throw ServiceValidationError.forField('range', 'Training enrollment has no data for this range', { operation: 'get_training_enrollment' });
+      }
+
+      const response = await this.healthMetricsTrainingService.getEnrollment(req, { foundationSlug, range });
+
+      logger.success(req, 'get_training_enrollment', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        measured: response.measured,
+        delivery_type_count: response.byType.length,
+        trend_year_count: response.trend.length,
+      });
 
       res.json(response);
     } catch (error) {

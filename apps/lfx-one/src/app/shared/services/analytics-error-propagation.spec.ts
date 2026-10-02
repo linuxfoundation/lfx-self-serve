@@ -216,6 +216,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no training programme.
       call: () => service.getTrainingPresence({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getTrainingEnrollment',
+      url: '/api/analytics/training-enrollment',
+      // A swallowed failure would read as a foundation with no enrollments.
+      call: () => service.getTrainingEnrollment({ foundationSlug: 'aaif', range: 'YTD' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
