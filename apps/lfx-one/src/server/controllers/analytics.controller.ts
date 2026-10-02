@@ -34,6 +34,10 @@ import {
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
@@ -44,6 +48,7 @@ import type {
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
   HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsTrainingCoursesType,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -61,7 +66,7 @@ import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../s
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
-import { HealthMetricsTrainingService } from '../services/health-metrics-training.service';
+import { HealthMetricsTrainingService, isSupportedTrainingRange } from '../services/health-metrics-training.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -80,6 +85,7 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
+const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
 
 /** Bridge bars whose organizations the Members movements list serves. */
 const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
@@ -4276,6 +4282,55 @@ export class AnalyticsController {
         measured: response.measured,
         delivery_type_count: response.periods.YTD.byType.length,
         trend_year_count: response.trend.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-courses` — one page of the foundation's courses with enrollments in a period. */
+  public async getTrainingCourses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_courses');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_courses');
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_training_courses');
+      if (!isSupportedTrainingRange(range)) {
+        throw ServiceValidationError.forField('range', 'Training courses have no data for this range', { operation: 'get_training_courses' });
+      }
+
+      const type = getStringQueryParam(req, 'type') || 'all';
+      if (!TRAINING_COURSES_TYPES.has(type)) {
+        throw ServiceValidationError.forField('type', `Invalid type value. Allowed: ${[...TRAINING_COURSES_TYPES].join(', ')}`, {
+          operation: 'get_training_courses',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsTrainingService.getCourses(req, {
+        foundationSlug,
+        range,
+        type: type as HealthMetricsTrainingCoursesType,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match course names, which the request URL also logs.
+      logger.success(req, 'get_training_courses', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        type,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
       });
 
       res.json(response);

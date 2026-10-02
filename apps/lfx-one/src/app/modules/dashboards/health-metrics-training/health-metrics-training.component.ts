@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, type Signal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import {
@@ -21,6 +21,7 @@ import { catchError, distinctUntilChanged, map, of, startWith, switchMap } from 
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { TrainingCoursesComponent } from './components/training-courses/training-courses.component';
 import { TrainingEnrollComponent } from './components/training-enroll/training-enroll.component';
 
 import type { HealthMetricsTrainingPresenceState, HealthMetricsTrainingSubNavItem } from '@lfx-one/shared/interfaces';
@@ -31,7 +32,7 @@ import type { HealthMetricsTrainingPresenceState, HealthMetricsTrainingSubNavIte
  */
 @Component({
   selector: 'lfx-health-metrics-training',
-  imports: [EmptyStateComponent, HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, Skeleton, TrainingEnrollComponent],
+  imports: [EmptyStateComponent, HealthMetricsL2SectionDirective, HealthMetricsL2ShellComponent, Skeleton, TrainingCoursesComponent, TrainingEnrollComponent],
   templateUrl: './health-metrics-training.component.html',
 })
 export class HealthMetricsTrainingComponent {
@@ -45,7 +46,9 @@ export class HealthMetricsTrainingComponent {
   protected readonly crossReference = HEALTH_METRICS_TRAINING_SUB_NAV_CROSS_REFERENCE;
   protected readonly scopeNote = HEALTH_METRICS_TRAINING_SCOPE_NOTE;
   protected readonly noProgramme = HEALTH_METRICS_TRAINING_NO_PROGRAMME;
-  protected readonly subNavItems: HealthMetricsTrainingSubNavItem[] = buildHealthMetricsTrainingSubNavItems();
+  /** Courses with enrollments in the period, for the sub-nav badge; `null` until the section reports one. */
+  protected readonly coursesCount = signal<number | null>(null);
+  protected readonly subNavItems = computed<HealthMetricsTrainingSubNavItem[]>(() => buildHealthMetricsTrainingSubNavItems({ courses: this.coursesCount() }));
 
   private readonly foundationSlug = computed(() => this.projectContextService.selectedFoundation()?.slug ?? '');
   protected readonly state: Signal<HealthMetricsTrainingPresenceState> = this.initState();

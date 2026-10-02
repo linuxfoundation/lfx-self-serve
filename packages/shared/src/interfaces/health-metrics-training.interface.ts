@@ -112,3 +112,63 @@ export interface HealthMetricsTrainingEnrollmentView {
   byType: HealthMetricsTrainingEnrollmentTypeView[];
   trend: HealthMetricsTrainingEnrollmentYearView[];
 }
+
+/** The delivery-type cut over the courses table. */
+export type HealthMetricsTrainingCoursesType = 'all' | 'certifications' | 'elearning';
+
+/** A type pill whose id is the cut it applies. */
+export interface HealthMetricsTrainingCoursesTypeOption extends FilterPillOption {
+  id: HealthMetricsTrainingCoursesType;
+}
+
+/** Query params the Courses section reads on arrival and writes back; `null` clears one the URL carries. */
+export interface HealthMetricsTrainingQueryParams {
+  trnType?: HealthMetricsTrainingCoursesType | null;
+  trnSearch?: string | null;
+  trnPage?: number | null;
+}
+
+/** One page of the courses with enrollments in a period, cut by delivery type and a name search. */
+export interface HealthMetricsTrainingCoursesQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  type: HealthMetricsTrainingCoursesType;
+  /** Matched anywhere in the course name; empty matches every course. */
+  search: string;
+  offset: number;
+  pageSize: number;
+}
+
+/** One course's figures for the period. `isFree` is `null` where LF Education does not say (edX). */
+export interface HealthMetricsTrainingCourse {
+  courseKey: string;
+  courseName: string;
+  deliveryType: string;
+  isFree: boolean | null;
+  /** Whether purchases are captured for the course, so its revenue can be read as measured. */
+  hasPurchaseCoverage: boolean;
+  enrollments: number | null;
+  revenueUsd: number | null;
+}
+
+/** `GET /api/analytics/training-courses` — one page, ranked by enrollments. */
+export interface HealthMetricsTrainingCourses {
+  rows: HealthMetricsTrainingCourse[];
+  /** Courses matching the type and search. */
+  totalRecords: number;
+  /** Every course with enrollments in the period; `null` when the read was not measured. */
+  scopeTotal: number | null;
+}
+
+/** A courses row with every label ready to render. */
+export interface HealthMetricsTrainingCourseRowView {
+  courseKey: string;
+  courseName: string;
+  typeLabel: string;
+  typeClass: string;
+  enrollmentsLabel: string;
+  /** `free` for a free course, `not available` where revenue is not captured; never a `$0` that reads as none sold. */
+  revenueLabel: string;
+  /** Whether `revenueLabel` is a figure rather than a note, which renders muted. */
+  revenueMeasured: boolean;
+}
