@@ -141,6 +141,8 @@ export class EventsService {
           WHERE NOT (${this.isPastEventSql()})
             ${eventIdFilter}
             ${affiliatedFilter}
+            -- Hide co-located events from discovery rows only; registered_events keeps them.
+            AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
         ),
         registered_events AS (
