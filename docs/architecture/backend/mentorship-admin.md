@@ -45,6 +45,7 @@ The Enroll form's lookups (program name availability, LF projects, invitable use
 ## Behavior
 
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
+- The routes check that a user is signed in, not that they are an admin. They serve mock data today. When a screen moves to the mentorship service, it must forward the caller's bearer token so upstream enforces admin access, or add a BFF-side admin guard, with a 403 test for a non-admin user.
 - The read routes stay available while impersonating. Admin write routes added later take `blockDuringImpersonation` (see [Impersonation](./impersonation.md)).
 - The app service falls back to an empty list (or `null` for a detail) on any failure, so the admin pages never block on a fault. A 404 is not logged.
-- Logs carry only ids, counts and flags. Names and emails never go in logs.
+- Logs carry ids, counts, flags and the list filters (including the `search` text). Names and emails never go in logs.

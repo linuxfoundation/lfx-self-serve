@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -25,7 +26,7 @@ export class MentorshipAdminController {
 
       const rawStatus = parseTrimmedString(status);
       if (rawStatus !== undefined && !isMentorshipProgramStatus(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: open, pending-review, completed`, {
+        throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_PROGRAM_STATUSES.join(', ')}`, {
           operation: 'get_mentorship_admin_programs',
         });
       }

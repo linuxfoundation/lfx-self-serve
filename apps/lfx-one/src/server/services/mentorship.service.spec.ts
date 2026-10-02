@@ -24,7 +24,7 @@ const { MicroserviceProxyService } = await import('./microservice-proxy.service'
 const { EmailVerificationService } = await import('./email-verification.service');
 
 function buildReq(): Request {
-  return { path: '/api/mentorship/admin/programs' } as Request;
+  return { path: '/api/mentorship/program-review/x' } as Request;
 }
 
 describe('MentorshipService program review', () => {
