@@ -5,7 +5,6 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, InputSignal, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyPendingApplication } from '@lfx-one/shared/interfaces';
 import { getEntityCommands } from '@lfx-one/shared/utils';
@@ -23,7 +22,7 @@ import { of, switchMap, take } from 'rxjs';
  */
 @Component({
   selector: 'lfx-committee-pending-applications',
-  imports: [ButtonComponent, TagComponent, RouterLink, DatePipe],
+  imports: [TagComponent, RouterLink, DatePipe],
   templateUrl: './committee-pending-applications.component.html',
   styleUrl: './committee-pending-applications.component.scss',
 })
