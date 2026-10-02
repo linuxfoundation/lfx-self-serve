@@ -61,7 +61,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, map, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -695,6 +695,10 @@ export class CommitteeMembersComponent implements OnInit {
       .pipe(
         take(6),
         exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
+        // Filter to pending-only to match this.invites() which only holds pending invites.
+        // Without this filter, accepted/revoked invites in the API response inflate the count
+        // and the condition would fire immediately on the first poll regardless of the new invite.
+        map((invites) => (Array.isArray(invites) ? invites.filter((i) => i.status === 'pending') : null)),
         filter((invites): invites is CommitteeInvite[] => Array.isArray(invites) && invites.length > countBefore),
         take(1),
         takeUntilDestroyed(this.destroyRef)

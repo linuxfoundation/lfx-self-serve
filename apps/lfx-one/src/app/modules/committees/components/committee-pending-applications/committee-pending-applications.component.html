@@ -23,7 +23,7 @@
               <a
                 [routerLink]="application.viewCommands"
                 [queryParams]="application.viewQueryParams"
-                [state]="{ backLabel: 'My Groups' }"
+                [state]="{ backLabel: 'My Groups', fromMeLens: true }"
                 class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate"
                 [attr.title]="application.committee_name"
                 [attr.aria-label]="'Open group ' + application.committee_name"
@@ -36,17 +36,18 @@
             </div>
           </div>
           <div class="flex items-center gap-2 self-start sm:self-auto sm:shrink-0">
-            <lfx-button
-              size="small"
-              severity="secondary"
-              [text]="true"
-              label="View group"
-              icon="fa-light fa-arrow-up-right-from-square"
-              [ariaLabel]="'View group ' + application.committee_name"
+            <!-- Plain anchor so router navigation state (backLabel + fromMeLens) is actually forwarded.
+                 ButtonComponent has no `state` input and does not forward it to its inner RouterLink. -->
+            <a
               [routerLink]="application.viewCommands"
               [queryParams]="application.viewQueryParams"
-              [state]="{ backLabel: 'My Groups' }"
-              data-testid="committee-pending-applications-view" />
+              [state]="{ backLabel: 'My Groups', fromMeLens: true }"
+              class="inline-flex items-center gap-1.5 rounded text-xs font-medium text-gray-600 hover:text-blue-600 transition-colors px-2 py-1"
+              [attr.aria-label]="'View group ' + application.committee_name"
+              data-testid="committee-pending-applications-view">
+              <i class="fa-light fa-arrow-up-right-from-square text-[11px]" aria-hidden="true"></i>
+              View group
+            </a>
           </div>
         </li>
       }

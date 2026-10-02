@@ -1578,15 +1578,12 @@ export class CommitteeService {
       return null;
     }
 
-    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'committee_application',
-          tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { maxResults: 20 }
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'committee_application',
+        tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
 
     // Return the most recent pending application, if any.
@@ -1619,7 +1616,7 @@ export class CommitteeService {
           tags_all: [`applicant_email:${email}`],
           ...(pageToken && { page_token: pageToken }),
         }),
-      { maxResults: 100 }
+      { failOnPartial: true }
     );
 
     const pending = applications.filter((a) => a.status === 'pending');
@@ -1628,17 +1625,24 @@ export class CommitteeService {
     }
 
     // Fetch committee names in parallel for each unique committee_uid.
+    // Use getCommitteeById with includeProjectMetadata so project_slug and is_foundation are
+    // populated — getCommitteeBase returns the raw upstream object which lacks these enriched fields.
     const uniqueUids = [...new Set(pending.map((a) => a.committee_uid))];
     const committeeMap = new Map<string, { name: string; is_foundation?: boolean; project_slug?: string }>();
 
     await Promise.allSettled(
       uniqueUids.map(async (uid) => {
-        const committee = await this.getCommitteeBase(req, uid);
-        committeeMap.set(uid, {
-          name: committee?.name ?? uid,
-          is_foundation: committee?.is_foundation,
-          project_slug: committee?.project_slug,
-        });
+        try {
+          const committee = await this.getCommitteeById(req, uid, { includeProjectMetadata: true });
+          committeeMap.set(uid, {
+            name: committee?.name ?? uid,
+            is_foundation: committee?.is_foundation ?? undefined,
+            project_slug: committee?.project_slug ?? undefined,
+          });
+        } catch {
+          // Committee not accessible or not found — fall back to the UID as display name.
+          committeeMap.set(uid, { name: uid });
+        }
       })
     );
 

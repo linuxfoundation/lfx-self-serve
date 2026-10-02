@@ -456,6 +456,10 @@ export class CommitteeViewComponent {
         .subscribe(({ uid, application }) => {
           if (application?.status === 'pending') {
             this.joinApplicationSession.markPending(uid);
+          } else {
+            // null = no pending application (rejected / withdrawn / never applied).
+            // Clear any stale session marker so the Apply-to-Join CTAs are re-enabled.
+            this.joinApplicationSession.clearPending(uid);
           }
         });
     }

@@ -1370,6 +1370,7 @@ export class CommitteeController {
     const startTime = logger.startOperation(req, 'get_my_committee_applications', {});
 
     try {
+      res.set('Cache-Control', 'private, no-cache');
       const applications = await this.committeeService.getMyApplications(req);
       logger.success(req, 'get_my_committee_applications', startTime, { count: applications.length });
       res.json(applications);
@@ -1388,6 +1389,7 @@ export class CommitteeController {
     const startTime = logger.startOperation(req, 'get_my_committee_application', { committee_id: id });
 
     try {
+      res.set('Cache-Control', 'private, no-cache');
       const application = await this.committeeService.getMyApplication(req, id);
 
       if (!application) {

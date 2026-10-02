@@ -152,10 +152,11 @@
       }
       <!-- Context-transition notice — shown when the user arrived from Me Lens My Groups.
            Explains the lens switch so the sidebar/context change isn't surprising.
-           Uses `is_foundation` to pick "foundation" vs "project" context label. -->
-      @if (fromMeLens && (committee()?.project_name || committee()?.foundation_name)) {
+           Uses `is_foundation` to pick "foundation" vs "project" context label.
+           Always uses project_name — foundation_name is not populated by the enrichment layer. -->
+      @if (fromMeLens && committee()?.project_name) {
         @let scopeLabel = committee()?.is_foundation ? 'foundation' : 'project';
-        @let scopeName = committee()?.is_foundation ? committee()?.foundation_name : committee()?.project_name;
+        @let scopeName = committee()?.project_name;
         <div
           class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600"
           role="note"

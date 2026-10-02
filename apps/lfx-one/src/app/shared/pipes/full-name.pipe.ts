@@ -17,6 +17,6 @@ export class FullNamePipe implements PipeTransform {
       return fullName;
     }
 
-    return fallback;
+    return entity.email || fallback;
   }
 }

@@ -250,6 +250,11 @@
           receive a separate account-creation email.</span
         >
       </p>
+    } @else if (collectOnly) {
+      <p class="text-xs text-gray-500 flex items-center gap-1.5" data-testid="add-member-footer-hint">
+        <i class="fa-light fa-inbox flex-none" aria-hidden="true"></i>
+        <span>Invites are <strong class="font-medium text-gray-700">staged</strong> — no emails are sent until you complete the wizard.</span>
+      </p>
     } @else {
       <p class="text-xs text-gray-500 flex items-center gap-1.5" data-testid="add-member-footer-hint">
         <i class="fa-light fa-paper-plane flex-none" aria-hidden="true"></i>
