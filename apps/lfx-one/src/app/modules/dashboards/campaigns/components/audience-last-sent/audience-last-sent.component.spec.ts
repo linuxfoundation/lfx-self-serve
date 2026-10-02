@@ -190,35 +190,59 @@ describe('AudienceLastSentComponent', () => {
     expect(text).not.toContain('0 contacts');
   });
 
-  describe('contact reach', () => {
-    // HubSpot omits the size property on some list shapes, so a send's lists split into those
-    // that reported a size and those that did not. Summing an absent size as zero left the
-    // total short by that entire list while the label still read as an exact figure --
-    // understating how many people a send reached, which is the one error direction that must
-    // never be presented as exact.
-    it('labels a partial sum as a floor when a list withheld its size', () => {
+  describe('reported list memberships', () => {
+    // An earlier version of this label said "N contacts" and then "at least N contacts". Both
+    // were wrong, and in opposite directions at once:
+    //
+    //   - a sum OVER-counts whenever lists overlap, which the api-catalog records as the normal
+    //     case ("registrant/speaker overlap is the normal case"), so "at least" is a FALSE floor;
+    //   - a list whose size HubSpot withheld contributes nothing, so it can understate too.
+    //
+    // No honest inequality exists, so the label states what the number IS.
+    it('states memberships rather than claiming a contact count', () => {
+      render({
+        emails: [email({ includedLists: [brief({ size: 5000 }), brief({ listId: '302', name: 'Speakers', size: 5000 })] })],
+      });
+
+      const text = host().textContent ?? '';
+      expect(text).toContain('10,000 list memberships');
+      expect(text).toContain('lists may overlap');
+      expect(text, 'a sum of overlapping lists is not a contact count').not.toContain('10,000 contacts');
+      expect(text, '"at least" is a false floor when the union can be smaller than the sum').not.toContain('at least');
+    });
+
+    it('names how many lists reported a size when some did not', () => {
       render({
         emails: [email({ includedLists: [brief({ size: 5000 }), brief({ listId: '302', name: 'Speakers', size: undefined })] })],
       });
 
-      const text = host().textContent ?? '';
-      expect(text).toContain('at least 5,000 contacts before suppression');
+      expect(host().textContent ?? '').toContain('across 1 of 2 lists');
     });
 
-    it('states an exact figure only when every list reported its size', () => {
+    it('counts a MISSING list against completeness', () => {
+      // `usable` drops missing lists, so a send whose third list was deleted reported
+      // "across 2 of 2" and read as complete -- the completeness claim silently excluded the
+      // very thing that made it incomplete.
       render({
-        emails: [email({ includedLists: [brief({ size: 5000 }), brief({ listId: '302', name: 'Speakers', size: 120 })] })],
+        emails: [
+          email({
+            includedLists: [
+              brief({ size: 5000 }),
+              brief({ listId: '302', name: 'Speakers', size: 120 }),
+              brief({ listId: '303', missing: true, size: undefined }),
+            ],
+          }),
+        ],
       });
 
       const text = host().textContent ?? '';
-      expect(text).toContain('5,120 contacts before suppression');
-      expect(text).not.toContain('at least');
+      expect(text, 'a deleted list must not be excluded from the completeness count').toContain('across 2 of 3 lists');
     });
 
-    it('says nothing about reach when no list reported a size', () => {
+    it('says nothing when no list reported a size', () => {
       render({ emails: [email({ includedLists: [brief({ size: undefined })] })] });
 
-      expect(host().textContent ?? '').not.toContain('contacts before suppression');
+      expect(host().textContent ?? '').not.toContain('list memberships');
     });
   });
 

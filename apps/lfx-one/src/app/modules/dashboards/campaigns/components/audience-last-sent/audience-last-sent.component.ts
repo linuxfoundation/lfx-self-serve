@@ -7,26 +7,29 @@ import { Component, computed, input, output } from '@angular/core';
 import type { AudienceLastSentEmail, AudienceListBrief, AudienceMasterListBrief } from '@lfx-one/shared/interfaces';
 
 /**
- * The contact-reach label for one prior send, or '' when nothing can be said.
+ * What one prior send's included lists REPORT, or '' when nothing can be said.
  *
- * Three states, not two. HubSpot omits the size property on some list shapes, so a send's lists
- * split into those that reported a size and those that did not:
+ * Deliberately not called reach, and deliberately not "contacts". A sum of list sizes is neither
+ * an exact contact count nor a reliable bound in EITHER direction:
  *
- *   - none reported -> '' . There is no number to show, and "0 contacts" would be a measurement.
- *   - some reported -> a FLOOR. The sum is real but incomplete, so it is labelled "at least".
- *     Presenting it bare understates reach, and understating is the one error direction that
- *     must not read as exact: the operator sizes their own send against this figure.
- *   - all reported  -> the exact figure.
+ *   - It over-counts whenever lists overlap, which `docs/api-catalog.md` records as the normal
+ *     case ("summing list sizes over-counts, because registrant/speaker overlap is the normal
+ *     case"). Two lists holding the same 5,000 contacts sum to 10,000.
+ *   - So "at least N" is a FALSE floor, not a cautious one: the union can be smaller than the
+ *     sum, and an earlier version of this label said exactly that.
+ *   - And a list whose size HubSpot withheld contributes nothing, so the sum can understate too.
  *
- * "before suppression" throughout: this is the included lists only, so the delivered count is
- * lower again once the suppression lists are applied.
+ * Both error directions at once means no honest inequality exists, and the only honest statement
+ * is what the number IS: the memberships the portal reported, across the lists that reported one.
+ * An operator who needs the real reach has `preview-count`, which unions rather than sums.
  */
-function reachLabel(sizedCount: number, usableCount: number, knownReach: number): string {
+function reportedMembershipsLabel(sizedCount: number, includedCount: number, total: number): string {
   if (sizedCount === 0) {
     return '';
   }
-  const figure = knownReach.toLocaleString('en-US');
-  return sizedCount === usableCount ? `${figure} contacts before suppression` : `at least ${figure} contacts before suppression`;
+  const figure = total.toLocaleString('en-US');
+  const scope = sizedCount === includedCount ? '' : ` across ${sizedCount} of ${includedCount} lists`;
+  return `${figure} list memberships${scope} — lists may overlap`;
 }
 
 /**
@@ -129,7 +132,12 @@ export class AudienceLastSentComponent {
       // zero leaves the total short by that entire list -- and the label below then presents a
       // partial sum as the reach, understating how many people a send actually touched.
       const sized = usable.filter((list) => list.size !== undefined);
-      const knownReach = sized.reduce((sum, list) => sum + (list.size ?? 0), 0);
+      const knownMemberships = sized.reduce((sum, list) => sum + (list.size ?? 0), 0);
+      // Counted against EVERY included list, not just the resolvable ones. `usable` drops the
+      // missing ones, so a send whose third list was deleted reported "across 2 of 2" and read
+      // as complete -- the completeness claim silently excluded the thing that made it
+      // incomplete.
+      const accountedFor = email.includedLists.length;
       const blocked = this.attachBlockedReason(email);
       return {
         ...email,
@@ -138,10 +146,7 @@ export class AudienceLastSentComponent {
         copyable: !email.listsUnavailable && usable.length > 0,
         attachBlocked: blocked,
         attached: blocked === null && attached !== null && usable[0]?.listId === attached,
-        // A floor when any list withheld its size, an exact figure only when every one reported.
-        // Understating reach is the one error direction that must never read as exact: the
-        // operator sizes their own send against this number.
-        reachText: reachLabel(sized.length, usable.length, knownReach),
+        reachText: reportedMembershipsLabel(sized.length, accountedFor, knownMemberships),
       };
     });
   });
