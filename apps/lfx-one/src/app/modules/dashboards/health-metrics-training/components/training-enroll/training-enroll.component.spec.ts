@@ -152,6 +152,16 @@ describe('TrainingEnrollComponent', () => {
     const colors = data.datasets[0].backgroundColor as string[];
     expect(colors[0]).not.toBe(colors[1]);
     expect(colors[1]).toMatch(/^rgba\(.*0\.4\)$/);
+    expect(text('training-enroll-trend-caption')).toBe('thousands per year');
+  });
+
+  it('captions a small programme per year and keeps its axis ticks as plain counts', async () => {
+    await render(enrollment({ trend: [{ year: currentYear - 1, enrollments: 150 }] }));
+
+    expect(text('training-enroll-trend-caption')).toBe('per year');
+    const ticks = fixture.componentInstance['chartOptions'].scales?.['y']?.ticks as { callback: (value: number) => string };
+    expect(ticks.callback(50)).toBe('50');
+    expect(ticks.callback(2000)).toBe('2K');
   });
 
   it('says a delta is not available without a baseline, and names why', async () => {

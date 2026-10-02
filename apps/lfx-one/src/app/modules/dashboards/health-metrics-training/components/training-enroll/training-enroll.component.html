@@ -93,7 +93,7 @@
     <div class="flex flex-col gap-3" data-testid="training-enroll-trend">
       <div class="flex flex-wrap items-baseline justify-between gap-2">
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Enrollment trend</h4>
-        <span class="text-[12px] text-gray-400">thousands per year</span>
+        <span class="text-[12px] text-gray-400" data-testid="training-enroll-trend-caption">{{ trendCaption() }}</span>
       </div>
       @if (view().trend.length === 0) {
         <p class="text-sm text-gray-500" data-testid="training-enroll-trend-empty">No yearly enrollment recorded for this foundation.</p>

@@ -71,6 +71,7 @@ export class TrainingEnrollComponent {
   protected readonly byTypeTitle = computed(() => (this.metric() === 'revenue' ? 'Revenue by type' : 'Enrollments by type'));
   protected readonly byTypeNote = computed(() => (this.metric() === 'revenue' ? 'highest revenue first' : 'highest volume first'));
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view().trend));
+  protected readonly trendCaption = computed(() => (this.view().trend.some((year) => (year.enrollments ?? 0) >= 1000) ? 'thousands per year' : 'per year'));
   protected readonly chartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -90,8 +91,8 @@ export class TrainingEnrollComponent {
         beginAtZero: true,
         grid: { color: lfxColors.gray[200] },
         border: { display: false },
-        // The caption reads "thousands per year", so the axis is labelled in K.
-        ticks: { color: lfxColors.gray[500], font: { size: 10 }, callback: (value) => `${Number(value) / 1000}K` },
+        // Thousands read in K; a small programme keeps plain counts so ticks never show 0.05K.
+        ticks: { color: lfxColors.gray[500], font: { size: 10 }, callback: (value) => this.formatTick(Number(value)) },
       },
     },
   };
@@ -146,6 +147,10 @@ export class TrainingEnrollComponent {
   }
 
   /** Enrollments per year; the open year is drawn lighter, as it will always look short until it ends. */
+  private formatTick(value: number): string {
+    return value >= 1000 ? `${value / 1000}K` : String(value);
+  }
+
   private buildChart(trend: HealthMetricsTrainingEnrollmentYearView[]): ChartData<'bar'> {
     const color = lfxColors.blue[600];
 
