@@ -9,7 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
 import { MentorshipNoteRequest, MentorshipProgramDetail, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { filter, map, switchMap, take, tap } from 'rxjs';
 
@@ -49,7 +49,7 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
 })
 export class ProgramDetailComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly dialogService = inject(DialogService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly destroyRef = inject(DestroyRef);
@@ -111,7 +111,7 @@ export class ProgramDetailComponent {
       toObservable(this.programId).pipe(
         filter((programId) => !!programId),
         tap(() => this.isLoading.set(true)),
-        switchMap((programId) => this.mentorshipService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
+        switchMap((programId) => this.mentorshipAdminService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
       ),
       { initialValue: null }
     );

@@ -77,19 +77,21 @@ import type {
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
   MentorshipNoteDisplay,
-  MentorshipProgram,
-  MentorshipProgramDetail,
-  MentorshipProgramLists,
   MentorshipProgramMentee,
-  MentorshipProgramMentor,
-  MentorshipProgramTabCounts,
   MentorshipProgramTerm,
-  MentorshipProgramTermRow,
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
+import type {
+  MentorshipProgram,
+  MentorshipProgramDetail,
+  MentorshipProgramLists,
+  MentorshipProgramMentor,
+  MentorshipProgramTabCounts,
+  MentorshipProgramTermRow,
+} from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,

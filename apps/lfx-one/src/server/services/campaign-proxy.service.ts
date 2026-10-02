@@ -1303,7 +1303,7 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
  */
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
-// DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
+// DERIVED from the shared constant, not a second hand-written list. AGENTS.md requires shared
 // constants to live in `@lfx-one/shared`, and the controller already validates against this one —
 // a duplicate here would let a newly-added delivery type be accepted by the controller and
 // rejected by this service, which is the worst version of the drift: it type-checks, and the two

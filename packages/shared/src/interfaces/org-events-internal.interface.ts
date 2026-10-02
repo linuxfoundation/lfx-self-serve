@@ -3,7 +3,7 @@
 
 // Internal Snowflake query-row shapes for the Org Lens Events backend service.
 // These mirror raw column names returned by the queries in org-lens-events.service.ts.
-// They live in the shared package because CLAUDE.md prohibits module-level interfaces
+// They live in the shared package because AGENTS.md prohibits module-level interfaces
 // inside apps/lfx-one/; they are not part of the public API surface consumed by the frontend.
 
 /** Row from ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS (platinum_lfx_one_org_events). */

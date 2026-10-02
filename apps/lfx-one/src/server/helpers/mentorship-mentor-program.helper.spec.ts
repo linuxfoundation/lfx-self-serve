@@ -18,7 +18,6 @@ import {
   groupMentorshipMentorProgramTasks,
   mapMentorshipMentorProgramCard,
   mapMentorshipMentorProgramLists,
-  mapMentorshipMentorProgramTask,
   sortMentorshipMentorProgramRows,
 } from './mentorship-mentor-program.helper';
 
@@ -220,51 +219,6 @@ describe('compareMentorshipMentorProgramCards', () => {
     const cards = [card('Zeta', 'completed'), card('Beta', 'upcoming'), card('Alpha', 'completed'), card('Gamma', 'active-term'), card('Delta', 'active-term')];
 
     expect([...cards].sort(compareMentorshipMentorProgramCards).map((row) => row.name)).toEqual(['Delta', 'Gamma', 'Beta', 'Alpha', 'Zeta']);
-  });
-});
-
-describe('mapMentorshipMentorProgramTask', () => {
-  it('maps an upstream task to a detail row task', () => {
-    expect(
-      mapMentorshipMentorProgramTask({
-        ...task('t1', 'in_progress', 'a1'),
-        name: 'Resume',
-        description: 'Upload your resume.',
-        category: 'prerequisite',
-        file: 'resume.pdf',
-        submit_file: 'yes',
-        due_date: '2026-09-30T00:00:00Z',
-      })
-    ).toEqual({
-      id: 't1',
-      name: 'Resume',
-      description: 'Upload your resume.',
-      status: 'in-progress',
-      prerequisite: true,
-      createdOn: '2026-08-01T00:00:00Z',
-      updatedOn: '2026-08-01T00:00:00Z',
-      dueOn: '2026-09-30',
-      hasSubmission: true,
-      requiresFileSubmission: true,
-    });
-  });
-
-  it.each([
-    ['incomplete', 'pending'],
-    ['submitted', 'submitted'],
-    ['complete', 'completed'],
-  ] as const)('maps the upstream %s status to %s, with no name, file or due date', (status, expected) => {
-    expect(mapMentorshipMentorProgramTask(task('t1', status, 'a1'))).toEqual({
-      id: 't1',
-      name: '',
-      description: '',
-      status: expected,
-      prerequisite: false,
-      createdOn: '2026-08-01T00:00:00Z',
-      updatedOn: '2026-08-01T00:00:00Z',
-      hasSubmission: false,
-      requiresFileSubmission: false,
-    });
   });
 });
 

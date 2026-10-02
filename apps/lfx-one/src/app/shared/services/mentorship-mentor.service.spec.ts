@@ -66,7 +66,7 @@ describe('MentorshipMentorService — read error mapping', () => {
   });
 
   it('lets mentor-program detail 503 and 404 errors propagate so the page can distinguish retry from not-found', () => {
-    // Unlike MentorshipService.getProgram, getMentorProgram must not swallow 404 into a null fallback.
+    // Unlike MentorshipAdminService.getProgram, getMentorProgram must not swallow 404 into a null fallback.
     // MentorProgramDetailComponent depends on the error status for not-found vs retry.
     let failed = false;
     service.getMentorProgram('mp_gridflow_fall26').subscribe({

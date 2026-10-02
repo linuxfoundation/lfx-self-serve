@@ -6,11 +6,9 @@ import type {
   MentorshipInvitableUser,
   MentorshipInvitableUsersResponse,
   MentorshipProgramApplicant,
-  MentorshipProgramLists,
   MentorshipProgramMentee,
-  MentorshipProgramMentor,
-  MentorshipProgramTermRow,
 } from '../interfaces/mentorship.interface';
+import type { MentorshipProgramLists, MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 
 export const EMPTY_MENTORSHIP_PROGRAM_LISTS: MentorshipProgramLists = {
   mentees: [],
