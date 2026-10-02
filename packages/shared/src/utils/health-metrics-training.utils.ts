@@ -75,7 +75,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
       // Refunds can net a prior window negative, which would flip the sign of the change.
       stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), totals.revenueUsd, positiveOrNull(baseline?.revenueUsd ?? null)),
     ],
-    typeCountLabel: formatTrainingTypeCount(byType.filter((type) => !isStructuralZero(type, 'enrollments')).length),
+    typeCountLabel: formatTrainingTypeCount(byType.filter(hasEnrollments).length),
     byType: buildTrainingTypeRows(byType, metric),
     trend: [...enrollment.trend]
       .sort((a, b) => a.year - b.year)
@@ -92,13 +92,13 @@ export function buildHealthMetricsTrainingEnrollmentView(
   };
 }
 
-/** Enrollments keep the model's `sort_rank` order; revenue re-ranks highest first. NULL and 0 rows stay, only structural types drop. */
+/** Enrollments keep the model's `sort_rank` order, showing only types with any; revenue drops edX and ranks highest first. */
 function buildTrainingTypeRows(
   types: HealthMetricsTrainingEnrollmentType[],
   metric: HealthMetricsTrainingEnrollmentMetric
 ): HealthMetricsTrainingEnrollmentTypeView[] {
   const pick = (type: HealthMetricsTrainingEnrollmentType): number | null => (metric === 'revenue' ? type.revenueUsd : type.enrollments);
-  const shown = types.filter((type) => !isStructuralZero(type, metric));
+  const shown = metric === 'revenue' ? types.filter((type) => !isStructuralZero(type, metric)) : types.filter(hasEnrollments);
   const max = Math.max(0, ...shown.map((type) => pick(type) ?? 0));
   const ordered = metric === 'revenue' ? [...shown].sort((a, b) => (pick(b) ?? -Infinity) - (pick(a) ?? -Infinity)) : shown;
 
@@ -115,6 +115,10 @@ function buildTrainingTypeRows(
 
 function isStructuralZero(type: HealthMetricsTrainingEnrollmentType, metric: HealthMetricsTrainingEnrollmentMetric): boolean {
   return HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES[metric].includes(type.deliveryType);
+}
+
+function hasEnrollments(type: HealthMetricsTrainingEnrollmentType): boolean {
+  return !isStructuralZero(type, 'enrollments') && (type.enrollments ?? 0) > 0;
 }
 
 function formatTrainingTypeCount(count: number): string {
