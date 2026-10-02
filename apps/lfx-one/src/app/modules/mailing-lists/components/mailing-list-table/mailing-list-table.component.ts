@@ -137,6 +137,9 @@ export class MailingListTableComponent {
       rejectButtonStyleClass: 'p-button-sm p-button-secondary',
       accept: () => {
         this.mailingListService.deleteMember(row.uid, memberUid).subscribe({
+          // deleteMember already polls the query-service index until the member record is gone
+          // (see pollUntilResourceRemoved server-side), so the index is consistent by the time
+          // this resolves — safe to refresh immediately.
           next: () => {
             this.messageService.add({ severity: 'success', summary: 'Left mailing list', detail: `You have left ${listName}.` });
             this.refresh.emit();
@@ -171,7 +174,9 @@ export class MailingListTableComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Joined mailing list', detail: `You have joined ${listName}.` });
-          this.refresh.emit();
+          // createMember intentionally skips index-poll wait on the hot path (LFXV2-2712), so an
+          // immediate refetch can race the query-service index — give it a beat to catch up.
+          setTimeout(() => this.refresh.emit(), 1000);
         },
         error: (err) => {
           console.error('Failed to join mailing list', err);
@@ -183,13 +188,17 @@ export class MailingListTableComponent {
   private initTableRows(): Signal<MailingListTableRowVm[]> {
     return computed(() => {
       const joinedUids = this.myMailingListUids();
+      // While myMailingListUids is still loading, it may not yet reflect the caller's actual
+      // memberships — don't show Join (which would incorrectly offer it for lists they already
+      // belong to) until it's settled.
+      const stillLoading = this.loading();
       return this.mailingLists().map((mailingList) => {
         const myDeliveryMode = (mailingList as Partial<MyMailingList>).my_delivery_mode;
         return {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
-          canJoin: mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
+          canJoin: !stillLoading && mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
           mySubscriptionLabel: myDeliveryMode ? this.deliveryModeLabels[myDeliveryMode] : 'Subscribed',
         };
       });

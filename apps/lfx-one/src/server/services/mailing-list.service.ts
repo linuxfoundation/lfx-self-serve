@@ -585,7 +585,7 @@ export class MailingListService {
    */
   public async updateMember(req: Request, mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Promise<MailingListMember> {
     const existingMember = await this.fetchMemberForMutation(req, mailingListId, memberId, 'update_mailing_list_member');
-    const grant = await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
+    const grant = await this.assertMemberWriteAccess(req, mailingListId, existingMember.email, existingMember.username);
 
     if (grant === 'self') {
       const escalatesModStatus = data.mod_status !== undefined && data.mod_status !== existingMember.mod_status;
@@ -619,7 +619,7 @@ export class MailingListService {
    */
   public async deleteMember(req: Request, mailingListId: string, memberId: string): Promise<void> {
     const existingMember = await this.fetchMemberForMutation(req, mailingListId, memberId, 'delete_mailing_list_member');
-    await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
+    await this.assertMemberWriteAccess(req, mailingListId, existingMember.email, existingMember.username);
 
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'DELETE');
 
@@ -637,13 +637,25 @@ export class MailingListService {
 
   /**
    * Allows the action when the caller has writer access on the mailing list, or when
-   * targetEmail matches the caller's own authenticated identity (self-service). Throws
-   * AuthorizationError (403) otherwise. Returns which grant applied so callers can apply
-   * additional per-operation scoping to the self-service path.
+   * targetEmail or targetUsername matches the caller's own authenticated identity
+   * (self-service). Throws AuthorizationError (403) otherwise. Returns which grant applied
+   * so callers can apply additional per-operation scoping to the self-service path.
    */
-  private async assertMemberWriteAccess(req: Request, mailingListId: string, targetEmail: string | undefined): Promise<'self' | 'writer'> {
+  private async assertMemberWriteAccess(
+    req: Request,
+    mailingListId: string,
+    targetEmail: string | undefined,
+    targetUsername?: string | undefined
+  ): Promise<'self' | 'writer'> {
     const callerEmail = getEffectiveEmail(req);
     if (callerEmail && targetEmail && callerEmail === targetEmail.toLowerCase()) {
+      return 'self';
+    }
+
+    // Same normalization as getMyMailingLists — strips the auth0|/authelia| prefix before comparing.
+    const rawUsername = await getUsernameFromAuth(req);
+    const callerUsername = rawUsername ? stripAuthPrefix(rawUsername) : null;
+    if (callerUsername && targetUsername && callerUsername === targetUsername) {
       return 'self';
     }
 

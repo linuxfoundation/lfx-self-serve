@@ -9,8 +9,10 @@ import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
+import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
+import type { MockInstance } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MailingListTableComponent } from './mailing-list-table.component';
@@ -38,14 +40,13 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
   let createMember: ReturnType<typeof vi.fn>;
   let deleteMember: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
-  let confirm: ReturnType<typeof vi.fn>;
+  let confirm: MockInstance<(confirmation: Confirmation) => ConfirmationService>;
 
   const render = async (mailingLists: GroupsIOMailingList[], userEmail: string | null = 'me@example.com'): Promise<void> => {
     TestBed.resetTestingModule();
     createMember = vi.fn(() => of({}));
     deleteMember = vi.fn(() => of(undefined));
     messageAdd = vi.fn();
-    confirm = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [MailingListTableComponent],
@@ -54,10 +55,15 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
         { provide: MailingListService, useValue: { createMember, deleteMember } },
         { provide: UserService, useValue: { user: () => (userEmail ? { email: userEmail } : null) } },
         { provide: PersonaService, useValue: { currentPersona: () => 'contributor' } },
-        { provide: ConfirmationService, useValue: { confirm } },
+        ConfirmationService,
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     }).compileComponents();
+
+    // Spy on the real ConfirmationService rather than mocking it outright — p-confirmDialog's
+    // constructor subscribes to its requireConfirmation$/accept observables, which a plain object
+    // mock doesn't provide and which crashes fixture.detectChanges() with a TypeError.
+    confirm = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm');
 
     fixture = TestBed.createComponent(MailingListTableComponent);
     fixture.componentRef.setInput('mailingLists', mailingLists);
@@ -136,7 +142,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
 
       expect(confirm).toHaveBeenCalledTimes(1);
       const confirmArgs = confirm.mock.calls[0][0];
-      confirmArgs.accept();
+      confirmArgs.accept?.();
 
       expect(deleteMember).toHaveBeenCalledWith('list-1', 'member-1');
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
