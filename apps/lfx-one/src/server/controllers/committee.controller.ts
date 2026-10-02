@@ -1362,7 +1362,7 @@ export class CommitteeController {
   }
 
   /**
-   * GET /committees/applications/my
+   * GET /committees/my-applications
    * Returns all of the caller's own pending join applications across every committee.
    * No writer guard — callers can only see their own applications.
    */
@@ -1380,7 +1380,7 @@ export class CommitteeController {
   }
 
   /**
-   * GET /committees/:id/applications/my
+   * GET /committees/:id/my-applications
    * Returns the caller's own pending join application, or 404 when none exists.
    * No writer guard — callers can only see their own application.
    */

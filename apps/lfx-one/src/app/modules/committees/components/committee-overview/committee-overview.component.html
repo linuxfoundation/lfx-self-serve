@@ -341,7 +341,11 @@
               <i class="fa-light fa-clock-rotate-left text-2xl text-gray-300 mb-2"></i>
               <p class="text-sm font-medium text-gray-500">No recent activity</p>
               @if (isVisitor() && !canEdit()) {
-                <p class="text-xs text-gray-400 mt-1">Recent meetings and documents will appear here.</p>
+                @if (committee().calendar?.public) {
+                  <p class="text-xs text-gray-400 mt-1">Recent meetings and documents will appear here.</p>
+                } @else {
+                  <p class="text-xs text-gray-400 mt-1">Recent documents will appear here.</p>
+                }
               } @else {
                 <p class="text-xs text-gray-400 mt-1">Recent meetings, votes, surveys, and documents will appear here.</p>
               }

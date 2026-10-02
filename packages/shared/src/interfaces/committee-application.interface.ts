@@ -69,7 +69,7 @@ export interface MyPendingApplication extends CommitteeJoinApplication {
  */
 export interface PendingApplicationRowVm extends MyPendingApplication {
   /** Canonical route commands for the group's view page. */
-  viewCommands: (string | object)[];
+  viewCommands: string[];
   /** Query params for the group's view page, or null when no project context is available. */
   viewQueryParams: { project: string } | null;
 }
