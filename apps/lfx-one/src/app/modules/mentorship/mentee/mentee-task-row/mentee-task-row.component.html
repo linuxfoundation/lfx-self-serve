@@ -106,7 +106,7 @@
       }
     } @else if (effectiveTask().dueDate; as dueDate) {
       Due {{ dueDate | date: 'MMM d, yyyy' : 'UTC' }}
-    } @else if (!effectiveTask().dueDate) {
+    } @else {
       No Due Date
     }
   </div>
