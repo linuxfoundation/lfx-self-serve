@@ -67,6 +67,17 @@ export class AudienceLastSentComponent {
    * is no brief to attach to) or while HubSpot is unusable; the attach buttons then explain why.
    */
   public readonly canAttach = input(false);
+  /**
+   * Whether an EXISTING master list may be reused, which needs more than `canAttach`.
+   *
+   * That path submits the operator's ticked suppressions, and while the suppression lookup is
+   * pending or failed the ticked set is empty for a reason unrelated to their intent -- so it
+   * would record a send audience with NO exclusions before anyone could review them.
+   *
+   * Prior-send reuse (`onUseSendLists`) stays on `canAttach`: it carries the earlier send's OWN
+   * exclusions rather than the ticked ones, so a pending lookup cannot empty it.
+   */
+  public readonly canUseExistingMaster = input(false);
   /** The id of the send or master list an attach is in flight for, so only its button spins. */
   public readonly attachingId = input<string | null>(null);
   /** The master list id currently recorded as this email's send list, if any. */
@@ -170,7 +181,7 @@ export class AudienceLastSentComponent {
   }
 
   protected onUseMasterList(list: AudienceMasterListBrief): void {
-    if (this.canAttach() && this.attachingId() === null) {
+    if (this.canUseExistingMaster() && this.attachingId() === null) {
       this.useMasterList.emit(list);
     }
   }

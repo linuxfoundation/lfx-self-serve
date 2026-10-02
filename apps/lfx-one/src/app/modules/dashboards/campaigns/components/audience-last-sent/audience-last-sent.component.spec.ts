@@ -55,9 +55,13 @@ describe('AudienceLastSentComponent', () => {
       mastersFailed?: boolean;
       emailsFailed?: boolean;
       canAttach?: boolean;
+      canUseExistingMaster?: boolean;
     } = {}
   ): void {
     fixture.componentRef.setInput('emails', inputs.emails ?? []);
+    // Defaults to `canAttach`: most tests here predate the separate master-reuse gate and mean
+    // "attaching is possible", not "the suppression lookup has not settled".
+    fixture.componentRef.setInput('canUseExistingMaster', inputs.canUseExistingMaster ?? inputs.canAttach ?? false);
     fixture.componentRef.setInput('masterLists', inputs.masterLists ?? []);
     fixture.componentRef.setInput('selectedIds', inputs.selectedIds ?? new Set<string>());
     fixture.componentRef.setInput('loading', false);
@@ -269,6 +273,32 @@ describe('AudienceLastSentComponent', () => {
       click('audience-last-sent-master-use-401');
 
       expect(seen.map((l) => l.listId)).toEqual(['401']);
+    });
+
+    it('does not reuse an existing master while the suppression lookup is unsettled', () => {
+      // This path submits the operator's TICKED suppressions. While the lookup is pending or
+      // failed that set is empty for a reason unrelated to their intent, so attaching would
+      // record a send audience with NO exclusions before anyone could review them.
+      // `canUseSelectionDirectly` already blocked the equivalent action; this one did not.
+      const seen: AudienceMasterListBrief[] = [];
+      fixture.componentInstance.useMasterList.subscribe((l) => seen.push(l));
+      render({ masterLists: [master()], canAttach: true, canUseExistingMaster: false });
+
+      click('audience-last-sent-master-use-401');
+
+      expect(seen, 'a master was reused before the suppression read settled').toEqual([]);
+    });
+
+    it("still reuses a prior send's lists while suppression is unsettled", () => {
+      // The deliberate asymmetry: a prior send carries its OWN exclusions rather than the ticked
+      // ones, so a pending lookup cannot empty them and the gate would only block useful work.
+      const seen: AudienceLastSentEmail[] = [];
+      fixture.componentInstance.useSendLists.subscribe((e) => seen.push(e));
+      render({ emails: [email()], canAttach: true, canUseExistingMaster: false });
+
+      click('audience-last-sent-use-em-1');
+
+      expect(seen.map((e) => e.emailId)).toEqual(['em-1']);
     });
 
     it('explains why nothing can be attached when there is no brief', () => {

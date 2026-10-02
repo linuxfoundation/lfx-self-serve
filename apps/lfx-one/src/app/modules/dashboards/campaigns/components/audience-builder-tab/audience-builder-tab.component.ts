@@ -541,6 +541,14 @@ export class AudienceBuilderTabComponent {
    * flight or failed records a send with no GDPR/CASL suppression. A past send's lists are not
    * gated here — they carry the suppression that send actually used.
    */
+  /**
+   * Reusing an EXISTING master list needs the same settled suppression read that composing does.
+   *
+   * Separate from `canUseSelectionDirectly` only because that one additionally requires exactly
+   * one inclusion; the readiness half is identical and is the half that matters here.
+   */
+  protected readonly canUseExistingMaster = computed(() => this.canAttach() && !this.suppressionLoading() && !this.suppressionFailed());
+
   protected readonly canUseSelectionDirectly = computed(
     () =>
       this.canAttach() &&
@@ -789,8 +797,21 @@ export class AudienceBuilderTabComponent {
     );
   }
 
-  /** Attaches an existing master list, with whatever suppression is ticked in step 3. */
+  /**
+   * Attaches an existing master list, with whatever suppression is ticked in step 3.
+   *
+   * Gated on a SETTLED suppression read, like `canUseSelectionDirectly`. This path submits
+   * `excludeIds()` -- the operator's ticked suppressions -- and while that lookup is pending or
+   * failed the set is empty for a reason that has nothing to do with the operator's intent. It
+   * would record a send audience with NO exclusions before anyone could review them.
+   *
+   * Prior-send reuse is deliberately NOT gated this way: it carries the earlier send's own
+   * exclusions rather than the ticked ones, so a pending lookup does not empty it.
+   */
   protected onUseMasterList(list: AudienceMasterListBrief): void {
+    if (!this.canUseExistingMaster()) {
+      return;
+    }
     this.attachExisting(list.listId, list.listId, this.excludeIds(), '');
   }
 
