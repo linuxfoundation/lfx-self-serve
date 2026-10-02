@@ -675,7 +675,9 @@ export class MailingListService {
    * a self-service caller must never be able to set on their own record.
    */
   private isPrivilegedMemberPayload(data: { mod_status?: MailingListMemberModStatus; member_type?: MailingListMemberType }): boolean {
-    return (!!data.mod_status && data.mod_status !== MailingListMemberModStatus.NONE) || (!!data.member_type && data.member_type !== MailingListMemberType.DIRECT);
+    return (
+      (!!data.mod_status && data.mod_status !== MailingListMemberModStatus.NONE) || (!!data.member_type && data.member_type !== MailingListMemberType.DIRECT)
+    );
   }
 
   /**

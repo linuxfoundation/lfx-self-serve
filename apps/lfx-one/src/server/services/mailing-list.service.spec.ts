@@ -87,9 +87,9 @@ describe('MailingListService member authorization', () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
       checkSingleAccessStrict.mockResolvedValue(false);
 
-      await expect(
-        service.createMember(req, 'list-1', { email: 'self@example.com', mod_status: MailingListMemberModStatus.OWNER })
-      ).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.createMember(req, 'list-1', { email: 'self@example.com', mod_status: MailingListMemberModStatus.OWNER })).rejects.toMatchObject({
+        statusCode: 403,
+      });
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 

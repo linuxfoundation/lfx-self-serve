@@ -154,7 +154,9 @@
               @if (mailingList.committees?.length) {
                 <span
                   class="inline-flex items-center"
-                  [pTooltip]="'This list syncs from the ' + mailingList.committees[0].name + ' committee — leaving may not persist if your committee role changes.'"
+                  [pTooltip]="
+                    'This list syncs from the ' + mailingList.committees[0].name + ' committee — leaving may not persist if your committee role changes.'
+                  "
                   tooltipPosition="top"
                   tabindex="0"
                   [attr.aria-label]="'This list syncs from the ' + mailingList.committees[0].name + ' committee'">
