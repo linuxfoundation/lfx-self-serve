@@ -81,6 +81,28 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     expect(elapsed).toBeLessThan(500);
   });
 
+  it('reads the real href, not one hidden inside another attribute value', () => {
+    // A regex that scans the tag for `href=` finds it inside ANOTHER attribute's value, because
+    // the quotes around that value are just characters to it. `verifyPageLink` would then vouch
+    // for a URL the page never links to, carrying it into the brief as the event's agenda.
+    const html = `<a title=" href='https://evil.example/agenda'" href="https://events.linuxfoundation.org/real">Agenda</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect(verifyPageLink('https://events.linuxfoundation.org/real', links, 'https://events.linuxfoundation.org/')).toBe(
+      'https://events.linuxfoundation.org/real'
+    );
+    expect(verifyPageLink('https://evil.example/agenda', links, 'https://events.linuxfoundation.org/')).toBe('');
+  });
+
+  it('takes the first href when a tag declares two, as a browser does', () => {
+    const html = `<a href="https://events.linuxfoundation.org/first" href="https://evil.example/second">Agenda</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect(verifyPageLink('https://evil.example/second', links, 'https://events.linuxfoundation.org/')).toBe('');
+  });
+
   it('decodes an &amp; in an href so a multi-parameter link still compares equal', () => {
     // The page writes `&amp;`; the extraction model returns the decoded `&`. Stored raw, the two
     // never compared equal and a real agenda link with two query parameters was dropped.

@@ -13,12 +13,22 @@
 const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
 
 /**
- * The `href` inside one already-isolated tag.
+ * One attribute inside an already-isolated tag: its name, and its quoted value.
  *
- * `\s`, not `\b`, before `href`: `\b` also matches the tail of `data-href`, so a framework's
+ * Walked attribute by attribute rather than searched for `href=` directly. A regex that scans
+ * the tag for `href=` finds it inside ANOTHER attribute's value, because the quotes around that
+ * value are just characters to it:
+ *
+ *   <a title=" href='https://evil.example/agenda'" href="/real">
+ *
+ * picked `https://evil.example/agenda` -- and `verifyPageLink` would then vouch for a URL the
+ * page never links to, carrying it into the brief as the event's agenda. Consuming the value as
+ * a unit is what makes the quotes structural instead of incidental.
+ *
+ * `\s` before the name, not `\b`: `\b` also matches the tail of `data-href`, so a framework's
  * lazy-load attribute was read as the link the page renders.
  */
-const HREF_ATTR_RE = /\shref=["']([^"']*)["']/i;
+const ATTR_RE = /\s([a-zA-Z][\w:-]*)\s*=\s*["']([^"']*)["']/g;
 
 /**
  * HTML entities for `&` as they appear in an href.
@@ -37,6 +47,22 @@ const AMP_ENTITY_RE = /&(?:amp|#38|#[xX]26);/g;
  * nothing past the point where a real event page has been covered.
  */
 const MAX_PAGE_LINKS = 5000;
+
+/**
+ * The `href` an opening tag actually declares, or `''` when it declares none.
+ *
+ * The FIRST `href`, matching how a browser resolves a duplicate attribute: everything after the
+ * first is ignored, so a page cannot show one link and have this read another.
+ */
+function hrefOf(tag: string): string {
+  ATTR_RE.lastIndex = 0;
+  for (let attr = ATTR_RE.exec(tag); attr !== null; attr = ATTR_RE.exec(tag)) {
+    if (attr[1].toLowerCase() === 'href') {
+      return attr[2].replace(AMP_ENTITY_RE, '&');
+    }
+  }
+  return '';
+}
 
 /**
  * A comparable form of a URL, or `null` when it is not an absolute http(s) URL.
@@ -99,9 +125,8 @@ export function extractPageLinks(html: string, baseUrl: string): Map<string, str
   try {
     for (const tag of html.matchAll(ANCHOR_TAG_RE)) {
       if (links.size >= MAX_PAGE_LINKS) break;
-      const href = HREF_ATTR_RE.exec(tag[0]);
-      if (!href) continue;
-      const raw = href[1].replace(AMP_ENTITY_RE, '&');
+      const raw = hrefOf(tag[0]);
+      if (raw === '') continue;
       const normalized = normalizeForCompare(raw, baseUrl);
       if (!normalized || links.has(normalized)) continue;
       links.set(normalized, pageHref(new URL(raw, baseUrl)));
