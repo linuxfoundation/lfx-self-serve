@@ -86,6 +86,17 @@ export class AudienceBuilderTabComponent {
    * but attached to nothing.
    */
   public readonly briefId = input('');
+  /**
+   * The brief's existing audience could not be READ back, as distinct from it having none.
+   *
+   * A failed read left `emailAudience` null, which is byte-identical to a brief that never had
+   * one -- and this tab then offered compose, so an outage that hid an existing audience let the
+   * operator create a SECOND HubSpot master list for the same brief. Compose is irreversible and
+   * not idempotent, so a duplicate is real work to unpick.
+   *
+   * Gated the same way `suppressionFailed` is: an unverifiable absence is not an absence.
+   */
+  public readonly audienceReadFailed = input(false);
 
   // === Outputs ===
   /**
@@ -226,6 +237,15 @@ export class AudienceBuilderTabComponent {
   /** The send / master list id an attach is in flight for; null when idle. */
   protected readonly attachingId = signal<string | null>(null);
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
+
+  /**
+   * Which of the two audience writes recorded LAST.
+   *
+   * `attachedListId` preferred the attach result unconditionally, so attaching and then
+   * composing showed the attached list while the brief recorded the composed one. The writes
+   * are serialized, so exactly one is in flight at a time and "last" is unambiguous.
+   */
+  private readonly lastWriteWasAttach = signal<boolean>(false);
   protected readonly attachError = signal<string | null>(null);
   /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
   private readonly composeBriefId = signal('');
@@ -403,19 +423,36 @@ export class AudienceBuilderTabComponent {
     }));
   });
 
-  /** Direct attach needs a brief to attach to and a usable HubSpot connection. */
-  protected readonly canAttach = computed(() => this.briefId() !== '' && !this.degraded());
+  /**
+   * Direct attach needs a brief to attach to and a usable HubSpot connection -- and no OTHER
+   * write to this brief's audience already in flight.
+   *
+   * Compose and attach both record an audience against the same brief, and neither used to know
+   * about the other: `canAttach` ignored `composing()` and `canCompose` ignored `attachingId()`.
+   * Started together, the displayed selection and the RECORDED audience are decided by response
+   * arrival order, so the operator can be looking at one list while the send points at another.
+   *
+   * Serialized rather than reconciled: there is no correct merge of two audiences for one brief,
+   * and the second write is a real HubSpot record either way.
+   */
+  protected readonly canAttach = computed(() => this.briefId() !== '' && !this.degraded() && !this.composing() && this.attachingId() === null);
 
   /** The list currently recorded as this email's send list by THIS panel, if any. */
   protected readonly attachedListId = computed(() => {
     const attached = this.attachResult();
-    if (attached) {
-      return attached.master.listId;
-    }
     const composed = this.composeResult();
     // A compose is recorded against the brief it was DISPATCHED with. After the parent moves to
     // another brief the lists still exist, but they are not that brief's send list.
-    return composed?.recorded && this.composeBriefId() === this.briefId() ? composed.master.listId : null;
+    const composedForThisBrief = composed?.recorded === true && this.composeBriefId() === this.briefId();
+
+    // The LATER write wins, not attach unconditionally. Preferring the attach result meant that
+    // after attaching and then composing, the panel showed the attached list while the brief
+    // recorded the composed one. The two writes are now serialized, so "later" is unambiguous --
+    // `lastWriteWasAttach` is set by whichever handler recorded last.
+    if (attached && (!composedForThisBrief || this.lastWriteWasAttach())) {
+      return attached.master.listId;
+    }
+    return composedForThisBrief && composed ? composed.master.listId : (attached?.master.listId ?? null);
   });
 
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
@@ -533,6 +570,12 @@ export class AudienceBuilderTabComponent {
     () =>
       !this.degraded() &&
       !this.composing() &&
+      // An audience that could not be READ is not an audience that is absent. Composing on top
+      // of one creates a duplicate master list.
+      !this.audienceReadFailed() &&
+      // The other half of the serialization above: an attach in flight is a write to this same
+      // brief's audience, and the later reply would decide the record.
+      this.attachingId() === null &&
       !this.suppressionFailed() &&
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
@@ -898,6 +941,8 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.composeResult.set(result);
+          // This compose recorded after any earlier attach; see `attachedListId`.
+          this.lastWriteWasAttach.set(false);
           this.composing.set(false);
 
           // Emitted INSIDE the staleness guard above, and it has to be: an emission after the run
@@ -1160,6 +1205,7 @@ export class AudienceBuilderTabComponent {
           }
           this.attachingId.set(null);
           this.attachResult.set(result);
+          this.lastWriteWasAttach.set(true);
         },
         error: (httpErr: HttpErrorResponse) => {
           if (run !== this.runGeneration || briefId !== this.briefId()) {

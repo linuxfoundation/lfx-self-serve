@@ -1088,6 +1088,16 @@ export class CampaignsComponent {
    * into a UI defect.
    */
   protected readonly emailAudienceOrigin = signal<'composed' | 'restored' | null>(null);
+  /**
+   * The brief's existing audience could not be READ back, as distinct from it having none.
+   *
+   * Null `emailAudience` means both things, and only one of them is safe to compose on top of.
+   * An outage that hid an existing audience let the operator create a SECOND HubSpot master
+   * list for the same brief -- irreversible, not idempotent, and real work to unpick.
+   *
+   * Cleared only by a read that actually answered, never by a retry that failed the same way.
+   */
+  protected readonly emailAudienceReadFailed = signal<boolean>(false);
 
   /**
    * A master list that exists in HubSpot and is attached to NOTHING.
@@ -3556,11 +3566,19 @@ export class CampaignsComponent {
         return;
       }
       if (result.error) {
-        // Still silent on screen, but not invisible: an upstream failure here is what makes a
-        // reload lose an attached audience, and without a trace it reads as "none was attached".
+        // RECORDED, not merely logged. A failed read leaves `emailAudience` null, which is
+        // byte-identical to a brief that never had one -- and the Audience tab then offered
+        // compose, so an outage that hid an existing audience let the operator create a SECOND
+        // HubSpot master list for the same brief. Compose is irreversible and not idempotent.
+        //
+        // The console line stays: it carries the upstream cause, which the flag does not.
         console.error('[campaigns] Failed to restore the email audience', result.error);
+        this.emailAudienceReadFailed.set(true);
         return;
       }
+      // Only a read that actually answered clears it. Reaching here means upstream returned a
+      // list -- empty or not -- so the absence is now a VERIFIED one.
+      this.emailAudienceReadFailed.set(false);
 
       // Matched on `hubspot` rather than taken as "the first row": a brief can carry rows for other
       // platforms, and only the HubSpot one is what an email send dispatches against. Upstream

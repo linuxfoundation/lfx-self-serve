@@ -124,7 +124,7 @@ describe('AudienceBuilderTabComponent', () => {
    * constructor, which flushes on the FIRST change-detection pass, so the response only reaches
    * the view on the second.
    */
-  async function render(inputs: { active?: boolean; initialEventUrl?: string; briefId?: string } = {}): Promise<void> {
+  async function render(inputs: { active?: boolean; initialEventUrl?: string; briefId?: string; audienceReadFailed?: boolean } = {}): Promise<void> {
     fixture = TestBed.createComponent(AudienceBuilderTabComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('active', inputs.active ?? true);
@@ -133,6 +133,7 @@ describe('AudienceBuilderTabComponent', () => {
     // Tests that care about attaching opt in, so every other test here keeps exercising the path
     // where a compose creates lists that no send points at.
     fixture.componentRef.setInput('briefId', inputs.briefId ?? '');
+    fixture.componentRef.setInput('audienceReadFailed', inputs.audienceReadFailed ?? false);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -351,8 +352,8 @@ describe('AudienceBuilderTabComponent', () => {
   });
 
   describe('selection, preview and compose', () => {
-    async function renderWithDiscovery(): Promise<void> {
-      await render();
+    async function renderWithDiscovery(inputs: { audienceReadFailed?: boolean } = {}): Promise<void> {
+      await render(inputs);
       typeEventUrl('https://events.example.org/synthetic-summit');
       click('campaigns-audience-discover');
       completeDiscovery();
@@ -695,6 +696,30 @@ describe('AudienceBuilderTabComponent', () => {
 
       const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
       expect(btn?.disabled, 'compose stayed enabled with an unresolved include/exclude conflict').toBe(true);
+    });
+
+    it("refuses to compose when the brief's existing audience could not be read", async () => {
+      // A failed audience read leaves the parent's `emailAudience` null, which is byte-identical
+      // to a brief that never had one. Offering compose there let an outage that HID an existing
+      // audience produce a SECOND HubSpot master list for the same brief -- irreversible, not
+      // idempotent, and real work to unpick.
+      //
+      // Same fail-closed reasoning as `suppressionFailed`: an unverifiable absence is not an
+      // absence.
+      await renderWithDiscovery({ audienceReadFailed: true });
+      click('audience-card-grid-toggle-101');
+
+      const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(btn?.disabled, 'compose stayed enabled while the existing audience was unreadable').toBe(true);
+    });
+
+    it('allows compose once the audience read has actually answered', async () => {
+      // The counterpart, so the guard cannot be satisfied by disabling compose permanently.
+      await renderWithDiscovery({ audienceReadFailed: false });
+      click('audience-card-grid-toggle-101');
+
+      const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(btn?.disabled, 'a verified-absent audience must not block compose').toBe(false);
     });
 
     it('does not re-enable compose after an ordinary failure', async () => {
@@ -1470,6 +1495,25 @@ describe('AudienceBuilderTabComponent', () => {
       fixture.componentInstance.continueToEmail.subscribe(() => continued++);
       click('campaigns-audience-attach-continue');
       expect(continued).toBe(1);
+    });
+
+    it('blocks attach while a compose is still in flight', async () => {
+      // Compose and attach both RECORD an audience against the same brief, and neither guard
+      // used to know about the other -- `canAttach` ignored `composing()`. Started together, the
+      // displayed selection and the recorded audience are decided by response arrival order, so
+      // the operator can be looking at one list while the send points at another.
+      //
+      // There is no correct merge of two audiences for one brief, so they are serialized.
+      await renderWithPastSend('brief-1');
+
+      // A compose that never settles: the window the race lives in.
+      composeAudienceMaster.mockReturnValue(new Subject().asObservable());
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+
+      click('audience-last-sent-use-em-7');
+
+      expect(attachExistingAudience, 'an attach started while a compose was still writing').not.toHaveBeenCalled();
     });
 
     it("copies a past send's selection into include AND exclude", async () => {

@@ -322,6 +322,7 @@
           [active]="selectedEmailTab() === 'audience'"
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
+          [audienceReadFailed]="emailAudienceReadFailed()"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
           (continueToEmail)="onContinueToEmailStep()" />
