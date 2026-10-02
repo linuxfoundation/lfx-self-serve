@@ -17,7 +17,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 import { TrainingEnrollComponent } from './training-enroll.component';
 
 import type { ChartData } from 'chart.js';
-import type { HealthMetricsTrainingEnrollment } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsTrainingEnrollment, HealthMetricsTrainingEnrollmentPeriod } from '@lfx-one/shared/interfaces';
 
 /** Chart.js needs a canvas jsdom does not have; the stub only records the datasets it is handed. */
 @Component({ selector: 'lfx-chart', template: '<div data-testid="chart-stub"></div>' })
@@ -30,15 +30,24 @@ class ChartStubComponent {
 
 const currentYear = new Date().getFullYear();
 
-function enrollment(overrides: Partial<HealthMetricsTrainingEnrollment> = {}): HealthMetricsTrainingEnrollment {
+const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
+  totals: { enrollments: 12000, certifications: 300, revenueUsd: 100000 },
+  baseline: { enrollments: 10000, certifications: 300, revenueUsd: 125000 },
+  byType: [
+    { deliveryType: 'E-Learning', enrollments: 9000, revenueUsd: 30000 },
+    { deliveryType: 'Certification Exam', enrollments: 3000, revenueUsd: 70000 },
+  ],
+};
+
+/** The same period under every range; `period` overrides it, `overrides` the rest of the read. */
+function enrollment(
+  overrides: Partial<HealthMetricsTrainingEnrollment> = {},
+  period: Partial<HealthMetricsTrainingEnrollmentPeriod> = {}
+): HealthMetricsTrainingEnrollment {
+  const merged = { ...PERIOD, ...period };
   return {
     measured: true,
-    totals: { enrollments: 12000, certifications: 300, revenueUsd: 100000 },
-    baseline: { enrollments: 10000, certifications: 300, revenueUsd: 125000 },
-    byType: [
-      { deliveryType: 'E-Learning', enrollments: 9000, revenueUsd: 30000 },
-      { deliveryType: 'Certification Exam', enrollments: 3000, revenueUsd: 70000 },
-    ],
+    periods: { YTD: merged, COMPLETED_YEAR: merged, COMPLETED_YEAR_2: merged, COMPLETED_YEAR_3: merged },
     trend: [
       { year: currentYear, enrollments: 4000 },
       { year: currentYear - 1, enrollments: 8000 },
@@ -99,11 +108,11 @@ describe('TrainingEnrollComponent', () => {
     lifecycle = [];
   });
 
-  it('reads the foundation for the period and settles', async () => {
+  it('reads every period for the foundation once and settles', async () => {
     await render();
 
     expect(getTrainingEnrollment).toHaveBeenCalledTimes(1);
-    expect(getTrainingEnrollment).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD' });
+    expect(getTrainingEnrollment).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(query('training-enroll-loading')).toBeNull();
   });
@@ -155,6 +164,22 @@ describe('TrainingEnrollComponent', () => {
     expect(text('training-enroll-trend-caption')).toBe('thousands per year');
   });
 
+  it('labels the chart and repeats its figures in a screen-reader table, marking the open year', async () => {
+    await render();
+
+    expect(query('training-enroll-trend-chart')?.getAttribute('role')).toBe('img');
+    expect(query('training-enroll-trend-chart')?.getAttribute('aria-label')).toBe(
+      `Bar chart of enrollments per year, ${currentYear - 1} to ${currentYear}. The same figures follow in a table.`
+    );
+    const rows = Array.from(query('training-enroll-trend-table')?.querySelectorAll('tbody tr') ?? []).map((row) =>
+      Array.from(row.children).map((cell) => cell.textContent?.trim())
+    );
+    expect(rows).toEqual([
+      [String(currentYear - 1), '8,000'],
+      [`${currentYear} (partial year)`, '4,000'],
+    ]);
+  });
+
   it('captions a small programme per year and keeps its axis ticks as plain counts', async () => {
     await render(enrollment({ trend: [{ year: currentYear - 1, enrollments: 150 }] }));
 
@@ -165,22 +190,24 @@ describe('TrainingEnrollComponent', () => {
   });
 
   it('says a delta is not available without a baseline, and names why', async () => {
-    await render(enrollment({ baseline: null }));
+    await render(enrollment({}, { baseline: null }));
 
     expect(text('training-enroll-headline-delta')).toBe('not available');
     expect(text('training-enroll-baseline')).toBe('no earlier year to compare against');
   });
 
-  it('re-reads a period change and names the prior year as the baseline', async () => {
-    await render();
+  it('re-projects a period change from the one read and names the prior year as the baseline', async () => {
+    const payload = enrollment();
+    payload.periods.COMPLETED_YEAR = { ...PERIOD, totals: { enrollments: 15000, certifications: 400, revenueUsd: 90000 } };
+    await render(payload);
     lifecycle = [];
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(getTrainingEnrollment).toHaveBeenCalledTimes(2);
-    expect(getTrainingEnrollment).toHaveBeenLastCalledWith({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
-    expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(getTrainingEnrollment).toHaveBeenCalledTimes(1);
+    expect(lifecycle).toEqual([]);
+    expect(text('training-enroll-headline-value')).toBe('15,000');
     expect(text('training-enroll-baseline')).toBe(`all against ${currentYear - 2}`);
   });
 

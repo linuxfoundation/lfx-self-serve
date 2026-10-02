@@ -220,7 +220,7 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getTrainingEnrollment',
       url: '/api/analytics/training-enrollment',
       // A swallowed failure would read as a foundation with no enrollments.
-      call: () => service.getTrainingEnrollment({ foundationSlug: 'aaif', range: 'YTD' }),
+      call: () => service.getTrainingEnrollment({ foundationSlug: 'aaif' }),
     },
   ];
 

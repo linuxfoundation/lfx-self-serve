@@ -98,9 +98,26 @@
       @if (view().trend.length === 0) {
         <p class="text-sm text-gray-500" data-testid="training-enroll-trend-empty">No yearly enrollment recorded for this foundation.</p>
       } @else {
-        <div class="h-56" data-testid="training-enroll-trend-chart">
+        <div class="h-56" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="training-enroll-trend-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
         </div>
+        <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+        <table class="sr-only" data-testid="training-enroll-trend-table">
+          <thead>
+            <tr>
+              <th scope="col">Year</th>
+              <th scope="col">Enrollments</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of view().trend; track row.year) {
+              <tr>
+                <th scope="row">{{ row.yearLabel }}</th>
+                <td>{{ row.enrollmentsLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
       }
     </div>
   }

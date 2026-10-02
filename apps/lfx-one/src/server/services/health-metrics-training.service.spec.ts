@@ -57,18 +57,29 @@ describe('HealthMetricsTrainingService.getPresence', () => {
 });
 
 describe('HealthMetricsTrainingService.getEnrollment', () => {
+  const RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'] as const;
+
+  /** One wide row with the same figures under every period, overridden per column where a test needs it. */
+  function row(deliveryType: string, figures: Record<string, unknown>, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    const columns = RANGES.flatMap((range) => Object.entries(figures).map(([key, value]) => [`${key}_${range}`, value]));
+    return { DELIVERY_TYPE: deliveryType, ...Object.fromEntries(columns), ...overrides };
+  }
+
   const summaryRows = [
-    {
-      DELIVERY_TYPE: 'All',
+    row('All', {
       ENROLLMENTS: 3850,
       CERTIFICATIONS: 620,
       REVENUE_USD: 100000.5,
       BASELINE_ENROLLMENTS: 3500,
       BASELINE_CERTIFICATIONS: null,
       BASELINE_REVENUE_USD: 90000,
-    },
-    { DELIVERY_TYPE: 'E-Learning', ENROLLMENTS: 2900, CERTIFICATIONS: 0, REVENUE_USD: 0 },
-    { DELIVERY_TYPE: 'Certification Exam', ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null },
+    }),
+    row('Certification Exam', { ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null, SORT_RANK: 2 }, { SORT_RANK_COMPLETED_YEAR: 1 }),
+    row(
+      'E-Learning',
+      { ENROLLMENTS: 2900, CERTIFICATIONS: 0, REVENUE_USD: 0, SORT_RANK: 1 },
+      { SORT_RANK_COMPLETED_YEAR: 2, ENROLLMENTS_COMPLETED_YEAR: 4100 }
+    ),
   ];
 
   function mockReads(summary: unknown[], years: unknown[]): void {
@@ -83,35 +94,30 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     vi.clearAllMocks();
   });
 
-  it.each([
-    ['YTD', 'ytd', 'prev_ytd'],
-    ['COMPLETED_YEAR', 'last_completed_year', 'prev_completed_year'],
-    ['COMPLETED_YEAR_2', 'prev_completed_year', '3rd_last_completed_year'],
-  ] as const)('reads %s from the %s columns against the %s baseline', async (range, suffix, baseline) => {
+  it('selects every period from its own columns against its own baseline, in one read', async () => {
     mockReads(summaryRows, []);
 
-    await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme', range });
+    await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
 
     const sql = summarySql();
-    expect(sql).toContain(`enrollment_count_${suffix} AS enrollments`);
-    expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd`);
-    expect(sql).toContain(`certifications_earned_count_${baseline} AS baseline_certifications`);
-    expect(sql).toContain(`ORDER BY sort_rank_${suffix} ASC NULLS LAST`);
-  });
-
-  it('selects no baseline for the oldest completed year, and returns none', async () => {
-    mockReads(summaryRows, []);
-
-    const enrollment = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme', range: 'COMPLETED_YEAR_3' });
-
-    expect(summarySql()).toContain('NULL AS baseline_enrollments');
-    expect(enrollment.baseline).toBeNull();
+    for (const [range, suffix, baseline] of [
+      ['YTD', 'ytd', 'prev_ytd'],
+      ['COMPLETED_YEAR', 'last_completed_year', 'prev_completed_year'],
+      ['COMPLETED_YEAR_2', 'prev_completed_year', '3rd_last_completed_year'],
+    ]) {
+      expect(sql).toContain(`enrollment_count_${suffix} AS enrollments_${range}`);
+      expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd_${range}`);
+      expect(sql).toContain(`sort_rank_${suffix} AS sort_rank_${range}`);
+      expect(sql).toContain(`certifications_earned_count_${baseline} AS baseline_certifications_${range}`);
+    }
+    expect(sql).toContain('enrollment_count_3rd_last_completed_year AS enrollments_COMPLETED_YEAR_3');
+    expect(sql).toContain('NULL AS baseline_enrollments_COMPLETED_YEAR_3');
   });
 
   it('binds only the foundation, once per read', async () => {
     mockReads(summaryRows, []);
 
-    await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme', range: 'YTD' });
+    await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
 
     expect(execute).toHaveBeenCalledTimes(2);
     for (const [sql, binds] of execute.mock.calls) {
@@ -126,27 +132,47 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       { ENROLLMENT_YEAR: '2026', ENROLLMENT_COUNT: null },
     ]);
 
-    const enrollment = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme', range: 'YTD' });
+    const enrollment = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
 
-    expect(enrollment).toEqual({
-      measured: true,
+    expect(enrollment.measured).toBe(true);
+    expect(enrollment.periods.YTD).toEqual({
       totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000.5 },
       baseline: { enrollments: 3500, certifications: null, revenueUsd: 90000 },
       byType: [
         { deliveryType: 'E-Learning', enrollments: 2900, revenueUsd: 0 },
         { deliveryType: 'Certification Exam', enrollments: 950, revenueUsd: null },
       ],
-      trend: [
-        { year: 2025, enrollments: 3400 },
-        { year: 2026, enrollments: null },
-      ],
     });
+    expect(enrollment.trend).toEqual([
+      { year: 2025, enrollments: 3400 },
+      { year: 2026, enrollments: null },
+    ]);
+  });
+
+  it("orders each period's types by that period's rank and reads that period's figures", async () => {
+    mockReads(summaryRows, []);
+
+    const { periods } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    expect(periods.COMPLETED_YEAR.byType.map((type) => [type.deliveryType, type.enrollments])).toEqual([
+      ['Certification Exam', 950],
+      ['E-Learning', 4100],
+    ]);
+    expect(periods.COMPLETED_YEAR_3.baseline).toBeNull();
+  });
+
+  it('ranks a type without a rank last, by name', async () => {
+    mockReads([summaryRows[0], row('Instructor Led', { ENROLLMENTS: 5 }), row('Bundle', { ENROLLMENTS: 0 }), summaryRows[2]], []);
+
+    const { periods } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    expect(periods.YTD.byType.map((type) => type.deliveryType)).toEqual(['E-Learning', 'Bundle', 'Instructor Led']);
   });
 
   it('returns the unmeasured read when the foundation has no All row', async () => {
     mockReads([], [{ ENROLLMENT_YEAR: 2025, ENROLLMENT_COUNT: 10 }]);
 
-    const enrollment = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme', range: 'YTD' });
+    const enrollment = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
 
     expect(enrollment.measured).toBe(false);
     expect(enrollment.trend).toEqual([]);
@@ -158,6 +184,6 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       return { rows: summaryRows };
     });
 
-    await expect(new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme', range: 'YTD' })).rejects.toThrow('warehouse down');
+    await expect(new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' })).rejects.toThrow('warehouse down');
   });
 });

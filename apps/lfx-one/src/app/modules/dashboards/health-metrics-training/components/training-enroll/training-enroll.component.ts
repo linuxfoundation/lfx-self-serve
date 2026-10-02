@@ -59,18 +59,19 @@ export class TrainingEnrollComponent {
   protected readonly metric = signal<HealthMetricsTrainingEnrollmentMetric>(HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS[0].id);
   protected readonly metricOptions: FilterPillOption[] = [...HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS];
 
+  // Every period comes back in one read, so a period change re-projects it and never re-reads.
   protected readonly query: Signal<HealthMetricsTrainingEnrollmentQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
-    range: this.range(),
   }));
   protected readonly response: Signal<HealthMetricsTrainingEnrollment> = this.initResponse();
   protected readonly view: Signal<HealthMetricsTrainingEnrollmentView> = computed(() =>
-    buildHealthMetricsTrainingEnrollmentView(this.response(), this.query().range, this.metric())
+    buildHealthMetricsTrainingEnrollmentView(this.response(), this.range(), this.metric())
   );
 
   protected readonly byTypeTitle = computed(() => (this.metric() === 'revenue' ? 'Revenue by type' : 'Enrollments by type'));
   protected readonly byTypeNote = computed(() => (this.metric() === 'revenue' ? 'highest revenue first' : 'highest volume first'));
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.view().trend));
+  protected readonly chartSummaryLabel = computed(() => this.buildChartSummaryLabel(this.view().trend));
   protected readonly trendCaption = computed(() => (this.view().trend.some((year) => (year.enrollments ?? 0) >= 1000) ? 'thousands per year' : 'per year'));
   protected readonly chartOptions: ChartOptions<'bar'> = {
     responsive: true,
@@ -113,7 +114,7 @@ export class TrainingEnrollComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.range === b.range),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
@@ -146,11 +147,11 @@ export class TrainingEnrollComponent {
     return HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === range) ?? 'YTD';
   }
 
-  /** Enrollments per year; the open year is drawn lighter, as it will always look short until it ends. */
   private formatTick(value: number): string {
     return value >= 1000 ? `${value / 1000}K` : String(value);
   }
 
+  /** Enrollments per year; the open year is drawn lighter, as it will always look short until it ends. */
   private buildChart(trend: HealthMetricsTrainingEnrollmentYearView[]): ChartData<'bar'> {
     const color = lfxColors.blue[600];
 
@@ -166,6 +167,12 @@ export class TrainingEnrollComponent {
         },
       ],
     };
+  }
+
+  private buildChartSummaryLabel(trend: HealthMetricsTrainingEnrollmentYearView[]): string {
+    if (trend.length === 0) return 'Bar chart of enrollments per year.';
+
+    return `Bar chart of enrollments per year, ${trend[0].year} to ${trend[trend.length - 1].year}. The same figures follow in a table.`;
   }
 
   private tooltipTitle(index: number | undefined): string {

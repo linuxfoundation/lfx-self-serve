@@ -26,10 +26,9 @@ export interface HealthMetricsTrainingPresence {
 /** What the Training tab renders: a skeleton while reading, the shell, the no-programme state, or an error. */
 export type HealthMetricsTrainingPresenceState = 'loading' | 'present' | 'absent' | 'failed';
 
-/** `GET /api/analytics/training-enrollment` query; the trend ignores `range` and always spans every year. */
+/** `GET /api/analytics/training-enrollment` query; one read carries every period, so a period change never re-reads. */
 export interface HealthMetricsTrainingEnrollmentQuery {
   foundationSlug: string;
-  range: HealthMetricsL2Range;
 }
 
 /** The KPI strip's figures for one period; `null` is not measured, never zero. */
@@ -53,14 +52,19 @@ export interface HealthMetricsTrainingEnrollmentYear {
 }
 
 /**
- * The Enrollment & revenue section. `totals` is the `All` row; `baseline` is the comparison period's
- * `All` row, `null` when the period has no earlier one. `byType` comes in the view's rank order.
+ * One period of the section. `totals` is the `All` row; `baseline` is the comparison period's
+ * `All` row, `null` when the period has no earlier one. `byType` comes in the period's rank order.
  */
-export interface HealthMetricsTrainingEnrollment {
-  measured: boolean;
+export interface HealthMetricsTrainingEnrollmentPeriod {
   totals: HealthMetricsTrainingEnrollmentTotals;
   baseline: HealthMetricsTrainingEnrollmentTotals | null;
   byType: HealthMetricsTrainingEnrollmentType[];
+}
+
+/** The Enrollment & revenue section: every L2 period, plus the period-independent yearly trend. */
+export interface HealthMetricsTrainingEnrollment {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsTrainingEnrollmentPeriod>;
   trend: HealthMetricsTrainingEnrollmentYear[];
 }
 
@@ -94,6 +98,9 @@ export interface HealthMetricsTrainingEnrollmentYearView {
   year: number;
   enrollments: number | null;
   isPartialYear: boolean;
+  /** The year, marked when partial, and its count, for the chart's screen-reader table. */
+  yearLabel: string;
+  enrollmentsLabel: string;
 }
 
 /** Render-ready Enrollment & revenue section. */

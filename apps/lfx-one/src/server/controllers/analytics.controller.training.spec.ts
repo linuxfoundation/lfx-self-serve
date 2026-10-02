@@ -11,7 +11,6 @@ vi.mock('../services/health-metrics-training.service', () => ({
     public getPresence = getPresence;
     public getEnrollment = getEnrollment;
   },
-  isSupportedTrainingRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
 }));
 // The controller constructs eight unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
@@ -83,11 +82,14 @@ describe('AnalyticsController.getTrainingPresence', () => {
 });
 
 describe('AnalyticsController.getTrainingEnrollment', () => {
-  const enrollment = {
-    measured: true,
+  const period = {
     totals: { enrollments: 10, certifications: 2, revenueUsd: 500 },
     baseline: null,
     byType: [{ deliveryType: 'E-Learning', enrollments: 10, revenueUsd: 500 }],
+  };
+  const enrollment = {
+    measured: true,
+    periods: { YTD: period, COMPLETED_YEAR: period, COMPLETED_YEAR_2: period, COMPLETED_YEAR_3: period },
     trend: [{ year: 2025, enrollments: 10 }],
   };
 
@@ -97,36 +99,19 @@ describe('AnalyticsController.getTrainingEnrollment', () => {
     getEnrollment.mockResolvedValue(enrollment);
   });
 
-  it('defaults the range to YTD and logs counts only', async () => {
+  it('reads every period for the foundation and logs counts only', async () => {
     const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getTrainingEnrollment');
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getEnrollment).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD' });
+    expect(getEnrollment).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
     expect(res.json).toHaveBeenCalledWith(enrollment);
     expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toEqual({
       foundation_slug: 'acme',
-      range: 'YTD',
       measured: true,
       delivery_type_count: 1,
       trend_year_count: 1,
     });
-  });
-
-  it('passes a supported range through', async () => {
-    const { promise } = call({ foundationSlug: 'acme', range: 'COMPLETED_YEAR_3' }, 'getTrainingEnrollment');
-    await promise;
-
-    expect(getEnrollment).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'COMPLETED_YEAR_3' });
-  });
-
-  it.each([['COMPLETED_YEAR_4'], ['ALL_TIME']])('rejects the %s range', async (range) => {
-    const { next, promise } = call({ foundationSlug: 'acme', range }, 'getTrainingEnrollment');
-    await promise;
-
-    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError | undefined;
-    expect(error).toBeInstanceOf(ServiceValidationError);
-    expect(getEnrollment).not.toHaveBeenCalled();
   });
 
   it('rejects a malformed foundationSlug', async () => {

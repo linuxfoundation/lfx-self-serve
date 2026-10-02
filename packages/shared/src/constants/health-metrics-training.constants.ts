@@ -6,6 +6,7 @@ import type {
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentMetricOption,
+  HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingSectionKey,
 } from '../interfaces/health-metrics-training.interface';
 
@@ -22,6 +23,7 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     footnote:
       'Certification exams and free eLearning are counted separately on purpose — one is revenue, the other is reach, and averaging them tells you neither.',
     footnoteCaution: false,
+    headingBadge: 'Provisional',
   },
   {
     key: 'courses',
@@ -61,12 +63,22 @@ export const HEALTH_METRICS_TRAINING_NO_PROGRAMME = {
 /** Rendered for a figure or a change that is not measured, so a gap never reads as zero. */
 export const HEALTH_METRICS_TRAINING_NOT_AVAILABLE = 'not available';
 
-/** The empty read: shown while loading, after a failure, and for a foundation without an `All` row. */
-export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainingEnrollment = {
-  measured: false,
+/** A period with nothing measured. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: null, certifications: null, revenueUsd: null },
   baseline: null,
   byType: [],
+};
+
+/** The empty read: shown while loading, after a failure, and for a foundation without an `All` row. */
+export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainingEnrollment = {
+  measured: false,
+  periods: {
+    YTD: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
+    COMPLETED_YEAR: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
+    COMPLETED_YEAR_2: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
+    COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
+  },
   trend: [],
 };
 

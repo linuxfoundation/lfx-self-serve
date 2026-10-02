@@ -19,6 +19,10 @@ describe('HEALTH_METRICS_TRAINING_SECTIONS', () => {
   it('marks the sections that read data', () => {
     expect(HEALTH_METRICS_TRAINING_DATA_SECTIONS).toEqual(['enroll']);
   });
+
+  it('badges the enrollment figures provisional until LF Education signs them off', () => {
+    expect(HEALTH_METRICS_TRAINING_SECTIONS.find((section) => section.key === 'enroll')?.headingBadge).toBe('Provisional');
+  });
 });
 
 describe('HEALTH_METRICS_TABS', () => {

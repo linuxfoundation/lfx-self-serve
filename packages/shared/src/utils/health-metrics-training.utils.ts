@@ -50,7 +50,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
   range: HealthMetricsL2Range,
   metric: HealthMetricsTrainingEnrollmentMetric
 ): HealthMetricsTrainingEnrollmentView {
-  const { totals, baseline } = enrollment;
+  const { totals, baseline, byType } = enrollment.periods[range];
   const stat = (
     key: HealthMetricsTrainingEnrollmentStatView['key'],
     label: string,
@@ -75,11 +75,20 @@ export function buildHealthMetricsTrainingEnrollmentView(
       // Refunds can net a prior window negative, which would flip the sign of the change.
       stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), totals.revenueUsd, positiveOrNull(baseline?.revenueUsd ?? null)),
     ],
-    typeCountLabel: formatTrainingTypeCount(enrollment.byType.filter(hasEnrollments).length),
-    byType: buildTrainingTypeRows(enrollment.byType, metric),
+    typeCountLabel: formatTrainingTypeCount(byType.filter(hasEnrollments).length),
+    byType: buildTrainingTypeRows(byType, metric),
     trend: [...enrollment.trend]
       .sort((a, b) => a.year - b.year)
-      .map((year) => ({ year: year.year, enrollments: year.enrollments, isPartialYear: year.year === partialYear })),
+      .map((year) => {
+        const isPartialYear = year.year === partialYear;
+        return {
+          year: year.year,
+          enrollments: year.enrollments,
+          isPartialYear,
+          yearLabel: isPartialYear ? `${year.year} (partial year)` : String(year.year),
+          enrollmentsLabel: formatHealthMetricsTrainingCount(year.enrollments),
+        };
+      }),
   };
 }
 
