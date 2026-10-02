@@ -13,9 +13,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
+import { COMMITTEE_LABEL, MAILING_LIST_DELIVERY_MODE_LABELS, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import { FilterOption, GroupsIOMailingList, MailingListTableRowVm } from '@lfx-one/shared/interfaces';
+import { FilterOption, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
 import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
@@ -79,14 +79,7 @@ export class MailingListTableComponent {
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly audienceAccess = MailingListAudienceAccess;
-  protected readonly deliveryModeLabels: Record<MailingListMemberDeliveryMode, string> = {
-    [MailingListMemberDeliveryMode.NORMAL]: 'Individual',
-    [MailingListMemberDeliveryMode.DIGEST]: 'Digest',
-    [MailingListMemberDeliveryMode.NONE]: 'None',
-    [MailingListMemberDeliveryMode.SPECIAL]: 'Special',
-    [MailingListMemberDeliveryMode.HTML_DIGEST]: 'HTML Digest',
-    [MailingListMemberDeliveryMode.SUMMARY]: 'Summary',
-  };
+  protected readonly deliveryModeLabels = MAILING_LIST_DELIVERY_MODE_LABELS;
 
   // Outputs
   public readonly refresh = output<void>();
@@ -122,7 +115,9 @@ export class MailingListTableComponent {
     this.projectFilterChange.emit(null);
   }
 
-  protected onLeave(row: MailingListTableRowVm): void {
+  protected onLeave(event: Event, row: MailingListTableRowVm): void {
+    event.stopPropagation();
+
     if (!row.my_member_uid) {
       return;
     }
@@ -155,7 +150,9 @@ export class MailingListTableComponent {
     });
   }
 
-  protected onJoin(row: MailingListTableRowVm): void {
+  protected onJoin(event: Event, row: MailingListTableRowVm): void {
+    event.stopPropagation();
+
     const email = this.userService.user()?.email;
     if (!email) {
       return;
@@ -183,12 +180,18 @@ export class MailingListTableComponent {
   }
 
   private initTableRows(): Signal<MailingListTableRowVm[]> {
-    return computed(() =>
-      this.mailingLists().map((mailingList) => ({
-        ...mailingList,
-        viewCommands: getMailingListCommands(mailingList),
-        linkQueryParams: getMailingListLinkQueryParams(mailingList),
-      }))
-    );
+    return computed(() => {
+      const joinedUids = this.myMailingListUids();
+      return this.mailingLists().map((mailingList) => {
+        const myDeliveryMode = (mailingList as MyMailingList).my_delivery_mode;
+        return {
+          ...mailingList,
+          viewCommands: getMailingListCommands(mailingList),
+          linkQueryParams: getMailingListLinkQueryParams(mailingList),
+          canJoin: mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
+          mySubscriptionLabel: myDeliveryMode ? this.deliveryModeLabels[myDeliveryMode] : 'Subscribed',
+        };
+      });
+    });
   }
 }

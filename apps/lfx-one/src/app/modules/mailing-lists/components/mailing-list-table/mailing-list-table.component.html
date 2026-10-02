@@ -150,14 +150,16 @@
           <!-- My Subscription Column -->
           <td>
             <div class="flex items-center gap-1.5" [attr.data-testid]="'mailing-list-my-subscription-' + mailingList.uid">
-              <lfx-tag [value]="mailingList.my_delivery_mode ? deliveryModeLabels[mailingList.my_delivery_mode] : 'Subscribed'" severity="info"> </lfx-tag>
+              <lfx-tag [value]="mailingList.mySubscriptionLabel" severity="info"> </lfx-tag>
               @if (mailingList.committees?.length) {
-                <i
-                  class="fa-light fa-circle-info text-gray-400"
+                <span
+                  class="inline-flex items-center"
                   [pTooltip]="'This list syncs from the ' + mailingList.committees[0].name + ' committee — leaving may not persist if your committee role changes.'"
                   tooltipPosition="top"
+                  tabindex="0"
                   [attr.aria-label]="'This list syncs from the ' + mailingList.committees[0].name + ' committee'">
-                </i>
+                  <i class="fa-light fa-circle-info text-gray-400" aria-hidden="true"></i>
+                </span>
               }
             </div>
           </td>
@@ -182,7 +184,7 @@
                 size="small"
                 [text]="true"
                 [disabled]="!mailingList.my_member_uid"
-                (onClick)="onLeave(mailingList)"
+                (onClick)="onLeave($event, mailingList)"
                 [attr.data-testid]="'mailing-list-leave-' + mailingList.uid">
               </lfx-button>
             </div>
@@ -337,13 +339,13 @@
           @if (!isBoardMember()) {
             <td>
               <div class="flex items-center justify-end gap-1">
-                @if (mailingList.audience_access === audienceAccess.PUBLIC && !myMailingListUids().has(mailingList.uid)) {
+                @if (mailingList.canJoin) {
                   <lfx-button
                     label="Join"
                     severity="info"
                     size="small"
                     [text]="true"
-                    (onClick)="onJoin(mailingList)"
+                    (onClick)="onJoin($event, mailingList)"
                     [attr.data-testid]="'mailing-list-join-' + mailingList.uid">
                   </lfx-button>
                 }

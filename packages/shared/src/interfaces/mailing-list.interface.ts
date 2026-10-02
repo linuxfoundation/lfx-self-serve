@@ -313,4 +313,8 @@ export interface MailingListTableRowVm extends GroupsIOMailingList {
   my_delivery_mode?: MailingListMemberDeliveryMode;
   my_mod_status?: MailingListMemberModStatus;
   my_member_uid?: string;
+  /** Whether the current user can self-join this list (public audience access, not already a member) */
+  canJoin: boolean;
+  /** Precomputed display label for the My Subscription column (avoids a template-bound lookup) */
+  mySubscriptionLabel: string;
 }

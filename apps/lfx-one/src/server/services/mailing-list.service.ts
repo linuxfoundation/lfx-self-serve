@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-one/shared/enums';
+import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
@@ -545,7 +545,20 @@ export class MailingListService {
    * Creates a new member in a mailing list
    */
   public async createMember(req: Request, mailingListId: string, data: CreateMailingListMemberRequest): Promise<MailingListMember> {
-    await this.assertMemberWriteAccess(req, mailingListId, data.email);
+    const grant = await this.assertMemberWriteAccess(req, mailingListId, data.email);
+
+    if (grant === 'self') {
+      if (this.isPrivilegedMemberPayload(data)) {
+        // A self-service caller may only ever add themselves as a plain direct subscriber —
+        // escalated fields require writer access, not merely matching your own email.
+        await this.assertWriterAccess(req, mailingListId);
+      } else {
+        const mailingList = await this.getMailingListById(req, mailingListId);
+        if (mailingList.audience_access !== MailingListAudienceAccess.PUBLIC) {
+          await this.assertWriterAccess(req, mailingListId);
+        }
+      }
+    }
 
     const newMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
       req,
@@ -571,13 +584,18 @@ export class MailingListService {
    * Updates an existing member
    */
   public async updateMember(req: Request, mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Promise<MailingListMember> {
-    const existingMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      'GET'
-    );
-    await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
+    const existingMember = await this.fetchMemberForMutation(req, mailingListId, memberId, 'update_mailing_list_member');
+    const grant = await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
+
+    if (grant === 'self') {
+      const escalatesModStatus = data.mod_status !== undefined && data.mod_status !== existingMember.mod_status;
+      const isAlreadyPrivileged = existingMember.mod_status !== MailingListMemberModStatus.NONE || existingMember.member_type !== MailingListMemberType.DIRECT;
+      if (escalatesModStatus || isAlreadyPrivileged) {
+        // Self-service may only touch an already-plain record, and may not grant itself
+        // moderator/owner status — both paths require writer access instead.
+        await this.assertWriterAccess(req, mailingListId);
+      }
+    }
 
     const updatedMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
       req,
@@ -600,12 +618,7 @@ export class MailingListService {
    * Deletes a member
    */
   public async deleteMember(req: Request, mailingListId: string, memberId: string): Promise<void> {
-    const existingMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      'GET'
-    );
+    const existingMember = await this.fetchMemberForMutation(req, mailingListId, memberId, 'delete_mailing_list_member');
     await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
 
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'DELETE');
@@ -625,14 +638,24 @@ export class MailingListService {
   /**
    * Allows the action when the caller has writer access on the mailing list, or when
    * targetEmail matches the caller's own authenticated identity (self-service). Throws
-   * AuthorizationError (403) otherwise.
+   * AuthorizationError (403) otherwise. Returns which grant applied so callers can apply
+   * additional per-operation scoping to the self-service path.
    */
-  private async assertMemberWriteAccess(req: Request, mailingListId: string, targetEmail: string | undefined): Promise<void> {
+  private async assertMemberWriteAccess(req: Request, mailingListId: string, targetEmail: string | undefined): Promise<'self' | 'writer'> {
     const callerEmail = getEffectiveEmail(req);
     if (callerEmail && targetEmail && callerEmail === targetEmail.toLowerCase()) {
-      return;
+      return 'self';
     }
 
+    await this.assertWriterAccess(req, mailingListId);
+    return 'writer';
+  }
+
+  /**
+   * Requires writer access on the mailing list, regardless of caller identity. Throws
+   * AuthorizationError (403) when the caller lacks it.
+   */
+  private async assertWriterAccess(req: Request, mailingListId: string): Promise<void> {
     const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, {
       resource: 'groupsio_mailing_list',
       id: mailingListId,
@@ -645,6 +668,34 @@ export class MailingListService {
         service: 'mailing_list_service',
       });
     }
+  }
+
+  /**
+   * True when a member payload requests anything beyond a plain direct subscription — fields
+   * a self-service caller must never be able to set on their own record.
+   */
+  private isPrivilegedMemberPayload(data: { mod_status?: MailingListMemberModStatus; member_type?: MailingListMemberType }): boolean {
+    return (!!data.mod_status && data.mod_status !== MailingListMemberModStatus.NONE) || (!!data.member_type && data.member_type !== MailingListMemberType.DIRECT);
+  }
+
+  /**
+   * Fetches a member for an update/delete and verifies it actually belongs to mailingListId —
+   * guards against a confused-deputy call where the URL's mailingListId and the member's own
+   * mailing_list_uid diverge.
+   */
+  private async fetchMemberForMutation(req: Request, mailingListId: string, memberId: string, operation: string): Promise<MailingListMember> {
+    const member = await this.microserviceProxy.proxyRequest<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      'GET'
+    );
+
+    if (member.mailing_list_uid !== mailingListId) {
+      throw new ResourceNotFoundError('Mailing List Member', memberId, { operation, service: 'mailing_list_service' });
+    }
+
+    return member;
   }
 
   // ============================================
