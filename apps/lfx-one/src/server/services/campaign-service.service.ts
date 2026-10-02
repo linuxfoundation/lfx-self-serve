@@ -3,7 +3,7 @@
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
-import { coerceCampaignEventDetails } from '@lfx-one/shared/utils';
+import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
@@ -2601,7 +2601,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function asText(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
-
 
 /**
  * `event_details` as a `CampaignEventDetails`, or `null` when there is nothing usable.

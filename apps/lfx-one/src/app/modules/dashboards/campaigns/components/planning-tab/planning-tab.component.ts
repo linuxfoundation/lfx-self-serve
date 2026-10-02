@@ -793,6 +793,10 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
+    // Audience and pitch described the brief just DISCARDED; leaving them pre-filled the next New
+    // Brief with the old event's copy (LFX-Campaigns-Email-QA-Report B5). The url stays -- see the
+    // restore-offer note below for why blanking it would strand that offer.
+    this.briefForm.patchValue({ targetAudience: '', valueProp: '' });
     // The restore offer is deliberately NOT cleared here, unlike everything above it.
     //
     // Cancel and New Brief discard the GENERATED brief. They say nothing about the STORED one,
