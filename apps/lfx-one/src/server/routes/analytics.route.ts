@@ -292,9 +292,10 @@ router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => anal
 router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
 router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
 
-// Health Metrics Training tab (#3198) and its enrollment section (#3199)
+// Health Metrics Training tab (#3198) and its enrollment (#3199) and courses (#3200) sections
 router.get('/training-presence', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingPresence(req, res, next));
 router.get('/training-enrollment', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingEnrollment(req, res, next));
+router.get('/training-courses', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCourses(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

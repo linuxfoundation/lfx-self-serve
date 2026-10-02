@@ -3,10 +3,13 @@
 
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsTrainingCourses,
+  HealthMetricsTrainingCoursesTypeOption,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentMetricOption,
   HealthMetricsTrainingEnrollmentPeriod,
+  HealthMetricsTrainingQueryParams,
   HealthMetricsTrainingSectionKey,
 } from '../interfaces/health-metrics-training.interface';
 
@@ -33,6 +36,7 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     footnote:
       'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
     footnoteCaution: false,
+    headingBadge: 'Provisional',
   },
 ] as const;
 
@@ -40,7 +44,7 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
 export const HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX = 'sec-trn-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
-export const HEALTH_METRICS_TRAINING_DATA_SECTIONS = ['enroll'] as const satisfies readonly HealthMetricsTrainingSectionKey[];
+export const HEALTH_METRICS_TRAINING_DATA_SECTIONS = ['enroll', 'courses'] as const satisfies readonly HealthMetricsTrainingSectionKey[];
 
 /** Note under the sub-nav items, linking to the Members directory's per-organization training. */
 export const HEALTH_METRICS_TRAINING_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
@@ -105,3 +109,52 @@ export const HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES: Readonly<Record<Heal
 
 /** Fill for the by-type bars — applied via `[class]`, so it is safelisted in Tailwind. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS = 'bg-blue-600';
+
+/** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */
+export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null };
+
+/** The type pills over the courses table; the first is the default. */
+export const HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS: readonly HealthMetricsTrainingCoursesTypeOption[] = [
+  { id: 'all', label: 'All' },
+  { id: 'certifications', label: 'Certifications' },
+  { id: 'elearning', label: 'eLearning' },
+];
+
+/** The LF Education delivery type each narrowing pill keeps. */
+export const HEALTH_METRICS_TRAINING_COURSES_TYPE_DELIVERY_TYPES = {
+  certifications: 'Certification Exam',
+  elearning: 'E-Learning',
+} as const;
+
+/** Rows per page; the server caps a request at `HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE`. */
+export const HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE = 25;
+
+export const HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE = 100;
+
+/** Search text past this length is cut before it is bound. */
+export const HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH = 100;
+
+export const HEALTH_METRICS_TRAINING_COURSES_SEARCH_DEBOUNCE_MS = 200;
+
+export const HEALTH_METRICS_TRAINING_QUERY_PARAMS = {
+  coursesType: 'trnType',
+  coursesSearch: 'trnSearch',
+  coursesPage: 'trnPage',
+} as const satisfies Record<string, keyof HealthMetricsTrainingQueryParams>;
+
+/** A course's type pill names one course, so it reads singular where the by-type bars read plural. */
+export const HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS: Readonly<Record<string, string>> = {
+  'E-Learning': 'eLearning',
+  'Certification Exam': 'Certification',
+  'Instructor Led': 'Instructor-led',
+  MicroCourse: 'Microcourse',
+};
+
+/** Type pills — applied via `[class]`, so they are safelisted in Tailwind. Certifications stand out from the rest. */
+export const HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES = {
+  certification: 'bg-blue-50 text-blue-700',
+  other: 'bg-gray-100 text-gray-600',
+} as const;
+
+/** Shown in place of revenue for a free course: reach, not a gap. */
+export const HEALTH_METRICS_TRAINING_COURSE_FREE_LABEL = 'free';

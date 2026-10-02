@@ -13,6 +13,7 @@ import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
+import { TrainingCoursesComponent } from './components/training-courses/training-courses.component';
 import { TrainingEnrollComponent } from './components/training-enroll/training-enroll.component';
 import { HealthMetricsTrainingComponent } from './health-metrics-training.component';
 
@@ -22,6 +23,14 @@ import type { Observable } from 'rxjs';
 /** Stands in for Enrollment & revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-enroll', template: '<div data-testid="training-enroll-stub"></div>' })
 class EnrollStubComponent {
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+/** Stands in for Courses, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-training-courses', template: '<div data-testid="training-courses-stub"></div>' })
+class CoursesStubComponent {
+  public readonly countChange = output<number | null>();
   public readonly settled = output<void>();
   public readonly reading = output<void>();
 }
@@ -46,7 +55,10 @@ describe('HealthMetricsTrainingComponent', () => {
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
     })
-      .overrideComponent(HealthMetricsTrainingComponent, { remove: { imports: [TrainingEnrollComponent] }, add: { imports: [EnrollStubComponent] } })
+      .overrideComponent(HealthMetricsTrainingComponent, {
+        remove: { imports: [TrainingCoursesComponent, TrainingEnrollComponent] },
+        add: { imports: [CoursesStubComponent, EnrollStubComponent] },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsTrainingComponent);
@@ -58,6 +70,10 @@ describe('HealthMetricsTrainingComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  function stub<T>(type: new (...args: never[]) => T): T {
+    return fixture.debugElement.query(By.directive(type)).componentInstance as T;
   }
 
   function testId(id: string): HTMLElement | null {
@@ -89,15 +105,15 @@ describe('HealthMetricsTrainingComponent', () => {
     rendered.forEach((element, index) => expect(element.textContent).toContain(HEALTH_METRICS_TRAINING_SECTIONS[index].heading));
   });
 
-  it('projects Enrollment & revenue into its section, leaving Courses awaiting data', async () => {
+  it('projects each section into its anchor, leaving none awaiting data', async () => {
     await setup();
 
     expect(fixture.nativeElement.querySelector('#sec-trn-enroll [data-testid="training-enroll-stub"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('#sec-trn-enroll')?.textContent).not.toContain('Awaiting data');
-    expect(fixture.nativeElement.querySelector('#sec-trn-courses')?.textContent).toContain('Awaiting data');
+    expect(fixture.nativeElement.querySelector('#sec-trn-courses [data-testid="training-courses-stub"]')).not.toBeNull();
+    expect(testId('health-metrics-training-page')?.textContent).not.toContain('Awaiting data');
   });
 
-  it('lists every section in the sub-nav, with no badge and the Members cross-reference', async () => {
+  it('lists every section in the sub-nav, with no badge before a read and the Members cross-reference', async () => {
     await setup();
     const nav = testId('training-sub-nav') as HTMLElement;
 
@@ -109,6 +125,20 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(testId('training-sub-nav-cross-reference-link')?.getAttribute('href')).toBe('/foundation/health-metrics/members#list');
   });
 
+  it('badges Courses with the in-scope count it reports, and clears it while a read is pending', async () => {
+    await setup();
+    const courses = stub(CoursesStubComponent);
+
+    courses.countChange.emit(340);
+    await flush();
+    expect(testId('training-sub-nav-courses')?.textContent).toContain('340');
+    expect(testId('training-sub-nav-enroll')?.textContent).not.toMatch(/\d/);
+
+    courses.countChange.emit(null);
+    await flush();
+    expect(testId('training-sub-nav-courses')?.textContent).not.toMatch(/\d/);
+  });
+
   it('says above the sections that the project selector does not narrow them', async () => {
     await setup();
     const note = testId('training-scope-note') as HTMLElement;
@@ -117,15 +147,19 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(note.compareDocumentPosition(testId('health-metrics-training-page') as HTMLElement)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it('re-lands a held deep link once Enrollment & revenue settles, then releases it', async () => {
+  it('re-lands a held deep link as each data section settles, releasing it once both have', async () => {
     await setup(of({ hasProgramme: true }), 'courses');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
 
-    const enroll = fixture.debugElement.query(By.directive(EnrollStubComponent)).componentInstance as EnrollStubComponent;
+    const enroll = stub(EnrollStubComponent);
     enroll.settled.emit();
     await flush();
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stub(CoursesStubComponent).settled.emit();
+    await flush();
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('training-sub-nav-courses');
 
     scrollIntoView.mockClear();

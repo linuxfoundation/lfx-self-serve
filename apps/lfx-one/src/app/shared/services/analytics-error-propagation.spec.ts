@@ -222,6 +222,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // A swallowed failure would read as a foundation with no enrollments.
       call: () => service.getTrainingEnrollment({ foundationSlug: 'aaif' }),
     },
+    {
+      name: 'getTrainingCourses',
+      url: '/api/analytics/training-courses',
+      // A swallowed failure would read as a foundation with no courses.
+      call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
@@ -249,6 +255,17 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getTrainingCourses sends a typed plus sign encoded and leaves an empty search out', () => {
+    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: 'C++', offset: 0, pageSize: 25 }).subscribe();
+    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }).subscribe();
+
+    const [withSearch, withoutSearch] = http.match((request) => request.url === '/api/analytics/training-courses');
+    expect(withSearch.request.urlWithParams).toContain('search=C%2B%2B');
+    expect(withoutSearch.request.params.has('search')).toBe(false);
+    withSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+    withoutSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getMembersDirectory sends a typed plus sign encoded and leaves empty filters out', () => {

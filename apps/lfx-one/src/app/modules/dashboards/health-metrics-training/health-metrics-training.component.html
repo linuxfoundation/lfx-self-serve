@@ -15,12 +15,18 @@
       [sections]="sections"
       [idPrefix]="idPrefix"
       [dataSections]="dataSections"
-      [subNavItems]="subNavItems"
+      [subNavItems]="subNavItems()"
       navLabel="Training sections"
       testIdPrefix="training"
       [crossReference]="crossReference">
       <ng-template lfxHealthMetricsL2Section="enroll">
         <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll')" />
+      </ng-template>
+      <ng-template lfxHealthMetricsL2Section="courses">
+        <lfx-training-courses
+          (reading)="shell.sectionReading('courses')"
+          (settled)="shell.sectionSettled('courses')"
+          (countChange)="coursesCount.set($event)" />
       </ng-template>
     </lfx-health-metrics-l2-shell>
   }

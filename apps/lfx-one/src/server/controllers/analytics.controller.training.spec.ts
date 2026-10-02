@@ -4,13 +4,15 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getPresence, getEnrollment } = vi.hoisted(() => ({ getPresence: vi.fn(), getEnrollment: vi.fn() }));
+const { getPresence, getEnrollment, getCourses } = vi.hoisted(() => ({ getPresence: vi.fn(), getEnrollment: vi.fn(), getCourses: vi.fn() }));
 
 vi.mock('../services/health-metrics-training.service', () => ({
   HealthMetricsTrainingService: class {
     public getPresence = getPresence;
     public getEnrollment = getEnrollment;
+    public getCourses = getCourses;
   },
+  isSupportedTrainingRange: (range: string) => range !== 'COMPLETED_YEAR_4',
 }));
 // The controller constructs eight unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
@@ -27,6 +29,8 @@ vi.mock('../services/logger.service', () => ({
 // `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
+import { HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH } from '@lfx-one/shared/constants';
+
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
@@ -34,7 +38,7 @@ import { logger } from '../services/logger.service';
 
 function call(
   queryParams: Record<string, string>,
-  handler: 'getTrainingPresence' | 'getTrainingEnrollment' = 'getTrainingPresence'
+  handler: 'getTrainingPresence' | 'getTrainingEnrollment' | 'getTrainingCourses' = 'getTrainingPresence'
 ): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
   const res = { json: vi.fn() } as unknown as Response;
@@ -127,6 +131,78 @@ describe('AnalyticsController.getTrainingEnrollment', () => {
     getEnrollment.mockRejectedValue(failure);
 
     const { next, promise } = call({ foundationSlug: 'acme' }, 'getTrainingEnrollment');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getTrainingCourses', () => {
+  const courses = { rows: [], totalRecords: 3, scopeTotal: 7 };
+
+  beforeEach(() => {
+    vi.mocked(logger.success).mockClear();
+    getCourses.mockReset();
+    getCourses.mockResolvedValue(courses);
+  });
+
+  it('defaults the period, type, search and page, and logs counts only', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getTrainingCourses');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 });
+    expect(res.json).toHaveBeenCalledWith(courses);
+    expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toEqual({
+      foundation_slug: 'acme',
+      range: 'YTD',
+      type: 'all',
+      has_search: false,
+      total_records: 3,
+      scope_total: 7,
+    });
+  });
+
+  it('passes the parsed query, with the search trimmed and capped', async () => {
+    const search = `  ${'a'.repeat(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH + 20)}  `;
+    const { promise } = call(
+      { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', type: 'certifications', search, offset: '50', pageSize: '25' },
+      'getTrainingCourses'
+    );
+    await promise;
+
+    expect(getCourses).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR_2',
+      type: 'certifications',
+      search: 'a'.repeat(HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH),
+      offset: 50,
+      pageSize: 25,
+    });
+    expect(vi.mocked(logger.success).mock.calls[0]?.[3]).toMatchObject({ has_search: true });
+    expect(JSON.stringify(vi.mocked(logger.success).mock.calls[0]?.[3])).not.toContain('aaa');
+  });
+
+  it.each([
+    [{}, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ foundationSlug: 'acme', range: 'LAST_WEEK' }, 'range'],
+    [{ foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ foundationSlug: 'acme', type: 'bundles' }, 'type'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query as Record<string, string>, 'getTrainingCourses');
+    await promise;
+
+    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError | undefined;
+    expect(error?.validationErrors?.[0]?.field).toBe(field);
+    expect(getCourses).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getCourses.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getTrainingCourses');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);
