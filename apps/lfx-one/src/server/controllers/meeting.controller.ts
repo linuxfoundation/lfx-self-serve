@@ -436,7 +436,7 @@ export class MeetingController {
         fieldErrors['occurrenceId'] = 'Occurrence ID must be a Unix timestamp';
       }
 
-      const startTimeError = this.getOccurrenceStartTimeError(newStartTime, newStartMs);
+      const startTimeError = this.getOccurrenceStartTimeError(newStartTime, newStartMs, occurrenceId);
       if (startTimeError) {
         fieldErrors['start_time'] = startTimeError;
       }
@@ -2381,7 +2381,12 @@ export class MeetingController {
   }
 
   /** Returns the validation message for a rescheduled occurrence start, or `null` when it is usable. */
-  private getOccurrenceStartTimeError(value: string, parsedMs: number): string | null {
+  /**
+   * A past start is accepted only when it is the occurrence's own start (its id is that instant in Unix
+   * seconds): upstream needs a start on every occurrence write, so a title or agenda edit during a live
+   * occurrence resends it unchanged. Upstream still rejects one for an occurrence that has ended.
+   */
+  private getOccurrenceStartTimeError(value: string, parsedMs: number, occurrenceId: string): string | null {
     if (!value) {
       return 'Start time is required';
     }
@@ -2390,7 +2395,7 @@ export class MeetingController {
       return 'Start time must be an RFC3339 date-time';
     }
 
-    if (parsedMs <= Date.now()) {
+    if (parsedMs <= Date.now() && parsedMs !== Number(occurrenceId) * 1000) {
       return 'Start time must be in the future';
     }
 

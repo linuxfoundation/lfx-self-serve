@@ -22,7 +22,7 @@ import {
   toZonedDateCarrier,
   wallTimeExistsInTimezone,
 } from '@lfx-one/shared/utils';
-import { futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
+import { editModeDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
@@ -150,10 +150,11 @@ export class RescheduleOccurrenceDialogComponent {
           Validators.maxLength(MEETING_AGENDA_MAX_LENGTH),
           ...(this.initialDescription.trim() ? [Validators.required, Validators.pattern(/\S/)] : []),
         ]),
-        // Not user-editable; present only because `futureDateTimeValidator` reads the zone off the group.
+        // Not user-editable; present only because `editModeDateTimeValidator` reads the zone off the group.
         timezone: new FormControl(this.timezone),
       },
-      { validators: [futureDateTimeValidator(), this.wallTimeExistsValidator()] }
+      // The occurrence's own start stays valid once it has begun, so a live occurrence can still be retitled.
+      { validators: [editModeDateTimeValidator(this.occurrence.start_time), this.wallTimeExistsValidator()] }
     );
 
     // An occurrence created elsewhere can carry a duration outside what this form accepts, and a series

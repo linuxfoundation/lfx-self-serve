@@ -918,6 +918,20 @@ describe('MeetingController', () => {
       expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual([field]);
     });
 
+    it("accepts an occurrence's own start once it has begun, so a live occurrence can still be retitled", async () => {
+      const liveOccurrenceId = String(Math.floor((Date.now() - 10 * 60_000) / 1000));
+      const ownStart = new Date(Number(liveOccurrenceId) * 1000).toISOString();
+
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: ownStart, duration: 30, title: 'Live demo' }, liveOccurrenceId), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, liveOccurrenceId, {
+        start_time: ownStart,
+        duration: 30,
+        title: 'Live demo',
+      });
+    });
+
     it('rejects a start time in the past without calling upstream', async () => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: new Date(Date.now() - 60_000).toISOString(), duration: 30 }), buildRes(), next);
 

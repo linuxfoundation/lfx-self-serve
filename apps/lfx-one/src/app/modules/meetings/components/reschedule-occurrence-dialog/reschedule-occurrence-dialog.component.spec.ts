@@ -142,6 +142,19 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.canSave()).toBe(true);
   });
 
+  it('lets a live occurrence change its title while keeping its own start', async () => {
+    const liveStart = new Date(Math.floor((Date.now() - 10 * 60_000) / 60_000) * 60_000).toISOString();
+    occurrence = { ...OCCURRENCE, start_time: liveStart };
+    const component = await mount();
+
+    component.form.patchValue({ title: 'Live demo' });
+
+    expect(component.form.errors?.['futureDateTime']).toBeUndefined();
+    expect(component.canSave()).toBe(true);
+    component.onConfirm();
+    expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', '1893492000', { start_time: liveStart, duration: 30, title: 'Live demo' });
+  });
+
   it('blocks a start in the past', async () => {
     const component = await mount();
 
