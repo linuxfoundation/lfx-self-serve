@@ -7,6 +7,9 @@
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
+  [closable]="!saving()"
+  [dismissible]="!saving()"
+  [closeOnEscape]="!saving()"
   styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
   data-testid="mentee-profile-edit-drawer">
   <ng-template #header>
@@ -17,82 +20,119 @@
   </ng-template>
 
   <div class="flex flex-col gap-6 h-full" data-testid="mentee-profile-edit-drawer-body">
-    <div class="flex flex-col gap-3" data-testid="mentee-profile-edit-about">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-base font-semibold text-gray-900">About Me</h2>
-        <p class="text-sm text-gray-500">{{ aboutIntro }}</p>
-        <ol class="list-decimal pl-5 text-sm text-gray-500 flex flex-col gap-0.5" data-testid="mentee-profile-edit-about-prompts">
-          @for (prompt of aboutPrompts; track prompt) {
-            <li>{{ prompt }}</li>
-          }
-        </ol>
-      </div>
+    <!-- `inert` for the length of the save, and only over the fields: onSave() snapshots the form before the request
+         goes out and closes on that response, so an edit typed mid-save would be silently dropped. The actions stay
+         outside it, as in the meeting composer. -->
+    <div class="flex flex-col gap-6" data-testid="mentee-profile-edit-drawer-fields" [attr.inert]="saving() ? '' : null">
+      <div class="flex flex-col gap-3" data-testid="mentee-profile-edit-about">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-base font-semibold text-gray-900">About Me</h2>
+          <p class="text-sm text-gray-500">{{ aboutIntro }}</p>
+          <ol class="list-decimal pl-5 text-sm text-gray-500 flex flex-col gap-0.5" data-testid="mentee-profile-edit-about-prompts">
+            @for (prompt of aboutPrompts; track prompt) {
+              <li>{{ prompt }}</li>
+            }
+          </ol>
+        </div>
 
-      <div class="flex flex-col gap-1">
-        <!-- No native [maxlength] — it counts UTF-16 units and would block emoji below the 3000 code-point cap. -->
-        <label for="mentee-profile-edit-about-me" class="sr-only">About Me</label>
-        <lfx-textarea
-          [form]="form"
-          control="introduction"
-          [rows]="6"
-          styleClass="w-full min-h-32"
-          inputId="mentee-profile-edit-about-me"
-          [ariaDescribedBy]="'mentee-profile-edit-about-me-counter'"
-          dataTest="mentee-profile-edit-about-me" />
-        <div class="flex justify-end">
-          <span
-            id="mentee-profile-edit-about-me-counter"
-            class="text-xs text-gray-400"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            [attr.aria-label]="aboutMeLength() + ' of ' + aboutMeMax + ' characters used'"
-            data-testid="mentee-profile-edit-about-me-counter">
-            {{ aboutMeLength() }} / {{ aboutMeMax }}
-          </span>
+        <div class="flex flex-col gap-1">
+          <!-- No native [maxlength] — it counts UTF-16 units and would block emoji below the 3000 code-point cap. -->
+          <label for="mentee-profile-edit-about-me" class="sr-only">About Me</label>
+          <lfx-textarea
+            [form]="form"
+            control="introduction"
+            [rows]="6"
+            styleClass="w-full min-h-32"
+            inputId="mentee-profile-edit-about-me"
+            [ariaDescribedBy]="'mentee-profile-edit-about-me-counter'"
+            dataTest="mentee-profile-edit-about-me" />
+          <div class="flex justify-end">
+            <span
+              id="mentee-profile-edit-about-me-counter"
+              class="text-xs text-gray-400"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              [attr.aria-label]="aboutMeLength() + ' of ' + aboutMeMax + ' characters used'"
+              data-testid="mentee-profile-edit-about-me-counter">
+              {{ aboutMeLength() }} / {{ aboutMeMax }}
+            </span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="flex flex-col gap-4" data-testid="mentee-profile-edit-skills">
-      <div class="flex flex-col gap-1">
-        <h2 class="text-base font-semibold text-gray-900">Skills</h2>
-        <p class="text-sm text-gray-500">{{ skillsIntro }}</p>
-      </div>
+      <div class="flex flex-col gap-4" data-testid="mentee-profile-edit-skills">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-base font-semibold text-gray-900">Skills</h2>
+          <p class="text-sm text-gray-500">{{ skillsIntro }}</p>
+        </div>
 
-      <lfx-mentorship-skills-picker
-        [form]="form"
-        [label]="skillsHaveLabel"
-        control="skillsHave"
-        idPrefix="mentee-profile-edit-have"
-        [error]="skillsHaveError()" />
-
-      <lfx-mentorship-skills-picker
-        [form]="form"
-        [label]="skillsWantLabel"
-        control="skillsWant"
-        idPrefix="mentee-profile-edit-want"
-        [error]="skillsWantError()" />
-
-      <div class="flex flex-col gap-1" data-testid="mentee-profile-edit-additional-notes">
-        <label for="mentee-profile-edit-additional-notes" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
-        <lfx-textarea
+        <lfx-mentorship-skills-picker
           [form]="form"
-          control="additionalNotes"
-          [rows]="4"
-          styleClass="w-full min-h-24"
-          [maxlength]="additionalNotesMax"
-          inputId="mentee-profile-edit-additional-notes"
-          dataTest="mentee-profile-edit-additional-notes" />
+          [label]="skillsHaveLabel"
+          control="skillsHave"
+          idPrefix="mentee-profile-edit-have"
+          [error]="skillsHaveError()" />
+
+        <lfx-mentorship-skills-picker
+          [form]="form"
+          [label]="skillsWantLabel"
+          control="skillsWant"
+          idPrefix="mentee-profile-edit-want"
+          [error]="skillsWantError()" />
+
+        <div class="flex flex-col gap-1" data-testid="mentee-profile-edit-additional-notes">
+          <label for="mentee-profile-edit-additional-notes" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
+          <lfx-textarea
+            [form]="form"
+            control="additionalNotes"
+            [rows]="4"
+            styleClass="w-full min-h-24"
+            [maxlength]="additionalNotesMax"
+            inputId="mentee-profile-edit-additional-notes"
+            dataTest="mentee-profile-edit-additional-notes" />
+        </div>
       </div>
+
+      <lfx-mentorship-resume-section
+        [form]="form"
+        [intro]="resumeIntro"
+        [bordered]="false"
+        [comingSoonSummary]="resumeComingSoonSummary"
+        idPrefix="mentee-profile-edit-resume" />
     </div>
 
-    <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" [bordered]="false" idPrefix="mentee-profile-edit-resume" />
+    <!-- Kept next to the actions, not at the top of the body: Save sits below a long scrolling form, so an error at the top would render off-screen. -->
+    @if (errorMessage(); as message) {
+      <div
+        #errorRef
+        role="alert"
+        tabindex="-1"
+        class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 focus:outline-none"
+        data-testid="mentee-profile-edit-drawer-error">
+        {{ message }}
+      </div>
+    }
 
     <div class="flex justify-end gap-3 border-t border-gray-200 pt-4 mt-auto" data-testid="mentee-profile-edit-drawer-actions">
-      <lfx-button type="button" variant="outlined" [label]="cancelLabel" (onClick)="onCancel()" size="small" data-testid="mentee-profile-edit-drawer-cancel" />
+      <lfx-button
+        type="button"
+        variant="outlined"
+        [label]="cancelLabel"
+        [disabled]="saving()"
+        (onClick)="onCancel()"
+        size="small"
+        data-testid="mentee-profile-edit-drawer-cancel" />
 
-      <lfx-button type="button" severity="info" [label]="saveLabel" (onClick)="onSave()" size="small" data-testid="mentee-profile-edit-drawer-save" />
+      <lfx-button
+        type="button"
+        severity="info"
+        [label]="saveLabel"
+        [loading]="saving()"
+        [disabled]="saving()"
+        (onClick)="onSave()"
+        size="small"
+        data-testid="mentee-profile-edit-drawer-save" />
     </div>
   </div>
 </p-drawer>

@@ -3991,7 +3991,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       // refused by its enum. Several types share a stage, which is why the two are distinct.
       // Variant A always requests the `urgency-fomo` draft; dropping it would silently
       // generate default copy and make the A/B test compare A against A.
-      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo');
+      //
+      // The trailing `undefined` is the SEGMENT, and it is asserted rather than left off: this is
+      // an exact-arity matcher, and the selector defaults to "All audiences" -- so a default
+      // generate must travel with no segment, exactly as it did before the field existed.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo', undefined);
     });
 
     it('ranks templates matching the selected type first, without removing any', () => {
@@ -4854,7 +4858,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Variant B takes ORDINARY stage copy -- variant A is the one that requests urgency-fomo.
       // If B passed the same variant, both arms would be the same draft and the A/B test would
       // compare a copy against itself, which no other test would notice.
-      expect(gen).toHaveBeenCalledWith(expect.any(String), 'brief-77', internals().selectedEmailStage());
+      expect(gen).toHaveBeenCalledWith(expect.any(String), 'brief-77', internals().selectedEmailStage(), undefined, undefined);
       expect(internals().abTestSubjectB()).toBe('B subject');
       expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
     });

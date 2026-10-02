@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import type {
   Project,
   ProjectApplication,
+  ProjectApplicationAcceptChoice,
   ProjectApplicationAnswerLink,
   ProjectApplicationStatusCallout,
   ProjectApplicationViewMode,
@@ -70,7 +71,7 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     };
     const messages = { add: vi.fn() };
     // The accept dialog closes with whatever the test pushes through `dialogClose`.
-    const dialogClose = new Subject<Project | undefined>();
+    const dialogClose = new Subject<ProjectApplicationAcceptChoice | undefined>();
     const dialog = { open: vi.fn(() => ({ onClose: dialogClose.asObservable() })) };
 
     await TestBed.configureTestingModule({
@@ -211,11 +212,11 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(service.accept).not.toHaveBeenCalled();
   });
 
-  it('accepts under the parent chosen in the dialog', async () => {
+  it('accepts under the parent and with the slug chosen in the dialog', async () => {
     const { component, service, changed, dialogClose } = await setup('staff');
     component.onAccept();
-    dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
-    expect(service.accept).toHaveBeenCalledWith(expect.objectContaining({ revision: 4 }), 'parent-uid');
+    dialogClose.next({ parent: { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project, slug: 'new-project' });
+    expect(service.accept).toHaveBeenCalledWith(expect.objectContaining({ revision: 4 }), 'parent-uid', 'new-project');
     expect(changed[0].state).toBe('accepted');
   });
 
@@ -229,11 +230,11 @@ describe('ProjectApplicationDrawerComponent (#3037)', () => {
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
   });
 
-  it('reloads after any accept failure, since the parent may already be recorded', async () => {
+  it('reloads after any accept failure, since the choices or the project may already be recorded', async () => {
     const { component, service, staleCount, messages, dialogClose } = await setup('staff');
     service.accept.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'Upstream unavailable' } })));
     component.onAccept();
-    dialogClose.next({ uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project);
+    dialogClose.next({ parent: { uid: 'parent-uid', name: 'Parent', slug: 'parent' } as Project, slug: 'new-project' });
     expect(staleCount()).toBe(1);
     expect(messages.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'The proposal could not be accepted' }));
   });

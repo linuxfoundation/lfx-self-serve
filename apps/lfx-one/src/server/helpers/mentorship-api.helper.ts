@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MentorshipUpstreamListResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../constants';
+import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_LIST_MAX_PAGES, MENTORSHIP_LIST_PAGE_SIZE, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
+import { isImpersonating } from '../utils/auth-helper';
 
 /** Whether an upstream failure is the mentorship service saying the caller has no local record yet. */
 export function isMentorshipNotProvisionedError(error: unknown): boolean {
@@ -22,6 +24,9 @@ export function isMentorshipNotProvisionedError(error: unknown): boolean {
  * Retrying a write is safe: upstream rejects an unprovisioned caller in middleware, before
  * the handler runs, so the first attempt changed nothing. `PUT /me` is an upsert, so two
  * requests provisioning the same user at once is harmless.
+ *
+ * While impersonating, the token is the target's, so provisioning would write the target's
+ * record from a read. Impersonation is read-only, so the 401 propagates instead.
  */
 export async function proxyMentorshipRequest<T>(
   proxy: MicroserviceProxyService,
@@ -34,7 +39,7 @@ export async function proxyMentorshipRequest<T>(
   try {
     return await proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
   } catch (error) {
-    if (!isMentorshipNotProvisionedError(error)) {
+    if (!isMentorshipNotProvisionedError(error) || isImpersonating(req)) {
       throw error;
     }
   }
@@ -43,4 +48,37 @@ export async function proxyMentorshipRequest<T>(
   // Upstream decodes a JSON body and rejects an empty one; it fills every field from the token.
   await proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
   return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
+}
+
+/**
+ * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
+ * the reported total, a page comes back empty, or the page carries no usable total. A list still
+ * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
+ */
+export async function listAllMentorshipPages<T>(
+  proxy: MicroserviceProxyService,
+  req: Request,
+  path: string,
+  query: Record<string, unknown> = {}
+): Promise<T[]> {
+  const items: T[] = [];
+  for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
+    const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(proxy, req, path, 'GET', {
+      ...query,
+      limit: MENTORSHIP_LIST_PAGE_SIZE,
+      offset: items.length,
+    });
+    const rows = data ?? [];
+    items.push(...rows);
+    const total = meta?.total;
+    if (rows.length === 0 || typeof total !== 'number' || !Number.isFinite(total) || items.length >= total) {
+      return items;
+    }
+  }
+  logger.warning(req, 'mentorship_list_all_pages', 'Upstream list exceeded the page cap, returning the rows read so far', {
+    path,
+    max_pages: MENTORSHIP_LIST_MAX_PAGES,
+    count: items.length,
+  });
+  return items;
 }

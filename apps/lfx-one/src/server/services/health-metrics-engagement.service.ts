@@ -43,6 +43,7 @@ import type {
   HealthMetricsEngagementRepRow,
 } from '@lfx-one/shared/interfaces';
 
+import { isHealthMetricsL2Range } from '../helpers/health-metrics-l2.helper';
 import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -73,7 +74,7 @@ const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string
 
 /** True when this service can serve the range — the controller uses it to validate before binding. */
 export function isSupportedEngagementRange(range: string): range is SupportedEngagementRange {
-  return Object.prototype.hasOwnProperty.call(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX, range);
+  return isHealthMetricsL2Range(range);
 }
 
 interface GroupAttendanceRow {

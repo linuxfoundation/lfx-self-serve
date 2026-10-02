@@ -54,7 +54,10 @@
                 <lfx-checkbox [form]="mlCheckboxForm" [control]="ml.uid" [binary]="true"></lfx-checkbox>
               </td>
               <td class="py-3 px-2 font-semibold text-gray-900">{{ ml.group_name }}</td>
-              <td class="py-3 px-2 text-gray-500">{{ ml | mailingListEmail }}</td>
+              <td class="py-3 px-2 text-gray-500">
+                @let mlEmail = ml | mailingListEmail;
+                {{ mlEmail || '—' }}
+              </td>
               <td class="py-3 px-2">
                 @if (ml.public) {
                   <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />

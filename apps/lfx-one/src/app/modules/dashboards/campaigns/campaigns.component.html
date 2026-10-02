@@ -191,6 +191,30 @@
             </p>
           </div>
 
+          <!--
+            The SEGMENT selector, beside the type rather than on Implement, because it is an input
+            to generation and not a property of the brief: the same brief generates copy for every
+            segment. Both pickers that feed `generateEmailCopy` therefore sit together, above the
+            planner, and the operator sees what the next generate will ask for in one place.
+          -->
+          <div class="flex flex-col gap-2" data-testid="campaigns-email-segment-picker">
+            <label for="email-segment" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience segment</label>
+            <lfx-select
+              [form]="selectorForm"
+              control="emailSegment"
+              inputId="email-segment"
+              [options]="emailSegments"
+              optionLabel="label"
+              optionValue="id"
+              size="small"
+              ariaLabel="Audience segment"
+              dataTest="campaigns-email-segment-select" />
+            <p class="text-xs text-gray-500">
+              Narrows the <em>framing</em> only — which benefits lead and what the call to action assumes the reader already knows. It does not change the
+              stage, the brief or the recipient list; leave it on <em>All audiences</em> for generic copy.
+            </p>
+          </div>
+
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             deliveryType="email"
@@ -346,22 +370,20 @@
                     <div class="flex flex-col gap-1">
                       <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Body</span>
                       <!--
-                        innerHTML is the point: the generator returns HTML sections and the operator
-                        needs to see the rendered email, not its markup.
-
-                        Safe because NOTHING here bypasses Angular's sanitizer -- there is no
-                        `bypassSecurityTrustHtml` anywhere in this module, so the default
-                        DomSanitizer strips scripts and event handlers on this binding.
-
-                        That is the load-bearing fact, NOT "we wrote the prompt": the model is fed
-                        scraped third-party event-page HTML, so `copy.body` is not purely
-                        first-party content. If a `bypassSecurityTrust*` is ever added to this
-                        module, this binding must be re-reviewed before it lands.
+                        Framed, not bound. Angular's sanitizer strips `style` on an `[innerHTML]`
+                        binding and email HTML is almost entirely inline-styled, so that binding
+                        showed the email's structure with none of its styling -- the operator
+                        approved a layout they had never actually seen.
+                        `lfx-email-body-preview` renders it in a sandboxed iframe instead, where
+                        the generator's inline styles survive. That component's docstring carries
+                        the security argument, including why its `sandbox` must never gain
+                        `allow-scripts` or `allow-same-origin`.
                       -->
-                      <div
-                        class="prose prose-sm max-w-none text-sm text-gray-800"
-                        [innerHTML]="emailBodyHtmlForSend()"
-                        data-testid="campaigns-email-copy-body"></div>
+                      <lfx-email-body-preview
+                        class="overflow-hidden rounded-md border border-gray-200"
+                        [html]="emailBodyHtmlForSend()"
+                        [heightPx]="420"
+                        testId="campaigns-email-copy-body" />
                     </div>
                   </div>
                 }
@@ -740,8 +762,8 @@
                     @if (emailHeroImageUrl()) {
                       <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
                     }
-                    <!-- `body` is model-generated and reaches `[innerHTML]`. Angular strips
-                         scripts and event handlers but KEEPS a plain `<img src>`, and
+                    <!-- `body` is model-generated and reaches a sandboxed iframe, which cannot
+                         run script but DOES still load a plain `<img src>`, and
                          campaign-service's /email-copy path applies no sanitizer, so the BFF
                          adapter removes resource-loading elements before this binding sees them
                          (`stripResourceLoadingHtml`). Without that, a generated or
@@ -752,10 +774,7 @@
                          send body would show that label TWICE. The other body cards have no such element and
                          bind their own `...ForSend()` body -- `emailBodyHtmlForSend()` for A,
                          `abTestBodyHtmlBForSend()` for B -- so they show exactly what the draft carries. -->
-                    <div
-                      class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                      [innerHTML]="emailBodyHtmlPreview()"
-                      data-testid="campaigns-email-preview-body"></div>
+                    <lfx-email-body-preview [html]="emailBodyHtmlPreview()" [heightPx]="480" testId="campaigns-email-preview-body" />
                     @if (emailCtaLabel(); as ctaLabel) {
                       <div class="px-4 pb-4">
                         <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white" data-testid="campaigns-email-preview-cta">
@@ -914,10 +933,11 @@
                         @if (emailHeroImageUrl()) {
                           <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
                         }
-                        <div
-                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                          [innerHTML]="emailBodyHtmlForSend() || '(template body)'"
-                          data-testid="campaigns-email-abtest-preview-a"></div>
+                        <lfx-email-body-preview
+                          [html]="emailBodyHtmlForSend()"
+                          [heightPx]="420"
+                          emptyText="(template body)"
+                          testId="campaigns-email-abtest-preview-a" />
                         @if (emailCtaLabel(); as ctaLabel) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
@@ -948,10 +968,7 @@
                         @if (emailHeroImageUrl()) {
                           <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
                         }
-                        <div
-                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                          [innerHTML]="abTestBodyHtmlBForSend() || '(no body yet)'"
-                          data-testid="campaigns-email-abtest-preview-b"></div>
+                        <lfx-email-body-preview [html]="abTestBodyHtmlBForSend()" [heightPx]="420" testId="campaigns-email-abtest-preview-b" />
                         @if (emailCtaLabel(); as ctaLabel) {
                           <div class="px-4 pb-4">
                             <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>

@@ -9,7 +9,6 @@ import {
   FORMATION_INVITE_DIALOG_HEADER,
   FORMATION_PEOPLE_EMPTY_MESSAGE,
   FORMATION_PEOPLE_FOOTER_NOTE,
-  FORMATION_PEOPLE_GROUP_LABELS,
   FORMATION_PEOPLE_HEADING,
   FORMATION_PEOPLE_UNAVAILABLE_MESSAGE,
   FORMATION_PERSON_STATUS_LABELS,
@@ -21,7 +20,7 @@ import type {
   FormationPeopleResponse,
   FormationPeopleRowGroup,
 } from '@lfx-one/shared/interfaces';
-import { formationPeopleGroupKeys, groupFormationPeople, toFormationPersonRow } from '@lfx-one/shared/utils';
+import { buildFormationPeopleRowGroups } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -32,7 +31,8 @@ import { FormationInviteDialogComponent } from '../formation-invite-dialog/forma
 /**
  * "People on this formation" — the checklist sidebar's people card (#2724), rendered under
  * `lfx-formation-card` on both checklist hosts. Lists the project's settings roles (a formation
- * invite is a project invite, #2147) grouped into LF Staff and Invited, each external row carrying
+ * invite is a project invite, #2147) grouped into LF Staff, then one group per invited
+ * organization (A–Z), then Other for invitees with no known organization. Each external row carries
  * an "Invited" (has an LF account) or "Invite Sent" (email-only, pending acceptance) chip.
  *
  * Writers (`can_write` on the response) also get an **Invite** action (PR 2) that opens
@@ -149,15 +149,6 @@ export class FormationPeopleCardComponent {
   }
 
   private initGroups(): Signal<FormationPeopleRowGroup[]> {
-    return computed(() => {
-      const grouped = groupFormationPeople(this.response().people);
-      const assignees = this.assignees();
-
-      // Render order is the labels constant's declaration order (staff first) — derived, not
-      // restated, so a group added to the constant renders without a matching edit here.
-      return formationPeopleGroupKeys()
-        .map((key) => ({ key, label: FORMATION_PEOPLE_GROUP_LABELS[key], rows: grouped[key].map((person) => toFormationPersonRow(person, assignees)) }))
-        .filter((group) => group.rows.length > 0);
-    });
+    return computed(() => buildFormationPeopleRowGroups(this.response().people, this.assignees()));
   }
 }

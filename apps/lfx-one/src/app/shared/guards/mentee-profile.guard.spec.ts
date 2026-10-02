@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { convertToParamMap, Router, UrlTree } from '@angular/router';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
@@ -55,6 +56,20 @@ describe('menteeRegisterGuard', () => {
     const result = await TestBed.runInInjectionContext(() => menteeRegisterGuard(routeWith(), {} as never));
 
     expect(result).toBe(true);
+  });
+
+  it('allows the register page during SSR without asking the profile check, so the browser run decides', async () => {
+    const hasMenteeProfile = vi.fn();
+    const { createUrlTree } = setup(hasMenteeProfile);
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+    const result = await TestBed.runInInjectionContext(() =>
+      menteeRegisterGuard(routeWith({ programId: 'mp_apicurio_winter26', programTermId: 'trm_apicurio_winter26' }), {} as never)
+    );
+
+    expect(result).toBe(true);
+    expect(hasMenteeProfile).not.toHaveBeenCalled();
+    expect(createUrlTree).not.toHaveBeenCalled();
   });
 
   it('rejects when the service throws (guard has no catchError)', async () => {

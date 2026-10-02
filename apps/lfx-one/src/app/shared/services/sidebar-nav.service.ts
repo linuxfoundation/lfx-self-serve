@@ -192,7 +192,7 @@ export class SidebarNavService {
   });
 
   // --- Me Lens Items ---
-  // Crowdfunding is a top-level section (peer of My Engagement / My Growth), with its
+  // Crowdfunding is a top-level section (peer of My Engagement / Education), with its
   // sub-pages as section children. Security/Akrites is filtered out reactively in visibleMeLensItems.
   private readonly meLensItems: SidebarMenuItem[] = [
     {
@@ -246,11 +246,6 @@ export class SidebarNavService {
           icon: 'fa-light fa-clipboard-list',
           routerLink: '/surveys',
         },
-        {
-          label: 'My ' + DOCUMENT_LABEL.plural,
-          icon: 'fa-light fa-folder-open',
-          routerLink: '/documents',
-        },
       ],
     },
     {
@@ -266,7 +261,7 @@ export class SidebarNavService {
       ],
     },
     {
-      label: 'My Growth',
+      label: 'Education',
       isSection: true,
       expanded: true,
       items: [

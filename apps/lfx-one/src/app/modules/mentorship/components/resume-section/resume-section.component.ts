@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, ElementRef, input, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, Injector, input, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,6 +17,8 @@ import { isMentorshipResumeFileName } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 import { startWith, switchMap } from 'rxjs';
 
+import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
+
 /**
  * Resume upload used by every mentorship register form. Extracted from the previously
  * duplicated `MentorResumeSectionComponent` / `MenteeResumeSectionComponent` — same reuse
@@ -31,6 +33,10 @@ import { startWith, switchMap } from 'rxjs';
  * The accept list, size cap and generic file-picker error text are file-picker plumbing,
  * not persona copy — they stay on the `MENTORSHIP_MENTOR_RESUME_*` constants both forms
  * already share, so a rename would churn beyond the review's ask.
+ *
+ * A host can pass `comingSoonSummary` to keep the picker inert while file upload is not live:
+ * Browse and Clear then show the coming-soon toast, the label no longer targets the file input,
+ * and the input is disabled.
  */
 @Component({
   selector: 'lfx-mentorship-resume-section',
@@ -39,6 +45,10 @@ import { startWith, switchMap } from 'rxjs';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ResumeSectionComponent {
+  // The coming-soon service is resolved lazily, only when a host opts in and a button is pressed,
+  // so hosts (and their TestBeds) that don't opt in never need MessageService in scope.
+  private readonly injector = inject(Injector);
+
   public readonly form = input.required<FormGroup>();
   public readonly intro = input.required<string>();
   /** When false, the card wrapper (border + padding + rounded corners) is stripped — used inside drawers. */
@@ -50,6 +60,12 @@ export class ResumeSectionComponent {
    * anchor to unchanged selectors after the merge.
    */
   public readonly idPrefix = input.required<string>();
+  /**
+   * Opt-in "coming soon" mode. When non-null, the picker is inert: Browse and Clear show the
+   * coming-soon toast with this summary, the label no longer opens the native file dialog and the
+   * hidden input is disabled. Null (default) keeps the normal file picker.
+   */
+  public readonly comingSoonSummary = input<string | null>(null);
 
   protected readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
 
@@ -64,6 +80,7 @@ export class ResumeSectionComponent {
   protected readonly wrapperClass = this.initWrapperClass();
 
   protected onBrowse(): void {
+    if (this.notifyComingSoon()) return;
     this.fileInput()?.nativeElement.click();
   }
 
@@ -89,6 +106,7 @@ export class ResumeSectionComponent {
   }
 
   protected onClear(): void {
+    if (this.notifyComingSoon()) return;
     const input = this.fileInput()?.nativeElement;
     if (input) input.value = '';
     this.fileError.set('');
@@ -111,6 +129,14 @@ export class ResumeSectionComponent {
 
   private initWrapperClass() {
     return computed(() => (this.bordered() ? 'flex flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 md:p-8' : 'flex flex-col gap-6'));
+  }
+
+  /** Shows the coming-soon toast and returns true when the host opted in; otherwise does nothing. */
+  private notifyComingSoon(): boolean {
+    const summary = this.comingSoonSummary();
+    if (summary === null) return false;
+    this.injector.get(MentorshipComingSoonService).notify(summary);
+    return true;
   }
 
   private reject(input: HTMLInputElement, message: string): void {

@@ -54,6 +54,23 @@ export interface Project {
 
 export type ProjectQueryResponse = Project[];
 
+/**
+ * project-service `POST /projects` body (`CreateProjectRequestBody`) — only the fields the BFF sends when a
+ * project application is accepted (#1995). `name`, `slug`, `description` and `parent_uid` are required upstream.
+ */
+export interface CreateProjectRequest {
+  name: string;
+  slug: string;
+  description: string;
+  parent_uid: string;
+  mission_statement?: string;
+  repository_url?: string;
+  website_url?: string;
+  stage?: ProjectStage;
+  legal_entity_type?: string;
+  category?: string;
+}
+
 export interface UserInfo {
   name: string;
   email: string;

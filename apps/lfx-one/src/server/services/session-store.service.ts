@@ -10,7 +10,7 @@ import { logger } from './logger.service';
 
 /**
  * express-openid-connect session store backed by Valkey. Moves the session bundle (Auth0 tokens
- * plus impersonation / API-gateway / crowdfunding / profile tokens written onto `req.appSession`)
+ * plus impersonation / API-gateway / profile tokens written onto `req.appSession`)
  * out of the encrypted `appSession` cookie and into Valkey, keyed by an opaque session id — the
  * cookie then only carries that id. Reads are fail-soft: a Valkey read fault degrades to a miss
  * (treated by express-openid-connect as an expired session, forcing re-auth) rather than a 500,

@@ -22,9 +22,18 @@
     </button>
   }
 
-  @if (crossReferenceNote()) {
+  @if (crossReference(); as crossReference) {
+    <!-- Preserves query params, matching the tab bar's links. -->
     <p class="mt-2 border-t border-gray-100 px-2 pt-3 text-[11px] text-gray-400" [attr.data-testid]="testIdPrefix() + '-sub-nav-cross-reference-note'">
-      {{ crossReferenceNote() }}
+      {{ crossReference.text }}
+      <a
+        class="font-medium text-blue-600 hover:underline"
+        [routerLink]="[basePath, crossReference.route]"
+        [fragment]="crossReference.fragment"
+        queryParamsHandling="preserve"
+        [attr.data-testid]="testIdPrefix() + '-sub-nav-cross-reference-link'"
+        >{{ crossReference.linkLabel }}</a
+      >
     </p>
   }
 </nav>

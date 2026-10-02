@@ -6,7 +6,7 @@
   <lfx-empty-state
     icon="fa-light fa-calendar-days"
     title="No events yet"
-    subtitle="Once an event is created in LFX Events, registrations, the forecast, revenue, sponsorship and speakers all appear here."
+    subtitle="Once an event is created in LFX Events, registrations, the forecast, revenue, sponsorship, speakers and countries all appear here."
     data-testid="events-empty" />
 } @else {
   <lfx-health-metrics-l2-shell
@@ -17,7 +17,7 @@
     [subNavItems]="subNavItems()"
     navLabel="Events sections"
     testIdPrefix="events"
-    [crossReferenceNote]="crossReferenceNote">
+    [crossReference]="crossReference">
     <ng-template lfxHealthMetricsL2Section="kpi">
       <lfx-events-at-a-glance [glance]="glance()" [status]="glanceStatus()" (reading)="shell.sectionReading('kpi')" (settled)="shell.sectionSettled('kpi')" />
     </ng-template>
@@ -43,6 +43,18 @@
     </ng-template>
     <ng-template lfxHealthMetricsL2Section="rev">
       <lfx-events-revenue (reading)="shell.sectionReading('rev')" (settled)="shell.sectionSettled('rev')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="spon">
+      <lfx-events-sponsorship (reading)="shell.sectionReading('spon')" (settled)="shell.sectionSettled('spon')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="spk">
+      <lfx-events-speakers (noteChange)="speakersNote.set($event)" (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="orgs">
+      <lfx-events-organizations (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs')" />
+    </ng-template>
+    <ng-template lfxHealthMetricsL2Section="geo">
+      <lfx-events-geography (countChange)="geoCount.set($event)" (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo')" />
     </ng-template>
   </lfx-health-metrics-l2-shell>
 }

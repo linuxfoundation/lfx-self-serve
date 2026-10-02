@@ -37,6 +37,7 @@ import {
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -682,6 +683,29 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
       'DELETE'
+    );
+  }
+
+  /**
+   * Reschedules a single occurrence of a recurring meeting directly via microservice proxy
+   * @description Upstream applies the change to this occurrence only; the rest of the series keeps its
+   * schedule. The occurrence id is its start time, so a new `start_time` also gives it a new id.
+   */
+  public async updateOccurrence(req: Request, meetingUid: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Promise<void> {
+    logger.debug(req, 'update_occurrence', 'Rescheduling meeting occurrence', {
+      meeting_id: meetingUid,
+      occurrence_id: occurrenceId,
+      start_time: payload.start_time,
+      duration: payload.duration,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'PUT',
+      undefined,
+      { start_time: payload.start_time, duration: payload.duration }
     );
   }
 

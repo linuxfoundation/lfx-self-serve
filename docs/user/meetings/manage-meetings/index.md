@@ -3,7 +3,7 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_updated: 2026-08-19
+last_updated: 2026-10-01
 intercom_collection: Meetings
 ---
 
@@ -20,7 +20,14 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 
 Select the edit (pencil) icon on a meeting you organize, or open the meeting's detail view and choose to edit it. Editing is only available for upcoming meetings. You can update the title, date, time, agenda, recurrence pattern, and platform/feature settings.
 
-For a meeting that's part of a recurring series, an edit currently applies only to that single occurrence — there's no option to apply it to the whole series or to future occurrences. This is separate from the delete/cancel scope below, which does let you act on the whole series.
+For a meeting that's part of a recurring series, selecting edit first asks what to change:
+
+- **Only this occurrence** — opens a **Reschedule Occurrence** dialog where you pick a new date, start time, and duration for that one instance. The time is read in the series' own timezone, and the rest of the series keeps its schedule. Title, agenda, recurrence pattern, and settings can't be changed per occurrence.
+- **The entire series** — opens the full editor, and your changes apply to every upcoming occurrence in the series.
+
+## Reschedule or cancel one occurrence from the join page
+
+On the join page of a recurring meeting you organize, the header shows **Reschedule this occurrence** and **Cancel this occurrence** buttons next to **Copy meeting link**. They act on the occurrence the page is currently showing — use the occurrence navigation to pick a different one first. After a reschedule, the page moves to the occurrence at its new time; after a cancel, it moves to the next upcoming occurrence. These buttons don't appear for past occurrences.
 
 ## Manage guests and registrants
 
@@ -31,9 +38,11 @@ The **Invite Guests** step (in the create/edit meeting form) is where you contro
 
 The invitation list shows a running count split as "X from committees" and "Y direct guests."
 
+From a meeting card in the list, **Invite people** opens the guest list with the **Add Guest** form already open, and **View all** opens it for browsing. A guest added there is invited to every occurrence of a recurring meeting.
+
 ## Manage meeting materials
 
-On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones.
+On the meeting's join page, organizers see a **Manage** button on the Meeting Materials panel (available before the meeting, and after it if you're viewing via the past-meeting link). Use it to upload files (**Primary Materials**) or add links (**Supporting Materials**) for attendees. Materials you add require the viewer to be signed in — this applies to any meeting, not just Private ones. On a meeting card in the list, the same drawer opens from **Edit materials**. Upcoming materials belong to the whole series, so they appear on every occurrence of a recurring meeting.
 
 ## Delete a meeting
 

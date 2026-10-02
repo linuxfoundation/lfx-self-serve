@@ -24,7 +24,7 @@ import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -483,6 +483,9 @@ export class VoteService {
       req,
       operation: 'create_vote_response_poll',
       pollFn: async () => {
+        // Known gap (GH #2985): filter_grants=direct never matches email-only invitees (the voting
+        // service emits no invitee FGA tuple for them), so this poll always times out for those
+        // users — see fetchCurrentUserVoteResponses.
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(
           req,
           'LFX_V2_SERVICE',
@@ -518,45 +521,20 @@ export class VoteService {
    * Queries vote_response records by user_email and username using filters_or.
    */
   public async getMyVotes(req: Request): Promise<Vote[]> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
+    // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
 
-    logger.debug(req, 'get_my_votes', 'Fetching votes for current user', {
-      username,
-      has_email: !!email,
-    });
-
-    if (!username && !email) {
-      return [];
-    }
-
-    // vote_response uses 'user_email' not 'email'.
-    const filtersOr: string[] = [];
-    if (email) filtersOr.push(`user_email:${email}`);
-    if (username) filtersOr.push(`username:${username}`);
-
-    const responses = await fetchAllQueryResources<{ vote_uid: string; vote_status?: IndexedVoteResponseStatus }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ vote_uid: string; vote_status?: IndexedVoteResponseStatus }>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          type: 'vote_response',
-          filters_or: filtersOr,
-          ...(pageToken && { page_token: pageToken }),
-        }
-      )
-    );
-
+    // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
+    // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
+    // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
-      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(r.vote_uid);
+      const id = getParentVoteId(r);
+      if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.filter((r) => r.vote_uid).map((r) => r.vote_uid))];
+    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return [];
@@ -598,35 +576,42 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
-
-    if (!username && !email) return null;
-
-    const filtersOr: string[] = [];
-    if (email) filtersOr.push(`user_email:${email}`);
-    if (username) filtersOr.push(`username:${username}`);
+    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
+    // the list surfaced this vote under) and requires a usable row id.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
+      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
-    // `filters_or` then disjuncts the user-identity match. Both AND together.
-    const responses = await fetchAllQueryResources<MyVoteResponse>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MyVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'vote_response',
-        filters: [`vote_uid:${voteUid}`],
-        filters_or: filtersOr,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
+    // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
+    let match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] }));
+
+    // Legacy poll_id-only rows carry no `vote_uid` (GH #2985): fall back to a poll_id-scoped
+    // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
+    // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
+    // The query service supports a single `filters_or` group (spent on identity), so the two
+    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
+    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
+    // non-match must still fall through to the legacy key.
+    if (!match) {
+      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+    }
+
+    if (!match) return null;
+
+    // A legacy poll_id-only row carries no `vote_uid`, but `MyVoteResponse.vote_uid` is required —
+    // normalize it to the validated parent key (`findMatch` guarantees `getParentVoteId(match) ===
+    // voteUid`, the key the list surfaced this vote under) so the payload honors the shared
+    // response contract. The cast still narrows the indexer's broader `vote_status` string
+    // unchecked (pre-existing).
+    const response = { ...match, vote_uid: voteUid } as MyVoteResponse;
 
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
     // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift.
-    const match = responses.find((r) => r?.vote_uid === voteUid && (!!r?.uid || !!r?.vote_id));
-    if (match && !match.uid && match.vote_id) {
+    if (!match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
-      return { ...match, uid: match.vote_id };
+      response.uid = match.vote_id;
     }
-    return match ?? null;
+    return response;
   }
 
   // ============================================

@@ -163,7 +163,9 @@ describe('EventsRegistrationForecastComponent', () => {
   it('says there are no upcoming events when the foundation has none', async () => {
     await render({ events: [] });
 
-    expect(query('events-registration-forecast-empty')).not.toBeNull();
+    expect(query('events-registration-forecast-empty')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'There are no upcoming events to forecast. Once an event is scheduled, its projection appears here.'
+    );
     expect(query('events-registration-forecast-pace')).toBeNull();
   });
 
@@ -228,15 +230,32 @@ describe('EventsRegistrationForecastComponent', () => {
     [{ goal: 620 }, 'short', 'about 120 short of the 620 goal. There are 40 days left'],
     [{ forecastAvg: 449.6, goal: 450 }, 'short', 'just short of the 450 goal. There are 40 days left'],
     [{ goal: 150 }, 'stale', '3.3× the goal of 150'],
-    [{ goal: 5000 }, 'goal-suspect', 'under a tenth of the goal'],
-    [{ goal: 40 }, 'goal-suspect', 'over ten times the goal'],
+    [{ goal: 620, daysLeft: 1 }, 'short', 'There is 1 day left to close the gap'],
+    [{ goal: 620, daysLeft: 0 }, 'short', 'Today is the last day to close the gap'],
+    [{ goal: 6000 }, 'goal-suspect', 'a tenth or less of the goal of 6,000'],
+    [{ goal: 5000 }, 'goal-suspect', 'a tenth or less of the goal of 5,000'],
+    [{ goal: 50 }, 'goal-suspect', 'ten or more times the goal of 50'],
+    [{ goal: 40 }, 'goal-suspect', 'ten or more times the goal of 40'],
     [{ goal: null }, 'no-goal', 'No registration goal is set'],
+    [{ goal: 0 }, 'no-goal', 'No registration goal is set'],
+    [{ goal: -5 }, 'no-goal', 'No registration goal is set'],
   ])('writes the %o verdict as %s', async (overrides, kind, copy) => {
     await render({ events: [event(overrides)] });
     const verdict = query('events-registration-forecast-verdict');
 
     expect(verdict?.getAttribute('data-kind')).toBe(kind);
     expect(verdict?.textContent?.replace(/\s+/g, ' ')).toContain(copy);
+  });
+
+  it.each([
+    [40, '40 days left'],
+    [1, '1 day left'],
+    [0, 'last day'],
+  ])('captions %i days left as "%s" and keeps the Days left tile numeric', async (daysLeft, caption) => {
+    await render({ events: [event({ daysLeft })] });
+
+    expect(query('events-registration-forecast-today')?.textContent?.replace(/\s+/g, ' ')).toContain(`today · ${caption}`);
+    expect(query('events-registration-forecast-days-left')?.textContent?.trim()).toBe(String(daysLeft));
   });
 
   it('leaves the days-left sentence out of a short verdict when days left is unmeasured', async () => {

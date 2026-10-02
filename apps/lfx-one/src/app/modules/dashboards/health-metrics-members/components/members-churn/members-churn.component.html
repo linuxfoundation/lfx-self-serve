@@ -1,0 +1,250 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="members-churn">
+  <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-churn-controls">
+    <lfx-filter-pills [options]="modeOptions" [selectedFilter]="mode()" (filterChange)="onModeChange($event)" data-testid="members-churn-mode-pills" />
+    <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-churn-meta">
+      @if (firstRead() || loadFailed() || !view().yearMeasured) {
+        &mdash;
+      } @else {
+        {{ view().metaLabel }}
+      }
+    </span>
+  </div>
+
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Churn unavailable"
+      subtitle="We could not load this foundation's membership churn. Refresh the page to try again."
+      data-testid="members-churn-error" />
+  } @else if (firstRead()) {
+    <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-churn-loading" aria-hidden="true" />
+  } @else if (!view().yearMeasured) {
+    <lfx-empty-state
+      icon="fa-light fa-chart-column"
+      title="Churn not measured for this period"
+      subtitle="Churn appears here once memberships for the selected period are measured."
+      data-testid="members-churn-unmeasured" />
+  } @else if (!view().hasChurn) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-check"
+      title="No churn this period"
+      subtitle="No memberships lapsed in the selected period."
+      data-testid="members-churn-empty" />
+  } @else {
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-churn-hero">
+      <div class="flex flex-col gap-2">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-semibold tabular-nums text-red-600" data-testid="members-churn-rate">{{ view().heroLabel }}</span>
+          @if (view().changeLabel; as change) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-red-600]="view().changeTone === 'bad'"
+              [class.text-emerald-600]="view().changeTone === 'good'"
+              [class.text-gray-500]="view().changeTone === 'neutral'"
+              data-testid="members-churn-change"
+              >{{ change }}</span
+            >
+          }
+        </div>
+        <span class="text-[12.5px] text-gray-500" data-testid="members-churn-caption">{{ view().caption }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-churn-sides">
+        @for (side of view().sides; track side.key) {
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-[11.5px] text-gray-400">{{ side.label }}</dt>
+            <dd
+              class="text-[17px] font-semibold tabular-nums"
+              [class.text-red-600]="side.isLoss"
+              [class.text-gray-900]="!side.isLoss"
+              [attr.data-testid]="'members-churn-side-' + side.key">
+              {{ side.value }}
+              @if (side.note) {
+                <span class="text-[12px] font-normal text-gray-400">{{ side.note }}</span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    <div class="flex flex-col gap-2" data-testid="members-churn-departures">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 class="text-sm font-medium text-gray-900">Who left</h4>
+        <span class="text-[11px] text-gray-400" data-testid="members-churn-departures-subtitle">{{ departuresSubtitle() }}</span>
+      </div>
+
+      @if (departuresFailed()) {
+        <lfx-empty-state
+          icon="fa-light fa-triangle-exclamation"
+          title="Departures unavailable"
+          subtitle="We could not load who left in this period. Refresh the page to try again."
+          data-testid="members-churn-departures-error" />
+      } @else {
+        <lfx-table
+          [value]="departureRows()"
+          [loading]="departuresLoading()"
+          [lazy]="true"
+          [lazyLoadOnInit]="false"
+          [paginator]="totalRecords() > size"
+          [rows]="size"
+          [first]="first()"
+          [totalRecords]="totalRecords()"
+          [showCurrentPageReport]="true"
+          [showFirstLastIcon]="false"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+          [scrollable]="true"
+          [tableStyle]="{ 'min-width': '640px' }"
+          (onPage)="onTablePage($event)"
+          data-testid="members-churn-departures-table">
+          <ng-template #header>
+            <tr>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
+              <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Dues lost</span></th>
+              <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Lapsed</span></th>
+              <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged</span></th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-row>
+            <tr [attr.data-testid]="'members-churn-departure-' + row.accountId">
+              <td>
+                <span class="text-sm font-semibold text-gray-900">{{ row.accountName }}</span>
+              </td>
+              <td>
+                <span class="rounded-full px-2 py-0.5 text-[12px] font-medium" [class]="tierPillClass">{{ row.tierLabel }}</span>
+              </td>
+              <td class="text-right">
+                <span class="text-sm font-semibold tabular-nums text-red-600" [attr.data-testid]="'members-churn-departure-' + row.accountId + '-dues'">{{
+                  row.duesLabel
+                }}</span>
+              </td>
+              <td class="text-right">
+                <span class="text-sm tabular-nums text-gray-700">{{ row.lapsedLabel }}</span>
+              </td>
+              <td class="text-right">
+                <span class="text-sm tabular-nums text-gray-700">{{ row.lastEngagedLabel }}</span>
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+
+        @if (countNote(); as note) {
+          <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-churn-count-note">
+            <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+            <span>{{ note }}</span>
+          </p>
+        }
+      }
+    </div>
+
+    @if (view().tiers.length > 0) {
+      <div class="flex flex-col gap-2" data-testid="members-churn-tiers">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 class="text-sm font-medium text-gray-900">Where the loss sits</h4>
+          <span class="text-[11px] text-gray-400">by tier, most dues lost first</span>
+        </div>
+
+        <lfx-table [value]="view().tiers" [scrollable]="true" [tableStyle]="{ 'min-width': '560px' }" data-testid="members-churn-tiers-table">
+          <ng-template #header>
+            <tr>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
+              <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Memberships lost</span></th>
+              <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Churn rate</span></th>
+              <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Dues lost</span></th>
+              <th scope="col" class="w-[150px]"><span class="text-xs font-medium text-gray-500">Share of the loss</span></th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-tier>
+            <tr [attr.data-testid]="'members-churn-tier-' + tier.tier">
+              <td>
+                <span class="text-sm font-semibold text-gray-900">{{ tier.tier }}</span>
+              </td>
+              <td class="text-right">
+                <span class="text-sm tabular-nums text-gray-700">{{ tier.lostLabel }}</span>
+              </td>
+              <td class="text-right">
+                <span
+                  class="text-sm tabular-nums"
+                  [class.font-semibold]="tier.isHighRate"
+                  [class.text-red-600]="tier.isHighRate"
+                  [class.text-gray-700]="!tier.isHighRate"
+                  [attr.data-testid]="'members-churn-tier-' + tier.tier + '-rate'"
+                  >{{ tier.rateLabel }}</span
+                >
+              </td>
+              <td class="text-right">
+                <span class="text-sm font-semibold tabular-nums text-gray-900">{{ tier.duesLabel }}</span>
+              </td>
+              <td>
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+                    <div class="h-full rounded-full" [class]="shareBarClass" [style.width.%]="tier.shareWidthPct"></div>
+                  </div>
+                  <span class="w-12 shrink-0 text-right text-[13px] font-semibold tabular-nums text-gray-900">{{ tier.shareLabel }}</span>
+                </div>
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+
+        @if (view().inversion; as inversion) {
+          <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-churn-inversion">
+            <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+            <span
+              ><strong class="font-semibold text-gray-700">{{ inversion.countLead }}</strong
+              >, but <strong class="font-semibold text-gray-700">{{ inversion.duesLead }}</strong
+              >: {{ inversion.text }}</span
+            >
+          </p>
+        }
+      </div>
+    }
+
+    @if (showTrend()) {
+      <div class="flex flex-col gap-2" data-testid="members-churn-trend">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 class="text-sm font-medium text-gray-900">{{ view().trendTitle }}</h4>
+          <span class="text-[11px] text-gray-400">{{ view().trendSubtitle }}</span>
+        </div>
+        <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="members-churn-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
+        </div>
+        <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
+        <table class="sr-only" data-testid="members-churn-chart-table">
+          <caption>
+            {{
+              view().trendTitle
+            }}
+            by year, oldest first
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Year</th>
+              <th scope="col">Churn rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (point of trend(); track point.year) {
+              <tr>
+                <th scope="row">{{ point.label }}</th>
+                <td>{{ point.valueLabel }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-churn-footer">
+      <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
+      <span>Churn leads here because renewal rate is unreliable mid-year: renewals are lumpy, so a rate taken part-way through the year swings widely.</span>
+    </p>
+  }
+</div>

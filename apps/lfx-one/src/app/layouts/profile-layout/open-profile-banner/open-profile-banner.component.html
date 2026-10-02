@@ -1,0 +1,17 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p class="text-sm text-slate-500" data-testid="open-profile-banner-slot">
+  <i class="fa-light fa-comment-lines mr-1.5" aria-hidden="true"></i>
+  Can’t find what you need here?
+  <button
+    type="button"
+    (click)="linkClick.emit()"
+    pTooltip="Individual Dashboard"
+    tooltipPosition="top"
+    aria-label="Open Profile — chat with support about the Individual Dashboard"
+    data-testid="open-profile-banner-link"
+    class="rounded-sm font-semibold text-blue-600 underline underline-offset-2 hover:text-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+    Open Profile
+  </button>
+</p>

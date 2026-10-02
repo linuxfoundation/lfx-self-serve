@@ -3,6 +3,7 @@
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
+import { coerceCampaignEventDetails } from '@lfx-one/shared/utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
@@ -14,7 +15,6 @@ import type {
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
-  CampaignEventSponsor,
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
@@ -812,7 +812,14 @@ export class CampaignServiceClient {
    * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
    * without one configured refuses rather than inventing copy.
    */
-  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string, variant?: string): Promise<GenerateEmailCopyResult> {
+  public async generateEmailCopy(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    stage?: string,
+    variant?: string,
+    segment?: string
+  ): Promise<GenerateEmailCopyResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       return { enabled: false };
     }
@@ -828,8 +835,10 @@ export class CampaignServiceClient {
       // copy.
       //
       // `variant` is also a query param upstream (same reasoning as `stage`), so it joins `stage`
-      // in the same query object rather than the sixth (body) argument.
-      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
+      // in the same query object rather than the sixth (body) argument. `segment` is the third of
+      // the same kind -- declared as `Param("segment")` in the service's Goa design, not a body
+      // attribute -- so all three ride the fifth argument together.
+      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
@@ -2593,9 +2602,6 @@ function asText(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function asTextList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
-}
 
 /**
  * `event_details` as a `CampaignEventDetails`, or `null` when there is nothing usable.
@@ -2623,41 +2629,11 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     return null;
   }
 
-  return {
-    name,
-    slug,
-    dates: asText(details['dates']),
-    city: asText(details['city']),
-    countryCode: asText(details['countryCode']),
-    audience: asText(details['audience']),
-    themes: asTextList(details['themes']),
-    registrationUrl: asText(details['registrationUrl']),
-    speakers: asTextList(details['speakers']),
-    formatNotes: asText(details['formatNotes']),
-    // Scraped hero/sponsors are PERSISTED by toUpstreamEventDetails' `...details` spread but were
-    // not read back here, so a reload silently dropped them: the preview and onStageEmailSend then
-    // omitted the hero and logo modules in any session that restored the brief rather than
-    // scraping it fresh. A write path that spreads and a read path that allow-lists diverge by
-    // construction -- every field added to the former has to be added here too.
-    heroImageUrl: asText(details['heroImageUrl']),
-    // Filtered on logoUrl, mirroring planning-tab's own mapping: a sponsor with no logo renders
-    // as an empty image module rather than as nothing.
-    sponsors: asSponsorList(details['sponsors']),
-  };
-}
-
-/** Sponsor rows with a usable logo, dropping malformed entries rather than rendering blanks. */
-function asSponsorList(value: unknown): CampaignEventSponsor[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
-    .map((entry) => ({
-      name: typeof entry['name'] === 'string' ? entry['name'] : '',
-      logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
-    }))
-    .filter((sponsor) => sponsor.logoUrl !== '');
+  // Coerced by the SHARED helper, not a second allow-list here. A write path that spreads and a
+  // read path that allow-lists diverge by construction: the previous local literal silently
+  // stopped carrying `heroImageUrl` and `sponsors`, so a reloaded brief lost the hero and logo
+  // modules. One conversion, used by both the client and this reader, cannot drift that way.
+  return coerceCampaignEventDetails(details);
 }
 
 /**

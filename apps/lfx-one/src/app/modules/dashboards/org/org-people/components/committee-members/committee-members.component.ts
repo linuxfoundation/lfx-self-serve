@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, firstValueFrom, map, of, skip, Subject, switchMap, takeUntil, tap } from 'rxjs';
@@ -13,7 +13,8 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
+import { OrgPeopleDirectoryStateService } from '@services/org-people-directory-state.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE, votingStatusPillClass } from '@lfx-one/shared/constants';
 import type {
@@ -63,11 +64,13 @@ import { buildPersonGroups, decoratePersonGroup } from './helpers/committee-memb
 export class CommitteeMembersComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(CommitteeMembersService);
-  private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly drawer = inject(PersonDetailDrawerService);
+  private readonly directory = inject(OrgPeopleDirectoryStateService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Individuals', 'Committees', 'Foundations with committee members'];
@@ -114,8 +117,9 @@ export class CommitteeMembersComponent {
 
   protected readonly isFiltering = computed(() => this.initIsFiltering());
 
-  // Writer-FGA gate (UX); BFF + Heimdall still re-enforce on write.
-  protected readonly canEdit = computed(() => this.initCanEdit());
+  // Edit gate (UX, #3136): roster editor or authorizer `writer`. The seat reassignment write is
+  // gateway-enforced against `b2b_org#writer` (see `org-lens-board-committee.service.ts`), so this mirrors it.
+  protected readonly canEdit = this.orgEditAccess.canEditSelected;
 
   protected readonly ariaSortMap = computed(() => this.initAriaSortMap());
   protected readonly sortIconMap = computed(() => this.initSortIconMap());
@@ -268,6 +272,9 @@ export class CommitteeMembersComponent {
     );
 
     const results = await Promise.allSettled(ops);
+    if (results.some((r) => r.status === 'fulfilled')) {
+      this.directory.invalidate(orgUid);
+    }
     this.retry();
 
     const total = intent.selected.length;
@@ -316,6 +323,7 @@ export class CommitteeMembersComponent {
       summary: 'Committee role updated',
       life: 3000,
     });
+    this.directory.invalidate(orgUid);
     this.retry();
   }
 
@@ -345,9 +353,12 @@ export class CommitteeMembersComponent {
           this.fetchErrorState.set(false);
         }),
         switchMap(([orgUid]) => {
-          if (!orgUid) {
+          if (!orgUid || !isPlatformBrowser(this.platformId)) {
             // Hold the skeleton until the org selector populates a uid — flipping loadingState to false here
             // would briefly render the empty state on mount before account-context emits the real uid.
+            // Server render fetches nothing either; the browser loads after hydration. The org drain has
+            // not been observed holding SSR in prod, but the cause is not established, so this is guarded
+            // like org-groups (#2063).
             return of(EMPTY_ORG_PEOPLE_COMMITTEE_MEMBERS_RESPONSE);
           }
           return this.dataService.getCommitteeMembers(orgUid).pipe(
@@ -434,15 +445,6 @@ export class CommitteeMembersComponent {
   private initDecoratedGroups(): CommitteeMemberPersonGroupVm[] {
     const opts = { canEdit: this.canEdit(), editDisabledTooltip: this.editDisabledTooltip };
     return this.sortedGroups().map((g) => decoratePersonGroup(g, opts));
-  }
-
-  private initCanEdit(): boolean {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return false;
-    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant. The upstream
-    // write (committee seat reassignment) is gateway-enforced against `b2b_org#writer` (see
-    // `org-lens-board-committee.service.ts`), so this display gate simply mirrors it.
-    return this.roleGrants.editorSet().has(uid);
   }
 
   private initAriaSortMap(): Record<CommitteeMembersSortColumn, 'ascending' | 'descending' | 'none'> {

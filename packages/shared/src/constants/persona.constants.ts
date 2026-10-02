@@ -65,12 +65,16 @@ export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
  * OpenFGA team id for the `team:lf-staff#member` relation used by the LF-staff capability check
  * (`PersonaDetectionService.checkLFStaff`). Deliberately staff-only: it gates non-Org-Lens
  * surfaces (Formations gating-item completion, dashboards, ED routes, marketing bypass) that
- * were never extended to contractors. Do not widen it — Org Lens uses `LF_TEAM_IDS` instead.
+ * were never extended to contractors. Do not widen it — Org Lens search uses `ORG_WIDE_READ_TEAM_IDS`
+ * in `OrgRoleGrantsService` instead.
  */
 export const LF_STAFF_TEAM_ID = 'lf-staff';
 
 /**
- * LF teams whose membership lights the Org Lens switcher and catalogue search — `lf-staff` only.
+ * LF teams holding plain `auditor` on every `b2b_org` — `lf-staff` only. ADR-0042 fixes this set; it
+ * mirrors member-service `B2BOrgAuditorTeamNames` and the reconciler's `orgAuditorTeams`, which write
+ * those grants. Org Lens search follows `ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`, which
+ * includes this list.
  * `lf-contractor` was added under spec 044 and rolled back (lfx-self-serve#2157): its blanket
  * `b2b_org` auditor grant is being removed, and the tenant-root auditor tuple that justified it is
  * deleted by lfx-self-serve#2814 Release 2. `lf-staff`'s own org-wide grant is unaffected.
@@ -80,6 +84,20 @@ export const LF_STAFF_TEAM_ID = 'lf-staff';
  * so an explicitly-granted contractor still reads that org — this list only drives the affordance.
  */
 export const LF_TEAM_IDS = ['lf-staff'] as const;
+
+/**
+ * #3077 — teams that read every organization through the `global_org_admin` relation (`writer`, hence
+ * `auditor`, on every `b2b_org`) rather than a plain `auditor` grant. The team that holds that relation
+ * is configured in member-service (`GLOBAL_ORG_ADMIN_TEAM_NAME`, chart `openfga.globalOrgAdminTeamName`);
+ * renaming it there without updating this list silently removes Org Lens search from its members.
+ * Never merge into `LF_TEAM_IDS`: the writers mirroring that list would grant permanent `auditor`
+ * tuples on every organization.
+ *
+ * Both lists stay plain literals so the browser bundle drops them: Org Lens search combines them
+ * server-side only (`ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`). A new company-wide team
+ * joins `LF_TEAM_IDS` (plain `auditor`, e.g. #2842) or this list.
+ */
+export const ORG_ADMIN_TEAM_IDS = ['global_org_admin'] as const;
 
 /**
  * #2961 — OpenFGA team id for LF contractors. Read by the role-grants lookup only to tell a contractor

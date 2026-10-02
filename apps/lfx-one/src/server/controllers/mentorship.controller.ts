@@ -5,6 +5,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { isMentorshipProgramReviewDecision, isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
@@ -48,62 +49,6 @@ export class MentorshipController {
       logger.success(req, 'get_mentorship_programs', startTime, { result_count: programs.data.length });
 
       res.json(programs);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentor/programs
-  public async getMentorPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentor_programs');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_programs' });
-      }
-
-      const programs = await this.mentorshipService.getMentorPrograms(req);
-      logger.success(req, 'get_mentorship_mentor_programs', startTime, { result_count: programs.data.length });
-      res.json(programs);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentor/programs/:programId — id (default) or slug
-  public async getMentorProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentor_program');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_program' });
-      }
-
-      const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_mentor_program' });
-      }
-
-      const program = await this.mentorshipService.getMentorProgram(req, programId);
-      logger.success(req, 'get_mentorship_mentor_program', startTime, { programId });
-      res.json(program);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentor/profile
-  public async getMentorProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentor_profile');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_profile' });
-      }
-
-      const profile = await this.mentorshipService.getMentorProfile(req);
-      logger.success(req, 'get_mentorship_mentor_profile', startTime, { history_count: profile.history.length });
-      res.json(profile);
     } catch (error) {
       next(error);
     }
@@ -235,6 +180,33 @@ export class MentorshipController {
 
       logger.success(req, 'submit_mentorship_program_decision', startTime, { programId, decision, status: review.status });
       res.json(review);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/me/lfx-profile
+  // Auth: logged-in user required (401 otherwise); refused while impersonating by the route. The
+  // body is the name and logo the profile card shows after an Edit LFX Profile save, checked with
+  // the rules the browser applies (400 with per-field errors); any email in it is ignored. Copies
+  // them, with the caller's verified primary email, onto every mentor and mentee profile the
+  // caller holds; 204 whether or not there were any.
+  public async syncLfxProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'sync_mentorship_lfx_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'sync_mentorship_lfx_profile' });
+      }
+
+      const { fields, errors } = readMentorshipLfxProfileFields(req.body);
+      if (Object.keys(errors).length > 0) {
+        throw ServiceValidationError.fromFieldErrors(errors, 'Validation failed', { operation: 'sync_mentorship_lfx_profile' });
+      }
+
+      const syncedCount = await this.mentorshipService.syncLfxProfileFields(req, fields);
+      logger.success(req, 'sync_mentorship_lfx_profile', startTime, { synced_count: syncedCount, field_count: Object.keys(fields).length });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

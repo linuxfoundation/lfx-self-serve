@@ -5,6 +5,7 @@ import type {
   AudienceSignal,
   AudienceSpeakerScope,
   CampaignDeliveryTypeOption,
+  CampaignEmailSegment,
   CampaignEmailTypeOption,
   CampaignGoalOption,
   CampaignKeyword,
@@ -1389,6 +1390,29 @@ export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;
  * wire validation.
  */
 export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
+
+/**
+ * Recognised `segment` values for `generate-email-copy`: narrows which content blocks appear for a
+ * named audience within the same stage's copy, orthogonal to `variant` (which restyles the whole
+ * draft). Both may be set together, either alone, or neither. Like `stage` and `variant`,
+ * campaign-service treats an unrecognised or absent value as "no segment requested" rather than an
+ * error, so this list is for the UI's own selector rather than wire validation.
+ */
+export const CAMPAIGN_EMAIL_SEGMENTS = ['developer', 'business-decision-maker', 'alumni', 'prospect'] as const;
+
+/**
+ * The selector's visible label per segment.
+ *
+ * Keyed on `CampaignEmailSegment` rather than on a re-spelled literal union so this map cannot
+ * drift from the type `CAMPAIGN_EMAIL_SEGMENTS` derives -- a member added to or renamed in the
+ * list fails to compile HERE.
+ */
+export const CAMPAIGN_EMAIL_SEGMENT_LABELS: Readonly<Record<CampaignEmailSegment, string>> = {
+  developer: 'Developer',
+  'business-decision-maker': 'Business Decision-Maker',
+  alumni: 'Alumni (Past Attendee)',
+  prospect: 'Prospect (First-Time)',
+};
 
 /**
  * Most sponsor logos carried on a brief.

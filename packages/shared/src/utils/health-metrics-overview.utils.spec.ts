@@ -4,16 +4,24 @@
 import { describe, expect, it } from 'vitest';
 
 import { HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '../constants/health-metrics-engagement.constants';
+import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
+import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import {
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
+  HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS,
 } from '../constants/health-metrics-overview.constants';
 
 import {
   buildHealthMetricsOverviewEngagementRoute,
+  buildHealthMetricsOverviewEventsRoute,
+  buildHealthMetricsOverviewMembersRoute,
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewRevenueStreams,
+  buildHealthMetricsOverviewTabRoute,
   buildHealthMetricsOverviewTiles,
   formatHealthMetricsOverviewAsOfLabel,
   groupHealthMetricsOverviewFindings,
@@ -77,19 +85,45 @@ describe('buildHealthMetricsOverviewTiles', () => {
     expect(tiles.find((tile) => tile.area === 'code')?.insightsUrl).toBe('https://insights.example/foundation');
   });
 
-  it('links the eng tile, and only that tile, into the Engagement tab group attendance view', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'eng' }), areaState({ area: 'code' })], undefined);
-    expect(tiles.find((tile) => tile.area === 'eng')?.route).toEqual({
+  it('links the eng tile into the Engagement tab group attendance view', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'eng' })], undefined);
+    expect(tiles[0].route).toEqual({
       commands: ['/foundation/health-metrics', 'engagement'],
       fragment: 'committees',
       queryParams: { groupType: null, groupPage: null },
     });
-    expect(tiles.find((tile) => tile.area === 'code')?.route).toBeUndefined();
+    expect(tiles[0].routeLabel).toBe('View groups');
   });
 
-  it('drops the eng tile link when the tile has no figure to drill into', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'eng', statValue: '—' })], undefined);
+  it('links the evt tile into the Events tab forecast', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', statValue: '81%' })], undefined);
+    expect(tiles[0].route).toEqual({ commands: ['/foundation/health-metrics', 'events'], fragment: 'forecast', queryParams: { event: null } });
+    expect(tiles[0].routeLabel).toBe('View forecast');
+  });
+
+  it('links the mem tile into the Members tab all members list', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'mem', statValue: '$250K' })], undefined);
+    expect(tiles[0].route).toEqual({
+      commands: ['/foundation/health-metrics', 'members'],
+      fragment: 'list',
+      queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null },
+    });
+    expect(tiles[0].routeLabel).toBe('View members');
+  });
+
+  it('links no tile outside eng, evt and mem', () => {
+    const tiles = buildHealthMetricsOverviewTiles(
+      (['non', 'trn', 'code'] as const).map((area) => areaState({ area })),
+      undefined
+    );
+    expect(tiles.map((tile) => tile.route)).toEqual([undefined, undefined, undefined]);
+    expect(tiles.map((tile) => tile.routeLabel)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it.each(['eng', 'evt', 'mem'] as const)('drops the %s tile link when the tile has no figure to drill into', (area) => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area, statValue: '—' })], undefined);
     expect(tiles[0].route).toBeUndefined();
+    expect(tiles[0].routeLabel).toBeUndefined();
   });
 
   it('carries showStatus through to the tile view model', () => {
@@ -157,20 +191,20 @@ describe('formatHealthMetricsOverviewAsOfLabel', () => {
 
 describe('buildHealthMetricsOverviewPccUrl', () => {
   it('builds a PCC report URL for a known link target', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', 'evt.forecast')).toBe(
-      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/events#forecast'
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', 'non.orgs')).toBe(
+      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/non-members'
     );
   });
 
   it('strips a trailing slash from the base URL before joining', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev/', 'proj-1', 'evt.forecast')).toBe(
-      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/events#forecast'
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev/', 'proj-1', 'non.orgs')).toBe(
+      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/non-members'
     );
   });
 
   it('encodes the project id in the URL path', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj 1/two', 'evt.forecast')).toBe(
-      'https://pcc.lfx.dev/project/proj%201%2Ftwo/reports/health-metrics/events#forecast'
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj 1/two', 'non.orgs')).toBe(
+      'https://pcc.lfx.dev/project/proj%201%2Ftwo/reports/health-metrics/non-members'
     );
   });
 
@@ -179,13 +213,29 @@ describe('buildHealthMetricsOverviewPccUrl', () => {
   });
 
   it('returns undefined for a missing project id', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', '', 'evt.forecast')).toBeUndefined();
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', '', 'non.orgs')).toBeUndefined();
   });
 
   it('resolves no Engagement target to PCC, now that the Engagement tab owns them', () => {
     for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS)[]) {
       expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', target)).toBeUndefined();
     }
+  });
+
+  it('resolves no Events target to PCC, now that the Events tab owns them', () => {
+    for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS)[]) {
+      expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', target)).toBeUndefined();
+    }
+  });
+
+  it('resolves no Members target to PCC, now that the Members tab owns them', () => {
+    for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS)[]) {
+      expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', target)).toBeUndefined();
+    }
+  });
+
+  it('leaves no Members key in the PCC map', () => {
+    expect(Object.keys(HEALTH_METRICS_OVERVIEW_LINK_TARGETS).filter((target) => target.startsWith('mem.'))).toEqual([]);
   });
 });
 
@@ -212,8 +262,83 @@ describe('buildHealthMetricsOverviewEngagementRoute', () => {
   });
 
   it('returns undefined for a target that still lives on PCC or Insights', () => {
-    expect(buildHealthMetricsOverviewEngagementRoute('mem.atrisk')).toBeUndefined();
+    expect(buildHealthMetricsOverviewEngagementRoute('non.orgs')).toBeUndefined();
     expect(buildHealthMetricsOverviewEngagementRoute('code.insights')).toBeUndefined();
+  });
+});
+
+describe('buildHealthMetricsOverviewEventsRoute', () => {
+  it('links evt.forecast to the forecast and clears a stale event pick', () => {
+    expect(buildHealthMetricsOverviewEventsRoute('evt.forecast')).toEqual({
+      commands: ['/foundation/health-metrics', 'events'],
+      fragment: 'forecast',
+      queryParams: { event: null },
+    });
+  });
+
+  it('points every Events target at a real section', () => {
+    const sectionKeys = HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.key as string);
+    for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS)[]) {
+      expect(sectionKeys).toContain(buildHealthMetricsOverviewEventsRoute(target)?.fragment);
+    }
+  });
+
+  it('returns undefined for an Engagement, PCC or Insights target', () => {
+    expect(buildHealthMetricsOverviewEventsRoute('eng.groups')).toBeUndefined();
+    expect(buildHealthMetricsOverviewEventsRoute('mem.atrisk')).toBeUndefined();
+    expect(buildHealthMetricsOverviewEventsRoute('non.orgs')).toBeUndefined();
+    expect(buildHealthMetricsOverviewEventsRoute('code.insights')).toBeUndefined();
+  });
+});
+
+describe('buildHealthMetricsOverviewMembersRoute', () => {
+  // Pins each target's full route, including the nulls that clear a stale cut on arrival.
+  it.each([
+    ['mem.atrisk', 'risk', { riskBucket: null, riskPage: null }],
+    ['mem.renewals', 'renewals', { renewalsPage: null }],
+    ['mem.list', 'list', { memTier: null, memNps: null, memSearch: null, memPage: null }],
+  ] as const)('links %s to its section with its arrival filters', (target, fragment, queryParams) => {
+    expect(buildHealthMetricsOverviewMembersRoute(target)).toEqual({
+      commands: ['/foundation/health-metrics', 'members'],
+      fragment,
+      queryParams,
+    });
+  });
+
+  it('points every Members target at a real section', () => {
+    const sectionKeys = HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.key as string);
+    for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS)[]) {
+      expect(sectionKeys).toContain(buildHealthMetricsOverviewMembersRoute(target)?.fragment);
+    }
+  });
+
+  it('clears only params the Members tab reads', () => {
+    const tabParams = Object.values(HEALTH_METRICS_MEMBERS_QUERY_PARAMS) as string[];
+    for (const spec of Object.values(HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS)) {
+      for (const param of Object.keys(spec.queryParams)) {
+        expect(tabParams).toContain(param);
+      }
+    }
+  });
+
+  it('returns undefined for an Engagement, Events, PCC or Insights target', () => {
+    expect(buildHealthMetricsOverviewMembersRoute('eng.groups')).toBeUndefined();
+    expect(buildHealthMetricsOverviewMembersRoute('evt.forecast')).toBeUndefined();
+    expect(buildHealthMetricsOverviewMembersRoute('non.orgs')).toBeUndefined();
+    expect(buildHealthMetricsOverviewMembersRoute('code.insights')).toBeUndefined();
+  });
+});
+
+describe('buildHealthMetricsOverviewTabRoute', () => {
+  it('resolves each in-app target to its own tab', () => {
+    expect(buildHealthMetricsOverviewTabRoute('eng.orgs')?.commands).toEqual(['/foundation/health-metrics', 'engagement']);
+    expect(buildHealthMetricsOverviewTabRoute('evt.forecast')?.commands).toEqual(['/foundation/health-metrics', 'events']);
+    expect(buildHealthMetricsOverviewTabRoute('mem.renewals')?.commands).toEqual(['/foundation/health-metrics', 'members']);
+  });
+
+  it('returns undefined for a PCC or Insights target', () => {
+    expect(buildHealthMetricsOverviewTabRoute('non.orgs')).toBeUndefined();
+    expect(buildHealthMetricsOverviewTabRoute('code.insights')).toBeUndefined();
   });
 });
 

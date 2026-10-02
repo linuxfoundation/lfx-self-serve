@@ -120,6 +120,10 @@ function req(overrides: Partial<Request> & { bearerToken?: string } = {}): Reque
   return overrides as unknown as Request;
 }
 
+function sessionClaims(user: Record<string, string>): Partial<Request> {
+  return { oidc: { user } } as unknown as Partial<Request>;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   isImpersonating.mockReturnValue(false);
@@ -273,6 +277,116 @@ describe('OrgClaService.listClaGroups — what must not cross to the client', ()
 
     expect(row.claManagersCount).toBe(2);
     expect(row).not.toHaveProperty('claManagers');
+  });
+});
+
+describe('OrgClaService.listClaGroups — whether the viewer is a CLA manager', () => {
+  it('marks a row whose roster names the caller', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('marks a row whose roster names the caller after another manager', async () => {
+    getUsernameFromAuth.mockResolvedValue('kmensah');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('passes over a roster entry whose username is not text rather than failing the list', async () => {
+    gatewayFetch.mockResolvedValue(
+      upstreamList(upstreamEntry({ claManagers: JSON.parse('[{"userID":"user-uuid-9","lfUsername":42},{"userID":"user-uuid-1","lfUsername":"aporter"}]') }))
+    );
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('reads the caller from the LF username claim rather than the general username', async () => {
+    getUsernameFromAuth.mockResolvedValue('ada-nickname');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })), ORG_UID))
+      .claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('prefers the LF username claim even when the general username is on the roster', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'someone-else' })), ORG_UID))
+      .claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('falls back to the general username when the session carries no LF username claim', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ nickname: 'someone-else' })), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(true);
+  });
+
+  it('matches the impersonated user, not the impersonator whose claims the session still carries', async () => {
+    isImpersonating.mockReturnValue(true);
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })), ORG_UID))
+      .claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('does not mark a row whose roster spells the caller in a different case', async () => {
+    getUsernameFromAuth.mockResolvedValue('APorter');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('does not mark a row whose roster entry differs from the caller only by surrounding whitespace', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: ' aporter ' }] })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('marks a row whose roster does not name the caller as not theirs', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('treats a row with no roster as not the caller’s', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: undefined })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
+  });
+
+  it('treats every row as not the caller’s when there is no username', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ claManagers: [{ userID: 'user-uuid-1', lfUsername: '' }] })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.viewerIsClaManager).toBe(false);
   });
 
   it('carries the auto-ECLA flag on a signed row under the shared field name (#1988)', async () => {
@@ -704,6 +818,36 @@ describe('OrgClaService.getPdfUrl', () => {
       expect.stringContaining('/v4/signatures/signature-uuid-1/signed-document'),
       expect.objectContaining({ bearerToken: 'target-token' })
     );
+  });
+
+  it.each([
+    [{ signed_cla_url: 'javascript:alert(1)' }],
+    [{ signed_cla_url: '  javascript:alert(1)' }],
+    [{ signed_cla_url: 'JaVaScRiPt:alert(1)' }],
+    [{ signed_cla_url: 'data:text/html,<p>x</p>' }],
+    [{ signed_cla_url: 'http://s3.example.org/ccla.pdf' }],
+    [{ signed_cla_url: '/ccla.pdf' }],
+    [{ signedClaUrl: 'javascript:alert(1)' }],
+    [{ signed_cla_url: {} }],
+    [{ signed_cla_url: ['https://s3.example.org/ccla.pdf'] }],
+    [{ signedClaUrl: 42 }],
+  ])('refuses a signed document address of %j with a 502', async (document) => {
+    stageDocument(document);
+
+    await expect(new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CLA_PDF_URL_INVALID',
+    });
+  });
+
+  it('keeps a refused document address out of the logs, recording only its scheme', async () => {
+    stageDocument({ signed_cla_url: 'javascript:alert(document.cookie)' });
+
+    await expect(new OrgClaService().getPdfUrl(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow();
+
+    const logged = JSON.stringify(loggerWarning.mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('"pdf_url_scheme":"javascript"');
   });
 });
 
@@ -1545,11 +1689,45 @@ describe('OrgClaService.getApprovalList — who may write', () => {
     expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
   });
 
-  it('matches the roster case-insensitively, since the two sources spell usernames differently', async () => {
+  it('grants write access from the LF username claim when the general username is not on the roster', async () => {
+    getUsernameFromAuth.mockResolvedValue('ada-nickname');
+    stageApprovalRead(corporateSignature());
+
+    const list = await new OrgClaService().getApprovalList(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(list?.canEdit).toBe(true);
+  });
+
+  it('checks write access against the impersonated user, not the impersonator', async () => {
+    isImpersonating.mockReturnValue(true);
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageApprovalRead(corporateSignature());
+
+    const list = await new OrgClaService().getApprovalList(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(list?.canEdit).toBe(false);
+  });
+
+  it('withholds write access from a caller whose username differs from the roster only in case', async () => {
     getUsernameFromAuth.mockResolvedValue('APorter');
     stageApprovalRead(corporateSignature());
 
-    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(true);
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
+  });
+
+  it('withholds write access from a caller whose username differs from the roster only by surrounding whitespace', async () => {
+    getUsernameFromAuth.mockResolvedValue(' aporter ');
+    stageApprovalRead(corporateSignature());
+
+    expect((await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1'))?.canEdit).toBe(false);
   });
 
   it('withholds write access when the caller has no resolvable username', async () => {
@@ -2033,6 +2211,28 @@ describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failu
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('reports forbidden for a caller off the roster, without calling the producer', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry()));
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'forbidden' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());
+  });
+
+  it('forwards the write to the producer when upstream sent no roster at all', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: undefined }))).mockResolvedValueOnce(null);
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'updated', autoCreateEcla: true });
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining('/ecla-auto-create'),
+      expect.objectContaining({ method: 'PUT' })
+    );
+  });
+
   it('refuses the write when two signatures share the company and CLA group, without calling the producer', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-a' }), upstreamEntry({ signatureID: 'signature-b' })));
 
@@ -2180,11 +2380,52 @@ function mockAddManagerUpstream(entry: ReturnType<typeof upstreamEntry> = upstre
 
 describe('OrgClaService.getManagers', () => {
   it('maps only the four fields the tab renders, and drops the Salesforce user id', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
 
     const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
 
     expect(result?.managers).toEqual([{ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' }]);
+  });
+
+  it('marks the viewer’s own row from the LF username claim, the identity the roster check uses', async () => {
+    getUsernameFromAuth.mockResolvedValue('ada-nickname');
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ lf_username: 'ada-nickname' }), upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(result?.managers.map((manager) => manager.isViewer)).toEqual([undefined, true]);
+  });
+
+  it('marks the impersonated user’s row, not the impersonator’s', async () => {
+    isImpersonating.mockReturnValue(true);
+    getUsernameFromAuth.mockResolvedValue('ada-target');
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager(), upstreamManager({ lf_username: 'ada-target' })] });
+
+    const result = await new OrgClaService().getManagers(
+      req(sessionClaims({ 'https://sso.linuxfoundation.org/claims/username': 'aporter' })),
+      ORG_UID,
+      'signature-uuid-1'
+    );
+
+    expect(result?.managers.map((manager) => manager.isViewer)).toEqual([undefined, true]);
+  });
+
+  it('marks no row when the session carries no username', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers[0]).not.toHaveProperty('isViewer');
   });
 
   it('omits addedOn when only approved_on is present, because that is signature time not manager add time', async () => {
@@ -2463,6 +2704,7 @@ describe('OrgClaService.addManager', () => {
   });
 
   it('re-reads the roster when POST returns a Signature without a top-level lf_username', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
     mockAddManagerUpstream();
 
     const manager = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
@@ -3010,6 +3252,15 @@ describe('OrgClaService.getContributorAcknowledgments — malformed producer row
     expect(list?.canEdit).toBe(false);
   });
 
+  it('withholds `canEdit` when the producer sent no roster at all, matching the invalidate write', async () => {
+    getUsernameFromAuth.mockResolvedValue('aporter');
+    stageAckRead(contributorPage(), [upstreamEntry({ claManagers: undefined })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.canEdit).toBe(false);
+  });
+
   it('carries no manager identity or username into the acknowledgment response', async () => {
     stageAckRead();
 
@@ -3087,21 +3338,13 @@ describe('OrgClaService.invalidateAcknowledgment — the gates', () => {
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
-  /**
-   * Fails OPEN on a missing roster, and only on a missing roster.
-   *
-   * This is the sibling approval-list posture, restated for the write that shares its gate: the
-   * producer is the authority and refuses the write regardless, so failing open costs an entitled
-   * CLA manager one clear error message where failing closed would hide the control from them.
-   * An EMPTY roster is a real answer — nobody manages this agreement — and must not fail open.
-   */
-  it('fails open when the producer sent no roster at all', async () => {
-    getUsernameFromAuth.mockResolvedValue('someone-else');
+  it('refuses when the producer sent no roster at all, without calling the producer', async () => {
     stageInvalidate(undefined, [upstreamEntry({ claManagers: undefined })]);
 
     const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
 
-    expect(result).toMatchObject({ outcome: 'invalidated' });
+    expect(result).toEqual({ outcome: 'forbidden' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
   it('does not fail open on an empty roster, which is a real answer rather than a missing one', async () => {

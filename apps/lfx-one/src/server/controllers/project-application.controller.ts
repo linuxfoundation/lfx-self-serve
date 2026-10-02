@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PROJECT_APPLICATION_CACHE_CONTROL, PROJECT_APPLICATION_PARENT_KEY, UUID_REGEX } from '@lfx-one/shared/constants';
+import { PROJECT_APPLICATION_CACHE_CONTROL, PROJECT_APPLICATION_STAFF_KEYS, PROJECT_SLUG_REGEX, UUID_REGEX } from '@lfx-one/shared/constants';
 import type { ProjectApplicationAnswers, ProjectApplicationWriteResult } from '@lfx-one/shared/interfaces';
 import { validateProjectApplicationAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -72,8 +72,8 @@ export const createProjectApplication = async (req: Request, res: Response, next
       });
     }
     const application = parseAnswers(req, operation);
-    // Nobody places a project at submit time — the formation team chooses the parent at accept.
-    delete application[PROJECT_APPLICATION_PARENT_KEY];
+    // Nobody places or creates a project at submit time — the formation team does both at accept.
+    omitStaffKeys(application);
 
     const result = await projectApplicationService.create(req, {
       submitter_username: username,
@@ -89,12 +89,12 @@ export const createProjectApplication = async (req: Request, res: Response, next
 };
 
 /**
- * `PUT /api/project-applications/:uid` — replace the complete answer map. `parent_project_uid` is the
- * formation team's placement choice. Upstream stores it as an ordinary answer any `writer` could
- * rewrite, so this BFF drops it from a revise sent by anyone outside the formation team rather than
- * refusing the revise: an accept that recorded the parent and then failed leaves the key in the
- * submitter's held answers, and refusing would lock them out of editing their own proposal. The team
- * sets the parent again at accept.
+ * `PUT /api/project-applications/:uid` — replace the complete answer map. `parent_project_uid`,
+ * `project_slug` and `project_uid` are the formation team's accept-time record. Upstream stores them as
+ * ordinary answers any `writer` could rewrite, so this BFF drops them from a revise sent by anyone outside
+ * the formation team rather than refusing the revise: an accept that recorded them and then failed leaves
+ * the keys in the submitter's held answers, and refusing would lock them out of editing their own proposal.
+ * The team sets them again at accept.
  */
 export const reviseProjectApplication = async (req: Request, res: Response, next: NextFunction) => {
   const operation = 'revise_project_application';
@@ -103,8 +103,8 @@ export const reviseProjectApplication = async (req: Request, res: Response, next
     const uid = parseUid(req, operation);
     const ifMatch = parseIfMatch(req, operation);
     const application = parseAnswers(req, operation);
-    if (application[PROJECT_APPLICATION_PARENT_KEY] !== undefined && !(await projectApplicationService.isFormationTeamMemberStrict(req))) {
-      delete application[PROJECT_APPLICATION_PARENT_KEY];
+    if (PROJECT_APPLICATION_STAFF_KEYS.some((key) => application[key] !== undefined) && !(await projectApplicationService.isFormationTeamMemberStrict(req))) {
+      omitStaffKeys(application);
     }
     const result = await projectApplicationService.revise(req, uid, ifMatch, application);
     return sendWriteResult(req, res, operation, startTime, result);
@@ -128,9 +128,9 @@ export const withdrawProjectApplication = async (req: Request, res: Response, ne
 };
 
 /**
- * `POST /api/project-applications/:uid/accept` — body `{ parent_project_uid, application }`. The parent is
- * required: per #3037 the formation team places the project at accept time, and the downstream project
- * create reads it from the accepted application's answers.
+ * `POST /api/project-applications/:uid/accept` — body `{ parent_project_uid, project_slug, application }`.
+ * Accepting creates the project in project-service (#1995), so both the parent it goes under and its slug
+ * are required.
  */
 export const acceptProjectApplication = async (req: Request, res: Response, next: NextFunction) => {
   const operation = 'accept_project_application';
@@ -142,8 +142,16 @@ export const acceptProjectApplication = async (req: Request, res: Response, next
     if (typeof parentProjectUid !== 'string' || !UUID_REGEX.test(parentProjectUid)) {
       throw ServiceValidationError.forField('parent_project_uid', 'A parent project is required to accept an application', { operation, path: req.path });
     }
+    const projectSlug = req.body?.project_slug;
+    if (typeof projectSlug !== 'string' || !PROJECT_SLUG_REGEX.test(projectSlug)) {
+      throw ServiceValidationError.forField(
+        'project_slug',
+        'A project slug is required: lowercase letters, numbers, "-" or "_", starting with a letter and ending with a letter or number',
+        { operation, path: req.path }
+      );
+    }
     const application = parseAnswers(req, operation);
-    const result = await projectApplicationService.accept(req, uid, ifMatch, application, parentProjectUid);
+    const result = await projectApplicationService.accept(req, uid, ifMatch, application, parentProjectUid, projectSlug);
     return sendWriteResult(req, res, operation, startTime, result);
   } catch (error) {
     return next(error);
@@ -193,6 +201,12 @@ function parseUid(req: Request, operation: string): string {
     throw ServiceValidationError.forField('uid', 'A valid application UID is required', { operation, path: req.path });
   }
   return uid;
+}
+
+function omitStaffKeys(application: ProjectApplicationAnswers): void {
+  for (const key of PROJECT_APPLICATION_STAFF_KEYS) {
+    delete application[key];
+  }
 }
 
 /** Reads and validates `body.application` against the backend's canonical-field rules. */

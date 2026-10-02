@@ -1,0 +1,71 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
+  styleClass="xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full">
+  <ng-template #header>
+    <div class="flex flex-col gap-0.5" data-testid="members-movements-drawer-header">
+      <h2 #titleRef id="members-movements-drawer-title" tabindex="-1" class="text-base font-semibold text-gray-900 focus:outline-none">
+        {{ title() }}
+      </h2>
+      @if (copy(); as copy) {
+        <span class="text-[12px] text-gray-500">{{ copy.subtitle }}</span>
+      }
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4" data-testid="members-movements-drawer-body">
+    <!-- Above the branches so an empty list still explains its bar; null until a read settles. -->
+    @if (countNote(); as note) {
+      <p class="rounded-md bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800" data-testid="members-movements-drawer-count-note">{{ note }}</p>
+    }
+    @if (loadFailed() && rows().length === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="List unavailable"
+        subtitle="We could not load these organizations. Close the panel and try again."
+        data-testid="members-movements-drawer-error" />
+    } @else if (loading() && rows().length === 0) {
+      <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="members-movements-drawer-loading" aria-hidden="true" />
+    } @else if (rows().length === 0) {
+      <p class="text-sm text-gray-500" data-testid="members-movements-drawer-empty">No organizations are listed for this movement.</p>
+    } @else {
+      <ul class="flex flex-col" data-testid="members-movements-drawer-list">
+        @for (row of rows(); track row.accountId) {
+          <li class="flex items-start justify-between gap-4 border-b border-gray-100 py-2.5" data-testid="members-movements-drawer-row">
+            <div class="flex min-w-0 flex-col gap-0.5">
+              <span class="break-words text-[13.5px] font-medium text-gray-900">{{ row.accountName }}</span>
+              <span class="text-[12px] text-gray-500">{{ row.detail }}</span>
+            </div>
+            @if (row.duesLabel) {
+              <span
+                class="shrink-0 text-[13px] font-semibold tabular-nums"
+                [class.text-red-600]="row.loss"
+                [class.text-gray-900]="!row.loss"
+                data-testid="members-movements-drawer-row-dues"
+                >{{ row.duesLabel }}</span
+              >
+            }
+          </li>
+        }
+      </ul>
+
+      @if (loadFailed()) {
+        <p class="text-[12.5px] text-red-600" data-testid="members-movements-drawer-more-error">The next organizations could not be loaded. Try again.</p>
+      }
+      @if (hasMore()) {
+        <lfx-button label="Show more" [text]="true" size="small" [loading]="loading()" (onClick)="onShowMore()" data-testid="members-movements-drawer-more" />
+      }
+    }
+
+    @if (copy(); as copy) {
+      <p class="border-t border-gray-100 pt-3 text-[12px] text-gray-500" data-testid="members-movements-drawer-note">{{ copy.note }}</p>
+    }
+  </div>
+</p-drawer>

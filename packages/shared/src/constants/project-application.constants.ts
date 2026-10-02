@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ProjectStage } from '../enums/project-stage.enum';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   ProjectApplicationOption,
@@ -23,6 +24,35 @@ export const PROJECT_APPLICATION_CACHE_CONTROL = 'private, no-store';
 
 /** Answer key the BFF writes the formation team's chosen parent project to before accepting. */
 export const PROJECT_APPLICATION_PARENT_KEY = 'parent_project_uid';
+
+/** Answer key the BFF writes the formation team's chosen project slug to before creating the project (#1995). */
+export const PROJECT_APPLICATION_SLUG_KEY = 'project_slug';
+
+/** Answer key the BFF writes the created project's UID to, so a retried accept never creates it twice (#1995). */
+export const PROJECT_APPLICATION_PROJECT_UID_KEY = 'project_uid';
+
+/**
+ * Answer keys only the formation team may set — the placement and project-creation record written at accept.
+ * The BFF strips them at submit and from any revise by someone outside the team, so a submitter can neither
+ * place their project nor plant a `project_uid` that would make accept skip creating it.
+ */
+export const PROJECT_APPLICATION_STAFF_KEYS: readonly string[] = [
+  PROJECT_APPLICATION_PARENT_KEY,
+  PROJECT_APPLICATION_SLUG_KEY,
+  PROJECT_APPLICATION_PROJECT_UID_KEY,
+];
+
+/** project-service's slug rule (`CreateProjectRequestBody.slug`): starts with a letter, ends alphanumeric. */
+export const PROJECT_SLUG_REGEX = /^[a-z][a-z0-9_-]*[a-z0-9]$/;
+
+/** Stage the project created at accept starts in. */
+export const PROJECT_APPLICATION_CREATED_STAGE = ProjectStage.FormationExploratory;
+
+/** Legal entity type of the project created at accept — a subproject of the chosen parent. */
+export const PROJECT_APPLICATION_CREATED_LEGAL_ENTITY_TYPE = 'Subproject';
+
+/** Category of the created project when the proposal says it will publish a specification or standard. */
+export const PROJECT_APPLICATION_SPEC_CATEGORY = 'Standards';
 
 /** Character limit on "About the project" — the design's counter. */
 export const PROJECT_APPLICATION_DESCRIPTION_MAX = 1000;
@@ -97,6 +127,8 @@ export const PROJECT_APPLICATION_FIELD_LABELS: Record<string, string> = {
   is_spec_project: 'Will the project publish a specification or standard?',
   description: 'About the project',
   parent_project_uid: 'Parent project',
+  project_slug: 'Project slug',
+  project_uid: 'Created project',
 };
 
 /** Detail-view grouping — mirrors the intake form's section cards. */

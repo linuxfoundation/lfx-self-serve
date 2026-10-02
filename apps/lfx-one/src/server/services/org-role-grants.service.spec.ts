@@ -5,11 +5,12 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as PersonaConstants from '../../../../../packages/shared/src/constants/persona.constants';
+import { LF_TEAM_IDS, ORG_ADMIN_TEAM_IDS } from '../../../../../packages/shared/src/constants/persona.constants';
 
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', async () => {
-  // Deep-import the real LF team list so the contractor test below guards the production value
+  // Deep-import the real team lists so the tests below guard the production values
   // rather than a hardcoded copy: with a literal here, re-adding 'lf-contractor' to
   // persona.constants.ts would leave every test green. The barrel is mocked because it
   // re-exports Angular-dependent constants; persona.constants.ts itself only has a type-only
@@ -22,6 +23,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
     ACCESS_CHECK_BATCH_SIZE: 2,
     LF_TEAM_IDS: personaConstants.LF_TEAM_IDS,
+    ORG_ADMIN_TEAM_IDS: personaConstants.ORG_ADMIN_TEAM_IDS,
     LF_CONTRACTOR_TEAM_ID: personaConstants.LF_CONTRACTOR_TEAM_ID,
     ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
     ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
@@ -69,18 +71,19 @@ const { OrgRoleGrantsService } = await import('./org-role-grants.service');
 const req = {} as Request;
 const USERNAME = 'staffer';
 
-/** The one batched membership question `resolveIsStaff` asks: `LF_TEAM_IDS`, then the contractor team (#2961). */
+/**
+ * The one batched membership question `resolveIsStaff` asks: `ORG_WIDE_READ_TEAM_IDS`, then the contractor
+ * team (#2961). Pinned as literals on purpose: a team added to that list must be added here too, in review.
+ */
 const TEAM_REQUESTS = [
   { resource: 'team', id: 'lf-staff', access: 'member' },
+  { resource: 'team', id: 'global_org_admin', access: 'member' },
   { resource: 'team', id: 'lf-contractor', access: 'member' },
 ];
 
-/** Authorizer answer for that batch, keyed the way `checkAccessStrict` keys its result map. */
-function teamMembership(staff: boolean, contractor = false): Map<string, boolean> {
-  return new Map([
-    ['lf-staff#member', staff],
-    ['lf-contractor#member', contractor],
-  ]);
+/** Authorizer answer for that batch, keyed the way `checkAccessStrict` keys its result map: `true` for each listed team. */
+function teamMembership(members: readonly string[] = []): Map<string, boolean> {
+  return new Map(TEAM_REQUESTS.map(({ id }) => [`${id}#member`, members.includes(id)]));
 }
 
 type AccessBatch = { resource: string; id: string; access: string }[];
@@ -117,27 +120,36 @@ beforeEach(() => {
   // Default: caller holds no roster grants — the defining LF-team shape, and the path that used to
   // short-circuit before the team answer was reached.
   proxyRequest.mockResolvedValue({ resources: [] });
-  setTeamAnswer(teamMembership(false));
+  setTeamAnswer(teamMembership());
   classifyAnswer = async () => new Map();
   checkAccessStrict.mockImplementation(async (_req: unknown, requests: AccessBatch) => (isTeamBatch(requests) ? teamAnswer() : classifyAnswer(requests)));
   checkAccess.mockResolvedValue(new Map());
 });
 
 describe('OrgRoleGrantsService — LF team determination', () => {
-  it('reports isStaff for a caller with no roster grants at all', async () => {
-    setTeamAnswer(teamMembership(true));
+  // #3077: search follows company-wide read, whatever grant gives it — every team in
+  // `ORG_WIDE_READ_TEAM_IDS` lights the affordance on its own. FR-010 (spec 044): membership is
+  // read-only; the write gate (`OrgLensAccessService.assertCanManage`) decides through
+  // `hasEditorAccess`, which reads writer grants only. #2961: such a caller never gets the contractor state.
+  it.each([...LF_TEAM_IDS, ...ORG_ADMIN_TEAM_IDS])(
+    'reports isStaff for a %s member with no roster grants, never as a contractor or an editor',
+    async (team) => {
+      setTeamAnswer(teamMembership([team, 'lf-contractor']));
 
-    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+      const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
-    expect(teamCalls()).toHaveLength(1);
-    expect(teamCalls()[0]).toEqual([req, TEAM_REQUESTS]);
-    expect(response.isStaff).toBe(true);
-    expect(response.writers).toEqual([]);
-    expect(response.auditors).toEqual([]);
-  });
+      expect(teamCalls()).toHaveLength(1);
+      expect(teamCalls()[0]).toEqual([req, TEAM_REQUESTS]);
+      expect(response.isStaff).toBe(true);
+      expect(response.isContractor).toBe(false);
+      expect(response.writers).toEqual([]);
+      expect(response.auditors).toEqual([]);
+      expect(OrgRoleGrantsService.hasEditorAccess(response, 'any-org')).toBe(false);
+    }
+  );
 
-  it('reports isStaff false for a caller in neither LF team', async () => {
-    setTeamAnswer(teamMembership(false));
+  it('reports isStaff false for a caller in no company-wide team', async () => {
+    setTeamAnswer(teamMembership());
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
@@ -146,39 +158,21 @@ describe('OrgRoleGrantsService — LF team determination', () => {
 
   // Rollback of spec 044 / DR-002: contractor membership no longer lights the affordance. The
   // authorizer is told the caller is a contractor and the answer must still be "not staff" —
-  // widening `LF_TEAM_IDS` back to include `lf-contractor` fails here.
+  // widening `ORG_WIDE_READ_TEAM_IDS` to include `lf-contractor` fails here.
   it('reports isStaff false for a contractor-only caller', async () => {
-    setTeamAnswer(teamMembership(false, true));
+    setTeamAnswer(teamMembership(['lf-contractor']));
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
     expect(response.isStaff).toBe(false);
   });
 
-  // #2961: the contractor signal only explains an empty Org Lens. It is true for a contractor, and false
-  // for anyone who is also LF staff (staff read every org, so the contractor state must never show).
-  it('reports isContractor for a contractor-only caller, and not for staff who are also contractors', async () => {
-    setTeamAnswer(teamMembership(false, true));
+  // #2961: the contractor signal only explains an empty Org Lens. It never shows for a company-wide
+  // team member (covered above), who reads every org.
+  it('reports isContractor for a contractor-only caller', async () => {
+    setTeamAnswer(teamMembership(['lf-contractor']));
+
     expect((await new OrgRoleGrantsService().getRoleGrants(req, USERNAME)).isContractor).toBe(true);
-
-    vi.clearAllMocks();
-    getJson.mockResolvedValue(null);
-    setTeamAnswer(teamMembership(true, true));
-    const staff = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
-    expect(staff.isStaff).toBe(true);
-    expect(staff.isContractor).toBe(false);
-  });
-
-  // FR-010 (spec 044): team membership is read-only. The write gate (`OrgLensAccessService.
-  // assertCanManage`) decides through `hasEditorAccess`, which reads writer grants only — an
-  // LF-team caller with no writer grant on the org is not an editor, whatever `isStaff` says.
-  it('never confers edit capability: an LF-team caller without a writer grant is not an editor', async () => {
-    setTeamAnswer(teamMembership(true, true));
-
-    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
-
-    expect(response.isStaff).toBe(true);
-    expect(OrgRoleGrantsService.hasEditorAccess(response, 'any-org')).toBe(false);
   });
 
   // The guard against a future refactor turning a degraded check into an optimistic one. Spec 053
@@ -222,7 +216,7 @@ describe('OrgRoleGrantsService — LF team determination', () => {
   });
 
   it('reports staffCheck ok and no correlation id when the check answers', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
@@ -232,7 +226,7 @@ describe('OrgRoleGrantsService — LF team determination', () => {
   });
 
   it('still resolves isStaff when the roster lookup fails, since the two are independent upstreams', async () => {
-    setTeamAnswer(teamMembership(true));
+    setTeamAnswer(teamMembership(['lf-staff']));
     proxyRequest.mockRejectedValue(new Error('query-service down'));
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -294,7 +288,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   }
 
   it('requests one row above the hard cap so overflow is detectable — via the `page_size` contract key', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(HARD_CAP);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -308,7 +302,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('does NOT emit the overflow warning at exactly the cap', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(HARD_CAP);
     const { logger: mockedLogger } = await import('./logger.service');
 
@@ -322,7 +316,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('emits ONE overflow warning and truncates to the cap before partitioning when the caller has more direct grants than supported', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(HARD_CAP + 1);
     const { logger: mockedLogger } = await import('./logger.service');
 
@@ -351,7 +345,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   // Truncating the roster makes the grant list a lower bound. Without this the write gate reads a
   // dropped editor grant as a verified denial (403) instead of an unverifiable one (503).
   it('reports degraded when the direct roster overflowed the cap', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(HARD_CAP + 1);
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -360,7 +354,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('caches a clean result under the full TTL', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
@@ -371,7 +365,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   // walk on every page load for exactly the heaviest callers. It keeps the full TTL — the viewer's
   // Retry bypasses the cache read instead.
   it('caches a degraded result under the full TTL', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(HARD_CAP + 1);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -382,7 +376,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   // A client-passable flag must not be a fan-out lever: only an entry Retry is offered for (degraded
   // or failed staff check) can be bypassed; a clean entry is served from cache regardless.
   it('bypassCache is ignored for a clean cached result', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     getJson.mockResolvedValue({
       resolved: [],
       orgDocByUid: [],
@@ -402,7 +396,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('bypassCache recomputes past a degraded cached result and still writes the fresh one', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(1);
     getJson.mockResolvedValue({
       resolved: [],
@@ -426,7 +420,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   // long enough run of pending invites can push the one accepted grant out of the slice. The empty
   // answer that follows must not reach the gates as a verified denial.
   it('reports degraded when truncation leaves no accepted grant at all', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     const pendingUids = Array.from({ length: HARD_CAP }, (_, i) => `pending-${i.toString().padStart(4, '0')}`);
     proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
       if (params && (params as { type?: string }).type === 'b2b_org_settings') {
@@ -450,7 +444,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('does NOT report degraded at exactly the cap — a full-but-complete roster is authoritative', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxy(HARD_CAP);
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -501,7 +495,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   }
 
   it('serializes into a single request when the caller sits at or below the chunk boundary', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxyForChunking(CHUNK_SIZE);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -512,7 +506,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('splits into two requests when the caller crosses the chunk boundary by one', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxyForChunking(CHUNK_SIZE + 1);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -525,7 +519,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('splits into HARD_CAP / CHUNK_SIZE requests at the ceiling, each bounded by CHUNK_SIZE', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     seedProxyForChunking(HARD_CAP);
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -540,7 +534,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('degrades to a partial result when one chunk fails — the other chunks still land', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
     // First b2b_org chunk resolves; second chunk rejects — mirrors a single-chunk upstream blip.
     let detailsCallCount = 0;
@@ -569,7 +563,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('fails closed when EVERY details chunk rejects — refuses to cache an empty grant list as success', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
     proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
       const type = params ? (params as { type?: string }).type : undefined;
@@ -596,7 +590,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   // does not reach `degraded` arrives at the write gate as an authoritative denial: 403 for a
   // caller who is owed a 503.
   it('folds upstreamFailed into the wire-level degraded flag', async () => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
     const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
     proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
       const type = params ? (params as { type?: string }).type : undefined;
@@ -689,7 +683,7 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
   }
 
   beforeEach(() => {
-    setTeamAnswer(teamMembership(false));
+    setTeamAnswer(teamMembership());
   });
 
   it('routes provenance through a parent that another root already discovered', async () => {
@@ -883,7 +877,7 @@ describe('OrgRoleGrantsService — connected-component walk, classification & de
 
 describe('OrgRoleGrantsService — isStaff cache round trip', () => {
   it('writes isStaff into the cached entry', async () => {
-    setTeamAnswer(teamMembership(true));
+    setTeamAnswer(teamMembership(['lf-staff']));
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
@@ -910,7 +904,7 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
 
   // The guard is private, so exercise it where it is actually injected: the getJson call site.
   it('rejects a pre-change entry that has no isStaff, so it recomputes instead of answering undefined', async () => {
-    setTeamAnswer(teamMembership(true));
+    setTeamAnswer(teamMembership(['lf-staff']));
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
@@ -945,7 +939,7 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
   // A `v1`-era entry came from the direct/downward-only resolver, so treating its absent
   // `degraded` as `false` would present an incomplete grant list as a complete classification.
   it('rejects an entry with no degraded flag, so a legacy roll-up is never read back as complete', async () => {
-    setTeamAnswer(teamMembership(true));
+    setTeamAnswer(teamMembership(['lf-staff']));
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 

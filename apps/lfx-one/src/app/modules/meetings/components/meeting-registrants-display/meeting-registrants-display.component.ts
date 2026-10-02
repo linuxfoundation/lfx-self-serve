@@ -56,6 +56,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
   public readonly visible: InputSignal<boolean> = input<boolean>(false);
   public readonly showAddRegistrant: InputSignal<boolean> = input<boolean>(false);
+  /** Opens with the Add Guest form expanded, for entry points whose intent is inviting someone. */
+  public readonly openAddFormOnShow: InputSignal<boolean> = input<boolean>(false);
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
@@ -195,6 +197,12 @@ export class MeetingRegistrantsDisplayComponent {
       if (this.externallyManaged()) return;
       this.internalLoading.set(true);
       this.refresh$.next(true);
+    });
+
+    effect(() => {
+      if (this.visible() && this.openAddFormOnShow() && this.showAddRegistrant() && !this.pastMeeting()) {
+        this.showAddForm.set(true);
+      }
     });
 
     // Reset inline add form when drawer closes (open → closed transition)

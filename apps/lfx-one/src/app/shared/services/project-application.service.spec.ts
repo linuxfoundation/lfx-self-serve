@@ -80,7 +80,7 @@ describe('ProjectApplicationService (#3037)', () => {
     service.revise(application, { project_name: 'Renamed' }).subscribe();
     service.withdraw(application).subscribe();
     service.deny(application).subscribe();
-    service.accept(application, 'parent-uid').subscribe();
+    service.accept(application, 'parent-uid', 'new-project').subscribe();
     service.remove(application).subscribe();
 
     const revise = http.expectOne({ method: 'PUT', url: `/api/project-applications/${UID}` });
@@ -94,7 +94,11 @@ describe('ProjectApplicationService (#3037)', () => {
     }
     expect(revise.request.body).toEqual({ application: { project_name: 'Renamed' } });
     // Accept carries the complete held answers so the BFF's revise keeps unknown keys.
-    expect(accept.request.body).toEqual({ parent_project_uid: 'parent-uid', application: { project_name: 'Example', future_question: 'kept' } });
+    expect(accept.request.body).toEqual({
+      parent_project_uid: 'parent-uid',
+      project_slug: 'new-project',
+      application: { project_name: 'Example', future_question: 'kept' },
+    });
 
     for (const request of [revise, withdraw, deny, accept]) {
       request.flush({ application: buildApplication(), etag: '8' });

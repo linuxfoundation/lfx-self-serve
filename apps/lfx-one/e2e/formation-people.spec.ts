@@ -29,7 +29,7 @@ import {
 test.setTimeout(120_000);
 
 test.describe('Formation people card (#2724)', () => {
-  test('groups LF staff apart from invited people, with status chips, subtitles and the grants note', async ({ page }) => {
+  test('groups LF staff first, invitees by organization, then Other, with status chips, subtitles and the grants note', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -46,15 +46,20 @@ test.describe('Formation people card (#2724)', () => {
     // Staff rows carry no status chip — only externals are "invited" in any sense.
     await expect(card.getByTestId('formation-people-status-alex.rivera')).toHaveCount(0);
 
-    const invitedGroup = card.getByTestId('formation-people-group-invited');
-    await expect(invitedGroup).toContainText('Invited');
-    const accepted = invitedGroup.getByTestId('formation-people-row-sam.chen');
+    // The organization is the heading, not repeated in each row's subtitle.
+    const orgGroup = card.getByTestId('formation-people-group-org-cascade-data');
+    await expect(orgGroup).toContainText('Cascade Data');
+    const accepted = orgGroup.getByTestId('formation-people-row-sam.chen');
     await expect(accepted).toContainText('Sam Chen');
-    await expect(accepted).toContainText('Partner contact · Cascade Data · 1 item');
+    await expect(accepted).toContainText('Partner contact · 1 item');
+    await expect(accepted).not.toContainText('Cascade Data');
     await expect(card.getByTestId('formation-people-status-sam.chen')).toHaveText('Invited');
 
-    // A pending invite (email-only settings entry) shows the email as its subtitle and "Invite Sent".
-    const pendingRow = invitedGroup.getByTestId('formation-people-row-jordan.lee@partner-corp.example');
+    // A pending invite (email-only settings entry) has no organization yet, so it lands under Other
+    // with the email as its subtitle and "Invite Sent".
+    const otherGroup = card.getByTestId('formation-people-group-other');
+    await expect(otherGroup).toContainText('Other');
+    const pendingRow = otherGroup.getByTestId('formation-people-row-jordan.lee@partner-corp.example');
     await expect(pendingRow).toContainText('Jordan Lee');
     await expect(pendingRow).toContainText('jordan.lee@partner-corp.example');
     await expect(card.getByTestId('formation-people-status-jordan.lee@partner-corp.example')).toHaveText('Invite Sent');

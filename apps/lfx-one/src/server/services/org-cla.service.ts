@@ -208,7 +208,7 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  * document exists to fetch, since `sanctioned` describes the entity and not the agreement, and
  * that is the one question `signed` is here for.
  */
-function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
+function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string, viewerUsername: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? []).map((project) => ({
     projectName: project.projectName?.trim() ?? '',
     ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
@@ -261,7 +261,27 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     // only there, so an unsigned or preview row does not need to carry the flag. Missing on the
     // upstream row maps to false, matching the producer's own default when the column is unset.
     ...(entry.signed === true ? { autoCreateEcla: entry.autoCreateECLA === true } : {}),
+    viewerIsClaManager: Array.isArray(entry.claManagers) && rosterNamesUsername(entry.claManagers, viewerUsername),
   };
+}
+
+/**
+ * The username EasyCLA compares against a CCLA roster: the Auth0 username, which the ID token
+ * carries on the LF username claim. `nickname`, which the general username getter prefers, is not
+ * tied to it. While impersonating, the session's own claims are the impersonator's, so the
+ * target's stored username is used instead.
+ */
+async function rosterUsername(req: Request): Promise<string> {
+  if (!isImpersonating(req)) {
+    const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+    if (typeof claim === 'string' && claim) return claim;
+  }
+  return (await getUsernameFromAuth(req)) ?? '';
+}
+
+function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
+  if (!username) return false;
+  return claManagers.some((manager) => manager?.lfUsername === username);
 }
 
 /**
@@ -467,12 +487,13 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
+    const viewerUsername = await rosterUsername(req);
 
     return {
       orgUid,
       // Upstream order (signing entity, then CLA group name) is preserved, so what a support
       // engineer sees probing the endpoint directly matches what the page shows.
-      claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName)),
+      claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName, viewerUsername)),
     };
   }
 
@@ -541,10 +562,25 @@ export class OrgClaService {
       throw error;
     }
 
-    const url = result?.signed_cla_url?.trim() || result?.signedClaUrl?.trim() || '';
-    if (!url) {
+    // Typed as strings, but `gatewayFetch` only casts the parsed body, so a present non-string is
+    // malformed upstream data to refuse, not a value to call `.trim()` on.
+    const fields: unknown[] = [result?.signed_cla_url, result?.signedClaUrl];
+    const malformed = fields.some((field) => field != null && typeof field !== 'string');
+    const url = malformed ? '' : (fields.map((field) => (field as string | undefined)?.trim()).find(Boolean) ?? '');
+    if (!url && !malformed) {
       logger.warning(req, 'org_cla_get_pdf_url', 'signed document carries no url', { signature_id: signatureId });
       return null;
+    }
+
+    if (malformed || !isHttpsUrl(url)) {
+      logger.warning(req, 'org_cla_get_pdf_url', 'upstream returned a signed document address that is not an https URL', {
+        signature_id: signatureId,
+        pdf_url_scheme: malformed ? 'non-string' : urlSchemeForLog(url),
+      });
+      throw new MicroserviceError('Upstream returned an unusable signed document address', 502, 'CLA_PDF_URL_INVALID', {
+        operation: 'org_cla_get_pdf_url',
+        service: SERVICE,
+      });
     }
 
     logger.debug(req, 'org_cla_get_pdf_url', 'resolved a signed document url', { signature_id: signatureId });
@@ -1021,6 +1057,14 @@ export class OrgClaService {
       return { outcome: 'not-signed' };
     }
 
+    if (!context.canEdit) {
+      logger.warning(req, 'org_cla_update_ecla_auto_create', 'caller is not a CLA manager on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'forbidden' };
+    }
+
     try {
       await gatewayFetch<unknown>(
         req,
@@ -1126,11 +1170,12 @@ export class OrgClaService {
       });
     }
 
+    const viewerUsername = await rosterUsername(req);
     return {
       signatureId,
       managers: upstream.list
         .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
-        .map((entry) => toOrgClaManager(entry)),
+        .map((entry) => ({ ...toOrgClaManager(entry), ...(viewerUsername && entry.lf_username === viewerUsername ? { isViewer: true as const } : {}) })),
     };
   }
 
@@ -1313,7 +1358,7 @@ export class OrgClaService {
     signatureId: string,
     query: ContributorAcknowledgmentQuery
   ): Promise<OrgClaContributorAcknowledgmentList | null> {
-    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments', { rosterRequired: true });
     if (!context) return null;
 
     if (!context.signed) {
@@ -1362,8 +1407,8 @@ export class OrgClaService {
    *   1. `blockDuringImpersonation`, declared *before* `requireOrgLensAccess` — a write, and the
    *      producer stamps the acting user on the signature as `invalidatedBy`.
    *   2. `requireOrgLensAccess` — the Org Lens grant on the organization.
-   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Fails open only
-   *      when the producer sent no roster, matching the sibling approval-list posture.
+   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Refused when the
+   *      producer sent no roster, because the producer does not check the roster on invalidate.
    *   4. The id verify below, which refuses an acknowledgment id that is not on this company's
    *      roster for this CLA Group.
    *
@@ -1381,7 +1426,7 @@ export class OrgClaService {
     acknowledgmentSignatureId: string,
     input: OrgClaInvalidateAcknowledgmentRequest
   ): Promise<OrgClaInvalidateAcknowledgmentOutcome> {
-    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment', { rosterRequired: true });
     if (!context) return { outcome: 'not-found' };
 
     if (!context.signed) {
@@ -1709,7 +1754,13 @@ export class OrgClaService {
     throw new MicroserviceError(message, 409, code, { operation, service: SERVICE });
   }
 
-  private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
+  private async resolveClaGroupContext(
+    req: Request,
+    orgUid: string,
+    signatureId: string,
+    operation: string,
+    { rosterRequired = false }: { rosterRequired?: boolean } = {}
+  ): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
     const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
     if (!entry) {
@@ -1766,7 +1817,7 @@ export class OrgClaService {
       companySfid: orgUid,
       projectSfid,
       signed: entry.signed === true,
-      canEdit: await this.callerCanEdit(req, entry, operation),
+      canEdit: await this.callerCanEdit(req, entry, operation, rosterRequired),
     };
   }
 
@@ -1782,21 +1833,24 @@ export class OrgClaService {
    * identities do not leave the server: the row mapper drops them, and what crosses to the
    * browser is this boolean.
    *
-   * Fails OPEN when the producer sent no roster at all. That is the deliberate direction: the
-   * producer is the authority and rejects the write regardless, so failing open costs a CLA
-   * manager one clear error message, where failing closed would hide the only approval-list
-   * controls Self Serve has from someone entitled to use them.
+   * On a row with no roster at all, the UI already hides these controls (the row's
+   * `viewerIsClaManager` is false), but this check still passes the Approval List and Auto ECLA
+   * writes through: EasyCLA re-checks the roster on them and is the authority. `rosterRequired`
+   * callers — Invalidate and the acknowledgment read that offers it — fail closed instead, because
+   * EasyCLA checks only ACS scope on Invalidate, never the roster, so this is the one roster check
+   * it gets.
    */
-  private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string): Promise<boolean> {
+  private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string, rosterRequired: boolean): Promise<boolean> {
     if (!Array.isArray(entry.claManagers)) {
+      if (rosterRequired) {
+        logger.warning(req, operation, 'upstream sent no CLA manager roster, so invalidate access was refused', { signature_id: entry.signatureID });
+        return false;
+      }
       logger.warning(req, operation, 'upstream sent no CLA manager roster, so write access was not narrowed', { signature_id: entry.signatureID });
       return true;
     }
 
-    const username = (await getUsernameFromAuth(req))?.trim().toLowerCase() ?? '';
-    if (!username) return false;
-
-    return entry.claManagers.some((manager) => manager?.lfUsername?.trim().toLowerCase() === username);
+    return rosterNamesUsername(entry.claManagers, await rosterUsername(req));
   }
 
   private requireApprovalListProject(context: ApprovalContext, operation: string): void {
@@ -2076,17 +2130,15 @@ export type OrgClaApprovalUpdateOutcome =
 /**
  * Result of an Auto ECLA toggle write (#1988).
  *
- * A union rather than a bare boolean plus a thrown error, because the two ordinary outcomes map
- * to distinct HTTP answers: a signature the organization does not hold is a 404, and an unsigned
- * agreement is a 400 with its own copy. `updated` is the success shape and carries the state the
- * producer now records — the caller sends the target, the service echoes it back so the client
- * can trust the new value without a re-read.
- *
  * Producer refusals (sanctions, ACL) travel as thrown 403s carrying the producer's own sentence
  * on `clientMessage`; they are not one of these outcomes. Splitting them out here would force the
  * BFF to translate copy the producer already wrote.
  */
-export type OrgClaEclaAutoCreateUpdateOutcome = { outcome: 'updated'; autoCreateEcla: boolean } | { outcome: 'not-found' } | { outcome: 'not-signed' };
+export type OrgClaEclaAutoCreateUpdateOutcome =
+  | { outcome: 'updated'; autoCreateEcla: boolean }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-signed' }
+  | { outcome: 'forbidden' };
 
 /** Query parameters accepted on the acknowledgments read. Every field is already validated. */
 export interface ContributorAcknowledgmentQuery {

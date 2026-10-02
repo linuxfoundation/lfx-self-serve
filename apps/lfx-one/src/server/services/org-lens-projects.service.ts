@@ -181,9 +181,11 @@ export class OrgLensProjectsService {
   }
 
   /**
-   * `canEdit=false` (auditor-only callers) makes this a pure read: member-service rejects the
-   * default-workspace bootstrap and seed writes for them, so skipping the writes returns the
-   * indexed state instead of a 502 / empty-after-warning result.
+   * `canEdit=false` — a caller not on the company's admin list, including company-wide writers
+   * (`global_org_admin`, #3136) whose writes member-service would accept — makes loading a pure read:
+   * no default-workspace bootstrap and no seed writes, so opening Projects never writes to a company
+   * on someone else's behalf. `canEdit` comes from `OrgLensProjectsController.resolveCanEdit` (roster
+   * only, deliberately); explicit workspace edits are separate calls.
    */
   public async getWorkspaces(req: Request, accountId: string, canEdit: boolean): Promise<OrgProjectsWorkspacesResponse> {
     let workspaces = await this.fetchWorkspaceMetadata(req, accountId);

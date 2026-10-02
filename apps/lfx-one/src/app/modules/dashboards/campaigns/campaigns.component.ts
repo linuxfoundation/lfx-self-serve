@@ -9,6 +9,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_SEGMENT_LABELS,
+  CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -35,6 +37,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignCreateRequest,
   CampaignDeliveryType,
+  CampaignEmailSegment,
   CampaignEmailStage,
   CampaignEmailTab,
   CampaignEventSponsor,
@@ -60,6 +63,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { EmailBodyPreviewComponent } from '@components/email-body-preview/email-body-preview.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { CampaignService } from '@services/campaign.service';
@@ -125,6 +129,7 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
     ReactiveFormsModule,
     ButtonComponent,
     CheckboxComponent,
+    EmailBodyPreviewComponent,
     InputTextComponent,
     TextareaComponent,
     SelectComponent,
@@ -167,6 +172,10 @@ export class CampaignsComponent {
     // native control also needed `selected` on each OPTION, because a `[value]` binding applied
     // before the options exist is ignored -- a form control has no such ordering hazard.
     emailType: new FormControl<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { nonNullable: true }),
+    // Defaults to '' -- no segment -- because a segment is optional upstream and generic copy
+    // is the behaviour this surface had before the field existed. Defaulting to a real segment
+    // would silently narrow every send that never touched the selector.
+    emailSegment: new FormControl<string>('', { nonNullable: true }),
   });
 
   // The A/B controls are a reactive form for the same reason emailType above is: the `lfx-*`
@@ -1147,6 +1156,40 @@ export class CampaignsComponent {
   // to satisfy one. The shared constant stays readonly, which is what protects it.
   protected readonly emailTypes = [...CAMPAIGN_EMAIL_TYPES];
 
+  /**
+   * The audience segment the generated copy is framed for, or `''` for none.
+   *
+   * Kept as the raw control value; the narrowing to the union happens once, in
+   * `selectedEmailSegment` below.
+   */
+  protected readonly selectedEmailSegmentId = signal<string>('');
+
+  /**
+   * The segment to send — `undefined` when none is chosen.
+   *
+   * Narrowed by LOOKUP against the shared list rather than cast, so an id that is no longer a
+   * member (a segment retired from `CAMPAIGN_EMAIL_SEGMENTS` while one was selected) degrades to
+   * generic copy instead of travelling upstream as a value the service does not know.
+   */
+  protected readonly selectedEmailSegment = computed<CampaignEmailSegment | undefined>(() =>
+    CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
+  );
+
+  /**
+   * Segment options for the selector.
+   *
+   * A mutable COPY for the template for the same reason `emailTypes` above is one, and shaped
+   * `{ id, label }` so it binds through the same `optionLabel`/`optionValue` pair.
+   *
+   * The leading empty-id entry is what keeps the field OPTIONAL in the UI. Omitting a segment is
+   * a legal request, so the operator needs a way back to generic copy after choosing one — a list
+   * of segments alone makes the first choice irreversible.
+   */
+  protected readonly emailSegments = [
+    { id: '', label: 'All audiences' },
+    ...CAMPAIGN_EMAIL_SEGMENTS.map((segment) => ({ id: segment, label: CAMPAIGN_EMAIL_SEGMENT_LABELS[segment] })),
+  ];
+
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
 
@@ -1265,12 +1308,15 @@ export class CampaignsComponent {
    * Variant B's body with resource-loading markup removed, before the refused-CTA fold-back.
    *
    * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
-   * through the server's sanitizer. Angular's own sanitization strips scripts and handlers but
-   * deliberately KEEPS `<img src="https://…">`, so pasting image or tracking-pixel markup into
-   * the B textarea made the operator's browser issue that request while merely previewing.
+   * through the server's sanitizer. The preview frame cannot run script, but a sandboxed iframe
+   * still LOADS `<img src="https://…">` -- sandboxing blocks execution, not resource fetches --
+   * so pasting image or tracking-pixel markup into the B textarea made the operator's browser
+   * issue that request while merely previewing. This strip is what prevents that, and it is the
+   * only control on this path: see `EmailBodyPreviewComponent`'s docstring for why the typed-B
+   * body reaches the frame without ever being server-sanitized.
    *
-   * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
-   * runtime, so there is no `<img>` in the template source to find.
+   * The static-template test cannot catch this: the element arrives inside the frame's `srcdoc`
+   * at runtime, so there is no `<img>` in the template source to find.
    *
    * Nothing in the TEMPLATE binds this: both the B preview panel and the staging payload read
    * `abTestBodyHtmlBForSend`, which wraps this value. Keeping the two separate is what lets the
@@ -2106,6 +2152,13 @@ export class CampaignsComponent {
       this.onSelectEmailType(value);
     });
 
+    // Same shape as the email-type stream above, and for the same reason: the no-op guard and the
+    // copy invalidation live in the handler, so a second copy of that sequence here is one edit
+    // away from disagreeing with it.
+    this.selectorForm.controls.emailSegment.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      this.onSelectEmailSegment(value);
+    });
+
     // Clearing lives on the control's own stream rather than in a template handler: the
     // checkbox is form-driven now, so a `setValue(false)` from the reset paths must clear the
     // draft exactly like an operator un-ticking the box. A (change) handler would only fire
@@ -2515,6 +2568,35 @@ export class CampaignsComponent {
   }
 
   /**
+   * Switch the audience segment.
+   *
+   * Clears the generated copy and invalidates an in-flight generate for the reason
+   * `onSelectEmailType` below does: the copy on screen was framed for the PREVIOUS segment, and
+   * `onStageEmailSend` reads `emailCopy()` unconditionally -- so copy written for a first-time
+   * prospect stays stageable under an "Alumni" selector.
+   *
+   * Deliberately a SUBSET of what a type change clears. A segment is not part of a brief's
+   * identity: one brief serves every segment and only the framing differs, so the brief id, the
+   * template suggestion and the staging poll are all left alone. A type change touches those
+   * because it moves the STAGE, and the stage is what names the brief.
+   */
+  protected onSelectEmailSegment(segmentId: string): void {
+    if (segmentId === this.selectedEmailSegmentId()) {
+      return;
+    }
+    this.selectedEmailSegmentId.set(segmentId);
+
+    this.emailCopyGeneration++;
+    this.emailCopy.set(null);
+    this.emailCopyState.set('idle');
+    this.emailCopyError.set('');
+
+    // Variant B is segment-scoped the same way variant A is -- its draft was composed against the
+    // previous segment and must not ride into a create under the new one. Same call, same reason.
+    this.clearAbTestDraft();
+  }
+
+  /**
    * Switch the email type.
    *
    * Clears any generated copy, because the copy on screen was written for the PREVIOUS type: its
@@ -2672,7 +2754,9 @@ export class CampaignsComponent {
 
       // Variant A always requests the urgency-fomo draft -- variant B (`onGenerateAbTestCopy`
       // below) stays on ordinary stage-based copy so the two drafts differ in more than wording.
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo'));
+      const result = await firstValueFrom(
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo', this.selectedEmailSegment())
+      );
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
       // simply the wrong kind of email, which `onStageEmailSend` would then clone.
@@ -2749,7 +2833,9 @@ export class CampaignsComponent {
         return;
       }
 
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      const result = await firstValueFrom(
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), undefined, this.selectedEmailSegment())
+      );
       if (!isCurrent()) {
         return;
       }

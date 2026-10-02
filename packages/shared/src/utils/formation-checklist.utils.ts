@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationItem, FormationItemStatus, FormationQueueRow, FormationTemplateSection } from '../interfaces/formation.interface';
+import type {
+  FormationBlockingItem,
+  FormationItem,
+  FormationItemStatus,
+  FormationNextGateItem,
+  FormationQueueRow,
+  FormationTemplateSection,
+  UpstreamFormationItemRow,
+} from '../interfaces/formation.interface';
 import type {
   FormationAnnouncementTiming,
   FormationProgressSegment,
@@ -14,6 +22,7 @@ import {
   FORMATION_ORPHAN_SECTION,
   FORMATION_PROGRESS_SEGMENT_RANK,
 } from '../constants/formation.constants';
+import { FORMATION_TEMPLATE } from '../constants/formation-template.constants';
 import { parseIsoDateAsUtcMidnight } from './date-time.utils';
 
 /** Every status in `FORMATION_PROGRESS_SEGMENT_RANK` order — derived once from the exhaustiveness-checked map so the two can't drift. */
@@ -85,6 +94,60 @@ export function formatFormationSubItemsDoneLabel(summary: Pick<FormationReadines
 export function deriveFormationBlockingItemTitle(items: FormationItem[]): string | null {
   const blockedGatingItems = items.filter((item) => item.is_gating && item.status === 'blocked');
   return blockedGatingItems.length > 0 ? blockedGatingItems.map((item) => item.title).join(', ') : null;
+}
+
+/**
+ * Checklist position of every template item key — section order, then item order within the
+ * section. Built once from `FORMATION_TEMPLATE`, whose order matches the formation service's seed
+ * (`cmd/formation-cli/templates/project_formation_v2.json`): the `formation_item` index carries no
+ * `position`/`section_key`, so this is the only ordering a list read has.
+ */
+const FORMATION_TEMPLATE_ITEM_ORDER: ReadonlyMap<string, number> = new Map(
+  FORMATION_TEMPLATE.sections.flatMap((section) => section.items.map((item) => item.key)).map((key, index) => [key, index])
+);
+
+/**
+ * The formation list tables' "Blocking" column (#3066): the first gating item that is still open
+ * (`not_started`/`in_progress`/`blocked`), in checklist order — a skipped gate is passed over while
+ * any open gate remains. Unlike {@link deriveFormationBlockingItemTitle}, an open
+ * `not_started`/`in_progress` gate counts: it is what stands between the formation and Active.
+ *
+ * When only skipped gates remain, the first skipped one is named rather than nothing: the formation
+ * service counts every gate that is not `done` as outstanding (`progress.go` `gateSummaryFromItems`),
+ * so a skipped gate still holds `gates_cleared` false and is the real reason the row can't activate.
+ * Keys the template doesn't know sort after every known key, then by title.
+ */
+export function selectNextFormationGateItem(items: Pick<UpstreamFormationItemRow, 'item_key' | 'title' | 'status' | 'gate'>[]): FormationNextGateItem | null {
+  const outstandingGates = items.filter((item) => item.gate && item.status !== 'done');
+  const openGates = outstandingGates.filter((item) => item.status !== 'skipped');
+  const candidates = openGates.length > 0 ? openGates : outstandingGates;
+  if (candidates.length === 0) return null;
+  const orderOf = (key: string): number => FORMATION_TEMPLATE_ITEM_ORDER.get(key) ?? Number.MAX_SAFE_INTEGER;
+  const [next] = [...candidates].sort((a, b) => orderOf(a.item_key) - orderOf(b.item_key) || a.title.localeCompare(b.title));
+  return { item_key: next.item_key, title: next.title, status: next.status };
+}
+
+/** Whether `FORMATION_TEMPLATE` knows `key` — lets a caller count keys that would sort last, i.e. template drift (#3066). */
+export function isFormationTemplateItemKey(key: string): boolean {
+  return FORMATION_TEMPLATE_ITEM_ORDER.has(key);
+}
+
+/**
+ * The one item a formation row's "Blocking" cell names (#3066) — the single rule both the queue
+ * table and My Formations apply. A gates-cleared row names nothing (the cell reads "Formation to
+ * set Active"): `gates_cleared` is the formation service's own readiness summary, and it publishes
+ * that projection before the item batch, so a stale open item document must not outrank it. Next,
+ * the outstanding gate; otherwise the first `blocked` title stands in. That fallback covers a
+ * degraded item read and the item index lagging the projection, so the cell never goes blank while
+ * the Blocked tile still counts a blocker.
+ */
+export function resolveFormationBlockingItem(
+  row: Pick<FormationQueueRow, 'next_gate_item' | 'gates_cleared' | 'blocked_item_titles'>
+): FormationBlockingItem | null {
+  if (row.gates_cleared) return null;
+  if (row.next_gate_item) return { title: row.next_gate_item.title, blocked: row.next_gate_item.status === 'blocked' };
+  const firstBlocked = row.blocked_item_titles[0];
+  return firstBlocked ? { title: firstBlocked, blocked: true } : null;
 }
 
 /**

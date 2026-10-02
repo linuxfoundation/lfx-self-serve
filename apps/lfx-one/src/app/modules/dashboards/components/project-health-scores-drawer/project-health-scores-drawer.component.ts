@@ -12,7 +12,6 @@ import { InsightsHandoffSectionComponent } from '@components/insights-handoff-se
 import {
   DEFAULT_FOUNDATION_HEALTH_SCORE_DISTRIBUTION,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
   lfxColors,
   PROJECT_HEALTH_CATEGORY_BADGE,
   PROJECT_HEALTH_CATEGORY_LABEL,
@@ -30,6 +29,7 @@ import {
   computeHealthyOrBetterCount,
   computeHealthyOrBetterPct,
   computeScoredCount,
+  formatHealthLabel,
   isPartialHealthScore,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -215,13 +215,11 @@ export class ProjectHealthScoresDrawerComponent {
     this.page.set(1);
   }
 
-  // Bare category label, plus " - Partial" when the BFF-sourced coveredCategoryCount marks a
-  // 2-of-3 score (never recomputed locally — see ProjectTableRow.healthCoveredCategoryCount).
+  // Category label, marked partial from the BFF-sourced covered count; an unscored row has no label.
   protected categoryLabelFor(project: ProjectTableRow): string {
     const category = project.healthScoreCategory;
     if (!category) return '';
-    const label = this.categoryLabel[category];
-    return isPartialHealthScore(project.healthCoveredCategoryCount) ? `${label}${HEALTH_SCORE_PARTIAL_SUFFIX}` : label;
+    return formatHealthLabel(this.categoryLabel[category], isPartialHealthScore(project.healthCoveredCategoryCount));
   }
 
   // === Private Initializers ===

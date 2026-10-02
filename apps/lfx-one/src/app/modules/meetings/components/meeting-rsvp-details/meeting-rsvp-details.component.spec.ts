@@ -176,4 +176,29 @@ describe('MeetingRsvpDetailsComponent', () => {
     expect(fixture.componentInstance.meetingRegistrantCount()).toBe(2);
     expect(fixture.componentInstance.attendedCount()).toBe(1);
   });
+
+  it('renders the attendee preview only when asked, attending people first, and forwards View all', async () => {
+    const registrants = [
+      buildRegistrant({ uid: 'declined', rsvp: { response_type: 'declined' } as never }),
+      buildRegistrant({ uid: 'accepted', rsvp: { response_type: 'accepted' } as never }),
+    ];
+    const fixture = createComponent();
+    fixture.componentRef.setInput('meeting', buildMeeting({ is_invite_responses_enabled: true }));
+    fixture.componentRef.setInput('initialRegistrants', registrants);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const preview = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="attendee-preview"]');
+    expect(preview()).toBeNull();
+
+    fixture.componentRef.setInput('showAttendeePreview', true);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(preview()).not.toBeNull();
+    expect(fixture.componentInstance.previewPeople().map((p) => p.key)).toEqual(['accepted', 'declined']);
+
+    let viewAll = 0;
+    fixture.componentInstance.viewAllClicked.subscribe(() => viewAll++);
+    (fixture.nativeElement.querySelector('[data-testid="attendee-preview-view-all"]') as HTMLButtonElement).click();
+    expect(viewAll).toBe(1);
+  });
 });

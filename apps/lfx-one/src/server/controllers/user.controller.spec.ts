@@ -5,14 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks. stripHostKey is kept as a spy so we can assert every list item is sanitized;
 // its real behaviour (deleting host_key) is covered in meeting.helper.spec.ts.
-const { stripHostKeyMock, getStringQueryParamMock, getEffectiveEmailMock, userSvc } = vi.hoisted(() => ({
+const { stripHostKeyMock, getStringQueryParamMock, getEffectiveEmailMock, getUsernameFromAuthMock, userSvc } = vi.hoisted(() => ({
   stripHostKeyMock: vi.fn(),
   getStringQueryParamMock: vi.fn(() => undefined),
-  getEffectiveEmailMock: vi.fn(() => 'user@example.com'),
+  getEffectiveEmailMock: vi.fn((): string | null => 'user@example.com'),
+  getUsernameFromAuthMock: vi.fn((): Promise<string | null> => Promise.resolve('testuser')),
   userSvc: {
     getUserMeetings: vi.fn(),
     getUserPastMeetings: vi.fn(),
     getUserLatestPastMeetings: vi.fn(),
+    getPendingActions: vi.fn(),
   },
 }));
 
@@ -46,7 +48,16 @@ vi.mock('../services/user.service', () => ({
     return userSvc;
   }),
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock }));
+vi.mock('../utils/auth-helper', () => ({
+  getEffectiveEmail: getEffectiveEmailMock,
+  getUsernameFromAuth: getUsernameFromAuthMock,
+  stripAuthPrefix: (value: string) => value.replace(/^auth0\|/, ''),
+  // Composed from the mocks above (0-arity vi.fns) so per-test identity control is unchanged.
+  resolveUserIdentity: async () => {
+    const raw = await getUsernameFromAuthMock();
+    return { email: getEffectiveEmailMock(), username: raw ? raw.replace(/^auth0\|/, '') : raw };
+  },
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -112,6 +123,44 @@ describe('UserController — host_key stripping on list endpoints', () => {
     expect(stripHostKeyMock).toHaveBeenCalledTimes(1);
     expect(stripHostKeyMock).toHaveBeenCalledWith(meetings[0]);
     expect(res.json).toHaveBeenCalledWith(meetings);
+  });
+});
+
+describe('UserController.getPendingActions identity gate (GH-2987)', () => {
+  let controller: UserController;
+
+  const pendingReq = () => ({ query: {}, path: '/api/user/pending-actions', log: {} }) as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new UserController();
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
+    userSvc.getPendingActions.mockResolvedValue([]);
+  });
+
+  it('proceeds with a username-only identity (no email in the auth context)', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getPendingActions(pendingReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(userSvc.getPendingActions).toHaveBeenCalledWith(expect.anything(), undefined, null, undefined, undefined);
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('rejects via next() when neither email nor username can be resolved', async () => {
+    getEffectiveEmailMock.mockReturnValue(null);
+    getUsernameFromAuthMock.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getPendingActions(pendingReq(), res, next);
+
+    expect(userSvc.getPendingActions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
   });
 });
 

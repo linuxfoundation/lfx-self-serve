@@ -143,6 +143,22 @@ describe.each([
   ['/events-at-a-glance', 'foundationSlug'],
   ['/events-registrations-growth', 'foundationSlug'],
   ['/events-revenue', 'foundationSlug'],
+  ['/events-speakers', 'foundationSlug'],
+  ['/events-organizations', 'foundationSlug'],
+  ['/events-sponsorship', 'foundationSlug'],
+  ['/events-geography', 'foundationSlug'],
+  ['/members-tiers', 'foundationSlug'],
+  ['/members-bridge', 'foundationSlug'],
+  // The year and movement ride ahead of the slug so the handler past the gate has a valid query.
+  ['/members-movements', 'year=2025&movementType=new&foundationSlug'],
+  ['/members-directory', 'foundationSlug'],
+  ['/members-directory-tiers', 'foundationSlug'],
+  ['/members-at-risk', 'foundationSlug'],
+  ['/members-renewals', 'foundationSlug'],
+  ['/members-board-attendance', 'foundationSlug'],
+  ['/members-nps', 'foundationSlug'],
+  ['/members-churn', 'foundationSlug'],
+  ['/members-churn-departures', 'year=2025&foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

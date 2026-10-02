@@ -12,17 +12,18 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
+import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
- * Health Metrics tab bar. Overview, Engagement and Events are routable today; the remaining three
- * render disabled so the bar does not reshuffle as their tabs land.
+ * Health Metrics tab bar. Overview, Engagement, Events and Members are routable today; the remaining
+ * two render disabled so the bar does not reshuffle as their tabs land.
  */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
   { key: 'events', label: 'Events', route: 'events' },
-  { key: 'members', label: 'Members', route: null },
+  { key: 'members', label: 'Members', route: 'members' },
   { key: 'non-members', label: 'Non-Members', route: null },
   { key: 'training', label: 'Training', route: null },
 ] as const;
@@ -101,8 +102,13 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
 ] as const;
 
-/** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
-export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE = 'Board & voting-member attendance is reported per member in Members';
+/** Note under the sub-nav items, linking to the Members board section. */
+export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
+  text: 'Board & voting-member attendance is reported per member in',
+  linkLabel: 'Members',
+  route: 'members',
+  fragment: 'board',
+};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a

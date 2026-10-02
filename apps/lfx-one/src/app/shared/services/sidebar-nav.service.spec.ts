@@ -331,7 +331,8 @@ describe('SidebarNavService', () => {
       expect.objectContaining({ label: 'My Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
     );
     expect(engagementLinks[engagementLinks.length - 1]).toBe('/formations');
-    expect(engagementLinks.indexOf('/formations')).toBe(engagementLinks.indexOf('/documents') + 1);
+    expect(engagementLinks).not.toContain('/documents');
+    expect(engagementLinks.indexOf('/formations')).toBe(engagementLinks.indexOf('/surveys') + 1);
     // The section gates keep filtering independently of the new item gate.
     expect(labels(items)).not.toContain('Security');
     expect(labels(items)).not.toContain('Mentorship');

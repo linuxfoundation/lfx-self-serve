@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MentorshipMenteeDemographicRow } from '../interfaces/mentorship-mentee.interface';
+import type {
+  MentorshipMenteeApplyBlockedReason,
+  MentorshipMenteeApplyBlockedState,
+  MentorshipMenteeDemographicRow,
+  MentorshipMenteeRegisterFieldErrors,
+} from '../interfaces/mentorship-mentee.interface';
+import type { MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -34,6 +40,8 @@ export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other c
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
 export const MENTORSHIP_MENTEE_RESUME_INTRO = 'Optional, but mentors often look you up before accepting a mentee.';
+/** Passed to the resume section's `comingSoonSummary`: upload stays inert and toasts this feature name. */
+export const MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO =
@@ -137,50 +145,60 @@ export const MENTORSHIP_MENTEE_TERMS_INTRO =
 export const MENTORSHIP_MENTEE_EXPORT_DISCLAIMER =
   'At this moment we are not accepting applications from a person or entity restricted by U.S. export controls or sanction programs, or a resident of Cuba, Iran, North Korea, Syria, Sudan, Russian Federation or Crimea region of Ukraine.';
 
+/** Success-toast copy shown once the mentee profile has been saved to the mentorship platform. */
+export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY = 'Profile created';
+export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL = 'Your mentee profile has been saved.';
+
+/** Error code the BFF puts on the 409 returned when a mentee profile already exists. */
+export const MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE = 'MENTEE_PROFILE_EXISTS';
+
 /**
- * Success-toast copy for a client-validated mentee submit. Kept honest because the
- * backend endpoint is not live yet (#1509): the toast reports what actually happened
- * (validation passed) rather than claiming the registration was sent to the platform.
+ * Mentee-specific failure-banner copy for a rejected registration submit. The conflict, read-only and
+ * fallback copy both register forms share is `MENTORSHIP_REGISTER_ERROR_*` in `mentorship.constants.ts`.
  */
-export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY = 'Registration validated';
-export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
-  'Your mentee registration passed all checks. Submission to the mentorship platform will complete once the backend goes live.';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS = 'You already have a mentee profile, so we did not overwrite it.';
+export const MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE = 'Go to my mentee dashboard';
+export const MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE = 'We could not accept your registration. Please confirm the eligibility statements and try again.';
+
+/** The form fields a server 400 can name; anything else in `errors[]` is ignored rather than shown against a field that does not exist. */
+export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMenteeRegisterFieldErrors)[] = [
+  'introduction',
+  'skillsHave',
+  'skillsWant',
+  'ageEligible',
+  'workAuthorized',
+  'noDuplicateProfile',
+  'complianceAccepted',
+  'termsAccepted',
+];
+
+/** How `mapMentorshipRegisterFailure` classifies a rejected Become a Mentee submit. */
+export const MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS: MentorshipRegisterFailureOptions<MentorshipMenteeRegisterFieldErrors> = {
+  profileExistsCode: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  profileExistsMessage: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  fieldKeys: MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
+  ineligibleMessage: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
+};
 
 // ---------------------------------------------------------------------------
-// Mentee shell page — tab metadata, profile labels, and mock data
+// Mentee shell page — tab metadata, overview, and tasks
 // ---------------------------------------------------------------------------
 
 import type {
-  MentorshipMenteeApplicationHistoryEntry,
   MentorshipMenteeApplicationHistoryStatus,
   MentorshipMenteeApplicationStatus,
-  MentorshipMenteeOverviewAccepted,
-  MentorshipMenteeOverviewApplicant,
-  MentorshipMenteeOverviewEmpty,
   MentorshipMenteePastOutcome,
   MentorshipMenteeProfileResponse,
-  MentorshipMenteeTask,
-  MentorshipMenteeTasksResponse,
   MentorshipMenteeTaskStatus,
-  MentorshipMenteeUpNextTaskStatus,
+  MentorshipMenteeUpdatableTaskStatus,
+  MentorshipUpstreamApplicationStatus,
 } from '../interfaces/mentorship-mentee.interface';
 
 // ---------------------------------------------------------------------------
-// Tab configs — one per phase
+// Tab config — My Tasks is always shown and renders its own empty state
 // ---------------------------------------------------------------------------
 
-export const MENTORSHIP_MENTEE_TABS_EMPTY = [
-  { value: 'overview' as const, label: 'Overview' },
-  { value: 'profile' as const, label: 'Mentee Profile' },
-] as const;
-
-export const MENTORSHIP_MENTEE_TABS_APPLICANT = [
-  { value: 'overview' as const, label: 'Overview' },
-  { value: 'tasks' as const, label: 'My Application Tasks' },
-  { value: 'profile' as const, label: 'Mentee Profile' },
-] as const;
-
-export const MENTORSHIP_MENTEE_TABS_ACCEPTED = [
+export const MENTORSHIP_MENTEE_TABS = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'tasks' as const, label: 'My Tasks' },
   { value: 'profile' as const, label: 'Mentee Profile' },
@@ -192,18 +210,19 @@ export const MENTORSHIP_MENTEE_TABS_ACCEPTED = [
 
 export const MENTORSHIP_MENTEE_SHELL_TITLE = 'My Mentorship';
 export const MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL = 'Find a Program';
-export const MENTORSHIP_MENTEE_FIND_PROGRAM_URL = 'https://mentorship.dev.lfx.dev/programs';
+export const MENTORSHIP_MENTEE_TASKS_URL = '/mentorship/mentee/tasks';
 
 // ---------------------------------------------------------------------------
-// Overview — empty phase (screen 1)
+// Overview — empty phase
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_EMPTY_TITLE = "You haven't applied to a program yet";
 export const MENTORSHIP_MENTEE_EMPTY_SUBTITLE =
   'Browse open programs and apply to up to three in a term. Your applications, prerequisite tasks and decisions will show up here.';
+export const MENTORSHIP_MENTEE_OVERVIEW_LOAD_ERROR = 'We could not load your mentee overview. Please retry.';
 
 // ---------------------------------------------------------------------------
-// Overview — applicant phase (screen 2)
+// Overview — applicant phase
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR = 'application under review';
@@ -211,61 +230,99 @@ export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL = 'applicati
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY =
   'Program admins review submissions after the application window closes. Finish the prerequisite tasks to be considered.';
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX =
-  ' You can hold three applications at a time and you are at the limit \u2014 withdraw one before you apply to another program.';
+  ' You can hold three applications at a time and you are at the limit — withdraw one before you apply to another program.';
 export const MENTORSHIP_MENTEE_APPLICATION_LIMIT = 3;
 
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
-  'in-progress': 'In Progress',
+  active: 'Active',
+  graduated: 'Graduated',
   'awaiting-review': 'Awaiting Review',
+  'in-progress': 'In Progress',
 };
 
+/**
+ * Runtime Tailwind class map for the application status badge. Spread into the
+ * Tailwind safelist, since these tokens live outside the app's `content` glob.
+ */
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES: Record<MentorshipMenteeApplicationStatus, string> = {
-  'in-progress': 'bg-emerald-50 text-emerald-700',
+  active: 'bg-blue-50 text-blue-700',
+  graduated: 'bg-violet-50 text-violet-700',
   'awaiting-review': 'bg-amber-50 text-amber-700',
+  'in-progress': 'bg-emerald-50 text-emerald-700',
+};
+
+/** Display order of the application cards on the Overview and My Tasks tabs. */
+export const MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER: readonly MentorshipMenteeApplicationStatus[] = [
+  'active',
+  'graduated',
+  'awaiting-review',
+  'in-progress',
+];
+
+/**
+ * Progress label per card status. An accepted (active) or graduated card counts its
+ * non-prerequisite tasks; a pending card counts its prerequisite tasks.
+ */
+export const MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
+  active: 'Tasks',
+  graduated: 'Tasks',
+  'awaiting-review': 'Prerequisite Tasks',
+  'in-progress': 'Prerequisite Tasks',
+};
+
+/**
+ * Upstream application statuses that land in Past Applications, and the outcome each
+ * one shows. `pending`, `accepted` and `graduated` are absent because they render as cards.
+ */
+export const MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS: Partial<Record<MentorshipUpstreamApplicationStatus, MentorshipMenteePastOutcome>> = {
+  declined: 'not-selected',
+  withdrawn: 'withdrawn',
+  hold: 'on-hold',
 };
 
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'Not selected',
   withdrawn: 'Withdrawn',
-  accepted: 'Accepted',
-  graduated: 'Graduated',
+  'on-hold': 'On Hold',
 };
 
+/** Runtime Tailwind class map for the past-outcome badge. Spread into the Tailwind safelist. */
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  accepted: 'bg-emerald-100 text-emerald-700',
-  graduated: 'bg-emerald-100 text-emerald-700',
+  'on-hold': 'bg-blue-100 text-blue-700',
 };
 
 export const MENTORSHIP_MENTEE_WITHDRAW_LABEL = 'Withdraw';
-export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY = 'Coming Soon';
-export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_DETAIL = 'Withdraw will be available once the backend endpoint is live.';
+export const MENTORSHIP_MENTEE_WITHDRAW_CANCEL_LABEL = 'Cancel';
+export const MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_HEADER = 'Withdraw Application';
+export const MENTORSHIP_MENTEE_WITHDRAW_CONFIRM_MESSAGE = 'Are you sure you want to withdraw this application? Its mentors will no longer review it.';
+export const MENTORSHIP_MENTEE_WITHDRAW_SUCCESS_SUMMARY = 'Application withdrawn';
+export const MENTORSHIP_MENTEE_WITHDRAW_SUCCESS_DETAIL = 'Your application has been withdrawn.';
+export const MENTORSHIP_MENTEE_WITHDRAW_ERROR_SUMMARY = 'Could not withdraw the application';
+export const MENTORSHIP_MENTEE_WITHDRAW_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_LIFE = 5000;
+
+/**
+ * The code the BFF's impersonation guard (`blockDuringImpersonation`) puts on its 403. That 403
+ * says nothing about the application, so the mentee pages that write (withdraw, apply) show the
+ * server's message and leave what is on screen as it is.
+ */
+export const MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE = 'IMPERSONATION_READ_ONLY';
+
+/**
+ * Withdraw failures that mean the mentee's view of the application is out of date, keyed by
+ * status: 409 is upstream refusing a transition out of anything but `pending`, 403 is the
+ * applicant check failing, and 404 is an application that no longer exists. The page shows
+ * this copy and re-reads the applications; any other status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTEE_WITHDRAW_STALE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer withdraw this application. Your applications have been refreshed.',
+  404: 'This application no longer exists. Your applications have been refreshed.',
+  409: 'This application is no longer pending, so it cannot be withdrawn. Your applications have been refreshed.',
+};
 export const MENTORSHIP_MENTEE_VIEW_TASKS_LABEL = 'View Tasks';
-export const MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY = 'Coming Soon';
-export const MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY = 'Coming Soon';
 export const MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE = 'Past Applications';
-
-// ---------------------------------------------------------------------------
-// Overview — accepted phase (screen 3)
-// ---------------------------------------------------------------------------
-
-export const MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL = 'Active';
-export const MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL = 'YOUR MENTORS';
-export const MENTORSHIP_MENTEE_UP_NEXT_TITLE = 'Up Next';
-export const MENTORSHIP_MENTEE_ALL_TASKS_LABEL = 'All tasks';
-
-export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_LABELS: Record<MentorshipMenteeUpNextTaskStatus, string> = {
-  'in-progress': 'In Progress',
-  pending: 'To Do',
-  incomplete: 'To Do',
-};
-
-export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES: Record<MentorshipMenteeUpNextTaskStatus, string> = {
-  'in-progress': 'bg-blue-100 text-blue-600',
-  pending: 'bg-gray-100 text-gray-600',
-  incomplete: 'bg-gray-100 text-gray-600',
-};
 
 // ---------------------------------------------------------------------------
 // Tasks tab — unified task status labels, classes, and dropdown options
@@ -288,19 +345,19 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_CLASSES: Record<MentorshipMenteeTaskS
 };
 
 /**
- * Selectable task statuses in the dropdown (both phases) — the single source of
+ * Selectable task statuses in the dropdown (every card) — the single source of
  * truth for which statuses a mentee can pick. `incomplete` / `complete` are
  * backend aliases that collapse onto these three.
  */
 export const MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES: readonly MentorshipMenteeTaskStatus[] = ['pending', 'in_progress', 'submitted'];
 
-/** Dropdown options for the task status selector (both phases). Labels derived from the label map so edits propagate. */
+/** Dropdown options for the task status selector (every card). Labels derived from the label map so edits propagate. */
 export const MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS: { value: MentorshipMenteeTaskStatus; label: string }[] = MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES.map(
   (value) => ({ value, label: MENTORSHIP_MENTEE_TASK_STATUS_LABELS[value] })
 );
 
 /**
- * Filter chip options on the accepted-phase My Tasks tab. `null` value = show all.
+ * Filter chip options on an accepted application's My Tasks card. `null` value = show all.
  * Derived from `MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS` (the single source of truth
  * for selectable statuses) plus a leading "All" chip, so new status options
  * propagate here automatically.
@@ -313,257 +370,64 @@ export const MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS: { value: MentorshipMenteeTas
 /** Natural case — the template applies the `uppercase` Tailwind class for display. */
 export const MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL = 'Prerequisite Tasks';
 
-// ---------------------------------------------------------------------------
-// Empty overview response (loading fallback)
-// ---------------------------------------------------------------------------
-
-export const EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE: MentorshipMenteeOverviewEmpty = {
-  phase: 'empty',
-};
+export const MENTORSHIP_MENTEE_TASKS_EMPTY_TITLE = 'No tasks yet';
+export const MENTORSHIP_MENTEE_TASKS_EMPTY_SUBTITLE = 'Tasks from the programs you apply to will appear here. Browse open programs to get started.';
+export const MENTORSHIP_MENTEE_TASKS_LOAD_ERROR = 'Could not load your tasks. Please retry.';
+export const MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY = 'No tasks for this application yet.';
 
 // ---------------------------------------------------------------------------
-// Mock data — three phases
+// Tasks tab — status change (PATCH /mentorship/v1/tasks/{id}/submission)
 // ---------------------------------------------------------------------------
 
-export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY: MentorshipMenteeOverviewEmpty = {
-  phase: 'empty',
+/**
+ * The only statuses a mentee can request: `pending → in_progress` and `in_progress → submitted`.
+ * `incomplete` and `complete` are reviewer-only, and anything else is a 409 upstream. The BFF never
+ * sends `file` (upload is a coming-soon toast), so the stored file satisfies upstream's file check.
+ */
+export const MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES: readonly MentorshipMenteeUpdatableTaskStatus[] = ['in_progress', 'submitted'];
+export const MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE = 5000;
+export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_SUMMARY = 'Task updated';
+export const MENTORSHIP_MENTEE_TASK_STATUS_SUCCESS_DETAIL = 'Your task status has been saved.';
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_SUMMARY = 'Could not update task';
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK = 'We could not update this task right now. Please try again.';
+
+/**
+ * Statuses where the local view is stale, so the applications are re-read after the toast. A 400 counts:
+ * the row only sends a task id and a status it has already validated, so in practice it is upstream's
+ * file-required check, which means the cached task no longer says whether a file is needed.
+ */
+export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [400, 403, 404, 409];
+
+/**
+ * Status-change failures with their own copy, keyed by status. A 400 is either the BFF rejecting the
+ * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both;
+ * the BFF's past-due 400 carries `MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE` and shows its own message.
+ * A 403 can come from the gateway's assignee check or the service's; the OpenFGA assignee tuple is written
+ * asynchronously, so a valid assignee may see one just after the task is created. The stale statuses
+ * (400, 403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
+ */
+export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This task could not be updated. If it needs a file, file upload is coming soon. Your tasks have been refreshed.',
+  403: 'You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed.',
+  404: 'This task no longer exists. Your tasks have been refreshed.',
+  409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',
 };
 
-export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverviewApplicant = {
-  phase: 'applicant',
-  openTaskCount: 3,
-  applications: [
-    {
-      id: 'app_apicurio',
-      programId: 'prog_apicurio',
-      orgAbbreviation: 'AR',
-      projectName: 'CNCF',
-      term: { id: 'term_apicurio_fall26', name: 'Fall 2026' },
-      programName: 'Apicurio Registry: Prompt Template Playground',
-      status: 'in-progress',
-      lastTaskUpdatedOn: 'Jun 28, 2026',
-      decisionExpectedDate: 'Jul 22, 2026',
-      prerequisiteTasksCompleted: 1,
-      prerequisiteTasksTotal: 3,
-      tasks: [
-        {
-          id: 'task_apicurio_1',
-          name: 'Read the contributor guide and set up the dev environment',
-          description: 'Follow the repo CONTRIBUTING.md and confirm the test suite passes locally.',
-          status: 'complete',
-          submitFile: null,
-          dueDate: '2026-07-02T00:00:00Z',
-          submittedOn: '2026-07-02T00:00:00Z',
-        },
-        {
-          id: 'task_apicurio_2',
-          name: 'Open a good-first-issue pull request',
-          description: 'Pick any issue labelled "good first issue" and submit a working PR.',
-          status: 'in_progress',
-          submitFile: 'required',
-          dueDate: '2026-07-09T00:00:00Z',
-        },
-        {
-          id: 'task_apicurio_3',
-          name: 'Write a short proposal for the playground UI',
-          description: 'One-page design brief describing your planned prompt-template playground.',
-          status: 'incomplete',
-          submitFile: 'required',
-          dueDate: '2026-07-14T00:00:00Z',
-        },
-      ],
-    },
-    {
-      id: 'app_zephyr',
-      programId: 'prog_zephyr',
-      orgAbbreviation: 'ZR',
-      projectName: 'Zephyr Project',
-      term: { id: 'term_zephyr_win26', name: 'Winter 2026' },
-      programName: 'Zephyr RTOS: Power Management Test Harness',
-      status: 'in-progress',
-      lastTaskUpdatedOn: 'Jul 1, 2026',
-      decisionExpectedDate: 'Aug 5, 2026',
-      prerequisiteTasksCompleted: 1,
-      prerequisiteTasksTotal: 2,
-      tasks: [
-        {
-          id: 'task_zephyr_1',
-          name: 'Build Zephyr for a supported board',
-          description: 'Clone the Zephyr SDK and produce a bootable image for any supported board.',
-          status: 'submitted',
-          submitFile: 'required',
-          fileUrl: 'https://example.com/uploads/zephyr-build-log.txt',
-          dueDate: '2026-07-06T00:00:00Z',
-          submittedOn: '2026-07-06T00:00:00Z',
-        },
-        {
-          id: 'task_zephyr_2',
-          name: 'Run the existing power management tests',
-          description: 'Execute the PM test suite and attach the report.',
-          status: 'pending',
-          submitFile: 'required',
-          dueDate: '2026-07-16T00:00:00Z',
-        },
-      ],
-    },
-    {
-      id: 'app_janusgraph',
-      programId: 'prog_janusgraph',
-      orgAbbreviation: 'JA',
-      projectName: 'LF AI & Data',
-      term: { id: 'term_janusgraph_fall26', name: 'Fall 2026' },
-      programName: 'JanusGraph: Adjacency Cache Instrumentation',
-      status: 'awaiting-review',
-      lastTaskUpdatedOn: 'Jul 4, 2026',
-      decisionExpectedDate: 'Jul 29, 2026',
-      prerequisiteTasksCompleted: 3,
-      prerequisiteTasksTotal: 3,
-      tasks: [
-        {
-          id: 'task_janus_1',
-          name: 'Introduce yourself on the dev mailing list',
-          description: 'Post an introduction to the JanusGraph dev mailing list.',
-          status: 'submitted',
-          submitFile: null,
-          dueDate: '2026-07-07T00:00:00Z',
-          submittedOn: '2026-07-07T00:00:00Z',
-        },
-        {
-          id: 'task_janus_2',
-          name: 'Reproduce the cache benchmark locally',
-          description: 'Run the adjacency cache benchmark and share results.',
-          status: 'submitted',
-          submitFile: 'required',
-          fileUrl: 'https://example.com/uploads/janus-benchmark.pdf',
-          dueDate: '2026-07-18T00:00:00Z',
-          submittedOn: '2026-07-18T00:00:00Z',
-        },
-        {
-          id: 'task_janus_3',
-          name: 'Summarise where instrumentation is missing',
-          description: 'Review the codebase and list modules without tracing hooks.',
-          status: 'submitted',
-          submitFile: 'required',
-          fileUrl: 'https://example.com/uploads/janus-audit.md',
-          dueDate: '2026-07-25T00:00:00Z',
-          submittedOn: '2026-07-25T00:00:00Z',
-        },
-      ],
-    },
-  ],
-  pastApplications: [
-    {
-      id: 'past_backstage',
-      programName: 'Backstage: Plugin Accessibility Audit',
-      projectName: 'CNCF',
-      termName: 'Summer 2026',
-      createdOn: 'Feb 12, 2026',
-      outcome: 'not-selected',
-    },
-    {
-      id: 'past_openapi',
-      programName: 'OpenAPI Tools: Type-Safe Client Generation',
-      projectName: 'OpenAPI Initiative',
-      termName: 'Spring 2026',
-      createdOn: 'Nov 8, 2025',
-      outcome: 'not-selected',
-    },
-  ],
-};
+/**
+ * Error code on the BFF's 400 when a mentee submits a task after its due date. Upstream enforces no
+ * deadline, so the BFF checks the task's own `due_date` (the end of that UTC day) before forwarding.
+ */
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE = 'TASK_PAST_DUE';
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted.';
 
-export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewAccepted = {
-  phase: 'accepted',
-  openTaskCount: 3,
-  program: {
-    id: 'app_gridflow',
-    programId: 'prog_gridflow',
-    projectName: 'LF Energy',
-    programName: 'GridFlow: Time-Series Ingestion Pipeline',
-    tasksCompleted: 7,
-    tasksTotal: 12,
-    mentors: [
-      { id: 'mentor_1', name: 'Test Mentor A' },
-      { id: 'mentor_2', name: 'Test Mentor B' },
-    ],
-    // Mirror the OPEN tasks in MOCK_MENTEE_TASKS so Overview "Up Next" and the My Tasks
-    // tab never disagree — a submitted task (e.g. "Benchmark 1M points per minute") must
-    // not appear here while it reads as Submitted on the tasks tab.
-    upNextTasks: [
-      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'pending', dueDate: '2026-09-18T00:00:00Z' },
-      { id: 'unt_2', name: 'Backpressure design note', status: 'in-progress', dueDate: '2026-09-12T00:00:00Z' },
-      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02T00:00:00Z' },
-    ],
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Tasks tab constants and mock data
-// ---------------------------------------------------------------------------
-
-export const EMPTY_MENTORSHIP_MENTEE_TASKS_RESPONSE: MentorshipMenteeTasksResponse = {
-  data: [],
-  total: 0,
-};
-
-const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
-  {
-    id: 'mt_1',
-    title: 'Implement replay from durable buffer',
-    description: 'Build the replay mechanism that reads from the durable write-ahead log.',
-    status: 'pending',
-    submitFile: null,
-    dueDate: '2026-09-18T00:00:00Z',
-  },
-  {
-    id: 'mt_2',
-    title: 'Backpressure design note',
-    description: 'Document how the pipeline handles backpressure from slow consumers.',
-    status: 'in_progress',
-    submitFile: 'required',
-    dueDate: '2026-09-12T00:00:00Z',
-  },
-  {
-    id: 'mt_3',
-    title: 'Benchmark 1M points per minute',
-    description: 'Run the ingestion benchmark at 1M points/min and capture a flame graph.',
-    status: 'submitted',
-    submitFile: 'required',
-    fileUrl: 'https://example.com/uploads/benchmark-report.pdf',
-    dueDate: '2026-09-25T00:00:00Z',
-    submittedDate: '2026-09-25T00:00:00Z',
-  },
-  {
-    id: 'mt_4',
-    title: 'Ingestion worker refactor',
-    description: 'Refactor the worker pool to use a bounded channel instead of mutex.',
-    status: 'submitted',
-    submitFile: null,
-    dueDate: '2026-09-04T00:00:00Z',
-    submittedDate: '2026-09-04T00:00:00Z',
-  },
-  {
-    id: 'mt_5',
-    title: 'Set up local dev environment',
-    description: 'Clone the repo, run the test suite, and confirm the CI pipeline passes.',
-    status: 'complete',
-    submitFile: null,
-    dueDate: '2026-08-29T00:00:00Z',
-    submittedDate: '2026-08-29T00:00:00Z',
-  },
-  {
-    id: 'mt_6',
-    title: 'Write contributor onboarding doc',
-    description: 'Create a CONTRIBUTING.md with setup, branching, and review conventions.',
-    status: 'pending',
-    submitFile: 'required',
-    dueDate: '2026-10-02T00:00:00Z',
-  },
-];
-
-export const MOCK_MENTORSHIP_MENTEE_TASKS: MentorshipMenteeTasksResponse = {
-  data: MOCK_MENTEE_TASKS,
-  total: MOCK_MENTEE_TASKS.length,
-};
+/**
+ * Reasons a status option is unavailable. They are read by assistive tech; the file-required and past-due
+ * ones also show on screen. The past-due hint also describes the disabled Upload button.
+ */
+export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. File upload is coming soon.';
+export const MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE = 'The due date has passed, so this task can no longer be submitted.';
+export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
+export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
 
 // ---------------------------------------------------------------------------
 // Profile tab constants and mock data
@@ -631,10 +495,49 @@ export const MENTORSHIP_MENTEE_APPLY_MISSING_SUBTITLE = 'Open the apply link fro
 export const MENTORSHIP_MENTEE_APPLY_LOAD_ERROR_TITLE = 'Could not load this application';
 export const MENTORSHIP_MENTEE_APPLY_LOAD_ERROR_FALLBACK = 'We could not load this application. Please retry.';
 
+export const MENTORSHIP_MENTEE_APPLY_SUCCESS_SUMMARY = 'Application submitted';
+export const MENTORSHIP_MENTEE_APPLY_SUCCESS_DETAIL = 'Your application has been submitted. You can follow it from your overview.';
+export const MENTORSHIP_MENTEE_APPLY_ERROR_SUMMARY = 'Could not submit the application';
+export const MENTORSHIP_MENTEE_APPLY_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTEE_APPLY_TOAST_LIFE = 5000;
+
+/** Copy for each state the apply page shows in place of the form. */
+export const MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES: Readonly<Record<MentorshipMenteeApplyBlockedReason, MentorshipMenteeApplyBlockedState>> = {
+  'not-found': {
+    icon: 'fa-light fa-magnifying-glass',
+    title: 'This program term could not be found',
+    subtitle: 'The link may be out of date, or the program is no longer available.',
+  },
+  closed: {
+    icon: 'fa-light fa-calendar-xmark',
+    title: 'This term is not accepting applications',
+    subtitle: 'Applications for this term are closed or have not opened yet.',
+  },
+  'already-applied': {
+    icon: 'fa-light fa-circle-check',
+    title: 'You already applied to this term',
+    subtitle: 'You have an application for this term, so you cannot apply again. Your applications are on your overview.',
+  },
+};
+
+/**
+ * Upstream statuses on the apply-target read or the submit that mean the form cannot be used,
+ * keyed by status. 400 is an id that is not a UUID, 403 a program the mentee cannot view, 404 a
+ * term that is not in the program, 422 a term outside its application window, and 409 an existing
+ * application for the term (pending, decided or declined; upstream does not say which). Any other
+ * status keeps the form and reports the failure.
+ */
+export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<number, MentorshipMenteeApplyBlockedReason>> = {
+  400: 'not-found',
+  403: 'not-found',
+  404: 'not-found',
+  409: 'already-applied',
+  422: 'closed',
+};
+
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
- * "Edit Mentee Profile" button. Save fires the coming-soon toast until the update
- * endpoint is wired. Drawer-only labels: the Become a Mentee register form keeps its
+ * "Edit Mentee Profile" button. Drawer-only labels: the Become a Mentee register form keeps its
  * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
@@ -653,10 +556,44 @@ export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL = 'What areas do y
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL = 'Save Changes';
 export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
 
+/** Ceilings the profile drawer validators and the BFF share. Above anything the skills picker catalogue reaches. */
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS = 100;
+export const MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH = 100;
+export const MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH = 100;
+
+/** Which upstream column each demographics row is stored in, in the profile update's camelCase keys. */
+export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
+  demographics: ['age', 'gender', 'raceEthnicity'],
+  socioeconomics: ['income', 'education'],
+} as const;
+
+/** Keys of the upstream `skill_set` column the mentee profile update owns; any other stored key is kept on save. */
+export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvementSkills', 'comments'] as const;
+
+/** Top-level keys the profile update accepts. Anything else is a 400. */
+export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
+export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
+
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE =
+  'Your introduction has too many line breaks or special characters to save. Shorten it or remove extra blank lines.';
+
+/** Copy per status; 403 is intentionally absent (the BFF impersonation guard authors its own message). */
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'Some of your changes could not be saved. Review them and try again.',
+  404: 'We could not find your mentee profile. Refresh the page and try again.',
+  409: 'Your mentee profile could not be updated because of a conflict. Refresh the page and try again.',
+};
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save your changes. Please try again.';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
+export const MENTORSHIP_MENTEE_DEMOGRAPHICS_SAVE_SUCCESS_SUMMARY = 'Demographics updated';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_TOAST_LIFE = 5000;
+export const MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
+
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE = 'Programs you apply to will appear here once you submit your first application.';
-export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL = 'View application';
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL = 'View program';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL = 'Withdraw application';
 
 /**
@@ -697,58 +634,3 @@ export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileRe
   profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
   history: [],
 };
-
-/**
- * Deterministic mock backing the standalone mentee profile page while the mentorship
- * profiles endpoint is unavailable. Removed once the real read is wired up.
- */
-export const MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY: MentorshipMenteeApplicationHistoryEntry[] = [
-  {
-    id: 'hist_gridflow_fall26',
-    programName: 'GridFlow: Time-Series Ingestion Pipeline',
-    termName: 'Fall 2026',
-    submittedOn: 'Jun 28, 2026',
-    status: 'accepted',
-  },
-  {
-    id: 'hist_apicurio_fall26',
-    programName: 'Apicurio Registry: Prompt Template Playground',
-    termName: 'Fall 2026',
-    submittedOn: 'Jul 2, 2026',
-    status: 'pending',
-  },
-  {
-    id: 'hist_backstage_summer26',
-    programName: 'Backstage: Plugin Accessibility Audit',
-    termName: 'Summer 2026',
-    submittedOn: 'Apr 9, 2026',
-    status: 'declined',
-  },
-];
-
-export const MOCK_MENTORSHIP_MENTEE_PROFILE: MentorshipMenteeProfileResponse = {
-  profile: {
-    aboutMe:
-      'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
-    skillsHave: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
-    skillsWant: ['Distributed Systems', 'Code Review', 'Observability'],
-    additionalNotes:
-      'I co-run a student Linux user group and have been maintaining our campus microgrid dashboards for two terms. I am comfortable working asynchronously across time zones.',
-    resumeFileName: 'test-user-1-resume.pdf',
-    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
-  },
-  demographics: {
-    age: '20-39',
-    education: 'college',
-  },
-  history: MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY,
-};
-
-// ---------------------------------------------------------------------------
-// Dev shortcuts
-// ---------------------------------------------------------------------------
-
-export const MENTORSHIP_MENTEE_DEV_DASHBOARD_LABEL = 'Go to Mentee Dashboard';
-export const MENTORSHIP_MENTEE_DEV_VIEW_EMPTY_LABEL = 'View the empty state \u2192';
-export const MENTORSHIP_MENTEE_DEV_VIEW_APPLICANT_LABEL = 'View the applicant state \u2192';
-export const MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL = 'View the accepted state \u2192';
