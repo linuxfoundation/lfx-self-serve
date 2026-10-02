@@ -4,36 +4,49 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  MENTORSHIP_ACTIVE_APPLICATION_STATUSES,
   MENTORSHIP_ADD_NOTE_LABEL,
+  MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
   MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
+  MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
+  MENTORSHIP_APPLICANT_STATUS_LABELS,
+  MENTORSHIP_APPLICANT_STATUS_NOTE,
   MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL,
-  MENTORSHIP_CURRENT_MENTEE_STATUSES,
-  MENTORSHIP_MENTEE_ACTION_ICONS,
-  MENTORSHIP_MENTEE_ACTION_LABELS,
-  MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+  MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS,
   MENTORSHIP_MENTEE_STATUS_LABELS,
+  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { FilterOption, MentorshipMenteeStatus, MentorshipNoteRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import {
-  formatMentorshipTaskProgress,
+  FilterOption,
+  MentorshipMenteeStatus,
+  MentorshipNoteRequest,
+  MentorshipProgramApplicant,
+  MentorshipProgramTermRow,
+  MentorshipRowAction,
+} from '@lfx-one/shared/interfaces';
+import {
+  formatIsoDateLabel,
   matchesMentorshipPersonSearch,
+  mentorshipApplicantDisplayStatus,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
-  mentorshipMenteeActionsFor,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
+  mentorshipTermFilterOptions,
 } from '@lfx-one/shared/utils';
-import { TooltipModule } from 'primeng/tooltip';
 import { startWith, take, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
@@ -43,18 +56,20 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
 import { RowActionsComponent } from '../../../../components/row-actions/row-actions.component';
 
 /**
- * Current mentees tab — task progress plus the reviewer note. Lists only the enrolled
- * statuses (accepted / graduated); everyone else belongs to the Applicants tab, and the
- * status filter offers exactly the two it lists. View Tasks expands an inline sub-table
- * of assigned tasks; submission view/download stub to coming soon until the write
- * endpoints land. Row actions (withdraw / decline / graduate), Create Task, and the
- * status export do the same. The reviewer note is the other action that takes effect;
- * the parent owns its state, so it outlives a tab switch.
+ * Current Mentees tab — every application in one of the program's open terms, whatever
+ * its status, filtered by search, status, and open term. View Tasks expands an inline
+ * sub-table of assigned tasks. Row actions depend on the status: an application under
+ * review can be accepted, declined, or withdrawn; an accepted mentee can also be given a
+ * task or graduated. Create task opens the task form; it and every other action stub to
+ * coming soon until the write endpoints land, as do Decline by Term and the status export.
+ * The reviewer note is the one action that takes effect; the parent owns its state, so it
+ * outlives a tab switch.
  */
 @Component({
   selector: 'lfx-mentorship-current-mentees-tab',
   imports: [
     ReactiveFormsModule,
+    RouterLink,
     ApplicantTasksPanelComponent,
     ButtonComponent,
     InputTextComponent,
@@ -62,7 +77,6 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
     RowActionsComponent,
     SelectComponent,
     TableComponent,
-    TooltipModule,
   ],
   templateUrl: './current-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -72,23 +86,32 @@ export class CurrentMenteesTabComponent {
   private readonly taskDialog = inject(MentorshipTaskDialogService);
   private readonly destroyRef = inject(DestroyRef);
 
-  public readonly mentees = input.required<MentorshipProgramMentee[]>();
+  public readonly mentees = input.required<MentorshipProgramApplicant[]>();
+  /** The program's terms; only the open ones feed the term filter. */
+  public readonly terms = input<MentorshipProgramTermRow[]>([]);
   /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
   public readonly noteDrafts = input<Record<string, string>>({});
   public readonly noteRequested = output<MentorshipNoteRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
+  protected readonly statusNote = MENTORSHIP_APPLICANT_STATUS_NOTE;
+  protected readonly viewTasksLabel = MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL;
+  protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
 
-  /** Fixed rather than derived from the rows: the two statuses this tab can list. */
+  /**
+   * Fixed rather than derived from the rows: every status a mentee can hold. Filters on the
+   * wire status, so Pending matches both the Applied and the Tasks Completed rows.
+   */
   protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
-    ...MENTORSHIP_CURRENT_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
+    ...MENTORSHIP_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
   ];
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
     status: new FormControl<MentorshipMenteeStatus | null>(null),
+    term: new FormControl<string | null>(null),
   });
 
   /**
@@ -101,9 +124,6 @@ export class CurrentMenteesTabComponent {
   /** Mentee ids whose tasks sub-table is expanded. */
   protected readonly expandedTaskMenteeIds = signal<Record<string, boolean>>({});
 
-  protected readonly viewTasksLabel = MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL;
-  protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
-
   private readonly filters = toSignal(
     this.form.valueChanges.pipe(
       tap(() => this.first.set(0)),
@@ -111,6 +131,8 @@ export class CurrentMenteesTabComponent {
     ),
     { initialValue: this.form.getRawValue() }
   );
+
+  protected readonly termOptions = this.initTermOptions();
 
   protected readonly rows = this.initRows();
 
@@ -122,19 +144,12 @@ export class CurrentMenteesTabComponent {
     this.comingSoon.notify(summary);
   }
 
-  /**
-   * Opens the shared task-form dialog in create mode for the given mentee. The
-   * persistence side stubs to the coming-soon toast until the mentorship-service
-   * create-task endpoint lands.
-   */
-  protected onCreateTask(mentee: MentorshipProgramMentee): void {
-    this.taskDialog
-      .openCreate({ id: mentee.id, name: mentee.name, email: mentee.email, avatarUrl: mentee.avatarUrl })
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => {
-        if (!value) return;
-        this.comingSoon.notify(`Create task "${value.name}" for ${mentee.name}`);
-      });
+  protected onRowAction(mentee: MentorshipProgramApplicant, action: MentorshipRowAction): void {
+    if (action.value === 'create-task') {
+      this.onCreateTask(mentee);
+      return;
+    }
+    this.comingSoon.notify(`${action.label} ${mentee.name}`);
   }
 
   protected toggleTasksExpanded(menteeId: string): void {
@@ -144,26 +159,54 @@ export class CurrentMenteesTabComponent {
     }));
   }
 
+  private initTermOptions() {
+    return computed(() => mentorshipTermFilterOptions(this.terms(), 'open', MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL));
+  }
+
   private initRows() {
     return computed(() => {
-      const { search, status } = this.filters();
+      const { search, status, term } = this.filters();
       return this.mentees()
         .filter((person) => matchesMentorshipPersonSearch(person, search ?? ''))
         .filter((person) => !status || person.status === status)
+        .filter((person) => !term || person.termName === term)
         .map((person) => this.toRow(person));
     });
   }
 
-  private toRow(person: MentorshipProgramMentee) {
+  private onCreateTask(mentee: MentorshipProgramApplicant): void {
+    this.taskDialog
+      .openCreate({ id: mentee.id, name: mentee.name, email: mentee.email, avatarUrl: mentee.avatarUrl })
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => {
+        if (!value) return;
+        this.comingSoon.notify(`Create task "${value.name}" for ${mentee.name}`);
+      });
+  }
+
+  private toRow(person: MentorshipProgramApplicant) {
+    const displayStatus = mentorshipApplicantDisplayStatus(person);
     return {
       ...person,
       initials: mentorshipPersonInitials(person.name),
       avatarStyleClass: mentorshipPersonAvatarClass(person.name),
-      statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
-      statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
-      taskLabel: formatMentorshipTaskProgress(person.tasksSubmitted, person.tasksTotal),
+      statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[displayStatus],
+      statusBadgeClass: MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES[displayStatus],
+      createdLabel: formatIsoDateLabel(person.createdOn),
+      updatedLabel: formatIsoDateLabel(person.updatedOn),
+      // The column is headed "Other Active Applications", so declined and withdrawn ones drop out.
+      otherApplications: (person.otherApplications ?? [])
+        .filter((application) => MENTORSHIP_ACTIVE_APPLICATION_STATUSES.includes(application.status))
+        .map((application) => ({
+          ...application,
+          statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
+        })),
       ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
-      actions: mentorshipRowActions(mentorshipMenteeActionsFor(person.status), MENTORSHIP_MENTEE_ACTION_LABELS, MENTORSHIP_MENTEE_ACTION_ICONS),
+      actions: mentorshipRowActions(
+        MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
+        MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+        MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
+      ),
       hasTasks: mentorshipApplicantHasTasks(person),
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
     };

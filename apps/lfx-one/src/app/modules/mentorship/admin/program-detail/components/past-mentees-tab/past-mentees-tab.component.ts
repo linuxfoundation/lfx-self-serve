@@ -9,15 +9,15 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  MENTORSHIP_ALL_CLOSED_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
-  MENTORSHIP_ALL_TERMS_OPTION_LABEL,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_PAST_MENTEE_STATUSES,
+  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
 import { startWith, tap } from 'rxjs';
 
@@ -25,10 +25,10 @@ import { MentorshipComingSoonService } from '../../../../services/mentorship-com
 import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
 
 /**
- * Past mentees tab — replaces Current Mentees once a program is completed. Finished
- * participations are read-only history, so unlike the current-mentee table this one
- * carries no tasks, Create Task, row actions, or reviewer note; it adds the term the
- * mentee took part in and filters by both status and term.
+ * Past mentees tab — every application in one of the program's closed terms, whatever
+ * status it was left in. A closed term is read-only history, so unlike the Current
+ * Mentees table this one carries no tasks, row actions, or reviewer note; it filters by
+ * status and closed term.
  */
 @Component({
   selector: 'lfx-mentorship-past-mentees-tab',
@@ -40,14 +40,19 @@ export class PastMenteesTabComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
+  /** The program's terms; only the closed ones feed the term filter. */
+  public readonly terms = input<MentorshipProgramTermRow[]>([]);
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
 
-  /** Fixed rather than derived from the rows: the statuses a finished mentee can hold. */
+  /**
+   * Fixed rather than derived from the rows: every status a mentee can hold. A term
+   * closes on whatever status each application was left in, so none is ruled out.
+   */
   protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
-    ...MENTORSHIP_PAST_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
+    ...MENTORSHIP_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
   ];
 
   protected readonly form = new FormGroup({
@@ -80,7 +85,7 @@ export class PastMenteesTabComponent {
   }
 
   private initTermOptions() {
-    return computed(() => mentorshipTermFilterOptions(this.mentees(), MENTORSHIP_ALL_TERMS_OPTION_LABEL));
+    return computed(() => mentorshipTermFilterOptions(this.terms(), 'closed', MENTORSHIP_ALL_CLOSED_TERMS_OPTION_LABEL));
   }
 
   private initRows() {

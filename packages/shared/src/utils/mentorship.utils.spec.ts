@@ -34,6 +34,9 @@ import {
   MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS,
 } from '../constants/mentorship-mentor.constants';
 import {
+  MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+  MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
@@ -49,7 +52,8 @@ import type {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskView,
 } from '../interfaces/mentorship-mentee.interface';
-import type { MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipProgramApplicant, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipProgram, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
 import {
   buildMentorshipMenteeApplicationView,
@@ -105,19 +109,17 @@ import {
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mapMentorshipRegisterFailure,
-  mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
-  mentorshipMenteeActionsFor,
   mentorshipMenteeDisplayStatus,
   isMentorshipMenteeProfileUpdateEmpty,
   isMentorshipMentorInviteToken,
   mentorshipMenteeProgressTasks,
-  mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
+  mentorshipTermFilterOptions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
@@ -463,79 +465,82 @@ describe('mentorship term dates', () => {
 });
 
 describe('program detail helpers', () => {
-  it('derives tab counts from list lengths', () => {
-    const detail = buildMentorshipProgramDetail(
-      {
-        id: 'mp_test',
-        slug: 'test',
-        name: 'Test',
-        projectName: 'LF Energy',
-        term: 'Fall 2026',
-        status: 'open',
-        stats: { mentors: 0, mentees: 0, graduated: 0 },
-        createdOn: '2026-01-01T00:00:00.000Z',
-        updatedOn: '2026-01-01T00:00:00.000Z',
-      },
-      {
-        mentees: [{ id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' }],
-        applicants: [],
-        mentors: [
-          { id: '2', name: 'B', email: 'b@example.com', status: 'pending' },
-          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted' },
-        ],
-        terms: [],
-      }
-    );
-
-    expect(detail.tabCounts).toEqual({ mentees: 1, applicants: 0, mentors: 2, terms: 0 });
+  const detailProgram: MentorshipProgram = {
+    id: 'mp_test',
+    slug: 'test',
+    name: 'Test',
+    projectName: 'LF Energy',
+    term: 'Fall 2026',
+    status: 'open',
+    stats: { mentors: 0, mentees: 0, graduated: 0 },
+    createdOn: '2026-01-01T00:00:00.000Z',
+    updatedOn: '2026-01-01T00:00:00.000Z',
+  };
+  const detailTerm = (name: string, status: MentorshipProgramTermRow['status']): MentorshipProgramTermRow => ({
+    id: name,
+    name,
+    status,
+    pending: 0,
+    declined: 0,
+    accepted: 0,
+    graduated: 0,
+    startDate: '2026-01-01',
+    endDate: '2026-06-01',
+    applicationStartDate: '2025-12-01',
+    applicationEndDate: '2025-12-15',
+  });
+  const detailApplication = (id: string, status: MentorshipProgramApplicant['status'], termName: string): MentorshipProgramApplicant => ({
+    id,
+    name: id,
+    email: `${id}@example.com`,
+    status,
+    termName,
+    createdOn: '2026-01-01',
+    updatedOn: '2026-01-01',
   });
 
-  it('scopes mentees to the tab that will render them, so the badge never over-counts', () => {
-    const program = {
-      id: 'mp_test',
-      slug: 'test',
-      name: 'Test',
-      projectName: 'LF Energy',
-      term: 'Fall 2026',
-      stats: { mentors: 0, mentees: 0, graduated: 0 },
-      createdOn: '2026-01-01T00:00:00.000Z',
-      updatedOn: '2026-01-01T00:00:00.000Z',
-    };
-    const mentees: MentorshipProgramMentee[] = [
-      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
-      // Still an applicant, so it belongs to neither mentee tab.
-      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
-      { id: '3', name: 'C', email: 'c@example.com', status: 'withdrawn', termName: 'Fall 2026' },
-    ];
-    const lists = { mentees, applicants: [], mentors: [], terms: [] };
+  it('splits applications by term status, whatever their own status', () => {
+    const detail = buildMentorshipProgramDetail(detailProgram, {
+      applications: [
+        detailApplication('1', 'pending', 'Fall 2026'),
+        detailApplication('2', 'graduated', 'Spring 2026'),
+        detailApplication('3', 'accepted', 'Spring 2026'),
+        detailApplication('4', 'declined', 'Fall 2026'),
+        // A term the program does not list stays current rather than vanishing.
+        detailApplication('5', 'hold', 'Winter 2027'),
+      ],
+      mentors: [{ id: 'm1', name: 'M', email: 'm@example.com', status: 'accepted' }],
+      terms: [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed')],
+    });
 
-    // A live program answers "who is taking part", so the withdrawal is out and the
-    // accepted mentee is in. Whatever the tab renders is what the badge counts.
-    const open = buildMentorshipProgramDetail({ ...program, status: 'open' as const }, lists);
-    expect(open.mentees.map((person) => person.id)).toEqual(['1']);
-    expect(open.tabCounts.mentees).toBe(open.mentees.length);
-
-    // Completing the program inverts it: the withdrawal is now history worth showing,
-    // and no mentee can still be `accepted` by the time a program closes.
-    const completed = buildMentorshipProgramDetail({ ...program, status: 'completed' as const }, lists);
-    expect(completed.mentees.map((person) => person.id)).toEqual(['3']);
-    expect(completed.tabCounts.mentees).toBe(completed.mentees.length);
+    expect(detail.currentMentees.map((person) => person.id)).toEqual(['1', '4', '5']);
+    expect(detail.pastMentees.map((person) => person.id)).toEqual(['2', '3']);
+    expect(detail.tabCounts).toEqual({ currentMentees: 3, pastMentees: 2, mentors: 1, terms: 2 });
   });
 
-  it('splits mentees between the live and completed tabs, keeping graduates on both', () => {
-    const mentees: MentorshipProgramMentee[] = [
-      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
-      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
-      { id: '3', name: 'C', email: 'c@example.com', status: 'graduated', termName: 'Fall 2026' },
-      { id: '4', name: 'D', email: 'd@example.com', status: 'declined', termName: 'Fall 2026' },
-    ];
+  it('leaves Past Mentees empty when no term is closed', () => {
+    const detail = buildMentorshipProgramDetail(detailProgram, {
+      applications: [detailApplication('1', 'accepted', 'Fall 2026')],
+      mentors: [],
+      terms: [detailTerm('Fall 2026', 'open')],
+    });
 
-    // Live: taking part or finished early. The declined mentee waits for completion.
-    expect(mentorshipMenteesForProgram(mentees, false).map((person) => person.id)).toEqual(['1', '3']);
-    // Completed: how each participation ended, so the graduate carries over and the
-    // decline appears. `pending` is an applicant either way.
-    expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
-    expect(mentorshipMenteesForProgram([], false)).toEqual([]);
+    expect(detail.pastMentees).toEqual([]);
+    expect(detail.tabCounts).toEqual({ currentMentees: 1, pastMentees: 0, mentors: 0, terms: 1 });
+  });
+
+  it('lists only the terms in the requested state as filter options', () => {
+    const terms = [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed'), detailTerm('Spring 2027', 'open')];
+
+    expect(mentorshipTermFilterOptions(terms, 'open', 'All open terms')).toEqual([
+      { label: 'All open terms', value: null },
+      { label: 'Fall 2026', value: 'Fall 2026' },
+      { label: 'Spring 2027', value: 'Spring 2027' },
+    ]);
+    expect(mentorshipTermFilterOptions(terms, 'closed', 'All closed terms')).toEqual([
+      { label: 'All closed terms', value: null },
+      { label: 'Spring 2026', value: 'Spring 2026' },
+    ]);
   });
 
   it('requires an introduction, skills, and both acknowledgements to become a mentor', () => {
@@ -668,11 +673,11 @@ describe('program detail helpers', () => {
     const icons = { accepted: 'fa-check', declined: 'fa-xmark' };
 
     expect(mentorshipRowActions(['accepted', 'declined'], labels, icons)).toEqual([
-      { label: 'Accept', icon: 'fa-check' },
-      { label: 'Decline', icon: 'fa-xmark' },
+      { value: 'accepted', label: 'Accept', icon: 'fa-check' },
+      { value: 'declined', label: 'Decline', icon: 'fa-xmark' },
     ]);
     // Order follows the caller's list, and an empty list means the row shows no menu.
-    expect(mentorshipRowActions(['declined'], labels, icons)).toEqual([{ label: 'Decline', icon: 'fa-xmark' }]);
+    expect(mentorshipRowActions(['declined'], labels, icons)).toEqual([{ value: 'declined', label: 'Decline', icon: 'fa-xmark' }]);
     expect(mentorshipRowActions([], labels, icons)).toEqual([]);
   });
 
@@ -692,14 +697,20 @@ describe('program detail helpers', () => {
     expect(formatMentorshipDateRange('2026-07-01', '2026-08-31')).toBe('Jul 1, 2026 – Aug 31, 2026');
   });
 
-  it('offers mentee row actions that exclude the current status, and none once graduated', () => {
-    expect(mentorshipMenteeActionsFor('accepted')).toEqual(['withdrawn', 'declined', 'graduated']);
-    // Only an accepted mentee can graduate.
-    expect(mentorshipMenteeActionsFor('pending')).toEqual(['withdrawn', 'declined']);
-    expect(mentorshipMenteeActionsFor('declined')).toEqual(['withdrawn']);
-    expect(mentorshipMenteeActionsFor('withdrawn')).toEqual(['declined']);
-    // `graduated` is terminal.
-    expect(mentorshipMenteeActionsFor('graduated')).toEqual([]);
+  it('offers Current Mentees row actions by status, and none once the application ends', () => {
+    const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
+      mentorshipRowActions(MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status], MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS, MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS).map(
+        (action) => action.label
+      );
+
+    // An application under review, held or not, is decided.
+    expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('hold')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    // Only an accepted mentee is given tasks or graduated.
+    expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
+    expect(labelsFor('declined')).toEqual([]);
+    expect(labelsFor('withdrawn')).toEqual([]);
+    expect(labelsFor('graduated')).toEqual([]);
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {
@@ -719,14 +730,8 @@ describe('program detail helpers', () => {
     // Every resolved status displays as itself, whatever the task counts say.
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'graduated' }))).toBe('graduated');
-  });
-
-  it('offers applicant row actions that exclude the current status, and never re-accepts a graduate', () => {
-    expect(mentorshipApplicantActionsFor('pending')).toEqual(['accepted', 'declined', 'withdrawn']);
-    expect(mentorshipApplicantActionsFor('accepted')).toEqual(['declined', 'withdrawn']);
-    expect(mentorshipApplicantActionsFor('declined')).toEqual(['accepted', 'withdrawn']);
-    expect(mentorshipApplicantActionsFor('withdrawn')).toEqual(['accepted', 'declined']);
-    expect(mentorshipApplicantActionsFor('graduated')).toEqual(['declined', 'withdrawn']);
+    // A held application is out of the Applied / Tasks Completed split.
+    expect(mentorshipApplicantDisplayStatus(applicant({ status: 'hold', tasksSubmitted: 5, tasksTotal: 5 }))).toBe('hold');
   });
 
   it('formats task progress, and reports no label when nothing is assigned', () => {

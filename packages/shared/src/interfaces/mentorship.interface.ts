@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   MENTORSHIP_APPLICANT_TASK_STATUSES,
-  MENTORSHIP_MENTEE_ACTIONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
@@ -228,17 +227,14 @@ export interface MentorshipTaskFormValue {
   status?: MentorshipApplicantTaskStatus;
 }
 
-/** Row action on the Current Mentees tab. Each maps to a terminal mentee status. */
-export type MentorshipMenteeAction = (typeof MENTORSHIP_MENTEE_ACTIONS)[number];
+/** Row action on the admin Current Mentees tab. */
+export type MentorshipCurrentMenteeAction = (typeof MENTORSHIP_CURRENT_MENTEE_ACTIONS)[number];
 
 /**
- * Status as shown on the Applicants tab. `applied` and `tasks-completed` are both the
+ * Status as shown on the mentee tables. `applied` and `tasks-completed` are both the
  * `pending` wire status, split by whether every prerequisite task has been submitted.
  */
 export type MentorshipApplicantDisplayStatus = (typeof MENTORSHIP_APPLICANT_DISPLAY_STATUSES)[number];
-
-/** Row action on the Applicants tab. Each maps to the same-named application status. */
-export type MentorshipApplicantAction = (typeof MENTORSHIP_APPLICANT_ACTIONS)[number];
 
 /**
  * The stored status of an application plus the prerequisite progress that splits its
@@ -268,10 +264,10 @@ export interface MentorshipNoteRequest {
 
 /**
  * One entry in a program-detail row's action menu, already resolved to what the menu
- * renders. The tabs' action unions differ, so they map their own labels and icons and
- * hand over this shape rather than the status the action came from.
+ * renders. `value` is the action key the menu hands back when the entry is picked.
  */
 export interface MentorshipRowAction {
+  value: string;
   label: string;
   icon: string;
 }
@@ -321,7 +317,7 @@ export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   canDownload: boolean;
 }
 
-/** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
+/** Application row on the admin mentee tabs — a mentee row plus its application metadata. */
 export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
   /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
   createdOn: string;
