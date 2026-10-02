@@ -40,7 +40,7 @@ The Enroll form's lookups (program name availability, LF projects, invitable use
 
 ## Shared mappers
 
-`apps/lfx-one/src/server/helpers/mentorship-program-application.helper.ts` maps an upstream task and an upstream application row to the detail-row shapes. The mentor and admin program detail both use it. The caller passes the application status map, because the two surfaces show some upstream statuses differently (the mentor map shows `hold` as `pending`).
+`apps/lfx-one/src/server/helpers/mentorship-program-application.helper.ts` maps an upstream task and an upstream application row to the detail-row shapes. The mentor program detail uses it today. The admin program detail still reads the mock lists directly and will use it once it moves to the mentorship service. The caller passes the application status map, because the two surfaces show some upstream statuses differently (the mentor map shows `hold` as `pending`).
 
 ## Behavior
 
