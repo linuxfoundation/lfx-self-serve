@@ -5,7 +5,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { MentorshipMentorProgramDetail, MentorshipMentorTaskCreateRequest, MentorshipMentorTaskCreateResponse } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorProgramDetail,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
+  MentorshipMentorTaskReviewDecision,
+} from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -15,6 +20,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
 import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
+import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
@@ -59,6 +65,7 @@ describe('MentorProgramDetailComponent', () => {
   let getMentorProgram: ReturnType<typeof vi.fn>;
   let saveNote: ReturnType<typeof vi.fn>;
   let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse | null>>>;
+  let reviewTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision) => Observable<boolean>>>;
 
   /**
    * Takes the dialog `onClose` observable (not the value) — a dismissed dialog emits
@@ -74,6 +81,7 @@ describe('MentorProgramDetailComponent', () => {
     getMentorProgram = vi.fn(() => program$);
     saveNote = vi.fn(() => save$);
     createTasks = vi.fn(() => of<MentorshipMentorTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
+    reviewTask = vi.fn(() => of(true));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -90,6 +98,7 @@ describe('MentorProgramDetailComponent', () => {
         { provide: MentorshipMentorService, useValue: { getMentorProgram } },
         { provide: MentorNoteSaveService, useValue: { save: saveNote } },
         { provide: MentorTaskCreateService, useValue: { create: createTasks } },
+        { provide: MentorTaskReviewService, useValue: { review: reviewTask } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });
@@ -350,6 +359,70 @@ describe('MentorProgramDetailComponent', () => {
 
       expect(shownDetail()?.mentees[0].id).toBe('mnt_1');
       expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
+    });
+  });
+
+  describe('task review', () => {
+    const TASK_ID = '9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const reviewing = (): readonly string[] => fixture.componentInstance['reviewingTaskIds']();
+
+    it.each(['complete', 'incomplete'] as const)('sends %s, then re-reads the detail without the loading state', (status) => {
+      build();
+      const reread = detail();
+      reread.tabCounts = { ...reread.tabCounts, tasks: 2 };
+      getMentorProgram.mockReturnValueOnce(of(reread));
+
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status });
+      fixture.detectChanges();
+
+      expect(reviewTask).toHaveBeenCalledWith(TASK_ID, status);
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+      expect(getMentorProgram).toHaveBeenLastCalledWith('mp_gridflow_fall26');
+      expect(fixture.componentInstance['tabCounts']().tasks).toBe(2);
+      expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-loading"]')).toBeNull();
+      expect(reviewing()).toEqual([]);
+    });
+
+    it('still re-reads when the review fails, so a task no longer awaiting review leaves the list', () => {
+      build();
+      reviewTask.mockReturnValueOnce(of(false));
+
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status: 'complete' });
+
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+      expect(reviewing()).toEqual([]);
+    });
+
+    it('holds the task until the re-read settles, and sends it only once meanwhile', () => {
+      build();
+      const review$ = new Subject<boolean>();
+      const reread$ = new Subject<MentorshipMentorProgramDetail>();
+      reviewTask.mockReturnValueOnce(review$);
+      getMentorProgram.mockReturnValueOnce(reread$);
+
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status: 'complete' });
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status: 'incomplete' });
+      expect(reviewTask).toHaveBeenCalledTimes(1);
+      expect(reviewing()).toEqual([TASK_ID]);
+
+      review$.next(true);
+      review$.complete();
+      expect(reviewing()).toEqual([TASK_ID]);
+
+      reread$.next(detail());
+      reread$.complete();
+      expect(reviewing()).toEqual([]);
+    });
+
+    it('releases the task when the re-read fails', () => {
+      build();
+      getMentorProgram.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status: 'complete' });
+      fixture.detectChanges();
+
+      expect(reviewing()).toEqual([]);
+      expect(shownDetail()?.mentees[0].id).toBe('mnt_1');
     });
   });
 });

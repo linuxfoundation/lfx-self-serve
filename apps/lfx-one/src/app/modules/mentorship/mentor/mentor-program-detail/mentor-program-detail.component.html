@@ -45,7 +45,7 @@
               (taskCreateRequested)="onTaskCreateRequested($event)" />
           }
           @case ('tasks') {
-            <lfx-mentorship-mentor-tasks-tab [mentees]="mentees()" />
+            <lfx-mentorship-mentor-tasks-tab [mentees]="mentees()" [reviewingTaskIds]="reviewingTaskIds()" (reviewRequested)="onTaskReviewRequested($event)" />
           }
         }
       </div>

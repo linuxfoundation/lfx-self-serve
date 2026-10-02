@@ -402,6 +402,26 @@ describe('mentorship router — mentor endpoints', () => {
     expect(res.status).toBe(403);
   });
 
+  const reviewPath = '/api/mentorship/mentor/tasks/9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d/review';
+  const reviewBody = JSON.stringify({ status: 'complete' });
+
+  it('routes PATCH /api/mentorship/mentor/tasks/:taskId/review (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}${reviewPath}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: reviewBody });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a task review while impersonating, before the controller runs', async () => {
+    const res = await fetch(`${baseUrl}${reviewPath}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-test-impersonating': 'true' },
+      body: reviewBody,
+    });
+
+    // 403 rather than the controller's 401 shows the guard ran first.
+    expect(res.status).toBe(403);
+  });
+
   it('still allows reading the mentor requests while impersonating', async () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentor/requests`, { headers: { 'x-test-impersonating': 'true' } });
 

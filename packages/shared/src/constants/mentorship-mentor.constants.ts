@@ -3,6 +3,7 @@
 
 import type { MentorshipMenteeStatus, MentorshipMentorStatus, MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipMentorTaskReviewDecision,
   MentorshipMentorTaskReviewStatus,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
@@ -342,6 +343,34 @@ export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<numbe
   400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
   403: 'You can no longer create tasks on this program. Refresh the page and try again.',
   404: 'This application no longer exists. Refresh the page and try again.',
+};
+
+/** Decisions a mentor may send for a submitted task: `complete` approves it, `incomplete` requests changes. */
+export const MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS: readonly MentorshipMentorTaskReviewDecision[] = ['complete', 'incomplete'];
+
+/**
+ * Error code the BFF puts on the 409 returned when a review reaches a task that is no longer submitted. Upstream
+ * lets `incomplete` reset a task from any status, so the BFF reads the task first rather than reopen finished work.
+ */
+export const MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE = 'TASK_NOT_SUBMITTED';
+export const MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_MESSAGE = 'This task is no longer awaiting review.';
+
+export const MENTORSHIP_MENTOR_TASK_REVIEW_SUCCESS_SUMMARIES: Readonly<Record<MentorshipMentorTaskReviewDecision, string>> = {
+  complete: 'Task approved',
+  incomplete: 'Changes requested',
+};
+export const MENTORSHIP_MENTOR_TASK_REVIEW_ERROR_SUMMARY = 'Could not review the task';
+export const MENTORSHIP_MENTOR_TASK_REVIEW_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTOR_TASK_REVIEW_TOAST_LIFE = 5000;
+
+/**
+ * Task review failures with their own copy, keyed by the BFF's status. A 403 is the caller no longer mentoring the
+ * program, a 404 a task that is gone, and a 409 a task no longer awaiting review; the page re-reads after each.
+ */
+export const MENTORSHIP_MENTOR_TASK_REVIEW_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer review tasks on this program.',
+  404: 'This task no longer exists.',
+  409: MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_MESSAGE,
 };
 
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';

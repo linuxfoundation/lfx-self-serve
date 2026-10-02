@@ -20,6 +20,8 @@ import {
   MentorshipMentorRegisterRequest,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
+  MentorshipMentorTaskReviewDecision,
+  MentorshipMentorTaskReviewUpdate,
 } from '@lfx-one/shared/interfaces';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
@@ -175,6 +177,15 @@ export class MentorshipMentorService {
    */
   public createMenteeTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
     return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/mentor/tasks', request).pipe(take(1));
+  }
+
+  /**
+   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task. Failures propagate as the
+   * raw `HttpErrorResponse`; a 409 means the task is no longer awaiting review.
+   */
+  public reviewMenteeTask(taskId: string, status: MentorshipMentorTaskReviewDecision): Observable<void> {
+    const body: MentorshipMentorTaskReviewUpdate = { status };
+    return this.http.patch<void>(`/api/mentorship/mentor/tasks/${encodeURIComponent(taskId)}/review`, body).pipe(take(1));
   }
 
   private rethrowError(label: string) {

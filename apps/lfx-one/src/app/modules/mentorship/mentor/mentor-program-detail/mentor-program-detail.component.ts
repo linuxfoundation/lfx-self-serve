@@ -14,6 +14,7 @@ import {
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramDetailTab,
   MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskReviewRequest,
   MentorshipNoteRequest,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
@@ -23,6 +24,7 @@ import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finaliz
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
 import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
+import { MentorTaskReviewService } from '../../services/mentor-task-review.service';
 import { MentorApplicantsTabComponent } from './components/mentor-applicants-tab/mentor-applicants-tab.component';
 import { MentorMenteesTabComponent } from './components/mentor-mentees-tab/mentor-mentees-tab.component';
 import { MentorProgramDetailHeaderComponent } from './components/mentor-program-detail-header/mentor-program-detail-header.component';
@@ -33,7 +35,8 @@ import { MentorTasksTabComponent } from './components/mentor-tasks-tab/mentor-ta
  * `MentorPageComponent`'s shell (own H1, own back link) so it can carry the full
  * program title/subtitle/tab-bar header shown in the design. Tasks, Mentees, and
  * Applicants are implemented. A reviewer note is saved when its dialog closes, and the row shows it once saved.
- * A task created from the Mentees tab re-reads the detail in the background, so both tabs list it.
+ * A task created from the Mentees tab re-reads the detail in the background, so both tabs list it. A task
+ * approved or sent back from the Tasks tab re-reads it too, so the tab and its count show the new status.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-program-detail',
@@ -55,11 +58,14 @@ export class MentorProgramDetailComponent {
   private readonly dialogService = inject(DialogService);
   private readonly noteSaveService = inject(MentorNoteSaveService);
   private readonly taskCreateService = inject(MentorTaskCreateService);
+  private readonly taskReviewService = inject(MentorTaskReviewService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
   protected readonly activeTab = signal<MentorshipMentorProgramDetailTab>('tasks');
+  /** Tasks being reviewed, held until the re-read after the review settles, so a stale row cannot be sent twice. */
+  protected readonly reviewingTaskIds = signal<readonly string[]>([]);
 
   /**
    * `distinctUntilChanged` guards against route-reuse strategies that re-emit the same
@@ -139,6 +145,19 @@ export class MentorProgramDetailComponent {
     this.taskCreateService.create(request, menteeNames).subscribe(() => this.refreshDetail(programId));
   }
 
+  /**
+   * Not tied to the page: a review, and its toast, finish even if the mentor leaves first. The detail is re-read
+   * whatever the outcome: a 409 means the task is no longer awaiting review, and a 403 or 404 that the row is stale.
+   */
+  protected onTaskReviewRequested(request: MentorshipMentorTaskReviewRequest): void {
+    const { taskId, status } = request;
+    if (this.reviewingTaskIds().includes(taskId)) return;
+    const programId = this.programId();
+    this.reviewingTaskIds.update((taskIds) => [...taskIds, taskId]);
+    const settle = (): void => this.reviewingTaskIds.update((taskIds) => taskIds.filter((id) => id !== taskId));
+    this.taskReviewService.review(taskId, status).subscribe(() => this.refreshDetail(programId, settle));
+  }
+
   /** Not tied to the page: a save, and its toast, finish even if the mentor leaves first. */
   private saveNote(applicationId: string, note: string): void {
     this.savingNoteIds.add(applicationId);
@@ -157,17 +176,22 @@ export class MentorProgramDetailComponent {
   }
 
   /**
-   * Re-reads the detail without the loading state, so the new tasks show on both tabs. Dropped if the mentor has
-   * left the page or moved to another program, or if a later re-read has started, so a slow one cannot overwrite
-   * a newer one; a failed read keeps the rows on screen, since the toast already said how the create went.
+   * Re-reads the detail without the loading state, so a created or reviewed task shows on every tab. Dropped if the
+   * mentor has left the page or moved to another program, or if a later re-read has started, so a slow one cannot
+   * overwrite a newer one; a failed read keeps the rows on screen, since the toast already said how the write went.
+   * `onSettled` runs once the re-read is done, whether it was applied, dropped or failed.
    */
-  private refreshDetail(programId: string): void {
-    if (programId !== this.programId()) return;
+  private refreshDetail(programId: string, onSettled: () => void = () => undefined): void {
+    if (programId !== this.programId()) {
+      onSettled();
+      return;
+    }
     const generation = ++this.refreshGeneration;
     this.mentorService
       .getMentorProgram(programId)
       .pipe(
         catchError(() => EMPTY),
+        finalize(onSettled),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((detail) => {

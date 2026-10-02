@@ -21,6 +21,7 @@ The mentor pages under `/mentorship/mentor/*` read their data from the LFX One B
 | POST   | `/api/mentorship/mentor/requests/:requestId/withdraw`     | `withdrawMentorRequest` | Withdraw on a pending row in the profile edit drawer                                     |
 | PUT    | `/api/mentorship/mentor/applications/:applicationId/note` | `updateApplicationNote` | Save in the note dialog on the program detail's Mentees and Applicants tabs              |
 | POST   | `/api/mentorship/mentor/tasks`                            | `createMenteeTasks`     | Create in the task dialog on the program detail's Mentees tab, for one mentee or a group |
+| PATCH  | `/api/mentorship/mentor/tasks/:taskId/review`             | `reviewMenteeTask`      | Approve and Request Changes on the program detail's Tasks tab                            |
 
 ## Flow
 
@@ -49,8 +50,8 @@ The register page and the profile edit drawer read the program picker through `G
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
 - `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is not a UUID, so a slug is refused before any upstream read. It answers 404 (`ResourceNotFoundError`) when the program is not one of the caller's (see [Program detail](#program-detail)).
 - The app service rethrows every failure, 404 included, so each page can tell a not-found state from a retry state.
-- The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests`, `POST /requests/:requestId/withdraw`, `PUT /applications/:applicationId/note` and `POST /tasks`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
-- Logs carry only ids, counts and flags (`programId`, `requestId`, `applicationId`, `cleared`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `tasks_read_by_application`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, `application_count`, `created_count`, `failed_count`, a card's `mentees`, `tasksToReview` and `applicants`, and a detail's `tasks`, `mentees` and `applicants` tab counts). Names, emails, notes, task text and the introduction never go in logs.
+- The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests`, `POST /requests/:requestId/withdraw`, `PUT /applications/:applicationId/note`, `POST /tasks` and `PATCH /tasks/:taskId/review`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
+- Logs carry only ids, counts and flags (`programId`, `requestId`, `applicationId`, `cleared`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `tasks_read_by_application`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, `application_count`, `created_count`, `failed_count`, a review's `taskId` and `status`, a card's `mentees`, `tasksToReview` and `applicants`, and a detail's `tasks`, `mentees` and `applicants` tab counts). Names, emails, notes, task text and the introduction never go in logs.
 
 ## Registration
 
@@ -161,6 +162,23 @@ POST /tasks { applicationIds, name, description, dueDate?, requiresFileSubmissio
 - **One application or many.** With one application, a failure passes through with its status. With several, each runs on its own (`Promise.allSettled`), and the 200 lists the ids in `created` and `failed` in request order; each failure logs a warning with the application id, status and code, never the task text.
 - **App side.** `MentorProgramDetailComponent` takes the tab's `taskCreateRequested` and creates through `MentorTaskCreateService`, which owns the toasts: `MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY` (naming the count for a group), `MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY` as a warning when some failed (naming the missed mentees), an error when none was created, and for a failed request `MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES` for a 400, 403 or 404, the server's message for the impersonation 403, else the fallback. Upstream's create is not idempotent, and a failure without a status of its own (a timeout, a 5xx) may still have created the task, so every failure copy sends the mentor to the row rather than to a retry. A group past `MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS` (shared, also the BFF's cap) is sent in batches of that size, one after another, with a failed batch counting its mentees as failed. After every create attempt, whatever its outcome, the page re-reads the detail without its loading state, so the rows show what upstream holds on the Mentees and Tasks tabs; the re-read is dropped if the mentor has left or moved to another program or a later re-read has started, and a failed re-read keeps the rows on screen. The create is not tied to the page, so it and its toast finish if the mentor leaves first.
 
+## Task reviews
+
+A mentor approves a submitted task, or sends it back to the mentee, from Approve and Request Changes on the program detail's Tasks tab, through `PATCH /api/mentorship/mentor/tasks/:taskId/review` (linuxfoundation/lfx-mentorship#215).
+
+```text
+PATCH /tasks/:taskId/review { status } → isUuid(taskId), else 400
+                                       → status `complete` or `incomplete` (MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS), else 400
+                                       → GET   /mentorship/v1/tasks/{id}          must be `submitted`, else 409 TASK_NOT_SUBMITTED
+                                       → PATCH /mentorship/v1/tasks/{id}/review   { status }
+                                       ← 204
+```
+
+- **The decision.** Approve sends `complete`, and upstream marks the task complete. Request Changes sends `incomplete`, which returns the task to the mentee. No comment goes with it: upstream's review takes only the status (U7). Upstream answers 200 with the task; the BFF drops the body, since the page re-reads the detail.
+- **Only a submitted task.** Upstream refuses `complete` unless the task is `submitted`, but takes `incomplete` from any state, so a stale row could send an approved task back. The BFF reads the task first and refuses with 409 (`MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE`) unless it is `submitted`, for either decision. The read and the write are two calls, so a change in between is still possible; upstream's own 409 then passes through.
+- **Access.** Upstream decides who may review: the gateway lets a task's managers through, and the service then needs an active mentor or program administrator of its program, else 403. A task that no longer exists answers 404. Both pass through unchanged, from the read or the write, and both calls use the caller's token.
+- **App side.** The Tasks tab rows carry the upstream task id (`taskId`) next to the row key, and emit `reviewRequested { taskId, status }`. `MentorProgramDetailComponent` reviews through `MentorTaskReviewService`, which owns the toasts: `MENTORSHIP_MENTOR_TASK_REVIEW_SUCCESS_SUMMARIES` per decision, and on failure `MENTORSHIP_MENTOR_TASK_REVIEW_ERROR_MESSAGES` for a 403, 404 or 409, the server's message for the impersonation 403, else the fallback. After every review, whatever its outcome, the page re-reads the detail without its loading state, as after a task create, so the task leaves Awaiting Review and the tab count moves; on a 409 that re-read shows the task as it now is. The row's buttons stay disabled from the click until that re-read settles, so a stale row cannot be sent twice. My Programs reads its counts on every visit, so its card is current when the mentor goes back. The review is not tied to the page, so it and its toast finish if the mentor leaves first. Open Submission stays coming soon until file upload lands (linuxfoundation/lfx-mentorship#204).
+
 ## Profile and Mentoring History
 
 The Profile page (`/mentorship/mentor/profile`) reads the mentor's profile and Mentoring History through `GET /api/mentorship/mentor/profile`, and the edit drawer saves the introduction and skills through `PATCH /api/mentorship/mentor/profile` (linuxfoundation/lfx-mentorship#210).
@@ -213,7 +231,7 @@ POST /requests/:requestId/withdraw          → blockDuringImpersonation · isUu
 
 ## Data source
 
-Every mentor route calls the mentorship service: My Programs, the program detail, the profile read and update, the has-profile check, the register save, the program requests, the reviewer notes and the task create. Story linuxfoundation/lfx-mentorship#206 replaced the mock seed data one screen at a time.
+Every mentor route calls the mentorship service: My Programs, the program detail, the profile read and update, the has-profile check, the register save, the program requests, the reviewer notes, the task create and the task review. Story linuxfoundation/lfx-mentorship#206 replaced the mock seed data one screen at a time.
 
 A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end, at the largest page size unless the caller passes a smaller one. The mentor service uses it for the published programs, the caller's mentor memberships, and each program's applications (at 50) and submitted tasks; the mentee service uses it for the caller's applications and an application's tasks.
 
