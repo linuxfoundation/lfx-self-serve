@@ -8,14 +8,11 @@ import type {
   MentorshipMenteeAction,
   MentorshipMenteeStatus,
   MentorshipMentorStatus,
-  MentorshipProgram,
   MentorshipProgramDecisionStatus,
   MentorshipProgramReviewDecision,
-  MentorshipProgramsResponse,
-  MentorshipProgramStatus,
-  MentorshipTermRowStatus,
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
+import type { MentorshipProgram, MentorshipProgramsResponse, MentorshipProgramStatus, MentorshipTermRowStatus } from '../interfaces/mentorship-admin.interface';
 
 /**
  * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
@@ -57,7 +54,7 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
 };
 
 /**
- * Admin program-list page size. Passed as `limit` on `GET /api/mentorship/programs`.
+ * Admin program-list page size. Passed as `limit` on `GET /api/mentorship/admin/programs`.
  * Sized below `MOCK_MENTORSHIP_PROGRAMS.length` so Load more is exercisable against the mock BFF.
  */
 export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;

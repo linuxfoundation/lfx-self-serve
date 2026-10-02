@@ -56,10 +56,25 @@ describe('mentorship router — write endpoints removed (GH-2717)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('still routes GET /api/mentorship/programs (not 404)', async () => {
-    const res = await fetch(`${baseUrl}/api/mentorship/programs`);
+  it.each(['/programs', '/programs/mp_test'])('no longer routes GET /api/mentorship%s (moved under /admin)', async (path) => {
+    const res = await fetch(`${baseUrl}/api/mentorship${path}`);
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('mentorship router — admin endpoints', () => {
+  it.each(['/admin/programs', '/admin/programs/mp_test'])('rejects unauthenticated GET /api/mentorship%s with 401', async (path) => {
+    const res = await fetch(`${baseUrl}/api/mentorship${path}`);
 
     // The route exists — it returns 401 (auth required), not 404.
+    expect(res.status).toBe(401);
+  });
+
+  it('still allows reading the admin programs while impersonating', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/admin/programs`, { headers: { 'x-test-impersonating': 'true' } });
+
+    // 401 rather than 403: reads skip the impersonation guard and reach the controller's auth check.
     expect(res.status).toBe(401);
   });
 });

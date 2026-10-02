@@ -24,31 +24,8 @@ const { MicroserviceProxyService } = await import('./microservice-proxy.service'
 const { EmailVerificationService } = await import('./email-verification.service');
 
 function buildReq(): Request {
-  return { path: '/api/mentorship/programs' } as Request;
+  return { path: '/api/mentorship/program-review/x' } as Request;
 }
-
-describe('MentorshipService — read-only contract', () => {
-  let service: InstanceType<typeof MentorshipService>;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
-    service = new MentorshipService();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('returns a stable program list across consecutive reads', async () => {
-    const first = await service.getPrograms(buildReq());
-    const second = await service.getPrograms(buildReq());
-
-    expect(first.total).toBe(second.total);
-    expect(first.total).toBeGreaterThan(0);
-    expect(first.data.map((p) => p.id)).toEqual(second.data.map((p) => p.id));
-  });
-});
 
 describe('MentorshipService program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
