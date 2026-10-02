@@ -85,8 +85,7 @@ describe('ProgramDetailComponent', () => {
     fixture.componentInstance['activeTab'].set(tab as never);
     fixture.detectChanges();
   };
-  const noteText = (id: string): string | undefined =>
-    element().querySelector(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.textContent?.trim();
+  const noteText = (id: string): string | undefined => element().querySelector(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.textContent?.trim();
   const clickNote = (id: string): void => {
     element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.click();
     fixture.detectChanges();
