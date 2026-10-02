@@ -14,7 +14,15 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
+import {
+  DocumentFormMode,
+  FilterPillOption,
+  MyDocumentItem,
+  MyDocumentSource,
+  ProjectContext,
+  ProjectDocument,
+  ProjectDocumentSource,
+} from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -76,19 +84,21 @@ export class DocumentsDashboardComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(''),
-    /** Project-mode source filter: 'link' | 'file' | null. Folders are never filtered out (they're navigation). */
-    projectSource: new FormControl<MyDocumentSource | null>(null),
+    /** Project-mode source filter by subsystem (project, committee, meeting, mailing_list). */
+    projectDocumentSource: new FormControl<ProjectDocumentSource | null>(null),
     foundation: new FormControl<string | null>(null),
     group: new FormControl<string | null>(null),
     meeting: new FormControl<string | null>(null),
     mailingList: new FormControl<string | null>(null),
   });
 
-  /** Source filter options shown on the Project / Foundation lens (mirrors committee-documents). */
-  protected readonly projectSourceOptions: { label: string; value: MyDocumentSource | null }[] = [
+  /** Source filter options for the Project / Foundation lens — filter by subsystem origin. */
+  protected readonly projectDocumentSourceOptions: { label: string; value: ProjectDocumentSource | null }[] = [
     { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' },
-    { label: 'File', value: 'file' },
+    { label: 'Project', value: 'project' },
+    { label: 'Committee', value: 'committee' },
+    { label: 'Meeting', value: 'meeting' },
+    { label: 'Mailing List', value: 'mailing_list' },
   ];
 
   // === Writable Signals ===
@@ -124,7 +134,7 @@ export class DocumentsDashboardComponent {
     return lens === 'project' || lens === 'foundation';
   });
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly projectSourceFilter: Signal<MyDocumentSource | null> = this.initProjectSourceFilter();
+  protected readonly projectDocumentSourceFilter: Signal<ProjectDocumentSource | null> = this.initProjectDocumentSourceFilter();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
@@ -158,7 +168,7 @@ export class DocumentsDashboardComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ search: '', foundation: null, group: null, meeting: null, mailingList: null });
+    this.filterForm.reset({ search: '', projectDocumentSource: null, foundation: null, group: null, meeting: null, mailingList: null });
     this.sourceTab.set('all');
   }
 
@@ -212,8 +222,8 @@ export class DocumentsDashboardComponent {
     );
   }
 
-  private initProjectSourceFilter(): Signal<MyDocumentSource | null> {
-    return toSignal(this.filterForm.controls.projectSource.valueChanges.pipe(startWith<MyDocumentSource | null>(null)), { initialValue: null });
+  private initProjectDocumentSourceFilter(): Signal<ProjectDocumentSource | null> {
+    return toSignal(this.filterForm.controls.projectDocumentSource.valueChanges.pipe(startWith<ProjectDocumentSource | null>(null)), { initialValue: null });
   }
 
   private initFoundationFilter(): Signal<string | null> {
@@ -343,24 +353,47 @@ export class DocumentsDashboardComponent {
    */
   private toMyDocumentItem(doc: ProjectDocument, project: ProjectContext | null, isChild: boolean): MyDocumentItem {
     const isFile = doc.type === 'file';
+    const docSource = doc.document_source ?? 'project';
     const ownerProjectUid = project?.uid ?? doc.project_uid ?? '';
-    const groupName = project?.name ?? '';
+
+    let mySource: MyDocumentSource;
+    if (docSource === 'mailing_list') {
+      mySource = 'mailing_list';
+    } else if (docSource === 'meeting') {
+      mySource = 'meeting';
+    } else if (docSource === 'recording') {
+      mySource = 'recording';
+    } else if (docSource === 'transcript') {
+      mySource = 'transcript';
+    } else if (docSource === 'summary') {
+      mySource = 'summary';
+    } else {
+      mySource = isFile ? 'file' : 'link';
+    }
+
+    // Show entity name (committee name, meeting title) when available, otherwise project name.
+    const groupName = doc.document_source_name || project?.name || '';
+
+    // Download endpoint is only valid for native project files — not committee/meeting files.
+    const isProjectFile = isFile && docSource === 'project';
+
     return {
       id: `project_${doc.type}:${doc.uid}`,
       name: doc.name,
-      source: (isFile ? 'file' : 'link') as MyDocumentSource,
+      source: mySource,
       foundationName: '',
       foundationUid: undefined,
       groupOrMeetingName: groupName,
       groupOrMeetingUid: ownerProjectUid,
       date: doc.created_at ?? doc.updated_at ?? '',
       url: doc.url,
-      attachmentUid: isFile ? doc.uid : undefined,
+      attachmentUid: isProjectFile ? doc.uid : undefined,
       fileType: doc.mime_type,
       parentUid: doc.parent_uid,
       isChild,
-      downloadUrl: isFile && ownerProjectUid ? `/api/projects/${ownerProjectUid}/documents/${doc.uid}/download` : undefined,
+      downloadUrl: isProjectFile && ownerProjectUid ? `/api/projects/${ownerProjectUid}/documents/${doc.uid}/download` : undefined,
       uploadedBy: doc.uploaded_by,
+      projectDocumentSource: docSource,
     };
   }
 
@@ -385,7 +418,7 @@ export class DocumentsDashboardComponent {
       const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const projectMode = this.useProjectSource();
-      const projectSource = this.projectSourceFilter();
+      const projectDocSource = this.projectDocumentSourceFilter();
       const foundation = this.foundationFilter();
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
@@ -404,7 +437,12 @@ export class DocumentsDashboardComponent {
 
         if (projectMode) {
           // Folders are structural navigation — never filtered by source.
-          if (projectSource && !doc.isFolder && doc.source !== projectSource) return false;
+          if (projectDocSource && !doc.isFolder) {
+            const docSource = doc.projectDocumentSource ?? 'project';
+            // "Meeting" filter bucket covers attachments, recordings, transcripts, and summaries.
+            const isMeetingBucket = projectDocSource === 'meeting' && ['meeting', 'recording', 'transcript', 'summary'].includes(docSource);
+            if (!isMeetingBucket && docSource !== projectDocSource) return false;
+          }
           return true;
         }
 

@@ -159,6 +159,12 @@ export interface MeetingWriteAccess {
 export type ProjectDocumentType = 'file' | 'link' | 'folder';
 
 /**
+ * Subsystem a project-lens document was sourced from.
+ * Used by the BFF to carry attribution and by the UI to drive source filtering.
+ */
+export type ProjectDocumentSource = 'project' | 'committee' | 'mailing_list' | 'meeting' | 'recording' | 'transcript' | 'summary';
+
+/**
  * Document types accepted by the JSON `POST /projects/:uid/documents` create endpoint.
  * Files are uploaded via a separate multipart endpoint, not this one — keep this union
  * narrow so misuse (sending `type: 'file'` to the JSON endpoint) is caught at compile time.
@@ -196,6 +202,10 @@ export interface ProjectDocument {
   parent_uid?: string;
   /** Project UID this document belongs to */
   project_uid?: string;
+  /** Subsystem this document was sourced from (project, committee, meeting, etc.) */
+  document_source?: ProjectDocumentSource;
+  /** Display name of the source entity (committee name, meeting title, etc.) */
+  document_source_name?: string;
 }
 
 /** Request body for creating a project document (folder or link). */

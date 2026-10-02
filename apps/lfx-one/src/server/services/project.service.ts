@@ -7549,25 +7549,25 @@ export class ProjectService {
       project_uid: projectId,
     });
 
-    // Stage 1: Resolve committee UIDs for this project.
+    // Stage 1: Resolve committee UIDs and names for this project.
     // committee_link and committee_document are indexed by committee_uid only — no project_uid tag —
     // so we must fetch committee UIDs first, then query those types via filters_or.
-    const committeeUids = await fetchAllQueryResources<{ uid: string }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+    const committees = await fetchAllQueryResources<{ uid: string; name?: string }>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; name?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'committee',
         tags: `project_uid:${projectId}`,
         ...(pageToken && { page_token: pageToken }),
       })
-    )
-      .then((cs) => cs.map((c) => c.uid))
-      .catch((err) => {
-        logger.warning(req, 'get_project_documents', 'Failed to fetch committee UIDs, committee docs will be skipped', {
-          project_uid: projectId,
-          err,
-        });
-        return [] as string[];
+    ).catch((err) => {
+      logger.warning(req, 'get_project_documents', 'Failed to fetch committee UIDs, committee docs will be skipped', {
+        project_uid: projectId,
+        err,
       });
+      return [] as { uid: string; name?: string }[];
+    });
 
+    const committeeUids = committees.map((c) => c.uid);
+    const committeeNameByUid = new Map(committees.map((c) => [c.uid, c.name ?? '']));
     const committeeFiltersOr = committeeUids.map((uid) => `committee_uid:${uid}`);
 
     // Stage 2: Fetch all resource types in parallel.
@@ -7741,6 +7741,7 @@ export class ProjectService {
       updated_at: f.updated_at,
       uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
       project_uid: f.project_uid,
+      document_source: 'project' as const,
     }));
 
     const linkDocs: ProjectDocument[] = (links || []).map((l) => ({
@@ -7754,6 +7755,7 @@ export class ProjectService {
       uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
       parent_uid: l.folder_uid,
       project_uid: l.project_uid,
+      document_source: 'project' as const,
     }));
 
     const fileDocs: ProjectDocument[] = (files || []).map((f) => ({
@@ -7768,6 +7770,7 @@ export class ProjectService {
       uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       parent_uid: f.folder_uid,
       project_uid: f.project_uid,
+      document_source: 'project' as const,
     }));
 
     const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => ({
@@ -7778,6 +7781,7 @@ export class ProjectService {
       mime_type: a.media_type,
       created_at: a.last_posted_at || a.created_at,
       project_uid: a.project_uid,
+      document_source: 'mailing_list' as const,
     }));
 
     const committeeLinkDocs: ProjectDocument[] = (committeeLinks || [])
@@ -7788,6 +7792,8 @@ export class ProjectService {
         name: l.name,
         url: l.url,
         created_at: l.created_at,
+        document_source: 'committee' as const,
+        document_source_name: l.committee_uid ? (committeeNameByUid.get(l.committee_uid) ?? '') : '',
       }));
 
     const committeeFileDocs: ProjectDocument[] = (committeeDocs || []).map((f) => ({
@@ -7800,6 +7806,8 @@ export class ProjectService {
       created_at: f.created_at,
       updated_at: f.updated_at,
       uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
+      document_source: 'committee' as const,
+      document_source_name: f.committee_uid ? (committeeNameByUid.get(f.committee_uid) ?? '') : '',
     }));
 
     const meetingAttachmentDocs: ProjectDocument[] = (meetingAttachments || []).map((a) => ({
@@ -7810,6 +7818,7 @@ export class ProjectService {
       mime_type: a.file_content_type,
       created_at: a.created_at,
       updated_at: a.updated_at,
+      document_source: 'meeting' as const,
     }));
 
     const pastAttachmentDocs: ProjectDocument[] = (pastAttachments || []).map((a) => ({
@@ -7820,6 +7829,7 @@ export class ProjectService {
       mime_type: a.file_content_type,
       created_at: a.created_at,
       updated_at: a.updated_at,
+      document_source: 'meeting' as const,
     }));
 
     const pastRecordingDocs: ProjectDocument[] = (pastRecordings || []).map((r) => ({
@@ -7828,6 +7838,8 @@ export class ProjectService {
       name: r.title || 'Recording',
       url: r.sessions?.[0]?.share_url ?? r.recording_files?.[0]?.play_url,
       created_at: r.start_time || r.created_at,
+      document_source: 'recording' as const,
+      document_source_name: r.title || '',
     }));
 
     const pastTranscriptDocs: ProjectDocument[] = (pastTranscripts || []).map((t) => ({
@@ -7836,6 +7848,8 @@ export class ProjectService {
       name: t.title || 'Transcript',
       url: t.sessions?.[0]?.share_url ?? t.recording_files?.[0]?.download_url,
       created_at: t.start_time || t.created_at,
+      document_source: 'transcript' as const,
+      document_source_name: t.title || '',
     }));
 
     const pastSummaryDocs: ProjectDocument[] = (pastSummaries || []).map((s) => ({
@@ -7843,6 +7857,8 @@ export class ProjectService {
       type: 'link' as const,
       name: s.summary_title || s.zoom_meeting_topic || 'Meeting Summary',
       created_at: s.summary_start_time || s.created_at,
+      document_source: 'summary' as const,
+      document_source_name: s.zoom_meeting_topic || '',
     }));
 
     logger.info(req, 'get_project_documents', 'Fetched all project document types', {
