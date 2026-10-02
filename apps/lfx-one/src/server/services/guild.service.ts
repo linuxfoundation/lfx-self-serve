@@ -10,6 +10,13 @@ import { logger } from './logger.service';
 /** Default Guild API base URL when GUILD_API_URL is not set. */
 const GUILD_DEFAULT_API_URL = 'https://app.guild.ai';
 
+// Default Guild workspace when GUILD_WORKSPACE_OWNER / GUILD_WORKSPACE_NAME are
+// unset. These are the LF Marketing OS workspace identifiers — not secrets — so
+// only GUILD_API_KEY needs configuring. Set the env vars to point at a different
+// workspace.
+const GUILD_DEFAULT_WORKSPACE_OWNER = 'linux-foundation';
+const GUILD_DEFAULT_WORKSPACE_NAME = 'marketing-os';
+
 /** Outbound request timeout for Guild API calls. */
 const GUILD_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -36,7 +43,8 @@ const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
  *
  * Auth is `Basic base64(GUILD_API_KEY)` — a server-side credential that must
  * never reach the browser. All methods fail with a clear 500 when the Guild
- * credentials/workspace are not configured.
+ * API key is not configured. The workspace owner/name default to the LF
+ * Marketing OS workspace, so only the key is required.
  */
 export class GuildService {
   private get apiUrl(): string {
@@ -49,11 +57,11 @@ export class GuildService {
   }
 
   private get owner(): string {
-    return process.env['GUILD_WORKSPACE_OWNER'] || '';
+    return process.env['GUILD_WORKSPACE_OWNER'] || GUILD_DEFAULT_WORKSPACE_OWNER;
   }
 
   private get workspace(): string {
-    return process.env['GUILD_WORKSPACE_NAME'] || '';
+    return process.env['GUILD_WORKSPACE_NAME'] || GUILD_DEFAULT_WORKSPACE_NAME;
   }
 
   /**
@@ -86,7 +94,7 @@ export class GuildService {
    * structured input without a handle is rejected outright.
    */
   public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string }): Promise<string> {
-    this.assertConfigured('guild_create_session', { requireWorkspace: true });
+    this.assertConfigured('guild_create_session');
 
     if (params.agentInput === undefined && params.message === undefined) {
       throw new MicroserviceError('Guild session creation requires a message or a structured agent input.', 500, 'guild_invalid_session_input', {
@@ -342,21 +350,14 @@ export class GuildService {
     }
   }
 
-  /** Throw a clear 500 when required Guild configuration is missing. */
-  private assertConfigured(operation: string, options: { requireWorkspace?: boolean } = {}): void {
-    const missing: string[] = [];
+  /**
+   * Throw a clear 500 when the Guild API key is missing. The workspace
+   * owner/name default to the LF Marketing OS workspace (see the getters), so
+   * the key is the only required value.
+   */
+  private assertConfigured(operation: string): void {
     if (!this.apiKey) {
-      missing.push('GUILD_API_KEY');
-    }
-    if (options.requireWorkspace && !this.owner) {
-      missing.push('GUILD_WORKSPACE_OWNER');
-    }
-    if (options.requireWorkspace && !this.workspace) {
-      missing.push('GUILD_WORKSPACE_NAME');
-    }
-
-    if (missing.length > 0) {
-      throw new MicroserviceError(`Guild API is not configured. Missing environment variables: ${missing.join(', ')}.`, 500, 'guild_not_configured', {
+      throw new MicroserviceError('Guild API is not configured. Missing environment variable: GUILD_API_KEY.', 500, 'guild_not_configured', {
         service: 'guild',
         operation,
       });
