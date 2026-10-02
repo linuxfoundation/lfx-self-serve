@@ -14,6 +14,7 @@ import {
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
+  CancelMeetingOccurrenceRequest,
   CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
@@ -338,8 +339,9 @@ export class MeetingService {
     );
   }
 
-  public cancelOccurrence(meetingId: string, occurrenceId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(
+  public cancelOccurrence(meetingId: string, occurrenceId: string, note?: string): Observable<void> {
+    const body: CancelMeetingOccurrenceRequest | undefined = note ? { note } : undefined;
+    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`, { body }).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(meetingId))
     );

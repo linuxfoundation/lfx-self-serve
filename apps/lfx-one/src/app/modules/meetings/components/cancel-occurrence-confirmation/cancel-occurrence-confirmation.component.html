@@ -34,6 +34,22 @@
     </div>
   </div>
 
+  <!-- Cancellation Note -->
+  <div class="flex flex-col gap-1.5 mb-6">
+    <label for="cancel-occurrence-note" class="text-sm font-medium text-gray-900">Reason <span class="font-normal text-gray-500">(optional)</span></label>
+    <lfx-textarea
+      [form]="form"
+      control="note"
+      inputId="cancel-occurrence-note"
+      [rows]="3"
+      styleClass="w-full"
+      [maxlength]="noteMaxLength"
+      [readonly]="isCanceling()"
+      ariaDescribedBy="cancel-occurrence-note-hint"
+      dataTest="cancel-occurrence-note" />
+    <p id="cancel-occurrence-note-hint" class="text-xs text-gray-500">Included in the cancellation email sent to guests.</p>
+  </div>
+
   <!-- Warning Message -->
   <lfx-message severity="error" icon="fa-light fa-triangle-exclamation" styleClass="mb-6">
     <ng-template #content>

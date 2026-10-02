@@ -1386,6 +1386,11 @@ export interface MeetingCancelOccurrenceResult {
  * which would widen the change from this occurrence to every later one. `title` and `description`
  * are sent only when changed, so an untouched field keeps following the series.
  */
+export interface CancelMeetingOccurrenceRequest {
+  /** Note included in the cancellation emails sent to guests */
+  note?: string;
+}
+
 export interface UpdateMeetingOccurrenceRequest {
   /** New start time of the occurrence in RFC3339 format */
   start_time: string;

@@ -669,18 +669,23 @@ export class MeetingService {
 
   /**
    * Cancels a meeting occurrence directly via microservice proxy
+   * @description An optional note is sent as the DELETE body; upstream includes it in the cancellation
+   * emails to guests. Without one no body is sent, so the request is unchanged from before.
    */
-  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string, note?: string): Promise<void> {
     logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
+      has_note: !!note,
     });
 
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      note ? { note } : undefined
     );
   }
 

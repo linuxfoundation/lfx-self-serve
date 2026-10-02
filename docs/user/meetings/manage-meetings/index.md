@@ -3,7 +3,7 @@ title: Manage Meetings
 description: How to edit, update, and cancel project meetings in LFX Self Serve.
 product_area: Meetings
 tags: [meetings, manage, edit, cancel]
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 intercom_collection: Meetings
 ---
 
@@ -49,7 +49,7 @@ On the meeting's join page, organizers see a **Manage** button on the Meeting Ma
 Select the delete (trash) icon on a meeting you organize.
 
 - For a one-time meeting, you'll confirm with **Delete Meeting** — the meeting is permanently deleted; this can't be undone.
-- For a meeting that's part of a recurring series, you'll be asked to choose between **Cancel This Occurrence** (only that instance is cancelled; the rest of the series continues) or **Delete Entire Series** (the whole recurring series is permanently deleted).
+- For a meeting that's part of a recurring series, you'll be asked to choose between **Cancel This Occurrence** (only that instance is cancelled; the rest of the series continues) or **Delete Entire Series** (the whole recurring series is permanently deleted). When cancelling one occurrence, you can add an optional **Reason**; it's included in the cancellation email sent to guests.
 
 ## Subscribe to a calendar feed
 
