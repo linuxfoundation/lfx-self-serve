@@ -3,7 +3,7 @@
 
 import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
-import { isMentorshipMentorInviteToken, isUuid } from '@lfx-one/shared/utils';
+import { isMentorshipMentorInviteToken, isMentorshipMentorTaskReviewDecision, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -254,6 +254,37 @@ export class MentorshipMentorController {
         failed_count: result.failed.length,
       });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentor/tasks/:taskId/review  { status: 'complete' | 'incomplete' } -> 204
+  // Auth: logged-in user required (401 otherwise). `complete` approves a submitted task and `incomplete` requests
+  // changes; there is no comment, since upstream has no field for one. A task that is no longer submitted is
+  // refused with a 409 `TASK_NOT_SUBMITTED`. Upstream's 403 (not a mentor of the program) and 404 pass through.
+  public async reviewMenteeTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'review_mentorship_mentee_task');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'review_mentorship_mentee_task' });
+      }
+
+      // Upstream checks access on `mentorship_task:<id>`, so only a UUID can match.
+      const taskId = parseTrimmedString(req.params['taskId']);
+      if (!taskId || !isUuid(taskId)) {
+        throw ServiceValidationError.forField('taskId', 'taskId must be a valid UUID', { operation: 'review_mentorship_mentee_task' });
+      }
+
+      const status = req.body?.status;
+      if (!isMentorshipMentorTaskReviewDecision(status)) {
+        throw ServiceValidationError.forField('status', 'status must be one of: complete, incomplete', { operation: 'review_mentorship_mentee_task' });
+      }
+
+      await this.mentorService.reviewMenteeTask(req, taskId, status);
+      logger.success(req, 'review_mentorship_mentee_task', startTime, { taskId, status });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

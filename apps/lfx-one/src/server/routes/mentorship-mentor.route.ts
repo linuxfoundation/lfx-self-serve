@@ -26,6 +26,8 @@ router.get('/programs/:programId', (req, res, next) => mentorController.getMento
 router.put('/applications/:applicationId/note', blockDuringImpersonation, (req, res, next) => mentorController.updateApplicationNote(req, res, next));
 // Refused while impersonating: upstream would create tasks for the impersonated mentor's mentees.
 router.post('/tasks', blockDuringImpersonation, (req, res, next) => mentorController.createMenteeTasks(req, res, next));
+// Refused while impersonating: upstream would approve or send back a task as the impersonated mentor.
+router.patch('/tasks/:taskId/review', blockDuringImpersonation, (req, res, next) => mentorController.reviewMenteeTask(req, res, next));
 router.get('/profile', (req, res, next) => mentorController.getMentorProfile(req, res, next));
 // Refused while impersonating: upstream would edit the impersonated user's profile.
 router.patch('/profile', blockDuringImpersonation, (req, res, next) => mentorController.updateMentorProfile(req, res, next));

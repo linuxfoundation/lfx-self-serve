@@ -233,6 +233,25 @@ export interface MentorshipUpstreamTaskCreate {
   due_date?: string;
 }
 
+/** A mentor's decision on a submitted task: `complete` approves it, `incomplete` sends it back for changes. */
+export type MentorshipMentorTaskReviewDecision = 'complete' | 'incomplete';
+
+/** Body of `PATCH /api/mentorship/mentor/tasks/:taskId/review`. Upstream has no field for a comment. */
+export interface MentorshipMentorTaskReviewUpdate {
+  status: MentorshipMentorTaskReviewDecision;
+}
+
+/** Body of `PATCH /mentorship/v1/tasks/{id}/review`. */
+export interface MentorshipUpstreamTaskReviewUpdate {
+  status: MentorshipMentorTaskReviewDecision;
+}
+
+/** What the mentor Tasks tab emits when a mentor approves a task or requests changes on it. */
+export interface MentorshipMentorTaskReviewRequest {
+  taskId: string;
+  status: MentorshipMentorTaskReviewDecision;
+}
+
 /** What an invited mentor does with the invitation on `/mentorship/mentor/invites`. */
 export type MentorshipMentorInviteDecision = 'accept' | 'decline';
 
@@ -288,7 +307,10 @@ export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM
 export type MentorshipMentorTaskReviewStatus = Extract<MentorshipApplicantTaskStatus, 'submitted' | 'completed'>;
 
 export interface MentorshipMentorReviewTask {
+  /** Row key, unique across mentees. */
   id: string;
+  /** Upstream task UUID, which the review write takes. */
+  taskId: string;
   menteeId: string;
   menteeName: string;
   menteeEmail: string;

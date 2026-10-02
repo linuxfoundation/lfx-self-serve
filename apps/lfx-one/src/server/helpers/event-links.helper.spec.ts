@@ -88,7 +88,9 @@ describe('extractPageLinks — malformed and hostile markup', () => {
 
     const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
 
-    expect(verifyPageLink('https://events.linuxfoundation.org/a?x=1&y=2', links)).toBe('https://events.linuxfoundation.org/a?x=1&y=2');
+    expect(verifyPageLink('https://events.linuxfoundation.org/a?x=1&y=2', links, 'https://events.linuxfoundation.org/')).toBe(
+      'https://events.linuxfoundation.org/a?x=1&y=2'
+    );
   });
 
   it('ignores data-href, which is not the link the page renders', () => {
