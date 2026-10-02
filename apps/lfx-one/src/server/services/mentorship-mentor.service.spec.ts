@@ -1131,3 +1131,42 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('MentorshipMentorService.updateApplicationNote', () => {
+  const APPLICATION_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+  const NOTE_PATH = `/mentorship/v1/applications/${APPLICATION_ID}/note`;
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it('PUTs the note as reviewer_note, without logging its text', async () => {
+    proxyRequest.mockResolvedValueOnce({ note: 'Strong screening call.' });
+
+    await expect(service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: 'Strong screening call.' })).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', NOTE_PATH, 'PUT', undefined, { reviewer_note: 'Strong screening call.' });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('Strong screening call.');
+  });
+
+  it('sends an empty reviewer_note to clear the note', async () => {
+    proxyRequest.mockResolvedValueOnce({ note: '' });
+
+    await service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: '' });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', NOTE_PATH, 'PUT', undefined, { reviewer_note: '' });
+  });
+
+  it.each([
+    [403, 'only program mentors and admins can review applications'],
+    [404, 'application not found'],
+  ])("passes upstream's %s through", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: 'Note' })).rejects.toBe(failure);
+  });
+});

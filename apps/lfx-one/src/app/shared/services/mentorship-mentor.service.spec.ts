@@ -289,4 +289,25 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(service.mentorRequestsRevision()).toBe(revision + 1);
     });
   });
+
+  describe('updateApplicationNote', () => {
+    it('PUTs the note to the encoded application id', () => {
+      let done = false;
+      service.updateApplicationNote('app/1', 'Strong screening call.').subscribe({ complete: () => (done = true) });
+
+      const req = http.expectOne('/api/mentorship/mentor/applications/app%2F1/note');
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual({ note: 'Strong screening call.' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(done).toBe(true);
+    });
+
+    it('propagates a failed save as the raw HttpErrorResponse', () => {
+      let error: HttpErrorResponse | undefined;
+      service.updateApplicationNote('app-1', '').subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http.expectOne('/api/mentorship/mentor/applications/app-1/note').flush({ error: 'application not found' }, { status: 404, statusText: 'Not Found' });
+      expect(error?.status).toBe(404);
+    });
+  });
 });

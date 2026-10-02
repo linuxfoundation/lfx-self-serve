@@ -302,6 +302,21 @@ export const MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save 
 export const MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
 export const MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE = 5000;
 
+export const MENTORSHIP_MENTOR_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
+export const MENTORSHIP_MENTOR_NOTE_CLEAR_SUCCESS_SUMMARY = 'Note cleared';
+export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_SUMMARY = 'Could not save the note';
+export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTOR_NOTE_TOAST_LIFE = 5000;
+
+/**
+ * Note save failures with their own copy, keyed by the BFF's status. A 403 is upstream no longer finding the
+ * caller an active mentor of the program, and a 404 an application that is gone; both mean the page is out of date.
+ */
+export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer edit notes on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
+
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_SUBTITLE = 'Programs you mentor on will appear here once your first term begins.';

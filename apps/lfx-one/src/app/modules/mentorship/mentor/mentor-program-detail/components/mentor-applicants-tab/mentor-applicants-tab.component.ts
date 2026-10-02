@@ -48,8 +48,6 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
 })
 export class MentorApplicantsTabComponent {
   public readonly applicants = input.required<MentorshipMentorProgramApplicant[]>();
-  /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
-  public readonly noteDrafts = input<Record<string, string>>({});
   public readonly noteRequested = output<MentorshipNoteRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
@@ -130,7 +128,8 @@ export class MentorApplicantsTabComponent {
           // The program's public page on the mentorship site; without an id the name shows as plain text.
           programUrl: application.programId ? buildMentorshipProgramsUrl(environment.urls.mentorship, application.programId) : null,
         })),
-      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      // No drafts: the page saves a note before it shows, so the row's own note is the saved one.
+      ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
       // Only the tasks the server read: when it reads them per mentee, the other applicants arrive without
       // `tasks` but with upstream's `tasksTotal`, and View Tasks would open an empty panel.
       hasTasks: !!person.tasks?.length,
