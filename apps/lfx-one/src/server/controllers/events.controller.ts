@@ -415,6 +415,13 @@ export class EventsController {
         throw ServiceValidationError.forField('termsAccepted', 'termsAccepted must be true', { operation: 'submit_visa_request_application' });
       }
 
+      // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'visa'))) {
+        throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for a visa letter for this event', {
+          operation: 'submit_visa_request_application',
+        });
+      }
+
       // Overwrite client-provided email with session email for data integrity
       payload.applicantInfo.email = userEmail;
 
@@ -456,6 +463,13 @@ export class EventsController {
 
       if (!payload?.expenses) {
         throw ServiceValidationError.forField('expenses', 'expenses is required', { operation: 'submit_travel_fund_application' });
+      }
+
+      // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'travel-fund'))) {
+        throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for travel funding for this event', {
+          operation: 'submit_travel_fund_application',
+        });
       }
 
       // Overwrite client-provided email with session email for data integrity

@@ -289,6 +289,92 @@ describe('EventsService filter options use the same past-event predicate', () =>
   });
 });
 
+describe('EventsService past and request lists match email case-insensitively', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  function lastSql(): string {
+    return snowflakeMocks.execute.mock.calls[0][0] as string;
+  }
+
+  it('dedups the past list per event, preferring Accepted', async () => {
+    await service.getMyEvents({} as never, USER_EMAIL, { isPast: true, pageSize: 10, offset: 0 } as never);
+
+    expect(lastSql()).toContain('WHERE LOWER(USER_EMAIL) = ?');
+    expect(lastSql()).toContain("QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1");
+    expect(lastSql()).not.toMatch(/WHERE USER_EMAIL = \?/);
+  });
+
+  it('matches the past foundations query case-insensitively', async () => {
+    await service.getEventOrganizations({} as never, USER_EMAIL, { isPast: true } as never);
+
+    expect(lastSql()).toContain('WHERE LOWER(USER_EMAIL) = ?');
+  });
+
+  it.each([
+    ['getVisaRequests', 'VL_APPLICATION_DATE'],
+    ['getTravelFundRequests', 'TF_APPLICATION_DATE'],
+  ] as const)('%s keeps the latest request per event', async (method, dateColumn) => {
+    await service[method]({} as never, USER_EMAIL, { pageSize: 10, offset: 0 } as never);
+
+    expect(lastSql()).toContain('AND LOWER(USER_EMAIL) = ?');
+    expect(lastSql()).toContain(`QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${dateColumn} DESC NULLS LAST) = 1`);
+  });
+});
+
+describe('EventsService.isEligibleForEventRequest', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new EventsService();
+  });
+
+  function lastCall(): [string, unknown[]] {
+    return snowflakeMocks.execute.mock.calls[0] as [string, unknown[]];
+  }
+
+  it('requires an accepted registration and visa requests for visa letters', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [{ ELIGIBLE: 1 }] });
+
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'visa')).resolves.toBe(true);
+
+    const [sql, binds] = lastCall();
+    expect(sql).toContain('WHERE LOWER(USER_EMAIL) = ?');
+    expect(sql).toContain('AND NOT (CASE WHEN');
+    expect(sql).toContain("AND REGISTRATION_STATUS = 'Accepted' AND IS_VISA_REQUEST_ACCEPTED = TRUE");
+    expect(binds).toEqual([USER_EMAIL, 'evt-1']);
+  });
+
+  it('accepts any registration status for travel funding', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [{ ELIGIBLE: 1 }] });
+
+    await service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'travel-fund');
+
+    const [sql] = lastCall();
+    expect(sql).toContain('AND IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).not.toContain('REGISTRATION_STATUS');
+    expect(sql).not.toContain('TRAVEL_FUND_END_TS');
+  });
+
+  it('returns false when no registration matches', async () => {
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'visa')).resolves.toBe(false);
+  });
+
+  it('propagates Snowflake errors instead of reporting ineligible', async () => {
+    snowflakeMocks.execute.mockRejectedValue(new Error('snowflake down'));
+
+    await expect(service.isEligibleForEventRequest({} as never, USER_EMAIL, 'evt-1', 'travel-fund')).rejects.toThrow('snowflake down');
+  });
+});
+
 describe('EventsService.getVisaRequests event-ended gate', () => {
   let service: InstanceType<typeof EventsService>;
 

@@ -32,6 +32,7 @@ import {
   TravelFundApplicationResponse,
   TravelFundRequestsResponse,
   OrgSearchResponse,
+  RequestType,
   VisaRequest,
   VisaRequestApplication,
   VisaRequestApplicationResponse,
@@ -303,8 +304,14 @@ export class EventsService {
           TRUE AS IS_REGISTERED,
           TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE USER_EMAIL = ?
+        FROM (
+          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
+          SELECT *
+          FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+          WHERE LOWER(USER_EMAIL) = ?
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
+        )
+        WHERE TRUE
           ${isPastFilter}
           ${eventIdFilter}
           ${projectNameFilter}
@@ -461,7 +468,7 @@ export class EventsService {
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE USER_EMAIL = ?
+        WHERE LOWER(USER_EMAIL) = ?
           AND (${this.isPastEventSql()})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
@@ -542,6 +549,32 @@ export class EventsService {
 
   public async getTravelFundRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
     return this.executeEventRequestsQuery(req, userEmail, options, 'TF_REQUEST_STATUS', 'TF_APPLICATION_DATE', 'get_travel_fund_requests');
+  }
+
+  /**
+   * Whether the user may apply for a visa letter / travel funding for an event, using the same rules as the step 1 event picker.
+   * Unlike the list queries, a Snowflake failure throws so a submit is never accepted or rejected on missing data.
+   */
+  public async isEligibleForEventRequest(req: Request, userEmail: string, eventId: string, requestType: RequestType): Promise<boolean> {
+    const requestFilter =
+      requestType === 'travel-fund' ? 'AND IS_TRAVEL_FUND_ACCEPTED = TRUE' : "AND REGISTRATION_STATUS = 'Accepted' AND IS_VISA_REQUEST_ACCEPTED = TRUE";
+
+    const sql = `
+      SELECT 1 AS ELIGIBLE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE LOWER(USER_EMAIL) = ?
+        AND EVENT_ID = ?
+        AND NOT (${this.isPastEventSql()})
+        ${requestFilter}
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<{ ELIGIBLE: number }>(sql, [userEmail, eventId]);
+    const eligible = result.rows.length > 0;
+
+    logger.debug(req, 'check_event_request_eligibility', 'Checked event request eligibility', { event_id: eventId, request_type: requestType, eligible });
+
+    return eligible;
   }
 
   /**
@@ -907,9 +940,15 @@ export class EventsService {
         TRAVEL_FUND_END_TS,
         COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED,
         COUNT(*) OVER() AS TOTAL_RECORDS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE ${statusColumn} IS NOT NULL
-        AND USER_EMAIL = ?
+      FROM (
+        -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep the latest request.
+        SELECT *
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE ${statusColumn} IS NOT NULL
+          AND LOWER(USER_EMAIL) = ?
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${applicationDateColumn} DESC NULLS LAST) = 1
+      )
+      WHERE TRUE
         ${eventIdFilter}
         ${projectNameFilter}
         ${searchQueryFilter}
