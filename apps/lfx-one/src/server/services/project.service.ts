@@ -160,6 +160,7 @@ import {
   UpdateProjectStaffRequest,
   UploadProjectDocumentRequest,
   AuditUserProfile,
+  CommitteeDocumentQueryResult,
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
   MeetingAttachment,
@@ -264,22 +265,6 @@ interface ProjectLinkQueryResult {
   created_by_username?: string;
   created_at?: string;
   updated_at?: string;
-}
-
-/** Query-service shape for an indexed `committee_document` resource — indexed by committee_uid only, no project_uid tag. */
-interface CommitteeDocumentQueryResult {
-  uid: string;
-  name: string;
-  file_name?: string;
-  file_size?: number;
-  content_type?: string;
-  description?: string;
-  committee_uid?: string;
-  folder_uid?: string;
-  created_at?: string;
-  updated_at?: string;
-  created_by?: AuditUserProfile;
-  uploaded_by_username?: string;
 }
 
 function buildFoundationFilter(foundationSlug: string): { filter: string; filterAnd: string; params: string[] } {
@@ -7861,7 +7846,7 @@ export class ProjectService {
       document_source_name: s.zoom_meeting_topic || '',
     }));
 
-    logger.info(req, 'get_project_documents', 'Fetched all project document types', {
+    logger.debug(req, 'get_project_documents', 'Fetched all project document types', {
       project_uid: projectId,
       folders: folderDocs.length,
       links: linkDocs.length,

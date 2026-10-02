@@ -19,7 +19,7 @@ The Documents section lets you browse and manage documents associated with your 
 
 ## Navigation
 
-Go to **app.lfx.dev**, switch to a project or foundation, and select **Documents** from the left navigation sidebar. The documents dashboard lists folders, files, and links for that context. Use search and the source filter to narrow the list.
+Go to **app.lfx.dev**, switch to a project or foundation, and select **Documents** from the left navigation sidebar. The documents dashboard lists documents from all sources for that context: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts. Use search and the **All Sources** filter (Project / Committee / Meeting / Mailing List) to narrow the list.
 
 ## Project context
 

@@ -346,10 +346,11 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * Maps a ProjectDocument (folder | link | file) to the MyDocumentItem shape the
-   * shared lfx-documents-table renders. Folders carry source 'link' as a placeholder
-   * (the table renders folders specially via `isFolder`). Files get a `downloadUrl`
-   * pointing at the BFF streaming endpoint.
+   * Maps a ProjectDocument to the MyDocumentItem shape the shared lfx-documents-table
+   * renders. Source is derived from document_source (project, committee, meeting, etc.)
+   * and mapped to the MyDocumentSource tag the table uses. Download URLs are only built
+   * for native project files (document_source === 'project'); committee and meeting
+   * documents open via their own URLs.
    */
   private toMyDocumentItem(doc: ProjectDocument, project: ProjectContext | null, isChild: boolean): MyDocumentItem {
     const isFile = doc.type === 'file';
@@ -391,7 +392,8 @@ export class DocumentsDashboardComponent {
       fileType: doc.mime_type,
       parentUid: doc.parent_uid,
       isChild,
-      downloadUrl: isProjectFile && ownerProjectUid ? `/api/projects/${ownerProjectUid}/documents/${doc.uid}/download` : undefined,
+      downloadUrl:
+        isProjectFile && ownerProjectUid ? `/api/projects/${encodeURIComponent(ownerProjectUid)}/documents/${encodeURIComponent(doc.uid)}/download` : undefined,
       uploadedBy: doc.uploaded_by,
       projectDocumentSource: docSource,
     };
