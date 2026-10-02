@@ -4,7 +4,14 @@
 import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
 import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
 import type {
+  MentorshipUpstreamApplicationStatus,
+  MentorshipUpstreamApplicationTerm,
+  MentorshipUpstreamProgramTermStatus,
+  MentorshipUpstreamTask,
+} from './mentorship-mentee.interface';
+import type {
   MentorshipApplicantTaskStatus,
+  MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgramApplicant,
   MentorshipProgramMentee,
@@ -99,13 +106,11 @@ export interface MentorshipMentorOpenProgramsState {
 
 /**
  * Become a Mentor form state. Name, email, and avatar are not here — they come from the
- * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
- * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
+ * signed-in LFX account.
  */
 export interface MentorshipMentorRegisterForm {
   introduction: string;
   skills: string[];
-  resumeFileName: string;
   complianceAccepted: boolean;
   termsAccepted: boolean;
 }
@@ -115,16 +120,14 @@ export interface MentorshipMentorRegisterForm {
  * entry: applying to a program is optional, so a mentor can register a profile and pick
  * programs later.
  */
-export interface MentorshipMentorRegisterFieldErrors {
-  introduction?: string;
-  skills?: string;
+export interface MentorshipMentorRegisterFieldErrors extends MentorshipMentorProfileFieldErrors {
   complianceAccepted?: string;
   termsAccepted?: string;
 }
 
 /**
- * Body of `POST /api/mentorship/mentor/profile`. Program requests and the resume are not part of
- * it: requests are sent separately, and there is no upload endpoint yet. `lfxProfile` carries the
+ * Body of `POST /api/mentorship/mentor/profile`. Program requests are not part of it: they are
+ * sent separately. `lfxProfile` carries the
  * name and avatar the profile card shows; it is omitted when the card had none to give. The BFF
  * adds the primary email itself.
  */
@@ -156,8 +159,11 @@ export interface MentorshipUpstreamMentorProfileInput extends MentorshipUpstream
   skill_set: { skills: string[] };
 }
 
-/** Statuses of an upstream `program_members` row, in the order the request lifecycle reaches them. */
-export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'active' | 'declined' | 'withdrawn';
+/**
+ * Statuses of an upstream `program_members` row, in the order the request lifecycle reaches them.
+ * Upstream renamed `active` to `approved`; `active` stays until every environment has migrated.
+ */
+export type MentorshipUpstreamProgramMemberStatus = 'invited' | 'requested' | 'pending' | 'approved' | 'active' | 'declined' | 'withdrawn';
 
 /**
  * One row of upstream `GET /mentorship/v1/me/program-memberships`: the caller's own membership of a
@@ -178,6 +184,65 @@ export interface MentorshipUpstreamProgramMembership {
 export interface MentorshipUpstreamProgramMembershipRequest {
   program_id: string;
 }
+
+/**
+ * Body of `PUT /api/mentorship/mentor/applications/:applicationId/note`: the application's reviewer note,
+ * shared by every mentor of the program. A note that is blank once trimmed clears it.
+ */
+export interface MentorshipMentorApplicationNoteUpdate {
+  note: string;
+}
+
+/** Body of `PUT /mentorship/v1/applications/{id}/note`. An empty string clears the note. */
+export interface MentorshipUpstreamApplicationNoteUpdate {
+  reviewer_note: string;
+}
+
+/**
+ * Body of `POST /api/mentorship/mentor/tasks`: one task, created once for each accepted mentee's application.
+ * `dueDate` is a date-only `YYYY-MM-DD`. The assignee, term and owner come from upstream, never from the browser.
+ */
+export interface MentorshipMentorTaskCreateRequest {
+  applicationIds: string[];
+  name: string;
+  description: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+}
+
+/** Response of `POST /api/mentorship/mentor/tasks`: the application ids whose task was created, and those whose was not. */
+export interface MentorshipMentorTaskCreateResponse {
+  created: string[];
+  failed: string[];
+}
+
+/**
+ * Body of `POST /mentorship/v1/applications/{id}/tasks`. `assignee_id` must be the accepted mentee's user id, and
+ * `program_term_id` is what lists the task under its term. Upstream sets `status` to `incomplete`.
+ */
+export interface MentorshipUpstreamTaskCreate {
+  assignee_id: string;
+  program_term_id: string;
+  owner_id: string;
+  created_by: string;
+  name: string;
+  description: string;
+  category: 'prerequisite' | 'non_prerequisite';
+  custom: boolean;
+  submit_file?: string;
+  due_date?: string;
+}
+
+/** What an invited mentor does with the invitation on `/mentorship/mentor/invites`. */
+export type MentorshipMentorInviteDecision = 'accept' | 'decline';
+
+/** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
+export interface MentorshipMentorInviteResponseRequest {
+  token: string;
+}
+
+/** What the invite page shows: the choice, the outcome, or why the link cannot be used. */
+export type MentorshipMentorInviteState = 'confirm' | 'submitting' | 'accepted' | 'declined' | 'invalid-link' | 'forbidden' | 'read-only' | 'error';
 
 // ---------------------------------------------------------------------------
 // My Programs and program detail types
@@ -246,10 +311,26 @@ export interface MentorshipMentorProgramTabCounts {
   applicants: number;
 }
 
-/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. */
+/**
+ * An application the same person holds on another program, as a mentor sees it. The Applicants tab links the
+ * program name to that program's public page on the mentorship site, which anyone may open; `programId` is
+ * left out when upstream's id is not a UUID, and the name then shows as plain text.
+ */
+export interface MentorshipMentorOtherApplication {
+  programId?: string;
+  programName: string;
+  status: MentorshipMenteeStatus;
+}
+
+/** One Applicants tab row. Its `id` is the application id. */
+export interface MentorshipMentorProgramApplicant extends Omit<MentorshipProgramApplicant, 'otherApplications'> {
+  otherApplications?: MentorshipMentorOtherApplication[];
+}
+
+/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. Each row's `id` is its application id. */
 export interface MentorshipMentorProgramLists {
   mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
+  applicants: MentorshipMentorProgramApplicant[];
 }
 
 /** Full mentor program-detail payload from `GET /api/mentorship/mentor/programs/:programId`. */
@@ -280,19 +361,185 @@ export interface MentorshipMentoringHistoryEntry {
   status: MentorshipMentoringHistoryStatus;
 }
 
+/** One (program name, term name) pair of the Mentoring History while the BFF builds it. */
+export interface MentorshipMentoringHistoryGroup {
+  programName: string;
+  term: string;
+  menteeIds: Set<string>;
+  hasCurrentMentee: boolean;
+}
+
 /** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
 export interface MentorshipMentorProfileDetails {
   /** Rich-text HTML or plain text authored on the Become a Mentor form. */
   aboutMe: string;
   skills: string[];
-  /** Optional resume file name, matching the picker on the register form. */
-  resumeFileName?: string;
-  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
-  resumeUrl?: string;
 }
 
 /** Full response body from `GET /api/mentorship/mentor/profile`. */
 export interface MentorshipMentorProfileResponse {
   profile: MentorshipMentorProfileDetails;
   history: MentorshipMentoringHistoryEntry[];
+}
+
+/**
+ * Validation errors for the two profile fields a mentor writes, shared by the register form and the
+ * profile edit, so both are held to one rule set.
+ */
+export interface MentorshipMentorProfileFieldErrors {
+  introduction?: string;
+  skills?: string;
+}
+
+/**
+ * Body of `PATCH /api/mentorship/mentor/profile`. Only the fields the mentor changed are sent, and at
+ * least one must be. `introduction` is the rich-text HTML the editor produces.
+ */
+export interface MentorshipMentorProfileUpdateRequest {
+  introduction?: string;
+  skills?: string[];
+}
+
+/** Response body from `PATCH /api/mentorship/mentor/profile`: the saved profile, without the history. */
+export interface MentorshipMentorProfileUpdateResponse {
+  profile: MentorshipMentorProfileDetails;
+}
+
+/**
+ * The `skill_set` column as the mentor profile edit writes it. The index signature carries stored keys
+ * the BFF does not model, which the edit keeps because upstream replaces the column whole.
+ */
+export interface MentorshipUpstreamMentorSkillSet {
+  skills: string[];
+  [key: string]: unknown;
+}
+
+/** Body of `PATCH /mentorship/v1/me/profiles/mentor`. Upstream keeps every column the body leaves out. */
+export interface MentorshipUpstreamMentorProfileUpdate {
+  introduction?: string;
+  skill_set?: MentorshipUpstreamMentorSkillSet;
+}
+
+/** Body of `GET /mentorship/v1/me`: the signed-in user's local record. `id` is the user id other reads take. */
+export interface MentorshipUpstreamUser {
+  id: string;
+  email?: string;
+  lfid?: string;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+  avatar_url?: string;
+  created_on: string;
+  updated_on: string;
+}
+
+/** One non-deleted term of a program on `GET /mentorship/v1/mentors/{id}`. Dates are RFC 3339 instants. */
+export interface MentorshipUpstreamMentorProgramTerm {
+  id: string;
+  name: string;
+  status: MentorshipUpstreamProgramTermStatus;
+  start_date_time?: string;
+  end_date_time?: string;
+  application_start_date?: string;
+  application_end_date?: string;
+}
+
+/** One published program the mentor is an active member of, on `GET /mentorship/v1/mentors/{id}`. */
+export interface MentorshipUpstreamMentorProgram {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  logo_url?: string;
+  skills: string[];
+  terms: MentorshipUpstreamMentorProgramTerm[];
+  /** The program's public mentor cards. Not read by the BFF. */
+  mentors: unknown[];
+}
+
+/** Status of a mentee row on `GET /mentorship/v1/mentors/{id}`. */
+export type MentorshipUpstreamMentorMenteeStatus = 'active' | 'accepted' | 'graduated';
+
+/**
+ * One mentee of a program the mentor belongs to. The row names its program and term but carries
+ * neither id, so it is matched to a term by name.
+ */
+export interface MentorshipUpstreamMentorMentee {
+  user_id: string;
+  name?: string;
+  avatar_url?: string;
+  introduction?: string;
+  program_name: string;
+  term_name: string;
+  status: MentorshipUpstreamMentorMenteeStatus;
+}
+
+/** Counts on `GET /mentorship/v1/mentors/{id}`. */
+export interface MentorshipUpstreamMentorStats {
+  programs_mentoring: number;
+  current_mentees: number;
+  mentees_graduated: number;
+}
+
+/**
+ * Body of `GET /mentorship/v1/mentors/{id}`, the public mentor profile. Upstream answers 404 for a user
+ * with no active membership of a published program.
+ */
+export interface MentorshipUpstreamMentorDetail {
+  user_id: string;
+  name?: string;
+  avatar_url?: string;
+  introduction?: string;
+  skills: string[];
+  joined_at: string;
+  github_url?: string;
+  linkedin_url?: string;
+  programs: MentorshipUpstreamMentorProgram[];
+  current_mentees: MentorshipUpstreamMentorMentee[];
+  graduated_mentees: MentorshipUpstreamMentorMentee[];
+  stats: MentorshipUpstreamMentorStats;
+}
+
+/** Another program a mentee row's applicant has applied to, on `GET /mentorship/v1/programs/{id}/applications`. */
+export interface MentorshipUpstreamProgramApplicationOther {
+  program_id: string;
+  program_name: string;
+  status: MentorshipUpstreamApplicationStatus;
+}
+
+/**
+ * One mentee application of a program, on `GET /mentorship/v1/programs/{id}/applications`, which a program's
+ * mentors and administrators may read. `tasks_submitted` counts the applicant's submitted and complete tasks.
+ */
+export interface MentorshipUpstreamProgramApplicationRow {
+  user_id: string;
+  application_id: string;
+  status: MentorshipUpstreamApplicationStatus;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+  note?: string;
+  tasks_submitted: number;
+  tasks_total: number;
+  other_applications?: MentorshipUpstreamProgramApplicationOther[];
+  term?: MentorshipUpstreamApplicationTerm;
+  created_on: string;
+  updated_on: string;
+}
+
+/** The term a My Programs card is shown by, and the group that puts the card in. No term means zero counts. */
+export interface MentorshipMentorProgramTermChoice {
+  term?: MentorshipUpstreamMentorProgramTerm;
+  termStatus: MentorshipMentorProgramTermStatus;
+}
+
+/**
+ * One term's rows of a mentor's program, sorted the way the My Programs card and the program detail tabs
+ * count them: mentees are accepted and graduated applications, applicants are every application, and tasks
+ * to review are submitted tasks on accepted mentees' applications.
+ */
+export interface MentorshipMentorProgramRows {
+  mentees: MentorshipUpstreamProgramApplicationRow[];
+  applicants: MentorshipUpstreamProgramApplicationRow[];
+  tasksToReview: MentorshipUpstreamTask[];
 }

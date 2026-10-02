@@ -62,30 +62,20 @@
       </div>
 
       <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
-           measured offset a tab's sub-nav pins below already accounts for the bar. Tabs whose Level 2
-           story hasn't landed render disabled rather than being omitted, so the bar doesn't reshuffle. -->
+           measured offset a tab's sub-nav pins below already accounts for the bar. -->
       <nav class="-mb-px flex gap-6 overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
         @for (tab of tabs; track tab.key) {
-          @if (tab.route === null) {
-            <span
-              class="cursor-default border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-300"
-              aria-disabled="true"
-              [attr.data-testid]="'health-metrics-tab-' + tab.key">
-              {{ tab.label }}
-            </span>
-          } @else {
-            <a
-              [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
-              queryParamsHandling="preserve"
-              routerLinkActive="!border-blue-600 !text-blue-700"
-              [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
-              #rla="routerLinkActive"
-              [attr.aria-current]="rla.isActive ? 'page' : null"
-              class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
-              [attr.data-testid]="'health-metrics-tab-' + tab.key">
-              {{ tab.label }}
-            </a>
-          }
+          <a
+            [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
+            queryParamsHandling="preserve"
+            routerLinkActive="!border-blue-600 !text-blue-700"
+            [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
+            #rla="routerLinkActive"
+            [attr.aria-current]="rla.isActive ? 'page' : null"
+            class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
+            [attr.data-testid]="'health-metrics-tab-' + tab.key">
+            {{ tab.label }}
+          </a>
         }
       </nav>
     </header>

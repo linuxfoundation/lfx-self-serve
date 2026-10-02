@@ -20,7 +20,6 @@ import {
   MENTORSHIP_MENTOR_REGISTER_PROFILE_EXISTS_CONTINUE,
   MENTORSHIP_MENTOR_REGISTER_SUBTITLE,
   MENTORSHIP_MENTOR_REGISTER_TITLE,
-  MENTORSHIP_MENTOR_RESUME_INTRO,
   MENTORSHIP_MENTOR_SKILLS_INTRO,
   MENTORSHIP_MENTOR_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTOR_SUBMIT_SUCCESS_SUMMARY,
@@ -45,7 +44,6 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
-import { ResumeSectionComponent } from '../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MentorProgramRequestService } from '../../services/mentor-program-request.service';
@@ -66,7 +64,7 @@ import { MentorProgramsSectionComponent } from './components/mentor-programs-sec
  * Picked programs stay on this page until the profile saves, since upstream takes a mentor's
  * request only once the profile exists. Then one request goes out per program, one at a time,
  * through `MentorProgramRequestService`, which toasts each failure by program name; the mentor
- * lands on My Programs either way. The resume file name stays local: there is no upload endpoint yet.
+ * lands on My Programs either way.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-register',
@@ -77,7 +75,6 @@ import { MentorProgramsSectionComponent } from './components/mentor-programs-sec
     RichEditorComponent,
     MentorProgramsSectionComponent,
     ProfileCardComponent,
-    ResumeSectionComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
   ],
@@ -98,7 +95,6 @@ export class MentorRegisterComponent {
   protected readonly introductionIntro = MENTORSHIP_MENTOR_INTRODUCTION_INTRO;
   protected readonly introductionPlaceholder = MENTORSHIP_MENTOR_INTRODUCTION_PLACEHOLDER;
   protected readonly skillsIntro = MENTORSHIP_MENTOR_SKILLS_INTRO;
-  protected readonly resumeIntro = MENTORSHIP_MENTOR_RESUME_INTRO;
   protected readonly complianceLead = MENTORSHIP_MENTOR_COMPLIANCE_LEAD;
   protected readonly complianceItems = MENTORSHIP_MENTOR_COMPLIANCE_ITEMS;
   protected readonly termsIntro = MENTORSHIP_MENTOR_TERMS_INTRO;
@@ -112,7 +108,6 @@ export class MentorRegisterComponent {
   protected readonly form = new FormGroup({
     introduction: new FormControl('', { nonNullable: true }),
     skills: new FormControl<string[]>([], { nonNullable: true }),
-    resumeFileName: new FormControl('', { nonNullable: true }),
     complianceAccepted: new FormControl(false, { nonNullable: true }),
     termsAccepted: new FormControl(false, { nonNullable: true }),
   });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -10,7 +10,7 @@ import type { CampaignBriefOutput, CampaignBriefPersistenceState, CampaignImplem
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImplementationTabComponent } from './implementation-tab.component';
@@ -3442,5 +3442,100 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
   it('preserves a restored draft Demand Gen selection where the deployment supports it', () => {
     restoreDraft(true, true);
     expect(demandGenValue()).toBe(true);
+  });
+});
+
+/**
+ * The create handler's error arm, which is the last step of the named-refusal path.
+ *
+ * Every guard on the server writes a field and a stated remedy, and all of that is wasted if the
+ * tab replaces the message with connection advice on the way to the screen. This handler took no
+ * parameter at all before this change, so EVERY non-2xx was reported as a connection failure.
+ *
+ * Both directions are asserted, because each alone passes against a different wrong handler: a
+ * test that only checked the server message passes against a handler that prints whatever it is
+ * handed, including the status-derived envelope `gatewayFetch` composes for an upstream failure;
+ * and a test that only checked the fallback passes against the unfixed handler.
+ */
+describe('ImplementationTabComponent create failure messaging', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const submittableGoogleCreate = () => {
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://example.com',
+      includeSearch: true,
+      budgetUsd: 500,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('surfaces the field refusal the server wrote instead of connection advice', async () => {
+    // The exact shape a server guard emits: 400 carrying VALIDATION_ERROR and the operator-facing
+    // sentence. `isBffValidationError` keys on the CODE, not the status, because a relayed
+    // upstream 400 carries a status-derived code and a message no person wrote.
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              code: 'VALIDATION_ERROR',
+              error:
+                'the Google Ads budget must be greater than 0 — this one resolves to no spend at all once the Search share is applied. Set a larger budget and create again.',
+            },
+          })
+      )
+    );
+    submittableGoogleCreate();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(c['errors']()).toEqual([expect.stringContaining('Google Ads budget must be greater than 0')]);
+    // Back to the form, not stranded on the progress step — the operator has to be able to act on
+    // the remedy the message just gave them.
+    expect(c['step']()).toBe('form');
+  });
+
+  it('keeps the connection fallback for a failure that carried no server message', async () => {
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 0, error: null, statusText: 'Unknown Error' }))
+    );
+    submittableGoogleCreate();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(c['errors']()).toEqual([expect.stringContaining('Unable to reach the campaign service')]);
+    expect(c['step']()).toBe('form');
   });
 });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PDFTemplateDetails } from '../interfaces/events.interface';
+import { PDFTemplateDetails, VisaLetterEntity, VisaLetterPaidBy, VisaLetterTicketStatus } from '../interfaces/events.interface';
 
 export const DEFAULT_TEMPLATE: PDFTemplateDetails = {
   link: 'https://www.linuxfoundation.org/',
@@ -57,4 +57,82 @@ export const PROJECT_TEMPLATES: Record<string, PDFTemplateDetails> = {
     signature: 'cncf-signature.png',
     signatureText: `Priyanka Sharma\nExecutive Director`,
   },
+};
+
+/** Members page linked from the default and European visa letter body */
+export const VISA_LETTER_MEMBERS_LINK = 'https://www.linuxfoundation.org/about/members';
+
+/** Visa letter signatory; the organisation line comes from the letter entity */
+export const VISA_LETTER_SIGNATORY = { name: 'James R. Zemlin', title: 'Executive Director', phone: '+1.415.723.9709' };
+
+/** Only letters in this upstream state can be generated; the server re-checks it on every download */
+export const VISA_LETTER_ISSUED_STATUS: VisaLetterTicketStatus = 'letter_issued';
+
+/** Event countries that route the visa letter to the LF India and LF Open Source entities */
+export const VISA_LETTER_INDIA_COUNTRY = 'India';
+export const VISA_LETTER_CHINA_COUNTRY = 'China';
+
+/** Default visa letter letterhead; also the fallback when the event country is unknown */
+export const VISA_LETTER_DEFAULT_ENTITY: VisaLetterEntity = {
+  name: 'The Linux Foundation',
+  address: DEFAULT_TEMPLATE.address,
+  link: 'https://www.linuxfoundation.org/',
+  logo: 'image2.png',
+  logoWidth: DEFAULT_LOGO_WIDTH,
+  signatureOrg: 'The Linux Foundation',
+  signatureOrgFromEvent: false,
+  showMembersLink: true,
+  dayFirstDates: false,
+};
+
+/** Event countries whose visa letters are issued by The Linux Foundation Europe */
+export const VISA_LETTER_LF_EUROPE_COUNTRIES: ReadonlySet<string> = new Set([
+  'Austria',
+  'Belgium',
+  'Czech Republic',
+  'Denmark',
+  'France',
+  'Germany',
+  'Hungary',
+  'Ireland',
+  'Netherlands',
+  'Portugal',
+  'Romania',
+  'Spain',
+  'Sweden',
+  'United Kingdom',
+]);
+
+/** Visa letter letterheads keyed by event country, ported from the previous My Profile app */
+export const VISA_LETTER_COUNTRY_ENTITIES: Record<'europe' | 'india' | 'china', VisaLetterEntity> = {
+  europe: {
+    ...VISA_LETTER_DEFAULT_ENTITY,
+    name: 'The Linux Foundation Europe',
+    address: `Avenue des Arts 56\n1000 Bruxelles, Belgium\nTEL: +32 2 486 41 80`,
+    link: 'https://www.linuxfoundation.eu/',
+  },
+  india: {
+    ...VISA_LETTER_DEFAULT_ENTITY,
+    name: 'LF India',
+    address: `36, Infantry Road, Bangalore,\nKarnataka, India 560001\nindia@linuxfoundation.org | lf-india.org`,
+    link: 'https://lf-india.org/',
+    logo: 'lf-india.png',
+    signatureOrg: 'LF India',
+    dayFirstDates: true,
+  },
+  china: {
+    ...VISA_LETTER_DEFAULT_ENTITY,
+    name: 'LF Open Source LLC',
+    link: 'https://lfopensource.com/',
+    logo: 'lfopensource-logo.png',
+    logoWidth: 200,
+    signatureOrgFromEvent: true,
+    showMembersLink: false,
+  },
+};
+
+/** Fixed payer names; `delegate` and `delegates_company` resolve from the attendee instead */
+export const VISA_LETTER_FIXED_PAYERS: Partial<Record<VisaLetterPaidBy, string>> = {
+  cncf: 'CNCF',
+  the_linux_foundation: 'Linux Foundation',
 };

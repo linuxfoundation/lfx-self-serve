@@ -114,7 +114,7 @@ test.describe('Mentor registration — save', () => {
     const body = saveBodies[0] as Record<string, unknown>;
     expect(body).toMatchObject({ skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true });
     expect(String(body['introduction'])).toContain('Test introduction from Test User 1.');
-    // Resume upload has no endpoint yet, and no program was picked, so the save carries neither.
+    // No program was picked, so the save carries no program list.
     // `lfxProfile` holds whatever the signed-in profile gave the card, so only its shape is checked:
     // it never carries the email, which the BFF reads itself.
     expect(

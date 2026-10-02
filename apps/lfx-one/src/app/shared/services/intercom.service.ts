@@ -3,6 +3,7 @@
 
 import { inject, Injectable } from '@angular/core';
 import { IntercomBootOptions, IntercomFunction } from '@lfx-one/shared/interfaces';
+import { redactInviteToken } from '@lfx-one/shared/utils';
 
 import { DataDogRumService } from './datadog-rum.service';
 
@@ -44,6 +45,13 @@ export class IntercomService {
     if (this.isBootRequested) {
       console.info('Intercom: boot ignored — already requested');
       return;
+    }
+
+    // Intercom records the page URL. On an invite page that carries the signed token, so swap in the
+    // redacted URL first; the page already holds the token, and replaceState does not re-route.
+    const redactedUrl = redactInviteToken(window.location.href);
+    if (redactedUrl !== window.location.href) {
+      window.history.replaceState(window.history.state, '', redactedUrl);
     }
 
     this.loadIntercomScript(options.app_id, options.api_base);

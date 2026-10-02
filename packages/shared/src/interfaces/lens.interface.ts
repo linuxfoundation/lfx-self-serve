@@ -68,4 +68,6 @@ export interface DisplayLensItem {
   isSelected: boolean;
   roleLabel: string;
   roleIcon: string;
+  /** Favorited items float to the top of the list, ahead of the role-tier sort (GH-2995). */
+  isFavorited: boolean;
 }

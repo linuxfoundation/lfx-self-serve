@@ -259,7 +259,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       getMeeting.mockReturnValue(of({ ...RECURRING, occurrences: [moved] }));
       dialogResults[1].next({ confirmed: true, start_time: '2030-01-02T00:00:00.000Z' });
 
-      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence rescheduled' }));
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
       expect(refreshed).toHaveBeenCalledTimes(1);
       // A host that never binds `meetingDeleted` (the committee meetings list) still sees the new time.
       expect(getMeeting).toHaveBeenCalledWith('meeting-1');

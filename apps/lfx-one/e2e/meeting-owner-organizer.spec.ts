@@ -353,8 +353,8 @@ async function stubMeetingEdit(page: Page, meeting: Record<string, unknown>): Pr
   await page.route('**/api/past-meetings/count*', (route) => fulfillJson(route, { count: 0 }));
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}/attachments*`, (route) => fulfillJson(route, []));
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}/registrants*`, (route) => fulfillJson(route, []));
-  // Exact-path predicate: Playwright glob `*` doesn't cross `/`, and the PUT carries ?editType=,
-  // so a pathname match handles both the GET detail load and the update capture.
+  // Exact-path predicate: Playwright glob `*` doesn't cross `/`, so a pathname match handles both
+  // the GET detail load and the update capture.
   await page.route(
     (url) => url.pathname === `/api/meetings/${MOCK_MEETING_UID}`,
     (route) => {

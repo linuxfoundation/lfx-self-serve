@@ -175,4 +175,10 @@ export class EventsService {
 
     return this.http.get('/api/events/certificate', { params: httpParams, responseType: 'blob', observe: 'response' });
   }
+
+  public getVisaLetter(eventId: string): Observable<HttpResponse<Blob>> {
+    const params = new HttpParams().set('eventId', eventId);
+
+    return this.http.get('/api/events/visa-letter', { params, responseType: 'blob', observe: 'response' });
+  }
 }

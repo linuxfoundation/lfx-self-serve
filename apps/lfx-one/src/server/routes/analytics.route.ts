@@ -287,6 +287,16 @@ router.get('/members-nps', requireDashboardAccess, (req, res, next) => analytics
 router.get('/members-churn', requireDashboardAccess, (req, res, next) => analyticsController.getMembersChurn(req, res, next));
 router.get('/members-churn-departures', requireDashboardAccess, (req, res, next) => analyticsController.getMembersChurnDepartures(req, res, next));
 
+// Health Metrics Non-Members sections: company participation (#3180), people (#3181) and conversion (#3182)
+router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersOrgs(req, res, next));
+router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
+router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
+
+// Health Metrics Training tab (#3198) and its enrollment (#3199) and courses (#3200) sections
+router.get('/training-presence', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingPresence(req, res, next));
+router.get('/training-enrollment', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingEnrollment(req, res, next));
+router.get('/training-courses', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCourses(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

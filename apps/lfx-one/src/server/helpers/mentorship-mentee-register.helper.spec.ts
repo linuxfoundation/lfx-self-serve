@@ -213,4 +213,14 @@ describe('buildMentorshipUpstreamMenteeProfile', () => {
   it('sends no email when none was resolved', () => {
     expect(buildMentorshipUpstreamMenteeProfile({ ...request, lfxProfile: LFX_PROFILE })).not.toHaveProperty('email');
   });
+
+  it('sends the resolved GitHub link as the only profile link', () => {
+    expect(buildMentorshipUpstreamMenteeProfile(request, undefined, 'https://github.com/test-user').profile_links).toEqual({
+      githubProfileLink: 'https://github.com/test-user',
+    });
+  });
+
+  it('sends no profile links when no GitHub link was resolved', () => {
+    expect(buildMentorshipUpstreamMenteeProfile(request, 'test.user@example.com')).not.toHaveProperty('profile_links');
+  });
 });

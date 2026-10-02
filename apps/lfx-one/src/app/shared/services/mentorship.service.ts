@@ -99,8 +99,8 @@ export class MentorshipService {
   }
 
   /**
-   * Copies the LFX profile's name, email and logo onto the caller's mentor and mentee profiles.
-   * Not caught here: the profile card logs the failure and tells the user.
+   * Copies the LFX profile's name, email, logo and GitHub link onto the caller's mentor and mentee
+   * profiles; the BFF resolves the email and the link. Not caught here: the profile card logs the failure and tells the user.
    */
   public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
     return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));

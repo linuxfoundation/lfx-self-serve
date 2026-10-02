@@ -274,6 +274,18 @@ export const routes: Routes = [
             loadComponent: () =>
               import('./modules/dashboards/health-metrics-members/health-metrics-members.component').then((m) => m.HealthMetricsMembersComponent),
           },
+          {
+            path: 'non-members',
+            title: 'Health Metrics — Non-Members',
+            loadComponent: () =>
+              import('./modules/dashboards/health-metrics-non-members/health-metrics-non-members.component').then((m) => m.HealthMetricsNonMembersComponent),
+          },
+          {
+            path: 'training',
+            title: 'Health Metrics — Training',
+            loadComponent: () =>
+              import('./modules/dashboards/health-metrics-training/health-metrics-training.component').then((m) => m.HealthMetricsTrainingComponent),
+          },
         ],
       },
       // Foundation Lens — Campaign Impact page (ED + LF Staff always; marketing_auditor when marketing-ops-fga-enabled is on — LF Staff still see only the Social Listening tab)

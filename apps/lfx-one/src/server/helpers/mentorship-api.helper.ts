@@ -34,7 +34,9 @@ export async function proxyMentorshipRequest<T>(
   path: string,
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
   query?: Record<string, unknown>,
-  data?: unknown
+  data?: unknown,
+  /** Logged in place of `path` when the path carries a credential. */
+  logPath: string = path
 ): Promise<T> {
   try {
     return await proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
@@ -44,14 +46,14 @@ export async function proxyMentorshipRequest<T>(
     }
   }
 
-  logger.info(req, 'mentorship_provision_user', 'Mentorship user not provisioned; bootstrapping and retrying', { path, method });
+  logger.info(req, 'mentorship_provision_user', 'Mentorship user not provisioned; bootstrapping and retrying', { path: logPath, method });
   // Upstream decodes a JSON body and rejects an empty one; it fills every field from the token.
   await proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
   return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
 }
 
 /**
- * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
+ * Reads an upstream list to the end, at the largest page size unless the route takes a smaller one, stopping once the rows read reach
  * the reported total, a page comes back empty, or the page carries no usable total. A list still
  * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
  */
@@ -59,13 +61,14 @@ export async function listAllMentorshipPages<T>(
   proxy: MicroserviceProxyService,
   req: Request,
   path: string,
-  query: Record<string, unknown> = {}
+  query: Record<string, unknown> = {},
+  pageSize: number = MENTORSHIP_LIST_PAGE_SIZE
 ): Promise<T[]> {
   const items: T[] = [];
   for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
     const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(proxy, req, path, 'GET', {
       ...query,
-      limit: MENTORSHIP_LIST_PAGE_SIZE,
+      limit: pageSize,
       offset: items.length,
     });
     const rows = data ?? [];

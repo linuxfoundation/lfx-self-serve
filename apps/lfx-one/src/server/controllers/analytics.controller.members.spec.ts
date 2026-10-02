@@ -36,9 +36,11 @@ vi.mock('../services/health-metrics-members.service', () => ({
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
 }));
-// The controller constructs six unrelated domain services; none of them are exercised here.
+// The controller constructs eight unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {}, isSupportedEventsRange: () => true }));
+vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
+vi.mock('../services/health-metrics-training.service', () => ({ HealthMetricsTrainingService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));

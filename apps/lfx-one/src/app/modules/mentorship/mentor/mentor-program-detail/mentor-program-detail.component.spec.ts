@@ -5,14 +5,16 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProgramDetail, MentorshipMentorTaskCreateRequest, MentorshipMentorTaskCreateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, Observable, of, throwError } from 'rxjs';
+import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
+import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
+import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
 import { MentorshipTaskDialogService } from '../../services/mentorship-task-dialog.service';
 import { MentorProgramDetailComponent } from './mentor-program-detail.component';
 
@@ -55,14 +57,23 @@ describe('MentorProgramDetailComponent', () => {
   let fixture: ComponentFixture<MentorProgramDetailComponent>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let getMentorProgram: ReturnType<typeof vi.fn>;
+  let saveNote: ReturnType<typeof vi.fn>;
+  let createTasks: ReturnType<typeof vi.fn<(request: MentorshipMentorTaskCreateRequest) => Observable<MentorshipMentorTaskCreateResponse | null>>>;
 
   /**
    * Takes the dialog `onClose` observable (not the value) — a dismissed dialog emits
-   * `undefined`, and passing a default would silently overwrite it.
+   * `undefined`, and passing a default would silently overwrite it. `null` stands for
+   * `DialogService.open` refusing to open a dialog.
    */
-  const buildWith = (onClose: Observable<string | undefined>, program$: Observable<MentorshipMentorProgramDetail> = of(detail())): void => {
-    dialogOpen = vi.fn(() => ({ onClose }));
+  const buildWith = (
+    onClose: Observable<string | undefined> | null,
+    program$: Observable<MentorshipMentorProgramDetail> = of(detail()),
+    save$: Observable<boolean> = of(true)
+  ): void => {
+    dialogOpen = vi.fn(() => (onClose ? { onClose } : null));
     getMentorProgram = vi.fn(() => program$);
+    saveNote = vi.fn(() => save$);
+    createTasks = vi.fn(() => of<MentorshipMentorTaskCreateResponse | null>({ created: ['mnt_1'], failed: [] }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -77,6 +88,8 @@ describe('MentorProgramDetailComponent', () => {
           useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
         },
         { provide: MentorshipMentorService, useValue: { getMentorProgram } },
+        { provide: MentorNoteSaveService, useValue: { save: saveNote } },
+        { provide: MentorTaskCreateService, useValue: { create: createTasks } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });
@@ -126,6 +139,28 @@ describe('MentorProgramDetailComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
   });
 
+  it('renders the "Program not found" empty state on a 400 for an id that is not a program id', () => {
+    // An old slug URL is refused with the BFF's own 400, which retrying cannot fix either.
+    buildWith(
+      of(undefined),
+      throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request', error: { code: 'VALIDATION_ERROR' } }))
+    );
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-not-found"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
+  });
+
+  it('keeps the Retry CTA on a 400 relayed from upstream', () => {
+    // Only the BFF's own validation means the id is wrong; an upstream 400 is a failed read.
+    buildWith(
+      of(undefined),
+      throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request', error: { code: 'BAD_REQUEST' } }))
+    );
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-not-found"]')).toBeNull();
+  });
+
   it('re-invokes the service when Retry is triggered', () => {
     build();
 
@@ -150,71 +185,171 @@ describe('MentorProgramDetailComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-tab"]')).not.toBeNull();
   });
 
-  it('persists a saved note into the drafts map', () => {
-    build();
+  /** An accepted mentee is listed on both tabs under its application id. */
+  const withAcceptedApplicant = (note?: string): MentorshipMentorProgramDetail => {
+    const value = detail();
+    value.mentees = [{ ...value.mentees[0], note }];
+    value.applicants = [...value.applicants, { ...value.applicants[0], id: 'mnt_1', name: 'Alex Rivera', status: 'accepted', note }];
+    return value;
+  };
+  const shownDetail = (): MentorshipMentorProgramDetail | null => fixture.componentInstance['detail']();
+  const requestNote = (personId = 'app_1', personName = 'Ifeoma Adeyemi'): void => fixture.componentInstance['onNoteRequested']({ personId, personName });
 
-    fixture.componentInstance['onNoteRequested']({ personId: 'app_1', personName: 'Ifeoma Adeyemi' });
+  it('saves a changed note and writes it into the row on both tabs', () => {
+    buildWith(of('a saved note'), of(withAcceptedApplicant()));
 
-    expect(dialogOpen).toHaveBeenCalledTimes(1);
-    expect(fixture.componentInstance['noteDrafts']()).toEqual({ app_1: 'a saved note' });
+    requestNote('mnt_1', 'Alex Rivera');
+
+    expect(saveNote).toHaveBeenCalledWith('mnt_1', 'a saved note');
+    expect(shownDetail()?.mentees[0].note).toBe('a saved note');
+    expect(shownDetail()?.applicants.find((applicant) => applicant.id === 'mnt_1')?.note).toBe('a saved note');
+    expect(shownDetail()?.applicants.find((applicant) => applicant.id === 'app_1')?.note).toBeUndefined();
   });
 
-  it('leaves the drafts map untouched when the note dialog is dismissed', () => {
+  it('clears the row note when an empty note is saved', () => {
+    buildWith(of(''), of(withAcceptedApplicant('from the server')));
+
+    requestNote('mnt_1', 'Alex Rivera');
+
+    expect(saveNote).toHaveBeenCalledWith('mnt_1', '');
+    expect(shownDetail()?.mentees[0].note).toBeUndefined();
+    expect(shownDetail()?.applicants.find((applicant) => applicant.id === 'mnt_1')?.note).toBeUndefined();
+  });
+
+  it('keeps the row note when the save fails', () => {
+    buildWith(of('a new note'), of(withAcceptedApplicant('from the server')), of(false));
+
+    requestNote('mnt_1', 'Alex Rivera');
+
+    expect(saveNote).toHaveBeenCalledTimes(1);
+    expect(shownDetail()?.mentees[0].note).toBe('from the server');
+  });
+
+  it('skips the save when the note dialog is dismissed', () => {
     // Dismissal resolves to `undefined` — that must be treated as "no change", not as a
     // defaulted empty string that clears the note.
     buildWith(of(undefined));
 
-    fixture.componentInstance['onNoteRequested']({ personId: 'app_1', personName: 'Ifeoma Adeyemi' });
+    requestNote();
 
-    expect(fixture.componentInstance['noteDrafts']()).toEqual({});
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(saveNote).not.toHaveBeenCalled();
   });
 
-  it('survives DialogService.open returning null', () => {
-    // PrimeNG returns null when a dialog of the same component is still registered,
-    // which a rapid double-click on two rows can trigger.
-    dialogOpen = vi.fn(() => null);
-    getMentorProgram = vi.fn(() => of(detail()));
+  it('skips the save when the note is unchanged', () => {
+    buildWith(of('from the server'), of(withAcceptedApplicant('from the server')));
 
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      imports: [MentorProgramDetailComponent],
-      providers: [
-        provideNoopAnimations(),
-        provideRouter([]),
-        MessageService,
-        { provide: DialogService, useValue: { open: dialogOpen } },
-        {
-          provide: MentorshipTaskDialogService,
-          useValue: { openCreate: vi.fn().mockReturnValue(EMPTY), openCreateGroup: vi.fn().mockReturnValue(EMPTY), openEdit: vi.fn().mockReturnValue(EMPTY) },
-        },
-        { provide: MentorshipMentorService, useValue: { getMentorProgram } },
-        { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
-      ],
-    });
+    requestNote('mnt_1', 'Alex Rivera');
 
-    fixture = TestBed.createComponent(MentorProgramDetailComponent);
-    fixture.detectChanges();
-
-    expect(() => fixture.componentInstance['onNoteRequested']({ personId: 'app_1', personName: 'Ifeoma Adeyemi' })).not.toThrow();
-    expect(fixture.componentInstance['noteDrafts']()).toEqual({});
+    expect(saveNote).not.toHaveBeenCalled();
   });
 
-  it('seeds the dialog with the row note first, then with the session draft', () => {
-    const withNote = detail();
-    withNote.applicants = [{ ...withNote.applicants[0], note: 'from the server' }];
-    buildWith(of('a saved note'), of(withNote));
+  it('skips the save when the stored note differs only by surrounding whitespace', () => {
+    buildWith(of('from the server'), of(withAcceptedApplicant('  from the server ')));
 
-    fixture.componentInstance['onNoteRequested']({ personId: 'app_1', personName: 'Ifeoma Adeyemi' });
+    requestNote('mnt_1', 'Alex Rivera');
+
+    expect(saveNote).not.toHaveBeenCalled();
+  });
+
+  it('keeps the dialog shut for a row whose save is in flight', () => {
+    const save$ = new Subject<boolean>();
+    buildWith(of('a saved note'), of(detail()), save$);
+
+    requestNote();
+    requestNote();
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+
+    save$.next(true);
+    save$.complete();
+    requestNote();
+    expect(dialogOpen).toHaveBeenCalledTimes(2);
+  });
+
+  it('seeds the dialog with the row note, then with the note saved since', () => {
+    const value = detail();
+    value.applicants = [{ ...value.applicants[0], note: 'from the server' }];
+    buildWith(of('a saved note'), of(value));
+
+    requestNote();
     expect(dialogOpen).toHaveBeenLastCalledWith(
       MenteeNoteDialogComponent,
       expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'from the server' } })
     );
 
-    // Reopening the same row must offer the draft, not the note it started with.
-    fixture.componentInstance['onNoteRequested']({ personId: 'app_1', personName: 'Ifeoma Adeyemi' });
+    requestNote();
     expect(dialogOpen).toHaveBeenLastCalledWith(
       MenteeNoteDialogComponent,
       expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'a saved note' } })
     );
+  });
+
+  it('survives DialogService.open returning null', () => {
+    // PrimeNG returns null when a dialog of the same component is still registered,
+    // which a rapid double-click on two rows can trigger.
+    buildWith(null);
+
+    expect(() => requestNote()).not.toThrow();
+    expect(saveNote).not.toHaveBeenCalled();
+  });
+
+  describe('task create', () => {
+    const request: MentorshipMentorTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
+    const withNewTask = (tasksTotal = 1): MentorshipMentorProgramDetail => {
+      const value = detail();
+      value.mentees = [{ ...value.mentees[0], tasksTotal }];
+      return value;
+    };
+
+    it('creates the tasks, then re-reads the detail without the loading state', () => {
+      build();
+      getMentorProgram.mockReturnValueOnce(of(withNewTask()));
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.detectChanges();
+
+      expect(createTasks).toHaveBeenCalledWith(request, expect.objectContaining({ mnt_1: 'Alex Rivera' }));
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+      expect(getMentorProgram).toHaveBeenLastCalledWith('mp_gridflow_fall26');
+      expect(shownDetail()?.mentees[0].tasksTotal).toBe(1);
+      expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-loading"]')).toBeNull();
+    });
+
+    it.each([
+      ['no task was created', { created: [], failed: ['mnt_1'] }],
+      ['the create failed', null],
+    ])('still re-reads when %s, since the task may exist upstream', (_label, result) => {
+      build();
+      createTasks.mockReturnValueOnce(of(result));
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the latest re-read when two finish out of order', () => {
+      build();
+      const earlier = new Subject<MentorshipMentorProgramDetail>();
+      const later = new Subject<MentorshipMentorProgramDetail>();
+      getMentorProgram.mockReturnValueOnce(earlier).mockReturnValueOnce(later);
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      later.next(withNewTask(2));
+      earlier.next(withNewTask(1));
+
+      expect(shownDetail()?.mentees[0].tasksTotal).toBe(2);
+    });
+
+    it('keeps the rows on screen when the re-read fails', () => {
+      build();
+      getMentorProgram.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.detectChanges();
+
+      expect(shownDetail()?.mentees[0].id).toBe('mnt_1');
+      expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
+    });
   });
 });

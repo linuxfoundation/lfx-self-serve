@@ -4,23 +4,14 @@
 import type { MentorshipMenteeStatus, MentorshipMentorStatus, MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
 import type {
   MentorshipMentorTaskReviewStatus,
-  MentorshipMentoringHistoryEntry,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
-import {
-  mentorshipArtworkIconUrl,
-  MENTORSHIP_CURRENT_MENTEE_STATUSES,
-  MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_MENTOR_STATUS_LABELS,
-} from './mentorship.constants';
-import { MOCK_MENTORSHIP_PROGRAM_LISTS } from './mentorship-program-detail.constants';
+import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
 
 /**
  * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
@@ -41,11 +32,6 @@ export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<Mentors
   'active-term': 'bg-blue-50 text-blue-700',
   upcoming: 'bg-amber-50 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
-};
-
-export const EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS: MentorshipMentorProgramLists = {
-  mentees: [],
-  applicants: [],
 };
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
@@ -99,186 +85,6 @@ export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskR
   { value: undefined, label: 'All' },
 ];
 
-/**
- * Deterministic mock programs backing the mentor My Programs list while the upstream
- * mentorship service is unavailable. Removed once the real endpoint is wired up.
- */
-const MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS: MentorshipMentorProgram[] = [
-  {
-    id: 'mp_gridflow_fall26',
-    slug: 'gridflow-time-series-ingestion-pipeline',
-    name: 'GridFlow: Time-Series Ingestion Pipeline',
-    projectName: 'LF Energy',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-23',
-    stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
-    logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
-  },
-  {
-    id: 'mp_apicurio_fall26',
-    slug: 'apicurio-registry-prompt-template-playground',
-    name: 'Apicurio Registry: Prompt Template Playground',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 2, tasksToReview: 2, applicants: 2 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
-  },
-  {
-    id: 'mp_janusgraph_fall26',
-    slug: 'janusgraph-adjacency-cache-instrumentation',
-    name: 'JanusGraph: Adjacency Cache Instrumentation',
-    projectName: 'LF AI & Data',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 1, tasksToReview: 0, applicants: 3 },
-    logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
-  },
-  {
-    id: 'mp_thanos_summer26',
-    slug: 'thanos-fan-out-query-observability',
-    name: 'Thanos: Fan-Out Query Observability',
-    projectName: 'CNCF',
-    term: 'Summer 2026',
-    termStatus: 'completed',
-    termStartDate: '2026-06-01',
-    termEndDate: '2026-08-15',
-    stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
-  },
-  {
-    id: 'mp_opa_winter27',
-    slug: 'open-policy-agent-policy-bundle-linting',
-    name: 'Open Policy Agent: Policy Bundle Linting',
-    projectName: 'CNCF',
-    term: 'Winter 2027',
-    termStatus: 'upcoming',
-    termStartDate: '2027-01-05',
-    termEndDate: '2027-03-20',
-    stats: { mentees: 0, tasksToReview: 0, applicants: 1 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa'),
-  },
-  {
-    id: 'mp_envoy_fall26',
-    slug: 'envoy-gateway-observability-hooks',
-    name: 'Envoy Gateway: Observability Hooks',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 4, tasksToReview: 1, applicants: 6 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy'),
-  },
-  {
-    id: 'mp_harbor_fall26',
-    slug: 'harbor-artifact-signing-workflows',
-    name: 'Harbor: Artifact Signing Workflows',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 2, tasksToReview: 3, applicants: 4 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'harbor'),
-  },
-  {
-    id: 'mp_vitess_fall26',
-    slug: 'vitess-query-plan-insights',
-    name: 'Vitess: Query Plan Insights',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 1, tasksToReview: 1, applicants: 2 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'vitess'),
-  },
-  {
-    id: 'mp_falco_fall26',
-    slug: 'falco-runtime-rule-simulator',
-    name: 'Falco: Runtime Rule Simulator',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 3, tasksToReview: 2, applicants: 3 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'falco'),
-  },
-  {
-    id: 'mp_crossplane_fall26',
-    slug: 'crossplane-composition-testing',
-    name: 'Crossplane: Composition Testing',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 2, tasksToReview: 5, applicants: 7 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'crossplane'),
-  },
-];
-
-const MENTOR_PROGRAM_IDS = new Set(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => program.id));
-
-/**
- * Keep mentees/applicants that belong to this mentor program's term. Admin lists are
- * keyed by slug and mix terms (and some mentor cards have no admin entry at all).
- * Mentees are further scoped to accepted/graduated — the statuses the Mentees tab lists.
- */
-function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMentorProgramLists {
-  const admin = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug];
-  if (!admin) return EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-  return {
-    mentees: admin.mentees.filter((row) => row.termName === program.term && MENTORSHIP_CURRENT_MENTEE_STATUSES.includes(row.status)),
-    applicants: admin.applicants
-      .filter((row) => row.termName === program.term)
-      .map((row) => ({
-        ...row,
-        // Mentor "other applications" route to `/mentor/programs/:id`. Drop ids the
-        // mentor detail endpoint cannot resolve (e.g. admin-only `mp_apicurio_winter26`).
-        otherApplications: (row.otherApplications ?? []).filter((application) => MENTOR_PROGRAM_IDS.has(application.programId)),
-      })),
-  };
-}
-
-/**
- * Mentor program-detail lists keyed by mentor program id, not admin slug.
- * Returns a fresh snapshot per call so dynamic `hoursAgoIso`/`daysAgoIso` timestamps
- * in `MOCK_MENTORSHIP_PROGRAM_LISTS` are evaluated at access time, not at import time.
- */
-export function getMockMentorshipMentorProgramLists(): Record<string, MentorshipMentorProgramLists> {
-  return Object.fromEntries(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)]));
-}
-
-/**
- * Card stats follow the id-keyed lists so the programs page, detail header, and
- * tab rows describe the same term. `tasksToReview` is the submitted-task count.
- * Returns a fresh snapshot per call for the same reason as the lists above.
- */
-export function getMockMentorshipMentorPrograms(): MentorshipMentorProgram[] {
-  const lists = getMockMentorshipMentorProgramLists();
-  return MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
-    const programLists = lists[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-    return {
-      ...program,
-      stats: {
-        ...program.stats,
-        mentees: programLists.mentees.length,
-        applicants: programLists.applicants.length,
-        tasksToReview: programLists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
-      },
-    };
-  });
-}
-
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';
 
@@ -331,8 +137,6 @@ export const MENTORSHIP_MENTOR_INTRODUCTION_MAX = 3000;
 
 export const MENTORSHIP_MENTOR_SKILLS_INTRO = 'What are the skills that you are respected and known for? This helps match you with the right candidates.';
 
-export const MENTORSHIP_MENTOR_RESUME_INTRO = 'Optional, but candidates often look you up before applying.';
-
 export const MENTORSHIP_MENTOR_TERMS_INTRO =
   'Before you submit your mentor registration to the LFX Platform, review and accept the terms and conditions below.';
 
@@ -346,38 +150,6 @@ export const MENTORSHIP_MENTOR_COMPLIANCE_ITEMS: readonly string[] = [
   'owned or controlled by, acting for or on behalf of, or an individual or entity that has in the past acted for or on behalf of the Government of Cuba, Iran, North Korea, Syria, or Venezuela; or',
   "listed as a blocked person by the U.S. Department of the Treasury's Office of Foreign Assets Control (OFAC), or directly or indirectly owned 50 percent or more by such a listed person.",
 ];
-
-/**
- * The accepted resume formats, and the single source the rest of this block derives
- * from. `isMentorshipResumeFileName` validates against this list, so adding a format
- * here reaches the validator, the file-picker filter, and both user-facing strings at
- * once rather than leaving three of them behind.
- */
-export const MENTORSHIP_MENTOR_RESUME_EXTENSIONS = ['pdf', 'doc', 'docx'] as const;
-export const MENTORSHIP_MENTOR_RESUME_MAX_BYTES = 10 * 1024 * 1024;
-
-const RESUME_MAX_MB = MENTORSHIP_MENTOR_RESUME_MAX_BYTES / (1024 * 1024);
-const RESUME_DOTTED = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => `.${extension}`);
-const RESUME_UPPERCASE = MENTORSHIP_MENTOR_RESUME_EXTENSIONS.map((extension) => extension.toUpperCase());
-
-/**
- * MIME type per accepted format, because macOS Finder filters on MIME type rather than
- * suffix. Typed against the extension list so a new format cannot be added there without
- * a type on this side too — leaving one out is what made Word documents unselectable.
- */
-const RESUME_MIME_TYPES: Record<(typeof MENTORSHIP_MENTOR_RESUME_EXTENSIONS)[number], string> = {
-  pdf: 'application/pdf',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-};
-
-/** The `accept` filter for the hidden file input: every extension and its MIME type. */
-export const MENTORSHIP_MENTOR_RESUME_ACCEPT = [...RESUME_DOTTED, ...Object.values(RESUME_MIME_TYPES)].join(',');
-
-export const MENTORSHIP_MENTOR_RESUME_HELPER = `File type: ${RESUME_UPPERCASE.join(', ')} · Max size: ${RESUME_MAX_MB} MB`;
-export const MENTORSHIP_MENTOR_RESUME_TYPE_ERROR = `Please upload a ${RESUME_UPPERCASE.slice(0, -1).join(', ')}, or ${RESUME_UPPERCASE.at(-1)} file.`;
-export const MENTORSHIP_MENTOR_RESUME_SIZE_ERROR = `File must be ${RESUME_MAX_MB} MB or smaller.`;
-export const MENTORSHIP_MENTOR_RESUME_EMPTY_LABEL = 'Choose file';
 
 /**
  * Request statuses as the mentor sees them. Spread from the admin labels so the two can
@@ -403,6 +175,9 @@ export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE = 20;
 
 /** Longest picker search the BFF accepts. No program name needs more to be found. */
 export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH = 100;
+
+/** Longest mentor invite token accepted. Upstream's tokens are about 200 characters. */
+export const MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH = 512;
 
 /** How long the picker waits after the last keystroke before searching. */
 export const MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS = 300;
@@ -490,7 +265,6 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
   return {
     introduction: '',
     skills: [],
-    resumeFileName: '',
     complianceAccepted: false,
     termsAccepted: false,
   };
@@ -498,32 +272,77 @@ export function createEmptyMentorshipMentorForm(): MentorshipMentorRegisterForm 
 
 /**
  * Copy for the standalone Mentor Profile page at `/mentorship/mentor/profile`.
- * Sections mirror the Become a Mentor registration form: about-me introduction,
- * skills tags, and the picked resume file, plus a read-only mentoring history.
+ * Sections mirror the Become a Mentor registration form: about-me introduction and
+ * skills tags, plus a read-only mentoring history.
  */
 export const MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE = 'Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL = 'Edit Mentor Profile';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL = 'About Me';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL = 'Skills';
-export const MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
-export const MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
-/**
- * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
- * the two fields are independently optional in `MentorshipMentorProfileDetails`, so the
- * UI needs a readable label when only the URL is present rather than falling into the
- * "No resume uploaded yet." empty state.
- */
-export const MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
 /**
  * Copy for the mentor profile edit drawer — the slide-in panel opened from the
- * "Edit Mentor Profile" button on the standalone mentor profile page. Save fires
- * the coming-soon toast until the update endpoint is wired.
+ * "Edit Mentor Profile" button on the standalone mentor profile page.
  */
 export const MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL = 'Save';
 export const MENTORSHIP_MENTOR_PROFILE_CANCEL_LABEL = 'Cancel';
+
+/** The fields `PATCH /api/mentorship/mentor/profile` accepts; any other key is a 400. */
+export const MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS = ['introduction', 'skills'] as const;
+
+/** Inline message for a failed profile save, keyed by the BFF's status. Any other status gets the fallback. */
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'Some of your changes could not be saved. Review them and try again.',
+  404: 'We could not find your mentor profile. Refresh the page and try again.',
+  409: 'Your mentor profile could not be updated because of a conflict. Refresh the page and try again.',
+};
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save your changes. Please try again.';
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
+export const MENTORSHIP_MENTOR_PROFILE_SAVE_TOAST_LIFE = 5000;
+
+export const MENTORSHIP_MENTOR_NOTE_SAVE_SUCCESS_SUMMARY = 'Note saved';
+export const MENTORSHIP_MENTOR_NOTE_CLEAR_SUCCESS_SUMMARY = 'Note cleared';
+export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_SUMMARY = 'Could not save the note';
+export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTOR_NOTE_TOAST_LIFE = 5000;
+
+/**
+ * Note save failures with their own copy, keyed by the BFF's status. A 403 is upstream no longer finding the
+ * caller an active mentor of the program, and a 404 an application that is gone; both mean the page is out of date.
+ */
+export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  403: 'You can no longer edit notes on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
+
+export const MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
+export const MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY = 'Some tasks were not created';
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
+
+/**
+ * Most applications one mentor task create request takes, so one request cannot fan out without bound. The app
+ * sends a larger group in batches of this size.
+ */
+export const MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS = 100;
+
+/**
+ * Shown when the create failed without a status of its own, such as a timeout or a 5xx. The task may still have
+ * been created upstream, whose create is not idempotent, so the copy sends the mentor to the row, not to a retry.
+ */
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
+export const MENTORSHIP_MENTOR_TASK_CREATE_TOAST_LIFE = 5000;
+
+/**
+ * Single-mentee task create failures with their own copy, keyed by the BFF's status. A 400 is most often a mentee
+ * who is no longer accepted, a 403 the caller no longer mentoring the program, and a 404 an application that is gone.
+ */
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
+  403: 'You can no longer create tasks on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
 
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
@@ -546,31 +365,6 @@ export const MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES: Record<Mentorshi
 };
 
 export const EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE: MentorshipMentorProfileResponse = {
-  profile: { aboutMe: '', skills: [], resumeFileName: undefined, resumeUrl: undefined },
+  profile: { aboutMe: '', skills: [] },
   history: [],
-};
-
-/**
- * Deterministic mock backing the standalone mentor profile page while the mentorship
- * profiles endpoint is unavailable. Removed once the real read is wired up.
- */
-export const MOCK_MENTORSHIP_MENTORING_HISTORY: MentorshipMentoringHistoryEntry[] = [
-  { id: 'mh_gridflow_fall26', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' },
-  { id: 'mh_apicurio_summer26', programName: 'Apicurio Registry: Playground', term: 'Summer 2026', menteesCount: 2, status: 'completed' },
-  { id: 'mh_gridflow_spring26', programName: 'GridFlow: Metrics Exporter', term: 'Spring 2026', menteesCount: 2, status: 'completed' },
-];
-
-export const MOCK_MENTORSHIP_MENTOR_PROFILE: MentorshipMentorProfileResponse = {
-  profile: {
-    aboutMe:
-      'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
-    skills: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
-    // Synthetic filename (no real person). The mock URL below is a fragment on purpose:
-    // `isValidUrl` in the profile details component rejects it, so the mentor sees the
-    // filename without an anchor — exactly the behavior expected once the upstream
-    // service returns a real signed URL.
-    resumeFileName: 'test-mentor-resume.pdf',
-    resumeUrl: '#',
-  },
-  history: MOCK_MENTORSHIP_MENTORING_HISTORY,
 };

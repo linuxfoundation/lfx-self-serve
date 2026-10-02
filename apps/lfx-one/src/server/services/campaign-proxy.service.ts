@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_GEO_TARGET_MAP, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -1344,43 +1344,6 @@ function failJob(jobId: string, error: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Country code to Google Ads geo target constant ID
-// ---------------------------------------------------------------------------
-
-const GEO_TARGET_MAP: Record<string, string> = {
-  US: '2840',
-  CA: '2124',
-  GB: '2826',
-  DE: '2276',
-  FR: '2250',
-  JP: '2392',
-  AU: '2036',
-  IN: '2356',
-  BR: '2076',
-  CN: '2156',
-  KR: '2410',
-  NL: '2528',
-  SE: '2752',
-  CH: '2756',
-  IL: '2376',
-  SG: '2702',
-  IE: '2372',
-  ES: '2724',
-  IT: '2380',
-  AT: '2040',
-  FI: '2246',
-  NO: '2578',
-  DK: '2208',
-  BE: '2056',
-  PL: '2616',
-  CZ: '2203',
-  NZ: '2554',
-  TW: '2158',
-  HK: '2344',
-  MX: '2484',
-};
-
-// ---------------------------------------------------------------------------
 // CampaignProxyService — brief generation + campaign creation
 // ---------------------------------------------------------------------------
 
@@ -2250,7 +2213,7 @@ export class CampaignProxyService {
     // 3. Geo targeting
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { campaign: campaignResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);
@@ -2373,7 +2336,7 @@ export class CampaignProxyService {
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { ad_group: adGroupResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);

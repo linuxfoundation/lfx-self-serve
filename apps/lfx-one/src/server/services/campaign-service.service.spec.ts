@@ -1634,6 +1634,80 @@ describe('CampaignServiceClient.loadBrief', () => {
 });
 
 /**
+ * The id read, which `loadBrief` cannot stand in for.
+ *
+ * `loadBrief` resolves `(project, event_slug, delivery_type, stage)` to whichever row that key
+ * names today; this reads the row a request is actually about. The two normally answer with the
+ * same brief and are not guaranteed to — and the caller that needs the difference is the create
+ * path's pre-dispatch guard, where "a different brief" means a create refused over contents the
+ * request never mentioned.
+ */
+describe('CampaignServiceClient.loadBriefById', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  it('reads the brief by id, through get-brief rather than the slug collection', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1');
+
+    expect(result.status).toBe('loaded');
+    expect(result.briefId).toBe('b-1');
+    expect(result.etag).toBe('"3"');
+    // No query at all: an id is exact identity upstream, so there is nothing to disambiguate.
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'GET');
+  });
+
+  // The whole point of the method: no delivery-type or stage check. `loadBrief` has one only
+  // because a key lookup can answer with a sibling row; an id cannot, so applying the same test
+  // here would report a real, correctly-addressed brief as absent.
+  it('returns an email brief asked for by id, with no delivery-type test to fail', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ status: 'loaded', briefId: 'b-1' });
+  });
+
+  it('reports a stored draft as not approved, exactly as the slug read does', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ approved: false });
+  });
+
+  it("reads from the caller's foundation rather than a fixed slug", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    await new CampaignServiceClient().loadBriefById(req, 'cncf', 'b-1');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs/b-1');
+  });
+
+  it("reports none on campaign-service's own typed 404", async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toEqual({
+      status: 'none',
+      briefId: null,
+      brief: null,
+      etag: null,
+      approved: false,
+    });
+  });
+
+  // A gateway 404 means "this deployment could not route the call", which is not evidence the
+  // brief is absent. Read as `none` it would let the create guard draw a conclusion from an
+  // outage — the same hazard `loadBrief` and `findBrief` already gate on the typed body for.
+  it.each([
+    ['a plain-text gateway 404 (null body)', null],
+    ['an untyped JSON 404', { error: 'not found' }],
+  ])('rethrows %s rather than reporting none', async (_label, errorBody) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+/**
  * The create path's CONTRACT with campaign-service, which nothing else in this repo checks.
  *
  * Both defects these tests pin shipped in a branch whose build, lint and full server suite were

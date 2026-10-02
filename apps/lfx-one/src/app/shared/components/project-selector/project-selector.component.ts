@@ -7,6 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { BOARD_SCOPED_PERSONA_PRIORITY, FORMATION_ENABLED_FLAG, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { DisplayLensItem, LensItem, NavLens, PersonaType, ProjectContext, SelectorTab } from '@lfx-one/shared/interfaces';
+import { FavoriteProjectsService } from '@services/favorite-projects.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
@@ -25,6 +26,7 @@ import { TooltipModule } from 'primeng/tooltip';
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
+  private readonly favoriteProjectsService = inject(FavoriteProjectsService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly navigationService = inject(NavigationService);
   private readonly personaService = inject(PersonaService);
@@ -141,6 +143,10 @@ export class ProjectSelectorComponent {
     } else {
       this.navigationService.setSearchTerm(this.lens(), '');
     }
+  }
+
+  protected toggleFavorite(_event: Event, uid: string): void {
+    this.favoriteProjectsService.toggleFavorite(uid);
   }
 
   protected loadMore(): void {
@@ -324,6 +330,7 @@ export class ProjectSelectorComponent {
       item,
       isNested,
       isSelected: selectedUid === item.uid,
+      isFavorited: this.favoriteProjectsService.state().data.has(item.uid),
       roleLabel: persona ? this.personaTypeToLabel(persona) : '',
       roleIcon: persona ? this.personaTypeToIcon(persona) : '',
     };
@@ -410,7 +417,12 @@ export class ProjectSelectorComponent {
   }
 
   private sortByRole(items: LensItem[]): LensItem[] {
+    // Favorited items float to the top (GH-2995) — only currently-loaded items are considered, since
+    // the nav lens list is paginated; a favorited item on a page not yet loaded won't be pulled forward.
+    const favoritedUids = this.favoriteProjectsService.state().data;
     return [...items].sort((a, b) => {
+      const favoriteDiff = Number(favoritedUids.has(b.uid)) - Number(favoritedUids.has(a.uid));
+      if (favoriteDiff !== 0) return favoriteDiff;
       const diff = this.roleIndex(a) - this.roleIndex(b);
       return diff !== 0 ? diff : (a.name ?? '').localeCompare(b.name ?? '');
     });

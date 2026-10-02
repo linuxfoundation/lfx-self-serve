@@ -27,6 +27,7 @@ import {
   getRegistrantAttendanceStatus,
   isSameOccurrenceId,
   occurrenceIdToMs,
+  occurrenceIdToSeconds,
   selectApplicableRsvp,
 } from './rsvp-calculator.util';
 
@@ -98,6 +99,18 @@ const OCC_AUG_04_SECONDS = '1785852000';
 const OCC_AUG_11_SECONDS = '1786456800';
 const OCC_AUG_18_SECONDS = '1787061600';
 const OCC_JUL_14_SECONDS = '1784037600';
+
+describe('occurrenceIdToSeconds', () => {
+  it('converts a millisecond id to seconds and keeps a seconds id', () => {
+    expect(occurrenceIdToSeconds('1786456800000')).toBe('1786456800');
+    expect(occurrenceIdToSeconds('1786456800')).toBe('1786456800');
+  });
+
+  it('returns null for an unparseable id', () => {
+    expect(occurrenceIdToSeconds(undefined)).toBeNull();
+    expect(occurrenceIdToSeconds('abc')).toBeNull();
+  });
+});
 
 describe('occurrenceIdToMs', () => {
   it('leaves ms-encoded ids alone', () => {
