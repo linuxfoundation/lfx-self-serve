@@ -17,7 +17,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -545,6 +545,8 @@ export class MailingListService {
    * Creates a new member in a mailing list
    */
   public async createMember(req: Request, mailingListId: string, data: CreateMailingListMemberRequest): Promise<MailingListMember> {
+    await this.assertMemberWriteAccess(req, mailingListId, data.email);
+
     const newMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
       req,
       'LFX_V2_SERVICE',
@@ -569,6 +571,14 @@ export class MailingListService {
    * Updates an existing member
    */
   public async updateMember(req: Request, mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Promise<MailingListMember> {
+    const existingMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      'GET'
+    );
+    await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
+
     const updatedMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
       req,
       'LFX_V2_SERVICE',
@@ -590,6 +600,14 @@ export class MailingListService {
    * Deletes a member
    */
   public async deleteMember(req: Request, mailingListId: string, memberId: string): Promise<void> {
+    const existingMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      'GET'
+    );
+    await this.assertMemberWriteAccess(req, mailingListId, existingMember.email);
+
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'DELETE');
 
     logger.debug(req, 'delete_mailing_list_member', 'Mailing list member deleted successfully', {
@@ -602,6 +620,31 @@ export class MailingListService {
       mailing_list_uid: mailingListId,
       member_uid: memberId,
     });
+  }
+
+  /**
+   * Allows the action when the caller has writer access on the mailing list, or when
+   * targetEmail matches the caller's own authenticated identity (self-service). Throws
+   * AuthorizationError (403) otherwise.
+   */
+  private async assertMemberWriteAccess(req: Request, mailingListId: string, targetEmail: string | undefined): Promise<void> {
+    const callerEmail = getEffectiveEmail(req);
+    if (callerEmail && targetEmail && callerEmail === targetEmail.toLowerCase()) {
+      return;
+    }
+
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, {
+      resource: 'groupsio_mailing_list',
+      id: mailingListId,
+      access: 'writer',
+    });
+
+    if (!canWrite) {
+      throw new AuthorizationError('You do not have permission to manage this mailing list member', {
+        operation: 'assert_member_write_access',
+        service: 'mailing_list_service',
+      });
+    }
   }
 
   // ============================================
