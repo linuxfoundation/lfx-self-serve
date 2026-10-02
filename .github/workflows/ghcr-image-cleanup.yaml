@@ -33,8 +33,9 @@ jobs:
   cleanup:
     name: Cleanup Stale Container Images
     # A called workflow cannot request more than the calling job grants, so
-    # the union of its scopes is declared here: packages: write deletes
-    # versions, pull-requests: read lists open deploy-preview PRs.
+    # the union of its scopes is declared here: contents: read is the shared
+    # workflow's top-level scope, packages: write deletes versions, and
+    # pull-requests: read lists open deploy-preview PRs.
     permissions:
       contents: read
       packages: write
@@ -43,7 +44,7 @@ jobs:
     # workflow can delete packages, so a moving ref is not acceptable. The
     # v0.1.0 tag predates this workflow and cannot be used. Do not add
     # `secrets: inherit`; the workflow uses the job's GITHUB_TOKEN.
-    uses: linuxfoundation/lfx-public-workflows/.github/workflows/ghcr-image-cleanup.yaml@476427e9afb0814cd8534eccc10b0d5ad5e4b9f8 # main
+    uses: linuxfoundation/lfx-public-workflows/.github/workflows/ghcr-image-cleanup.yaml@476427e9afb0814cd8534eccc10b0d5ad5e4b9f8 # main (lfx-public-workflows#17 merge, 2026-09-24)
     with:
       image-name: lfx-self-serve
       # Replaces the shared default, which omits two-segment release tags.

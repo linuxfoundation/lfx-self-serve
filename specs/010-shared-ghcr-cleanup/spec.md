@@ -2,7 +2,7 @@
 
 **Feature Branch**: `ci/lfx-self-serve-ops-250`
 **Created**: 2026-10-01
-**Status**: Draft
+**Status**: Implemented (PR open)
 **Input**: User description: "We recently added a stand-alone GitHub action for cleaning up old GitHub container registry entries. This is working great. Then, we decided to move this functionality to a common GitHub action in the linuxfoundation/lfx-public-workflows repository as part of lfx-public-workflows#17. Now we're ready to leverage this new common GitHub action. The task is to replace our local container registry cleanup action and support logic/instruction with the common shared GitHub action."
 
 Spec-kit directory name and git branch are independent.
