@@ -44,11 +44,15 @@
       [rows]="3"
       styleClass="w-full"
       [readonly]="isCanceling()"
+      [invalid]="form.controls.note.hasError('maxCodePoints')"
       ariaDescribedBy="cancel-occurrence-note-hint"
+      [describedBy]="form.controls.note.hasError('maxCodePoints') ? 'cancel-occurrence-note-error' : undefined"
       dataTest="cancel-occurrence-note" />
     <p id="cancel-occurrence-note-hint" class="text-xs text-gray-500">Included in the cancellation email sent to guests.</p>
     @if (form.controls.note.hasError('maxCodePoints')) {
-      <p class="text-xs text-red-500" data-testid="cancel-occurrence-note-too-long">Reason must be {{ noteMaxLength }} characters or fewer.</p>
+      <p id="cancel-occurrence-note-error" class="text-xs text-red-500" data-testid="cancel-occurrence-note-too-long">
+        Reason must be {{ noteMaxLength }} characters or fewer.
+      </p>
     }
   </div>
 

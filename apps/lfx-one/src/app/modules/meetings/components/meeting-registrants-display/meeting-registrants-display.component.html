@@ -198,17 +198,17 @@
                 <fieldset class="flex flex-col gap-2" data-testid="inline-add-registrant-scope">
                   <legend class="text-sm font-medium text-gray-900 mb-2">Invite to</legend>
                   <div class="flex items-center gap-2">
-                    <lfx-radio-button [form]="inviteScopeForm" control="scope" name="guest-invite-scope" value="all" inputId="guest-invite-scope-all" />
-                    <label for="guest-invite-scope-all" class="text-sm text-gray-700 cursor-pointer">All occurrences</label>
+                    <lfx-radio-button [form]="inviteScopeForm" control="scope" [name]="inviteScopeId()" value="all" [inputId]="inviteScopeId() + '-all'" />
+                    <label [for]="inviteScopeId() + '-all'" class="text-sm text-gray-700 cursor-pointer">All occurrences</label>
                   </div>
                   <div class="flex items-center gap-2">
                     <lfx-radio-button
                       [form]="inviteScopeForm"
                       control="scope"
-                      name="guest-invite-scope"
+                      [name]="inviteScopeId()"
                       value="occurrence"
-                      inputId="guest-invite-scope-occurrence" />
-                    <label for="guest-invite-scope-occurrence" class="text-sm text-gray-700 cursor-pointer">
+                      [inputId]="inviteScopeId() + '-occurrence'" />
+                    <label [for]="inviteScopeId() + '-occurrence'" class="text-sm text-gray-700 cursor-pointer">
                       Only {{ scopeOccurrence.start_time | meetingTime: scopeOccurrence.duration : 'date' : meeting().timezone }}
                     </label>
                   </div>

@@ -156,11 +156,14 @@ export class RescheduleOccurrenceDialogComponent {
       { validators: [futureDateTimeValidator(), this.wallTimeExistsValidator()] }
     );
 
-    // An occurrence created elsewhere can carry a duration outside what this form accepts; show why
-    // Save is disabled up front instead of waiting for the organizer to touch a field they didn't change.
-    const duration = form.get('duration');
-    if (duration?.invalid) {
-      duration.markAsTouched();
+    // An occurrence created elsewhere can carry a duration outside what this form accepts, and a series
+    // title can exceed the YouTube cap; show why Save is disabled up front instead of waiting for the
+    // organizer to touch a field they didn't change.
+    for (const name of ['duration', 'title']) {
+      const control = form.get(name);
+      if (control?.invalid) {
+        control.markAsTouched();
+      }
     }
 
     return form;

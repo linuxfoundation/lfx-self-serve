@@ -110,6 +110,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly inviteScopeForm: FormGroup = new FormGroup({
     scope: new FormControl<GuestInviteScope>('all', { nonNullable: true }),
   });
+  // The dashboard renders one of these per card, so the radio group's ids and name must be unique per meeting.
+  public readonly inviteScopeId: Signal<string> = computed(() => `guest-invite-scope-${this.meeting().id}`);
   // Only a recurring series has dates to choose between, and only a known occurrence can be targeted.
   public readonly scopeOccurrence: Signal<MeetingOccurrence | null> = computed(() =>
     !this.pastMeeting() && (this.meeting() as Meeting).recurrence ? this.occurrence() : null

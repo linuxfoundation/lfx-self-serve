@@ -287,6 +287,14 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.canSave()).toBe(false);
   });
 
+  it('shows the title error up front when the prefilled title is over the YouTube cap', async () => {
+    meeting = { ...MEETING, youtube_upload_enabled: true, title: 'x'.repeat(YOUTUBE_MAX_MEETING_TITLE_LENGTH + 1) } as Meeting;
+    const component = await mount();
+
+    expect(component.showTitleError()).toBe(true);
+    expect(component.canSave()).toBe(false);
+  });
+
   it('closes unconfirmed on cancel without writing', async () => {
     const component = await mount();
 
