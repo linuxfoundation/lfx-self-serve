@@ -14,6 +14,7 @@ import {
   MENTORSHIP_ADD_NOTE_LABEL,
   MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
+  MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_LABELS,
@@ -22,14 +23,12 @@ import {
   MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS,
   MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
   MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS,
-  MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import {
   FilterOption,
-  MentorshipMenteeStatus,
+  MentorshipApplicantDisplayStatus,
   MentorshipNoteRequest,
   MentorshipProgramApplicant,
   MentorshipProgramTermRow,
@@ -100,17 +99,17 @@ export class CurrentMenteesTabComponent {
   protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
 
   /**
-   * Fixed rather than derived from the rows: every status a mentee can hold. Filters on the
-   * wire status, so Pending matches both the Applied and the Tasks Completed rows.
+   * Fixed rather than derived from the rows: every status the table can badge. Filters on
+   * the displayed status, so Applied and Tasks Completed each pick out their own pending rows.
    */
-  protected readonly statusOptions: FilterOption<MentorshipMenteeStatus | null>[] = [
+  protected readonly statusOptions: FilterOption<MentorshipApplicantDisplayStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
-    ...MENTORSHIP_MENTEE_STATUSES.map((status) => ({ label: MENTORSHIP_MENTEE_STATUS_LABELS[status], value: status })),
+    ...MENTORSHIP_APPLICANT_DISPLAY_STATUSES.map((status) => ({ label: MENTORSHIP_APPLICANT_STATUS_LABELS[status], value: status })),
   ];
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
-    status: new FormControl<MentorshipMenteeStatus | null>(null),
+    status: new FormControl<MentorshipApplicantDisplayStatus | null>(null),
     term: new FormControl<string | null>(null),
   });
 
@@ -168,7 +167,7 @@ export class CurrentMenteesTabComponent {
       const { search, status, term } = this.filters();
       return this.mentees()
         .filter((person) => matchesMentorshipPersonSearch(person, search ?? ''))
-        .filter((person) => !status || person.status === status)
+        .filter((person) => !status || mentorshipApplicantDisplayStatus(person) === status)
         .filter((person) => !term || person.termName === term)
         .map((person) => this.toRow(person));
     });

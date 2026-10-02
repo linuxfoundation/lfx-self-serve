@@ -8,8 +8,8 @@
  * program's applications by their term's status: an open term's rows are current, a closed term's are
  * past, whatever the row's own status. Each test stubs that read via `page.route` with a synthetic
  * payload, so the suite never depends on the BFF's mock programs: one populated payload proves the tab
- * counts, each tab's rows (including an "On hold" row), the row actions by status and each tab's term
- * options, and an empty one drives the two tabs' empty messages.
+ * counts, each tab's rows, the Applied / Tasks Completed split of a pending row, the row actions by
+ * status and each tab's filter options, and an empty one drives the two tabs' empty messages.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
@@ -37,7 +37,7 @@ const PROGRAM_ID = '61111111-1111-4111-8111-111111111111';
 const DETAIL_URL = `/mentorship/admin/${PROGRAM_ID}`;
 const DETAIL_ROUTE = `**/api/mentorship/admin/programs/${PROGRAM_ID}`;
 const PENDING_ID = '62222222-2222-4222-8222-222222222222';
-const HOLD_ID = '63333333-3333-4333-8333-333333333333';
+const TASKS_COMPLETED_ID = '63333333-3333-4333-8333-333333333333';
 const ACCEPTED_ID = '64444444-4444-4444-8444-444444444444';
 const GRADUATED_ID = '65555555-5555-4555-8555-555555555555';
 
@@ -58,7 +58,13 @@ const term = (id: string, name: string, status: MentorshipProgramTermRow['status
   applicationEndDate: '2026-08-15',
 });
 
-const application = (id: string, name: string, status: MentorshipProgramApplicant['status'], termName: string): MentorshipProgramApplicant => ({
+const application = (
+  id: string,
+  name: string,
+  status: MentorshipProgramApplicant['status'],
+  termName: string,
+  overrides: Partial<MentorshipProgramApplicant> = {}
+): MentorshipProgramApplicant => ({
   id,
   name,
   email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
@@ -66,6 +72,7 @@ const application = (id: string, name: string, status: MentorshipProgramApplican
   termName,
   createdOn: '2026-07-10',
   updatedOn: '2026-07-20',
+  ...overrides,
 });
 
 const PROGRAM: MentorshipProgramDetail['program'] = {
@@ -86,8 +93,9 @@ const POPULATED: MentorshipProgramDetail = {
   program: PROGRAM,
   tabCounts: { currentMentees: 3, pastMentees: 1, mentors: 0, terms: 2 },
   currentMentees: [
-    application(PENDING_ID, 'Test Applicant One', 'pending', OPEN_TERM),
-    application(HOLD_ID, 'Test Applicant Two', 'hold', OPEN_TERM),
+    application(PENDING_ID, 'Test Applicant One', 'pending', OPEN_TERM, { tasksSubmitted: 1, tasksTotal: 2 }),
+    // Still `pending` on the wire, but every prerequisite is in.
+    application(TASKS_COMPLETED_ID, 'Test Applicant Two', 'pending', OPEN_TERM, { tasksSubmitted: 2, tasksTotal: 2 }),
     application(ACCEPTED_ID, 'Test Mentee Three', 'accepted', OPEN_TERM),
   ],
   pastMentees: [application(GRADUATED_ID, 'Test Mentee Four', 'graduated', CLOSED_TERM)],
@@ -106,13 +114,15 @@ async function stubDetail(page: Page, body: MentorshipProgramDetail): Promise<vo
   await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
 }
 
-/** Opens a tab's term select and returns the option labels it lists. */
-async function termOptions(page: Page, dataTest: string): Promise<string[]> {
+/** Opens one of a tab's filter selects and returns the option labels it lists. */
+async function selectOptions(page: Page, dataTest: string): Promise<string[]> {
   await page.locator(`[data-test="${dataTest}"]`).click();
   const options = page.getByRole('option');
   await expect(options.first()).toBeVisible();
   const labels = (await options.allTextContents()).map((label) => label.trim());
   await page.keyboard.press('Escape');
+  // Wait for the overlay to go, so the next select's options are not read alongside these.
+  await expect(options).toHaveCount(0);
   return labels;
 }
 
@@ -132,12 +142,13 @@ test.describe('Admin program detail — mentee tabs', () => {
     await expect(page.getByTestId('mentorship-program-detail-tab-terms')).toHaveText(/Terms\s*2/);
   });
 
-  test('opens on Current Mentees with the open-term rows, including the one on hold', async ({ page }) => {
+  test('opens on Current Mentees with the open-term rows, splitting pending into Applied and Tasks Completed', async ({ page }) => {
     await expect(page.getByTestId('mentorship-current-mentees-tab')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
     await expect(page.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(3);
     await expect(page.getByTestId(`mentorship-current-mentee-row-${PENDING_ID}`)).toContainText('Test Applicant One');
-    await expect(page.getByTestId(`mentorship-current-mentee-row-${HOLD_ID}`)).toContainText('On hold');
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${PENDING_ID}`)).toContainText('Applied');
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${TASKS_COMPLETED_ID}`)).toContainText('Tasks Completed');
     await expect(page.getByTestId(`mentorship-current-mentee-row-${ACCEPTED_ID}`)).toContainText('Test Mentee Three');
     await expect(page.getByTestId(`mentorship-current-mentee-row-${GRADUATED_ID}`)).toHaveCount(0);
   });
@@ -154,10 +165,19 @@ test.describe('Admin program detail — mentee tabs', () => {
     await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Graduate', 'Decline', 'Withdraw']);
   });
 
-  test('lists only the open terms on Current Mentees', async ({ page }) => {
+  test('names the Current Mentees statuses as the table shows them, and lists only the open terms', async ({ page }) => {
     await expect(page.getByTestId('mentorship-current-mentees-tab')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
-    expect(await termOptions(page, 'mentorship-current-mentees-term')).toEqual(['All open terms', OPEN_TERM]);
+    expect(await selectOptions(page, 'mentorship-current-mentees-status')).toEqual([
+      'All statuses',
+      'Applied',
+      'Tasks Completed',
+      'Accepted',
+      'Declined',
+      'Withdrawn',
+      'Graduated',
+    ]);
+    expect(await selectOptions(page, 'mentorship-current-mentees-term')).toEqual(['All open terms', OPEN_TERM]);
   });
 
   test('shows the closed-term rows on Past Mentees, with only the closed terms to filter by', async ({ page }) => {
@@ -166,7 +186,7 @@ test.describe('Admin program detail — mentee tabs', () => {
     await expect(page.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(1);
     await expect(page.getByTestId(`mentorship-past-mentee-row-${GRADUATED_ID}`)).toContainText('Test Mentee Four');
 
-    expect(await termOptions(page, 'mentorship-past-mentees-term')).toEqual(['All closed terms', CLOSED_TERM]);
+    expect(await selectOptions(page, 'mentorship-past-mentees-term')).toEqual(['All closed terms', CLOSED_TERM]);
   });
 });
 

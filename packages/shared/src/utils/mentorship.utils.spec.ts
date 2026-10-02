@@ -507,7 +507,7 @@ describe('program detail helpers', () => {
         detailApplication('3', 'accepted', 'Spring 2026'),
         detailApplication('4', 'declined', 'Fall 2026'),
         // A term the program does not list stays current rather than vanishing.
-        detailApplication('5', 'hold', 'Winter 2027'),
+        detailApplication('5', 'withdrawn', 'Winter 2027'),
       ],
       mentors: [{ id: 'm1', name: 'M', email: 'm@example.com', status: 'accepted' }],
       terms: [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed')],
@@ -699,13 +699,14 @@ describe('program detail helpers', () => {
 
   it('offers Current Mentees row actions by status, and none once the application ends', () => {
     const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
-      mentorshipRowActions(MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status], MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS, MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS).map(
-        (action) => action.label
-      );
+      mentorshipRowActions(
+        MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status],
+        MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+        MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
+      ).map((action) => action.label);
 
-    // An application under review, held or not, is decided.
+    // An application under review is decided.
     expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
-    expect(labelsFor('hold')).toEqual(['Accept', 'Decline', 'Withdraw']);
     // Only an accepted mentee is given tasks or graduated.
     expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
     expect(labelsFor('declined')).toEqual([]);
@@ -730,8 +731,6 @@ describe('program detail helpers', () => {
     // Every resolved status displays as itself, whatever the task counts say.
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'graduated' }))).toBe('graduated');
-    // A held application is out of the Applied / Tasks Completed split.
-    expect(mentorshipApplicantDisplayStatus(applicant({ status: 'hold', tasksSubmitted: 5, tasksTotal: 5 }))).toBe('hold');
   });
 
   it('formats task progress, and reports no label when nothing is assigned', () => {

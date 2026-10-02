@@ -427,17 +427,6 @@ const gridflowApplicants: MentorshipProgramApplicant[] = [
     otherApplications: [{ programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'pending', tasksSubmitted: 2, tasksTotal: 4 }],
   },
   {
-    id: 'app_samir_okafor',
-    name: 'Samir Okafor',
-    email: 'samir.okafor@example.com',
-    status: 'hold',
-    termName: 'Fall 2026',
-    createdOn: '2026-06-30',
-    updatedOn: '2026-07-14',
-    tasksSubmitted: 3,
-    tasksTotal: 5,
-  },
-  {
     id: 'app_nadia_rahman',
     name: 'Nadia Rahman',
     email: 'nadia.rahman@example.com',

@@ -102,10 +102,10 @@ export const MENTORSHIP_MENTOR_STATUSES = ['pending', 'accepted', 'declined', 'w
 
 /**
  * Mentee lifecycle statuses on the admin Current Mentees / Past Mentees tabs.
- * Superset of mentor statuses; mentees can also be put on `hold` and reach `graduated`.
+ * Superset of mentor statuses; mentees additionally reach `graduated`.
  * Declaration order is the status filter's option order.
  */
-export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'hold', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
+export const MENTORSHIP_MENTEE_STATUSES = ['pending', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
 export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, string> = {
   pending: 'Invited',
@@ -116,7 +116,6 @@ export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, str
 
 export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, string> = {
   pending: 'Pending',
-  hold: 'On hold',
   accepted: 'Accepted',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
@@ -132,7 +131,6 @@ export const MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipMentorStat
 
 export const MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES: Record<MentorshipMenteeStatus, string> = {
   pending: 'bg-amber-100 text-amber-700',
-  hold: 'bg-violet-100 text-violet-700',
   accepted: 'bg-emerald-100 text-emerald-700',
   declined: 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
@@ -150,7 +148,7 @@ export const MENTORSHIP_CURRENT_MENTEE_STATUSES: readonly MentorshipMenteeStatus
  * the person saw a program through, which is worth showing an admin reviewing them.
  * Only the two rejections — declined and withdrawn — are left out.
  */
-export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeStatus[] = ['pending', 'hold', 'accepted', 'graduated'];
+export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeStatus[] = ['pending', 'accepted', 'graduated'];
 
 /**
  * Row actions on the admin Current Mentees tab. Source of the
@@ -182,7 +180,6 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMen
  */
 export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMenteeStatus, readonly MentorshipCurrentMenteeAction[]> = {
   pending: ['accept', 'decline', 'withdraw'],
-  hold: ['accept', 'decline', 'withdraw'],
   accepted: ['create-task', 'graduate', 'decline', 'withdraw'],
   declined: [],
   withdrawn: [],
@@ -195,12 +192,11 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMente
  * into `applied` (tasks still outstanding) and `tasks-completed` (all submitted). The
  * rest are the mentee statuses unchanged.
  */
-export const MENTORSHIP_APPLICANT_DISPLAY_STATUSES = ['applied', 'tasks-completed', 'hold', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
+export const MENTORSHIP_APPLICANT_DISPLAY_STATUSES = ['applied', 'tasks-completed', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
 export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDisplayStatus, string> = {
   applied: 'Applied',
   'tasks-completed': 'Tasks Completed',
-  hold: MENTORSHIP_MENTEE_STATUS_LABELS.hold,
   accepted: 'Accepted',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
@@ -211,7 +207,6 @@ export const MENTORSHIP_APPLICANT_STATUS_LABELS: Record<MentorshipApplicantDispl
 export const MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES: Record<MentorshipApplicantDisplayStatus, string> = {
   applied: 'bg-amber-100 text-amber-700',
   'tasks-completed': 'bg-blue-100 text-blue-700',
-  hold: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.hold,
   accepted: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.accepted,
   declined: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.declined,
   withdrawn: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES.withdrawn,

@@ -85,15 +85,7 @@ describe('PastMenteesTabComponent', () => {
   it('offers every mentee status, and only the closed terms', () => {
     const component = fixture.componentInstance;
 
-    expect(component['statusOptions'].map((option) => option.label)).toEqual([
-      'All statuses',
-      'Pending',
-      'On hold',
-      'Accepted',
-      'Declined',
-      'Withdrawn',
-      'Graduated',
-    ]);
+    expect(component['statusOptions'].map((option) => option.label)).toEqual(['All statuses', 'Pending', 'Accepted', 'Declined', 'Withdrawn', 'Graduated']);
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All closed terms', 'Summer 2026', 'Spring 2026']);
   });
 

@@ -93,7 +93,7 @@ describe('CurrentMenteesTabComponent', () => {
       }),
       // Same `pending` status, but every prerequisite is in.
       mentee({ id: 'app_2', name: 'Diego Souza', tasksSubmitted: 5, tasksTotal: 5 }),
-      mentee({ id: 'app_3', name: 'Samir Okafor', status: 'hold', termName: 'Winter 2027' }),
+      mentee({ id: 'app_3', name: 'Samir Okafor', status: 'declined', termName: 'Winter 2027' }),
       mentee({ id: 'app_4', name: 'Alex Rivera', status: 'accepted' }),
       mentee({ id: 'app_5', name: 'Aiko Tanaka', status: 'graduated', tasksSubmitted: undefined, tasksTotal: undefined }),
     ]);
@@ -117,11 +117,11 @@ describe('CurrentMenteesTabComponent', () => {
     expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Current Mentees');
   });
 
-  it('splits the pending status into Applied and Tasks Completed, and badges a held row On hold', () => {
+  it('splits the pending status into Applied and Tasks Completed', () => {
     expect(rowText('app_1')).toContain('Applied');
     expect(rowText('app_1')).not.toContain('Tasks Completed');
     expect(rowText('app_2')).toContain('Tasks Completed');
-    expect(rowText('app_3')).toContain('On hold');
+    expect(rowText('app_3')).toContain('Declined');
   });
 
   it('shows the created and updated dates, and links out to other active applications', () => {
@@ -139,7 +139,6 @@ describe('CurrentMenteesTabComponent', () => {
       mentee({
         otherApplications: [
           { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
-          { programId: 'mp_held', programName: 'Held Program', status: 'hold' },
           { programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'graduated' },
           { programId: 'mp_declined', programName: 'Declined Program', status: 'declined' },
           { programId: 'mp_withdrawn', programName: 'Withdrawn Program', status: 'withdrawn' },
@@ -151,7 +150,7 @@ describe('CurrentMenteesTabComponent', () => {
     const shown = Array.from(element().querySelectorAll('[data-testid^="mentorship-current-mentee-other-application-"]')).map((link) =>
       (link.textContent ?? '').trim()
     );
-    expect(shown).toEqual(['Apicurio Registry', 'Held Program', 'Thanos']);
+    expect(shown).toEqual(['Apicurio Registry', 'Thanos']);
   });
 
   it('explains the Applied / Tasks Completed split above the table', () => {
@@ -161,13 +160,13 @@ describe('CurrentMenteesTabComponent', () => {
     expect(note).toContain('Tasks Completed');
   });
 
-  it('offers every mentee status in the status filter, and only the open terms in the term filter', () => {
+  it('offers the statuses the table badges in the status filter, and only the open terms in the term filter', () => {
     const component = fixture.componentInstance;
 
     expect(component['statusOptions'].map((option) => option.label)).toEqual([
       'All statuses',
-      'Pending',
-      'On hold',
+      'Applied',
+      'Tasks Completed',
       'Accepted',
       'Declined',
       'Withdrawn',
@@ -176,14 +175,18 @@ describe('CurrentMenteesTabComponent', () => {
     expect(component['termOptions']().map((option) => option.label)).toEqual(['All open terms', 'Fall 2026', 'Winter 2027']);
   });
 
-  it('filters on the wire status, so Pending keeps both the Applied and the Tasks Completed rows', () => {
+  it('filters on the displayed status, so Applied and Tasks Completed split the pending rows', () => {
     const component = fixture.componentInstance;
 
-    component['form'].controls.status.setValue('pending');
+    component['form'].controls.status.setValue('applied');
     fixture.detectChanges();
-    expect(component['rows']().map((row) => row.id)).toEqual(['app_1', 'app_2']);
+    expect(component['rows']().map((row) => row.id)).toEqual(['app_1']);
 
-    component['form'].controls.status.setValue('hold');
+    component['form'].controls.status.setValue('tasks-completed');
+    fixture.detectChanges();
+    expect(component['rows']().map((row) => row.id)).toEqual(['app_2']);
+
+    component['form'].controls.status.setValue('declined');
     fixture.detectChanges();
     expect(component['rows']().map((row) => row.id)).toEqual(['app_3']);
 
@@ -204,7 +207,7 @@ describe('CurrentMenteesTabComponent', () => {
 
   it('offers the row actions each status allows', () => {
     expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_3')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('app_3')).toEqual([]);
     expect(labelsFor('app_4')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
     expect(labelsFor('app_5')).toEqual([]);
   });
