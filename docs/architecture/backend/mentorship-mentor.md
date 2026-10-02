@@ -27,8 +27,8 @@ MentorProgramsComponent · MentorProgramDetailComponent · MentorProfileComponen
   → MentorshipMentorService (app)             GET /api/mentorship/mentor/*
       → mentorship.route.ts                   router.use('/mentor', mentorRouter)
       → mentorship-mentor.route.ts
-      → MentorshipMentorController            401 with no signed-in user · 400 for a blank programId
-      → MentorshipMentorService (server)      404 for an unknown program
+      → MentorshipMentorController            401 with no signed-in user · 400 for a programId that is not a UUID
+      → MentorshipMentorService (server)      404 for a program the caller does not mentor
   ← JSON
 ```
 
@@ -45,10 +45,10 @@ The register page and the profile edit drawer read the program picker through `G
 ## Behavior
 
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
-- `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is blank. It accepts a program id or slug, and answers 404 (`ResourceNotFoundError`) when neither matches.
+- `GET /programs/:programId` trims the id and answers 400 (`ServiceValidationError`) when it is not a UUID, so a slug is refused before any upstream read. It answers 404 (`ResourceNotFoundError`) when the program is not one of the caller's (see [Program detail](#program-detail)).
 - The app service rethrows every failure, 404 included, so each page can tell a not-found state from a retry state.
 - The read routes stay available while impersonating. The write routes (`POST /profile`, `PATCH /profile`, `POST /requests` and `POST /requests/:requestId/withdraw`) take `blockDuringImpersonation`, as on the mentee router (see [Impersonation](./impersonation.md)).
-- Logs carry only ids, counts and flags (`programId`, `requestId`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, and a card's `mentees`, `tasksToReview` and `applicants`). Names, emails, notes and the introduction never go in logs.
+- Logs carry only ids, counts and flags (`programId`, `requestId`, `program_id`, `term_id`, `term_status`, `count`, `total`, `offset`, `has_search`, `dropped`, `tasks_read_by_application`, `result_count`, `history_count`, `skills_count`, `changed_fields`, `hasProfile`, a card's `mentees`, `tasksToReview` and `applicants`, and a detail's `tasks`, `mentees` and `applicants` tab counts). Names, emails, notes and the introduction never go in logs.
 
 ## Registration
 
@@ -95,7 +95,30 @@ GET /programs → GET /mentorship/v1/me                                         
 - **The term.** `chooseMentorshipMentorProgramTerm` (`helpers/mentorship-mentor-program.helper.ts`) picks the term each card counts and the group it goes in: the open term that started most recently (`active-term`), else the open term that starts first, an undated one last (`upcoming`), else the closed term that started most recently (`completed`). A program with no such term is `upcoming` with no term name and zero counts, and its rows are not read. Cards sort by group, then by program name (`compareMentorshipMentorProgramCards`).
 - **The counts.** `sortMentorshipMentorProgramRows` sorts the chosen term's rows: mentees are `accepted` and `graduated` applications, applicants are every application, and tasks to review are submitted tasks on an `accepted` mentee's application, so a graduated mentee's leftover submission is not counted. The rows are read in full rather than counted with `limit=1` and `meta.total`, so the program detail (linuxfoundation/lfx-mentorship#212) can sort its tabs with the same helper and its counts always match the card's. The applications route resets any limit above 50 to 10, hence the smaller page (`MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE`). The term dates on a card are the calendar dates upstream wrote, not shifted to UTC (`toIsoDate`).
 - **Access.** The applications and tasks routes need the gateway `manager` relation on the program, which an active mentor holds. Each read uses the caller's token and `encodeURIComponent` on every id in the path. The program and term ids come from upstream, so one that is not a UUID fails the list with a 502 (`MENTORSHIP_INVALID_PROGRAM`) before any path is built from it. A failure on any program's reads, 403 and 404 included, fails the whole list rather than show counts it could not read.
-- **Program detail.** `GET /programs/:programId` still serves the mock seed, which holds none of the live program ids, so until linuxfoundation/lfx-mentorship#212 opening any card from the live list shows the detail's not-found state.
+
+## Program detail
+
+The program detail page (`/mentorship/mentor/programs/:programId`) reads its header, tab counts and the Tasks, Mentees and Applicants rows through `GET /api/mentorship/mentor/programs/:programId` (linuxfoundation/lfx-mentorship#212).
+
+```text
+GET /programs/:programId → isUuid(programId), else 400
+                         → GET /mentorship/v1/me → GET /mentorship/v1/mentors/{userId}
+                                                                              the program must be one of the caller's, else 404
+                         → GET  /mentorship/v1/programs/{id}                  project_name
+                         ∥ GET  /mentorship/v1/programs/{id}/applications?term=
+                                                                              paged at 50 to meta.total
+                         ∥ GET  /mentorship/v1/programs/{id}/terms/{termId}/tasks
+                                                                              every status, paged at 100 to meta.total
+                           403 → per mentee, at most 5 at once:
+                                 GET /mentorship/v1/applications/{applicationId}/tasks
+                         ← MentorshipMentorProgramDetail { program, tabCounts, mentees, applicants }
+```
+
+- **Access.** The detail is limited to the programs `/mentors/{userId}` lists for the caller, the same list My Programs shows, so a program the caller does not mentor answers 404 before any of its rows are read. The term is the one the card counts (`chooseMentorshipMentorProgramTerm`), and the same id checks apply: a program or term id that is not a UUID fails with a 502 (`MENTORSHIP_INVALID_PROGRAM`).
+- **The rows.** `mapMentorshipMentorProgramLists` (`helpers/mentorship-mentor-program.helper.ts`) builds one applicant row per application on the term and, for an `accepted` or `graduated` one, a mentee row too; upstream's `hold` reads as `pending`. Every row's `id` is the application id, and an application id that is not a UUID fails with a 502 (`MENTORSHIP_INVALID_APPLICATION`) however the tasks are read. The header counts come from the same rows through `sortMentorshipMentorProgramRows`, and the tab counts through `buildMentorshipMentorProgramDetail`, so the page and its card always agree.
+- **The tasks.** The term task listing also returns tasks on mentor-role applications, which the applications route never lists, so `groupMentorshipMentorProgramTasks` keeps only tasks on a listed application (H3). `mapMentorshipMentorProgramTask` maps the upstream status through `MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP` and the `prerequisite` category, file and due date onto the shared task row. The Tasks tab shows the submitted tasks of `accepted` mentees, matching the card's tasks to review, and the completed tasks of any mentee.
+- **The fallback.** When the gateway refuses the term task listing with 403, the BFF logs a warning and reads each mentee's tasks from `/applications/{id}/tasks` instead, at most `MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY` at once. Applicants who are not mentees then carry no tasks and show no View Tasks; the counts still match, since only `accepted` mentees' submissions are counted. Any other failure fails the page.
+- **Other applications.** An applicant's other applications carry the program id, name and status (`MentorshipMentorOtherApplication`). The Applicants tab links each program name, in a new tab, to that program's public page on the mentorship site (`buildMentorshipProgramsUrl` with `environment.urls.mentorship`), never to an in-app page the mentor may not be able to open. A program id that is not a UUID is dropped, and that name shows as plain text.
 
 ## Profile and Mentoring History
 
@@ -149,7 +172,7 @@ POST /requests/:requestId/withdraw          → blockDuringImpersonation · isUu
 
 ## Data source
 
-My Programs, the profile read and update, the has-profile check, the register save and the program request routes call the mentorship service. The program detail route still returns the shared mock seed data from `packages/shared/src/constants/mentorship-mentor.constants.ts`. Story linuxfoundation/lfx-mentorship#206 replaces the mocks one screen at a time.
+Every mentor route calls the mentorship service: My Programs, the program detail, the profile read and update, the has-profile check, the register save and the program requests. Story linuxfoundation/lfx-mentorship#206 replaced the mock seed data one screen at a time.
 
 A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end, at the largest page size unless the caller passes a smaller one. The mentor service uses it for the published programs, the caller's mentor memberships, and each program's applications (at 50) and submitted tasks; the mentee service uses it for the caller's applications and an application's tasks.
 

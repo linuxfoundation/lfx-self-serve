@@ -793,12 +793,40 @@ describe('program detail helpers', () => {
           },
         ],
       },
+      {
+        id: 'mnt_2',
+        name: 'Ravi Patel',
+        email: 'ravi@example.com',
+        status: 'graduated',
+        termName: 'Fall 2026',
+        tasks: [
+          {
+            id: 'tsk_leftover',
+            name: 'Final report',
+            description: 'Submitted after graduating.',
+            status: 'submitted',
+            prerequisite: false,
+            createdOn: '2026-08-01',
+            updatedOn: '2026-09-16',
+          },
+          {
+            id: 'tsk_done',
+            name: 'Demo',
+            description: 'Recorded a demo.',
+            status: 'completed',
+            prerequisite: false,
+            createdOn: '2026-08-01',
+            updatedOn: '2026-09-01',
+          },
+        ],
+      },
     ];
 
+    // A graduated mentee's submitted task is not waiting on the mentor, so it is neither counted nor listed.
     expect(mentorshipMentorSubmittedTaskCount(mentees)).toBe(1);
 
     const rows = mentorshipMentorReviewTasks(mentees);
-    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_1__tsk_old']);
+    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_2__tsk_done', 'mnt_1__tsk_old']);
     expect(rows[0]).toMatchObject({
       menteeName: 'Hana Suzuki',
       taskName: 'Backpressure design note',

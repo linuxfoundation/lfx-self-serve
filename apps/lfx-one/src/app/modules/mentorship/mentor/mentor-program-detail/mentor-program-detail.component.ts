@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
+import { isBffValidationError, serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
@@ -121,11 +121,12 @@ export class MentorProgramDetailComponent {
             tap(() => this.hasLoaded.set(true)),
             catchError((error: HttpErrorResponse) => {
               this.hasLoaded.set(true);
-              // A 404 means the id is unknown — surface the dedicated "Program not found"
-              // empty state (which offers a back-to-list CTA) rather than the generic
-              // Retry banner. Retrying a 404 will just 404 again and the empty state
-              // gives the user a working exit.
-              if (error?.status === 404) {
+              // A 404 means the id is unknown and the BFF's own 400 that it is not a program id at
+              // all (an old slug URL, say) — surface the dedicated "Program not found" empty state
+              // (which offers a back-to-list CTA) rather than the generic Retry banner. Retrying
+              // either will just fail again and the empty state gives the user a working exit. A
+              // 400 relayed from upstream is a failed read, so it keeps the Retry banner.
+              if (error?.status === 404 || isBffValidationError(error)) {
                 this.loadError.set(null);
                 return of(null);
               }

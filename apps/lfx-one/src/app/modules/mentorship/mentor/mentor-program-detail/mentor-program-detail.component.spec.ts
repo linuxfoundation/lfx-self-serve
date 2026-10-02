@@ -126,6 +126,28 @@ describe('MentorProgramDetailComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
   });
 
+  it('renders the "Program not found" empty state on a 400 for an id that is not a program id', () => {
+    // An old slug URL is refused with the BFF's own 400, which retrying cannot fix either.
+    buildWith(
+      of(undefined),
+      throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request', error: { code: 'VALIDATION_ERROR' } }))
+    );
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-not-found"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
+  });
+
+  it('keeps the Retry CTA on a 400 relayed from upstream', () => {
+    // Only the BFF's own validation means the id is wrong; an upstream 400 is a failed read.
+    buildWith(
+      of(undefined),
+      throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request', error: { code: 'BAD_REQUEST' } }))
+    );
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-not-found"]')).toBeNull();
+  });
+
   it('re-invokes the service when Retry is triggered', () => {
     build();
 

@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
+
 import type {
   MentorshipMentorProgram,
   MentorshipUpstreamMentorProgram,
@@ -13,11 +15,15 @@ import { describe, expect, it } from 'vitest';
 import {
   chooseMentorshipMentorProgramTerm,
   compareMentorshipMentorProgramCards,
+  groupMentorshipMentorProgramTasks,
   mapMentorshipMentorProgramCard,
+  mapMentorshipMentorProgramLists,
+  mapMentorshipMentorProgramTask,
   sortMentorshipMentorProgramRows,
 } from './mentorship-mentor-program.helper';
 
 const NOW = new Date('2026-09-17T12:00:00.000Z');
+const OTHER_PROGRAM_ID = '1a2b3c4d-0000-4000-8000-000000000002';
 
 const term = (id: string, status: MentorshipUpstreamMentorProgramTerm['status'], start?: string, end?: string): MentorshipUpstreamMentorProgramTerm => ({
   id,
@@ -214,5 +220,160 @@ describe('compareMentorshipMentorProgramCards', () => {
     const cards = [card('Zeta', 'completed'), card('Beta', 'upcoming'), card('Alpha', 'completed'), card('Gamma', 'active-term'), card('Delta', 'active-term')];
 
     expect([...cards].sort(compareMentorshipMentorProgramCards).map((row) => row.name)).toEqual(['Delta', 'Gamma', 'Beta', 'Alpha', 'Zeta']);
+  });
+});
+
+describe('mapMentorshipMentorProgramTask', () => {
+  it('maps an upstream task to a detail row task', () => {
+    expect(
+      mapMentorshipMentorProgramTask({
+        ...task('t1', 'in_progress', 'a1'),
+        name: 'Resume',
+        description: 'Upload your resume.',
+        category: 'prerequisite',
+        file: 'resume.pdf',
+        submit_file: 'yes',
+        due_date: '2026-09-30T00:00:00Z',
+      })
+    ).toEqual({
+      id: 't1',
+      name: 'Resume',
+      description: 'Upload your resume.',
+      status: 'in-progress',
+      prerequisite: true,
+      createdOn: '2026-08-01T00:00:00Z',
+      updatedOn: '2026-08-01T00:00:00Z',
+      dueOn: '2026-09-30',
+      hasSubmission: true,
+      requiresFileSubmission: true,
+    });
+  });
+
+  it.each([
+    ['incomplete', 'pending'],
+    ['submitted', 'submitted'],
+    ['complete', 'completed'],
+  ] as const)('maps the upstream %s status to %s, with no name, file or due date', (status, expected) => {
+    expect(mapMentorshipMentorProgramTask(task('t1', status, 'a1'))).toEqual({
+      id: 't1',
+      name: '',
+      description: '',
+      status: expected,
+      prerequisite: false,
+      createdOn: '2026-08-01T00:00:00Z',
+      updatedOn: '2026-08-01T00:00:00Z',
+      hasSubmission: false,
+      requiresFileSubmission: false,
+    });
+  });
+});
+
+describe('groupMentorshipMentorProgramTasks', () => {
+  it("groups tasks by application, starting every listed application with none and dropping any other application's tasks", () => {
+    const grouped = groupMentorshipMentorProgramTasks(
+      ['a1', 'a2'],
+      [task('t1', 'submitted', 'a1'), task('t2', 'submitted', 'mentor-app'), task('t3', 'complete', 'a1'), task('t4', 'submitted')]
+    );
+
+    expect([...grouped.entries()].map(([id, tasks]) => [id, tasks.map((row) => row.id)])).toEqual([
+      ['a1', ['t1', 't3']],
+      ['a2', []],
+    ]);
+  });
+});
+
+describe('mapMentorshipMentorProgramLists', () => {
+  const row = (
+    id: string,
+    status: MentorshipUpstreamProgramApplicationRow['status'],
+    overrides: Partial<MentorshipUpstreamProgramApplicationRow> = {}
+  ): MentorshipUpstreamProgramApplicationRow => ({ ...application(id, status), ...overrides });
+
+  it('makes every application an applicant and the accepted and graduated ones mentees, keyed by application id', () => {
+    const lists = mapMentorshipMentorProgramLists(
+      [row('a1', 'accepted'), row('a2', 'graduated'), row('a3', 'pending'), row('a4', 'hold'), row('a5', 'declined')],
+      'Fall 2026',
+      new Map()
+    );
+
+    expect(lists.mentees.map((mentee) => [mentee.id, mentee.status])).toEqual([
+      ['a1', 'accepted'],
+      ['a2', 'graduated'],
+    ]);
+    // `hold` has no UI status and shows as pending (H4).
+    expect(lists.applicants.map((applicant) => [applicant.id, applicant.status])).toEqual([
+      ['a1', 'accepted'],
+      ['a2', 'graduated'],
+      ['a3', 'pending'],
+      ['a4', 'pending'],
+      ['a5', 'declined'],
+    ]);
+  });
+
+  it('maps a row with every field, reducing other applications to program name and status', () => {
+    const lists = mapMentorshipMentorProgramLists(
+      [
+        row('a1', 'accepted', {
+          name: 'Ifeoma Adeyemi',
+          email: 'ifeoma@example.com',
+          avatar_url: 'https://avatars.example.com/a1.png',
+          note: 'Strong start.',
+          tasks_submitted: 1,
+          tasks_total: 2,
+          term: { id: 'term-1', name: 'Summer 2026', status: 'closed' },
+          created_on: '2026-08-01T10:00:00Z',
+          updated_on: '2026-08-02T10:00:00Z',
+          other_applications: [
+            { program_id: OTHER_PROGRAM_ID, program_name: 'Thanos', status: 'accepted' },
+            { program_id: 'program-3', program_name: 'Apicurio', status: 'hold' },
+          ],
+        }),
+      ],
+      'Fall 2026',
+      new Map([['a1', [task('t1', 'submitted', 'a1')]]])
+    );
+
+    const mentee = {
+      id: 'a1',
+      name: 'Ifeoma Adeyemi',
+      email: 'ifeoma@example.com',
+      avatarUrl: 'https://avatars.example.com/a1.png',
+      status: 'accepted',
+      tasksSubmitted: 1,
+      tasksTotal: 2,
+      termName: 'Summer 2026',
+      note: 'Strong start.',
+      tasks: [expect.objectContaining({ id: 't1', status: 'submitted' })],
+    };
+    expect(lists.mentees).toEqual([mentee]);
+    expect(lists.applicants).toEqual([
+      {
+        ...mentee,
+        createdOn: '2026-08-01',
+        updatedOn: '2026-08-02',
+        // A program id that is not a UUID is dropped, so that name shows without a link.
+        otherApplications: [
+          { programId: OTHER_PROGRAM_ID, programName: 'Thanos', status: 'accepted' },
+          { programName: 'Apicurio', status: 'pending' },
+        ],
+      },
+    ]);
+  });
+
+  it("falls back to the chosen term's name and empty strings, and leaves tasks out when they were not read", () => {
+    const [applicant] = mapMentorshipMentorProgramLists([row('a1', 'pending')], 'Fall 2026', new Map()).applicants;
+
+    expect(applicant).toEqual({
+      id: 'a1',
+      name: '',
+      email: '',
+      status: 'pending',
+      tasksSubmitted: 0,
+      tasksTotal: 0,
+      termName: 'Fall 2026',
+      createdOn: '2026-08-01',
+      updatedOn: '2026-08-01',
+      otherApplications: [],
+    });
   });
 });
