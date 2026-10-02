@@ -173,7 +173,7 @@ export class FoundationHealthComponent {
   }
 
   private initializeTotalMembersCard() {
-    return computed(() => this.transformTotalMembers(this.getMetricConfig('Total Members')));
+    return computed(() => this.transformTotalMembers(this.getMetricConfig('Active Members')));
   }
 
   private initializeSoftwareValueCard() {
