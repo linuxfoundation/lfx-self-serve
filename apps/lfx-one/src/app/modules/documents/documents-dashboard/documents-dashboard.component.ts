@@ -358,7 +358,9 @@ export class DocumentsDashboardComponent {
     const ownerProjectUid = project?.uid ?? doc.project_uid ?? '';
 
     let mySource: MyDocumentSource;
-    if (docSource === 'mailing_list') {
+    if (docSource === 'committee') {
+      mySource = 'committee';
+    } else if (docSource === 'mailing_list') {
       mySource = 'mailing_list';
     } else if (docSource === 'meeting') {
       mySource = 'meeting';
