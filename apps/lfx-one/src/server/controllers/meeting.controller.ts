@@ -1,11 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MAX_CUSTOM_DURATION, MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
+import {
+  MAX_CUSTOM_DURATION,
+  MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_MAX_LENGTH,
+  MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
+  MIN_CUSTOM_DURATION,
+} from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
+  CancelMeetingOccurrenceRequest,
   Committee,
   CommitteeMember,
   CreateMeetingAttachmentRequest,
@@ -324,9 +331,12 @@ export class MeetingController {
 
   /**
    * DELETE /meetings/:uid/occurrences/:occurrenceId
+   *
+   * Accepts an optional `{ note }` body; upstream includes the note in the cancellation emails to guests.
    */
   public async cancelOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, occurrenceId } = req.params;
+    const body = (req.body ?? {}) as Partial<CancelMeetingOccurrenceRequest>;
     const startTime = logger.startOperation(req, 'cancel_occurrence', {
       meeting_id: uid,
       occurrence_id: occurrenceId,
@@ -353,13 +363,24 @@ export class MeetingController {
         return next(validationError);
       }
 
+      const note = typeof body.note === 'string' ? body.note.trim() : body.note;
+      if (note != null && (typeof note !== 'string' || note.length > MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)) {
+        return next(
+          ServiceValidationError.forField('note', `Note must be text of at most ${MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH} characters`, {
+            operation: 'cancel_occurrence',
+            service: 'meeting_controller',
+          })
+        );
+      }
+
       // Cancel the occurrence
-      await this.meetingService.cancelOccurrence(req, uid, occurrenceId);
+      await this.meetingService.cancelOccurrence(req, uid, occurrenceId, note || undefined);
 
       // Log the success
       logger.success(req, 'cancel_occurrence', startTime, {
         meeting_id: uid,
         occurrence_id: occurrenceId,
+        has_note: !!note,
         status_code: 204,
       });
 

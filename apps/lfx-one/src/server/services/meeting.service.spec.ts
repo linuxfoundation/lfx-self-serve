@@ -1592,6 +1592,30 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
   });
 });
 
+describe('MeetingService.cancelOccurrence', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue(undefined);
+    service = new MeetingService();
+  });
+
+  it('sends the note as the DELETE body', async () => {
+    await service.cancelOccurrence(req, 'mtg 1', '1893456000', 'Holiday week');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg%201/occurrences/1893456000', 'DELETE', undefined, {
+      note: 'Holiday week',
+    });
+  });
+
+  it('sends no body without a note', async () => {
+    await service.cancelOccurrence(req, 'mtg-1', '1893456000');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/occurrences/1893456000', 'DELETE', undefined, undefined);
+  });
+});
+
 describe('MeetingService.updateOccurrence', () => {
   let service: MeetingService;
 

@@ -26,6 +26,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     updateMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
     updateOccurrence: vi.fn(),
+    cancelOccurrence: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -55,10 +56,11 @@ vi.mock('@lfx-one/shared/enums', () => ({
   },
 }));
 // Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
-// module-level bindings. Kept in sync with `MEETING_AGENDA_*` and `*_CUSTOM_DURATION` in the shared constants barrel.
+// module-level bindings. Kept in sync with `MEETING_AGENDA_*`, `MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH` and `*_CUSTOM_DURATION` in the shared constants barrel.
 vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_AGENDA_MAX_LENGTH: 2000,
   MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000,
+  MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH: 4000,
   MIN_CUSTOM_DURATION: 5,
   MAX_CUSTOM_DURATION: 480,
 }));
@@ -815,6 +817,40 @@ describe('MeetingController', () => {
         })
       );
       expect(meetingSvc.createMeetingRsvp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelOccurrence', () => {
+    const OCCURRENCE_ID = '1893456000';
+    const buildCancelReq = (body: unknown): Request => buildReq({ params: { uid: MEETING_ID, occurrenceId: OCCURRENCE_ID }, body } as Partial<Request>);
+    const fieldsIn = (error: unknown): string[] => ((error as FakeValidationError).validationErrors ?? []).map((e) => e.field);
+
+    beforeEach(() => {
+      meetingSvc.cancelOccurrence.mockResolvedValue(undefined);
+    });
+
+    it('forwards a trimmed note and answers 204', async () => {
+      const res = buildRes();
+
+      await controller.cancelOccurrence(buildCancelReq({ note: '  Holiday week ' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.cancelOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, 'Holiday week');
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it.each([[undefined], [{}], [{ note: null }], [{ note: '   ' }]])('cancels without a note for body %o', async (body) => {
+      await controller.cancelOccurrence(buildCancelReq(body), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.cancelOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, undefined);
+    });
+
+    it.each([[{ note: 42 }], [{ note: 'x'.repeat(4001) }]])('rejects %o without calling upstream', async (body) => {
+      await controller.cancelOccurrence(buildCancelReq(body), buildRes(), next);
+
+      expect(meetingSvc.cancelOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['note']);
     });
   });
 
