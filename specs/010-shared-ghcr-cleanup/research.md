@@ -64,7 +64,7 @@ No regressions identified. Container image digest is the same (`sha256:884037f1â
 
 - `gh workflow run ghcr-image-cleanup.yaml --ref ci/lfx-self-serve-ops-250 -f dry-run=true` runs the branch version because the file exists on `main`. Baseline: `gh workflow run ghcr-image-cleanup.yaml --ref main -f dry-run=true` (old local version) - both must be started close together so age windows match.
 - Compare from run logs: the old workflow's `Delete stale image versions` step vs the shared `cleanup / Delete stale image versions` step, specifically the sets of `dry-run: Would have deleted â€¦ package_version=<id>` lines and the summary's "Would delete" counts. Expect set equality (versions aging past 30d between runs excepted).
-- Also assert no `Deleted ` lines and `Deleted: 0` in the manual-dry-run summary (SC-004).
+- Also assert no deletion log lines (`Deleted` followed by a package version) and `Deleted: 0` in the manual-dry-run summary (SC-004).
 - Org Actions policy for calling `lfx-public-workflows` is already exercised by `license-header-check.yml` and the helm publisher (both in this repo), so it is allowed; the org policy API itself is not readable with current credentials.
 - Static checks: parse the YAML and run `actionlint` if available; license-header check workflow covers the header.
 

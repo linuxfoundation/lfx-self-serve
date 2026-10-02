@@ -134,9 +134,9 @@ Polish:        T017 + T019
 
 ### Incremental delivery
 
-4. US3 docs (T011-T013) in the same PR.
-5. US2/US4 verification (T008-T010, T014-T016) as evidence in the PR description.
-6. Polish and commit (T017-T020); T021 after merge.
+1. US3 docs (T011-T013) in the same PR.
+2. US2/US4 verification (T008-T010, T014-T016) as evidence in the PR description.
+3. Polish and commit (T017-T020); T021 after merge.
 
 ## Summary
 
@@ -145,6 +145,8 @@ Polish:        T017 + T019
 - All 21 follow the `- [ ] Tnnn [P?] [Story?] description` checklist format.
 
 ## Validation Results (2026-10-01)
+
+Provenance: runs 36957355953, 36957439754 and 36957447878 were dispatched from this branch before it was renamed from `feat/use-common-gh-ci-action-container-cleanup` to `ci/lfx-self-serve-ops-250` (the old branch name has since been deleted). The workflow logic was identical to the current head; only comments changed afterwards. A fresh default dry-run from the renamed branch at head `f9d1a53` (run 36970986614) reproduced the result: `DRY_RUN: true`, `CUT_OFF: 30d`, 309 would-delete candidates, 0 deleted, `Selected 15 tagged and 652 untagged`.
 
 | Task | Evidence                                                                                                                                                                                                                                                                           |
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -155,4 +157,4 @@ Polish:        T017 + T019
 | T009 | `dry-run=true cut-off=14d` run 36957447878: `CUT_OFF: 14d`, 2040 would-delete (superset of the 30d set by count)                                                                                                                                                                   |
 | T014 | Summary step ran in the new workflow; fields come from the pinned shared workflow's summary step (read in T010/T015). The rendered step summary itself was not fetched.                                                                                                            |
 
-Still open: T016 (optional negative test, skipped), T018 (`yarn lint`/`yarn test`: `node_modules` is not installed in this worktree; no source files changed), T020 (commit done; PR description pending), T021 (after merge).
+Still open: T016 (optional negative test, skipped) and T021 (after merge). T018 was run later in the pre-PR flow: `yarn lint` (0 errors), `yarn build` and `yarn test` passed.
