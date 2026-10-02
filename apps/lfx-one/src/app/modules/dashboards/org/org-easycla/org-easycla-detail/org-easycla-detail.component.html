@@ -45,6 +45,20 @@
       icon="fa-light fa-triangle-exclamation"
       title="We couldn't load your CLAs"
       subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+  } @else if (signatureStillUnlisted() && !claGroup()) {
+    <!--
+      A flagged return whose wait ended with a list and no row. Distinct from cannot-preview: that
+      copy is true for a pasted unsigned address and false for someone who just finished signing.
+      Refresh reloads the address after the return parameters are stripped. A later load of that
+      stripped address, if the row is still absent, is the ordinary hasn't-signed state.
+    -->
+    <lfx-empty-state
+      data-testid="org-easycla-detail-signature-pending-state"
+      icon="fa-light fa-clock"
+      [title]="returnPendingTitle"
+      [subtitle]="returnPendingSubtitle"
+      [ctaLabel]="returnPendingRefresh"
+      (ctaClick)="reloadPage()" />
   } @else if (cannotPreview()) {
     <!--
       A group address this organization has not signed, reached without the picker (#2364). Rendered
