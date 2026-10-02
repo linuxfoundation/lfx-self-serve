@@ -5,7 +5,7 @@ All unknowns from the plan are resolved below. Evidence was read directly from `
 ## R1 - Which commit to pin
 
 - **Decision**: `476427e9afb0814cd8534eccc10b0d5ad5e4b9f8` (merge commit of lfx-public-workflows PR #17, 2026-09-24T02:42:04Z), annotated `# main`.
-- **Evidence**: The only release tag, `v0.1.0` (`a93335d…`), is *behind* `476427e` and `contents/.github/workflows/ghcr-image-cleanup.yaml?ref=a93335d…` returns 404, so the tag cannot be used. The workflow blob SHA is identical (`347f7930…`) at `476427e` and at current `main` (`9531d85…`); the three later commits touch only `.cspell.json`, `.yamllint.yml`, other workflows, `helm-chart-oci-publisher`, README/AGENTS/SECURITY docs.
+- **Evidence**: The only release tag, `v0.1.0` (`a93335d…`), is _behind_ `476427e` and `contents/.github/workflows/ghcr-image-cleanup.yaml?ref=a93335d…` returns 404, so the tag cannot be used. The workflow blob SHA is identical (`347f7930…`) at `476427e` and at current `main` (`9531d85…`); the three later commits touch only `.cspell.json`, `.yamllint.yml`, other workflows, `helm-chart-oci-publisher`, README/AGENTS/SECURITY docs.
 - **Rationale**: The merge commit is the earliest main commit with the reviewed content; the workflow is byte-identical to HEAD, so there is no reason to prefer a later SHA. Existing pin convention in this repo (`docker-build-tag.yml`: `@17e4144… # main`) is followed.
 - **Alternatives considered**: `@main` (rejected: moving ref on a workflow that deletes packages; spec FR-002); `@v0.1.0` (rejected: does not contain the workflow); current `main` HEAD `9531d85` (equivalent for this file, but pulls in unrelated upstream churn into the diff reviewers see).
 - **Follow-up for implementer**: before committing, re-verify `ghcr-image-cleanup.yaml` blob SHA at the chosen pin still equals the latest `main` blob; if upstream has changed it, re-read the diff and pick the newest reviewed SHA.
@@ -42,15 +42,15 @@ All unknowns from the plan are resolved below. Evidence was read directly from `
 
 ## R7 - Behavior differences accepted
 
-| Aspect | Local today | Shared | Impact |
-|--------|-------------|--------|--------|
-| Default-branch tag | not protected | `!main` always added | Extra protection only |
-| Open-PR enumeration | `gh pr list --limit 1000` | `gh api --paginate` | Removes cap |
-| Failed-count counting | may double-count a line | per-line guard | More accurate count |
-| `account=user` support / owner env | n/a | forwarded | Unused here |
-| Input validation | none | rejects wildcard/list/quote/CRLF | `lfx-self-serve` passes |
-| Summary text | local format | same section/lines (copy of local) | Equivalent facts |
-| Outputs | none | `deleted-count`, `would-delete-count`, `failed-count` | Unused (could be surfaced later) |
+| Aspect                             | Local today               | Shared                                                | Impact                           |
+| ---------------------------------- | ------------------------- | ----------------------------------------------------- | -------------------------------- |
+| Default-branch tag                 | not protected             | `!main` always added                                  | Extra protection only            |
+| Open-PR enumeration                | `gh pr list --limit 1000` | `gh api --paginate`                                   | Removes cap                      |
+| Failed-count counting              | may double-count a line   | per-line guard                                        | More accurate count              |
+| `account=user` support / owner env | n/a                       | forwarded                                             | Unused here                      |
+| Input validation                   | none                      | rejects wildcard/list/quote/CRLF                      | `lfx-self-serve` passes          |
+| Summary text                       | local format              | same section/lines (copy of local)                    | Equivalent facts                 |
+| Outputs                            | none                      | `deleted-count`, `would-delete-count`, `failed-count` | Unused (could be surfaced later) |
 
 No regressions identified. Container image digest is the same (`sha256:884037f1…b4112`).
 

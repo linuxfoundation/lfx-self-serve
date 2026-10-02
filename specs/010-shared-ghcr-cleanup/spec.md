@@ -15,7 +15,7 @@ That logic has since been generalized and merged into the shared, public `linuxf
 
 This feature is that migration: Self Serve keeps its schedule, manual trigger, and retention outcome, and stops owning the cleanup mechanics.
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Weekly cleanup keeps working with the same protections (Priority: P1)
 
@@ -94,7 +94,7 @@ When a deletion fails (permissions, API error), the maintainer finds out from th
 - **Rollback**: If the shared workflow misbehaves, reverting the single migration change MUST restore the previous local behavior.
 - **Weekly run overlaps the migration merge**: A scheduled run that fires between merge and first verification must behave safely; the first post-merge validation is a manual dry-run.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -120,7 +120,7 @@ When a deletion fails (permissions, API error), the maintainer finds out from th
 - **Caller workflow**: The thin repository-owned workflow that owns triggers, inputs, and permissions and delegates to the shared workflow.
 - **Shared cleanup workflow**: The reusable workflow in `lfx-public-workflows` that owns selection, deletion, safeguards, and summary.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

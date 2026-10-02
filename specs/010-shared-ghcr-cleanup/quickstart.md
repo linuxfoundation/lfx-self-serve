@@ -60,10 +60,10 @@ gh api --paginate "orgs/linuxfoundation/packages/container/lfx-self-serve/versio
 
 ## 5. Manual-input behavior
 
-| Run | Command | Expected |
-|-----|---------|----------|
-| Defaults | `gh workflow run … --ref <branch>` (no `-f`) | `Dry run: true`, `Deleted: 0` (SC-004) |
-| Custom cut-off | `-f dry-run=true -f cut-off=14d` | Summary `Cut-off: 14d`; candidate set is a superset of the 30d set |
+| Run            | Command                                      | Expected                                                           |
+| -------------- | -------------------------------------------- | ------------------------------------------------------------------ |
+| Defaults       | `gh workflow run … --ref <branch>` (no `-f`) | `Dry run: true`, `Deleted: 0` (SC-004)                             |
+| Custom cut-off | `-f dry-run=true -f cut-off=14d`             | Summary `Cut-off: 14d`; candidate set is a superset of the 30d set |
 
 Do not run `-f dry-run=false` from the branch for validation; the first real delete should be the scheduled run (or a deliberate manual one after merge by a maintainer).
 

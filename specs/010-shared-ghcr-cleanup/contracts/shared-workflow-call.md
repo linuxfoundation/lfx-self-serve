@@ -12,14 +12,14 @@ Full 40-char SHA required. No `secrets:` and no `secrets: inherit`.
 
 ## 2. Inputs this repo supplies
 
-| Input | Value in this repo | Required by shared workflow |
-|-------|--------------------|-----------------------------|
-| `image-name` | `lfx-self-serve` | yes (single exact package, no whitespace/quote/comma/`!`/`*`/`?`) |
-| `image-tags` | `"!development !latest !*.*.* !*.*"` | no (overrides default) |
-| `enable-preview-protection` | `true` | no |
-| `cut-off` | `${{ github.event.inputs.cut-off \|\| '30d' }}` | no |
-| `dry-run` | `${{ fromJSON(github.event.inputs['dry-run'] \|\| 'true') }}` | no |
-| `account`, `preview-label`, `preview-tag-prefix` | omitted (defaults `linuxfoundation`, `deploy-preview`, `ui-pr-`) | no |
+| Input                                            | Value in this repo                                               | Required by shared workflow                                       |
+| ------------------------------------------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `image-name`                                     | `lfx-self-serve`                                                 | yes (single exact package, no whitespace/quote/comma/`!`/`*`/`?`) |
+| `image-tags`                                     | `"!development !latest !*.*.* !*.*"`                             | no (overrides default)                                            |
+| `enable-preview-protection`                      | `true`                                                           | no                                                                |
+| `cut-off`                                        | `${{ github.event.inputs.cut-off \|\| '30d' }}`                  | no                                                                |
+| `dry-run`                                        | `${{ fromJSON(github.event.inputs['dry-run'] \|\| 'true') }}`    | no                                                                |
+| `account`, `preview-label`, `preview-tag-prefix` | omitted (defaults `linuxfoundation`, `deploy-preview`, `ui-pr-`) | no                                                                |
 
 ## 3. Permissions the calling job must grant
 
@@ -27,7 +27,7 @@ Full 40-char SHA required. No `secrets:` and no `secrets: inherit`.
 permissions:
   contents: read
   packages: write
-  pull-requests: read   # required because enable-preview-protection is true
+  pull-requests: read # required because enable-preview-protection is true
 ```
 
 ## 4. Outputs available (unused today)
@@ -36,11 +36,11 @@ permissions:
 
 ## 5. Trigger surface preserved by this repo
 
-| Trigger | Behavior |
-|---------|----------|
-| `schedule` `0 0 * * 0` | Deletes eligible versions (dry-run forced off by the shared workflow). |
-| `workflow_dispatch` input `dry-run` (boolean, default `true`) | Preview unless explicitly set false. |
-| `workflow_dispatch` input `cut-off` (string, default `30d`) | Minimum age, e.g. `14d`, `4w 2d`. |
+| Trigger                                                       | Behavior                                                               |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `schedule` `0 0 * * 0`                                        | Deletes eligible versions (dry-run forced off by the shared workflow). |
+| `workflow_dispatch` input `dry-run` (boolean, default `true`) | Preview unless explicitly set false.                                   |
+| `workflow_dispatch` input `cut-off` (string, default `30d`)   | Minimum age, e.g. `14d`, `4w 2d`.                                      |
 
 ## 6. Compatibility obligations
 

@@ -25,6 +25,7 @@ Replace the ~220-line local `.github/workflows/ghcr-image-cleanup.yaml` (tag-fil
 **Performance Goals**: N/A. Weekly run; runtime comparable to today's.
 
 **Constraints**:
+
 - Reference MUST be a full commit SHA that contains the workflow (v0.1.0 does not, see research R1).
 - Caller job MUST grant `contents: read`, `packages: write`, `pull-requests: read` and MUST NOT use `secrets: inherit`.
 - Manual runs MUST default to dry-run; scheduled runs MUST delete.
@@ -37,13 +38,13 @@ Replace the ~220-line local `.github/workflows/ghcr-image-cleanup.yaml` (tag-fil
 
 `.specify/memory/constitution.md` is still the unfilled template (placeholders such as `[PRINCIPLE_1_NAME]`), so it defines no gates. The repository's documented conventions from `CLAUDE.md` / `.github/copilot-instructions.md` are used as the gate instead:
 
-| Gate | Status |
-|------|--------|
-| License header + SPDX line on new/changed files | Pass (kept on workflow; checked by existing `license-header-check.yml`) |
-| Third-party workflow pinned by full SHA, not a moving ref | Pass (`476427e…` with a `# main` annotation, matching the existing helm-chart-oci-publisher pin in `docker-build-tag.yml`) |
-| Least-privilege `permissions` on the job; no inherited secrets | Pass |
-| Docs updated with behavior change (`docs/reviews/docs-checklist.md`); markdown formatted with Prettier | Pass (planned; run `yarn format:check` on the two docs) |
-| No untrusted input interpolated into `run:` blocks | Pass (no `run:` blocks remain in the caller; inputs go through `with:`) |
+| Gate                                                                                                   | Status                                                                                                                     |
+| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| License header + SPDX line on new/changed files                                                        | Pass (kept on workflow; checked by existing `license-header-check.yml`)                                                    |
+| Third-party workflow pinned by full SHA, not a moving ref                                              | Pass (`476427e…` with a `# main` annotation, matching the existing helm-chart-oci-publisher pin in `docker-build-tag.yml`) |
+| Least-privilege `permissions` on the job; no inherited secrets                                         | Pass                                                                                                                       |
+| Docs updated with behavior change (`docs/reviews/docs-checklist.md`); markdown formatted with Prettier | Pass (planned; run `yarn format:check` on the two docs)                                                                    |
+| No untrusted input interpolated into `run:` blocks                                                     | Pass (no `run:` blocks remain in the caller; inputs go through `with:`)                                                    |
 
 Re-check after Phase 1 design: no change, no violations. Complexity Tracking is empty.
 
