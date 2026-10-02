@@ -1087,6 +1087,20 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     expect(detail.program.id).toBe(PROGRAM_ID);
   });
 
+  it('skips a listed program whose id is not a UUID instead of failing the lookup', async () => {
+    answer({
+      ...caller([
+        { ...mentorProgram(), id: 42 as unknown as string },
+        { ...mentorProgram(), terms: [] },
+      ]),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+    });
+
+    const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID);
+
+    expect(detail.program.id).toBe(PROGRAM_ID);
+  });
+
   it.each([
     ['another program', () => caller([mentorProgram(OTHER_PROGRAM_ID)])],
     [

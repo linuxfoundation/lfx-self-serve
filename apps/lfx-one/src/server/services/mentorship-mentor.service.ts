@@ -314,9 +314,10 @@ export class MentorshipMentorService {
   public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
     const operation = 'mentorship_get_mentor_program';
     logger.debug(req, operation, 'Loading mentor program', { programId });
-    // UUIDs compare without case, so an uppercase id in the URL still finds the program.
+    // UUIDs compare without case, so an uppercase id in the URL still finds the program. The requested id is a
+    // UUID, so a listed id that is not one can never match and is skipped before it is lowercased.
     const wanted = programId.toLowerCase();
-    const program = (await this.findMentorDetail(req, operation))?.programs?.find((entry) => entry.id.toLowerCase() === wanted);
+    const program = (await this.findMentorDetail(req, operation))?.programs?.find((entry) => isUuid(entry.id) && entry.id.toLowerCase() === wanted);
     if (!program) {
       throw new ResourceNotFoundError('Mentor program', programId, { operation });
     }
