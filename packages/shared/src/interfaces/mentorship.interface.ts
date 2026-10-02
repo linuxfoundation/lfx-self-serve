@@ -231,7 +231,7 @@ export interface MentorshipTaskFormValue {
 export type MentorshipCurrentMenteeAction = (typeof MENTORSHIP_CURRENT_MENTEE_ACTIONS)[number];
 
 /**
- * Status as shown on the mentee tables. `applied` and `tasks-completed` are both the
+ * Status as shown on the admin Current Mentees and mentor Applicants tables. `applied` and `tasks-completed` are both the
  * `pending` wire status, split by whether every prerequisite task has been submitted.
  */
 export type MentorshipApplicantDisplayStatus = (typeof MENTORSHIP_APPLICANT_DISPLAY_STATUSES)[number];

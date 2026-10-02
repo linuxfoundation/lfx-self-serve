@@ -187,10 +187,11 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMente
 };
 
 /**
- * Statuses the mentee tables display. These are not wire statuses: an application
- * stays `pending` throughout the prerequisite work, and the tables split that one status
- * into `applied` (tasks still outstanding) and `tasks-completed` (all submitted). The
- * rest are the mentee statuses unchanged.
+ * Statuses the admin Current Mentees and mentor Applicants tables display. These are not
+ * wire statuses: an application stays `pending` throughout the prerequisite work, and those
+ * tables split that one status into `applied` (tasks still outstanding) and `tasks-completed`
+ * (all submitted). The rest are the mentee statuses unchanged. Past Mentees shows the wire
+ * status, since a closed term's pending row is history rather than review work.
  */
 export const MENTORSHIP_APPLICANT_DISPLAY_STATUSES = ['applied', 'tasks-completed', 'accepted', 'declined', 'withdrawn', 'graduated'] as const;
 
