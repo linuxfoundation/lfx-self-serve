@@ -129,21 +129,52 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     ]);
   });
 
-  it('sorts an unmeasured type last with no bar', () => {
+  it('sorts a type with unmeasured revenue last with no bar', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
-      { ...ENROLLMENT, byType: [{ deliveryType: 'edX', enrollments: null, revenueUsd: null }, ...ENROLLMENT.byType] },
+      { ...ENROLLMENT, byType: [{ deliveryType: 'MicroCourse', enrollments: 40, revenueUsd: null }, ...ENROLLMENT.byType] },
       'YTD',
-      'enrollments'
+      'revenue'
     );
 
-    expect(view.byType.at(-1)).toEqual({ deliveryType: 'edX', label: 'edX', value: 'not available', barWidthPct: 0 });
+    expect(view.byType.at(-1)).toEqual({ deliveryType: 'MicroCourse', label: 'Microcourses', value: 'not available', barWidthPct: 0 });
   });
 
-  it('counts the delivery types', () => {
+  it('leaves Bundle and types without enrollments off the enrollment bars, and edX off the revenue bars', () => {
+    const byType = [
+      ...ENROLLMENT.byType,
+      { deliveryType: 'Bundle', enrollments: 0, revenueUsd: 90000 },
+      { deliveryType: 'edX', enrollments: 500, revenueUsd: 0 },
+      { deliveryType: 'MicroCourse', enrollments: 0, revenueUsd: 0 },
+    ];
+
+    const enrollments = buildHealthMetricsTrainingEnrollmentView({ ...ENROLLMENT, byType }, 'YTD', 'enrollments');
+    expect(enrollments.byType.map((row) => row.deliveryType)).toEqual(['E-Learning', 'Certification Exam', 'edX', 'Instructor Led']);
+
+    const revenue = buildHealthMetricsTrainingEnrollmentView({ ...ENROLLMENT, byType }, 'YTD', 'revenue');
+    expect(revenue.byType.map((row) => row.deliveryType)).toEqual(['Bundle', 'Certification Exam', 'Instructor Led', 'E-Learning', 'MicroCourse']);
+  });
+
+  it('counts the delivery types with enrollments, never Bundle', () => {
     expect(buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments').typeCountLabel).toBe('3 delivery types');
     expect(buildHealthMetricsTrainingEnrollmentView({ ...ENROLLMENT, byType: ENROLLMENT.byType.slice(0, 1) }, 'YTD', 'enrollments').typeCountLabel).toBe(
       '1 delivery type'
     );
+    const byType = [
+      ...ENROLLMENT.byType,
+      { deliveryType: 'Bundle', enrollments: 0, revenueUsd: 90000 },
+      { deliveryType: 'MicroCourse', enrollments: 0, revenueUsd: 0 },
+    ];
+    expect(buildHealthMetricsTrainingEnrollmentView({ ...ENROLLMENT, byType }, 'YTD', 'revenue').typeCountLabel).toBe('3 delivery types');
+  });
+
+  it('shows not available for a revenue delta whose baseline netted negative', () => {
+    const view = buildHealthMetricsTrainingEnrollmentView(
+      { ...ENROLLMENT, baseline: { enrollments: 3500, certifications: 620, revenueUsd: -5000 } },
+      'YTD',
+      'enrollments'
+    );
+
+    expect(view.side[1].delta).toBe('not available');
   });
 
   it('orders the trend by year and marks the running year partial', () => {

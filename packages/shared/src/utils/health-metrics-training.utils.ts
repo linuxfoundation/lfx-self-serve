@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_NOT_AVAILABLE,
   HEALTH_METRICS_TRAINING_SECTIONS,
+  HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES,
 } from '../constants/health-metrics-training.constants';
 import { formatCurrency } from './number.utils';
 
@@ -71,9 +72,10 @@ export function buildHealthMetricsTrainingEnrollmentView(
         totals.certifications,
         baseline?.certifications ?? null
       ),
-      stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), totals.revenueUsd, baseline?.revenueUsd ?? null),
+      // Refunds can net a prior window negative, which would flip the sign of the change.
+      stat('revenue', 'Revenue', formatHealthMetricsTrainingRevenue(totals.revenueUsd), totals.revenueUsd, positiveOrNull(baseline?.revenueUsd ?? null)),
     ],
-    typeCountLabel: `${enrollment.byType.length} ${enrollment.byType.length === 1 ? 'delivery type' : 'delivery types'}`,
+    typeCountLabel: formatTrainingTypeCount(enrollment.byType.filter(hasEnrollments).length),
     byType: buildTrainingTypeRows(enrollment.byType, metric),
     trend: [...enrollment.trend]
       .sort((a, b) => a.year - b.year)
@@ -81,15 +83,16 @@ export function buildHealthMetricsTrainingEnrollmentView(
   };
 }
 
-/** Highest first under the toggle; an unmeasured type sorts last and draws no bar. Ties keep the view's rank order. */
+/** Highest first under the toggle; enrollments show only types with any, revenue drops types it never captures. */
 function buildTrainingTypeRows(
   types: HealthMetricsTrainingEnrollmentType[],
   metric: HealthMetricsTrainingEnrollmentMetric
 ): HealthMetricsTrainingEnrollmentTypeView[] {
   const pick = (type: HealthMetricsTrainingEnrollmentType): number | null => (metric === 'revenue' ? type.revenueUsd : type.enrollments);
-  const max = Math.max(0, ...types.map((type) => pick(type) ?? 0));
+  const shown = metric === 'revenue' ? types.filter((type) => !isStructuralZero(type, metric)) : types.filter(hasEnrollments);
+  const max = Math.max(0, ...shown.map((type) => pick(type) ?? 0));
 
-  return [...types]
+  return [...shown]
     .sort((a, b) => (pick(b) ?? -Infinity) - (pick(a) ?? -Infinity))
     .map((type) => {
       const value = pick(type);
@@ -100,6 +103,22 @@ function buildTrainingTypeRows(
         barWidthPct: value === null || max === 0 ? 0 : Math.min(100, Math.max(0, (value / max) * 100)),
       };
     });
+}
+
+function isStructuralZero(type: HealthMetricsTrainingEnrollmentType, metric: HealthMetricsTrainingEnrollmentMetric): boolean {
+  return HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES[metric].includes(type.deliveryType);
+}
+
+function hasEnrollments(type: HealthMetricsTrainingEnrollmentType): boolean {
+  return !isStructuralZero(type, 'enrollments') && (type.enrollments ?? 0) > 0;
+}
+
+function formatTrainingTypeCount(count: number): string {
+  return `${count} ${count === 1 ? 'delivery type' : 'delivery types'}`;
+}
+
+function positiveOrNull(value: number | null): number | null {
+  return value !== null && value > 0 ? value : null;
 }
 
 /** Names what every delta compares against, so a change never stands without its baseline. */

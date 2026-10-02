@@ -4,6 +4,7 @@
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingEnrollment,
+  HealthMetricsTrainingEnrollmentMetric,
   HealthMetricsTrainingEnrollmentMetricOption,
   HealthMetricsTrainingSectionKey,
 } from '../interfaces/health-metrics-training.interface';
@@ -82,6 +83,12 @@ export const HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS: Readonly<Record<strin
   'Instructor Led': 'Instructor-led',
   MicroCourse: 'Microcourses',
   Bundle: 'Bundles',
+};
+
+/** Types whose zero on a measure is structural: Bundle is a purchase container, edX revenue is never captured. */
+export const HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES: Readonly<Record<HealthMetricsTrainingEnrollmentMetric, readonly string[]>> = {
+  enrollments: ['Bundle'],
+  revenue: ['edX'],
 };
 
 /** Fill for the by-type bars — applied via `[class]`, so it is safelisted in Tailwind. */
