@@ -189,6 +189,8 @@ export class HealthMetricsTrainingService {
         FROM ${TRAINING_COURSES_VIEW}
         WHERE foundation_slug = ?
           AND enrollment_count_${suffix} > 0
+          AND _key IS NOT NULL
+          AND NULLIF(TRIM(course_name), '') IS NOT NULL
       ),
       matched AS (
         SELECT * FROM scoped ${matchClause}

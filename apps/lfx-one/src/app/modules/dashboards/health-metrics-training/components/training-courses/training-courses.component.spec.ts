@@ -124,8 +124,8 @@ describe('TrainingCoursesComponent', () => {
     const edx = query('training-courses-row-edx-1-revenue');
     expect(free?.textContent?.trim()).toBe('free');
     expect(edx?.textContent?.trim()).toBe('not available');
-    expect(free?.classList).toContain('text-gray-400');
-    expect(edx?.classList).toContain('text-gray-400');
+    expect(free?.classList).toContain('text-gray-500');
+    expect(edx?.classList).toContain('text-gray-500');
     expect(query(`training-courses-row-free-1-type`)?.textContent?.trim()).toBe('eLearning');
   });
 
@@ -178,6 +178,12 @@ describe('TrainingCoursesComponent', () => {
     await render(response(), { trnType: 'bundles', trnPage: '-2' });
 
     expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ type: 'all', offset: 0 }));
+  });
+
+  it('starts on page 1 for a fractional URL page below 1', async () => {
+    await render(response(), { trnPage: '0.5' });
+
+    expect(getTrainingCourses).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });
 
   it('re-reads from page 1 when the period changes', async () => {

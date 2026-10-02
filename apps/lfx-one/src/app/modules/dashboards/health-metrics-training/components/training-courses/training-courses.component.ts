@@ -212,7 +212,7 @@ export class TrainingCoursesComponent {
 
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_TRAINING_QUERY_PARAMS.coursesPage));
-    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+    return Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
   }
 
   private normalizeSearch(value: string): string {

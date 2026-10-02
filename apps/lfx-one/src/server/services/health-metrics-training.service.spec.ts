@@ -236,6 +236,8 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     const [sql] = execute.mock.calls[0];
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.TRAINING_COURSES');
     expect(sql).toContain(`AND enrollment_count_${suffix} > 0`);
+    expect(sql).toContain('AND _key IS NOT NULL');
+    expect(sql).toContain("AND NULLIF(TRIM(course_name), '') IS NOT NULL");
     expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd`);
     expect(sql).toContain(`sort_rank_${suffix} AS sort_rank`);
     expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, course_key ASC');
