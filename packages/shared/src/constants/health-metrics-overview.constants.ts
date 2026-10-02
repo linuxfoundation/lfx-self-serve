@@ -11,15 +11,16 @@ import type {
   HealthMetricsOverviewMembersLinkSpec,
   HealthMetricsOverviewNonMembersLinkSpec,
   HealthMetricsOverviewTileLinkSpec,
+  HealthMetricsOverviewTrainingLinkSpec,
   HealthOverviewKpisRow,
   HealthOverviewRevenueRow,
 } from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
- * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS},
- * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS}, {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS},
- * {@link HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS}.
+ * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS},
+ * {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS}, {@link HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS},
+ * {@link HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS}.
  * Order here is the tile-strip render order — never re-sorted.
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
@@ -94,16 +95,6 @@ export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
 ] as const satisfies readonly (keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[];
 
 /**
- * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
- * A one-line map so retiring a link when its Level 2 page ships is a one-line change.
- * `code.insights` is not here — it opens LFX Insights externally via `buildLensAwareInsightsUrl`.
- * Engagement's, Events', Members' and Non-Members' targets moved to their own in-app maps below.
- */
-export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
-  'trn.enrollment': '/training',
-} as const;
-
-/**
  * `eng.*` `link_target` → the Engagement section that owns it, plus the section filters to apply on
  * arrival. A filter left `null` is cleared, so a stale cut carried over in the URL cannot hide the
  * responsible entity.
@@ -142,6 +133,11 @@ export const HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS = {
   'non.conversion': { section: 'conversion', queryParams: {} },
 } as const satisfies Record<string, HealthMetricsOverviewNonMembersLinkSpec>;
 
+/** `trn.*` `link_target` → the Training section that owns it; `trn.enrollment` lands on `#enroll`. */
+export const HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS = {
+  'trn.enrollment': { section: 'enroll', queryParams: {} },
+} as const satisfies Record<string, HealthMetricsOverviewTrainingLinkSpec>;
+
 /** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
 export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 
@@ -151,9 +147,10 @@ export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
   evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
   mem: { linkTarget: 'mem.list', label: 'View members' },
   non: { linkTarget: 'non.orgs', label: 'View organizations' },
+  trn: { linkTarget: 'trn.enrollment', label: 'View enrollment' },
 } as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
 
-/** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */
+/** The one `link_target` that opens externally (LFX Insights) instead of an in-app tab. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
 
 /**

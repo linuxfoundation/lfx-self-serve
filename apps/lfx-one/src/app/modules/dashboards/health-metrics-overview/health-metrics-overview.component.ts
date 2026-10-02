@@ -13,7 +13,6 @@ import {
   HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS,
 } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewTabRoute,
   buildHealthMetricsOverviewTiles,
   buildLensAwareInsightsUrl,
@@ -22,7 +21,6 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { environment } from '@environments/environment';
 import { Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
@@ -189,7 +187,6 @@ export class HealthMetricsOverviewComponent {
   private initFindingGroups(): Signal<HealthMetricsOverviewFindingGroup[]> {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
-      const foundationSfid = this.projectContextService.selectedFoundationSfid();
 
       return groupHealthMetricsOverviewFindings(this.findings()).map((groupRows) => {
         const groupMeta = resolveHealthMetricsOverviewGroupMeta(groupRows.classification);
@@ -198,7 +195,7 @@ export class HealthMetricsOverviewComponent {
           classification: groupRows.classification,
           groupTextClass: groupMeta.textClass,
           groupIcon: groupMeta.icon,
-          findings: groupRows.findings.map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation, foundationSfid)),
+          findings: groupRows.findings.map((finding) => HealthMetricsOverviewComponent.toFindingViewModel(finding, foundation)),
         };
       });
     });
@@ -228,22 +225,11 @@ export class HealthMetricsOverviewComponent {
     };
   }
 
-  private static toFindingViewModel(
-    finding: HealthMetricsFinding,
-    foundation: ProjectContext | null,
-    foundationSfid: string | null
-  ): HealthMetricsOverviewFindingViewModel {
+  private static toFindingViewModel(finding: HealthMetricsFinding, foundation: ProjectContext | null): HealthMetricsOverviewFindingViewModel {
     const isInsightsLink = finding.linkTarget === HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
-    // Engagement, Events, Members and Non-Members findings link into their tab in-app and need no Salesforce id.
+    // Engagement, Events, Members, Non-Members and Training findings link into their tab in-app; only Insights opens externally.
     const linkRoute = buildHealthMetricsOverviewTabRoute(finding.linkTarget);
-    // PCC's `/project/{id}/...` routes are keyed by the Salesforce ID, not the LFX v2 project uid —
-    // resolve through `selectedFoundationSfid` (null while resolving degrades to a hidden link).
-    let linkHref: string | undefined;
-    if (isInsightsLink) {
-      linkHref = buildLensAwareInsightsUrl(foundation?.slug, true);
-    } else if (!linkRoute) {
-      linkHref = buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundationSfid ?? '', finding.linkTarget);
-    }
+    const linkHref = isInsightsLink ? buildLensAwareInsightsUrl(foundation?.slug, true) : undefined;
 
     return {
       classification: finding.classification,
