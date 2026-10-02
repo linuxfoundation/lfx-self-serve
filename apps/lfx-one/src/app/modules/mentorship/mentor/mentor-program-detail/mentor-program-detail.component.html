@@ -36,13 +36,16 @@
         [attr.aria-labelledby]="'mentorship-mentor-program-detail-tab-trigger-' + activeTab()">
         @switch (activeTab()) {
           @case ('applicants') {
-            <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
+            <lfx-mentorship-mentor-applicants-tab [applicants]="applicants()" (noteRequested)="onNoteRequested($event)" />
           }
           @case ('mentees') {
-            <lfx-mentorship-mentor-mentees-tab [mentees]="mentees()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
+            <lfx-mentorship-mentor-mentees-tab
+              [mentees]="mentees()"
+              (noteRequested)="onNoteRequested($event)"
+              (taskCreateRequested)="onTaskCreateRequested($event)" />
           }
           @case ('tasks') {
-            <lfx-mentorship-mentor-tasks-tab [mentees]="mentees()" />
+            <lfx-mentorship-mentor-tasks-tab [mentees]="mentees()" [reviewingTaskIds]="reviewingTaskIds()" (reviewRequested)="onTaskReviewRequested($event)" />
           }
         }
       </div>

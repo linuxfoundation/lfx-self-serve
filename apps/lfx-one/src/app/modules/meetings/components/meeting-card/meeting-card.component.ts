@@ -643,7 +643,7 @@ export class MeetingCardComponent implements OnInit {
       width: '450px',
       modal: true,
       closable: true,
-      dismissableMask: true,
+      dismissableMask: false,
       data: {
         meeting: meeting,
         occurrence: occurrenceToCancel,
@@ -740,7 +740,7 @@ export class MeetingCardComponent implements OnInit {
 
   private showRescheduleOccurrenceModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
     const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
-      header: 'Reschedule Occurrence',
+      header: 'Edit Occurrence',
       width: '520px',
       modal: true,
       closable: true,
@@ -755,8 +755,8 @@ export class MeetingCardComponent implements OnInit {
 
       this.messageService.add({
         severity: 'success',
-        summary: 'Occurrence rescheduled',
-        detail: 'Only this occurrence was moved. The rest of the series is unchanged.',
+        summary: 'Occurrence updated',
+        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
       });
       // Not every host binds `meetingDeleted` (the committee meetings list doesn't), so the card
       // re-reads the series itself to show the occurrence under its new start time (also its new id).

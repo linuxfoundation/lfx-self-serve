@@ -3,13 +3,14 @@
 
 import '@angular/compiler';
 
-import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms, MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE, MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE } from '@lfx-one/shared/constants';
 import type {
   MentorshipMentorRegisterRequest,
   MentorshipUpstreamMentorDetail,
   MentorshipUpstreamMentorProgram,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramMembership,
+  MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
@@ -40,7 +41,7 @@ const MENTOR_USER_ID = '6f1c2d3e-4a5b-4c6d-8e7f-901234567890';
 const MENTOR_DETAIL_PATH = `/mentorship/v1/mentors/${MENTOR_USER_ID}`;
 
 function buildReq(): Request {
-  return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
+  return { path: '/api/mentorship/mentor/programs' } as Request;
 }
 
 /** A signed-in caller, so the service looks up their primary email by sub. */
@@ -827,10 +828,91 @@ describe('MentorshipMentorService.updateMentorProfile', () => {
 
 describe('MentorshipMentorService.getMentorProgram', () => {
   let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const PROGRAM_ID = '1a2b3c4d-0000-4000-8000-000000000001';
+  const OTHER_PROGRAM_ID = '1a2b3c4d-0000-4000-8000-000000000002';
+  const TERM_ID = '2b3c4d5e-0000-4000-8000-000000000001';
+  const PROGRAM_PATH = `/mentorship/v1/programs/${PROGRAM_ID}`;
+  const TERM_TASKS_PATH = `${PROGRAM_PATH}/terms/${TERM_ID}/tasks`;
+  const ACCEPTED_ID = '3c4d5e6f-0000-4000-8000-000000000001';
+  const GRADUATED_ID = '3c4d5e6f-0000-4000-8000-000000000002';
+  const PENDING_ID = '3c4d5e6f-0000-4000-8000-000000000003';
+  const MENTOR_ROLE_ID = '3c4d5e6f-0000-4000-8000-000000000004';
+  const applicationTasksPath = (applicationId: string) => `/mentorship/v1/applications/${applicationId}/tasks`;
+
+  const mentorProgram = (id = PROGRAM_ID, termId = TERM_ID): MentorshipUpstreamMentorProgram => ({
+    id,
+    name: 'GridFlow',
+    slug: 'gridflow',
+    skills: [],
+    mentors: [],
+    terms: [{ id: termId, name: 'Fall 2026', status: 'open', start_date_time: '2026-09-01T00:00:00Z' }],
+  });
+  const mentorDetail = (programs: MentorshipUpstreamMentorProgram[]): MentorshipUpstreamMentorDetail => ({
+    user_id: MENTOR_USER_ID,
+    skills: [],
+    joined_at: '2026-01-01T00:00:00Z',
+    programs,
+    current_mentees: [],
+    graduated_mentees: [],
+    stats: { programs_mentoring: programs.length, current_mentees: 0, mentees_graduated: 0 },
+  });
+  const row = (
+    id: string,
+    status: MentorshipUpstreamProgramApplicationRow['status'],
+    overrides: Partial<MentorshipUpstreamProgramApplicationRow> = {}
+  ): MentorshipUpstreamProgramApplicationRow => ({
+    user_id: `user-${id}`,
+    application_id: id,
+    status,
+    name: `Mentee ${id.slice(-1)}`,
+    email: `mentee${id.slice(-1)}@example.com`,
+    tasks_submitted: 0,
+    tasks_total: 0,
+    created_on: '2026-08-01T10:00:00Z',
+    updated_on: '2026-08-02T10:00:00Z',
+    ...overrides,
+  });
+  const task = (id: string, applicationId: string, status: MentorshipUpstreamTask['status']): MentorshipUpstreamTask => ({
+    id,
+    application_id: applicationId,
+    assignee_id: `user-${applicationId}`,
+    status,
+    custom: false,
+    created_on: '2026-08-05T00:00:00Z',
+    updated_on: '2026-09-01T00:00:00Z',
+  });
+  const rows = [
+    row(ACCEPTED_ID, 'accepted', {
+      note: 'Strong start.',
+      avatar_url: 'https://avatars.example.com/1.png',
+      other_applications: [{ program_id: OTHER_PROGRAM_ID, program_name: 'Thanos', status: 'hold' }],
+    }),
+    row(GRADUATED_ID, 'graduated'),
+    row(PENDING_ID, 'pending', { tasks_submitted: 1, tasks_total: 2 }),
+  ];
+
+  /** Answers each upstream read by path, since the program reads run in parallel. */
+  function answer(routes: Record<string, (query: Record<string, unknown> | undefined) => unknown>) {
+    proxyRequest.mockImplementation(async (_req, _service, path, _method, query) => {
+      const route = routes[path];
+      if (!route) throw new Error(`unexpected upstream call to ${path}`);
+      return route(query as Record<string, unknown> | undefined) as never;
+    });
+  }
+
+  const caller = (programs = [mentorProgram()]) => ({
+    [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+    [MENTOR_DETAIL_PATH]: () => mentorDetail(programs),
+  });
 
   beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.warning).mockClear();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
     service = new MentorshipMentorService();
   });
 
@@ -838,77 +920,444 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     vi.useRealTimers();
   });
 
-  it('resolves by primary id and returns a fully-built detail (program + tab counts + lists)', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
-
-    const source = getMockMentorshipMentorPrograms().find((program) => program.id === 'mp_gridflow_fall26')!;
-    // Detail carries the raw program plus the derived tab counts and the mentee & applicant lists.
-    expect(detail.program.id).toBe(source.id);
-    expect(detail.program.slug).toBe(source.slug);
-    expect(detail.program.name).toBe(source.name);
-
-    // Tab counts and rows come from the id-keyed mentor lists (term-filtered), not
-    // the admin slug map. `tasks` is the submitted-task count on those mentees.
-    const lists = getMockMentorshipMentorProgramLists()[source.id];
-    expect(detail.tabCounts).toEqual({
-      tasks: source.stats.tasksToReview,
-      mentees: lists.mentees.length,
-      applicants: lists.applicants.length,
+  it("builds the detail from the chosen term's rows and every task on the term, with counts matching the card", async () => {
+    answer({
+      ...caller(),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published', project_name: 'LF Energy' }),
+      [`${PROGRAM_PATH}/applications`]: () => listOf(rows),
+      [TERM_TASKS_PATH]: () =>
+        listOf([
+          { ...task('t1', ACCEPTED_ID, 'submitted'), name: 'Resume', category: 'prerequisite', file: 'resume.pdf', due_date: '2026-09-30T00:00:00Z' },
+          task('t2', GRADUATED_ID, 'submitted'),
+          task('t3', PENDING_ID, 'incomplete'),
+          task('t4', MENTOR_ROLE_ID, 'submitted'),
+        ]),
     });
-    expect(detail.program.stats.tasksToReview).toBe(detail.tabCounts.tasks);
-    expect(detail.program.stats.mentees).toBe(lists.mentees.length);
-    expect(detail.program.stats.applicants).toBe(lists.applicants.length);
-    expect(detail.mentees).toEqual(lists.mentees);
-    expect(detail.applicants).toEqual(lists.applicants);
-    expect(detail.applicants.every((applicant) => applicant.termName === source.term)).toBe(true);
+
+    const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID);
+
+    expect(detail.program).toMatchObject({ id: PROGRAM_ID, projectName: 'LF Energy', term: 'Fall 2026', termStatus: 'active-term' });
+    // A graduated mentee's leftover submission and a mentor-role application's task are not waiting on the mentor.
+    expect(detail.program.stats).toEqual({ mentees: 2, tasksToReview: 1, applicants: 3 });
+    expect(detail.tabCounts).toEqual({ tasks: 1, mentees: 2, applicants: 3 });
+    expect(detail.mentees.map((mentee) => mentee.id)).toEqual([ACCEPTED_ID, GRADUATED_ID]);
+    expect(detail.mentees[0]).toEqual({
+      id: ACCEPTED_ID,
+      name: 'Mentee 1',
+      email: 'mentee1@example.com',
+      avatarUrl: 'https://avatars.example.com/1.png',
+      status: 'accepted',
+      tasksSubmitted: 0,
+      tasksTotal: 0,
+      termName: 'Fall 2026',
+      note: 'Strong start.',
+      tasks: [
+        {
+          id: 't1',
+          name: 'Resume',
+          description: '',
+          status: 'submitted',
+          prerequisite: true,
+          createdOn: '2026-08-05T00:00:00Z',
+          updatedOn: '2026-09-01T00:00:00Z',
+          dueOn: '2026-09-30',
+          hasSubmission: true,
+          requiresFileSubmission: false,
+        },
+      ],
+    });
+    expect(detail.applicants.map((applicant) => applicant.id)).toEqual([ACCEPTED_ID, GRADUATED_ID, PENDING_ID]);
+    expect(detail.applicants[0]).toMatchObject({
+      createdOn: '2026-08-01',
+      updatedOn: '2026-08-02',
+      otherApplications: [{ programId: OTHER_PROGRAM_ID, programName: 'Thanos', status: 'pending' }],
+    });
+    expect(detail.applicants[2].tasks?.map((applicantTask) => applicantTask.status)).toEqual(['pending']);
+    expect(JSON.stringify(detail)).not.toContain(MENTOR_ROLE_ID);
+    expect(proxyRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      `${PROGRAM_PATH}/applications`,
+      'GET',
+      { term: TERM_ID, limit: 50, offset: 0 },
+      undefined
+    );
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', TERM_TASKS_PATH, 'GET', { limit: 100, offset: 0 }, undefined);
   });
 
-  it('omits other-application links whose program id the mentor detail endpoint cannot resolve', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
-    const ifeoma = detail.applicants.find((applicant) => applicant.id === 'app_ifeoma_adeyemi');
-    expect(ifeoma?.otherApplications?.map((application) => application.programId)).toEqual(['mp_janusgraph_fall26']);
+  it("reads each mentee's tasks from their application when the gateway refuses the term task listing", async () => {
+    answer({
+      ...caller(),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+      [`${PROGRAM_PATH}/applications`]: () => listOf(rows),
+      [TERM_TASKS_PATH]: () => {
+        throw upstreamError(403, { error: 'forbidden' });
+      },
+      [applicationTasksPath(ACCEPTED_ID)]: () => listOf([task('t1', ACCEPTED_ID, 'submitted'), task('t2', ACCEPTED_ID, 'complete')]),
+      [applicationTasksPath(GRADUATED_ID)]: () => listOf([task('t3', GRADUATED_ID, 'submitted')]),
+    });
+
+    const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID);
+
+    expect(detail.tabCounts).toEqual({ tasks: 1, mentees: 2, applicants: 3 });
+    expect(detail.program.stats).toEqual({ mentees: 2, tasksToReview: 1, applicants: 3 });
+    expect(detail.mentees.map((mentee) => mentee.tasks?.map((menteeTask) => menteeTask.status))).toEqual([['submitted', 'completed'], ['submitted']]);
+    // The pending applicant's application is not read, so the row carries no tasks.
+    expect(detail.applicants[2].tasks).toBeUndefined();
+    expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', applicationTasksPath(PENDING_ID), 'GET', expect.anything(), undefined);
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_get_mentor_program', expect.any(String), { term_id: TERM_ID });
   });
 
-  it('does not join a Fall mentor card to Winter applicant rows stored under the same slug', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_apicurio_fall26');
-    const lists = getMockMentorshipMentorProgramLists()['mp_apicurio_fall26'];
-    expect(detail.applicants).toEqual(lists.applicants);
-    expect(detail.applicants.some((applicant) => applicant.termName === 'Winter 2026')).toBe(false);
-    expect(detail.tabCounts.applicants).toBe(detail.applicants.length);
-    expect(detail.program.stats.applicants).toBe(detail.applicants.length);
+  it('reads at most five mentee applications at once in the fallback', async () => {
+    const mentees = Array.from({ length: 7 }, (_, index) => row(`3c4d5e6f-0000-4000-8000-00000000010${index}`, 'accepted'));
+    let inFlight = 0;
+    let peak = 0;
+    const routes: Record<string, () => unknown> = {
+      ...caller(),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+      [`${PROGRAM_PATH}/applications`]: () => listOf(mentees),
+      [TERM_TASKS_PATH]: () => {
+        throw upstreamError(403, { error: 'forbidden' });
+      },
+    };
+    proxyRequest.mockImplementation(async (_req, _service, path) => {
+      if (routes[path]) return routes[path]() as never;
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await Promise.resolve();
+      inFlight--;
+      return listOf([]) as never;
+    });
+
+    await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).resolves.toMatchObject({ tabCounts: { mentees: 7 } });
+    expect(peak).toBe(5);
   });
 
-  it('resolves by slug for callers that route via the URL-friendly identifier', async () => {
-    const source = getMockMentorshipMentorPrograms()[0];
-    const detail = await service.getMentorProgram(buildReq(), source.slug);
-    expect(detail.program.id).toBe(source.id);
+  it.each([
+    ['refused', true],
+    ['allowed', false],
+  ])('refuses an application id from upstream that is not a UUID when the term task listing is %s', async (_kind, refused) => {
+    answer({
+      ...caller(),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+      [`${PROGRAM_PATH}/applications`]: () => listOf([row('../tasks', 'accepted')]),
+      [TERM_TASKS_PATH]: () => {
+        if (refused) throw upstreamError(403, { error: 'forbidden' });
+        return listOf([]);
+      },
+    });
+
+    await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toMatchObject({ statusCode: 502, code: 'MENTORSHIP_INVALID_APPLICATION' });
   });
 
-  it('throws ResourceNotFoundError when neither id nor slug matches', async () => {
-    await expect(service.getMentorProgram(buildReq(), 'mp_does_not_exist')).rejects.toBeInstanceOf(ResourceNotFoundError);
-    // The error carries the operation tag so log/observability layers can group by it.
-    await expect(service.getMentorProgram(buildReq(), 'mp_does_not_exist')).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-      statusCode: 404,
+  it('propagates any other failure of the term task listing', async () => {
+    const error = upstreamError(500, { error: 'internal server error' });
+    answer({
+      ...caller(),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+      [`${PROGRAM_PATH}/applications`]: () => listOf(rows),
+      [TERM_TASKS_PATH]: () => {
+        throw error;
+      },
+    });
+
+    await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toBe(error);
+  });
+
+  it('reads no rows for a program with no terms', async () => {
+    answer({
+      ...caller([{ ...mentorProgram(), terms: [] }]),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+    });
+
+    const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID);
+
+    expect(detail).toMatchObject({ mentees: [], applicants: [], tabCounts: { tasks: 0, mentees: 0, applicants: 0 } });
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('finds the program whatever the case of the requested id', async () => {
+    answer({
+      ...caller([{ ...mentorProgram(), terms: [] }]),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+    });
+
+    const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID.toUpperCase());
+
+    expect(detail.program.id).toBe(PROGRAM_ID);
+  });
+
+  it('skips a listed program whose id is not a UUID instead of failing the lookup', async () => {
+    answer({
+      ...caller([
+        { ...mentorProgram(), id: 42 as unknown as string },
+        { ...mentorProgram(), terms: [] },
+      ]),
+      [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
+    });
+
+    const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID);
+
+    expect(detail.program.id).toBe(PROGRAM_ID);
+  });
+
+  it.each([
+    ['another program', () => caller([mentorProgram(OTHER_PROGRAM_ID)])],
+    [
+      'no mentor detail',
+      () => ({
+        [ME_PATH]: () => ({ id: MENTOR_USER_ID }),
+        [MENTOR_DETAIL_PATH]: () => {
+          throw upstreamError(404, { error: 'mentor not found' });
+        },
+      }),
+    ],
+  ])('answers 404 for a program the caller does not mentor (%s) without reading it', async (_case, routes) => {
+    answer(routes());
+
+    await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toMatchObject({ statusCode: 404, operation: 'mentorship_get_mentor_program' });
+    expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROGRAM_PATH, 'GET', undefined, undefined);
+  });
+
+  it('refuses a term id from upstream that is not a UUID before building a path from it', async () => {
+    answer(caller([mentorProgram(PROGRAM_ID, '../tasks')]));
+
+    await expect(service.getMentorProgram(buildReq(), PROGRAM_ID)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'MENTORSHIP_INVALID_PROGRAM',
       operation: 'mentorship_get_mentor_program',
     });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('MentorshipMentorService.updateApplicationNote', () => {
+  const APPLICATION_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+  const NOTE_PATH = `/mentorship/v1/applications/${APPLICATION_ID}/note`;
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
   });
 
-  it('keeps header counts and rows aligned when a card has no people for its term', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_envoy_fall26');
-    expect(detail.mentees).toEqual([]);
-    expect(detail.applicants).toEqual([]);
-    expect(detail.tabCounts.mentees).toBe(0);
-    expect(detail.tabCounts.applicants).toBe(0);
-    expect(detail.program.stats.mentees).toBe(0);
-    expect(detail.program.stats.applicants).toBe(0);
+  it('PUTs the note as reviewer_note, without logging its text', async () => {
+    proxyRequest.mockResolvedValueOnce({ note: 'Strong screening call.' });
+
+    await expect(service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: 'Strong screening call.' })).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', NOTE_PATH, 'PUT', undefined, { reviewer_note: 'Strong screening call.' });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('Strong screening call.');
   });
 
-  it('lists only accepted and graduated mentees on the mentor Mentees tab payload', async () => {
-    const detail = await service.getMentorProgram(buildReq(), 'mp_thanos_summer26');
-    expect(detail.mentees.every((mentee) => mentee.status === 'accepted' || mentee.status === 'graduated')).toBe(true);
-    expect(detail.mentees.map((mentee) => mentee.id)).toEqual(['mnt_thanos_1', 'mnt_thanos_2']);
-    expect(detail.tabCounts.mentees).toBe(detail.mentees.length);
-    expect(detail.program.stats.mentees).toBe(detail.mentees.length);
+  it('sends an empty reviewer_note to clear the note', async () => {
+    proxyRequest.mockResolvedValueOnce({ note: '' });
+
+    await service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: '' });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', NOTE_PATH, 'PUT', undefined, { reviewer_note: '' });
+  });
+
+  it.each([
+    [403, 'only program mentors and admins can review applications'],
+    [404, 'application not found'],
+  ])("passes upstream's %s through", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: 'Note' })).rejects.toBe(failure);
+  });
+});
+
+describe('MentorshipMentorService.createMenteeTasks', () => {
+  const FIRST_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+  const SECOND_ID = '7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d';
+  const THIRD_ID = '8b3c4d5e-6f7a-4b2c-8d3e-4f5a6b7c8d9e';
+  const MENTEE_USER_ID = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
+  const TERM_ID = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+  const request = { name: 'Write a design doc', description: 'One page on the plan.', dueDate: '2026-11-30' };
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const application = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    program_term_id: TERM_ID,
+    user_id: MENTEE_USER_ID,
+    role: 'mentee',
+    status: 'accepted',
+    tasks_submitted: false,
+    admin_notified: false,
+    created_on: '2026-06-01T10:00:00Z',
+    updated_on: '2026-06-02T10:00:00Z',
+    ...overrides,
+  });
+
+  /** Answers GET /me, each GET /applications/{id} and each POST /applications/{id}/tasks; `fail` maps an id to its POST failure. */
+  function routeUpstream(fail: Record<string, unknown> = {}, applications: Record<string, unknown> = {}): void {
+    proxyRequest.mockImplementation(async (_req, _service, path, method) => {
+      if (path === ME_PATH) return { id: MENTOR_USER_ID };
+      const match = /^\/mentorship\/v1\/applications\/([^/]+)(\/tasks)?$/.exec(path);
+      if (!match) throw new Error(`unexpected path ${path}`);
+      const id = match[1];
+      if (!match[2]) return applications[id] ?? application(id);
+      expect(method).toBe('POST');
+      if (fail[id]) throw fail[id];
+      return { id: `task-${id}` };
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    vi.mocked(logger.warning).mockClear();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it("creates the task with the application's mentee and term, owned by the caller's local user id", async () => {
+    routeUpstream();
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID] })).resolves.toEqual({ created: [FIRST_ID], failed: [] });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/applications/${FIRST_ID}/tasks`, 'POST', undefined, {
+      assignee_id: MENTEE_USER_ID,
+      program_term_id: TERM_ID,
+      owner_id: MENTOR_USER_ID,
+      created_by: MENTOR_USER_ID,
+      name: request.name,
+      description: request.description,
+      category: 'non_prerequisite',
+      custom: true,
+      due_date: '2026-11-30',
+    });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(request.name);
+  });
+
+  it("passes a single application's upstream failure through", async () => {
+    const failure = upstreamError(403, { error: 'forbidden' });
+    routeUpstream({ [FIRST_ID]: failure });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID] })).rejects.toBe(failure);
+  });
+
+  it('refuses an application that is not an accepted mentee, without creating anything', async () => {
+    routeUpstream({}, { [FIRST_ID]: application(FIRST_ID, { status: 'graduated' }) });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID] })).rejects.toMatchObject({ statusCode: 400 });
+    expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', expect.stringMatching(/\/tasks$/), 'POST', undefined, expect.anything());
+  });
+
+  it('reads the caller once and lists, in order, the applications whose task was not created', async () => {
+    routeUpstream({ [SECOND_ID]: upstreamError(422, { error: 'referenced resource does not exist' }) });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID, SECOND_ID, THIRD_ID] })).resolves.toEqual({
+      created: [FIRST_ID, THIRD_ID],
+      failed: [SECOND_ID],
+    });
+    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_PATH)).toHaveLength(1);
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_mentor_tasks', expect.any(String), {
+      applicationId: SECOND_ID,
+      status: 422,
+      code: expect.any(String),
+    });
+  });
+
+  it('runs at most three creates at once', async () => {
+    const ids = Array.from({ length: 7 }, (_, index) => `5d1c8e2f-3a4b-4c6d-8e9f-${index.toString(16).padStart(12, '0')}`);
+    let inFlight = 0;
+    let peak = 0;
+    proxyRequest.mockImplementation(async (_req, _service, path) => {
+      if (path === ME_PATH) return { id: MENTOR_USER_ID };
+      if (!path.endsWith('/tasks')) return application(path.split('/').pop() as string);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return {};
+    });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: ids })).resolves.toEqual({ created: ids, failed: [] });
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it('fails the whole create when the caller has no valid local user id', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'not-a-uuid' });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID, SECOND_ID] })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'MENTORSHIP_INVALID_USER',
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MentorshipMentorService.reviewMenteeTask', () => {
+  const TASK_ID = '9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+  const TASK_PATH = `/mentorship/v1/tasks/${TASK_ID}`;
+  const REVIEW_PATH = `${TASK_PATH}/review`;
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const task = (status: MentorshipUpstreamTask['status']): Partial<MentorshipUpstreamTask> => ({ id: TASK_ID, status });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it.each(['complete', 'incomplete'] as const)('reads the submitted task, then PATCHes the review route with only %s', async (status) => {
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockResolvedValueOnce(task(status));
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, status)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', REVIEW_PATH, 'PATCH', undefined, { status });
+  });
+
+  it.each([
+    ['complete', 'complete'],
+    ['incomplete', 'in_progress'],
+    ['incomplete', 'incomplete'],
+    ['incomplete', 'complete'],
+  ] as const)('refuses %s on a task that is %s with a 409 and never PATCHes', async (status, current) => {
+    proxyRequest.mockResolvedValueOnce(task(current));
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, status)).rejects.toMatchObject({
+      statusCode: 409,
+      code: MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('encodes the task id into both paths', async () => {
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockResolvedValueOnce(task('complete'));
+
+    await service.reviewMenteeTask(buildReq(), 'a/b?c', 'complete');
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/tasks/a%2Fb%3Fc', 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/tasks/a%2Fb%3Fc/review', 'PATCH', undefined, {
+      status: 'complete',
+    });
+  });
+
+  it.each([
+    [403, 'actor is not a member of this program'],
+    [404, 'task not found'],
+  ])("passes the read's %s through without PATCHing", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, 'complete')).rejects.toBe(failure);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'actor is not a member of this program'],
+    [409, 'invalid state transition'],
+  ])("passes the review's %s through", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockRejectedValueOnce(failure);
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, 'complete')).rejects.toBe(failure);
   });
 });

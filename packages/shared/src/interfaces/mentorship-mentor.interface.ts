@@ -11,6 +11,7 @@ import type {
 } from './mentorship-mentee.interface';
 import type {
   MentorshipApplicantTaskStatus,
+  MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgramApplicant,
   MentorshipProgramMentee,
@@ -184,6 +185,73 @@ export interface MentorshipUpstreamProgramMembershipRequest {
   program_id: string;
 }
 
+/**
+ * Body of `PUT /api/mentorship/mentor/applications/:applicationId/note`: the application's reviewer note,
+ * shared by every mentor of the program. A note that is blank once trimmed clears it.
+ */
+export interface MentorshipMentorApplicationNoteUpdate {
+  note: string;
+}
+
+/** Body of `PUT /mentorship/v1/applications/{id}/note`. An empty string clears the note. */
+export interface MentorshipUpstreamApplicationNoteUpdate {
+  reviewer_note: string;
+}
+
+/**
+ * Body of `POST /api/mentorship/mentor/tasks`: one task, created once for each accepted mentee's application.
+ * `dueDate` is a date-only `YYYY-MM-DD`. The assignee, term and owner come from upstream, never from the browser.
+ */
+export interface MentorshipMentorTaskCreateRequest {
+  applicationIds: string[];
+  name: string;
+  description: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+}
+
+/** Response of `POST /api/mentorship/mentor/tasks`: the application ids whose task was created, and those whose was not. */
+export interface MentorshipMentorTaskCreateResponse {
+  created: string[];
+  failed: string[];
+}
+
+/**
+ * Body of `POST /mentorship/v1/applications/{id}/tasks`. `assignee_id` must be the accepted mentee's user id, and
+ * `program_term_id` is what lists the task under its term. Upstream sets `status` to `incomplete`.
+ */
+export interface MentorshipUpstreamTaskCreate {
+  assignee_id: string;
+  program_term_id: string;
+  owner_id: string;
+  created_by: string;
+  name: string;
+  description: string;
+  category: 'prerequisite' | 'non_prerequisite';
+  custom: boolean;
+  submit_file?: string;
+  due_date?: string;
+}
+
+/** A mentor's decision on a submitted task: `complete` approves it, `incomplete` sends it back for changes. */
+export type MentorshipMentorTaskReviewDecision = 'complete' | 'incomplete';
+
+/** Body of `PATCH /api/mentorship/mentor/tasks/:taskId/review`. Upstream has no field for a comment. */
+export interface MentorshipMentorTaskReviewUpdate {
+  status: MentorshipMentorTaskReviewDecision;
+}
+
+/** Body of `PATCH /mentorship/v1/tasks/{id}/review`. */
+export interface MentorshipUpstreamTaskReviewUpdate {
+  status: MentorshipMentorTaskReviewDecision;
+}
+
+/** What the mentor Tasks tab emits when a mentor approves a task or requests changes on it. */
+export interface MentorshipMentorTaskReviewRequest {
+  taskId: string;
+  status: MentorshipMentorTaskReviewDecision;
+}
+
 /** What an invited mentor does with the invitation on `/mentorship/mentor/invites`. */
 export type MentorshipMentorInviteDecision = 'accept' | 'decline';
 
@@ -239,7 +307,10 @@ export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM
 export type MentorshipMentorTaskReviewStatus = Extract<MentorshipApplicantTaskStatus, 'submitted' | 'completed'>;
 
 export interface MentorshipMentorReviewTask {
+  /** Row key, unique across mentees. */
   id: string;
+  /** Upstream task UUID, which the review write takes. */
+  taskId: string;
   menteeId: string;
   menteeName: string;
   menteeEmail: string;
@@ -262,10 +333,26 @@ export interface MentorshipMentorProgramTabCounts {
   applicants: number;
 }
 
-/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. */
+/**
+ * An application the same person holds on another program, as a mentor sees it. The Applicants tab links the
+ * program name to that program's public page on the mentorship site, which anyone may open; `programId` is
+ * left out when upstream's id is not a UUID, and the name then shows as plain text.
+ */
+export interface MentorshipMentorOtherApplication {
+  programId?: string;
+  programName: string;
+  status: MentorshipMenteeStatus;
+}
+
+/** One Applicants tab row. Its `id` is the application id. */
+export interface MentorshipMentorProgramApplicant extends Omit<MentorshipProgramApplicant, 'otherApplications'> {
+  otherApplications?: MentorshipMentorOtherApplication[];
+}
+
+/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. Each row's `id` is its application id. */
 export interface MentorshipMentorProgramLists {
   mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
+  applicants: MentorshipMentorProgramApplicant[];
 }
 
 /** Full mentor program-detail payload from `GET /api/mentorship/mentor/programs/:programId`. */

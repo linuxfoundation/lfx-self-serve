@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { FormGroup } from '@angular/forms';
-import { PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
+import { FormControl, FormGroup } from '@angular/forms';
+import { Meeting, MeetingOccurrence, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -87,5 +87,82 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
     // to the meeting's own count meanwhile. An emit here would overwrite that fallback with a zero and
     // state, as a fact, that nobody attended.
     expect(emitted).toEqual([]);
+  });
+});
+
+const RECURRING_MEETING = { id: 'meeting-1', timezone: 'UTC', recurrence: { type: 2, repeat_interval: 1 } } as unknown as Meeting;
+const OCCURRENCE = { occurrence_id: '1893492000', start_time: '2030-01-01T10:00:00.000Z', duration: 30 } as MeetingOccurrence;
+const GUEST = { meeting_id: 'meeting-1', email: 'ada@acme-motors.example', first_name: 'Ada', last_name: 'Byron', host: false };
+
+/**
+ * Covers which dates a guest added from the drawer is invited to.
+ * @description Upstream reads a blank `occurrence` as "every occurrence", so the default must send
+ * none, and "this date only" must send the occurrence the host is showing. A one-off meeting has no
+ * dates to choose between, so it never offers the choice.
+ */
+describe('MeetingRegistrantsDisplayComponent — guest invite scope', () => {
+  let addMeetingRegistrants: ReturnType<typeof vi.fn>;
+
+  async function mount(meeting: Meeting, occurrence: MeetingOccurrence | null): Promise<MeetingRegistrantsDisplayComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () =>
+              new FormGroup({ email: new FormControl(GUEST.email), first_name: new FormControl('Ada'), last_name: new FormControl('Byron') }),
+            stripMetadata: () => ({ ...GUEST }),
+            addMeetingRegistrants,
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', meeting);
+    fixture.componentRef.setInput('occurrence', occurrence);
+    // A parent-supplied list keeps the drawer from self-fetching; the add path is the same either way.
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    addMeetingRegistrants = vi.fn().mockReturnValue(of({ summary: { successful: 1, failed: 0, total: 1 }, successes: [], failures: [] }));
+  });
+
+  it('invites to every occurrence by default', async () => {
+    const component = await mount(RECURRING_MEETING, OCCURRENCE);
+
+    component.onAddRegistrant();
+
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [GUEST]);
+  });
+
+  it('invites to the shown occurrence only when that is chosen', async () => {
+    const component = await mount(RECURRING_MEETING, OCCURRENCE);
+
+    component.inviteScopeForm.setValue({ scope: 'occurrence' });
+    component.onAddRegistrant();
+
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [{ ...GUEST, occurrence_id: '1893492000' }]);
+  });
+
+  it('offers no choice for a one-off meeting', async () => {
+    const component = await mount({ ...RECURRING_MEETING, recurrence: null } as Meeting, OCCURRENCE);
+
+    expect(component.scopeOccurrence()).toBeNull();
+  });
+
+  it('offers no choice when the host shows no specific occurrence', async () => {
+    const component = await mount(RECURRING_MEETING, null);
+
+    expect(component.scopeOccurrence()).toBeNull();
   });
 });

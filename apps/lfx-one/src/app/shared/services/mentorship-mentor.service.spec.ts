@@ -289,4 +289,71 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(service.mentorRequestsRevision()).toBe(revision + 1);
     });
   });
+
+  describe('updateApplicationNote', () => {
+    it('PUTs the note to the encoded application id', () => {
+      let done = false;
+      service.updateApplicationNote('app/1', 'Strong screening call.').subscribe({ complete: () => (done = true) });
+
+      const req = http.expectOne('/api/mentorship/mentor/applications/app%2F1/note');
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual({ note: 'Strong screening call.' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(done).toBe(true);
+    });
+
+    it('propagates a failed save as the raw HttpErrorResponse', () => {
+      let error: HttpErrorResponse | undefined;
+      service.updateApplicationNote('app-1', '').subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http.expectOne('/api/mentorship/mentor/applications/app-1/note').flush({ error: 'application not found' }, { status: 404, statusText: 'Not Found' });
+      expect(error?.status).toBe(404);
+    });
+  });
+
+  describe('createMenteeTasks', () => {
+    const request = { applicationIds: ['app-1', 'app-2'], name: 'Write a design doc', description: 'One page.', requiresFileSubmission: false };
+
+    it('POSTs the request and emits which applications got the task', () => {
+      let result: unknown;
+      service.createMenteeTasks(request).subscribe((response) => (result = response));
+
+      const req = http.expectOne('/api/mentorship/mentor/tasks');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+      req.flush({ created: ['app-1'], failed: ['app-2'] });
+      expect(result).toEqual({ created: ['app-1'], failed: ['app-2'] });
+    });
+
+    it('propagates a failed create as the raw HttpErrorResponse', () => {
+      let error: HttpErrorResponse | undefined;
+      service.createMenteeTasks(request).subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http.expectOne('/api/mentorship/mentor/tasks').flush({ error: 'application not found' }, { status: 404, statusText: 'Not Found' });
+      expect(error?.status).toBe(404);
+    });
+  });
+
+  describe('reviewMenteeTask', () => {
+    it.each(['complete', 'incomplete'] as const)('PATCHes %s to the encoded task review path', (status) => {
+      let completed = false;
+      service.reviewMenteeTask('tsk/1?x', status).subscribe({ complete: () => (completed = true) });
+
+      const req = http.expectOne('/api/mentorship/mentor/tasks/tsk%2F1%3Fx/review');
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ status });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(completed).toBe(true);
+    });
+
+    it('propagates a failed review as the raw HttpErrorResponse', () => {
+      let error: HttpErrorResponse | undefined;
+      service.reviewMenteeTask('tsk-1', 'complete').subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http
+        .expectOne('/api/mentorship/mentor/tasks/tsk-1/review')
+        .flush({ error: 'This task is no longer awaiting review.', code: 'TASK_NOT_SUBMITTED' }, { status: 409, statusText: 'Conflict' });
+      expect(error?.status).toBe(409);
+    });
+  });
 });

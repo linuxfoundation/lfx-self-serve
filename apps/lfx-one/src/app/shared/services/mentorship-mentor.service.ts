@@ -4,6 +4,7 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
+  MentorshipMentorApplicationNoteUpdate,
   MentorshipMentorHasProfileResponse,
   MentorshipMentorInviteDecision,
   MentorshipMentorInviteResponseRequest,
@@ -17,6 +18,10 @@ import {
   MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
+  MentorshipMentorTaskReviewDecision,
+  MentorshipMentorTaskReviewUpdate,
 } from '@lfx-one/shared/interfaces';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
@@ -155,6 +160,32 @@ export class MentorshipMentorService {
     return this.http
       .get<MentorshipMentorProgramDetail>(`/api/mentorship/mentor/programs/${encodeURIComponent(programId)}`)
       .pipe(catchError(this.rethrowError('getMentorProgram')));
+  }
+
+  /**
+   * Saves the reviewer note on one application of a program the mentor mentors; an empty note clears it.
+   * Failures propagate as the raw `HttpErrorResponse`.
+   */
+  public updateApplicationNote(applicationId: string, note: string): Observable<void> {
+    const body: MentorshipMentorApplicationNoteUpdate = { note };
+    return this.http.put<void>(`/api/mentorship/mentor/applications/${encodeURIComponent(applicationId)}/note`, body).pipe(take(1));
+  }
+
+  /**
+   * Creates one task for each accepted mentee's application and emits which were created and which were not.
+   * With one application, a failure propagates as the raw `HttpErrorResponse`.
+   */
+  public createMenteeTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
+    return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/mentor/tasks', request).pipe(take(1));
+  }
+
+  /**
+   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task. Failures propagate as the
+   * raw `HttpErrorResponse`; a 409 means the task is no longer awaiting review.
+   */
+  public reviewMenteeTask(taskId: string, status: MentorshipMentorTaskReviewDecision): Observable<void> {
+    const body: MentorshipMentorTaskReviewUpdate = { status };
+    return this.http.patch<void>(`/api/mentorship/mentor/tasks/${encodeURIComponent(taskId)}/review`, body).pipe(take(1));
   }
 
   private rethrowError(label: string) {

@@ -742,6 +742,9 @@ export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or re
 /** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
 
+/** Character limit for the note sent with a cancelled occurrence (matches the upstream ITX cap) */
+export const MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH = 4000;
+
 /** Agenda length at which the character counter turns amber */
 export const MEETING_AGENDA_WARNING_LENGTH = 1800;
 
