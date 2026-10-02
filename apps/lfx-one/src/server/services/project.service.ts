@@ -7599,12 +7599,15 @@ export class ProjectService {
       pastTranscripts,
       pastSummaries,
     ] = await Promise.all([
-      fetchAllQueryResources<ProjectFolderQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectFolderQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_folder',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<ProjectFolderQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectFolderQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_folder',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch project folders via query service, returning empty list', {
           project_uid: projectId,
@@ -7612,12 +7615,15 @@ export class ProjectService {
         });
         return [] as ProjectFolderQueryResult[];
       }),
-      fetchAllQueryResources<ProjectLinkQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_link',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<ProjectLinkQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_link',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch project links via query service, returning empty list', {
           project_uid: projectId,
@@ -7625,12 +7631,15 @@ export class ProjectService {
         });
         return [] as ProjectLinkQueryResult[];
       }),
-      fetchAllQueryResources<ProjectDocumentQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_document',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<ProjectDocumentQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_document',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch project files via query service, returning empty list', {
           project_uid: projectId,
@@ -7638,12 +7647,15 @@ export class ProjectService {
         });
         return [] as ProjectDocumentQueryResult[];
       }),
-      fetchAllQueryResources<GroupsIOArtifactQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOArtifactQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'groupsio_artifact',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<GroupsIOArtifactQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOArtifactQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_artifact',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch mailing list artifacts via query service, returning empty list', {
           project_uid: projectId,
@@ -7653,12 +7665,15 @@ export class ProjectService {
       }),
       fetchCommitteeBatched<CommitteeLinkQueryResult>('committee_link', 'committee links'),
       fetchCommitteeBatched<CommitteeDocumentQueryResult>('committee_document', 'committee documents'),
-      fetchAllQueryResources<MeetingAttachment>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'v1_meeting_attachment',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<MeetingAttachment>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_meeting_attachment',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch meeting attachments via query service, returning empty list', {
           project_uid: projectId,
@@ -7666,12 +7681,15 @@ export class ProjectService {
         });
         return [] as MeetingAttachment[];
       }),
-      fetchAllQueryResources<PastMeetingAttachment>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'v1_past_meeting_attachment',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<PastMeetingAttachment>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_attachment',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting attachments via query service, returning empty list', {
           project_uid: projectId,
@@ -7679,12 +7697,15 @@ export class ProjectService {
         });
         return [] as PastMeetingAttachment[];
       }),
-      fetchAllQueryResources<PastMeetingRecordingQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecordingQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'v1_past_meeting_recording',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<PastMeetingRecordingQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecordingQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_recording',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting recordings via query service, returning empty list', {
           project_uid: projectId,
@@ -7692,12 +7713,15 @@ export class ProjectService {
         });
         return [] as PastMeetingRecordingQueryResult[];
       }),
-      fetchAllQueryResources<PastMeetingTranscriptQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscriptQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'v1_past_meeting_transcript',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<PastMeetingTranscriptQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscriptQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_transcript',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting transcripts via query service, returning empty list', {
           project_uid: projectId,
@@ -7705,12 +7729,15 @@ export class ProjectService {
         });
         return [] as PastMeetingTranscriptQueryResult[];
       }),
-      fetchAllQueryResources<PastMeetingSummaryQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummaryQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'v1_past_meeting_summary',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<PastMeetingSummaryQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummaryQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_summary',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting summaries via query service, returning empty list', {
           project_uid: projectId,
@@ -7769,6 +7796,7 @@ export class ProjectService {
       created_at: a.last_posted_at || a.created_at,
       project_uid: a.project_uid,
       document_source: 'mailing_list' as const,
+      document_source_name: a.committee_uid ? (committeeNameByUid.get(a.committee_uid) ?? '') : '',
     }));
 
     const committeeLinkDocs: ProjectDocument[] = (committeeLinks || [])
