@@ -11,7 +11,7 @@ import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { MailingListTableComponent } from './mailing-list-table.component';
 
@@ -76,7 +76,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     it('marks a public list the user has not joined as joinable', async () => {
       await render([baseList]);
 
-      expect(fixture.componentInstance.tableRows()[0].canJoin).toBe(true);
+      expect(fixture.componentInstance['tableRows']()[0].canJoin).toBe(true);
     });
 
     it('does not mark a list the user already joined as joinable even if public', async () => {
@@ -86,13 +86,13 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(fixture.componentInstance.tableRows()[0].canJoin).toBe(false);
+      expect(fixture.componentInstance['tableRows']()[0].canJoin).toBe(false);
     });
 
     it('does not mark a non-public list as joinable', async () => {
       await render([{ ...baseList, audience_access: MailingListAudienceAccess.APPROVAL_REQUIRED }]);
 
-      expect(fixture.componentInstance.tableRows()[0].canJoin).toBe(false);
+      expect(fixture.componentInstance['tableRows']()[0].canJoin).toBe(false);
     });
   });
 
@@ -102,7 +102,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       const refreshSpy = vi.fn();
       fixture.componentInstance.refresh.subscribe(refreshSpy);
 
-      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance.tableRows()[0]);
+      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       expect(createMember).toHaveBeenCalledWith('list-1', expect.objectContaining({ email: 'me@example.com' }));
       expect(refreshSpy).toHaveBeenCalled();
@@ -112,7 +112,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     it('shows an error toast and does not call createMember when the caller has no email', async () => {
       await render([baseList], null);
 
-      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance.tableRows()[0]);
+      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       expect(createMember).not.toHaveBeenCalled();
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
@@ -122,7 +122,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       await render([baseList]);
       createMember.mockReturnValue(throwError(() => new Error('boom')));
 
-      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance.tableRows()[0]);
+      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     });
@@ -132,7 +132,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     it('opens a confirmation dialog and calls deleteMember on accept', async () => {
       await render([{ ...baseList, my_member_uid: 'member-1' } as GroupsIOMailingList]);
 
-      fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance.tableRows()[0]);
+      fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       expect(confirm).toHaveBeenCalledTimes(1);
       const confirmArgs = confirm.mock.calls[0][0];
@@ -151,7 +151,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
         } as GroupsIOMailingList,
       ]);
 
-      fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance.tableRows()[0]);
+      fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       const confirmArgs = confirm.mock.calls[0][0];
       expect(confirmArgs.message).toContain('Technical Steering Committee');
@@ -161,7 +161,7 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     it('does nothing when the row has no my_member_uid', async () => {
       await render([baseList]);
 
-      fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance.tableRows()[0]);
+      fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       expect(confirm).not.toHaveBeenCalled();
     });
