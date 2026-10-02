@@ -93,6 +93,7 @@ export class MailingListDashboardComponent {
   protected readonly canWrite = this.projectContextService.canWrite;
   public readonly mailingLists: Signal<GroupsIOMailingList[]> = this.initMailingLists();
   public readonly myMailingLists: Signal<MyMailingList[]> = this.initMyMailingLists();
+  public readonly myMailingListUids: Signal<Set<string>> = computed(() => new Set(this.myMailingLists().map((ml) => ml.uid)));
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
   public readonly statusOptions: Signal<FilterOption[]> = this.initStatusOptions();
   public readonly filteredMailingLists: Signal<GroupsIOMailingList[]> = this.initFilteredMailingLists();
@@ -426,15 +427,9 @@ export class MailingListDashboardComponent {
   }
 
   private initMyMailingLists(): Signal<MyMailingList[]> {
-    const lens$ = toObservable(this.lensService.activeLens);
-
     return toSignal(
-      combineLatest([lens$, this.refresh]).pipe(
-        switchMap(([lens]) => {
-          if (lens !== 'me') {
-            this.myMailingListsLoading.set(false);
-            return of([] as MyMailingList[]);
-          }
+      this.refresh.pipe(
+        switchMap(() => {
           this.myMailingListsLoading.set(true);
           return this.mailingListService.getMyMailingLists().pipe(
             catchError(() => {

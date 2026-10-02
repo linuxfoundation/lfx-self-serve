@@ -14,6 +14,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
+import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import { FilterOption, GroupsIOMailingList, MailingListTableRowVm } from '@lfx-one/shared/interfaces';
 import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
@@ -21,7 +22,11 @@ import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
 import { SliceLinkedGroupsPipe } from '@pipes/slice-linked-groups.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
+import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
+import { UserService } from '@services/user.service';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
@@ -42,6 +47,7 @@ import { TooltipModule } from 'primeng/tooltip';
     SliceLinkedGroupsPipe,
     StripHtmlPipe,
     EmptyStateComponent,
+    ConfirmDialogModule,
   ],
   templateUrl: './mailing-list-table.component.html',
   styleUrl: './mailing-list-table.component.scss',
@@ -49,10 +55,16 @@ import { TooltipModule } from 'primeng/tooltip';
 export class MailingListTableComponent {
   // Injected services
   private readonly personaService = inject(PersonaService);
+  private readonly mailingListService = inject(MailingListService);
+  private readonly userService = inject(UserService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
 
   // Inputs
   public mailingLists = input.required<GroupsIOMailingList[]>();
   public isMaintainer = input<boolean>(false);
+  public isMeLens = input<boolean>(false);
+  public myMailingListUids = input<Set<string>>(new Set());
   public mailingListLabel = input<string>(MAILING_LIST_LABEL.singular);
   public searchForm = input.required<FormGroup>();
   public committeeFilterOptions = input.required<FilterOption[]>();
@@ -66,6 +78,15 @@ export class MailingListTableComponent {
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
   protected readonly committeeLabel = COMMITTEE_LABEL;
+  protected readonly audienceAccess = MailingListAudienceAccess;
+  protected readonly deliveryModeLabels: Record<MailingListMemberDeliveryMode, string> = {
+    [MailingListMemberDeliveryMode.NORMAL]: 'Individual',
+    [MailingListMemberDeliveryMode.DIGEST]: 'Digest',
+    [MailingListMemberDeliveryMode.NONE]: 'None',
+    [MailingListMemberDeliveryMode.SPECIAL]: 'Special',
+    [MailingListMemberDeliveryMode.HTML_DIGEST]: 'HTML Digest',
+    [MailingListMemberDeliveryMode.SUMMARY]: 'Summary',
+  };
 
   // Outputs
   public readonly refresh = output<void>();
@@ -99,6 +120,66 @@ export class MailingListTableComponent {
     this.searchForm().patchValue({ search: '', committee: null, status: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
+  }
+
+  protected onLeave(row: MailingListTableRowVm): void {
+    if (!row.my_member_uid) {
+      return;
+    }
+
+    const listName = row.title || row.group_name;
+    const memberUid = row.my_member_uid;
+    const caveat = row.committees?.length
+      ? ` Note: this list syncs from the ${row.committees[0].name} committee — leaving may not persist if your committee role changes.`
+      : '';
+
+    this.confirmationService.confirm({
+      message: `Are you sure you want to leave ${listName}? You will no longer receive emails from this list.${caveat}`,
+      header: 'Leave Mailing List',
+      acceptLabel: 'Leave',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm p-button-danger',
+      rejectButtonStyleClass: 'p-button-sm p-button-secondary',
+      accept: () => {
+        this.mailingListService.deleteMember(row.uid, memberUid).subscribe({
+          next: () => {
+            this.messageService.add({ severity: 'success', summary: 'Left mailing list', detail: `You have left ${listName}.` });
+            this.refresh.emit();
+          },
+          error: (err) => {
+            console.error('Failed to leave mailing list', err);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to leave ${listName}. Please try again.` });
+          },
+        });
+      },
+    });
+  }
+
+  protected onJoin(row: MailingListTableRowVm): void {
+    const email = this.userService.user()?.email;
+    if (!email) {
+      return;
+    }
+
+    const listName = row.title || row.group_name;
+
+    this.mailingListService
+      .createMember(row.uid, {
+        email,
+        member_type: MailingListMemberType.DIRECT,
+        delivery_mode: MailingListMemberDeliveryMode.NORMAL,
+        mod_status: MailingListMemberModStatus.NONE,
+      })
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Joined mailing list', detail: `You have joined ${listName}.` });
+          this.refresh.emit();
+        },
+        error: (err) => {
+          console.error('Failed to join mailing list', err);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to join ${listName}. Please try again.` });
+        },
+      });
   }
 
   private initTableRows(): Signal<MailingListTableRowVm[]> {

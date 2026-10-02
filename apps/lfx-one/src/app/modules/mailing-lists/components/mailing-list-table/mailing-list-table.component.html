@@ -88,10 +88,17 @@
     selectionMode="single"
     (onRowSelect)="onRowSelect($event)"
     data-testid="mailing-list-dashboard-table">
-    <!-- Header Template - Conditional based on isMaintainer -->
+    <!-- Header Template - Conditional based on isMeLens / isMaintainer -->
     <ng-template #header>
       <tr>
-        @if (isMaintainer()) {
+        @if (isMeLens()) {
+          <!-- Me Lens Headers (5 columns) -->
+          <th>Mailing List</th>
+          <th class="min-w-[300px]">Description</th>
+          <th>My Subscription</th>
+          <th>Public</th>
+          <th></th>
+        } @else if (isMaintainer()) {
           <!-- Maintainer View Headers (7 columns) -->
           <th>Name</th>
           <th>List Email</th>
@@ -117,7 +124,70 @@
     <!-- Body Template -->
     <ng-template #body let-mailingList let-rowIndex="rowIndex">
       <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'mailing-list-row-' + mailingList.uid">
-        @if (isMaintainer()) {
+        @if (isMeLens()) {
+          <!-- Me Lens Row -->
+          <!-- Mailing List Column -->
+          <td>
+            <div class="flex flex-col gap-1">
+              <a
+                [routerLink]="mailingList.viewCommands"
+                [queryParams]="mailingList.linkQueryParams"
+                class="lfx-table-name-link text-sm"
+                [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
+                {{ mailingList.title || mailingList.group_name || '-' }}
+              </a>
+              <span class="text-xs text-gray-500">{{ mailingList | groupEmail }}</span>
+            </div>
+          </td>
+
+          <!-- Description Column -->
+          <td>
+            <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
+              {{ (mailingList.description | stripHtml) || '-' }}
+            </div>
+          </td>
+
+          <!-- My Subscription Column -->
+          <td>
+            <div class="flex items-center gap-1.5" [attr.data-testid]="'mailing-list-my-subscription-' + mailingList.uid">
+              <lfx-tag [value]="mailingList.my_delivery_mode ? deliveryModeLabels[mailingList.my_delivery_mode] : 'Subscribed'" severity="info"> </lfx-tag>
+              @if (mailingList.committees?.length) {
+                <i
+                  class="fa-light fa-circle-info text-gray-400"
+                  [pTooltip]="'This list syncs from the ' + mailingList.committees[0].name + ' committee — leaving may not persist if your committee role changes.'"
+                  tooltipPosition="top"
+                  [attr.aria-label]="'This list syncs from the ' + mailingList.committees[0].name + ' committee'">
+                </i>
+              }
+            </div>
+          </td>
+
+          <!-- Public Column -->
+          <td>
+            @if (mailingList.public) {
+              <span class="inline-flex items-center" pTooltip="Public mailing list" tooltipPosition="top" tabindex="0" aria-label="Public mailing list">
+                <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+              </span>
+            } @else {
+              <span class="text-gray-400 text-xs" aria-label="Private mailing list">&mdash;</span>
+            }
+          </td>
+
+          <!-- Action Column -->
+          <td>
+            <div class="flex items-center justify-end">
+              <lfx-button
+                label="Leave"
+                severity="danger"
+                size="small"
+                [text]="true"
+                [disabled]="!mailingList.my_member_uid"
+                (onClick)="onLeave(mailingList)"
+                [attr.data-testid]="'mailing-list-leave-' + mailingList.uid">
+              </lfx-button>
+            </div>
+          </td>
+        } @else if (isMaintainer()) {
           <!-- Maintainer View Row -->
           <!-- Name Column -->
           <td>
@@ -266,7 +336,17 @@
           <!-- Actions Column - Hidden for board members -->
           @if (!isBoardMember()) {
             <td>
-              <div class="flex items-center justify-end">
+              <div class="flex items-center justify-end gap-1">
+                @if (mailingList.audience_access === audienceAccess.PUBLIC && !myMailingListUids().has(mailingList.uid)) {
+                  <lfx-button
+                    label="Join"
+                    severity="info"
+                    size="small"
+                    [text]="true"
+                    (onClick)="onJoin(mailingList)"
+                    [attr.data-testid]="'mailing-list-join-' + mailingList.uid">
+                  </lfx-button>
+                }
                 <lfx-button
                   icon="fa-light fa-ellipsis-vertical"
                   severity="secondary"
@@ -285,7 +365,7 @@
     <!-- Empty Message Template -->
     <ng-template #emptymessage>
       <tr>
-        <td [attr.colspan]="isMaintainer() ? 7 : isBoardMember() ? 5 : 6">
+        <td [attr.colspan]="isMeLens() ? 5 : isMaintainer() ? 7 : isBoardMember() ? 5 : 6">
           @if (isFiltered()) {
             <lfx-empty-state
               [withCard]="false"
@@ -305,3 +385,5 @@
     </ng-template>
   </lfx-table>
 </lfx-card>
+
+<p-confirmDialog></p-confirmDialog>

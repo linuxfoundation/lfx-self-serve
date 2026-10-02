@@ -95,6 +95,8 @@
           [mailingLists]="filteredMailingLists()"
           [loading]="isMeLens() && myMailingListsLoading()"
           [isMaintainer]="canWrite()"
+          [isMeLens]="isMeLens()"
+          [myMailingListUids]="myMailingListUids()"
           [mailingListLabel]="mailingListLabel"
           [searchForm]="searchForm"
           [committeeFilterOptions]="committeeOptions()"
