@@ -278,7 +278,7 @@ export interface MentorshipTaskFormDialogData {
  * Value emitted by the task-form dialog on save. `taskId` is present in edit mode so
  * the caller can route the write to `PUT` vs. `POST`; `assignedMenteeIds` carries the
  * single preselected id in single-mentee mode and every checked id in multi mode.
- * `status` is only present in edit mode (create defaults to `pending` at the server).
+ * `status` is only present in edit mode (upstream creates a task as `incomplete`, which reads as pending).
  */
 export interface MentorshipTaskFormValue {
   taskId?: string;

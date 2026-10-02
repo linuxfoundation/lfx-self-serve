@@ -22,6 +22,9 @@ import {
   MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
+  MentorshipUpstreamApplication,
   MentorshipUpstreamApplicationNoteUpdate,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMentorDetail,
@@ -48,10 +51,11 @@ import {
   MENTORSHIP_MENTOR_INVITES_PATH,
   MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY,
+  MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY,
   MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
-import { ConflictError, MicroserviceError, ResourceNotFoundError } from '../errors';
+import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { mapMentorshipMentoringHistory, mapMentorshipMentorProfileDetails } from '../helpers/mentorship-mentor-profile.helper';
@@ -71,6 +75,7 @@ import {
   mapMentorshipMentorProgramRequests,
 } from '../helpers/mentorship-mentor-request.helper';
 import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
+import { buildMentorshipUpstreamTaskCreate, isMentorshipTaskAssignableApplication } from '../helpers/mentorship-mentor-task.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -78,8 +83,8 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
  * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write, the
- * program requests, the profile read and edit, My Programs and the program detail call the mentorship
- * service with the caller's token.
+ * program requests, the profile read and edit, My Programs, the program detail, reviewer notes and task creates
+ * call the mentorship service with the caller's token.
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -254,6 +259,45 @@ export class MentorshipMentorService {
   }
 
   /**
+   * Creates one task for each application, at most `MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY` at once, since
+   * upstream has no batch create. The caller's local user id, read once, is each task's owner and author. With one
+   * application its failure propagates, so upstream's status reaches the browser; with several, each failure is
+   * logged and listed in `failed`, and the rest are still created. Upstream checks the caller mentors the program.
+   * The task's text is never logged.
+   */
+  public async createMenteeTasks(req: Request, request: MentorshipMentorTaskCreateRequest): Promise<MentorshipMentorTaskCreateResponse> {
+    const operation = 'create_mentorship_mentor_tasks';
+    logger.debug(req, operation, 'Creating mentee tasks', { application_count: request.applicationIds.length });
+    const callerUserId = await this.readLocalUserId(req, operation);
+    if (request.applicationIds.length === 1) {
+      await this.createMenteeTask(req, request, request.applicationIds[0], callerUserId);
+      return { created: [...request.applicationIds], failed: [] };
+    }
+
+    const created: string[] = [];
+    const failed: string[] = [];
+    for (let start = 0; start < request.applicationIds.length; start += MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY) {
+      const batch = request.applicationIds.slice(start, start + MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY);
+      const outcomes = await Promise.allSettled(batch.map((applicationId) => this.createMenteeTask(req, request, applicationId, callerUserId)));
+      outcomes.forEach((outcome, index) => {
+        const applicationId = batch[index];
+        if (outcome.status === 'fulfilled') {
+          created.push(applicationId);
+          return;
+        }
+        failed.push(applicationId);
+        const reason: unknown = outcome.reason;
+        logger.warning(req, operation, 'Task not created for one application', {
+          applicationId,
+          status: reason instanceof BaseApiError ? reason.statusCode : undefined,
+          code: reason instanceof BaseApiError ? reason.code : undefined,
+        });
+      });
+    }
+    return { created, failed };
+  }
+
+  /**
    * My Programs: one card for each published program the caller is an active mentor of, read from their
    * public mentor detail. Upstream's 404 for no such membership is an empty list. Each card is built from its
    * chosen term's rows, at most `MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY` programs at once. Any other
@@ -384,14 +428,7 @@ export class MentorshipMentorService {
    * has no active membership of a published program, which is `undefined` rather than a failure.
    */
   private async findMentorDetail(req: Request, operation: string): Promise<MentorshipUpstreamMentorDetail | undefined> {
-    const user = await proxyMentorshipRequest<MentorshipUpstreamUser>(this.microserviceProxy, req, MENTORSHIP_BOOTSTRAP_PATH);
-    const userId = typeof user?.id === 'string' ? user.id.trim() : '';
-    if (!isUuid(userId)) {
-      throw new MicroserviceError('The mentorship service returned a user without a valid id', 502, 'MENTORSHIP_INVALID_USER', {
-        operation,
-        service: 'mentorship',
-      });
-    }
+    const userId = await this.readLocalUserId(req, operation);
 
     try {
       return await proxyMentorshipRequest<MentorshipUpstreamMentorDetail>(
@@ -406,6 +443,41 @@ export class MentorshipMentorService {
       }
       throw error;
     }
+  }
+
+  /** The caller's local mentorship user id, read from `GET /me`. A missing or malformed id is a 502. */
+  private async readLocalUserId(req: Request, operation: string): Promise<string> {
+    const user = await proxyMentorshipRequest<MentorshipUpstreamUser>(this.microserviceProxy, req, MENTORSHIP_BOOTSTRAP_PATH);
+    const userId = typeof user?.id === 'string' ? user.id.trim() : '';
+    if (!isUuid(userId)) {
+      throw new MicroserviceError('The mentorship service returned a user without a valid id', 502, 'MENTORSHIP_INVALID_USER', {
+        operation,
+        service: 'mentorship',
+      });
+    }
+    return userId;
+  }
+
+  /**
+   * Creates the task on one application. The application is read first for its mentee and term, so the browser
+   * supplies neither; one that is not an accepted mentee's is a 400, as upstream would answer.
+   */
+  private async createMenteeTask(req: Request, request: MentorshipMentorTaskCreateRequest, applicationId: string, callerUserId: string): Promise<void> {
+    const applicationPath = `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}`;
+    const application = await proxyMentorshipRequest<MentorshipUpstreamApplication>(this.microserviceProxy, req, applicationPath);
+    if (!isMentorshipTaskAssignableApplication(application)) {
+      throw ServiceValidationError.forField('applicationIds', 'Tasks can be created only for accepted mentees', {
+        operation: 'create_mentorship_mentor_tasks',
+      });
+    }
+    await proxyMentorshipRequest<MentorshipUpstreamTask>(
+      this.microserviceProxy,
+      req,
+      `${applicationPath}/tasks`,
+      'POST',
+      undefined,
+      buildMentorshipUpstreamTaskCreate(request, application, callerUserId)
+    );
   }
 
   /**

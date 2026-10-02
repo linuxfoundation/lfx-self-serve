@@ -10,13 +10,19 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
-import { MentorshipMentorProgramDetail, MentorshipMentorProgramDetailTab, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorProgramDetail,
+  MentorshipMentorProgramDetailTab,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipNoteRequest,
+} from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorNoteSaveService } from '../../services/mentor-note-save.service';
+import { MentorTaskCreateService } from '../../services/mentor-task-create.service';
 import { MentorApplicantsTabComponent } from './components/mentor-applicants-tab/mentor-applicants-tab.component';
 import { MentorMenteesTabComponent } from './components/mentor-mentees-tab/mentor-mentees-tab.component';
 import { MentorProgramDetailHeaderComponent } from './components/mentor-program-detail-header/mentor-program-detail-header.component';
@@ -27,6 +33,7 @@ import { MentorTasksTabComponent } from './components/mentor-tasks-tab/mentor-ta
  * `MentorPageComponent`'s shell (own H1, own back link) so it can carry the full
  * program title/subtitle/tab-bar header shown in the design. Tasks, Mentees, and
  * Applicants are implemented. A reviewer note is saved when its dialog closes, and the row shows it once saved.
+ * A task created from the Mentees tab re-reads the detail in the background, so both tabs list it.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-program-detail',
@@ -47,6 +54,7 @@ export class MentorProgramDetailComponent {
   private readonly mentorService = inject(MentorshipMentorService);
   private readonly dialogService = inject(DialogService);
   private readonly noteSaveService = inject(MentorNoteSaveService);
+  private readonly taskCreateService = inject(MentorTaskCreateService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly hasLoaded = signal(false);
@@ -119,6 +127,14 @@ export class MentorProgramDetailComponent {
     });
   }
 
+  /** Not tied to the page: a create, and its toast, finish even if the mentor leaves first. */
+  protected onTaskCreateRequested(request: MentorshipMentorTaskCreateRequest): void {
+    const programId = this.programId();
+    this.taskCreateService.create(request).subscribe((result) => {
+      if (result && result.created.length > 0) this.refreshDetail(programId);
+    });
+  }
+
   /** Not tied to the page: a save, and its toast, finish even if the mentor leaves first. */
   private saveNote(applicationId: string, note: string): void {
     this.savingNoteIds.add(applicationId);
@@ -134,6 +150,24 @@ export class MentorProgramDetailComponent {
   private withNote(detail: MentorshipMentorProgramDetail, applicationId: string, note: string): MentorshipMentorProgramDetail {
     const apply = <T extends { id: string; note?: string }>(person: T): T => (person.id === applicationId ? { ...person, note: note || undefined } : person);
     return { ...detail, mentees: detail.mentees.map(apply), applicants: detail.applicants.map(apply) };
+  }
+
+  /**
+   * Re-reads the detail without the loading state, so the new tasks show on both tabs. Dropped if the mentor has
+   * left the page or moved to another program; a failed read keeps the rows on screen, since the toast already
+   * said the task was created.
+   */
+  private refreshDetail(programId: string): void {
+    if (programId !== this.programId()) return;
+    this.mentorService
+      .getMentorProgram(programId)
+      .pipe(
+        catchError(() => EMPTY),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((detail) => {
+        if (programId === this.programId()) this.detail.set(detail);
+      });
   }
 
   private initDetail(): Signal<MentorshipMentorProgramDetail | null> {

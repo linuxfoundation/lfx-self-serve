@@ -18,6 +18,8 @@ import {
   MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
+  MentorshipMentorTaskCreateRequest,
+  MentorshipMentorTaskCreateResponse,
 } from '@lfx-one/shared/interfaces';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
@@ -165,6 +167,14 @@ export class MentorshipMentorService {
   public updateApplicationNote(applicationId: string, note: string): Observable<void> {
     const body: MentorshipMentorApplicationNoteUpdate = { note };
     return this.http.put<void>(`/api/mentorship/mentor/applications/${encodeURIComponent(applicationId)}/note`, body).pipe(take(1));
+  }
+
+  /**
+   * Creates one task for each accepted mentee's application and emits which were created and which were not.
+   * With one application, a failure propagates as the raw `HttpErrorResponse`.
+   */
+  public createMenteeTasks(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
+    return this.http.post<MentorshipMentorTaskCreateResponse>('/api/mentorship/mentor/tasks', request).pipe(take(1));
   }
 
   private rethrowError(label: string) {

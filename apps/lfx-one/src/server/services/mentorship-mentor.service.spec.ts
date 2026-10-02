@@ -1170,3 +1170,124 @@ describe('MentorshipMentorService.updateApplicationNote', () => {
     await expect(service.updateApplicationNote(buildReq(), APPLICATION_ID, { note: 'Note' })).rejects.toBe(failure);
   });
 });
+
+describe('MentorshipMentorService.createMenteeTasks', () => {
+  const FIRST_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+  const SECOND_ID = '7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d';
+  const THIRD_ID = '8b3c4d5e-6f7a-4b2c-8d3e-4f5a6b7c8d9e';
+  const MENTEE_USER_ID = '1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e';
+  const TERM_ID = '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f';
+  const request = { name: 'Write a design doc', description: 'One page on the plan.', dueDate: '2026-11-30' };
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const application = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    program_term_id: TERM_ID,
+    user_id: MENTEE_USER_ID,
+    role: 'mentee',
+    status: 'accepted',
+    tasks_submitted: false,
+    admin_notified: false,
+    created_on: '2026-06-01T10:00:00Z',
+    updated_on: '2026-06-02T10:00:00Z',
+    ...overrides,
+  });
+
+  /** Answers GET /me, each GET /applications/{id} and each POST /applications/{id}/tasks; `fail` maps an id to its POST failure. */
+  function routeUpstream(fail: Record<string, unknown> = {}, applications: Record<string, unknown> = {}): void {
+    proxyRequest.mockImplementation(async (_req, _service, path, method) => {
+      if (path === ME_PATH) return { id: MENTOR_USER_ID };
+      const match = /^\/mentorship\/v1\/applications\/([^/]+)(\/tasks)?$/.exec(path);
+      if (!match) throw new Error(`unexpected path ${path}`);
+      const id = match[1];
+      if (!match[2]) return applications[id] ?? application(id);
+      expect(method).toBe('POST');
+      if (fail[id]) throw fail[id];
+      return { id: `task-${id}` };
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    vi.mocked(logger.warning).mockClear();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it("creates the task with the application's mentee and term, owned by the caller's local user id", async () => {
+    routeUpstream();
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID] })).resolves.toEqual({ created: [FIRST_ID], failed: [] });
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/applications/${FIRST_ID}/tasks`, 'POST', undefined, {
+      assignee_id: MENTEE_USER_ID,
+      program_term_id: TERM_ID,
+      owner_id: MENTOR_USER_ID,
+      created_by: MENTOR_USER_ID,
+      name: request.name,
+      description: request.description,
+      category: 'non_prerequisite',
+      custom: true,
+      due_date: '2026-11-30',
+    });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(request.name);
+  });
+
+  it("passes a single application's upstream failure through", async () => {
+    const failure = upstreamError(403, { error: 'forbidden' });
+    routeUpstream({ [FIRST_ID]: failure });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID] })).rejects.toBe(failure);
+  });
+
+  it('refuses an application that is not an accepted mentee, without creating anything', async () => {
+    routeUpstream({}, { [FIRST_ID]: application(FIRST_ID, { status: 'graduated' }) });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID] })).rejects.toMatchObject({ statusCode: 400 });
+    expect(proxyRequest).not.toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', expect.stringMatching(/\/tasks$/), 'POST', undefined, expect.anything());
+  });
+
+  it('reads the caller once and lists, in order, the applications whose task was not created', async () => {
+    routeUpstream({ [SECOND_ID]: upstreamError(422, { error: 'referenced resource does not exist' }) });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID, SECOND_ID, THIRD_ID] })).resolves.toEqual({
+      created: [FIRST_ID, THIRD_ID],
+      failed: [SECOND_ID],
+    });
+    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_PATH)).toHaveLength(1);
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_mentor_tasks', expect.any(String), {
+      applicationId: SECOND_ID,
+      status: 422,
+      code: expect.any(String),
+    });
+  });
+
+  it('runs at most three creates at once', async () => {
+    const ids = Array.from({ length: 7 }, (_, index) => `5d1c8e2f-3a4b-4c6d-8e9f-${index.toString(16).padStart(12, '0')}`);
+    let inFlight = 0;
+    let peak = 0;
+    proxyRequest.mockImplementation(async (_req, _service, path) => {
+      if (path === ME_PATH) return { id: MENTOR_USER_ID };
+      if (!path.endsWith('/tasks')) return application(path.split('/').pop() as string);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight -= 1;
+      return {};
+    });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: ids })).resolves.toEqual({ created: ids, failed: [] });
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it('fails the whole create when the caller has no valid local user id', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'not-a-uuid' });
+
+    await expect(service.createMenteeTasks(buildReq(), { ...request, applicationIds: [FIRST_ID, SECOND_ID] })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'MENTORSHIP_INVALID_USER',
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+});

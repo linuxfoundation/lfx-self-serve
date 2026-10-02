@@ -317,6 +317,22 @@ export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number,
   404: 'This application no longer exists. Refresh the page and try again.',
 };
 
+export const MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
+export const MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY = 'Some tasks were not created';
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+export const MENTORSHIP_MENTOR_TASK_CREATE_TOAST_LIFE = 5000;
+
+/**
+ * Single-mentee task create failures with their own copy, keyed by the BFF's status. A 400 is most often a mentee
+ * who is no longer accepted, a 403 the caller no longer mentoring the program, and a 404 an application that is gone.
+ */
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This mentee can no longer be given tasks. Refresh the page and try again.',
+  403: 'You can no longer create tasks on this program. Refresh the page and try again.',
+  404: 'This application no longer exists. Refresh the page and try again.',
+};
+
 export const MENTORSHIP_MENTORING_HISTORY_TITLE = 'Mentoring History';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_TITLE = 'No mentoring history yet';
 export const MENTORSHIP_MENTORING_HISTORY_EMPTY_SUBTITLE = 'Programs you mentor on will appear here once your first term begins.';
