@@ -516,9 +516,9 @@ export interface GetMyEventsOptions {
   country?: string;
   /** Project slugs from persona detection — scopes upcoming events to affiliated projects */
   affiliatedProjectSlugs?: string[];
-  /** When true, only events where the user's visa letter request was accepted are returned */
+  /** When true, only events that offer visa letters (IS_VISA_REQUEST_ACCEPTED) are returned */
   isVisaRequestAccepted?: boolean;
-  /** When true, only events where the user's travel fund request was accepted are returned */
+  /** When true, only events that offer travel funding (IS_TRAVEL_FUND_ACCEPTED) are returned */
   isTravelFundRequestAccepted?: boolean;
   /** Upcoming only: when true, a registration of any REGISTRATION_STATUS counts as registered (default requires Accepted) */
   anyRegistrationStatus?: boolean;

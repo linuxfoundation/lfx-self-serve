@@ -184,6 +184,8 @@ export class EventsService {
           WHERE LOWER(USER_EMAIL) = ?
             AND NOT (${this.isPastEventSql()})
             ${registrationStatusFilter}
+          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
         ),
         combined AS (
           -- The subquery is load-bearing: QUALIFY written directly after UNION ALL binds to
@@ -478,7 +480,7 @@ export class EventsService {
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE NOT (${this.isPastEventSql()})
-          AND ((USER_EMAIL = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
+          AND ((LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;

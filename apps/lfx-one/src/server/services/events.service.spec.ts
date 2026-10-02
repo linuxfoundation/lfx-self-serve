@@ -229,6 +229,12 @@ describe('EventsService.getMyEvents upcoming eligibility filters', () => {
     expect(sql).not.toMatch(/WHERE USER_EMAIL = \?/);
   });
 
+  it('keeps one registration per event, preferring Accepted', async () => {
+    const sql = await sqlFor({ registeredOnly: true, anyRegistrationStatus: true });
+
+    expect(sql).toContain("QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1");
+  });
+
   it('requires an Accepted registration by default (visa letters)', async () => {
     const sql = await sqlFor({ registeredOnly: true, isVisaRequestAccepted: true });
 
@@ -272,6 +278,7 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+    expect(lastSql()).toContain("LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted'");
   });
 
   it('applies the negated predicate to the upcoming countries query', async () => {
