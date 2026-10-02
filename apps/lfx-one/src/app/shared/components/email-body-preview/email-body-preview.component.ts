@@ -59,7 +59,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
  * and an edited string never goes back to campaign-service before it is framed.
  *
  * On that typed path the only control ahead of this frame is `stripResourceLoadingHtml`, applied
- * in the BROWSER by `abTestBodyHtmlBPreview`. That strips resource-loading elements; it is not a
+ * in the BROWSER by `abTestBodyHtmlBForSend`, which wraps `abTestBodyHtmlBPreview`. That strips resource-loading elements; it is not a
  * general sanitizer and does not pretend to be. So for at least one call site "the server
  * sanitizes it anyway" is false, and the sandbox is doing the load-bearing work. Treat it that way
  * when changing the frame.

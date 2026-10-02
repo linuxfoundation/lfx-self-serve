@@ -86,7 +86,7 @@ sanitized — but the operator can edit it or type one from scratch, and an edit
 without ever going back to campaign-service.
 
 On that typed path the only control ahead of the frame is `stripResourceLoadingHtml`, applied in
-the browser by `abTestBodyHtmlBPreview`. It removes resource-loading elements; it is not a general
+the browser by `abTestBodyHtmlBForSend`, which wraps `abTestBodyHtmlBPreview`. It removes resource-loading elements; it is not a general
 sanitizer. Of the four bindings of `lfx-email-body-preview` in `campaigns.component.html`, one is
 that signal. Anyone weakening the sandbox on the assumption that the server already sanitized the
 string is wrong for that one.

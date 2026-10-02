@@ -2356,6 +2356,23 @@ describe('CampaignServiceClient.listAudiences', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
+  it('refuses a dot-segment identifier instead of letting it climb the path', async () => {
+    // `encodeURIComponent` passes `..` through unchanged, and percent-decoding happens BEFORE
+    // path normalization -- so `/projects/../briefs/b-1/audiences` resolves upstream to
+    // `/briefs/b-1/audiences`, dropping the project scope entirely. `encodePathSegment` refuses
+    // it as a 400 rather than sending it on to be resolved. Every other path in this client
+    // already uses that guard; this one is the only call site that has to be held to it.
+    await expect(new CampaignServiceClient().listAudiences(req, '..', 'b-1')).rejects.toThrow(/path_segment/i);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('refuses an identifier the encoder cannot represent', async () => {
+    // `JSON.parse` accepts a lone UTF-16 surrogate, `encodeURIComponent` throws `URIError` on
+    // one. Unguarded that surfaces as a 500 for what is a malformed request.
+    await expect(new CampaignServiceClient().listAudiences(req, 'tlf', '\uD800')).rejects.toThrow(/path_segment/i);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
   it('reads the rows from the `audiences` wrapper upstream returns', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [audience] }));
 

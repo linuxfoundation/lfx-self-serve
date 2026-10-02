@@ -186,6 +186,38 @@ describe('AudienceLastSentComponent', () => {
     expect(text).not.toContain('0 contacts');
   });
 
+  describe('contact reach', () => {
+    // HubSpot omits the size property on some list shapes, so a send's lists split into those
+    // that reported a size and those that did not. Summing an absent size as zero left the
+    // total short by that entire list while the label still read as an exact figure --
+    // understating how many people a send reached, which is the one error direction that must
+    // never be presented as exact.
+    it('labels a partial sum as a floor when a list withheld its size', () => {
+      render({
+        emails: [email({ includedLists: [brief({ size: 5000 }), brief({ listId: '302', name: 'Speakers', size: undefined })] })],
+      });
+
+      const text = host().textContent ?? '';
+      expect(text).toContain('at least 5,000 contacts before suppression');
+    });
+
+    it('states an exact figure only when every list reported its size', () => {
+      render({
+        emails: [email({ includedLists: [brief({ size: 5000 }), brief({ listId: '302', name: 'Speakers', size: 120 })] })],
+      });
+
+      const text = host().textContent ?? '';
+      expect(text).toContain('5,120 contacts before suppression');
+      expect(text).not.toContain('at least');
+    });
+
+    it('says nothing about reach when no list reported a size', () => {
+      render({ emails: [email({ includedLists: [brief({ size: undefined })] })] });
+
+      expect(host().textContent ?? '').not.toContain('contacts before suppression');
+    });
+  });
+
   describe('reusing lists without composing', () => {
     function click(testId: string): void {
       host().querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.click();

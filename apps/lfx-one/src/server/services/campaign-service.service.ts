@@ -1098,7 +1098,7 @@ export class CampaignServiceClient {
       return { enabled: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences`;
     try {
       // Wrapped, not a bare array: Goa generates `ListAudiencesResponseBody { audiences: [...] }`
       // for `list-audiences`, so reading `response.data` as the array would always see nothing.
