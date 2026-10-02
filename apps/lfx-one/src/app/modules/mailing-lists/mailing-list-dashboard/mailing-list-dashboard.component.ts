@@ -426,6 +426,10 @@ export class MailingListDashboardComponent {
     });
   }
 
+  /**
+   * Fetches unconditionally (not gated to Me lens) because `myMailingListUids` — derived from this
+   * signal — feeds the Join/Leave state on the Foundation/Project/Org tables too, not just Me lens.
+   */
   private initMyMailingLists(): Signal<MyMailingList[]> {
     return toSignal(
       this.refresh.pipe(

@@ -155,6 +155,7 @@ export class MailingListTableComponent {
 
     const email = this.userService.user()?.email;
     if (!email) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Unable to determine your email address.' });
       return;
     }
 
@@ -183,7 +184,7 @@ export class MailingListTableComponent {
     return computed(() => {
       const joinedUids = this.myMailingListUids();
       return this.mailingLists().map((mailingList) => {
-        const myDeliveryMode = (mailingList as MyMailingList).my_delivery_mode;
+        const myDeliveryMode = (mailingList as Partial<MyMailingList>).my_delivery_mode;
         return {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
