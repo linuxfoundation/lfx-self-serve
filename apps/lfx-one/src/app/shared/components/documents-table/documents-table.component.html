@@ -84,6 +84,16 @@
               [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
               {{ doc.name }}
             </button>
+          } @else if (doc.downloadUrl) {
+            <button
+              type="button"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
+              (click)="downloadDocument(doc)"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
+              {{ doc.name }}
+            </button>
           } @else {
             <span
               class="text-xs text-gray-900 truncate min-w-0"
