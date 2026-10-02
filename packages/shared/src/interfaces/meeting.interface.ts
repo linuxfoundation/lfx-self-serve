@@ -659,6 +659,9 @@ export interface MeetingRegistrant {
  */
 export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;
 
+/** Which dates a guest added from a recurring meeting's guest list is invited to */
+export type GuestInviteScope = 'all' | 'occurrence';
+
 /**
  * Request payload for creating a meeting registrant
  * @description Data required to add a new registrant to a meeting
@@ -1377,16 +1380,27 @@ export interface MeetingCancelOccurrenceResult {
   error?: string;
 }
 
+/** Request body for canceling a single occurrence of a recurring meeting */
+export interface CancelMeetingOccurrenceRequest {
+  /** Note included in the cancellation emails sent to guests */
+  note?: string;
+}
+
 /**
- * Request body for rescheduling a single occurrence of a recurring meeting
+ * Request body for editing a single occurrence of a recurring meeting
  * @description Carries no `recurrence`: upstream rejects one unless `all_following_occurrences` is set,
- * which would widen the change from this occurrence to every later one.
+ * which would widen the change from this occurrence to every later one. `title` and `description`
+ * are sent only when changed, so an untouched field keeps following the series.
  */
 export interface UpdateMeetingOccurrenceRequest {
   /** New start time of the occurrence in RFC3339 format */
   start_time: string;
   /** New duration of the occurrence in minutes */
   duration: number;
+  /** Title for this occurrence only (upstream `topic`) */
+  title?: string;
+  /** Agenda for this occurrence only (upstream `agenda`). Upstream drops an empty value, so it can't be cleared. */
+  description?: string;
 }
 
 /**

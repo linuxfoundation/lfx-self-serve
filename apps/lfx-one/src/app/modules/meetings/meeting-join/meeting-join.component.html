@@ -124,10 +124,10 @@
                     size="small"
                     severity="secondary"
                     [text]="true"
-                    ariaLabel="Reschedule this occurrence"
+                    ariaLabel="Edit this occurrence"
                     (onClick)="rescheduleCurrentOccurrence()"
                     data-testid="meeting-reschedule-occurrence-button"
-                    tooltip="Reschedule this occurrence">
+                    tooltip="Edit this occurrence">
                   </lfx-button>
                   <lfx-button
                     icon="fa-light fa-ban"
@@ -860,6 +860,7 @@
           [meeting]="meeting()"
           [pastMeeting]="isPastMeeting()"
           [showAddRegistrant]="!!meeting().organizer && !isPastMeeting()"
+          [occurrence]="currentOccurrence()"
           [myMeetingRegistrants]="true"
           [initialRegistrants]="registrants()"
           [initialRegistrantsLoading]="registrantsLoading()"

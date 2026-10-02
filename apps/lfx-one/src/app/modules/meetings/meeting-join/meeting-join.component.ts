@@ -535,7 +535,7 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  /** Opens the reschedule dialog for the occurrence this page is showing. */
+  /** Opens the edit dialog (time, duration, title, agenda) for the occurrence this page is showing. */
   public rescheduleCurrentOccurrence(): void {
     const meeting = this.meeting();
     const occurrence = this.currentOccurrence();
@@ -544,7 +544,7 @@ export class MeetingJoinComponent implements OnInit {
     }
 
     const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
-      header: 'Reschedule Occurrence',
+      header: 'Edit Occurrence',
       width: '520px',
       modal: true,
       closable: true,
@@ -559,8 +559,8 @@ export class MeetingJoinComponent implements OnInit {
 
       this.messageService.add({
         severity: 'success',
-        summary: 'Occurrence rescheduled',
-        detail: 'Only this occurrence was moved. The rest of the series is unchanged.',
+        summary: 'Occurrence updated',
+        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
       });
       this.showOccurrenceAfterChange(new Date(result.start_time).getTime());
     });
@@ -579,7 +579,7 @@ export class MeetingJoinComponent implements OnInit {
       width: '450px',
       modal: true,
       closable: true,
-      dismissableMask: true,
+      dismissableMask: false,
       data: { meeting, occurrence },
     }) as DynamicDialogRef;
 
