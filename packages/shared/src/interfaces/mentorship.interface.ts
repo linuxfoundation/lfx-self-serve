@@ -319,6 +319,8 @@ export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
 
 /** Application row on the admin mentee tabs — a mentee row plus its application metadata. */
 export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
+  /** Id of the application's term. The mentee tabs split on it, since two of a program's terms can share a name. */
+  termId: string;
   /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
   createdOn: string;
   updatedOn: string;

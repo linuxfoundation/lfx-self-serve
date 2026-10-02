@@ -837,9 +837,10 @@ export function toMentorshipDateOnly(value: Date): string {
  * lists, so a badge can never promise a row its tab does not show.
  */
 export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
-  const closedTermNames = new Set(lists.terms.filter((term) => term.status === 'closed').map((term) => term.name));
-  const currentMentees = lists.applications.filter((application) => !closedTermNames.has(application.termName));
-  const pastMentees = lists.applications.filter((application) => closedTermNames.has(application.termName));
+  // Keyed by id, not name: a program can hold an open and a closed term that share a name.
+  const closedTermIds = new Set(lists.terms.filter((term) => term.status === 'closed').map((term) => term.id));
+  const currentMentees = lists.applications.filter((application) => !closedTermIds.has(application.termId));
+  const pastMentees = lists.applications.filter((application) => closedTermIds.has(application.termId));
 
   return {
     program,

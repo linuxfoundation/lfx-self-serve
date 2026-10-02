@@ -24,6 +24,7 @@ describe('CurrentMenteesTabComponent', () => {
     name: 'Ifeoma Adeyemi',
     email: 'ifeoma.adeyemi@example.com',
     status: 'pending',
+    termId: 'trm_fall26',
     termName: 'Fall 2026',
     createdOn: '2026-06-28',
     updatedOn: '2026-07-02',

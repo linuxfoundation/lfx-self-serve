@@ -62,13 +62,14 @@ const application = (
   id: string,
   name: string,
   status: MentorshipProgramApplicant['status'],
-  termName: string,
+  { id: termId, name: termName }: MentorshipProgramTermRow,
   overrides: Partial<MentorshipProgramApplicant> = {}
 ): MentorshipProgramApplicant => ({
   id,
   name,
   email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
   status,
+  termId,
   termName,
   createdOn: '2026-07-10',
   updatedOn: '2026-07-20',
@@ -87,18 +88,20 @@ const PROGRAM: MentorshipProgramDetail['program'] = {
   updatedOn: '2026-07-20',
 };
 
-const TERMS = [term('66666666-6666-4666-8666-666666666666', OPEN_TERM, 'open'), term('67777777-7777-4777-8777-777777777777', CLOSED_TERM, 'closed')];
+const OPEN_TERM_ROW = term('66666666-6666-4666-8666-666666666666', OPEN_TERM, 'open');
+const CLOSED_TERM_ROW = term('67777777-7777-4777-8777-777777777777', CLOSED_TERM, 'closed');
+const TERMS = [OPEN_TERM_ROW, CLOSED_TERM_ROW];
 
 const POPULATED: MentorshipProgramDetail = {
   program: PROGRAM,
   tabCounts: { currentMentees: 3, pastMentees: 1, mentors: 0, terms: 2 },
   currentMentees: [
-    application(PENDING_ID, 'Test Applicant One', 'pending', OPEN_TERM, { tasksSubmitted: 1, tasksTotal: 2 }),
+    application(PENDING_ID, 'Test Applicant One', 'pending', OPEN_TERM_ROW, { tasksSubmitted: 1, tasksTotal: 2 }),
     // Still `pending` on the wire, but every prerequisite is in.
-    application(TASKS_COMPLETED_ID, 'Test Applicant Two', 'pending', OPEN_TERM, { tasksSubmitted: 2, tasksTotal: 2 }),
-    application(ACCEPTED_ID, 'Test Mentee Three', 'accepted', OPEN_TERM),
+    application(TASKS_COMPLETED_ID, 'Test Applicant Two', 'pending', OPEN_TERM_ROW, { tasksSubmitted: 2, tasksTotal: 2 }),
+    application(ACCEPTED_ID, 'Test Mentee Three', 'accepted', OPEN_TERM_ROW),
   ],
-  pastMentees: [application(GRADUATED_ID, 'Test Mentee Four', 'graduated', CLOSED_TERM)],
+  pastMentees: [application(GRADUATED_ID, 'Test Mentee Four', 'graduated', CLOSED_TERM_ROW)],
   mentors: [],
   terms: TERMS,
 };

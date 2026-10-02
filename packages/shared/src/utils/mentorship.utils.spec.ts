@@ -475,8 +475,8 @@ describe('program detail helpers', () => {
     createdOn: '2026-01-01T00:00:00.000Z',
     updatedOn: '2026-01-01T00:00:00.000Z',
   };
-  const detailTerm = (name: string, status: MentorshipProgramTermRow['status']): MentorshipProgramTermRow => ({
-    id: name,
+  const detailTerm = (name: string, status: MentorshipProgramTermRow['status'], id = name): MentorshipProgramTermRow => ({
+    id,
     name,
     status,
     pending: 0,
@@ -488,11 +488,12 @@ describe('program detail helpers', () => {
     applicationStartDate: '2025-12-01',
     applicationEndDate: '2025-12-15',
   });
-  const detailApplication = (id: string, status: MentorshipProgramApplicant['status'], termName: string): MentorshipProgramApplicant => ({
+  const detailApplication = (id: string, status: MentorshipProgramApplicant['status'], termName: string, termId = termName): MentorshipProgramApplicant => ({
     id,
     name: id,
     email: `${id}@example.com`,
     status,
+    termId,
     termName,
     createdOn: '2026-01-01',
     updatedOn: '2026-01-01',
@@ -515,6 +516,17 @@ describe('program detail helpers', () => {
     expect(detail.currentMentees.map((person) => person.id)).toEqual(['1', '4', '5']);
     expect(detail.pastMentees.map((person) => person.id)).toEqual(['2', '3']);
     expect(detail.tabCounts).toEqual({ currentMentees: 3, pastMentees: 2, mentors: 1, terms: 2 });
+  });
+
+  it('splits by term id when an open and a closed term share a name', () => {
+    const detail = buildMentorshipProgramDetail(detailProgram, {
+      applications: [detailApplication('1', 'accepted', 'Winter 2026', 'winter-open'), detailApplication('2', 'graduated', 'Winter 2026', 'winter-closed')],
+      mentors: [],
+      terms: [detailTerm('Winter 2026', 'open', 'winter-open'), detailTerm('Winter 2026', 'closed', 'winter-closed')],
+    });
+
+    expect(detail.currentMentees.map((person) => person.id)).toEqual(['1']);
+    expect(detail.pastMentees.map((person) => person.id)).toEqual(['2']);
   });
 
   it('leaves Past Mentees empty when no term is closed', () => {
