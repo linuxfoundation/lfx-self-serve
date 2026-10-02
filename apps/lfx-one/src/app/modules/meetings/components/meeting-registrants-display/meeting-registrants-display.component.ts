@@ -315,6 +315,7 @@ export class MeetingRegistrantsDisplayComponent {
                 this.refresh$.next(true);
               }
               this.addRegistrantForm.reset();
+              this.inviteScopeForm.reset();
             } else {
               this.messageService.add({
                 severity: 'error',

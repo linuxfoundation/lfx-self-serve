@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -82,9 +82,11 @@ export class RescheduleOccurrenceDialogComponent {
 
   public constructor() {
     // Closing mid-save would drop the result, so the parent never refreshes onto the new time.
-    effect(() => {
-      this.config.closable = !this.isSaving();
-    });
+    toObservable(this.isSaving)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((saving) => {
+        this.config.closable = !saving;
+      });
   }
 
   public onCancel(): void {

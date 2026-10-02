@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -22,6 +23,7 @@ export class CancelOccurrenceConfirmationComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
   private readonly meetingService = inject(MeetingService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly meeting: Meeting = this.config.data.meeting;
   public readonly occurrence: MeetingOccurrence = this.config.data.occurrence;
@@ -33,9 +35,11 @@ export class CancelOccurrenceConfirmationComponent {
 
   public constructor() {
     // Closing mid-request would drop the result, so the parent never refreshes past the cancelled date.
-    effect(() => {
-      this.config.closable = !this.isCanceling();
-    });
+    toObservable(this.isCanceling)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((canceling) => {
+        this.config.closable = !canceling;
+      });
   }
 
   public onCancel(): void {
