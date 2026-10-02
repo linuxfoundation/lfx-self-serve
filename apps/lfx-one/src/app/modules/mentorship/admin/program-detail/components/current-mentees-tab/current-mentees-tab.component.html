@@ -108,6 +108,8 @@
             <span
               class="max-w-full block truncate text-sm text-gray-700"
               tabindex="0"
+              role="note"
+              [attr.aria-label]="row.termName"
               [pTooltip]="row.termName"
               tooltipEvent="both"
               tooltipPosition="top"
