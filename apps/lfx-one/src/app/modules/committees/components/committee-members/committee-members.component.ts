@@ -113,6 +113,12 @@ export class CommitteeMembersComponent implements OnInit {
   public applicationsLoading = input<boolean>(false);
   /** Non-writer members in invite_only groups may send invites. */
   public canSendMemberInvites = input<boolean>(false);
+  /**
+   * True when the viewer is a visitor (not a member of this committee). Visitors admitted via
+   * BASIC_PROFILE visibility must not see member emails or management actions — the public-groups
+   * projection intentionally limits visible profile fields to name, organisation, and role.
+   */
+  public readonly isVisitor = input<boolean>(false);
   // Engagement rollup (LFXV2-1705, behind wg-engagement-metrics). Fetched once at the page level
   // (committee-view) and shared with the Overview summary; flag off = no engagement UI at all.
   public engagementEnabled = input<boolean>(false);
@@ -236,7 +242,8 @@ export class CommitteeMembersComponent implements OnInit {
   // Both empty-state rows must span every rendered column: 5 base, +2 when the voting columns
   // render, +2 when the flag-gated engagement columns render.
   public readonly emptyStateColspan: Signal<number> = computed(() => {
-    let count = 5;
+    // Base columns: Name, Email (hidden for visitors), Organization, Permission, Actions
+    let count = this.isVisitor() ? 4 : 5;
     if (this.committee()?.enable_voting) {
       count += 2;
     }
