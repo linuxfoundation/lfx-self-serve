@@ -99,7 +99,8 @@ export class IntercomService {
     this.show();
   }
 
-  // Call before re-booting with a different user (impersonation identity reset).
+  // Call on logout, before the page navigates away (LogoutLinkDirective), and before re-booting
+  // with a different user (impersonation identity reset).
   public shutdown(): void {
     // Dropped unconditionally: the stale identity must not survive into the next boot even when
     // there is no widget to shut down.
