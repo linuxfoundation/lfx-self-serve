@@ -2513,7 +2513,7 @@ describe('WeeklyBriefService', () => {
       expect(result).toEqual({ committee_name: 'Test Committee', total_recipients: 42 });
       expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(
         nonImpersonatingReq,
-        { resource: 'project', id: 'project-1', access: 'writer' },
+        { resource: 'project', id: 'project-1', access: 'writer_guard' },
         { bearerToken: 'writer-token' }
       );
       expect(createNewsletterMock).toHaveBeenCalledWith(

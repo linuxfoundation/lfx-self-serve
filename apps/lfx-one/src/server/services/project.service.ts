@@ -338,7 +338,7 @@ export class ProjectService {
     const filtered = await this.fetchAllProjectsFiltered(req, query, failOnPartial);
 
     // Add writer access field to all projects
-    return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
+    return await this.accessCheckService.addProjectWriterToResources(req, filtered);
   }
 
   /**
@@ -381,13 +381,15 @@ export class ProjectService {
     }
 
     if (access) {
-      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-      // Skip the meeting_coordinator/auditor checks when already a writer. Per model.fga,
-      // `auditor: … or writer or …` — writer already implies auditor, so that round trip can't
-      // change the outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
+      const writerProject = await this.accessCheckService.addProjectWriterToResource(req, project);
+      // Skip the meeting_coordinator/auditor checks when already a writer. The `writer` field is
+      // resolved from `writer_guard`, and `global_writer` does not compose into `auditor_guard`, so
+      // at the FGA level a writer here need not be an auditor — but the only consumer of `auditor`
+      // (FormationCardComponent) reads `writer === true || auditor === true`, so the round trip
+      // can't change its outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
       // imply it at the FGA level — but every consumer of this field (e.g. writer.guard.ts) already
       // treats `writer === true` as sufficient on its own before ever reading meetingCoordinator,
-      // and upstream `meetings_creator: writer or meeting_coordinator` makes the same true one level
+      // and upstream `meetings_creator: writer_guard or meeting_coordinator` makes the same true one level
       // up. So the round trip could return a different raw value for a writer, but never a
       // different access outcome — skipping it is safe for that reason alone.
       // Return the field as undefined (omitted) rather than false — false would be a
@@ -422,7 +424,7 @@ export class ProjectService {
       // admin-link guard) — same rationale, and the same Strict variant, as meeting_coordinator above.
       if (includeAuditor) {
         const isAuditor = await this.accessCheckService
-          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor' })
+          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor_guard' })
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'auditor check failed, skipping field', {
               project_uid: project.uid,
@@ -689,7 +691,7 @@ export class ProjectService {
     // and answers "is this address known?" with a distinguishable 404, so without this gate a
     // read-only caller could probe directory membership through this route off the 404-vs-403
     // split. Strict so an access-service outage fails closed instead of degrading to "not a writer".
-    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
 
     if (!canWrite) {
       throw new AuthorizationError('You do not have permission to manage project permissions', {
@@ -860,7 +862,7 @@ export class ProjectService {
     // addresses through this route and read directory membership off the 404-vs-403 split.
     // Strict so an access-service outage fails closed instead of degrading to a definitive
     // "not a writer".
-    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
 
     if (!canWrite) {
       throw new AuthorizationError('You do not have permission to update project staff', {
@@ -8938,7 +8940,7 @@ export class ProjectService {
       return projects;
     }
 
-    const writerChecked = await this.accessCheckService.addAccessToResources(req, projects, 'project');
+    const writerChecked = await this.accessCheckService.addProjectWriterToResources(req, projects);
     if (!includeMeetingCoordinator) {
       return writerChecked.filter((p) => p.writer === true);
     }

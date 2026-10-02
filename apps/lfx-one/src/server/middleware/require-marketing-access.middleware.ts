@@ -88,16 +88,19 @@ function createMarketingAccessMiddleware(
         await requireExecutiveDirector(req, res, next);
         return;
       }
-      if (result.isRootWriter) {
-        next();
-        return;
-      }
-
       // The two route files this middleware gates name the foundation/project differently
       // (`analytics.route.ts` reads `foundationSlug`, `campaign.controller.ts` reads `project`);
       // each caller lists its own primary param first purely for logging clarity — in practice a
       // request only ever sets one of the two, so the fallback order never has to arbitrate.
       const requestedSlug = slugQueryParams.map((param) => req.query[param]).find((value): value is string => typeof value === 'string' && value.length > 0);
+
+      // The ROOT writer check admits `global_writer`, which is withheld on some projects, so a
+      // request naming a project needs that project's `writer_guard` too. A root writer who fails
+      // it is not denied here — it falls through to the ED/FGA paths like any other caller.
+      if (result.isRootWriter && (!requestedSlug || (await personaDetectionService.checkProjectWriter(req, requestedSlug)))) {
+        next();
+        return;
+      }
 
       // ED is scoped to the foundations it's actually held for (mirrors `requireExecutiveDirector`)
       // — an ED for foundation A must not read foundation B just by passing B's slug. A request
@@ -114,13 +117,19 @@ function createMarketingAccessMiddleware(
         }
       }
 
-      const hasRootAccess =
-        access === 'marketing_auditor'
-          ? await personaDetectionService.checkRootMarketingAuditor(req)
-          : await personaDetectionService.checkRootCampaignManager(req);
-      if (hasRootAccess) {
-        next();
-        return;
+      // `marketing_auditor` cascades (`from parent`), so a ROOT grant answers for every project.
+      // `campaign_manager` does not: a request naming a project is answered by that project's own
+      // relation below, which already folds in the cascading `marketing_ops` and the per-project
+      // `global_marketing_ops`. Only an unscoped campaign request falls back to the ROOT grant.
+      if (access === 'marketing_auditor' || !requestedSlug) {
+        const hasRootAccess =
+          access === 'marketing_auditor'
+            ? await personaDetectionService.checkRootMarketingAuditor(req)
+            : await personaDetectionService.checkRootCampaignManager(req);
+        if (hasRootAccess) {
+          next();
+          return;
+        }
       }
 
       // No slug to scope against — the route handler is responsible for rejecting a missing

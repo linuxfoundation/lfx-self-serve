@@ -11,8 +11,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // suites below use only the `execute` mock, while the others stay trivial.
 const {
   proxyRequest,
-  addAccessToResources,
-  addAccessToResource,
+  addProjectWriterToResources,
+  addProjectWriterToResource,
   checkAccess,
   checkSingleAccessStrict,
   execute,
@@ -25,8 +25,8 @@ const {
   natsRequest,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  addAccessToResources: vi.fn(),
-  addAccessToResource: vi.fn(),
+  addProjectWriterToResources: vi.fn(),
+  addProjectWriterToResource: vi.fn(),
   checkAccess: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
   execute: vi.fn(),
@@ -209,8 +209,8 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
-    public addAccessToResources = addAccessToResources;
-    public addAccessToResource = addAccessToResource;
+    public addProjectWriterToResources = addProjectWriterToResources;
+    public addProjectWriterToResource = addProjectWriterToResource;
     public checkAccess = checkAccess;
     public checkSingleAccessStrict = checkSingleAccessStrict;
   },
@@ -263,7 +263,7 @@ describe('ProjectService — create picker methods', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    addAccessToResources.mockReset();
+    addProjectWriterToResources.mockReset();
     checkAccess.mockReset();
     service = new ProjectService();
   });
@@ -284,7 +284,7 @@ describe('ProjectService — create picker methods', () => {
       // page_size 100, not the query service's default 50: this read is on the My Formations
       // render path now, and pagination is sequential (PR #2799 review).
       expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_size: 100 });
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
       expect(checkAccess).not.toHaveBeenCalled();
     });
 
@@ -332,7 +332,7 @@ describe('ProjectService — create picker methods', () => {
           { uid: 'b', slug: 'b' },
         ])
       );
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
 
@@ -345,12 +345,14 @@ describe('ProjectService — create picker methods', () => {
 
     it('excludes the ROOT pseudo-project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getDirectGrantProjects(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('OR-includes meeting_coordinator when requested, without re-checking existing writers', async () => {
@@ -360,7 +362,7 @@ describe('ProjectService — create picker methods', () => {
           { uid: 'b', slug: 'b' },
         ])
       );
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
       checkAccess.mockResolvedValueOnce(new Map([['b#meeting_coordinator', true]]));
@@ -386,7 +388,9 @@ describe('ProjectService — create picker methods', () => {
   describe('getWriterSummary', () => {
     it('returns {true, false} when the only direct-writer project is a foundation', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -395,7 +399,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {false, true} when the only direct-writer project is non-foundation', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([nonFoundation('proj')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -404,7 +410,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {true, true} when direct-writer grants span both a foundation and a non-foundation project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn'), nonFoundation('proj')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -413,7 +421,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {false, false} when the caller holds no direct writer grants', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('visible-only')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: false })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -430,7 +440,7 @@ describe('ProjectService — create picker methods', () => {
   describe('getProjects', () => {
     it('requests QUERY_SERVICE_PAGE_SIZE, overriding any caller-supplied page_size', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       await service.getProjects(req, { page_size: 10 });
 
@@ -440,7 +450,7 @@ describe('ProjectService — create picker methods', () => {
     it('follows page_token across pages and returns the accumulated projects', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       const result = await service.getProjects(req);
 
@@ -451,12 +461,12 @@ describe('ProjectService — create picker methods', () => {
 
     it('excludes the ROOT pseudo-project before the access check', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       const result = await service.getProjects(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).toHaveBeenCalledWith(req, [], 'project');
+      expect(addProjectWriterToResources).toHaveBeenCalledWith(req, []);
     });
   });
 
@@ -474,13 +484,13 @@ describe('ProjectService — create picker methods', () => {
       expect(result.sort()).toEqual(['a', 'b']);
     });
 
-    it('excludes the ROOT pseudo-project without calling addAccessToResources', async () => {
+    it('excludes the ROOT pseudo-project without calling addProjectWriterToResources', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
 
       const result = await service.getProjectSlugs(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('follows page_token across pages and returns accumulated slugs', async () => {
@@ -495,12 +505,12 @@ describe('ProjectService — create picker methods', () => {
       expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', page_size: 500, page_token: 'next-token' });
     });
 
-    it('does not call addAccessToResources for a standard non-root project', async () => {
+    it('does not call addProjectWriterToResources for a standard non-root project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
 
       await service.getProjectSlugs(req);
 
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('throws when a subsequent page fails (failOnPartial: true — partial slug set drops affiliations)', async () => {
@@ -516,7 +526,9 @@ describe('ProjectService — create picker methods', () => {
   describe('getChildProjects', () => {
     it('queries parent=project:<uid> and filters to writer-permitted children', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'child-1', slug: 'child-1' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getChildProjects(req, 'parent-uid');
 
@@ -555,7 +567,9 @@ describe('ProjectService — create picker methods', () => {
   describe('searchCreatableProjects', () => {
     it('queries name=<term> with a small page size and filters to writer-permitted matches', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-1', slug: 'match-1' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
@@ -568,7 +582,7 @@ describe('ProjectService — create picker methods', () => {
       // silently fell back to the default name_asc would reorder results mid-scan (GH-2030).
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-2', slug: 'match-2' }]));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'match-2' })))
       );
 
@@ -582,7 +596,7 @@ describe('ProjectService — create picker methods', () => {
       // A single-page search would return [] here even though a real target exists.
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'inherited-writer', slug: 'inherited-writer' }]));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'inherited-writer' })))
       );
 
@@ -595,7 +609,7 @@ describe('ProjectService — create picker methods', () => {
 
     it('stops paging once the page cap is reached, even if pages remain', async () => {
       proxyRequest.mockResolvedValue(pageOf([{ uid: 'no-match', slug: 'no-match' }], 'more'));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
 
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
@@ -606,7 +620,7 @@ describe('ProjectService — create picker methods', () => {
 
   it('never issues a type=project query-service call without filter_grants, parent, or name', async () => {
     proxyRequest.mockResolvedValue(pageOf([]));
-    addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects));
+    addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
     await service.getDirectGrantProjects(req);
     await service.getChildProjects(req, 'uid-1');
@@ -2031,7 +2045,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    addAccessToResource.mockReset();
+    addProjectWriterToResource.mockReset();
     checkSingleAccessStrict.mockReset();
     warning.mockReset();
     service = new ProjectService();
@@ -2039,7 +2053,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('does not run the meeting_coordinator/auditor checks and returns neither field for a writer', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
-    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
+    addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
 
     const result = await service.getProjectById(req, 'p1', true, true, true);
 
@@ -2050,7 +2064,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('leaves auditor undefined and warns when the strict FGA check rejects, rather than reporting false', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
-    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
+    addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
     checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
 
     const result = await service.getProjectById(req, 'p1', true, false, true);
@@ -2795,7 +2809,7 @@ describe('ProjectService.updateProjectPermissions', () => {
       code: 'AUTHORIZATION_REQUIRED',
     });
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     // Nothing may run before the gate: the directory lookup answers "is this address known?"
     // with a distinguishable 404, so reaching it would leak directory membership to a reader.
     expect(natsRequest).not.toHaveBeenCalled();
@@ -2972,7 +2986,7 @@ describe('ProjectService.updateProjectStaff', () => {
       code: 'AUTHORIZATION_REQUIRED',
     });
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     // Nothing may run before the gate. The directory lookup in particular distinguishes a
     // known email (reaches the write) from an unknown one (404), so letting an unauthorized
     // caller reach it would leak directory membership; the settings read is skipped too.
