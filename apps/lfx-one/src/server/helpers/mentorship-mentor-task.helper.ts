@@ -1,11 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_TASK_DESCRIPTION_MAX, MENTORSHIP_TASK_NAME_MAX } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS, MENTORSHIP_TASK_DESCRIPTION_MAX, MENTORSHIP_TASK_NAME_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorTaskCreateRequest, MentorshipUpstreamApplication, MentorshipUpstreamTaskCreate } from '@lfx-one/shared/interfaces';
 import { isMentorshipIsoDate, isUuid } from '@lfx-one/shared/utils';
 
-import { MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS } from '../constants/mentorship.constants';
 import { ServiceValidationError } from '../errors';
 import { parseTrimmedString } from './mentorship-params.helper';
 

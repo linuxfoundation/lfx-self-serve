@@ -320,7 +320,18 @@ export const MENTORSHIP_MENTOR_NOTE_SAVE_ERROR_MESSAGES: Readonly<Record<number,
 export const MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY = 'Task created';
 export const MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY = 'Some tasks were not created';
 export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_SUMMARY = 'Could not create the task';
-export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK = 'Something went wrong. Please try again.';
+
+/**
+ * Most applications one mentor task create request takes, so one request cannot fan out without bound. The app
+ * sends a larger group in batches of this size.
+ */
+export const MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS = 100;
+
+/**
+ * Shown when the create failed without a status of its own, such as a timeout or a 5xx. The task may still have
+ * been created upstream, whose create is not idempotent, so the copy sends the mentor to the row, not to a retry.
+ */
+export const MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK = "The task may not have been created. Check the mentee's row before trying again.";
 export const MENTORSHIP_MENTOR_TASK_CREATE_TOAST_LIFE = 5000;
 
 /**

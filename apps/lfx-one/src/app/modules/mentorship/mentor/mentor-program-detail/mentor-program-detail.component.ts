@@ -96,6 +96,8 @@ export class MentorProgramDetailComponent {
 
   /** Applications whose note is being saved. Their dialog stays shut until the save settles, so it never opens on a stale note. */
   private readonly savingNoteIds = new Set<string>();
+  /** Counts the background re-reads, so only the latest one writes the rows. */
+  private refreshGeneration = 0;
 
   protected onTabChange(tab: MentorshipMentorProgramDetailTab): void {
     this.activeTab.set(tab);
@@ -127,13 +129,14 @@ export class MentorProgramDetailComponent {
     });
   }
 
-  /** Not tied to the page: a create, and its toast, finish even if the mentor leaves first. */
+  /**
+   * Not tied to the page: a create, and its toast, finish even if the mentor leaves first. The detail is re-read
+   * whatever the outcome, since a failed create (a timeout, a 5xx) may still have made the task upstream.
+   */
   protected onTaskCreateRequested(request: MentorshipMentorTaskCreateRequest): void {
     const programId = this.programId();
     const menteeNames = Object.fromEntries(this.mentees().map((mentee) => [mentee.id, mentee.name]));
-    this.taskCreateService.create(request, menteeNames).subscribe((result) => {
-      if (result && result.created.length > 0) this.refreshDetail(programId);
-    });
+    this.taskCreateService.create(request, menteeNames).subscribe(() => this.refreshDetail(programId));
   }
 
   /** Not tied to the page: a save, and its toast, finish even if the mentor leaves first. */
@@ -155,11 +158,12 @@ export class MentorProgramDetailComponent {
 
   /**
    * Re-reads the detail without the loading state, so the new tasks show on both tabs. Dropped if the mentor has
-   * left the page or moved to another program; a failed read keeps the rows on screen, since the toast already
-   * said the task was created.
+   * left the page or moved to another program, or if a later re-read has started, so a slow one cannot overwrite
+   * a newer one; a failed read keeps the rows on screen, since the toast already said how the create went.
    */
   private refreshDetail(programId: string): void {
     if (programId !== this.programId()) return;
+    const generation = ++this.refreshGeneration;
     this.mentorService
       .getMentorProgram(programId)
       .pipe(
@@ -167,7 +171,7 @@ export class MentorProgramDetailComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((detail) => {
-        if (programId === this.programId()) this.detail.set(detail);
+        if (programId === this.programId() && generation === this.refreshGeneration) this.detail.set(detail);
       });
   }
 

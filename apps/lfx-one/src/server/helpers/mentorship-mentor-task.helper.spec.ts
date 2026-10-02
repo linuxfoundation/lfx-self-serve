@@ -4,11 +4,10 @@
 // The shared utils barrel reaches Angular's partially-compiled packages, which need the JIT compiler under vitest.
 import '@angular/compiler';
 
-import { MENTORSHIP_TASK_DESCRIPTION_MAX, MENTORSHIP_TASK_NAME_MAX } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS, MENTORSHIP_TASK_DESCRIPTION_MAX, MENTORSHIP_TASK_NAME_MAX } from '@lfx-one/shared/constants';
 import { MentorshipUpstreamApplication } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
-import { MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS } from '../constants/mentorship.constants';
 import { ServiceValidationError } from '../errors';
 import {
   buildMentorshipUpstreamTaskCreate,

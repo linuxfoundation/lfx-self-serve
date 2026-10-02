@@ -295,9 +295,9 @@ describe('MentorProgramDetailComponent', () => {
 
   describe('task create', () => {
     const request: MentorshipMentorTaskCreateRequest = { applicationIds: ['mnt_1'], name: 'Write a design doc', description: 'One page.' };
-    const withNewTask = (): MentorshipMentorProgramDetail => {
+    const withNewTask = (tasksTotal = 1): MentorshipMentorProgramDetail => {
       const value = detail();
-      value.mentees = [{ ...value.mentees[0], tasksTotal: 1 }];
+      value.mentees = [{ ...value.mentees[0], tasksTotal }];
       return value;
     };
 
@@ -318,13 +318,27 @@ describe('MentorProgramDetailComponent', () => {
     it.each([
       ['no task was created', { created: [], failed: ['mnt_1'] }],
       ['the create failed', null],
-    ])('skips the re-read when %s', (_label, result) => {
+    ])('still re-reads when %s, since the task may exist upstream', (_label, result) => {
       build();
       createTasks.mockReturnValueOnce(of(result));
 
       fixture.componentInstance['onTaskCreateRequested'](request);
 
-      expect(getMentorProgram).toHaveBeenCalledTimes(1);
+      expect(getMentorProgram).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the latest re-read when two finish out of order', () => {
+      build();
+      const earlier = new Subject<MentorshipMentorProgramDetail>();
+      const later = new Subject<MentorshipMentorProgramDetail>();
+      getMentorProgram.mockReturnValueOnce(earlier).mockReturnValueOnce(later);
+
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      fixture.componentInstance['onTaskCreateRequested'](request);
+      later.next(withNewTask(2));
+      earlier.next(withNewTask(1));
+
+      expect(shownDetail()?.mentees[0].tasksTotal).toBe(2);
     });
 
     it('keeps the rows on screen when the re-read fails', () => {

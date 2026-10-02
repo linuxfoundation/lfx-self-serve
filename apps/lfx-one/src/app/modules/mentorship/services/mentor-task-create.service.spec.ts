@@ -8,6 +8,7 @@ import {
   MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK,
   MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES,
   MENTORSHIP_MENTOR_TASK_CREATE_ERROR_SUMMARY,
+  MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS,
   MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY,
   MENTORSHIP_MENTOR_TASK_CREATE_SUCCESS_SUMMARY,
 } from '@lfx-one/shared/constants';
@@ -73,7 +74,7 @@ describe('MentorTaskCreateService', () => {
       expect.objectContaining({
         severity: 'warn',
         summary: MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY,
-        detail: 'Grace Hopper did not get the task. Create it from their row, so the others do not get it twice.',
+        detail: 'Grace Hopper did not get the task. Check their row, and create it there if it is still missing, so the others do not get it twice.',
       })
     );
   });
@@ -86,7 +87,7 @@ describe('MentorTaskCreateService', () => {
     expect(add).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'warn',
-        detail: '1 of 2 mentees did not get the task. Create it from their row, so the others do not get it twice.',
+        detail: '1 of 2 mentees did not get the task. Check their row, and create it there if it is still missing, so the others do not get it twice.',
       })
     );
   });
@@ -100,9 +101,36 @@ describe('MentorTaskCreateService', () => {
       expect.objectContaining({
         severity: 'error',
         summary: MENTORSHIP_MENTOR_TASK_CREATE_ERROR_SUMMARY,
-        detail: '2 of 2 tasks were not created. Refresh the page and try again.',
+        detail: "2 of 2 tasks were not created. Check the mentees' rows before trying again.",
       })
     );
+  });
+
+  describe('a group past the request cap', () => {
+    const ids = Array.from({ length: MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS + 2 }, (_, index) => `app_${index}`);
+    const firstBatch = ids.slice(0, MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS);
+    const lastBatch = ids.slice(MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS);
+
+    it('sends it in batches and merges the results', async () => {
+      createMenteeTasks.mockImplementation(({ applicationIds }) => of({ created: applicationIds, failed: [] }));
+
+      await expect(firstValueFrom(service.create({ ...request, applicationIds: ids }))).resolves.toEqual({ created: ids, failed: [] });
+
+      expect(createMenteeTasks.mock.calls.map(([sent]) => sent.applicationIds)).toEqual([firstBatch, lastBatch]);
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: `${ids.length} mentees were given the task.` }));
+    });
+
+    it("counts a failed batch's mentees as failed and keeps going", async () => {
+      createMenteeTasks
+        .mockReturnValueOnce(throwError(() => httpError(503)))
+        .mockImplementationOnce(({ applicationIds }) => of({ created: applicationIds, failed: [] }));
+
+      await expect(firstValueFrom(service.create({ ...request, applicationIds: ids }))).resolves.toEqual({ created: lastBatch, failed: firstBatch });
+
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY }));
+    });
   });
 
   it.each([400, 403, 404])('shows the %i copy and emits null', async (status) => {

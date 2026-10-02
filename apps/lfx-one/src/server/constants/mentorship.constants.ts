@@ -81,9 +81,6 @@ export const MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY = 5;
 /** Most applications a mentor's task create reads and writes at once; upstream has no batch create. */
 export const MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY = 3;
 
-/** Most applications one mentor task create takes, so one request cannot fan out without bound. */
-export const MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS = 100;
-
 /**
  * How an application's status reads on a mentor's program detail. `hold` is an administrator's hold on an
  * application still under review, so the mentor sees it as pending.
