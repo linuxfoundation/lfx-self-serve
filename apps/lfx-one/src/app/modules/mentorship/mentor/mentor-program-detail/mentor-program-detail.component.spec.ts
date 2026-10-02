@@ -126,6 +126,17 @@ describe('MentorProgramDetailComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
   });
 
+  it('renders the "Program not found" empty state on a 400 for an id that is not a program id', () => {
+    // An old slug URL is refused with a 400, which retrying cannot fix either.
+    buildWith(
+      of(undefined),
+      throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request' }))
+    );
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-not-found"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-program-detail-error-state"]')).toBeNull();
+  });
+
   it('re-invokes the service when Retry is triggered', () => {
     build();
 

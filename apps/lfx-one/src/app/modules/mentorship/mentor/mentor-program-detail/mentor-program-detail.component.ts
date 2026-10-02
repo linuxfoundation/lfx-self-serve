@@ -121,11 +121,12 @@ export class MentorProgramDetailComponent {
             tap(() => this.hasLoaded.set(true)),
             catchError((error: HttpErrorResponse) => {
               this.hasLoaded.set(true);
-              // A 404 means the id is unknown — surface the dedicated "Program not found"
-              // empty state (which offers a back-to-list CTA) rather than the generic
-              // Retry banner. Retrying a 404 will just 404 again and the empty state
-              // gives the user a working exit.
-              if (error?.status === 404) {
+              // A 404 means the id is unknown and a 400 that it is not a program id at all (an
+              // old slug URL, say) — surface the dedicated "Program not found" empty state
+              // (which offers a back-to-list CTA) rather than the generic Retry banner.
+              // Retrying either will just fail again and the empty state gives the user a
+              // working exit.
+              if (error?.status === 404 || error?.status === 400) {
                 this.loadError.set(null);
                 return of(null);
               }
