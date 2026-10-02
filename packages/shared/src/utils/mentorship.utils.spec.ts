@@ -69,6 +69,7 @@ import {
   formatMentorshipMonthYear,
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
+  isMentorshipMentorTaskReviewDecision,
   mentorshipMenteeTaskStatusFields,
   mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
@@ -828,6 +829,7 @@ describe('program detail helpers', () => {
     const rows = mentorshipMentorReviewTasks(mentees);
     expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_2__tsk_done', 'mnt_1__tsk_old']);
     expect(rows[0]).toMatchObject({
+      taskId: 'tsk_new',
       menteeName: 'Hana Suzuki',
       taskName: 'Backpressure design note',
       status: 'submitted',
@@ -1505,6 +1507,16 @@ describe('isMentorshipMenteeUpdatableTaskStatus', () => {
     expect(isMentorshipMenteeUpdatableTaskStatus('submitted')).toBe(true);
     for (const value of ['pending', 'incomplete', 'complete', 'IN_PROGRESS', '', null, undefined, 1]) {
       expect(isMentorshipMenteeUpdatableTaskStatus(value)).toBe(false);
+    }
+  });
+});
+
+describe('isMentorshipMentorTaskReviewDecision', () => {
+  it('accepts complete and incomplete only', () => {
+    expect(isMentorshipMentorTaskReviewDecision('complete')).toBe(true);
+    expect(isMentorshipMentorTaskReviewDecision('incomplete')).toBe(true);
+    for (const value of ['completed', 'submitted', 'in_progress', 'COMPLETE', '', null, undefined, 1]) {
+      expect(isMentorshipMentorTaskReviewDecision(value)).toBe(false);
     }
   });
 });

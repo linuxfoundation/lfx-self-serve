@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorTaskReviewRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { MessageService, ToastMessageOptions } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -139,30 +139,49 @@ describe('MentorTasksTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')).not.toBeNull();
   });
 
-  it('routes approve, request-changes, and open-submission to the coming-soon toast', () => {
-    const messageService = TestBed.inject(MessageService);
-    const addSpy = vi.spyOn(messageService, 'add');
+  const button = (testId: string): HTMLButtonElement | null =>
+    element().querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.querySelector<HTMLButtonElement>('button') ?? null;
 
-    element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')
-      ?.querySelector<HTMLButtonElement>('button')
-      ?.click();
-    element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting"]')
-      ?.querySelector<HTMLButtonElement>('button')
-      ?.click();
-    element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting"]')
-      ?.querySelector<HTMLButtonElement>('button')
-      ?.click();
+  it('asks the page to approve, or to request changes on, the upstream task, without a toast', () => {
+    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const requests: MentorshipMentorTaskReviewRequest[] = [];
+    fixture.componentInstance.reviewRequested.subscribe((request) => requests.push(request));
 
-    expect(addSpy).toHaveBeenCalledTimes(3);
-    const summaries = addSpy.mock.calls.map((call) => (call[0] as ToastMessageOptions).summary);
-    expect(summaries).toEqual([
-      'Approve "Backpressure design note" for Hana Suzuki',
-      'Request changes on "Backpressure design note" for Hana Suzuki',
-      'Open submission for "Backpressure design note" from Hana Suzuki',
+    button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
+    button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.click();
+
+    // The row id is unique across mentees; the request carries the upstream task id.
+    expect(requests).toEqual([
+      { taskId: 'tsk_awaiting', status: 'complete' },
+      { taskId: 'tsk_awaiting', status: 'incomplete' },
     ]);
+    expect(addSpy).not.toHaveBeenCalled();
+  });
+
+  it('disables both review buttons, and emits nothing, while the page is reviewing the task', () => {
+    const requests: MentorshipMentorTaskReviewRequest[] = [];
+    fixture.componentInstance.reviewRequested.subscribe((request) => requests.push(request));
+    fixture.componentRef.setInput('reviewingTaskIds', ['tsk_awaiting']);
+    fixture.detectChanges();
+
+    expect(button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.disabled).toBe(true);
+    expect(button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.disabled).toBe(true);
+    button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
+    expect(requests).toEqual([]);
+
+    fixture.componentRef.setInput('reviewingTaskIds', []);
+    fixture.detectChanges();
+
+    expect(button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.disabled).toBe(false);
+  });
+
+  it('routes open-submission to the coming-soon toast', () => {
+    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+    button('mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting')?.click();
+
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Open submission for "Backpressure design note" from Hana Suzuki');
   });
 
   it('shows the empty state when no tasks match the filter', () => {

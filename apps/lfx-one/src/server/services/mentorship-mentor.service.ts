@@ -6,6 +6,8 @@ import {
   MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE,
   MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE,
+  MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMentorApplicationNoteUpdate,
@@ -24,6 +26,7 @@ import {
   MentorshipMentorRegisterRequest,
   MentorshipMentorTaskCreateRequest,
   MentorshipMentorTaskCreateResponse,
+  MentorshipMentorTaskReviewDecision,
   MentorshipUpstreamApplication,
   MentorshipUpstreamApplicationNoteUpdate,
   MentorshipUpstreamListResponse,
@@ -34,6 +37,7 @@ import {
   MentorshipUpstreamProgramMembership,
   MentorshipUpstreamProgramMembershipRequest,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTaskReviewUpdate,
   MentorshipUpstreamUser,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
@@ -54,6 +58,7 @@ import {
   MENTORSHIP_MENTOR_TASK_CREATE_CONCURRENCY,
   MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_TASKS_PATH,
 } from '../constants';
 import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
@@ -83,8 +88,8 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
  * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write, the
- * program requests, the profile read and edit, My Programs, the program detail, reviewer notes and task creates
- * call the mentorship service with the caller's token.
+ * program requests, the profile read and edit, My Programs, the program detail, reviewer notes, task creates and
+ * task reviews call the mentorship service with the caller's token.
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -295,6 +300,28 @@ export class MentorshipMentorService {
       });
     }
     return { created, failed };
+  }
+
+  /**
+   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task through the reviewer
+   * route, `PATCH /tasks/{id}/review`. Upstream refuses `complete` on a task that is not submitted (409), but lets
+   * `incomplete` reset a task from any status, so the task is read first and anything not `submitted` is refused
+   * with a 409 (`TASK_NOT_SUBMITTED`): a stale page cannot reopen approved work. Upstream checks the caller is an
+   * active mentor or administrator of the program (403) and answers 404 for a task that is gone; both pass
+   * through, as does a failed read. The returned task is dropped and the page re-reads the program instead.
+   */
+  public async reviewMenteeTask(req: Request, taskId: string, status: MentorshipMentorTaskReviewDecision): Promise<void> {
+    const operation = 'mentorship_review_mentee_task';
+    logger.debug(req, operation, 'Reviewing mentee task', { taskId, status });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
+    if (task.status !== 'submitted') {
+      throw new ConflictError(MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_MESSAGE, MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE, { operation });
+    }
+
+    const body: MentorshipUpstreamTaskReviewUpdate = { status };
+    await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/review`, 'PATCH', undefined, body);
+    logger.debug(req, operation, 'Mentee task reviewed', { taskId, status });
   }
 
   /**
