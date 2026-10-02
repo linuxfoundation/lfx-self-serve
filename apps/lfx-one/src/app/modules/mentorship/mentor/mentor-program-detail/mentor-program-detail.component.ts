@@ -98,8 +98,10 @@ export class MentorProgramDetailComponent {
   }
 
   protected onNoteRequested(request: MentorshipNoteRequest): void {
-    if (this.savingNoteIds.has(request.personId)) return;
-    const current = this.noteFor(request.personId);
+    // The mentor tabs' row id, and so the request's `personId`, is the application id.
+    const applicationId = request.personId;
+    if (this.savingNoteIds.has(applicationId)) return;
+    const current = this.noteFor(applicationId);
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(MenteeNoteDialogComponent, {
       header: MENTORSHIP_NOTE_DIALOG_HEADER,
       width: '34rem',
@@ -113,7 +115,7 @@ export class MentorProgramDetailComponent {
     dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((note: string | undefined) => {
       // `undefined` is a dismissed dialog; an unchanged note needs no save. The dialog trims, so compare trimmed.
       if (note === undefined || note === current.trim()) return;
-      this.saveNote(request.personId, note);
+      this.saveNote(applicationId, note);
     });
   }
 
@@ -167,8 +169,8 @@ export class MentorProgramDetailComponent {
     );
   }
 
-  private noteFor(personId: string): string {
-    const person = [...this.mentees(), ...this.applicants()].find((candidate) => candidate.id === personId);
+  private noteFor(applicationId: string): string {
+    const person = [...this.mentees(), ...this.applicants()].find((candidate) => candidate.id === applicationId);
     return person?.note ?? '';
   }
 }
