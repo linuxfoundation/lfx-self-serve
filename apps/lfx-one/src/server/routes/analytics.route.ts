@@ -292,6 +292,9 @@ router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => anal
 router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
 router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
 
+// Health Metrics Training tab (#3198)
+router.get('/training-presence', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingPresence(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

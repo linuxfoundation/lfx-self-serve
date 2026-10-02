@@ -98,6 +98,7 @@ export * from './health-metrics-l2.utils';
 export * from './health-metrics-members.utils';
 export * from './health-metrics-non-members.utils';
 export * from './health-metrics-overview.utils';
+export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './sha256.utils';
 export * from './auth-fragment.utils';
