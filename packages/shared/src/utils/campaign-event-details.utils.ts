@@ -31,6 +31,29 @@ export function coerceCampaignEventDetails(value: unknown): CampaignEventDetails
   const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
   const list = (key: string): string[] =>
     Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((entry): entry is string => typeof entry === 'string') : [];
+  // Every URL-bearing field is scheme-checked on the way back OUT, not only on the way in.
+  //
+  // Only the fresh-scrape path validated these. A value saved through the brief API -- which
+  // accepts arbitrary strings -- was read back verbatim, and these fields are printed as
+  // hyperlinks in the email. A `javascript:` or `data:` href therefore reached an `href`
+  // consumer that has no sandbox, in markup sent under the foundation's name.
+  //
+  // Applied to all SIX url fields, not the four that were reported: `registrationUrl` rides on
+  // the same path and `heroImageUrl` becomes an `src`, so exempting them would leave the same
+  // hole one field over.
+  const url = (key: string): string => {
+    const value = text(key);
+    if (value === '') return '';
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? value : '';
+    } catch {
+      // Not absolute, so there is no scheme to vouch for. A relative value cannot be resolved
+      // here -- the coercer has no base -- and emitting it as an href would produce a link
+      // relative to whatever renders it.
+      return '';
+    }
+  };
 
   return {
     name: text('name'),
@@ -39,16 +62,16 @@ export function coerceCampaignEventDetails(value: unknown): CampaignEventDetails
     countryCode: text('countryCode'),
     audience: text('audience'),
     themes: list('themes'),
-    registrationUrl: text('registrationUrl'),
+    registrationUrl: url('registrationUrl'),
     speakers: list('speakers'),
     slug: text('slug'),
     formatNotes: text('formatNotes'),
     description: text('description'),
-    agendaUrl: text('agendaUrl'),
-    cfpUrl: text('cfpUrl'),
-    venueUrl: text('venueUrl'),
-    sponsorshipUrl: text('sponsorshipUrl'),
-    heroImageUrl: text('heroImageUrl'),
+    agendaUrl: url('agendaUrl'),
+    cfpUrl: url('cfpUrl'),
+    venueUrl: url('venueUrl'),
+    sponsorshipUrl: url('sponsorshipUrl'),
+    heroImageUrl: url('heroImageUrl'),
     sponsors: coerceCampaignEventSponsors(raw['sponsors']),
   };
 }

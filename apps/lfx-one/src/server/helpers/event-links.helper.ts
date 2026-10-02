@@ -1,7 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-const ANCHOR_HREF_RE = /<a\b[^>]*\bhref=["']([^"']+)["']/gi;
+/**
+ * Opening `<a>` tags, bounded so the scan cannot backtrack.
+ *
+ * `[^<>]*`, never `[^>]*`. An unbounded `[^>]*` lets each `<a` scan to the end of the document
+ * before failing, so a page of repeated `<a ` is QUADRATIC: measured 115ms at 20k tags, 454ms at
+ * 40k, 8.5s at 80k, against a 5 MiB fetch cap. `matchAll` is synchronous and this runs inside the
+ * scrape generator on an operator-supplied URL, so that is a freeze of the single-threaded SSR
+ * process. Excluding `<` as well confines each attempt to one tag.
+ */
+const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
+
+/**
+ * The `href` inside one already-isolated tag.
+ *
+ * `\s`, not `\b`, before `href`: `\b` also matches the tail of `data-href`, so a framework's
+ * lazy-load attribute was read as the link the page renders.
+ */
+const HREF_ATTR_RE = /\shref=["']([^"']*)["']/i;
+
+/**
+ * HTML entities for `&` as they appear in an href.
+ *
+ * A page writes `?a=1&amp;b=2`; `new URL` keeps that literal, so the stored link carried `&amp;`
+ * while the extraction model returned the decoded `&`. The two then failed to compare equal and a
+ * real agenda link with more than one query parameter was silently dropped.
+ */
+const AMP_ENTITY_RE = /&(?:amp|#38|#[xX]26);/g;
 
 /**
  * Upper bound on distinct links collected from one page.
@@ -71,11 +97,14 @@ function pageHref(resolved: URL): string {
 export function extractPageLinks(html: string, baseUrl: string): Map<string, string> {
   const links = new Map<string, string>();
   try {
-    for (const match of html.matchAll(ANCHOR_HREF_RE)) {
+    for (const tag of html.matchAll(ANCHOR_TAG_RE)) {
       if (links.size >= MAX_PAGE_LINKS) break;
-      const normalized = normalizeForCompare(match[1], baseUrl);
+      const href = HREF_ATTR_RE.exec(tag[0]);
+      if (!href) continue;
+      const raw = href[1].replace(AMP_ENTITY_RE, '&');
+      const normalized = normalizeForCompare(raw, baseUrl);
       if (!normalized || links.has(normalized)) continue;
-      links.set(normalized, pageHref(new URL(match[1], baseUrl)));
+      links.set(normalized, pageHref(new URL(raw, baseUrl)));
     }
   } catch {
     return new Map<string, string>();

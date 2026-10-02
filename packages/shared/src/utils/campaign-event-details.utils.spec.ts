@@ -78,6 +78,28 @@ const POPULATED_DETAILS: CampaignEventDetails = {
 };
 
 describe('coerceCampaignEventDetails', () => {
+  // Only the fresh-scrape path validated these. A value saved through the brief API, which takes
+  // arbitrary strings, was read back verbatim -- and these fields are printed as hyperlinks in a
+  // sent email, which has no sandbox.
+  it.each(['registrationUrl', 'agendaUrl', 'cfpUrl', 'venueUrl', 'sponsorshipUrl', 'heroImageUrl'])(
+    'drops a non-http(s) %s rather than handing it to an href',
+    (field) => {
+      const coerced = coerceCampaignEventDetails({ [field]: 'javascript:alert(1)' });
+
+      expect((coerced as unknown as Record<string, string>)[field]).toBe('');
+    }
+  );
+
+  it('keeps an ordinary https url on every url field', () => {
+    const coerced = coerceCampaignEventDetails({
+      registrationUrl: 'https://events.linuxfoundation.org/register',
+      agendaUrl: 'http://events.linuxfoundation.org/agenda',
+    });
+
+    expect(coerced.registrationUrl).toBe('https://events.linuxfoundation.org/register');
+    expect(coerced.agendaUrl).toBe('http://events.linuxfoundation.org/agenda');
+  });
+
   // The drift pin. Compares the emitted key set against the hand-written reference above, so
   // dropping a field from the conversion fails here even though the interface declares the two
   // that went missing as optional and the compiler stays silent about losing them.

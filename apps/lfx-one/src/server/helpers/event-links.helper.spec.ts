@@ -63,6 +63,49 @@ describe('extractPageLinks', () => {
   });
 });
 
+describe('extractPageLinks — malformed and hostile markup', () => {
+  // `[^>]*` let each `<a` scan to the end of the document before failing, so a page of repeated
+  // `<a ` was QUADRATIC: 115ms at 20k tags, 454ms at 40k, 8.5s at 80k, against a 5 MiB fetch cap.
+  // `matchAll` is synchronous and runs inside the scrape generator on an operator-supplied URL,
+  // so that froze the single-threaded SSR process. The bound is `[^<>]*`.
+  it('stays linear on a page of unclosed anchors', () => {
+    const html = '<a '.repeat(80_000);
+
+    const started = Date.now();
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+    const elapsed = Date.now() - started;
+
+    expect(links.size).toBe(0);
+    // Two orders of magnitude of headroom over the fixed cost, and three under the 8.5s the
+    // unbounded pattern took at this size -- so this fails loudly if the bound is ever relaxed.
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it('decodes an &amp; in an href so a multi-parameter link still compares equal', () => {
+    // The page writes `&amp;`; the extraction model returns the decoded `&`. Stored raw, the two
+    // never compared equal and a real agenda link with two query parameters was dropped.
+    const html = '<a href="https://events.linuxfoundation.org/a?x=1&amp;y=2">Agenda</a>';
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect(verifyPageLink('https://events.linuxfoundation.org/a?x=1&y=2', links)).toBe('https://events.linuxfoundation.org/a?x=1&y=2');
+  });
+
+  it('ignores data-href, which is not the link the page renders', () => {
+    // `\bhref=` also matches the tail of `data-href`, so a framework's lazy-load attribute was
+    // read as the destination.
+    const html = '<a data-href="https://evil.example/phish">Agenda</a>';
+
+    expect(extractPageLinks(html, 'https://events.linuxfoundation.org/').size).toBe(0);
+  });
+
+  it('stops collecting at the link cap', () => {
+    const html = Array.from({ length: 5_050 }, (_unused, i) => `<a href="https://events.linuxfoundation.org/p/${i}">x</a>`).join('');
+
+    expect(extractPageLinks(html, 'https://events.linuxfoundation.org/').size).toBe(5_000);
+  });
+});
+
 describe('verifyPageLink', () => {
   const html = `<a href="/agenda/">Agenda</a><a href="https://example.com/sponsor-us">Sponsor</a><a href="https://other.example/cfp">CFP</a>`;
   const links = extractPageLinks(html, BASE_URL);
