@@ -38,6 +38,15 @@ export function occurrenceIdToMs(occurrenceId: string | null | undefined): numbe
 }
 
 /**
+ * Normalize an `occurrence_id` to the Unix-seconds form Zoom/ITX expect, accepting seconds or milliseconds.
+ * Returns `null` for anything {@link occurrenceIdToMs} can't parse.
+ */
+export function occurrenceIdToSeconds(occurrenceId: string | null | undefined): string | null {
+  const ms = occurrenceIdToMs(occurrenceId);
+  return ms === null ? null : String(Math.floor(ms / 1000));
+}
+
+/**
  * Compare two `occurrence_id` strings while treating seconds and milliseconds as
  * the same instant. Prefer this over `===` anywhere an occurrence-side id may be
  * compared against an rsvp-side id (LFXV2-2864).

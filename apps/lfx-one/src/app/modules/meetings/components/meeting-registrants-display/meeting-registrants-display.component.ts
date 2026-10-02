@@ -32,6 +32,7 @@ import {
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
   resolveRsvpOccurrenceId,
+  occurrenceIdToSeconds,
 } from '@lfx-one/shared/utils';
 import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -264,7 +265,7 @@ export class MeetingRegistrantsDisplayComponent {
     if (this.addRegistrantForm.valid) {
       this.submitting.set(true);
       const formValue = this.addRegistrantForm.value;
-      const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? (this.scopeOccurrence()?.occurrence_id ?? null) : null;
+      const occurrenceId = this.inviteScopeForm.value.scope === 'occurrence' ? occurrenceIdToSeconds(this.scopeOccurrence()?.occurrence_id) : null;
       const createData = {
         ...this.meetingService.stripMetadata(this.meeting().id, formValue),
         ...(occurrenceId ? { occurrence_id: occurrenceId } : {}),

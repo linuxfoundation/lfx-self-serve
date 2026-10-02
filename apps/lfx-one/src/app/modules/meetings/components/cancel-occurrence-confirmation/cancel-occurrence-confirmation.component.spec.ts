@@ -75,6 +75,31 @@ describe('CancelOccurrenceConfirmationComponent', () => {
     expect(cancelOccurrence).not.toHaveBeenCalled();
   });
 
+  it('counts the reason limit in code points, as upstream does', async () => {
+    const component = await mount();
+
+    component.form.controls.note.setValue('😀'.repeat(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH));
+
+    expect(component.form.valid).toBe(true);
+  });
+
+  it('swallows Escape only while the request is in flight', async () => {
+    const response = new Subject<void>();
+    cancelOccurrence.mockReturnValue(response);
+    const component = await mount();
+    const pressEscape = (): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(event);
+      return event;
+    };
+
+    expect(pressEscape().defaultPrevented).toBe(false);
+    component.onConfirm();
+    expect(pressEscape().defaultPrevented).toBe(true);
+    response.next();
+    expect(pressEscape().defaultPrevented).toBe(false);
+  });
+
   it('locks the header close button while the request is in flight', async () => {
     const response = new Subject<void>();
     cancelOccurrence.mockReturnValue(response);

@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, DestroyRef, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, inject, signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
@@ -23,23 +24,18 @@ export class CancelOccurrenceConfirmationComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
   private readonly meetingService = inject(MeetingService);
-  private readonly destroyRef = inject(DestroyRef);
 
   public readonly meeting: Meeting = this.config.data.meeting;
   public readonly occurrence: MeetingOccurrence = this.config.data.occurrence;
   public readonly isCanceling = signal(false);
   public readonly noteMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
   public readonly form = new FormGroup({
-    note: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)] }),
+    note: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)] }),
   });
 
   public constructor() {
     // Closing mid-request would drop the result, so the parent never refreshes past the cancelled date.
-    toObservable(this.isCanceling)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((canceling) => {
-        this.config.closable = !canceling;
-      });
+    lockDynamicDialogWhile(this.isCanceling);
   }
 
   public onCancel(): void {

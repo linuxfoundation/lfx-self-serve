@@ -29,7 +29,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -364,7 +364,7 @@ export class MeetingController {
       }
 
       const note = typeof body.note === 'string' ? body.note.trim() : body.note;
-      if (note != null && (typeof note !== 'string' || note.length > MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)) {
+      if (note != null && (typeof note !== 'string' || codePointLength(note) > MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)) {
         return next(
           ServiceValidationError.forField('note', `Note must be text of at most ${MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH} characters`, {
             operation: 'cancel_occurrence',

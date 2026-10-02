@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -25,6 +25,7 @@ import {
 import { futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { map, startWith } from 'rxjs';
 
@@ -60,7 +61,7 @@ export class RescheduleOccurrenceDialogComponent {
   public readonly titleMaxLength: number | null = this.meeting.youtube_upload_enabled ? YOUTUBE_MAX_MEETING_TITLE_LENGTH : null;
   // What the occurrence shows today: its own override if it has one, else the series value.
   private readonly initialTitle: string = this.occurrence.title || this.meeting.title || '';
-  private readonly initialDescription: string = this.occurrence.description ?? this.meeting.description ?? '';
+  private readonly initialDescription: string = this.occurrence.description || this.meeting.description || '';
   // The picker shows the series' local calendar, so "today" has to be today in that zone, not the viewer's.
   public readonly minDate: Date = this.initMinDate();
   public readonly form: FormGroup = this.initializeForm();
@@ -82,11 +83,7 @@ export class RescheduleOccurrenceDialogComponent {
 
   public constructor() {
     // Closing mid-save would drop the result, so the parent never refreshes onto the new time.
-    toObservable(this.isSaving)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((saving) => {
-        this.config.closable = !saving;
-      });
+    lockDynamicDialogWhile(this.isSaving);
   }
 
   public onCancel(): void {
