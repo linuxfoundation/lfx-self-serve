@@ -130,7 +130,8 @@ export class MentorProgramDetailComponent {
   /** Not tied to the page: a create, and its toast, finish even if the mentor leaves first. */
   protected onTaskCreateRequested(request: MentorshipMentorTaskCreateRequest): void {
     const programId = this.programId();
-    this.taskCreateService.create(request).subscribe((result) => {
+    const menteeNames = Object.fromEntries(this.mentees().map((mentee) => [mentee.id, mentee.name]));
+    this.taskCreateService.create(request, menteeNames).subscribe((result) => {
       if (result && result.created.length > 0) this.refreshDetail(programId);
     });
   }

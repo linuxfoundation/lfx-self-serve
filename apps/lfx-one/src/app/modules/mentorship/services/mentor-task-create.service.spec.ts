@@ -63,16 +63,30 @@ describe('MentorTaskCreateService', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: '2 mentees were given the task.' }));
   });
 
-  it('warns when only some of a group were given the task', async () => {
+  it('warns when only some of a group were given the task, naming the missed mentees', async () => {
     createMenteeTasks.mockReturnValueOnce(of({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] }));
+    const names = { [APPLICATION_ID]: 'Ada Lovelace', [OTHER_APPLICATION_ID]: 'Grace Hopper' };
 
-    await expect(firstValueFrom(service.create(request))).resolves.toEqual({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] });
+    await expect(firstValueFrom(service.create(request, names))).resolves.toEqual({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] });
 
     expect(add).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'warn',
         summary: MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY,
-        detail: '1 of 2 tasks were not created. Refresh the page and try again.',
+        detail: 'Grace Hopper did not get the task. Create it from their row, so the others do not get it twice.',
+      })
+    );
+  });
+
+  it('counts the missed mentees when a name is not known', async () => {
+    createMenteeTasks.mockReturnValueOnce(of({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] }));
+
+    await firstValueFrom(service.create(request));
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'warn',
+        detail: '1 of 2 mentees did not get the task. Create it from their row, so the others do not get it twice.',
       })
     );
   });

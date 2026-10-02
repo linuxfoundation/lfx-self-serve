@@ -308,7 +308,7 @@ describe('MentorProgramDetailComponent', () => {
       fixture.componentInstance['onTaskCreateRequested'](request);
       fixture.detectChanges();
 
-      expect(createTasks).toHaveBeenCalledWith(request);
+      expect(createTasks).toHaveBeenCalledWith(request, expect.objectContaining({ mnt_1: 'Alex Rivera' }));
       expect(getMentorProgram).toHaveBeenCalledTimes(2);
       expect(getMentorProgram).toHaveBeenLastCalledWith('mp_gridflow_fall26');
       expect(shownDetail()?.mentees[0].tasksTotal).toBe(1);

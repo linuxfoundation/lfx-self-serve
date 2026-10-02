@@ -177,7 +177,7 @@ test.describe('Mentor task create', () => {
     await submitTask(page);
 
     await expect(page.getByText('Some tasks were not created')).toBeVisible();
-    await expect(page.getByText('1 of 2 tasks were not created. Refresh the page and try again.')).toBeVisible();
+    await expect(page.getByText('Test Mentee Two did not get the task. Create it from their row, so the others do not get it twice.')).toBeVisible();
   });
 
   test('explains a refused single create', async ({ page }) => {

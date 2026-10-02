@@ -35,6 +35,8 @@ const application: MentorshipUpstreamApplication = {
 };
 
 describe('parseMentorshipMentorTaskCreateRequest', () => {
+  const manyApplicationId = (index: number) => `5d1c8e2f-3a4b-4c6d-8e9f-${index.toString(16).padStart(12, '0')}`;
+
   const valid = { applicationIds: [APPLICATION_ID], name: 'Write a design doc', description: 'One page on the plan.' };
 
   it('trims the text and keeps the optional fields', () => {
@@ -63,6 +65,25 @@ describe('parseMentorshipMentorTaskCreateRequest', () => {
     });
   });
 
+  it('takes the maximum number of applications, with repeats', () => {
+    const ids = Array.from({ length: MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS }, (_, index) => manyApplicationId(index));
+
+    expect(parseMentorshipMentorTaskCreateRequest({ ...valid, applicationIds: [...ids, ...ids] }).applicationIds).toEqual(ids);
+  });
+
+  it('refuses an oversized list without reading past the limit', () => {
+    const ids = Array.from({ length: MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS + 1 }, (_, index) => manyApplicationId(index));
+
+    // The trailing non-UUID would be refused with the UUID message if the parser read it.
+    expect(() => parseMentorshipMentorTaskCreateRequest({ ...valid, applicationIds: [...ids, 'not-a-uuid'] })).toThrow(
+      expect.objectContaining({
+        validationErrors: [
+          expect.objectContaining({ message: `applicationIds must hold at most ${MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS} applications` }),
+        ],
+      })
+    );
+  });
+
   it('leaves out a blank or null due date', () => {
     expect(parseMentorshipMentorTaskCreateRequest({ ...valid, dueDate: '' })).not.toHaveProperty('dueDate');
     expect(parseMentorshipMentorTaskCreateRequest({ ...valid, dueDate: null })).not.toHaveProperty('dueDate');
@@ -84,10 +105,7 @@ describe('parseMentorshipMentorTaskCreateRequest', () => {
       'more applications than the limit',
       {
         ...valid,
-        applicationIds: Array.from(
-          { length: MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS + 1 },
-          (_, index) => `5d1c8e2f-3a4b-4c6d-8e9f-${index.toString(16).padStart(12, '0')}`
-        ),
+        applicationIds: Array.from({ length: MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS + 1 }, (_, index) => manyApplicationId(index)),
       },
     ],
     ['a blank name', { ...valid, name: '   ' }],

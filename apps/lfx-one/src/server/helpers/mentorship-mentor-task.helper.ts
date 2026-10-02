@@ -35,23 +35,28 @@ export const parseMentorshipMentorTaskCreateRequest = (body: unknown): Mentorshi
   if (!Array.isArray(rawIds) || rawIds.length === 0) {
     throw ServiceValidationError.forField('applicationIds', 'applicationIds must be a non-empty list of application UUIDs', { operation: OPERATION });
   }
-  const applicationIds: string[] = [];
+  // Stop at the first id past the cap, so an oversized list is refused without reading the rest of it.
+  const applicationIds = new Set<string>();
   for (const rawId of rawIds) {
     const applicationId = parseTrimmedString(rawId)?.toLowerCase();
     if (!applicationId || !isUuid(applicationId)) {
       throw ServiceValidationError.forField('applicationIds', 'applicationIds must be a non-empty list of application UUIDs', { operation: OPERATION });
     }
-    if (!applicationIds.includes(applicationId)) applicationIds.push(applicationId);
-  }
-  if (applicationIds.length > MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS) {
-    throw ServiceValidationError.forField('applicationIds', `applicationIds must hold at most ${MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS} applications`, {
-      operation: OPERATION,
-    });
+    applicationIds.add(applicationId);
+    if (applicationIds.size > MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS) {
+      throw ServiceValidationError.forField(
+        'applicationIds',
+        `applicationIds must hold at most ${MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS} applications`,
+        {
+          operation: OPERATION,
+        }
+      );
+    }
   }
 
   const name = parseRequiredText(input['name'], 'name', MENTORSHIP_TASK_NAME_MAX);
   const description = parseRequiredText(input['description'], 'description', MENTORSHIP_TASK_DESCRIPTION_MAX);
-  const request: MentorshipMentorTaskCreateRequest = { applicationIds, name, description };
+  const request: MentorshipMentorTaskCreateRequest = { applicationIds: [...applicationIds], name, description };
 
   const rawDueDate = input['dueDate'];
   if (rawDueDate !== undefined && rawDueDate !== null && rawDueDate !== '') {
