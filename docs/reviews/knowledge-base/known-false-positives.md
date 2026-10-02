@@ -72,7 +72,7 @@ Applied by the `/lfx-self-serve-learnings-review` skill (Step 4) to its own find
 
 **Pattern matched:** suggestion to extract a 3-5 line block into a named helper, when the block is used exactly once and inlining is clearer.
 
-**Why false:** premature abstraction. AGENTS.md explicitly says "three similar lines is better than a premature abstraction" — single-use extraction violates this.
+**Why false:** premature abstraction — single-use extraction is clearer inlined; avoid pulling a 3-5 line block into a named helper that's only called once.
 
 ### `PORT=4200` in `.env.example` flagged as wrong port
 

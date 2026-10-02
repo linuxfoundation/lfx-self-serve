@@ -214,7 +214,7 @@ US4 is largely a property emerging from US1 (the route table at T020/T021 and th
 
 **Purpose**: Improvements that span multiple stories and final pre-PR validation.
 
-- [x] T056 [P] Document the docs build pipeline and runtime architecture at `docs/architecture/frontend/docs-portal.md` — pipeline diagram, contract references, route registration, layout switching, search lazy-load semantics. Add a row to the Architecture Documentation table in `AGENTS.md` and `AGENTS.md` only via code-owner review (those files are protected).
+- [x] T056 [P] Document the docs build pipeline and runtime architecture at `docs/architecture/frontend/docs-portal.md` — pipeline diagram, contract references, route registration, layout switching, search lazy-load semantics. Add a row to the Architecture Documentation table in `AGENTS.md` only via code-owner review (that file is protected).
 - [x] T057 [P] Add a "Last updated" footer to `DocsArticleComponent` template (`apps/lfx-one/src/app/modules/docs/pages/docs-article/docs-article.component.html`) that renders the article's `lastUpdated` field via the existing `formatDate`/`getRelativeDate` utilities from `@lfx-one/shared/utils`.
 - [ ] T058 [P] Implement a breadcrumb component at `apps/lfx-one/src/app/modules/docs/components/docs-breadcrumb/docs-breadcrumb.component.{ts,html,scss}` consuming `DocsArticle.breadcrumb`; embed it above the article body in `DocsArticleComponent`.
 - [ ] T059 [P] Performance audit: run a Lighthouse pass against three sample article pages and confirm the SC-008 target ("first usable HTML response within 1 second on a typical broadband connection"). Document the run and numbers inline in `apps/lfx-one/e2e/docs/perf-notes.md` (informational, not a blocking gate).

@@ -233,7 +233,7 @@ See [Logging & Monitoring](./logging-monitoring.md) for full details.
 
 ## Quick Links
 
-- [Server Configuration](../../AGENTS.md#backend-stack)
-- [Logging System](../../AGENTS.md#logging-system)
+- [Server Configuration](#server-stack)
+- [Logging System](#logging-rules)
 - [Shared Interfaces](../shared/package-architecture.md)
 - [Frontend Integration](../frontend/README.md)

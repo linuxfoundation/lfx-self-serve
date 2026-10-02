@@ -74,6 +74,6 @@ Discover SSR benefits, build optimizations, and performance strategies.
 
 ## 🔗 Quick Links
 
-- [Getting Started Guide](../../../AGENTS.md#angular-19-development-patterns)
+- [Getting Started Guide](../../../AGENTS.md#quick-start)
 - [Component Development Checklist](./component-architecture.md#development-checklist)
 - [Styling Guidelines](./styling-system.md#styling-guidelines)

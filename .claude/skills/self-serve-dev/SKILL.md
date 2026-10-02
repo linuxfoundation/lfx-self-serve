@@ -137,7 +137,7 @@ Read the relevant architecture docs **before generating code**. These are the so
 
 ### Always Read
 
-- **`AGENTS.md`** → "Component Organization Pattern" section — class structure ordering, signal patterns
+- **`.claude/rules/component-organization.md`** — class structure ordering, signal patterns
 
 ### For Frontend Work
 

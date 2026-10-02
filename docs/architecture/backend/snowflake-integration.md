@@ -1063,7 +1063,7 @@ async execute<T>(sql: string, binds?: (Bind | Date)[]): Promise<T> {
 - [Backend Architecture Overview](./README.md)
 - [NATS Integration](./nats-integration.md)
 - [Authentication & Authorization](./authentication.md)
-- [Environment Configuration](../../AGENTS.md#environment-configuration)
+- [Environment Configuration](#environment-variables)
 
 ## 📚 External Resources
 

@@ -91,7 +91,7 @@ export class OrgProfileEditComponent implements OnInit {
   /** Overrides `record().logoUrl` after a successful upload so the preview updates without waiting on the parent's own record refresh. */
   protected readonly logoUrl = signal<string | null>(null);
 
-  /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (AGENTS.md "No functions in HTML templates"). */
+  /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (docs/reviews/frontend-checklist.md "No template functions"). */
   protected readonly descriptionInvalid = signal(false);
   protected readonly employeesInvalid = signal(false);
   protected readonly crunchbaseInvalid = signal(false);
