@@ -7537,12 +7537,15 @@ export class ProjectService {
     // Stage 1: Resolve committee UIDs and names for this project.
     // committee_link and committee_document are indexed by committee_uid only — no project_uid tag —
     // so we must fetch committee UIDs first, then query those types via filters_or.
-    const committees = await fetchAllQueryResources<{ uid: string; name?: string }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; name?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'committee',
-        tags: `project_uid:${projectId}`,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const committees = await fetchAllQueryResources<{ uid: string; name?: string }>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; name?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee',
+          tags: `project_uid:${projectId}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     ).catch((err) => {
       logger.warning(req, 'get_project_documents', 'Failed to fetch committee UIDs, committee docs will be skipped', {
         project_uid: projectId,
@@ -7553,7 +7556,34 @@ export class ProjectService {
 
     const committeeUids = committees.map((c) => c.uid);
     const committeeNameByUid = new Map(committees.map((c) => [c.uid, c.name ?? '']));
-    const committeeFiltersOr = committeeUids.map((uid) => `committee_uid:${uid}`);
+    // Chunk into batches of QUERY_SERVICE_FILTERS_OR_BATCH_SIZE to stay within query-service URL limits.
+    const committeeFiltersBatched: string[][] = [];
+    for (let i = 0; i < committeeUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      committeeFiltersBatched.push(committeeUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((uid) => `committee_uid:${uid}`));
+    }
+
+    // Fetches a committee-indexed resource type across all filter batches and merges the results.
+    const fetchCommitteeBatched = async <T>(type: string, label: string): Promise<T[]> => {
+      if (committeeFiltersBatched.length === 0) return [];
+      const batchResults = await Promise.all(
+        committeeFiltersBatched.map((batch) =>
+          fetchAllQueryResources<T>(req, (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<T>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type,
+              filters_or: batch,
+              ...(pageToken && { page_token: pageToken }),
+            })
+          ).catch((err) => {
+            logger.warning(req, 'get_project_documents', `Failed to fetch ${label} via query service, returning empty list for batch`, {
+              project_uid: projectId,
+              err,
+            });
+            return [] as T[];
+          })
+        )
+      );
+      return batchResults.flat();
+    };
 
     // Stage 2: Fetch all resource types in parallel.
     const [
@@ -7621,36 +7651,8 @@ export class ProjectService {
         });
         return [] as GroupsIOArtifactQueryResult[];
       }),
-      committeeFiltersOr.length > 0
-        ? fetchAllQueryResources<CommitteeLinkQueryResult>(req, (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'committee_link',
-              filters_or: committeeFiltersOr,
-              ...(pageToken && { page_token: pageToken }),
-            })
-          ).catch((err) => {
-            logger.warning(req, 'get_project_documents', 'Failed to fetch committee links via query service, returning empty list', {
-              project_uid: projectId,
-              err,
-            });
-            return [] as CommitteeLinkQueryResult[];
-          })
-        : Promise.resolve([] as CommitteeLinkQueryResult[]),
-      committeeFiltersOr.length > 0
-        ? fetchAllQueryResources<CommitteeDocumentQueryResult>(req, (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'committee_document',
-              filters_or: committeeFiltersOr,
-              ...(pageToken && { page_token: pageToken }),
-            })
-          ).catch((err) => {
-            logger.warning(req, 'get_project_documents', 'Failed to fetch committee documents via query service, returning empty list', {
-              project_uid: projectId,
-              err,
-            });
-            return [] as CommitteeDocumentQueryResult[];
-          })
-        : Promise.resolve([] as CommitteeDocumentQueryResult[]),
+      fetchCommitteeBatched<CommitteeLinkQueryResult>('committee_link', 'committee links'),
+      fetchCommitteeBatched<CommitteeDocumentQueryResult>('committee_document', 'committee documents'),
       fetchAllQueryResources<MeetingAttachment>(req, (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'v1_meeting_attachment',
@@ -7793,6 +7795,7 @@ export class ProjectService {
       uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       document_source: 'committee' as const,
       document_source_name: f.committee_uid ? (committeeNameByUid.get(f.committee_uid) ?? '') : '',
+      committee_uid: f.committee_uid,
     }));
 
     const meetingAttachmentDocs: ProjectDocument[] = (meetingAttachments || []).map((a) => ({
@@ -7844,6 +7847,8 @@ export class ProjectService {
       created_at: s.summary_start_time || s.created_at,
       document_source: 'summary' as const,
       document_source_name: s.zoom_meeting_topic || '',
+      summary_uid: s.id,
+      summary_content: s.edited_content ?? s.content,
     }));
 
     logger.debug(req, 'get_project_documents', 'Fetched all project document types', {

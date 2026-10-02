@@ -375,8 +375,18 @@ export class DocumentsDashboardComponent {
     // Show entity name (committee name, meeting title) when available, otherwise project name.
     const groupName = doc.document_source_name || project?.name || '';
 
-    // Download endpoint is only valid for native project files — not committee/meeting files.
+    // Download endpoint is only valid for native project files — not meeting files.
     const isProjectFile = isFile && docSource === 'project';
+    const isCommitteeFile = isFile && docSource === 'committee' && !!doc.committee_uid;
+
+    // Build download URL: project files use the project BFF endpoint; committee files use the
+    // committee BFF endpoint (same streaming approach, different route).
+    let downloadUrl: string | undefined;
+    if (isProjectFile && ownerProjectUid) {
+      downloadUrl = `/api/projects/${encodeURIComponent(ownerProjectUid)}/documents/${encodeURIComponent(doc.uid)}/download`;
+    } else if (isCommitteeFile && doc.committee_uid) {
+      downloadUrl = `/api/committees/${encodeURIComponent(doc.committee_uid)}/documents/${encodeURIComponent(doc.uid)}/download`;
+    }
 
     return {
       id: `project_${doc.type}:${doc.uid}`,
@@ -392,9 +402,10 @@ export class DocumentsDashboardComponent {
       fileType: doc.mime_type,
       parentUid: doc.parent_uid,
       isChild,
-      downloadUrl:
-        isProjectFile && ownerProjectUid ? `/api/projects/${encodeURIComponent(ownerProjectUid)}/documents/${encodeURIComponent(doc.uid)}/download` : undefined,
+      downloadUrl,
       uploadedBy: doc.uploaded_by,
+      summaryUid: doc.summary_uid,
+      summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
     };
   }

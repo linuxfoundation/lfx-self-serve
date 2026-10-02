@@ -206,6 +206,12 @@ export interface ProjectDocument {
   document_source?: ProjectDocumentSource;
   /** Display name of the source entity (committee name, meeting title, etc.) */
   document_source_name?: string;
+  /** Committee UID — set on committee_document rows so the UI can build a download URL */
+  committee_uid?: string;
+  /** Summary UID — set on past_meeting_summary rows for the preview dialog */
+  summary_uid?: string;
+  /** Raw markdown summary content — set on past_meeting_summary rows for the preview dialog */
+  summary_content?: string;
 }
 
 /** Request body for creating a project document (folder or link). */
