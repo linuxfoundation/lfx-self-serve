@@ -4,7 +4,6 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
@@ -19,8 +18,9 @@ import {
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeStatus, MentorshipNoteRequest, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
+import { MentorshipMenteeStatus, MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
 import {
+  buildMentorshipProgramsUrl,
   formatIsoDateLabel,
   matchesMentorshipPersonSearch,
   mentorshipApplicantDisplayStatus,
@@ -30,6 +30,7 @@ import {
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
 } from '@lfx-one/shared/utils';
+import { environment } from '@environments/environment';
 import { startWith, tap } from 'rxjs';
 
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
@@ -42,12 +43,12 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
  */
 @Component({
   selector: 'lfx-mentorship-mentor-applicants-tab',
-  imports: [ReactiveFormsModule, RouterLink, ApplicantTasksPanelComponent, ButtonComponent, InputTextComponent, PersonCellComponent, TableComponent],
+  imports: [ReactiveFormsModule, ApplicantTasksPanelComponent, ButtonComponent, InputTextComponent, PersonCellComponent, TableComponent],
   templateUrl: './mentor-applicants-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorApplicantsTabComponent {
-  public readonly applicants = input.required<MentorshipProgramApplicant[]>();
+  public readonly applicants = input.required<MentorshipMentorProgramApplicant[]>();
   /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
   public readonly noteDrafts = input<Record<string, string>>({});
   public readonly noteRequested = output<MentorshipNoteRequest>();
@@ -110,7 +111,7 @@ export class MentorApplicantsTabComponent {
     });
   }
 
-  private toRow(person: MentorshipProgramApplicant) {
+  private toRow(person: MentorshipMentorProgramApplicant) {
     const displayStatus = mentorshipApplicantDisplayStatus(person);
     return {
       ...person,
@@ -126,6 +127,9 @@ export class MentorApplicantsTabComponent {
         .map((application) => ({
           ...application,
           statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
+          statusBadgeClass: MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES[mentorshipApplicantDisplayStatus(application)],
+          // The program's public page on the mentorship site; without an id the name shows as plain text.
+          programUrl: application.programId ? buildMentorshipProgramsUrl(environment.urls.mentorship, application.programId) : null,
         })),
       ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
       hasTasks: mentorshipApplicantHasTasks(person),

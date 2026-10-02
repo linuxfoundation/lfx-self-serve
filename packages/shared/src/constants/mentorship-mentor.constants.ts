@@ -6,20 +6,12 @@ import type {
   MentorshipMentorTaskReviewStatus,
   MentorshipMentoringHistoryStatus,
   MentorshipMentorProfileResponse,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramLists,
   MentorshipMentorProgramsResponse,
   MentorshipMentorProgramTermStatus,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
-import {
-  mentorshipArtworkIconUrl,
-  MENTORSHIP_CURRENT_MENTEE_STATUSES,
-  MENTORSHIP_MENTEE_STATUS_LABELS,
-  MENTORSHIP_MENTOR_STATUS_LABELS,
-} from './mentorship.constants';
-import { MOCK_MENTORSHIP_PROGRAM_LISTS } from './mentorship-program-detail.constants';
+import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
 
 /**
  * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
@@ -40,11 +32,6 @@ export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES: Record<Mentors
   'active-term': 'bg-blue-50 text-blue-700',
   upcoming: 'bg-amber-50 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
-};
-
-export const EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS: MentorshipMentorProgramLists = {
-  mentees: [],
-  applicants: [],
 };
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
@@ -97,186 +84,6 @@ export const MENTORSHIP_MENTOR_TASK_FILTER_PILLS: { value: MentorshipMentorTaskR
   { value: 'completed', label: MENTORSHIP_MENTOR_TASK_APPROVED_LABEL },
   { value: undefined, label: 'All' },
 ];
-
-/**
- * Deterministic mock programs backing the mentor My Programs list while the upstream
- * mentorship service is unavailable. Removed once the real endpoint is wired up.
- */
-const MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS: MentorshipMentorProgram[] = [
-  {
-    id: 'mp_gridflow_fall26',
-    slug: 'gridflow-time-series-ingestion-pipeline',
-    name: 'GridFlow: Time-Series Ingestion Pipeline',
-    projectName: 'LF Energy',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-23',
-    stats: { mentees: 3, tasksToReview: 4, applicants: 5 },
-    logoUrl: mentorshipArtworkIconUrl('lf-energy', 'grid-exchange-fabric'),
-  },
-  {
-    id: 'mp_apicurio_fall26',
-    slug: 'apicurio-registry-prompt-template-playground',
-    name: 'Apicurio Registry: Prompt Template Playground',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 2, tasksToReview: 2, applicants: 2 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'apicurio-registry'),
-  },
-  {
-    id: 'mp_janusgraph_fall26',
-    slug: 'janusgraph-adjacency-cache-instrumentation',
-    name: 'JanusGraph: Adjacency Cache Instrumentation',
-    projectName: 'LF AI & Data',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 1, tasksToReview: 0, applicants: 3 },
-    logoUrl: mentorshipArtworkIconUrl('lfai', 'janusgraph'),
-  },
-  {
-    id: 'mp_thanos_summer26',
-    slug: 'thanos-fan-out-query-observability',
-    name: 'Thanos: Fan-Out Query Observability',
-    projectName: 'CNCF',
-    term: 'Summer 2026',
-    termStatus: 'completed',
-    termStartDate: '2026-06-01',
-    termEndDate: '2026-08-15',
-    stats: { mentees: 0, tasksToReview: 0, applicants: 0 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'thanos'),
-  },
-  {
-    id: 'mp_opa_winter27',
-    slug: 'open-policy-agent-policy-bundle-linting',
-    name: 'Open Policy Agent: Policy Bundle Linting',
-    projectName: 'CNCF',
-    term: 'Winter 2027',
-    termStatus: 'upcoming',
-    termStartDate: '2027-01-05',
-    termEndDate: '2027-03-20',
-    stats: { mentees: 0, tasksToReview: 0, applicants: 1 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'open-policy-agent', 'opa'),
-  },
-  {
-    id: 'mp_envoy_fall26',
-    slug: 'envoy-gateway-observability-hooks',
-    name: 'Envoy Gateway: Observability Hooks',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 4, tasksToReview: 1, applicants: 6 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'envoy'),
-  },
-  {
-    id: 'mp_harbor_fall26',
-    slug: 'harbor-artifact-signing-workflows',
-    name: 'Harbor: Artifact Signing Workflows',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 2, tasksToReview: 3, applicants: 4 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'harbor'),
-  },
-  {
-    id: 'mp_vitess_fall26',
-    slug: 'vitess-query-plan-insights',
-    name: 'Vitess: Query Plan Insights',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 1, tasksToReview: 1, applicants: 2 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'vitess'),
-  },
-  {
-    id: 'mp_falco_fall26',
-    slug: 'falco-runtime-rule-simulator',
-    name: 'Falco: Runtime Rule Simulator',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 3, tasksToReview: 2, applicants: 3 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'falco'),
-  },
-  {
-    id: 'mp_crossplane_fall26',
-    slug: 'crossplane-composition-testing',
-    name: 'Crossplane: Composition Testing',
-    projectName: 'CNCF',
-    term: 'Fall 2026',
-    termStatus: 'active-term',
-    termStartDate: '2026-09-01',
-    termEndDate: '2026-11-30',
-    stats: { mentees: 2, tasksToReview: 5, applicants: 7 },
-    logoUrl: mentorshipArtworkIconUrl('cncf', 'crossplane'),
-  },
-];
-
-const MENTOR_PROGRAM_IDS = new Set(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => program.id));
-
-/**
- * Keep mentees/applicants that belong to this mentor program's term. Admin lists are
- * keyed by slug and mix terms (and some mentor cards have no admin entry at all).
- * Mentees are further scoped to accepted/graduated — the statuses the Mentees tab lists.
- */
-function mentorProgramListsFor(program: MentorshipMentorProgram): MentorshipMentorProgramLists {
-  const admin = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug];
-  if (!admin) return EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-  return {
-    mentees: admin.mentees.filter((row) => row.termName === program.term && MENTORSHIP_CURRENT_MENTEE_STATUSES.includes(row.status)),
-    applicants: admin.applicants
-      .filter((row) => row.termName === program.term)
-      .map((row) => ({
-        ...row,
-        // Mentor "other applications" route to `/mentor/programs/:id`. Drop ids the
-        // mentor detail endpoint cannot resolve (e.g. admin-only `mp_apicurio_winter26`).
-        otherApplications: (row.otherApplications ?? []).filter((application) => MENTOR_PROGRAM_IDS.has(application.programId)),
-      })),
-  };
-}
-
-/**
- * Mentor program-detail lists keyed by mentor program id, not admin slug.
- * Returns a fresh snapshot per call so dynamic `hoursAgoIso`/`daysAgoIso` timestamps
- * in `MOCK_MENTORSHIP_PROGRAM_LISTS` are evaluated at access time, not at import time.
- */
-export function getMockMentorshipMentorProgramLists(): Record<string, MentorshipMentorProgramLists> {
-  return Object.fromEntries(MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => [program.id, mentorProgramListsFor(program)]));
-}
-
-/**
- * Card stats follow the id-keyed lists so the programs page, detail header, and
- * tab rows describe the same term. `tasksToReview` is the submitted-task count.
- * Returns a fresh snapshot per call for the same reason as the lists above.
- */
-export function getMockMentorshipMentorPrograms(): MentorshipMentorProgram[] {
-  const lists = getMockMentorshipMentorProgramLists();
-  return MOCK_MENTORSHIP_MENTOR_PROGRAM_SEEDS.map((program) => {
-    const programLists = lists[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-    return {
-      ...program,
-      stats: {
-        ...program.stats,
-        mentees: programLists.mentees.length,
-        applicants: programLists.applicants.length,
-        tasksToReview: programLists.mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0),
-      },
-    };
-  });
-}
 
 export const MENTORSHIP_MENTOR_REGISTER_TITLE = 'Become a Mentor';
 export const MENTORSHIP_MENTOR_REGISTER_SUBTITLE = 'Register as a mentor and request to join the programs you want to support. Fields marked * are required.';

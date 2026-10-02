@@ -11,6 +11,7 @@ import type {
 } from './mentorship-mentee.interface';
 import type {
   MentorshipApplicantTaskStatus,
+  MentorshipMenteeStatus,
   MentorshipMentorStatus,
   MentorshipProgramApplicant,
   MentorshipProgramMentee,
@@ -262,10 +263,26 @@ export interface MentorshipMentorProgramTabCounts {
   applicants: number;
 }
 
-/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. */
+/**
+ * An application the same person holds on another program, as a mentor sees it. The Applicants tab links the
+ * program name to that program's public page on the mentorship site, which anyone may open; `programId` is
+ * left out when upstream's id is not a UUID, and the name then shows as plain text.
+ */
+export interface MentorshipMentorOtherApplication {
+  programId?: string;
+  programName: string;
+  status: MentorshipMenteeStatus;
+}
+
+/** One Applicants tab row. Its `id` is the application id. */
+export interface MentorshipMentorProgramApplicant extends Omit<MentorshipProgramApplicant, 'otherApplications'> {
+  otherApplications?: MentorshipMentorOtherApplication[];
+}
+
+/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. Each row's `id` is its application id. */
 export interface MentorshipMentorProgramLists {
   mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
+  applicants: MentorshipMentorProgramApplicant[];
 }
 
 /** Full mentor program-detail payload from `GET /api/mentorship/mentor/programs/:programId`. */

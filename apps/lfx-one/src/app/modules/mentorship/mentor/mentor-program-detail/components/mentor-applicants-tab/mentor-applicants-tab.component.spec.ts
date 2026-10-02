@@ -4,7 +4,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MentorshipNoteRequest, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
+import { environment } from '@environments/environment';
+import { MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES } from '@lfx-one/shared/constants';
+import { MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
+import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { EMPTY } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +16,7 @@ import { MentorshipTaskDialogService } from '../../../../services/mentorship-tas
 import { MentorApplicantsTabComponent } from './mentor-applicants-tab.component';
 
 describe('MentorApplicantsTabComponent', () => {
-  const applicant = (overrides: Partial<MentorshipProgramApplicant> = {}): MentorshipProgramApplicant => ({
+  const applicant = (overrides: Partial<MentorshipMentorProgramApplicant> = {}): MentorshipMentorProgramApplicant => ({
     id: 'app_1',
     name: 'Ifeoma Adeyemi',
     email: 'ifeoma.adeyemi@example.com',
@@ -45,9 +48,9 @@ describe('MentorApplicantsTabComponent', () => {
    * accepted row for the status-pill assertion, one declined row for the same.
    */
   const setup = (
-    applicants: MentorshipProgramApplicant[] = [
+    applicants: MentorshipMentorProgramApplicant[] = [
       applicant({
-        otherApplications: [{ programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 }],
+        otherApplications: [{ programName: 'Apicurio Registry', status: 'pending' }],
       }),
       applicant({ id: 'app_2', name: 'Diego Souza' }),
       applicant({ id: 'app_3', name: 'Aiko Tanaka', status: 'accepted' }),
@@ -183,18 +186,59 @@ describe('MentorApplicantsTabComponent', () => {
     setup([
       applicant({
         otherApplications: [
-          { programId: 'mp_apicurio_winter26', programName: 'Apicurio Registry', status: 'pending', tasksSubmitted: 1, tasksTotal: 3 },
-          { programId: 'mp_thanos_summer26', programName: 'Thanos', status: 'graduated' },
-          { programId: 'mp_declined', programName: 'Declined Program', status: 'declined' },
-          { programId: 'mp_withdrawn', programName: 'Withdrawn Program', status: 'withdrawn' },
+          { programName: 'Apicurio Registry', status: 'pending' },
+          { programName: 'Thanos', status: 'graduated' },
+          { programName: 'Declined Program', status: 'declined' },
+          { programName: 'Withdrawn Program', status: 'withdrawn' },
         ],
       }),
     ]);
 
-    const shown = Array.from(element().querySelectorAll('[data-testid^="mentorship-mentor-applicant-other-application-"]')).map((link) =>
-      (link.textContent ?? '').trim()
+    const shown = Array.from(element().querySelectorAll('[data-testid="mentorship-mentor-applicant-other-application"]')).map((entry) =>
+      (entry.textContent ?? '').replace(/\s+/g, ' ').trim()
     );
-    expect(shown).toEqual(['Apicurio Registry', 'Thanos']);
+    expect(shown).toEqual(['Apicurio Registry Applied', 'Thanos Graduated']);
+  });
+
+  it("colours each other application's status with the applicant status badge", () => {
+    setup([
+      applicant({
+        otherApplications: [
+          { programName: 'Apicurio Registry', status: 'pending' },
+          { programName: 'Thanos', status: 'accepted' },
+        ],
+      }),
+    ]);
+
+    const badges = Array.from(element().querySelectorAll('[data-testid="mentorship-mentor-applicant-other-application-status"]'));
+    expect(badges.map((badge) => badge.textContent?.trim())).toEqual(['Applied', 'Accepted']);
+    for (const [index, status] of (['applied', 'accepted'] as const).entries()) {
+      for (const cssClass of MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES[status].split(' ')) {
+        expect(badges[index].classList).toContain(cssClass);
+      }
+    }
+  });
+
+  it("links an other application's program name to its page on the mentorship site, in a new tab", () => {
+    const programId = '1a2b3c4d-0000-4000-8000-000000000002';
+    setup([
+      applicant({
+        otherApplications: [
+          { programId, programName: 'Apicurio Registry', status: 'pending' },
+          { programName: 'Thanos', status: 'accepted' },
+        ],
+      }),
+    ]);
+
+    const [linked, plain] = Array.from(element().querySelectorAll('[data-testid="mentorship-mentor-applicant-other-application"]'));
+    const link = linked.querySelector<HTMLAnchorElement>('[data-testid="mentorship-mentor-applicant-other-application-link"]');
+    expect(link?.textContent?.trim()).toBe('Apicurio Registry');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipProgramsUrl(environment.urls.mentorship, programId));
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+    // Without a program id the name stays plain text.
+    expect(plain.querySelector('a')).toBeNull();
+    expect(plain.textContent).toContain('Thanos');
   });
 
   it('renders the empty message when the filter chain narrows to zero rows', () => {

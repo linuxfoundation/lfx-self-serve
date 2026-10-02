@@ -312,18 +312,20 @@ describe('MentorshipMentorController', () => {
   });
 
   describe('getMentorProgram', () => {
+    const PROGRAM_ID = '1a2b3c4d-0000-4000-8000-000000000001';
+
     it('trims the program id and answers with the program detail', async () => {
-      const detail = { program: { id: 'mp_test' } } as unknown as MentorshipMentorProgramDetail;
+      const detail = { program: { id: PROGRAM_ID } } as unknown as MentorshipMentorProgramDetail;
       const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorProgram').mockResolvedValue(detail);
 
-      await controller.getMentorProgram(buildReq({ programId: '  mp_test  ' }), res, next);
+      await controller.getMentorProgram(buildReq({ programId: `  ${PROGRAM_ID}  ` }), res, next);
 
-      expect(read).toHaveBeenCalledWith(expect.anything(), 'mp_test');
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID);
       expect(res.json).toHaveBeenCalledWith(detail);
       expect(next).not.toHaveBeenCalled();
     });
 
-    it.each([undefined, '', '   '])('passes a ServiceValidationError to next for the program id %j', async (programId) => {
+    it.each([undefined, '', '   ', 'gridflow', '../applications'])('passes a ServiceValidationError to next for the program id %j', async (programId) => {
       const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorProgram');
 
       await controller.getMentorProgram(buildReq({ programId }), res, next);
@@ -336,7 +338,7 @@ describe('MentorshipMentorController', () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorProgram');
 
-      await controller.getMentorProgram(buildReq({ programId: 'mp_test' }), res, next);
+      await controller.getMentorProgram(buildReq({ programId: PROGRAM_ID }), res, next);
 
       expect(read).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));

@@ -879,8 +879,14 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
   };
 }
 
+/**
+ * Submitted tasks waiting on the mentor: those of `accepted` mentees, so a graduated mentee's leftover
+ * submission is not counted, the same rule as the My Programs card's tasks to review.
+ */
 export function mentorshipMentorSubmittedTaskCount(mentees: MentorshipProgramMentee[]): number {
-  return mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
+  return mentees
+    .filter((mentee) => mentee.status === 'accepted')
+    .reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
 }
 
 export function buildMentorshipMentorProgramTabCounts(lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
@@ -900,8 +906,9 @@ export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProg
 }
 
 /**
- * Flatten current-mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting
- * Review) and `completed` (Approved). Newest `updatedOn` first.
+ * Flatten mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting Review) on
+ * `accepted` mentees, matching `mentorshipMentorSubmittedTaskCount`, and `completed`
+ * (Approved) on any mentee. Newest `updatedOn` first.
  */
 export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]): MentorshipMentorReviewTask[] {
   const rows: MentorshipMentorReviewTask[] = [];
@@ -909,6 +916,7 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
   for (const mentee of mentees) {
     for (const task of mentee.tasks ?? []) {
       if (task.status !== 'submitted' && task.status !== 'completed') continue;
+      if (task.status === 'submitted' && mentee.status !== 'accepted') continue;
       rows.push({
         id: `${mentee.id}__${task.id}`,
         menteeId: mentee.id,

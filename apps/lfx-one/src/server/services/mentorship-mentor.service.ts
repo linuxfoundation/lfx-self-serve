@@ -3,9 +3,6 @@
 
 import {
   EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE,
-  EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
-  getMockMentorshipMentorProgramLists,
-  getMockMentorshipMentorPrograms,
   MENTORSHIP_MENTOR_OPEN_PROGRAMS_PAGE_SIZE,
   MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
@@ -21,7 +18,6 @@ import {
   MentorshipMentorProfileUpdateResponse,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
-  MentorshipMentorProgramLists,
   MentorshipMentorProgramRequestsResponse,
   MentorshipMentorProgramsResponse,
   MentorshipMentorRegisterRequest,
@@ -40,12 +36,15 @@ import { buildMentorshipMentorProgramDetail, isUuid } from '@lfx-one/shared/util
 import { Request } from 'express';
 
 import {
+  MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_BOOTSTRAP_PATH,
   MENTORSHIP_ME_MENTOR_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH,
+  MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTORS_PATH,
   MENTORSHIP_MENTOR_INVITES_PATH,
+  MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY,
   MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE,
   MENTORSHIP_PROGRAMS_PATH,
@@ -57,7 +56,9 @@ import { mapMentorshipMentoringHistory, mapMentorshipMentorProfileDetails } from
 import {
   chooseMentorshipMentorProgramTerm,
   compareMentorshipMentorProgramCards,
+  groupMentorshipMentorProgramTasks,
   mapMentorshipMentorProgramCard,
+  mapMentorshipMentorProgramLists,
   sortMentorshipMentorProgramRows,
 } from '../helpers/mentorship-mentor-program.helper';
 import { buildMentorshipUpstreamMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
@@ -68,7 +69,6 @@ import {
   mapMentorshipMentorProgramRequests,
 } from '../helpers/mentorship-mentor-request.helper';
 import { buildMentorshipUpstreamMentorProfile } from '../helpers/mentorship-mentor-register.helper';
-import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -76,8 +76,8 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
  * BFF for the mentor pages at `/mentorship/mentor/*`. The has-profile check, the register write, the
- * program requests, the profile read and edit, and My Programs call the mentorship service with the
- * caller's token; the program detail read still serves the shared mock seed data.
+ * program requests, the profile read and edit, My Programs and the program detail call the mentorship
+ * service with the caller's token.
  */
 export class MentorshipMentorService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -303,19 +303,46 @@ export class MentorshipMentorService {
     return { profile };
   }
 
+  /**
+   * One of the caller's mentor programs, read the way its My Programs card is read so the two counts agree. The
+   * program must be in the caller's public mentor detail, so a mentor reads only their own programs; any other
+   * program is a 404. The chosen term's applications and every task on the term are read in full alongside the
+   * program's own record, and tasks on applications that are not listed are dropped (H3). The term task listing
+   * is gated at the gateway; when it refuses the caller, each mentee's tasks are read from their application
+   * instead, a few at a time, and the other applicants are shown without tasks (H8).
+   */
   public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
-    logger.debug(req, 'mentorship_get_mentor_program', 'Resolving mentor program', { programId });
-    const program = this.findMentorProgram(programId);
+    const operation = 'mentorship_get_mentor_program';
+    logger.debug(req, operation, 'Loading mentor program', { programId });
+    const program = (await this.findMentorDetail(req, operation))?.programs?.find((entry) => entry.id === programId);
     if (!program) {
-      throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
+      throw new ResourceNotFoundError('Mentor program', programId, { operation });
     }
 
-    // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
-    // slug-twin, and cards without people fixtures stay empty instead of inheriting
-    // another program's rows.
-    const lists: MentorshipMentorProgramLists = getMockMentorshipMentorProgramLists()[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-    const detail = buildMentorshipMentorProgramDetail(program, lists);
-    logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
+    const choice = chooseMentorshipMentorProgramTerm(program.terms ?? [], new Date());
+    const termId = choice.term?.id;
+    const programPath = this.mentorProgramPath(program, termId, operation);
+    const [record, applications, termTasks] = await Promise.all([
+      proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
+      termId ? this.listTermApplications(req, programPath, termId) : [],
+      termId ? this.findTermTasks(req, programPath, termId) : [],
+    ]);
+
+    const tasksByApplication = termTasks
+      ? groupMentorshipMentorProgramTasks(
+          applications.map((application) => application.application_id),
+          termTasks
+        )
+      : await this.listMenteeTasks(req, applications, operation);
+    const tasks = [...tasksByApplication.values()].flat();
+    const card = mapMentorshipMentorProgramCard(program, record ?? {}, choice, sortMentorshipMentorProgramRows(applications, tasks));
+    const detail = buildMentorshipMentorProgramDetail(card, mapMentorshipMentorProgramLists(applications, card.term, tasksByApplication));
+    logger.debug(req, operation, 'Mentor program detail built', {
+      program_id: program.id,
+      term_id: termId,
+      tasks_read_by_application: !termTasks,
+      ...detail.tabCounts,
+    });
     return detail;
   }
 
@@ -357,33 +384,17 @@ export class MentorshipMentorService {
 
   /**
    * One My Programs card. The program's own record carries its project name. The chosen term's applications
-   * and submitted tasks are read in full alongside it; with no term there is nothing to count. The program and
-   * term ids come from upstream and go into paths, so an id that is not a UUID fails the list with a 502.
+   * and submitted tasks are read in full alongside it; with no term there is nothing to count.
    */
   private async buildMentorProgramCard(req: Request, program: MentorshipUpstreamMentorProgram, now: Date): Promise<MentorshipMentorProgram> {
     const choice = chooseMentorshipMentorProgramTerm(program.terms ?? [], now);
     const termId = choice.term?.id;
-    if (!isUuid(program.id) || (termId !== undefined && !isUuid(termId))) {
-      throw new MicroserviceError('The mentorship service returned a program or term without a valid id', 502, 'MENTORSHIP_INVALID_PROGRAM', {
-        operation: 'mentorship_get_mentor_programs',
-        service: 'mentorship',
-      });
-    }
-
-    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(program.id)}`;
+    const programPath = this.mentorProgramPath(program, termId, 'mentorship_get_mentor_programs');
     const [record, applications, tasks] = await Promise.all([
       proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
+      termId ? this.listTermApplications(req, programPath, termId) : [],
       termId
-        ? listAllMentorshipPages<MentorshipUpstreamProgramApplicationRow>(
-            this.microserviceProxy,
-            req,
-            `${programPath}/applications`,
-            { term: termId },
-            MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE
-          )
-        : [],
-      termId
-        ? listAllMentorshipPages<MentorshipUpstreamTask>(this.microserviceProxy, req, `${programPath}/terms/${encodeURIComponent(termId)}/tasks`, {
+        ? listAllMentorshipPages<MentorshipUpstreamTask>(this.microserviceProxy, req, this.termTasksPath(programPath, termId), {
             status: 'submitted',
           })
         : [],
@@ -396,6 +407,83 @@ export class MentorshipMentorService {
       ...card.stats,
     });
     return card;
+  }
+
+  /**
+   * A mentor program's API path. The program and chosen term ids come from upstream and go into paths, so an id
+   * that is not a UUID fails the read with a 502.
+   */
+  private mentorProgramPath(program: MentorshipUpstreamMentorProgram, termId: string | undefined, operation: string): string {
+    if (!isUuid(program.id) || (termId !== undefined && !isUuid(termId))) {
+      throw new MicroserviceError('The mentorship service returned a program or term without a valid id', 502, 'MENTORSHIP_INVALID_PROGRAM', {
+        operation,
+        service: 'mentorship',
+      });
+    }
+    return `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(program.id)}`;
+  }
+
+  private termTasksPath(programPath: string, termId: string): string {
+    return `${programPath}/terms/${encodeURIComponent(termId)}/tasks`;
+  }
+
+  /** Every mentee application on one term of a program, 50 a page since upstream caps the page there (H1). */
+  private listTermApplications(req: Request, programPath: string, termId: string): Promise<MentorshipUpstreamProgramApplicationRow[]> {
+    return listAllMentorshipPages<MentorshipUpstreamProgramApplicationRow>(
+      this.microserviceProxy,
+      req,
+      `${programPath}/applications`,
+      { term: termId },
+      MENTORSHIP_PROGRAM_APPLICATIONS_PAGE_SIZE
+    );
+  }
+
+  /** Every task on one term of a program, or `undefined` when the gateway refuses the caller the listing. */
+  private async findTermTasks(req: Request, programPath: string, termId: string): Promise<MentorshipUpstreamTask[] | undefined> {
+    try {
+      return await listAllMentorshipPages<MentorshipUpstreamTask>(this.microserviceProxy, req, this.termTasksPath(programPath, termId));
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 403) {
+        logger.warning(req, 'mentorship_get_mentor_program', 'Term task listing refused; reading each mentee application instead', { term_id: termId });
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Each mentee's tasks, read from their application, at most `MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY` at
+   * once; the other applicants are left out. Application ids come from upstream and go into paths, so an id
+   * that is not a UUID fails the read with a 502.
+   */
+  private async listMenteeTasks(
+    req: Request,
+    applications: readonly MentorshipUpstreamProgramApplicationRow[],
+    operation: string
+  ): Promise<Map<string, MentorshipUpstreamTask[]>> {
+    const mentees = applications.filter((application) => MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES.includes(application.status));
+    if (mentees.some((mentee) => !isUuid(mentee.application_id))) {
+      throw new MicroserviceError('The mentorship service returned an application without a valid id', 502, 'MENTORSHIP_INVALID_APPLICATION', {
+        operation,
+        service: 'mentorship',
+      });
+    }
+
+    const tasksByApplication = new Map<string, MentorshipUpstreamTask[]>();
+    for (let start = 0; start < mentees.length; start += MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY) {
+      const batch = mentees.slice(start, start + MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY);
+      const batchTasks = await Promise.all(
+        batch.map((mentee) =>
+          listAllMentorshipPages<MentorshipUpstreamTask>(
+            this.microserviceProxy,
+            req,
+            `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(mentee.application_id)}/tasks`
+          )
+        )
+      );
+      batch.forEach((mentee, index) => tasksByApplication.set(mentee.application_id, batchTasks[index]));
+    }
+    return tasksByApplication;
   }
 
   /**
@@ -429,10 +517,5 @@ export class MentorshipMentorService {
       if (error instanceof MicroserviceError && error.statusCode === 404) return undefined;
       throw error;
     }
-  }
-
-  /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
-  private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
-    return findByIdOrSlug(getMockMentorshipMentorPrograms(), programId);
   }
 }

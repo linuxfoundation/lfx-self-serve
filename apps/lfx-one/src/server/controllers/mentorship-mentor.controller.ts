@@ -171,7 +171,7 @@ export class MentorshipMentorController {
     }
   }
 
-  // GET /api/mentorship/mentor/programs/:programId — id (default) or slug
+  // GET /api/mentorship/mentor/programs/:programId — a program UUID
   public async getMentorProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentor_program');
 
@@ -181,12 +181,12 @@ export class MentorshipMentorController {
       }
 
       const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_mentor_program' });
+      if (!programId || !isUuid(programId)) {
+        throw ServiceValidationError.forField('programId', 'programId must be a program UUID', { operation: 'get_mentorship_mentor_program' });
       }
 
       const program = await this.mentorService.getMentorProgram(req, programId);
-      logger.success(req, 'get_mentorship_mentor_program', startTime, { programId });
+      logger.success(req, 'get_mentorship_mentor_program', startTime, { programId, ...program.tabCounts });
       res.json(program);
     } catch (error) {
       next(error);

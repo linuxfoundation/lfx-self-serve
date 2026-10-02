@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MentorshipApplicantTaskStatus,
+  MentorshipMenteeStatus,
   MentorshipMentorProgramTermStatus,
   MentorshipMentorStatus,
   MentorshipUpstreamApplicationStatus,
   MentorshipUpstreamProgramMemberStatus,
+  MentorshipUpstreamTaskStatus,
 } from '@lfx-one/shared/interfaces';
 
 // ---------------------------------------------------------------------------
@@ -72,8 +75,29 @@ export const MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER: readonly MentorshipMen
 /** Application statuses a mentor's program counts as its mentees. */
 export const MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['accepted', 'graduated'];
 
-/** Most application task reads the mentee applications read runs at once. */
+/** Most application task reads the mentee applications read, and the mentor program detail's fallback, run at once. */
 export const MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY = 5;
+
+/**
+ * How an application's status reads on a mentor's program detail. `hold` is an administrator's hold on an
+ * application still under review, so the mentor sees it as pending.
+ */
+export const MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP: Readonly<Record<MentorshipUpstreamApplicationStatus, MentorshipMenteeStatus>> = {
+  pending: 'pending',
+  hold: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
+  graduated: 'graduated',
+};
+
+/** How an upstream task status reads on a mentor's program detail. */
+export const MENTORSHIP_MENTOR_PROGRAM_TASK_STATUS_MAP: Readonly<Record<MentorshipUpstreamTaskStatus, MentorshipApplicantTaskStatus>> = {
+  incomplete: 'pending',
+  in_progress: 'in-progress',
+  submitted: 'submitted',
+  complete: 'completed',
+};
 
 /** Application statuses whose tasks the mentee views track; every other status is a past application. */
 export const MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'accepted', 'graduated'];
