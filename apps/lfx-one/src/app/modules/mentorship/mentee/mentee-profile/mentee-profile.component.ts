@@ -27,7 +27,7 @@ import { MenteeProfileEditDrawerService } from './components/mentee-profile-edit
  *
  * Composes three sections: the shared `lfx-mentorship-profile-card` (LFX identity
  * summary — name, emails, linked accounts), the mentee's own profile details (About Me,
- * Skills, Areas to Improve, Additional Notes, Resume), and Application History
+ * Skills, Areas to Improve, Additional Notes), and Application History
  * (`applications` with `role = mentee`).
  *
  * The profile-card owns its own fetch, so this page only loads the mentorship-side

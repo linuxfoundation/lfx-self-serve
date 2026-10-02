@@ -38,6 +38,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { map, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
@@ -1495,8 +1496,14 @@ export class ImplementationTabComponent implements OnInit {
         this.creationProgress.update((msgs) => [...msgs, `Job started: ${response.jobId}`]);
         this.pollJob(response.jobId, projectSlug);
       },
-      error: () => {
-        this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
+      // Surface the message the SERVER wrote, keeping the connection copy as the fallback for a
+      // response that carried none. This handler took no parameter at all, so EVERY non-2xx was
+      // reported as a connection failure — including the named field refusals this create path
+      // deliberately emits, which arrive with a field and a stated remedy and were being replaced
+      // with advice to check the network. `serverAuthoredMessage` is the shared gate for this:
+      // it forwards a message a person wrote and refuses a status-derived envelope.
+      error: (err) => {
+        this.errors.set([serverAuthoredMessage(err, 'Unable to reach the campaign service. Please check your connection and try again.')]);
         this.step.set('form');
       },
     });

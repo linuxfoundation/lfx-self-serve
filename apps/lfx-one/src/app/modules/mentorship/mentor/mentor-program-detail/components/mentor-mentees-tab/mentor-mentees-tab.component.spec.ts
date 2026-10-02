@@ -3,8 +3,14 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipNoteRequest, MentorshipProgramMentee, MentorshipTaskDialogAssignee, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
+import {
+  MentorshipMentorTaskCreateRequest,
+  MentorshipNoteRequest,
+  MentorshipProgramMentee,
+  MentorshipTaskDialogAssignee,
+  MentorshipTaskFormValue,
+} from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -141,58 +147,73 @@ describe('MentorMenteesTabComponent', () => {
   });
 
   it("opens the task-form dialog with just the row's mentee when the plus control is clicked", () => {
-    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-create-task-mnt_2"]')?.querySelector<HTMLButtonElement>('button')?.click();
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-create-task-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
 
     expect(openCreate).toHaveBeenCalledTimes(1);
     const arg = openCreate.mock.calls[0][0] as MentorshipTaskDialogAssignee;
-    expect(arg.id).toBe('mnt_2');
-    expect(arg.name).toBe('Priya Shah');
+    expect(arg.id).toBe('mnt_1');
+    expect(arg.name).toBe('Alex Rivera');
   });
 
-  it('opens group create with every listed mentee preselected', () => {
+  it('offers no task create on a graduated mentee', () => {
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-create-task-mnt_2"]')).toBeNull();
+  });
+
+  it('opens group create with every accepted mentee preselected', () => {
+    setup([mentee(), mentee({ id: 'mnt_3', name: 'Sam Lee' }), mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated' })]);
+
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentees-create-group-task"]')?.querySelector<HTMLButtonElement>('button')?.click();
 
     expect(openCreateGroup).toHaveBeenCalledTimes(1);
     const assignees = openCreateGroup.mock.calls[0][0] as MentorshipTaskDialogAssignee[];
-    expect(assignees.map((person) => person.id)).toEqual(['mnt_1', 'mnt_2']);
+    expect(assignees.map((person) => person.id)).toEqual(['mnt_1', 'mnt_3']);
   });
 
-  it('routes a created group task to the coming-soon toast until the write endpoint lands', () => {
+  it('disables group create when no listed mentee is accepted', () => {
+    setup([mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentees-create-group-task"] button')?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('asks the parent to create a group task for the mentees chosen in the dialog', () => {
     openCreateGroup.mockReturnValue(
       of({
-        taskId: undefined,
         name: 'Submit ingestion benchmark report',
         description: 'Upload the benchmark output.',
-        requiresFileSubmission: false,
-        assignedMenteeIds: ['mnt_1', 'mnt_2'],
+        dueOn: '2026-11-30',
+        requiresFileSubmission: true,
+        assignedMenteeIds: ['mnt_1', 'mnt_3'],
       } satisfies MentorshipTaskFormValue)
     );
-    const messageService = TestBed.inject(MessageService);
-    const addSpy = vi.spyOn(messageService, 'add');
+    const requests: MentorshipMentorTaskCreateRequest[] = [];
+    fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
 
     fixture.componentInstance['onCreateGroupTask']();
 
-    expect(addSpy).toHaveBeenCalledTimes(1);
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create group task "Submit ingestion benchmark report" for 2 mentees');
-  });
-
-  it('singularizes the group-task toast when only one mentee is assigned', () => {
-    setup([mentee()]);
-    openCreateGroup.mockReturnValue(
-      of({
-        taskId: undefined,
+    expect(requests).toEqual([
+      {
+        applicationIds: ['mnt_1', 'mnt_3'],
         name: 'Submit ingestion benchmark report',
         description: 'Upload the benchmark output.',
-        requiresFileSubmission: false,
-        assignedMenteeIds: ['mnt_1'],
-      } satisfies MentorshipTaskFormValue)
+        dueDate: '2026-11-30',
+        requiresFileSubmission: true,
+      },
+    ]);
+  });
+
+  it("asks the parent to create the row's task, and nothing when the dialog is cancelled", () => {
+    const requests: MentorshipMentorTaskCreateRequest[] = [];
+    fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
+
+    fixture.componentInstance['onCreateTask'](mentee());
+    expect(requests).toEqual([]);
+
+    openCreate.mockReturnValue(
+      of({ name: 'Resume', description: 'Upload it.', requiresFileSubmission: false, assignedMenteeIds: ['mnt_1'] } satisfies MentorshipTaskFormValue)
     );
-    const messageService = TestBed.inject(MessageService);
-    const addSpy = vi.spyOn(messageService, 'add');
+    fixture.componentInstance['onCreateTask'](mentee());
 
-    fixture.componentInstance['onCreateGroupTask']();
-
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create group task "Submit ingestion benchmark report" for 1 mentee');
+    expect(requests).toEqual([{ applicationIds: ['mnt_1'], name: 'Resume', description: 'Upload it.', dueDate: undefined, requiresFileSubmission: false }]);
   });
 
   it('shows the empty state when no current mentees are present', () => {

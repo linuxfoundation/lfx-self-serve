@@ -39,4 +39,15 @@ describe('maxCodePointsValidator', () => {
   it('ignores non-string values (other validators own type-shape errors)', () => {
     expect(validate(control(12345))).toBeNull();
   });
+
+  it('counts the untrimmed value by default', () => {
+    expect(validate(control(` ${'a'.repeat(2000)} `))).toEqual({ maxCodePoints: { requiredLength: 2000, actualLength: 2002 } });
+  });
+
+  it('counts the trimmed value when asked, matching consumers that trim first', () => {
+    const validateTrimmed = maxCodePointsValidator(2000, { trim: true });
+
+    expect(validateTrimmed(control(` ${'a'.repeat(2000)} `))).toBeNull();
+    expect(validateTrimmed(control(` ${'a'.repeat(2001)} `))).toEqual({ maxCodePoints: { requiredLength: 2000, actualLength: 2001 } });
+  });
 });

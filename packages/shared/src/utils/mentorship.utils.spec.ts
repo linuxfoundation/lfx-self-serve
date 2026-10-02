@@ -17,21 +17,29 @@ import {
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
+  MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
-import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
-import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
-import { htmlClipboardToText } from './html-utils';
+import {
+  createEmptyMentorshipMentorForm,
+  MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+  MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS,
+} from '../constants/mentorship-mentor.constants';
+import {
+  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
+} from '../constants/mentorship.constants';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationTask,
@@ -49,6 +57,8 @@ import {
   buildMentorshipMenteeProfileUpdate,
   buildMentorshipMenteeOverview,
   buildMentorshipMenteeRegisterRequest,
+  buildMentorshipMentorProfileUpdate,
+  buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramDetail,
   buildMentorshipProgramsUrl,
@@ -59,6 +69,7 @@ import {
   formatMentorshipMonthYear,
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
+  isMentorshipMentorTaskReviewDecision,
   mentorshipMenteeTaskStatusFields,
   mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
@@ -72,8 +83,10 @@ import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
+  getMentorshipMenteeIntroductionError,
   getMentorshipMenteeRegisterErrors,
   getMentorshipMenteeRegisterRequestErrors,
+  getMentorshipMentorProfileErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
@@ -86,24 +99,24 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
-  isMentorshipResumeFileName,
+  isMentorshipMentorProfileUpdateEmpty,
   isMentorshipRichTextOverRawMax,
   isMentorshipTaskPastDue,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
-  mapMentorshipMenteeRegisterFailure,
+  mapMentorshipRegisterFailure,
   mentorshipApplicantActionsFor,
   mentorshipApplicantDisplayStatus,
   mentorshipMenteeActionsFor,
   mentorshipMenteeDisplayStatus,
   isMentorshipMenteeProfileUpdateEmpty,
+  isMentorshipMentorInviteToken,
   mentorshipMenteeProgressTasks,
   mentorshipMenteesForProgram,
   mentorshipMonthYearToStartDate,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
-  mentorshipPlainTextToHtml,
   mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -534,12 +547,11 @@ describe('program detail helpers', () => {
     });
   });
 
-  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
-    // Both are optional: a mentor can register a profile now and apply to programs later.
+  it('registers a mentor who has not applied to a program', () => {
+    // Requests are optional: a mentor can register a profile now and apply to programs later.
     const complete: MentorshipMentorRegisterForm = {
       introduction: '<p>Maintainer on two CNCF projects.</p>',
-      skills: ['Go'],
-      resumeFileName: '',
+      skills: ['Kubernetes'],
       complianceAccepted: true,
       termsAccepted: true,
     };
@@ -548,7 +560,7 @@ describe('program detail helpers', () => {
   });
 
   it('treats markup with no text as an empty introduction', () => {
-    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
 
     // The rich editor leaves an empty paragraph behind when the user clears the field.
     expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p></p>' }).introduction).toBe('Introduction is required.');
@@ -557,7 +569,7 @@ describe('program detail helpers', () => {
   });
 
   it('caps the introduction, since it reaches a mentor profile the whole platform can read', () => {
-    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
     const atCap = `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX)}</p>`;
 
     expect(getMentorshipMentorRegisterErrors({ ...form, introduction: atCap }).introduction).toBeUndefined();
@@ -566,14 +578,60 @@ describe('program detail helpers', () => {
     );
   });
 
-  it('accepts only document extensions for a resume', () => {
-    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
-    // No extension at all, and a name that only looks like one.
-    expect(isMentorshipResumeFileName('resume')).toBe(false);
-    expect(isMentorshipResumeFileName('')).toBe(false);
+  it('refuses a mentor skill the picker does not offer, since only a tampered request can carry one', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), introduction: '<p>Hi</p>', complianceAccepted: true, termsAccepted: true };
+
+    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Not A Skill'] }).skills).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
+    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
+  });
+
+  it('checks only the mentor profile fields present in an edit', () => {
+    expect(getMentorshipMentorProfileErrors({})).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p>Hi</p>' })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ skills: ['Kubernetes'] })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p></p>' })).toEqual({ introduction: 'Introduction is required.' });
+    expect(getMentorshipMentorProfileErrors({ skills: [] })).toEqual({ skills: 'Add at least one skill.' });
+    expect(getMentorshipMentorProfileErrors({ skills: ['Not A Skill'] })).toEqual({ skills: MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL });
+  });
+
+  it('sends only the mentor profile fields that changed', () => {
+    const seed = { aboutMe: '<p>Hi</p>', skills: ['Kubernetes', 'Angular'] };
+
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: [' Kubernetes ', 'Angular', ''] })).toEqual({});
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hello</p>', skills: ['Kubernetes', 'Angular'] })).toEqual({
+      introduction: '<p>Hello</p>',
+    });
+    // Order counts, and the whole list is sent, since upstream replaces it.
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: ['Angular', 'Kubernetes'] })).toEqual({
+      skills: ['Angular', 'Kubernetes'],
+    });
+    expect(buildMentorshipMentorProfileUpdate({ aboutMe: '', skills: [] }, { introduction: '', skills: [] })).toEqual({});
+  });
+
+  it('treats a mentor profile update with no field present as empty', () => {
+    expect(isMentorshipMentorProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMentorProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMentorProfileUpdateEmpty({ skills: [] })).toBe(false);
+  });
+
+  it('builds the mentor register request from the form', () => {
+    const request = buildMentorshipMentorRegisterRequest({
+      introduction: '<p>Hi</p>',
+      skills: ['Kubernetes'],
+      complianceAccepted: true,
+      termsAccepted: true,
+    });
+
+    expect(request).toEqual({ introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true });
+  });
+
+  it('adds the LFX profile fields to the mentor register request only when there are some', () => {
+    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
+    const lfxProfile = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
+
+    expect(buildMentorshipMentorRegisterRequest(form, lfxProfile).lfxProfile).toEqual(lfxProfile);
+    expect(buildMentorshipMentorRegisterRequest(form, {})).not.toHaveProperty('lfxProfile');
+    expect(buildMentorshipMentorRegisterRequest(form)).not.toHaveProperty('lfxProfile');
   });
 
   it('tints an avatar deterministically, and survives an empty name', () => {
@@ -736,13 +794,42 @@ describe('program detail helpers', () => {
           },
         ],
       },
+      {
+        id: 'mnt_2',
+        name: 'Ravi Patel',
+        email: 'ravi@example.com',
+        status: 'graduated',
+        termName: 'Fall 2026',
+        tasks: [
+          {
+            id: 'tsk_leftover',
+            name: 'Final report',
+            description: 'Submitted after graduating.',
+            status: 'submitted',
+            prerequisite: false,
+            createdOn: '2026-08-01',
+            updatedOn: '2026-09-16',
+          },
+          {
+            id: 'tsk_done',
+            name: 'Demo',
+            description: 'Recorded a demo.',
+            status: 'completed',
+            prerequisite: false,
+            createdOn: '2026-08-01',
+            updatedOn: '2026-09-01',
+          },
+        ],
+      },
     ];
 
+    // A graduated mentee's submitted task is not waiting on the mentor, so it is neither counted nor listed.
     expect(mentorshipMentorSubmittedTaskCount(mentees)).toBe(1);
 
     const rows = mentorshipMentorReviewTasks(mentees);
-    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_1__tsk_old']);
+    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_2__tsk_done', 'mnt_1__tsk_old']);
     expect(rows[0]).toMatchObject({
+      taskId: 'tsk_new',
       menteeName: 'Hana Suzuki',
       taskName: 'Backpressure design note',
       status: 'submitted',
@@ -838,10 +925,9 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     });
   });
 
-  it('accepts a fully populated form — additional notes, resume, and demographic answers stay optional', () => {
-    // `additionalNotes`, `resumeFileName`, and every demographic control are optional
-    // by design: declining a demographic is a valid answer, and the resume is
-    // validated by its picker at selection time.
+  it('accepts a fully populated form — additional notes and demographic answers stay optional', () => {
+    // `additionalNotes` and every demographic control are optional by design:
+    // declining a demographic is a valid answer.
     const complete = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
@@ -1016,11 +1102,12 @@ describe('buildMentorshipMenteeRegisterRequest', () => {
     expect(optedOut.demographics).toEqual({ gender: 'preferNotToSay' });
   });
 
-  it('never includes the resume, even when the form holds a file name', () => {
-    const request = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, resumeFileName: 'test-resume.pdf' });
+  it('adds the LFX profile fields only when there are some', () => {
+    const lfxProfile = { firstName: 'Test', lastName: 'User' };
 
-    expect(request).not.toHaveProperty('resumeFileName');
-    expect(JSON.stringify(request)).not.toContain('test-resume.pdf');
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, lfxProfile).lfxProfile).toEqual(lfxProfile);
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, {})).not.toHaveProperty('lfxProfile');
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM)).not.toHaveProperty('lfxProfile');
   });
 
   it('coerces the five flags with isMentorshipTermsAccepted', () => {
@@ -1073,11 +1160,9 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
     const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
 
     expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: ['Java', 'Not A Skill'] }).skillsHave).toBe(
-      MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL
+      MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL
     );
-    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(
-      MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL
-    );
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
   });
 
   it('accepts every skill in MENTORSHIP_SKILL_OPTIONS', () => {
@@ -1106,38 +1191,45 @@ describe('getMentorshipMenteeRegisterRequestErrors', () => {
   });
 });
 
-describe('mapMentorshipMenteeRegisterFailure', () => {
+describe('mapMentorshipRegisterFailure', () => {
+  const menteeOptions = MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS;
+  const mentorOptions = MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS;
+
   it('maps a 409 with the profile-exists code to profile-exists and any other 409 to conflict', () => {
-    expect(mapMentorshipMenteeRegisterFailure(409, { code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE })).toEqual({
+    expect(mapMentorshipRegisterFailure(409, { code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE }, menteeOptions)).toEqual({
       kind: 'profile-exists',
       message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
     });
-    expect(mapMentorshipMenteeRegisterFailure(409, { code: 'CONFLICT', error: 'slug already exists' })).toEqual({
+    expect(mapMentorshipRegisterFailure(409, { code: 'CONFLICT', error: 'slug already exists' }, menteeOptions)).toEqual({
       kind: 'conflict',
-      message: MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
+      message: MENTORSHIP_REGISTER_ERROR_CONFLICT,
     });
   });
 
   it('maps a 403 impersonation guard to read-only and any other 403 to the fallback', () => {
-    expect(mapMentorshipMenteeRegisterFailure(403, { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE })).toEqual({
+    expect(mapMentorshipRegisterFailure(403, { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE }, menteeOptions)).toEqual({
       kind: 'read-only',
-      message: MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
+      message: MENTORSHIP_REGISTER_ERROR_READ_ONLY,
     });
-    expect(mapMentorshipMenteeRegisterFailure(403, { code: 'FORBIDDEN' }).kind).toBe('error');
+    expect(mapMentorshipRegisterFailure(403, { code: 'FORBIDDEN' }, menteeOptions).kind).toBe('error');
   });
 
   it('keeps only known fields from a 400, first message per field', () => {
-    const failure = mapMentorshipMenteeRegisterFailure(400, {
-      code: 'VALIDATION_ERROR',
-      errors: [
-        { field: 'demographics', message: 'Not a form field.' },
-        { field: 'skillsHave', message: 'Add at least one skill you currently have.' },
-        { field: 'skillsHave', message: 'Second message for the same field.' },
-        { field: 'introduction', message: '' },
-        { field: 'termsAccepted', message: 42 },
-        { field: 'introduction', message: 'Introduction is required.' },
-      ],
-    });
+    const failure = mapMentorshipRegisterFailure(
+      400,
+      {
+        code: 'VALIDATION_ERROR',
+        errors: [
+          { field: 'demographics', message: 'Not a form field.' },
+          { field: 'skillsHave', message: 'Add at least one skill you currently have.' },
+          { field: 'skillsHave', message: 'Second message for the same field.' },
+          { field: 'introduction', message: '' },
+          { field: 'termsAccepted', message: 42 },
+          { field: 'introduction', message: 'Introduction is required.' },
+        ],
+      },
+      menteeOptions
+    );
 
     expect(failure).toEqual({
       kind: 'field-errors',
@@ -1147,27 +1239,57 @@ describe('mapMentorshipMenteeRegisterFailure', () => {
   });
 
   it('falls back when a 400 has no errors list or none that maps to a form field', () => {
-    const fallback = { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+    const fallback = { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
 
-    expect(mapMentorshipMenteeRegisterFailure(400, { error: 'bad request' })).toEqual(fallback);
-    expect(mapMentorshipMenteeRegisterFailure(400, { errors: [{ field: 'body', message: 'Body must be an object.' }] })).toEqual(fallback);
-    expect(mapMentorshipMenteeRegisterFailure(400, { errors: [null, 'text', 3] })).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(400, { error: 'bad request' }, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(400, { errors: [{ field: 'body', message: 'Body must be an object.' }] }, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(400, { errors: [null, 'text', 3] }, menteeOptions)).toEqual(fallback);
   });
 
   it('maps a 422 to the fixed ineligible copy whatever the upstream text says', () => {
     const expected = { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
 
-    expect(mapMentorshipMenteeRegisterFailure(422, { error: 'age eligibility is required' })).toEqual(expected);
-    expect(mapMentorshipMenteeRegisterFailure(422, null)).toEqual(expected);
+    expect(mapMentorshipRegisterFailure(422, { error: 'age eligibility is required' }, menteeOptions)).toEqual(expected);
+    expect(mapMentorshipRegisterFailure(422, null, menteeOptions)).toEqual(expected);
   });
 
   it('falls back for status 0, 5xx and unusable bodies', () => {
-    const fallback = { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+    const fallback = { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
 
-    expect(mapMentorshipMenteeRegisterFailure(0, null)).toEqual(fallback);
-    expect(mapMentorshipMenteeRegisterFailure(500, { error: 'boom' })).toEqual(fallback);
-    expect(mapMentorshipMenteeRegisterFailure(401, 'Unauthorized')).toEqual(fallback);
-    expect(mapMentorshipMenteeRegisterFailure(500, undefined)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(0, null, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(500, { error: 'boom' }, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(401, 'Unauthorized', menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(500, undefined, menteeOptions)).toEqual(fallback);
+  });
+
+  it('reads the profile-exists code and copy from the options, so each role only matches its own code', () => {
+    expect(mapMentorshipRegisterFailure(409, { code: MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE }, mentorOptions)).toEqual({
+      kind: 'profile-exists',
+      message: MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
+    });
+    expect(mapMentorshipRegisterFailure(409, { code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE }, mentorOptions).kind).toBe('conflict');
+  });
+
+  it('keeps only the mentor form fields from a mentor 400', () => {
+    const failure = mapMentorshipRegisterFailure(
+      400,
+      {
+        errors: [
+          { field: 'skillsHave', message: 'Mentee field.' },
+          { field: 'skills', message: 'Add at least one skill.' },
+        ],
+      },
+      mentorOptions
+    );
+
+    expect(failure).toEqual({ kind: 'field-errors', message: 'Add at least one skill.', fieldErrors: { skills: 'Add at least one skill.' } });
+  });
+
+  it('falls back on a 422 when the options carry no ineligible copy', () => {
+    expect(mapMentorshipRegisterFailure(422, { error: 'user not found' }, mentorOptions)).toEqual({
+      kind: 'error',
+      message: MENTORSHIP_REGISTER_ERROR_FALLBACK,
+    });
   });
 });
 
@@ -1385,6 +1507,16 @@ describe('isMentorshipMenteeUpdatableTaskStatus', () => {
     expect(isMentorshipMenteeUpdatableTaskStatus('submitted')).toBe(true);
     for (const value of ['pending', 'incomplete', 'complete', 'IN_PROGRESS', '', null, undefined, 1]) {
       expect(isMentorshipMenteeUpdatableTaskStatus(value)).toBe(false);
+    }
+  });
+});
+
+describe('isMentorshipMentorTaskReviewDecision', () => {
+  it('accepts complete and incomplete only', () => {
+    expect(isMentorshipMentorTaskReviewDecision('complete')).toBe(true);
+    expect(isMentorshipMentorTaskReviewDecision('incomplete')).toBe(true);
+    for (const value of ['completed', 'submitted', 'in_progress', 'COMPLETE', '', null, undefined, 1]) {
+      expect(isMentorshipMentorTaskReviewDecision(value)).toBe(false);
     }
   });
 });
@@ -1744,35 +1876,19 @@ describe('rich-text fields over MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
   });
 });
 
-describe('mentorshipPlainTextToHtml', () => {
-  it('returns an empty string for null, undefined, empty and whitespace-only input', () => {
-    expect(mentorshipPlainTextToHtml(null)).toBe('');
-    expect(mentorshipPlainTextToHtml(undefined)).toBe('');
-    expect(mentorshipPlainTextToHtml('')).toBe('');
-    expect(mentorshipPlainTextToHtml(' \n\t \r\n ')).toBe('');
+describe('getMentorshipMenteeIntroductionError', () => {
+  it('requires text, not just markup', () => {
+    expect(getMentorshipMenteeIntroductionError('')).toBe('Introduction is required.');
+    expect(getMentorshipMenteeIntroductionError('<p></p>')).toBe('Introduction is required.');
   });
 
-  it('wraps each non-blank line in a paragraph and turns a blank line into an empty paragraph', () => {
-    expect(mentorshipPlainTextToHtml('First\nSecond')).toBe('<p>First</p><p>Second</p>');
-    expect(mentorshipPlainTextToHtml('First\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
+  it('counts the visible text against the max, not the markup', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p><strong>${'a'.repeat(3000)}</strong></p>`)).toBeUndefined();
+    expect(getMentorshipMenteeIntroductionError(`<p>${'a'.repeat(3001)}</p>`)).toBe('Introduction must be 3000 characters or fewer.');
   });
 
-  it('collapses a run of blank lines into one empty paragraph', () => {
-    expect(mentorshipPlainTextToHtml('First\n\n \n\t\n\nSecond')).toBe('<p>First</p><p><br></p><p>Second</p>');
-  });
-
-  it('escapes markup so a caller can never store tags', () => {
-    expect(mentorshipPlainTextToHtml(`<script>alert("x")</script> & 'y'`)).toBe('<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;</p>');
-  });
-
-  it('normalizes CRLF and lone CR line endings', () => {
-    expect(mentorshipPlainTextToHtml('One\r\nTwo\rThree')).toBe('<p>One</p><p>Two</p><p>Three</p>');
-  });
-
-  it('round-trips through htmlClipboardToText to the same text', () => {
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\nTwo'))).toBe('One\nTwo');
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml('One\n\nTwo'))).toBe('One\n\nTwo');
-    expect(htmlClipboardToText(mentorshipPlainTextToHtml(`A & B <c> "d" 'e'\n\n\n\nF`))).toBe(`A & B <c> "d" 'e'\n\nF`);
+  it('reports formatting as the problem over the raw max', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p>a</p>${'<p></p>'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}`)).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
   });
 });
 
@@ -1783,60 +1899,58 @@ describe('buildMentorshipMenteeProfileUpdate', () => {
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
   };
-  const seededIntroduction = 'Hello world';
   const unchanged: MentorshipMenteeProfileFormValue = {
-    introduction: seededIntroduction,
+    introduction: '<p>Hello world</p>',
     skillsHave: ['Go', 'Python'],
     skillsWant: ['Kubernetes'],
     additionalNotes: 'Evenings only',
   };
 
   it('returns an empty request when nothing changed', () => {
-    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, unchanged);
+    const request = buildMentorshipMenteeProfileUpdate(seed, unchanged);
     expect(request).toEqual({});
     expect(isMentorshipMenteeProfileUpdateEmpty(request)).toBe(true);
   });
 
-  it('omits the introduction when it equals the seeded text, ignoring surrounding whitespace and CRLF', () => {
-    const multiline = 'Line one\nLine two';
-    expect(buildMentorshipMenteeProfileUpdate(seed, multiline, { ...unchanged, introduction: '  Line one\r\nLine two\r\n' })).toEqual({});
-    expect(buildMentorshipMenteeProfileUpdate(seed, '  Line one\r\nLine two \n', { ...unchanged, introduction: multiline })).toEqual({});
+  it('sends the introduction HTML as is, only when it differs from the stored HTML', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '<p>Hello <strong>there</strong></p>' })).toEqual({
+      introduction: '<p>Hello <strong>there</strong></p>',
+    });
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '' })).toEqual({ introduction: '' });
   });
 
-  it('sends the introduction only when it was edited, and an empty string when it was cleared', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: ' Hello there\r\n' })).toEqual({
-      introduction: 'Hello there',
-    });
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, introduction: '  ' })).toEqual({ introduction: '' });
+  it('leaves an empty stored introduction out while the editor stays empty', () => {
+    const withoutAbout: MentorshipMenteeProfileDetails = { ...seed, aboutMe: '' };
+    expect(buildMentorshipMenteeProfileUpdate(withoutAbout, { ...unchanged, introduction: '' })).toEqual({});
   });
 
   it('sends the whole skill set when only the additional notes changed', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
       skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'], additionalNotes: 'Weekends too' },
     });
   });
 
   it('compares skills after trimming and detects a reorder', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
       skillSet: { skillsHave: ['Python', 'Go'], skillsWant: ['Kubernetes'], additionalNotes: 'Evenings only' },
     });
   });
 
   it('omits additional notes when the trimmed notes are blank', () => {
-    expect(buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, { ...unchanged, additionalNotes: '   ' })).toEqual({
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: '   ' })).toEqual({
       skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'] },
     });
   });
 
   it('treats missing stored notes and blank notes as the same', () => {
     const withoutNotes: MentorshipMenteeProfileDetails = { ...seed, additionalNotes: undefined };
-    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, seededIntroduction, { ...unchanged, additionalNotes: '' })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, { ...unchanged, additionalNotes: '' })).toEqual({});
   });
 
   it('never emits demographics or socioeconomics', () => {
-    const request = buildMentorshipMenteeProfileUpdate(seed, seededIntroduction, {
-      introduction: 'New',
+    const request = buildMentorshipMenteeProfileUpdate(seed, {
+      introduction: '<p>New</p>',
       skillsHave: ['Rust'],
       skillsWant: ['Go'],
       additionalNotes: 'x',
@@ -1942,5 +2056,15 @@ describe('isMentorshipMenteeProfileUpdateEmpty', () => {
     expect(isMentorshipMenteeProfileUpdateEmpty({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } })).toBe(false);
     expect(isMentorshipMenteeProfileUpdateEmpty({ demographics: { age: '61+' } })).toBe(false);
     expect(isMentorshipMenteeProfileUpdateEmpty({ socioeconomics: { income: 'upperClass' } })).toBe(false);
+  });
+});
+
+describe('isMentorshipMentorInviteToken', () => {
+  it('accepts two base64url parts joined by a dot', () => {
+    expect(isMentorshipMentorInviteToken('eyJwcm9ncmFtX2lkIjoicDEifQ.c2ln-_')).toBe(true);
+  });
+
+  it.each(['', 'nodot', '.sig', 'payload.', 'a.b.c', 'a.b/c', 'a.b=', `${'a'.repeat(512)}.b`])('rejects %j', (value) => {
+    expect(isMentorshipMentorInviteToken(value)).toBe(false);
   });
 });

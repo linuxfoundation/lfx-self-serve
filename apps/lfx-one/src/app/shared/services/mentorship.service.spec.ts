@@ -95,3 +95,33 @@ describe('MentorshipService — program review', () => {
     expect(status).toBe(409);
   });
 });
+
+describe('MentorshipService — LFX profile sync', () => {
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('patches the fields onto the caller mentorship profiles and surfaces a failure', () => {
+    const fields = { firstName: 'Test', lastName: 'User' };
+    let status = 0;
+    service.syncLfxProfileFields(fields).subscribe({ error: (err) => (status = err.status) });
+
+    const req = http.expectOne('/api/mentorship/me/lfx-profile');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(fields);
+    req.flush({ error: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
+
+    expect(status).toBe(403);
+  });
+});

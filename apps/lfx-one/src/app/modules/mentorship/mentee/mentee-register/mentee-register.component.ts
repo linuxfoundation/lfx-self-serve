@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -21,14 +21,13 @@ import {
   MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX,
   MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX,
   MENTORSHIP_MENTEE_REGISTER_TITLE,
-  MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY,
-  MENTORSHIP_MENTEE_RESUME_INTRO,
   MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL,
   MENTORSHIP_MENTEE_SKILLS_INTRO,
   MENTORSHIP_MENTEE_SKILLS_WANT_LABEL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
   MENTORSHIP_MENTEE_PROFILE_CREATED_STATE,
+  MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
   MENTORSHIP_MENTEE_TERMS_INTRO,
   MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
   MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
@@ -39,7 +38,7 @@ import {
   buildMentorshipMenteeRegisterRequest,
   createEmptyMentorshipMenteeForm,
   getMentorshipMenteeRegisterErrors,
-  mapMentorshipMenteeRegisterFailure,
+  mapMentorshipRegisterFailure,
   mentorshipMenteeApplyIds,
 } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
@@ -47,7 +46,6 @@ import { MessageService } from 'primeng/api';
 import { startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
-import { ResumeSectionComponent } from '../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
@@ -75,7 +73,6 @@ import { MenteeEligibilitySectionComponent } from './components/mentee-eligibili
     MenteeDemographicsSectionComponent,
     MenteeEligibilitySectionComponent,
     ProfileCardComponent,
-    ResumeSectionComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
   ],
@@ -97,8 +94,6 @@ export class MenteeRegisterComponent {
   protected readonly skillsIntro = MENTORSHIP_MENTEE_SKILLS_INTRO;
   protected readonly skillsHaveLabel = MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL;
   protected readonly skillsWantLabel = MENTORSHIP_MENTEE_SKILLS_WANT_LABEL;
-  protected readonly resumeIntro = MENTORSHIP_MENTEE_RESUME_INTRO;
-  protected readonly resumeComingSoonSummary = MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY;
   protected readonly additionalNotesLabel = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL;
   protected readonly additionalNotesPlaceholder = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
@@ -109,12 +104,14 @@ export class MenteeRegisterComponent {
   protected readonly profileExistsContinueLabel = MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE;
   protected readonly cancelRoute = '/mentorship/admin';
 
+  /** The card above the form: its name, email and picture go into the registration as they stand at submit. */
+  private readonly profileCard = viewChild(ProfileCardComponent);
+
   protected readonly form = new FormGroup({
     introduction: new FormControl('', { nonNullable: true }),
     skillsHave: new FormControl<string[]>([], { nonNullable: true }),
     skillsWant: new FormControl<string[]>([], { nonNullable: true }),
     additionalNotes: new FormControl('', { nonNullable: true }),
-    resumeFileName: new FormControl('', { nonNullable: true }),
     ageConsent: new FormControl(false, { nonNullable: true }),
     age: new FormControl('', { nonNullable: true }),
     raceEthnicityConsent: new FormControl(false, { nonNullable: true }),
@@ -163,7 +160,7 @@ export class MenteeRegisterComponent {
     this.submitting.set(true);
 
     this.menteeService
-      .registerMenteeProfile(buildMentorshipMenteeRegisterRequest(form))
+      .registerMenteeProfile(buildMentorshipMenteeRegisterRequest(form, this.profileCard()?.lfxProfileFields()))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => this.onRegistered(),
@@ -207,10 +204,10 @@ export class MenteeRegisterComponent {
   private onRegisterFailed(error: unknown): void {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     const body = error instanceof HttpErrorResponse ? error.error : null;
-    const failure = mapMentorshipMenteeRegisterFailure(status, body);
+    const failure = mapMentorshipRegisterFailure(status, body, MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS);
 
-    // Keyed to the form as it stands now, not as it was sent: the form stays editable while the save is
-    // in flight, and a failure keyed to the sent form would never match and would vanish unseen.
+    // Keyed to the form as it stands now, not as it was sent. The fields are inert while the save is in flight,
+    // but a write made in that window from code would leave a sent-form key unmatched and the failure unseen.
     this.submitFailure.set({ failure, formKey: this.formKey() });
     this.submitting.set(false);
     if (failure.kind === 'field-errors') {

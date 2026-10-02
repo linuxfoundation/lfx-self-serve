@@ -37,4 +37,10 @@
   <ng-template lfxHealthMetricsL2Section="board">
     <lfx-members-board-attendance (noteChange)="boardNote.set($event)" (reading)="shell.sectionReading('board')" (settled)="shell.sectionSettled('board')" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2Section="nps">
+    <lfx-members-nps (reading)="shell.sectionReading('nps')" (settled)="shell.sectionSettled('nps')" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="churn">
+    <lfx-members-churn (reading)="shell.sectionReading('churn')" (settled)="shell.sectionSettled('churn')" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>

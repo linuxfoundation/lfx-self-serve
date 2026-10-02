@@ -22,6 +22,9 @@ router.get('/program-review/:programId', (req, res, next) => mentorshipControlle
 // The decision is refused while impersonating: upstream would attribute it to the impersonated
 // approver, and a published or rejected program cannot be moved back.
 router.post('/program-review/:programId/decision', blockDuringImpersonation, (req, res, next) => mentorshipController.submitProgramDecision(req, res, next));
+// Copies the LFX profile's name, email and logo onto the caller's mentor and mentee profiles. A
+// write to the caller's own profiles, so it is refused while impersonating.
+router.patch('/me/lfx-profile', blockDuringImpersonation, (req, res, next) => mentorshipController.syncLfxProfile(req, res, next));
 router.get('/lf-projects', (req, res, next) => mentorshipController.getLfProjects(req, res, next));
 router.get('/invitable-users', (req, res, next) => mentorshipController.getInvitableUsers(req, res, next));
 router.get('/cii/:projectId', (req, res, next) => mentorshipController.getCiiBadge(req, res, next));

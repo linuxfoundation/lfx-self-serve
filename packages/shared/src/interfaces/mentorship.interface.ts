@@ -278,7 +278,7 @@ export interface MentorshipTaskFormDialogData {
  * Value emitted by the task-form dialog on save. `taskId` is present in edit mode so
  * the caller can route the write to `PUT` vs. `POST`; `assignedMenteeIds` carries the
  * single preselected id in single-mentee mode and every checked id in multi mode.
- * `status` is only present in edit mode (create defaults to `pending` at the server).
+ * `status` is only present in edit mode (upstream creates a task as `incomplete`, which reads as pending).
  */
 export interface MentorshipTaskFormValue {
   taskId?: string;
@@ -498,4 +498,27 @@ export interface MentorshipProgramReviewLink {
 export interface MentorshipProgramReviewConfirmation {
   program: MentorshipProgramReview;
   decision: MentorshipProgramReviewDecision;
+}
+
+/** How a failed mentor or mentee registration submit is shown. */
+export type MentorshipRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
+
+/** Result of `mapMentorshipRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
+export interface MentorshipRegisterSubmitFailure<TFieldErrors extends object> {
+  kind: MentorshipRegisterSubmitFailureKind;
+  /** Banner / toast copy. For 'field-errors' this is the first field message. */
+  message: string;
+  /** Present only for kind 'field-errors'; contains only keys listed in the caller's `fieldKeys`. */
+  fieldErrors?: TFieldErrors;
+}
+
+/** What differs between the mentor and mentee register pages when a save fails. */
+export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
+  /** The code the BFF puts on its 409 when the profile already exists. */
+  profileExistsCode: string;
+  profileExistsMessage: string;
+  /** The form fields a server 400 can name; any other field in `errors[]` is ignored. */
+  fieldKeys: readonly (keyof TFieldErrors)[];
+  /** Copy for a 422. Without it a 422 gets the fallback message, since the page has no eligibility statements to point at. */
+  ineligibleMessage?: string;
 }

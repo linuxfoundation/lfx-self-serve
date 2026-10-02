@@ -233,6 +233,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
+  // Both writes also need the viewer on this CCLA's CLA Manager list. The approval-list write is
+  // refused by EasyCLA otherwise; Invalidate is refused by this application's server, because
+  // EasyCLA checks only ACS on it. The list's own `canEdit` is read after the row, so it can
+  // withdraw what the row's flag offered.
   private readonly rosterAllows = computed(() => this.claGroup().viewerIsClaManager === true && this.loadedList()?.canEdit === true);
   protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.rosterAllows());
   // Gates the Not Authorized "Add the user to the Approval list" remedy on the same

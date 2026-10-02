@@ -37,6 +37,7 @@ import {
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -587,7 +588,7 @@ export class MeetingService {
   /**
    * Updates a meeting directly via microservice proxy
    */
-  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
+  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest): Promise<ApiResponse<void>> {
     // Fetch existing meeting to merge organizers
     const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET');
 
@@ -627,17 +628,15 @@ export class MeetingService {
       updatePayload.show_meeting_attendees = false;
     }
 
-    const sanitizedPayload = logger.sanitize({ updatePayload, editType });
+    const sanitizedPayload = logger.sanitize({ updatePayload });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
-
-    const query = editType ? { editType } : undefined;
 
     return await this.microserviceProxy.proxyRequestWithResponse<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}`,
       'PUT',
-      query,
+      undefined,
       updatePayload
     );
   }
@@ -670,18 +669,54 @@ export class MeetingService {
 
   /**
    * Cancels a meeting occurrence directly via microservice proxy
+   * @description An optional note is sent as the DELETE body; upstream includes it in the cancellation
+   * emails to guests. Without one no body is sent, so the request is unchanged from before.
    */
-  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string, note?: string): Promise<void> {
     logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
+      has_note: !!note,
     });
 
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      note ? { note } : undefined
+    );
+  }
+
+  /**
+   * Edits a single occurrence of a recurring meeting directly via microservice proxy
+   * @description Upstream applies the change to this occurrence only; the rest of the series keeps its
+   * schedule, title and agenda. The occurrence id is its start time, so a new `start_time` also gives it
+   * a new id. LFX `title`/`description` map to upstream `topic`/`agenda`.
+   */
+  public async updateOccurrence(req: Request, meetingUid: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Promise<void> {
+    logger.debug(req, 'update_occurrence', 'Rescheduling meeting occurrence', {
+      meeting_id: meetingUid,
+      occurrence_id: occurrenceId,
+      start_time: payload.start_time,
+      duration: payload.duration,
+      title_changed: payload.title !== undefined,
+      agenda_changed: payload.description !== undefined,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'PUT',
+      undefined,
+      {
+        start_time: payload.start_time,
+        duration: payload.duration,
+        ...(payload.title !== undefined && { topic: payload.title }),
+        ...(payload.description !== undefined && { agenda: payload.description }),
+      }
     );
   }
 

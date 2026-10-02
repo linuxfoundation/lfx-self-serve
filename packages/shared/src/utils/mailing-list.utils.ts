@@ -5,6 +5,13 @@ import type { GroupsIOMailingList } from '../interfaces/mailing-list.interface';
 
 import { getEntityCommands } from './entity-route.utils';
 
+/** Address from the mailing list's indexed domain; never depend on a readable parent service. */
+export function getMailingListEmail(list: Pick<GroupsIOMailingList, 'group_name' | 'domain'> | null | undefined): string {
+  const groupName = list?.group_name?.trim();
+  const domain = list?.domain?.trim();
+  return groupName && domain ? `${groupName}@${domain}` : '';
+}
+
 /** Canonical tier-prefixed mailing-list link with the flat `/mailing-lists/...` fallback baked in (GH-1567). */
 export function getMailingListCommands(list: Pick<GroupsIOMailingList, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] {
   const flatFallback = leaf ? ['/mailing-lists', list.uid, leaf] : ['/mailing-lists', list.uid];

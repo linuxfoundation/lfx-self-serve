@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipMentorProfileResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorProfileResponse, MentorshipMentorProfileUpdateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
@@ -27,25 +28,27 @@ import { MentorProfileComponent } from './mentor-profile.component';
   selector: 'lfx-mentorship-profile-card',
   template: '<div data-testid="mentorship-profile-card-stub"></div>',
 })
-class StubProfileCardComponent {}
+class StubProfileCardComponent {
+  public readonly syncMentorshipProfiles = input(false);
+}
 
 /**
  * Stub out the drawer to avoid pulling in its child components (PrimeNG drawer, rich editor,
- * skills picker, resume section). The drawer's own spec covers its behavior.
+ * skills picker). The drawer's own spec covers its behavior.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile-edit-drawer',
   template: '',
 })
-class StubMentorProfileEditDrawerComponent {}
+class StubMentorProfileEditDrawerComponent {
+  public readonly saved = output<MentorshipMentorProfileUpdateResponse>();
+}
 
 describe('MentorProfileComponent', () => {
   const mockProfile: MentorshipMentorProfileResponse = {
     profile: {
       aboutMe: 'Maintainer working on telemetry.',
       skills: ['Python', 'Go'],
-      resumeFileName: 'test-mentor-resume.pdf',
-      resumeUrl: 'https://example.com/resume.pdf',
     },
     history: [{ id: 'mh_active', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' }],
   };
@@ -114,6 +117,14 @@ describe('MentorProfileComponent', () => {
     expect(details).toBeLessThan(history);
   });
 
+  it('tells the profile card to copy a saved LFX profile onto the mentorship profiles', async () => {
+    await bootstrap();
+
+    expect((fixture.debugElement.query(By.directive(StubProfileCardComponent)).componentInstance as StubProfileCardComponent).syncMentorshipProfiles()).toBe(
+      true
+    );
+  });
+
   it('opens the mentor profile edit drawer when the mentor asks to edit the profile', async () => {
     await bootstrap();
 
@@ -158,5 +169,52 @@ describe('MentorProfileComponent', () => {
     // only signal, not a half-rendered profile.
     expect(fixture.componentInstance['profile']()).toEqual(EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE.profile);
     expect(fixture.componentInstance['history']()).toEqual(EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE.history);
+  });
+
+  describe('saving the edit drawer', () => {
+    const savedResponse: MentorshipMentorProfileUpdateResponse = {
+      profile: { ...mockProfile.profile, aboutMe: '<p>Saved introduction.</p>', skills: ['Kubernetes'] },
+    };
+
+    const emitSaved = (response: MentorshipMentorProfileUpdateResponse): void => {
+      (fixture.debugElement.query(By.directive(StubMentorProfileEditDrawerComponent)).componentInstance as StubMentorProfileEditDrawerComponent).saved.emit(
+        response
+      );
+      fixture.detectChanges();
+    };
+
+    it('replaces the profile view in place, keeps the history and does not reload or flash the loading state', async () => {
+      await bootstrap();
+
+      emitSaved(savedResponse);
+
+      expect(fixture.componentInstance['profile']()).toEqual(savedResponse.profile);
+      expect(fixture.componentInstance['history']()).toEqual(mockProfile.history);
+      expect(getMentorProfile).toHaveBeenCalledTimes(1);
+      expect(element().querySelector('[data-testid="mentorship-mentor-profile-loading"]')).toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-mentor-profile-details"]')).not.toBeNull();
+    });
+
+    it('opens the drawer re-seeded from the saved profile', async () => {
+      await bootstrap();
+      emitSaved(savedResponse);
+
+      element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentor-profile-details-edit"] button')?.click();
+
+      expect(drawerService.context()).toEqual(savedResponse.profile);
+    });
+
+    it('drops the saved profile on Retry, so the freshly loaded data wins', async () => {
+      await bootstrap();
+      emitSaved(savedResponse);
+      const refetched: MentorshipMentorProfileResponse = { ...mockProfile, profile: { ...mockProfile.profile, aboutMe: 'Refetched.' } };
+      getMentorProfile.mockReturnValue(of(refetched));
+
+      fixture.componentInstance['retry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['profile']()).toEqual(refetched.profile);
+    });
   });
 });

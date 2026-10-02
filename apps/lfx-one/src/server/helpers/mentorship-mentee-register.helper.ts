@@ -6,6 +6,7 @@ import { MentorshipMenteeDemographics, MentorshipMenteeRegisterRequest, Mentorsh
 import { getMentorshipMenteeRegisterRequestErrors } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
+import { buildMentorshipUpstreamLfxProfileFields, buildMentorshipUpstreamProfileLinks, readMentorshipLfxProfileFields } from './mentorship-lfx-profile.helper';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -55,7 +56,8 @@ const parseDemographics = (value: unknown): { demographics?: MentorshipMenteeDem
  * the register form applies (`getMentorshipMenteeRegisterRequestErrors`) run on the values, so the
  * browser and the BFF cannot drift. Repeated skills are dropped before those rules run, so the
  * skills cap counts what is stored. Only known keys are copied. The introduction HTML is stored as
- * sent, capped but not sanitised: every render path sanitises it.
+ * sent, capped but not sanitised: every render path sanitises it. The optional `lfxProfile` is read
+ * by `readMentorshipLfxProfileFields`, so a bad name or logo URL is a 400 too.
  */
 export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipMenteeRegisterRequest => {
   if (!isRecord(body)) {
@@ -77,6 +79,8 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
   }
   const { demographics, error: demographicsError } = parseDemographics(body['demographics']);
   if (demographicsError) typeErrors['demographics'] = demographicsError;
+  const lfxProfile = body['lfxProfile'] === undefined ? undefined : readMentorshipLfxProfileFields(body['lfxProfile'], 'lfxProfile');
+  if (lfxProfile) Object.assign(typeErrors, lfxProfile.errors);
 
   if (Object.keys(typeErrors).length > 0) {
     throw ServiceValidationError.fromFieldErrors(typeErrors);
@@ -93,6 +97,7 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
     noDuplicateProfile: body['noDuplicateProfile'] as boolean,
     complianceAccepted: body['complianceAccepted'] as boolean,
     termsAccepted: body['termsAccepted'] as boolean,
+    ...(lfxProfile && Object.keys(lfxProfile.fields).length > 0 ? { lfxProfile: lfxProfile.fields } : {}),
   };
 
   const fieldErrors = getMentorshipMenteeRegisterRequestErrors(request);
@@ -106,14 +111,23 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
  * The `PUT /mentorship/v1/me/profiles/mentee` body. The JSON columns mirror what
  * `mapMentorshipMenteeProfile` reads back: `skill_set` carries both skill lists and the notes,
  * `demographics` the age band, gender and race, `socioeconomics` the income and education.
- * Name, email, phone, slug and logo are not sent: upstream reads display names from the user row,
- * and an unset slug cannot collide with another profile's.
+ * The name and logo are the LFX profile's, each sent only when the card had it; `email` is the
+ * resolved primary email and `profile_links` the resolved GitHub link, each sent only when there is
+ * one. The profile is new, so there are no stored links to keep. Phone and slug are not sent: an
+ * unset slug cannot collide with another profile's.
  */
-export const buildMentorshipUpstreamMenteeProfile = (request: MentorshipMenteeRegisterRequest): MentorshipUpstreamMenteeProfileInput => {
+export const buildMentorshipUpstreamMenteeProfile = (
+  request: MentorshipMenteeRegisterRequest,
+  email?: string,
+  githubProfileLink?: string
+): MentorshipUpstreamMenteeProfileInput => {
+  const profileLinks = buildMentorshipUpstreamProfileLinks(undefined, githubProfileLink);
   const demographics = withoutBlanks({ age: request.demographics?.age, gender: request.demographics?.gender, race: request.demographics?.raceEthnicity });
   const socioeconomics = withoutBlanks({ income: request.demographics?.income, educationLevel: request.demographics?.education });
 
   return {
+    ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
+    ...(profileLinks ? { profile_links: profileLinks } : {}),
     introduction: request.introduction,
     terms_and_conditions: request.termsAccepted,
     age_eligible: request.ageEligible,

@@ -14,6 +14,7 @@ import {
 import {
   AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
+  CancelMeetingOccurrenceRequest,
   CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
@@ -48,6 +49,7 @@ import {
   QueryServiceCountResponse,
   ReconcilePastMeetingParticipantsResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -311,12 +313,8 @@ export class MeetingService {
     );
   }
 
-  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<void> {
-    let params = new HttpParams();
-    if (editType) {
-      params = params.set('editType', editType);
-    }
-    return this.http.put<void>(`/api/meetings/${id}`, meeting, { params }).pipe(
+  public updateMeeting(id: string, meeting: UpdateMeetingRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${id}`, meeting).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(id)),
       catchError((error) => {
@@ -341,8 +339,16 @@ export class MeetingService {
     );
   }
 
-  public cancelOccurrence(meetingId: string, occurrenceId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(
+  public cancelOccurrence(meetingId: string, occurrenceId: string, note?: string): Observable<void> {
+    const body: CancelMeetingOccurrenceRequest | undefined = note ? { note } : undefined;
+    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`, { body }).pipe(
+      take(1),
+      tap(() => this.meetingDetailCache.delete(meetingId))
+    );
+  }
+
+  public updateOccurrence(meetingId: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${encodeURIComponent(meetingId)}/occurrences/${encodeURIComponent(occurrenceId)}`, payload).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(meetingId))
     );

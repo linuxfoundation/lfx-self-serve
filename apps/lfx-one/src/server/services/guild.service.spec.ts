@@ -241,3 +241,63 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     expect('agent_id' in sentBody()).toBe(false);
   });
 });
+
+/**
+ * The workspace owner/name default to the LF Marketing OS workspace, so only
+ * GUILD_API_KEY is required to configure Guild (issue #3207). These cover the
+ * fallback getters and the key-only `assertConfigured` guard.
+ */
+describe('GuildService — workspace defaults and configuration guard', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('defaults owner/name to linux-foundation/marketing-os when the workspace env vars are unset', async () => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    // Empty workspace env vars fall through to the defaults (robust against any ambient env).
+    vi.stubEnv('GUILD_WORKSPACE_OWNER', '');
+    vi.stubEnv('GUILD_WORKSPACE_NAME', '');
+    const service = new GuildService();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ id: 'session-new' }) } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
+
+    const [url, options] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(url).toBe('https://guild.test/api/workspaces/linux-foundation/marketing-os/sessions');
+    const body = JSON.parse(options.body) as Record<string, unknown>;
+    expect(body['agent_id']).toBe('linux-foundation~foundation-message');
+  });
+
+  it('lets the workspace env vars override the defaults', async () => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    vi.stubEnv('GUILD_WORKSPACE_OWNER', 'other-owner');
+    vi.stubEnv('GUILD_WORKSPACE_NAME', 'other-workspace');
+    const service = new GuildService();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ id: 'session-new' }) } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
+
+    const [url] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(url).toBe('https://guild.test/api/workspaces/other-owner/other-workspace/sessions');
+  });
+
+  it('throws guild_not_configured naming only GUILD_API_KEY when the key is unset', async () => {
+    // Empty API key triggers the guard; workspace vars must not be reported.
+    vi.stubEnv('GUILD_API_KEY', '');
+    const service = new GuildService();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(service.createSession(req, { message: 'hi', handle: 'foundation-message' })).rejects.toMatchObject({
+      code: 'guild_not_configured',
+      message: 'Guild API is not configured. Missing environment variable: GUILD_API_KEY.',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

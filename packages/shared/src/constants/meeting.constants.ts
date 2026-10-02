@@ -742,6 +742,9 @@ export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or re
 /** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
 
+/** Character limit for the note sent with a cancelled occurrence (matches the upstream ITX cap) */
+export const MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH = 4000;
+
 /** Agenda length at which the character counter turns amber */
 export const MEETING_AGENDA_WARNING_LENGTH = 1800;
 
@@ -866,6 +869,18 @@ export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
  * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
  */
 export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
+
+/**
+ * Rolling window, in days, for the My Meetings "Next 7 Days" stat. Counts individual
+ * occurrences rather than series, so a weekly series contributes one per week.
+ */
+export const MY_MEETINGS_STATS_WINDOW_DAYS = 7;
+
+/**
+ * Faces shown in a meeting card's attendee preview before collapsing the rest into "+N".
+ * Keeps the card a fixed height regardless of guest count; the full list opens in a drawer.
+ */
+export const MEETING_ATTENDEE_PREVIEW_LIMIT = 5;
 
 /**
  * Max concurrent attachment writes — deletes, file uploads, link creates — in one composer save.

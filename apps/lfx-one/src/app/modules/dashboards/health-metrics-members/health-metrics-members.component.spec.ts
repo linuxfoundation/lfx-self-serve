@@ -14,7 +14,9 @@ import { HealthMetricsChromeService } from '../health-metrics-gate/health-metric
 import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
 import { MembersBoardAttendanceComponent } from './components/members-board-attendance/members-board-attendance.component';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
+import { MembersChurnComponent } from './components/members-churn/members-churn.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
@@ -46,6 +48,20 @@ class DirectoryStubComponent {
 @Component({ selector: 'lfx-members-at-risk', template: '<div data-testid="members-at-risk-stub"></div>' })
 class AtRiskStubComponent {
   public readonly noteChange = output<string>();
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+/** Stands in for the member satisfaction section; the test drives its settle. */
+@Component({ selector: 'lfx-members-nps', template: '<div data-testid="members-nps-stub"></div>' })
+class NpsStubComponent {
+  public readonly settled = output<void>();
+  public readonly reading = output<void>();
+}
+
+/** Stands in for the churn section; the test drives its settle. */
+@Component({ selector: 'lfx-members-churn', template: '<div data-testid="members-churn-stub"></div>' })
+class ChurnStubComponent {
   public readonly settled = output<void>();
   public readonly reading = output<void>();
 }
@@ -87,12 +103,25 @@ describe('HealthMetricsMembersComponent', () => {
             MembersAtRiskComponent,
             MembersBoardAttendanceComponent,
             MembersBridgeComponent,
+            MembersChurnComponent,
             MembersDirectoryComponent,
+            MembersNpsComponent,
             MembersRenewalsComponent,
             MembersTiersComponent,
           ],
         },
-        add: { imports: [AtRiskStubComponent, BoardStubComponent, BridgeStubComponent, DirectoryStubComponent, RenewalsStubComponent, TiersStubComponent] },
+        add: {
+          imports: [
+            AtRiskStubComponent,
+            BoardStubComponent,
+            BridgeStubComponent,
+            ChurnStubComponent,
+            DirectoryStubComponent,
+            NpsStubComponent,
+            RenewalsStubComponent,
+            TiersStubComponent,
+          ],
+        },
       })
       .compileComponents();
 
@@ -135,8 +164,13 @@ describe('HealthMetricsMembersComponent', () => {
       } else if (key === 'board') {
         expect(element.querySelector('[data-testid="members-board-stub"]')).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
+      } else if (key === 'nps') {
+        expect(element.querySelector('[data-testid="members-nps-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
       } else {
-        expect(element.textContent).toContain('Awaiting data');
+        expect(key).toBe('churn');
+        expect(element.querySelector('[data-testid="members-churn-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
       }
     });
   });
@@ -174,8 +208,8 @@ describe('HealthMetricsMembersComponent', () => {
     fixture.detectChanges();
   }
 
-  it('holds a deep link until the tiers, bridge, directory, at-risk, renewals and board reads settle', async () => {
-    await setup('board');
+  it('holds a deep link until the tiers, bridge, directory, at-risk, renewals, board, nps and churn reads settle', async () => {
+    await setup('churn');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // Each settle re-lands the held link; it is released only once every data section has settled.
     stub(TiersStubComponent).settled.emit();
@@ -217,8 +251,24 @@ describe('HealthMetricsMembersComponent', () => {
     stub(TiersStubComponent).settled.emit();
     await flush();
 
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stub(NpsStubComponent).settled.emit();
+    await flush();
+    scrollIntoView.mockClear();
+    stub(TiersStubComponent).settled.emit();
+    await flush();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stub(ChurnStubComponent).settled.emit();
+    await flush();
+    scrollIntoView.mockClear();
+    stub(TiersStubComponent).settled.emit();
+    await flush();
+
     expect(scrollIntoView).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-board');
+    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-churn');
   });
 
   it('badges All members with the directory count once it reports one', async () => {
