@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE, MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE } from '@lfx-one/shared/constants';
 import type {
   MentorshipMentorRegisterRequest,
   MentorshipUpstreamMentorDetail,
@@ -1289,5 +1289,75 @@ describe('MentorshipMentorService.createMenteeTasks', () => {
       code: 'MENTORSHIP_INVALID_USER',
     });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MentorshipMentorService.reviewMenteeTask', () => {
+  const TASK_ID = '9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+  const TASK_PATH = `/mentorship/v1/tasks/${TASK_ID}`;
+  const REVIEW_PATH = `${TASK_PATH}/review`;
+  let service: InstanceType<typeof MentorshipMentorService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  const task = (status: MentorshipUpstreamTask['status']): Partial<MentorshipUpstreamTask> => ({ id: TASK_ID, status });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMentorService();
+  });
+
+  it.each(['complete', 'incomplete'] as const)('reads the submitted task, then PATCHes the review route with only %s', async (status) => {
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockResolvedValueOnce(task(status));
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, status)).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', REVIEW_PATH, 'PATCH', undefined, { status });
+  });
+
+  it.each([
+    ['complete', 'complete'],
+    ['incomplete', 'in_progress'],
+    ['incomplete', 'incomplete'],
+    ['incomplete', 'complete'],
+  ] as const)('refuses %s on a task that is %s with a 409 and never PATCHes', async (status, current) => {
+    proxyRequest.mockResolvedValueOnce(task(current));
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, status)).rejects.toMatchObject({
+      statusCode: 409,
+      code: MENTORSHIP_MENTOR_TASK_NOT_SUBMITTED_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('encodes the task id into both paths', async () => {
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockResolvedValueOnce(task('complete'));
+
+    await service.reviewMenteeTask(buildReq(), 'a/b?c', 'complete');
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/tasks/a%2Fb%3Fc', 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/tasks/a%2Fb%3Fc/review', 'PATCH', undefined, {
+      status: 'complete',
+    });
+  });
+
+  it.each([
+    [403, 'actor is not a member of this program'],
+    [404, 'task not found'],
+  ])("passes the read's %s through without PATCHing", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, 'complete')).rejects.toBe(failure);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'actor is not a member of this program'],
+    [409, 'invalid state transition'],
+  ])("passes the review's %s through", async (status, error) => {
+    const failure = upstreamError(status, { error });
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockRejectedValueOnce(failure);
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, 'complete')).rejects.toBe(failure);
   });
 });

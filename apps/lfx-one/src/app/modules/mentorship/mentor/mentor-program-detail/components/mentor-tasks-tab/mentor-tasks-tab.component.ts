@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -15,15 +15,22 @@ import {
   MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED,
   MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorReviewTask, MentorshipMentorTaskReviewStatus, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorReviewTask,
+  MentorshipMentorTaskReviewDecision,
+  MentorshipMentorTaskReviewRequest,
+  MentorshipMentorTaskReviewStatus,
+  MentorshipProgramMentee,
+} from '@lfx-one/shared/interfaces';
 import { formatMentorshipReviewUpdatedLabel, mentorshipMentorReviewTasks, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 
 /**
  * Mentor-facing Tasks tab — submitted work awaiting review, plus already-approved
- * (completed) tasks. Approve / Request Changes / Open Submission toast only until
- * the write endpoints land.
+ * (completed) tasks. Approve and Request Changes ask the page to review the task, and
+ * stay disabled while the page is reviewing it. Open Submission toasts until file
+ * upload lands.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-tasks-tab',
@@ -35,6 +42,10 @@ export class MentorTasksTabComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
+  /** Upstream task ids the page is reviewing; their buttons stay disabled until the page has re-read the program. */
+  public readonly reviewingTaskIds = input<readonly string[]>([]);
+
+  public readonly reviewRequested = output<MentorshipMentorTaskReviewRequest>();
 
   protected readonly statusPills = MENTORSHIP_MENTOR_TASK_FILTER_PILLS;
   protected readonly approveLabel = MENTORSHIP_MENTOR_TASK_APPROVE_LABEL;
@@ -49,16 +60,22 @@ export class MentorTasksTabComponent {
     this.statusFilter.set(status);
   }
 
-  protected onApprove(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
-    this.comingSoon.notify(`Approve "${row.taskName}" for ${row.menteeName}`);
+  protected onApprove(row: Pick<MentorshipMentorReviewTask, 'taskId'>): void {
+    this.requestReview(row.taskId, 'complete');
   }
 
-  protected onRequestChanges(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
-    this.comingSoon.notify(`Request changes on "${row.taskName}" for ${row.menteeName}`);
+  /** No comment goes with the request: upstream has no field for one. */
+  protected onRequestChanges(row: Pick<MentorshipMentorReviewTask, 'taskId'>): void {
+    this.requestReview(row.taskId, 'incomplete');
   }
 
   protected onOpenSubmission(row: Pick<MentorshipMentorReviewTask, 'id' | 'menteeName' | 'taskName'>): void {
     this.comingSoon.notify(`Open submission for "${row.taskName}" from ${row.menteeName}`);
+  }
+
+  private requestReview(taskId: string, status: MentorshipMentorTaskReviewDecision): void {
+    if (this.reviewingTaskIds().includes(taskId)) return;
+    this.reviewRequested.emit({ taskId, status });
   }
 
   private initEmptyMessage() {
@@ -73,6 +90,7 @@ export class MentorTasksTabComponent {
   private initRows() {
     return computed(() => {
       const status = this.statusFilter();
+      const reviewingTaskIds = this.reviewingTaskIds();
       return mentorshipMentorReviewTasks(this.mentees())
         .filter((task) => !status || task.status === status)
         .map((task) => ({
@@ -81,6 +99,7 @@ export class MentorTasksTabComponent {
           avatarStyleClass: mentorshipPersonAvatarClass(task.menteeName),
           updatedLabel: formatMentorshipReviewUpdatedLabel(task.updatedOn),
           verb: task.status === 'completed' ? MENTORSHIP_MENTOR_TASK_COMPLETED_VERB : MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB,
+          reviewing: reviewingTaskIds.includes(task.taskId),
         }));
     });
   }

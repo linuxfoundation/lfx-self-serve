@@ -54,6 +54,7 @@
                 iconPos="left"
                 severity="success"
                 size="small"
+                [disabled]="row.reviewing"
                 (onClick)="onApprove(row)"
                 [attr.data-testid]="'mentorship-mentor-task-approve-' + row.id" />
               <lfx-button
@@ -61,6 +62,7 @@
                 severity="secondary"
                 [outlined]="true"
                 size="small"
+                [disabled]="row.reviewing"
                 (onClick)="onRequestChanges(row)"
                 [attr.data-testid]="'mentorship-mentor-task-request-changes-' + row.id" />
             }

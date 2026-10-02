@@ -48,6 +48,7 @@ import {
   MENTORSHIP_MENTOR_INTRODUCTION_MAX,
   MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH,
   MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS,
+  MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS,
 } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
@@ -99,6 +100,7 @@ import type {
   MentorshipMentorProgramTabCounts,
   MentorshipMentorReviewTask,
   MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorTaskReviewDecision,
   MentorshipMentorRegisterForm,
   MentorshipMentorRegisterRequest,
 } from '../interfaces/mentorship-mentor.interface';
@@ -919,6 +921,7 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
       if (task.status === 'submitted' && mentee.status !== 'accepted') continue;
       rows.push({
         id: `${mentee.id}__${task.id}`,
+        taskId: task.id,
         menteeId: mentee.id,
         menteeName: mentee.name,
         menteeEmail: mentee.email,
@@ -1250,6 +1253,11 @@ export function buildMentorshipMenteeTaskView(
 /** Whether a value is a status a mentee may request (`in_progress` or `submitted`). Narrows for the controller and the row. */
 export function isMentorshipMenteeUpdatableTaskStatus(value: unknown): value is MentorshipMenteeUpdatableTaskStatus {
   return MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES.includes(value as MentorshipMenteeUpdatableTaskStatus);
+}
+
+/** Whether a value is a review decision a mentor may send (`complete` or `incomplete`). Narrows for the controller. */
+export function isMentorshipMentorTaskReviewDecision(value: unknown): value is MentorshipMentorTaskReviewDecision {
+  return MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS.includes(value as MentorshipMentorTaskReviewDecision);
 }
 
 /**

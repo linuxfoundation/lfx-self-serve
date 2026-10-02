@@ -333,4 +333,27 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(error?.status).toBe(404);
     });
   });
+
+  describe('reviewMenteeTask', () => {
+    it.each(['complete', 'incomplete'] as const)('PATCHes %s to the encoded task review path', (status) => {
+      let completed = false;
+      service.reviewMenteeTask('tsk/1?x', status).subscribe({ complete: () => (completed = true) });
+
+      const req = http.expectOne('/api/mentorship/mentor/tasks/tsk%2F1%3Fx/review');
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ status });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(completed).toBe(true);
+    });
+
+    it('propagates a failed review as the raw HttpErrorResponse', () => {
+      let error: HttpErrorResponse | undefined;
+      service.reviewMenteeTask('tsk-1', 'complete').subscribe({ error: (err: HttpErrorResponse) => (error = err) });
+
+      http
+        .expectOne('/api/mentorship/mentor/tasks/tsk-1/review')
+        .flush({ error: 'This task is no longer awaiting review.', code: 'TASK_NOT_SUBMITTED' }, { status: 409, statusText: 'Conflict' });
+      expect(error?.status).toBe(409);
+    });
+  });
 });

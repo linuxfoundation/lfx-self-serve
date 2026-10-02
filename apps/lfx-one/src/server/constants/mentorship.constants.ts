@@ -45,7 +45,7 @@ export const MENTORSHIP_APPLICATIONS_PATH = '/mentorship/v1/applications';
 /** Upstream mentor invites; the invited mentor answers at `/{token}/accept` or `/{token}/decline`. */
 export const MENTORSHIP_MENTOR_INVITES_PATH = '/mentorship/v1/mentor-invites';
 
-/** Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`. */
+/** Upstream tasks collection; a mentee changes a task's status at `/{id}/submission`, and a mentor reviews it at `/{id}/review`. */
 export const MENTORSHIP_TASKS_PATH = '/mentorship/v1/tasks';
 
 /**
