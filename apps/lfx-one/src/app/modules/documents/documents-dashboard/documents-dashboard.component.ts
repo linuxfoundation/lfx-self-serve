@@ -105,10 +105,23 @@ export class DocumentsDashboardComponent {
   protected readonly personaLoaded = this.personaService.personaLoaded;
   // Toolbar gated only on project-scope so it can't render under the legacy aggregator (no-op clicks).
   protected readonly canUpload = computed(() => this.useProjectSource());
-  /** True when the dashboard is project-scoped (Project / Foundation lens with active context). */
+  /**
+   * True when the dashboard is project-scoped (Project / Foundation lens with active context).
+   *
+   * Prefers `activeRouteLensKind` (set by `projectQueryParamGuard` before the route activates)
+   * over `activeLens()` so that deep-linking or navigating to `/foundation/documents` or
+   * `/project/documents` while the global lens is 'me' or 'org' still enables the project-source
+   * path. `activeLens()` reflects the user's globally-selected lens and is unaffected by route
+   * navigation alone, while `activeRouteLensKind` is scoped to the current route declaration.
+   */
   protected readonly useProjectSource = computed(() => {
+    if (!this.project()?.uid) return false;
+    const routeLensKind = this.projectContextService.activeRouteLensKind();
+    if (routeLensKind) {
+      return routeLensKind === 'project' || routeLensKind === 'foundation';
+    }
     const lens = this.activeLens();
-    return !!this.project()?.uid && (lens === 'project' || lens === 'foundation');
+    return lens === 'project' || lens === 'foundation';
   });
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly projectSourceFilter: Signal<MyDocumentSource | null> = this.initProjectSourceFilter();
