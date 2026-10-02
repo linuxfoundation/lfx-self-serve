@@ -133,7 +133,7 @@ export const HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS = {
   'non.conversion': { section: 'conversion', queryParams: {} },
 } as const satisfies Record<string, HealthMetricsOverviewNonMembersLinkSpec>;
 
-/** `trn.*` `link_target` → the Training section that owns it; enrollment and revenue findings land on `#enroll`. */
+/** `trn.*` `link_target` → the Training section that owns it; `trn.enrollment` lands on `#enroll`. */
 export const HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS = {
   'trn.enrollment': { section: 'enroll', queryParams: {} },
 } as const satisfies Record<string, HealthMetricsOverviewTrainingLinkSpec>;
