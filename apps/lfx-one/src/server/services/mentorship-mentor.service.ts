@@ -329,13 +329,15 @@ export class MentorshipMentorService {
       termId ? this.listTermApplications(req, programPath, termId) : [],
       termId ? this.findTermTasks(req, programPath, termId) : [],
     ]);
+    // Checked whichever way the tasks are read, so the page does not pass or fail on the gateway's answer.
+    this.assertApplicationIds(applications, operation);
 
     const tasksByApplication = termTasks
       ? groupMentorshipMentorProgramTasks(
           applications.map((application) => application.application_id),
           termTasks
         )
-      : await this.listMenteeTasks(req, applications, operation);
+      : await this.listMenteeTasks(req, applications);
     const tasks = [...tasksByApplication.values()].flat();
     const card = mapMentorshipMentorProgramCard(program, record ?? {}, choice, sortMentorshipMentorProgramRows(applications, tasks));
     const detail = buildMentorshipMentorProgramDetail(card, mapMentorshipMentorProgramLists(applications, card.term, tasksByApplication));
@@ -454,23 +456,27 @@ export class MentorshipMentorService {
   }
 
   /**
-   * Each mentee's tasks, read from their application, at most `MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY` at
-   * once; the other applicants are left out. Application ids come from upstream and go into paths, so an id
-   * that is not a UUID fails the read with a 502.
+   * Application ids come from upstream, and the per-mentee task read puts them into paths, so an id that is
+   * not a UUID fails the read with a 502.
    */
-  private async listMenteeTasks(
-    req: Request,
-    applications: readonly MentorshipUpstreamProgramApplicationRow[],
-    operation: string
-  ): Promise<Map<string, MentorshipUpstreamTask[]>> {
-    const mentees = applications.filter((application) => MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES.includes(application.status));
-    if (mentees.some((mentee) => !isUuid(mentee.application_id))) {
+  private assertApplicationIds(applications: readonly MentorshipUpstreamProgramApplicationRow[], operation: string): void {
+    if (applications.some((application) => !isUuid(application.application_id))) {
       throw new MicroserviceError('The mentorship service returned an application without a valid id', 502, 'MENTORSHIP_INVALID_APPLICATION', {
         operation,
         service: 'mentorship',
       });
     }
+  }
 
+  /**
+   * Each mentee's tasks, read from their application, at most `MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY` at
+   * once; the other applicants are left out. The application ids are checked before this runs.
+   */
+  private async listMenteeTasks(
+    req: Request,
+    applications: readonly MentorshipUpstreamProgramApplicationRow[]
+  ): Promise<Map<string, MentorshipUpstreamTask[]>> {
+    const mentees = applications.filter((application) => MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES.includes(application.status));
     const tasksByApplication = new Map<string, MentorshipUpstreamTask[]>();
     for (let start = 0; start < mentees.length; start += MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY) {
       const batch = mentees.slice(start, start + MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY);

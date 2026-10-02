@@ -1033,13 +1033,17 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     expect(peak).toBe(5);
   });
 
-  it('refuses a mentee application id from upstream that is not a UUID before building a path from it', async () => {
+  it.each([
+    ['refused', true],
+    ['allowed', false],
+  ])('refuses an application id from upstream that is not a UUID when the term task listing is %s', async (_kind, refused) => {
     answer({
       ...caller(),
       [PROGRAM_PATH]: () => ({ id: PROGRAM_ID, name: 'GridFlow', status: 'published' }),
       [`${PROGRAM_PATH}/applications`]: () => listOf([row('../tasks', 'accepted')]),
       [TERM_TASKS_PATH]: () => {
-        throw upstreamError(403, { error: 'forbidden' });
+        if (refused) throw upstreamError(403, { error: 'forbidden' });
+        return listOf([]);
       },
     });
 
