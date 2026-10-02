@@ -454,11 +454,21 @@ export const CCLA_SIGN_COPY = {
    * agreement is not in their organization's list yet.
    *
    * EasyCLA writes the signature when DocuSign calls it back, which races the return trip, so the
-   * page keeps asking on a short budget. Without this line the wait is an unexplained skeleton on
+   * page keeps asking for about half a minute. Without this line the wait is an unexplained skeleton on
    * the one visit where the signatory is most primed to see their agreement, and a reload is the
    * obvious thing to try — which restarts the wait rather than shortening it.
    */
   returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
+  /**
+   * Shown once that wait has ended and the organization's list still has no row for this group.
+   *
+   * Distinct from the hasn't-signed empty state, which is true for a pasted unsigned address and
+   * false for someone who just finished DocuSign. Refresh reloads the address after the return
+   * parameters are gone; a later load that still lacks the row uses the hasn't-signed state.
+   */
+  returnPendingTitle: "We're still confirming your signature",
+  returnPendingSubtitle: 'You finished signing. EasyCLA has not listed this agreement yet. Refresh this page in a moment.',
+  returnPendingRefresh: 'Refresh',
 } as const;
 
 /**

@@ -2891,6 +2891,7 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-error-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
       } finally {
         vi.useRealTimers();
@@ -2914,17 +2915,20 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
       } finally {
         vi.useRealTimers();
       }
     });
 
     /**
-     * Bounded, because past a few seconds the likelier explanations are ones no amount of waiting
-     * fixes. What the exhausted wait must not do is leave the address: this is the address the
-     * agreement will have once EasyCLA catches up, so a reload is all it takes — where the list
-     * would be a dead end wearing a different URL.
+     * Bounded, because past about half a minute the likelier explanations are ones no amount of
+     * waiting fixes. What the exhausted wait must not do is leave the address, or say the
+     * organization has not signed: this is the address the agreement will have once EasyCLA
+     * catches up, so a reload is all it takes — where the list would be a dead end wearing a
+     * different URL. The still-confirming state is this visit only. A later load of the stripped
+     * address, if the row is still absent, is the ordinary hasn't-signed state.
      */
     it('settles on this address, not the list, when the wait is spent', async () => {
       vi.useFakeTimers();
@@ -2934,10 +2938,23 @@ describe('OrgEasyclaDetailComponent', () => {
         await vi.advanceTimersByTimeAsync(30_000);
         await flush(fixture);
 
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        const pending = byTestId(fixture, 'org-easycla-detail-signature-pending-state');
+        expect(pending).not.toBeNull();
+        expect(pending?.textContent).toContain(CCLA_SIGN_COPY.returnPendingTitle);
+        expect(pending?.textContent).toContain(CCLA_SIGN_COPY.returnPendingSubtitle);
+        expect(pending?.textContent).toContain(CCLA_SIGN_COPY.returnPendingRefresh);
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
         expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
+
+        const reload = vi.fn();
+        vi.stubGlobal('location', { reload });
+        pending?.querySelector('button')?.click();
+        expect(reload).toHaveBeenCalledOnce();
+        expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
       } finally {
+        vi.unstubAllGlobals();
         vi.useRealTimers();
       }
     });
@@ -2961,6 +2978,7 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-title')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
       } finally {
         vi.useRealTimers();
@@ -2970,9 +2988,8 @@ describe('OrgEasyclaDetailComponent', () => {
     /**
      * The budget is count-bounded, but each attempt talks to the BFF and the BFF's own gateway
      * timeout is 30 seconds. `concatMap` runs the attempts in series, so a stalled BFF would leave
-     * three attempts waiting the full 30 seconds each — about 90 seconds against a doc comment that
-     * describes a few-second budget. The per-attempt `timeout()` bounds the wait in wall-clock time
-     * as well as in count.
+     * twelve attempts waiting the full 30 seconds each — about six minutes. The per-attempt
+     * `timeout()` bounds the wait in wall-clock time as well as in count.
      *
      * A request that neither errors nor completes is what the fixture models: a Subject that is
      * never fed. Without the timeout `concatMap` waits for it for ever, and even a 30-second
@@ -2981,16 +2998,17 @@ describe('OrgEasyclaDetailComponent', () => {
     it('bounds the wait in wall-clock time when each attempt hangs, not only in count', async () => {
       vi.useFakeTimers();
       try {
-        // One retry-delay plus one per-attempt timeout is (2000 + 3000)ms; three attempts is
-        // 15_000ms. Sized a beat past that, so a regression off by one attempt still fails.
-        const budgetMs = 3 * (2000 + 3000);
+        // One retry-delay plus one per-attempt timeout is (2000 + 3000)ms; twelve attempts is
+        // 60_000ms. Sized a beat past that, so a regression off by one attempt still fails.
+        const budgetMs = 12 * (2000 + 3000);
         const { fixture } = await renderReturn({ claGroups: [] });
         getClaGroups.mockReturnValue(new Subject());
 
         await vi.advanceTimersByTimeAsync(budgetMs + 1000);
         await flush(fixture);
 
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
       } finally {
         vi.useRealTimers();
@@ -3109,14 +3127,15 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
-     * The flag defers the four-way discriminator; it does not add a fifth outcome. An address
-     * without it resolves exactly as it did before — which is what keeps a group address from
-     * reading as a signing return every time someone opens one.
+     * An address without the flag resolves exactly as it did before — which is what keeps a group
+     * address from reading as a signing return every time someone opens one. The still-confirming
+     * state is only for a visit that arrived with the flag.
      */
     it('opens no wait on an ordinary visit that carries no flag', async () => {
       const { fixture } = await renderReturn({ org: null, flag: null, claGroups: [], listOrgUid: SELECTED_ACCOUNT.uid });
 
       expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     });
