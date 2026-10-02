@@ -70,6 +70,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+  codePointLength: (await import('../../../../../packages/shared/src/utils/string.utils')).codePointLength,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
@@ -851,6 +852,14 @@ describe('MeetingController', () => {
 
       expect(meetingSvc.cancelOccurrence).not.toHaveBeenCalled();
       expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['note']);
+    });
+
+    // A cancel is destructive: a malformed body must fail rather than cancel with the reason dropped.
+    it.each([[['note']], ['reason'], [42]])('rejects the non-object body %o without calling upstream', async (body) => {
+      await controller.cancelOccurrence(buildCancelReq(body), buildRes(), next);
+
+      expect(meetingSvc.cancelOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['body']);
     });
   });
 

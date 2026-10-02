@@ -30,7 +30,7 @@ export class CancelOccurrenceConfirmationComponent {
   public readonly isCanceling = signal(false);
   public readonly noteMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
   public readonly form = new FormGroup({
-    note: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)] }),
+    note: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH, { trim: true })] }),
   });
 
   public constructor() {

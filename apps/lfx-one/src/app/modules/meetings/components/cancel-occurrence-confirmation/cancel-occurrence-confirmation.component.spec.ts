@@ -75,6 +75,16 @@ describe('CancelOccurrenceConfirmationComponent', () => {
     expect(cancelOccurrence).not.toHaveBeenCalled();
   });
 
+  it('accepts a reason at the limit once its surrounding whitespace is trimmed', async () => {
+    const component = await mount();
+    const reason = 'x'.repeat(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH);
+
+    component.form.controls.note.setValue(`  ${reason}\n`);
+    component.onConfirm();
+
+    expect(cancelOccurrence).toHaveBeenCalledWith('meeting-1', '1893492000', reason);
+  });
+
   it('counts the reason limit in code points, as upstream does', async () => {
     const component = await mount();
 

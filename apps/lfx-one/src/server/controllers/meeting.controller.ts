@@ -363,6 +363,16 @@ export class MeetingController {
         return next(validationError);
       }
 
+      // Upstream rejects a non-object body; reading `note` off an array would cancel with the reason silently lost.
+      if (req.body != null && (typeof req.body !== 'object' || Array.isArray(req.body))) {
+        return next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'cancel_occurrence',
+            service: 'meeting_controller',
+          })
+        );
+      }
+
       const note = typeof body.note === 'string' ? body.note.trim() : body.note;
       if (note != null && (typeof note !== 'string' || codePointLength(note) > MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)) {
         return next(
