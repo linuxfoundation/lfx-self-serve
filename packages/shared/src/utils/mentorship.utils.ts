@@ -51,13 +51,9 @@ import {
   MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS,
 } from '../constants/mentorship-mentor.constants';
 import {
-  MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
-  MENTORSHIP_CURRENT_MENTEE_STATUSES,
-  MENTORSHIP_MENTEE_ACTIONS,
-  MENTORSHIP_PAST_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
@@ -66,7 +62,6 @@ import {
 } from '../constants/mentorship.constants';
 import type { FilterOption } from '../interfaces/filter.interface';
 import type {
-  MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipApplicantTaskRow,
@@ -74,8 +69,6 @@ import type {
   MentorshipEnrollFieldErrors,
   MentorshipEnrollStep,
   MentorshipEnrollValidationInput,
-  MentorshipMenteeAction,
-  MentorshipMenteeStatus,
   MentorshipNoteDisplay,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
@@ -89,8 +82,8 @@ import type {
   MentorshipProgramDetail,
   MentorshipProgramLists,
   MentorshipProgramMentor,
-  MentorshipProgramTabCounts,
   MentorshipProgramTermRow,
+  MentorshipTermRowStatus,
 } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
@@ -836,50 +829,31 @@ export function toMentorshipDateOnly(value: Date): string {
   return toLocalDateOnlyString(value);
 }
 
-export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): MentorshipProgramTabCounts {
-  return {
-    mentees: lists.mentees.length,
-    applicants: lists.applicants.length,
-    mentors: lists.mentors.length,
-    terms: lists.terms.length,
-  };
-}
-
 /**
- * The mentees the program's first tab can show, which is a narrower set than
- * "everyone who is not an applicant".
- *
- * A live program lists the mentees actually taking part — `accepted`, plus the
- * `graduated` ones who finished early. A completed program lists how each
- * participation ended: `withdrawn`, `declined` or `graduated`. `accepted` is
- * deliberately absent from that second set, because closing a program requires
- * every accepted mentee to have been graduated or declined first, so an
- * `accepted` mentee on a completed program is a state the domain does not
- * produce rather than a row to render.
- *
- * A mentee who withdraws or is declined mid-program is therefore not shown while
- * the program is still running, and appears on Past Mentees once it completes.
- * That is intended: the live tab answers "who is taking part", not "who ever was".
- */
-export function mentorshipMenteesForProgram(mentees: MentorshipProgramMentee[], isCompleted: boolean): MentorshipProgramMentee[] {
-  const statuses = isCompleted ? MENTORSHIP_PAST_MENTEE_STATUSES : MENTORSHIP_CURRENT_MENTEE_STATUSES;
-  return mentees.filter((person) => statuses.includes(person.status));
-}
-
-/**
- * Scopes the mentee list to the tab that will render it *before* the counts are
- * taken, so the badge can never promise a row the tab does not show.
+ * Splits a program's applications across the two mentee tabs by their term, not their
+ * status: an application in a closed term is history, so it moves to Past Mentees
+ * whatever state it was left in, and everything else — including a row whose term the
+ * program does not list — stays on Current Mentees. The counts are taken from the split
+ * lists, so a badge can never promise a row its tab does not show.
  */
 export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
-  const scoped: MentorshipProgramLists = {
-    ...lists,
-    mentees: mentorshipMenteesForProgram(lists.mentees, program.status === 'completed'),
-  };
+  // Keyed by id, not name: a program can hold an open and a closed term that share a name.
+  const closedTermIds = new Set(lists.terms.filter((term) => term.status === 'closed').map((term) => term.id));
+  const currentMentees = lists.applications.filter((application) => !closedTermIds.has(application.termId));
+  const pastMentees = lists.applications.filter((application) => closedTermIds.has(application.termId));
 
   return {
     program,
-    tabCounts: buildMentorshipProgramTabCounts(scoped),
-    ...scoped,
+    tabCounts: {
+      currentMentees: currentMentees.length,
+      pastMentees: pastMentees.length,
+      mentors: lists.mentors.length,
+      terms: lists.terms.length,
+    },
+    currentMentees,
+    pastMentees,
+    mentors: lists.mentors,
+    terms: lists.terms,
   };
 }
 
@@ -999,48 +973,17 @@ export function mentorshipApplicantDisplayStatus(application: MentorshipApplicat
 }
 
 /**
- * Term filter options for a program-detail tab, derived from the rows themselves — a
- * program's terms are whichever ones its people took part in.
+ * Term filter options for a mentee tab: the program's terms in the given state, in the
+ * order the program lists them. Current Mentees passes `open` and Past Mentees `closed`,
+ * so each tab's filter offers only the terms its rows can be in.
  */
-export function mentorshipTermFilterOptions(people: { termName: string }[], allLabel: string): FilterOption[] {
-  const terms = [...new Set(people.map((person) => person.termName))];
-  return [{ label: allLabel, value: null }, ...terms.map((term) => ({ label: term, value: term }))];
-}
-
-/**
- * Row actions offered for an application's current status on the Applicants tab. Each
- * action moves the application to the same-named status, so the one it already holds is
- * never offered, and a mentee who has already graduated can no longer be accepted.
- */
-export function mentorshipApplicantActionsFor(status: MentorshipMenteeStatus): MentorshipApplicantAction[] {
-  return MENTORSHIP_APPLICANT_ACTIONS.filter((action) => {
-    if (action === status) return false;
-    return action !== 'accepted' || status !== 'graduated';
-  });
-}
-
-/**
- * Row actions offered for a mentee's current status on the Current Mentees tab.
- * Each action moves the mentee to the same-named status, so the status a mentee is
- * already in is never offered. `graduated` is terminal, and only an accepted mentee
- * can graduate.
- */
-export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): MentorshipMenteeAction[] {
-  if (status === 'graduated') return [];
-  return MENTORSHIP_MENTEE_ACTIONS.filter((action) => {
-    if (action === status) return false;
-    return action !== 'graduated' || status === 'accepted';
-  });
-}
-
-/**
- * Task column label on the Current Mentees tab, e.g. `7 of 12 submitted`.
- * Returns null when no tasks are assigned so the cell can render a dash instead
- * of the misleading `0 of 0 submitted`.
- */
-export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
-  if (!total || total <= 0) return null;
-  return `${submitted ?? 0} of ${total} submitted`;
+export function mentorshipTermFilterOptions(
+  terms: ReadonlyArray<Pick<MentorshipProgramTermRow, 'name' | 'status'>>,
+  status: MentorshipTermRowStatus,
+  allLabel: string
+): FilterOption[] {
+  const names = [...new Set(terms.filter((term) => term.status === status).map((term) => term.name))];
+  return [{ label: allLabel, value: null }, ...names.map((name) => ({ label: name, value: name }))];
 }
 
 /**
@@ -1121,12 +1064,12 @@ export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRo
 }
 
 /**
- * Resolves a row's action statuses into what its menu renders. Each tab has its own
- * action union and its own label and icon maps, so this takes them as arguments rather
- * than choosing; the shape it returns is what `lfx-mentorship-row-actions` consumes.
+ * Resolves a row's action keys into what its menu renders. It takes the label and icon
+ * maps as arguments so it serves any action union; the shape it returns is what
+ * `lfx-mentorship-row-actions` consumes, and `value` is the key the menu emits back.
  */
 export function mentorshipRowActions<T extends string>(actions: readonly T[], labels: Record<T, string>, icons: Record<T, string>): MentorshipRowAction[] {
-  return actions.map((action) => ({ label: labels[action], icon: icons[action] }));
+  return actions.map((action) => ({ value: action, label: labels[action], icon: icons[action] }));
 }
 
 /**

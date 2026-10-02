@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_PROGRAM_DETAIL_TABS, MENTORSHIP_PROGRAM_STATUSES, MENTORSHIP_TERM_ROW_STATUSES } from '../constants/mentorship.constants';
-import type { MentorshipMentorStatus, MentorshipProgramApplicant, MentorshipProgramMentee, MentorshipProgramPersonBase } from './mentorship.interface';
+import type { MentorshipMentorStatus, MentorshipProgramApplicant, MentorshipProgramPersonBase } from './mentorship.interface';
 
 /**
  * Enrollment / graduation counters shown on the admin program card.
@@ -49,8 +49,8 @@ export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)
 
 /** Count badges shown next to each program-detail tab label. */
 export interface MentorshipProgramTabCounts {
-  mentees: number;
-  applicants: number;
+  currentMentees: number;
+  pastMentees: number;
   mentors: number;
   terms: number;
 }
@@ -81,16 +81,22 @@ export interface MentorshipProgramTermRow {
   applicationEndDate: string;
 }
 
-/** Tab lists returned with a program-detail payload. */
+/** A program's raw lists, before its applications are split across the two mentee tabs. */
 export interface MentorshipProgramLists {
-  mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
+  /** Every application on the program, whatever its status or term. */
+  applications: MentorshipProgramApplicant[];
   mentors: MentorshipProgramMentor[];
   terms: MentorshipProgramTermRow[];
 }
 
 /** Full admin program-detail payload from `GET /api/mentorship/admin/programs/:programId`. */
-export interface MentorshipProgramDetail extends MentorshipProgramLists {
+export interface MentorshipProgramDetail {
   program: MentorshipProgram;
   tabCounts: MentorshipProgramTabCounts;
+  /** Applications in an open term (or a term the program does not list), any status. */
+  currentMentees: MentorshipProgramApplicant[];
+  /** Applications in a closed term, any status. */
+  pastMentees: MentorshipProgramApplicant[];
+  mentors: MentorshipProgramMentor[];
+  terms: MentorshipProgramTermRow[];
 }

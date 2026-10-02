@@ -3,7 +3,6 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { RowActionsComponent } from './row-actions.component';
@@ -18,15 +17,15 @@ describe('RowActionsComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [RowActionsComponent],
-      providers: [provideNoopAnimations(), MessageService],
+      providers: [provideNoopAnimations()],
     });
 
     fixture = TestBed.createComponent(RowActionsComponent);
     fixture.componentRef.setInput('personName', 'Alex Rivera');
     fixture.componentRef.setInput('testId', 'mentorship-mentee-actions-mnt_1');
     fixture.componentRef.setInput('actions', [
-      { label: 'Withdraw', icon: 'fa-light fa-user-minus' },
-      { label: 'Graduate', icon: 'fa-light fa-graduation-cap' },
+      { value: 'withdraw', label: 'Withdraw', icon: 'fa-light fa-user-minus' },
+      { value: 'graduate', label: 'Graduate', icon: 'fa-light fa-graduation-cap' },
     ]);
     fixture.detectChanges();
   });
@@ -40,6 +39,15 @@ describe('RowActionsComponent', () => {
   it('builds one menu item per action, keeping the order it was given', () => {
     expect(fixture.componentInstance['menuItems']().map((item) => item.label)).toEqual(['Withdraw', 'Graduate']);
     expect(fixture.componentInstance['menuItems']().map((item) => item.icon)).toEqual(['fa-light fa-user-minus', 'fa-light fa-graduation-cap']);
+  });
+
+  it('emits the picked action so the tab can handle it', () => {
+    const picked: string[] = [];
+    fixture.componentInstance.actionSelect.subscribe((action) => picked.push(action.value));
+
+    fixture.componentInstance['menuItems']()[1].command?.({});
+
+    expect(picked).toEqual(['graduate']);
   });
 
   it('falls back to an em dash when a row has no action left', () => {

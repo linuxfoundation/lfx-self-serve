@@ -16,6 +16,8 @@ The admin screens still read mock data (`MOCK_MENTORSHIP_PROGRAMS`, `MOCK_MENTOR
 
 `programId` is the program's id or its slug. The list accepts `search`, `status`, `offset` and `limit` (clamped to 1–50, default 50).
 
+The program detail has four tabs: Current Mentees, Past Mentees, Mentors and Terms. `buildMentorshipProgramDetail` (shared utils) splits the program's applications by their term's status. Rows in an open term go to `currentMentees` and rows in a closed term go to `pastMentees`; the row's own status plays no part. A row whose term the program doesn't list stays current. `tabCounts` is built from the same lists, so a count always matches its tab.
+
 ## Flow
 
 ```text

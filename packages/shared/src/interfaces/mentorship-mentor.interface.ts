@@ -345,7 +345,7 @@ export interface MentorshipMentorOtherApplication {
 }
 
 /** One Applicants tab row. Its `id` is the application id. */
-export interface MentorshipMentorProgramApplicant extends Omit<MentorshipProgramApplicant, 'otherApplications'> {
+export interface MentorshipMentorProgramApplicant extends Omit<MentorshipProgramApplicant, 'otherApplications' | 'termId'> {
   otherApplications?: MentorshipMentorOtherApplication[];
 }
 
