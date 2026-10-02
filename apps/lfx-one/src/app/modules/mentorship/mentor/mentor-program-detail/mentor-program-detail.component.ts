@@ -111,8 +111,8 @@ export class MentorProgramDetailComponent {
     });
     if (!dialogRef) return;
     dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((note: string | undefined) => {
-      // `undefined` is a dismissed dialog; an unchanged note needs no save.
-      if (note === undefined || note === current) return;
+      // `undefined` is a dismissed dialog; an unchanged note needs no save. The dialog trims, so compare trimmed.
+      if (note === undefined || note === current.trim()) return;
       this.saveNote(request.personId, note);
     });
   }

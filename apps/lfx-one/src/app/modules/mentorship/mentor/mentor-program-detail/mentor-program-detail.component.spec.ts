@@ -240,6 +240,14 @@ describe('MentorProgramDetailComponent', () => {
     expect(saveNote).not.toHaveBeenCalled();
   });
 
+  it('skips the save when the stored note differs only by surrounding whitespace', () => {
+    buildWith(of('from the server'), of(withAcceptedApplicant('  from the server ')));
+
+    requestNote('mnt_1', 'Alex Rivera');
+
+    expect(saveNote).not.toHaveBeenCalled();
+  });
+
   it('keeps the dialog shut for a row whose save is in flight', () => {
     const save$ = new Subject<boolean>();
     buildWith(of('a saved note'), of(detail()), save$);
