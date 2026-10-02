@@ -74,7 +74,7 @@ export class EventsService {
       affiliatedProjectSlugs,
       isVisaRequestAccepted,
       isTravelFundRequestAccepted,
-      excludePastTravelFundDeadline,
+      anyRegistrationStatus,
     } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
@@ -108,12 +108,11 @@ export class EventsService {
       const startDateFromFilter = startDateFrom ? 'AND e.EVENT_START_DATE >= ?' : '';
       const startDateToFilter = startDateTo ? 'AND e.EVENT_START_DATE <= ?' : '';
       const countryFilter = country ? 'AND e.EVENT_COUNTRY = ?' : '';
-      const registeredOnlyFilter = registeredOnly ? "AND r.EVENT_ID IS NOT NULL AND r.REGISTRATION_STATUS = 'Accepted'" : '';
+      // Travel funding counts a registration of any status; everything else requires Accepted.
+      const registrationStatusFilter = anyRegistrationStatus ? '' : "AND REGISTRATION_STATUS = 'Accepted'";
+      const registeredOnlyFilter = registeredOnly ? 'AND r.EVENT_ID IS NOT NULL' : '';
       const visaRequestAcceptedFilter = isVisaRequestAccepted ? 'AND r.IS_VISA_REQUEST_ACCEPTED = TRUE' : '';
       const travelFundRequestAcceptedFilter = isTravelFundRequestAccepted ? 'AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE' : '';
-      const excludePastTravelFundDeadlineFilter = excludePastTravelFundDeadline
-        ? 'AND (r.TRAVEL_FUND_END_TS IS NULL OR r.TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP())'
-        : '';
 
       const slugs = affiliatedProjectSlugs ?? [];
       const hasAffiliatedSlugs = slugs.length > 0;
@@ -161,9 +160,9 @@ export class EventsService {
             EVENT_URL,
             EVENT_REGISTRATION_URL
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE USER_EMAIL = ?
+          WHERE LOWER(USER_EMAIL) = ?
             AND NOT (${this.isPastEventSql()})
-            AND REGISTRATION_STATUS = 'Accepted'
+            ${registrationStatusFilter}
             ${eventIdFilter}
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
         ),
@@ -182,9 +181,9 @@ export class EventsService {
             IS_TRAVEL_FUND_ACCEPTED,
             TRAVEL_FUND_END_TS
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE USER_EMAIL = ?
+          WHERE LOWER(USER_EMAIL) = ?
             AND NOT (${this.isPastEventSql()})
-            AND REGISTRATION_STATUS = 'Accepted'
+            ${registrationStatusFilter}
         ),
         combined AS (
           -- The subquery is load-bearing: QUALIFY written directly after UNION ALL binds to
@@ -240,7 +239,6 @@ export class EventsService {
           ${registeredOnlyFilter}
           ${visaRequestAcceptedFilter}
           ${travelFundRequestAcceptedFilter}
-          ${excludePastTravelFundDeadlineFilter}
         ORDER BY ${sortField} ${normalizedSortOrder}
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
@@ -1075,6 +1073,7 @@ export class EventsService {
     // only rows with REGISTRATION_STATUS = 'Accepted' (or LEFT JOINed nulls for upcoming discovery)
     // reach this mapper. If new REGISTRATION_STATUS values are added to Snowflake, this mapping
     // should be updated to derive status from row.REGISTRATION_STATUS directly.
+    // Exception: anyRegistrationStatus (travel funding event picker) lets any status through and maps it to Registered.
     let status: MyEventStatus;
     if (!row.IS_REGISTERED) {
       status = MY_EVENT_STATUS.NOT_REGISTERED;

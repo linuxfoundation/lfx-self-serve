@@ -76,7 +76,7 @@ export class EventsController {
       const country = req.query['country'] ? String(req.query['country']) : undefined;
       const isVisaRequestAccepted = req.query['isVisaRequestAccepted'] === 'true' ? true : undefined;
       const isTravelFundRequestAccepted = req.query['isTravelFundRequestAccepted'] === 'true' ? true : undefined;
-      const excludePastTravelFundDeadline = req.query['excludePastTravelFundDeadline'] === 'true' ? true : undefined;
+      const anyRegistrationStatus = req.query['anyRegistrationStatus'] === 'true' ? true : undefined;
 
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
@@ -112,7 +112,7 @@ export class EventsController {
         affiliatedProjectSlugs,
         isVisaRequestAccepted,
         isTravelFundRequestAccepted,
-        excludePastTravelFundDeadline,
+        anyRegistrationStatus,
       });
 
       logger.success(req, 'get_my_events', startTime, {

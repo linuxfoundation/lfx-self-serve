@@ -208,6 +208,43 @@ describe('EventsService.getMyEvents past-event SQL', () => {
   });
 });
 
+describe('EventsService.getMyEvents upcoming eligibility filters', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function sqlFor(options: Record<string, unknown>): Promise<string> {
+    await service.getMyEvents({} as never, USER_EMAIL, { isPast: false, pageSize: 10, offset: 0, ...options } as never);
+    return snowflakeMocks.execute.mock.calls[0][0] as string;
+  }
+
+  it('matches the user email case-insensitively in both user CTEs', async () => {
+    const sql = await sqlFor({ registeredOnly: true });
+
+    expect(sql.match(/WHERE LOWER\(USER_EMAIL\) = \?/g)).toHaveLength(2);
+    expect(sql).not.toMatch(/WHERE USER_EMAIL = \?/);
+  });
+
+  it('requires an Accepted registration by default (visa letters)', async () => {
+    const sql = await sqlFor({ registeredOnly: true, isVisaRequestAccepted: true });
+
+    expect(sql.match(/AND REGISTRATION_STATUS = 'Accepted'/g)).toHaveLength(2);
+    expect(sql).toContain('AND r.IS_VISA_REQUEST_ACCEPTED = TRUE');
+  });
+
+  it('counts any registration status when anyRegistrationStatus is set (travel funding)', async () => {
+    const sql = await sqlFor({ registeredOnly: true, isTravelFundRequestAccepted: true, anyRegistrationStatus: true });
+
+    expect(sql).not.toContain("AND REGISTRATION_STATUS = 'Accepted'");
+    expect(sql).toContain('AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE');
+    expect(sql).not.toContain('TRAVEL_FUND_END_TS >=');
+  });
+});
+
 describe('EventsService filter options use the same past-event predicate', () => {
   let service: InstanceType<typeof EventsService>;
 

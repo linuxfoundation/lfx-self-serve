@@ -255,8 +255,8 @@ export interface GetMyEventsParams {
   country?: string;
   isVisaRequestAccepted?: boolean;
   isTravelFundRequestAccepted?: boolean;
-  /** When true, events whose travel fund deadline timestamp has already passed (server-side `CURRENT_TIMESTAMP()` comparison) are excluded */
-  excludePastTravelFundDeadline?: boolean;
+  /** Upcoming only: when true, a registration of any REGISTRATION_STATUS counts as registered (default requires Accepted) */
+  anyRegistrationStatus?: boolean;
 }
 
 /**
@@ -520,8 +520,8 @@ export interface GetMyEventsOptions {
   isVisaRequestAccepted?: boolean;
   /** When true, only events where the user's travel fund request was accepted are returned */
   isTravelFundRequestAccepted?: boolean;
-  /** When true, events whose travel fund deadline timestamp has already passed (server-side `CURRENT_TIMESTAMP()` comparison) are excluded */
-  excludePastTravelFundDeadline?: boolean;
+  /** Upcoming only: when true, a registration of any REGISTRATION_STATUS counts as registered (default requires Accepted) */
+  anyRegistrationStatus?: boolean;
 }
 
 /**

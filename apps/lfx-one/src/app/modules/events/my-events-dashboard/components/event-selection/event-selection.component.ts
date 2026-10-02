@@ -70,7 +70,8 @@ export class EventSelectionComponent {
     country: this.filtersValue().locationFilter !== 'any' ? (this.filtersValue().locationFilter ?? undefined) : undefined,
     isVisaRequestAccepted: this.requestType() === 'visa' ? true : undefined,
     isTravelFundRequestAccepted: this.requestType() === 'travel-fund' ? true : undefined,
-    excludePastTravelFundDeadline: this.requestType() === 'travel-fund' ? true : undefined,
+    // Travel funding counts a registration of any status; visa letters need an accepted one.
+    anyRegistrationStatus: this.requestType() === 'travel-fund' ? true : undefined,
   }));
 
   // Initial events loaded reactively from activeFilters
@@ -110,7 +111,7 @@ export class EventSelectionComponent {
         icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
         title: 'No registered events',
         description: isVisa
-          ? 'You must be registered for an upcoming event to apply for a visa letter.'
+          ? 'You must have an accepted registration for an upcoming event to apply for a visa letter.'
           : 'You must be registered for an upcoming event to apply for travel funding.',
       };
     }
@@ -226,7 +227,8 @@ export class EventSelectionComponent {
             this.registeredEventsLoading.set(false);
             return of(null as number | null);
           }
-          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, pageSize: 1 }).pipe(
+          const anyRegistrationStatus = this.requestType() === 'travel-fund' ? true : undefined;
+          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, anyRegistrationStatus, pageSize: 1 }).pipe(
             map((res) => res.total ?? 0),
             catchError(() => of(null as number | null)),
             finalize(() => this.registeredEventsLoading.set(false))
