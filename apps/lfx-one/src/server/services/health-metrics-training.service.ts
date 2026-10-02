@@ -70,6 +70,8 @@ interface CourseRow {
   HAS_PURCHASE_COVERAGE: boolean | null;
   ENROLLMENT_COUNT: number | null;
   REVENUE_USD: number | null;
+  /** Orders the page only; `toCourse` leaves it out of the response. */
+  SORT_RANK: number | null;
 }
 
 /** Snowflake reads behind the Health Metrics Training tab; every figure is foundation-wide. */
