@@ -79,7 +79,6 @@ import {
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
-  formatMentorshipTaskProgress,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
   mentorshipMentorReviewTasks,
@@ -731,16 +730,6 @@ describe('program detail helpers', () => {
     // Every resolved status displays as itself, whatever the task counts say.
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'graduated' }))).toBe('graduated');
-  });
-
-  it('formats task progress, and reports no label when nothing is assigned', () => {
-    expect(formatMentorshipTaskProgress(7, 12)).toBe('7 of 12 submitted');
-    expect(formatMentorshipTaskProgress(0, 12)).toBe('0 of 12 submitted');
-    // A missing count is a mentee with tasks assigned but none submitted yet.
-    expect(formatMentorshipTaskProgress(undefined, 9)).toBe('0 of 9 submitted');
-    // No assigned tasks must not render as "0 of 0 submitted".
-    expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
-    expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
   it('computes mentee task completion from assigned statuses, excluding prerequisites', () => {

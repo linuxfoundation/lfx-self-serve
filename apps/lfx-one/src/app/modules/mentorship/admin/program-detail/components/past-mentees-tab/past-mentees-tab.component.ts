@@ -19,6 +19,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { FilterOption, MentorshipMenteeStatus, MentorshipProgramMentee, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { matchesMentorshipPersonSearch, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipTermFilterOptions } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { startWith, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
@@ -32,7 +33,7 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
  */
 @Component({
   selector: 'lfx-mentorship-past-mentees-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, SelectComponent, TableComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, PersonCellComponent, SelectComponent, TableComponent, TooltipModule],
   templateUrl: './past-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

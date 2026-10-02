@@ -29,6 +29,7 @@ import {
 import {
   FilterOption,
   MentorshipApplicantDisplayStatus,
+  MentorshipCurrentMenteeAction,
   MentorshipNoteRequest,
   MentorshipProgramApplicant,
   MentorshipProgramTermRow,
@@ -46,6 +47,7 @@ import {
   mentorshipRowActions,
   mentorshipTermFilterOptions,
 } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { startWith, take, tap } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
@@ -76,6 +78,7 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
     RowActionsComponent,
     SelectComponent,
     TableComponent,
+    TooltipModule,
   ],
   templateUrl: './current-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -144,7 +147,8 @@ export class CurrentMenteesTabComponent {
   }
 
   protected onRowAction(mentee: MentorshipProgramApplicant, action: MentorshipRowAction): void {
-    if (action.value === 'create-task') {
+    // The menu hands back a plain string; `satisfies` ties the key to the action union, so renaming it fails here.
+    if (action.value === ('create-task' satisfies MentorshipCurrentMenteeAction)) {
       this.onCreateTask(mentee);
       return;
     }

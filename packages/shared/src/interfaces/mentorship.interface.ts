@@ -145,7 +145,7 @@ export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid'
 /** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
 export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee lifecycle on the Current Mentees / Applicants tabs. Adds `graduated`. */
+/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. Adds `graduated`. */
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
 /** Shared row fields consumed by the admin program-detail people tables. */
@@ -156,7 +156,7 @@ export interface MentorshipProgramPersonBase {
   avatarUrl?: string;
 }
 
-/** Mentee row on the Current Mentees / Past Mentees / Applicants tabs. */
+/** Mentee row on the admin Past Mentees tab and the mentor program-detail tables. */
 export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, MentorshipApplicationProgress {
   termName: string;
   /** Reviewer note shared with the program's admins and mentors. */

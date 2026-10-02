@@ -986,16 +986,6 @@ export function mentorshipTermFilterOptions(
 }
 
 /**
- * Task column label on the Current Mentees tab, e.g. `7 of 12 submitted`.
- * Returns null when no tasks are assigned so the cell can render a dash instead
- * of the misleading `0 of 0 submitted`.
- */
-export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
-  if (!total || total <= 0) return null;
-  return `${submitted ?? 0} of ${total} submitted`;
-}
-
-/**
  * Progress the mentor Mentees tab shows as a bar plus percent. Counts
  * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
  * so the bar matches the default View Tasks panel (`hidePrerequisite`).
