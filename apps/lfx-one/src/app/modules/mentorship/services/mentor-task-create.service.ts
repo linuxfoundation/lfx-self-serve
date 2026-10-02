@@ -17,7 +17,7 @@ import {
 import { MentorshipMentorTaskCreateRequest, MentorshipMentorTaskCreateResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { MessageService } from 'primeng/api';
-import { catchError, concatMap, from, Observable, of, reduce, tap } from 'rxjs';
+import { catchError, concatMap, from, Observable, of, reduce, tap, throwError } from 'rxjs';
 
 /**
  * Creates a mentor's task for one or more accepted mentees and toasts the outcome, for the mentor program detail.
@@ -48,7 +48,10 @@ export class MentorTaskCreateService {
     );
   }
 
-  /** One request, or one per batch for a group past the BFF's cap, merged; a failed batch counts its mentees as failed. */
+  /**
+   * One request, or one per batch for a group past the BFF's cap, merged; a failed batch counts its mentees as failed.
+   * The impersonation guard refuses every batch before any is created, so its 403 ends the send and shows its message.
+   */
   private send(request: MentorshipMentorTaskCreateRequest): Observable<MentorshipMentorTaskCreateResponse> {
     const { applicationIds } = request;
     if (applicationIds.length <= MENTORSHIP_MENTOR_TASK_CREATE_MAX_APPLICATIONS) return this.mentorService.createMenteeTasks(request);
@@ -62,6 +65,7 @@ export class MentorTaskCreateService {
       concatMap((batch) =>
         this.mentorService.createMenteeTasks({ ...request, applicationIds: batch }).pipe(
           catchError((err: HttpErrorResponse) => {
+            if (this.isImpersonationRefusal(err)) return throwError(() => err);
             console.error('[MentorTaskCreateService] create batch failed', err);
             return of({ created: [], failed: batch });
           })
@@ -108,9 +112,8 @@ export class MentorTaskCreateService {
   }
 
   private showCreateError(err: HttpErrorResponse): void {
-    const code = (err.error as { code?: string } | null | undefined)?.code;
     let detail = MENTORSHIP_MENTOR_TASK_CREATE_ERROR_MESSAGES[err.status] ?? MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK;
-    if (err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
+    if (this.isImpersonationRefusal(err)) {
       detail = serverAuthoredMessage(err, MENTORSHIP_MENTOR_TASK_CREATE_ERROR_FALLBACK);
     }
 
@@ -120,5 +123,10 @@ export class MentorTaskCreateService {
       detail,
       life: MENTORSHIP_MENTOR_TASK_CREATE_TOAST_LIFE,
     });
+  }
+
+  private isImpersonationRefusal(err: HttpErrorResponse): boolean {
+    const code = (err.error as { code?: string } | null | undefined)?.code;
+    return err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE;
   }
 }

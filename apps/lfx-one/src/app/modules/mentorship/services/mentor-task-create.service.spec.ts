@@ -131,6 +131,18 @@ describe('MentorTaskCreateService', () => {
       expect(add).toHaveBeenCalledTimes(1);
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: MENTORSHIP_MENTOR_TASK_CREATE_PARTIAL_SUMMARY }));
     });
+
+    it("stops at the impersonation guard's 403 and shows the server's message", async () => {
+      createMenteeTasks.mockReturnValue(
+        throwError(() => httpError(403, { error: 'Read-only while impersonating.', code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE }))
+      );
+
+      await expect(firstValueFrom(service.create({ ...request, applicationIds: ids }))).resolves.toBeNull();
+
+      expect(createMenteeTasks).toHaveBeenCalledTimes(1);
+      expect(add).toHaveBeenCalledTimes(1);
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Read-only while impersonating.' }));
+    });
   });
 
   it.each([400, 403, 404])('shows the %i copy and emits null', async (status) => {
