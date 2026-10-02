@@ -414,6 +414,27 @@ describe('MentorProgramDetailComponent', () => {
       expect(reviewing()).toEqual([]);
     });
 
+    it('holds the task until the latest re-read settles, when a newer one supersedes its own', () => {
+      build();
+      const OTHER_TASK_ID = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+      const firstReread$ = new Subject<MentorshipMentorProgramDetail>();
+      const secondReread$ = new Subject<MentorshipMentorProgramDetail>();
+      getMentorProgram.mockReturnValueOnce(firstReread$).mockReturnValueOnce(secondReread$);
+
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status: 'complete' });
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: OTHER_TASK_ID, status: 'complete' });
+      expect(reviewing()).toEqual([TASK_ID, OTHER_TASK_ID]);
+
+      // The first re-read is dropped, so its task stays held on the rows it did not write.
+      firstReread$.next(detail());
+      firstReread$.complete();
+      expect(reviewing()).toEqual([TASK_ID, OTHER_TASK_ID]);
+
+      secondReread$.next(detail());
+      secondReread$.complete();
+      expect(reviewing()).toEqual([]);
+    });
+
     it('releases the task when the re-read fails', () => {
       build();
       getMentorProgram.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));

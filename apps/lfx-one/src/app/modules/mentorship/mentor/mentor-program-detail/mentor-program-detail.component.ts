@@ -64,7 +64,10 @@ export class MentorProgramDetailComponent {
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
   protected readonly activeTab = signal<MentorshipMentorProgramDetailTab>('tasks');
-  /** Tasks being reviewed, held until the re-read after the review settles, so a stale row cannot be sent twice. */
+  /**
+   * Tasks being reviewed, held until the latest re-read after the review settles, so a stale row is not sent twice.
+   * A failed re-read releases them on the old rows; the BFF's 409 then refuses a second review of the task.
+   */
   protected readonly reviewingTaskIds = signal<readonly string[]>([]);
 
   /**
@@ -104,6 +107,8 @@ export class MentorProgramDetailComponent {
   private readonly savingNoteIds = new Set<string>();
   /** Counts the background re-reads, so only the latest one writes the rows. */
   private refreshGeneration = 0;
+  /** Callbacks waiting on the latest re-read, so a re-read that a newer one supersedes releases nothing. */
+  private pendingSettles: (() => void)[] = [];
 
   protected onTabChange(tab: MentorshipMentorProgramDetailTab): void {
     this.activeTab.set(tab);
@@ -179,7 +184,8 @@ export class MentorProgramDetailComponent {
    * Re-reads the detail without the loading state, so a created or reviewed task shows on every tab. Dropped if the
    * mentor has left the page or moved to another program, or if a later re-read has started, so a slow one cannot
    * overwrite a newer one; a failed read keeps the rows on screen, since the toast already said how the write went.
-   * `onSettled` runs once the re-read is done, whether it was applied, dropped or failed.
+   * `onSettled` runs once the latest re-read is done, whether it was applied or failed, so a dropped re-read hands
+   * it on to the newer one rather than releasing a row that is still stale.
    */
   private refreshDetail(programId: string, onSettled: () => void = () => undefined): void {
     if (programId !== this.programId()) {
@@ -187,11 +193,14 @@ export class MentorProgramDetailComponent {
       return;
     }
     const generation = ++this.refreshGeneration;
+    this.pendingSettles.push(onSettled);
     this.mentorService
       .getMentorProgram(programId)
       .pipe(
         catchError(() => EMPTY),
-        finalize(onSettled),
+        finalize(() => {
+          if (generation === this.refreshGeneration) this.settlePending();
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((detail) => {
@@ -230,6 +239,12 @@ export class MentorProgramDetailComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private settlePending(): void {
+    const settles = this.pendingSettles;
+    this.pendingSettles = [];
+    settles.forEach((settle) => settle());
   }
 
   private noteFor(applicationId: string): string {
