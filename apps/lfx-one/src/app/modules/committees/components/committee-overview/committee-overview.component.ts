@@ -872,7 +872,7 @@ export class CommitteeOverviewComponent {
     // only — votes, surveys, and notes are member-only content. The feed section in the template
     // is visible to all, so the previous visitor short-circuit that returned [] early is removed.
     return toSignal(
-      toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
+      toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() && !this.canEdit() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
         distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
         switchMap(({ committee, roleLoading, visitor }) => {

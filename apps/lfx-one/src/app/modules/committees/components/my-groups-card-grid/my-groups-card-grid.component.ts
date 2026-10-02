@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE, JOIN_MODE_LABELS } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
 import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
@@ -56,14 +56,12 @@ export class MyGroupsCardGridComponent {
         const memberCount = committee.total_members;
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const scopeLabel = committee.project_name || committee.foundation_name;
-        const joinModeLabel = committee.join_mode ? JOIN_MODE_LABELS[committee.join_mode] : null;
         const typeDisplay = resolveTypeDisplay(committee);
         const parts = [
           `Open ${committee.name || 'group'}`,
           typeDisplay,
           ...(scopeLabel ? [scopeLabel] : []),
           committee.my_role || 'Member',
-          ...(joinModeLabel ? [joinModeLabel] : []),
           `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
           `updated ${lastActivityLabel}`,
         ];

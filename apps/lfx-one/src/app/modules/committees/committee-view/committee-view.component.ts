@@ -362,8 +362,9 @@ export class CommitteeViewComponent {
       },
       icon: 'fa-users',
       // Visitors may see the Members tab when the group admin has opted into basic_profile
-      // visibility — isMembersTabVisible() already encodes that check (BASIC_PROFILE || canEdit()
-      // || canSendMemberInvites()), so removing the isMemberOrAdmin() gate is sufficient.
+      // visibility — isMembersTabVisible() encodes the full check:
+      //   !isVisitor() || BASIC_PROFILE || canEdit() || canSendMemberInvites()
+      // Delegating directly to isMembersTabVisible() is correct; no additional gate needed.
       visible: () => this.isMembersTabVisible(),
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },

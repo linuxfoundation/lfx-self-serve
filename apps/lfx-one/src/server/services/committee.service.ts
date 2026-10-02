@@ -1567,7 +1567,7 @@ export class CommitteeService {
    * Returns the caller's own pending join application for a committee, or null if none exists.
    *
    * No writer guard — callers can only see their own application. Uses a `tags_all` query so
-   * the result is scoped to the (committee_uid, username) pair; the full writer-gated list
+   * the result is scoped to the (committee_uid, applicant_email) pair; the full writer-gated list
    * endpoint ({@link getCommitteeApplications}) is separate and intentionally unrelated.
    */
   public async getMyApplication(req: Request, committeeId: string): Promise<CommitteeJoinApplication | null> {
@@ -1597,8 +1597,9 @@ export class CommitteeService {
    * committee display fields (name, is_foundation, project_slug) for the My Groups page.
    *
    * No writer guard — callers can only see their own applications. Committee names are resolved via
-   * parallel `getCommitteeBase` calls (one per unique committee_uid). Failures to resolve a name
-   * fall back to the committee_uid string so the row is still renderable.
+   * parallel `getCommitteeById` calls (one per unique committee_uid) — `getCommitteeBase` lacks the
+   * enriched project metadata fields needed here. Failures to resolve a name are logged at warning
+   * level and fall back to the committee_uid string so the row is still renderable.
    */
   public async getMyApplications(req: Request): Promise<MyPendingApplication[]> {
     // committee_application records are indexed by applicant_email (lowercased), not by username.
@@ -1640,7 +1641,11 @@ export class CommitteeService {
             project_slug: committee?.project_slug ?? undefined,
           });
         } catch {
-          // Committee not accessible or not found — fall back to the UID as display name.
+          // Committee not accessible or not found — fall back to the UID as display name,
+          // mirroring the getMyPendingInvitations fallback pattern.
+          logger.warning(req, 'get_my_applications', 'Committee enrichment failed, using UID as fallback display name', {
+            committee_uid: uid,
+          });
           committeeMap.set(uid, { name: uid });
         }
       })

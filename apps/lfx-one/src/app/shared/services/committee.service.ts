@@ -305,7 +305,7 @@ export class CommitteeService {
    * Used to pre-seed application state on page load without relying on sessionStorage.
    */
   public getMyApplication(committeeId: string): Observable<CommitteeJoinApplication | null> {
-    return this.http.get<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications/my`).pipe(
+    return this.http.get<CommitteeJoinApplication>(`/api/committees/${committeeId}/my-applications`).pipe(
       take(1),
       catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err)))
     );
@@ -318,7 +318,7 @@ export class CommitteeService {
    * Errors degrade to an empty array so a transient failure never breaks the My Groups load.
    */
   public getMyApplications(): Observable<MyPendingApplication[]> {
-    return this.http.get<MyPendingApplication[]>('/api/committees/applications/my').pipe(
+    return this.http.get<MyPendingApplication[]>('/api/committees/my-applications').pipe(
       take(1),
       catchError(() => of([] as MyPendingApplication[]))
     );

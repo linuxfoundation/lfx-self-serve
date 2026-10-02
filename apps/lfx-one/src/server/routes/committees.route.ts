@@ -19,8 +19,8 @@ router.get('/count', (req, res, next) => committeeController.getCommitteesCount(
 router.get('/engagement-stats', (req, res, next) => committeeController.getGroupsEngagementStats(req, res, next));
 router.get('/my-committees', (req, res, next) => committeeController.getMyCommittees(req, res, next));
 router.get('/my-committee-uids', (req, res, next) => committeeController.getMyCommitteeUids(req, res, next));
-// Must be before /:id so Express does not parse "applications" as an ID parameter.
-router.get('/applications/my', (req, res, next) => committeeController.getMyApplications(req, res, next));
+// Must be before /:id so Express does not parse "my-applications" as an ID parameter.
+router.get('/my-applications', (req, res, next) => committeeController.getMyApplications(req, res, next));
 router.get('/:id', (req, res, next) => committeeController.getCommitteeById(req, res, next));
 router.post('/', (req, res, next) => committeeController.createCommittee(req, res, next));
 router.put('/:id', (req, res, next) => committeeController.updateCommittee(req, res, next));
@@ -65,8 +65,7 @@ router.post('/:id/join', (req, res, next) => committeeController.joinCommittee(r
 router.delete('/:id/leave', (req, res, next) => committeeController.leaveCommittee(req, res, next));
 router.post('/:id/applications', (req, res, next) => committeeController.submitApplication(req, res, next));
 router.get('/:id/applications', (req, res, next) => committeeController.getCommitteeApplications(req, res, next));
-// /my must be registered before /:applicationId/... so Express doesn't treat "my" as an ID
-router.get('/:id/applications/my', (req, res, next) => committeeController.getMyApplication(req, res, next));
+router.get('/:id/my-applications', (req, res, next) => committeeController.getMyApplication(req, res, next));
 router.post('/:id/applications/:applicationId/approve', (req, res, next) => committeeController.approveApplication(req, res, next));
 router.post('/:id/applications/:applicationId/reject', (req, res, next) => committeeController.rejectApplication(req, res, next));
 

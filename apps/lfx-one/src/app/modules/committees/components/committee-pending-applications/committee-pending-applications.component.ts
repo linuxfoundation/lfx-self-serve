@@ -6,7 +6,7 @@ import { Component, computed, DestroyRef, inject, input, InputSignal, PLATFORM_I
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TagComponent } from '@components/tag/tag.component';
-import { MyPendingApplication } from '@lfx-one/shared/interfaces';
+import { MyPendingApplication, PendingApplicationRowVm } from '@lfx-one/shared/interfaces';
 import { getEntityCommands } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { of, switchMap, take } from 'rxjs';
@@ -55,11 +55,11 @@ export class CommitteePendingApplicationsComponent {
   /**
    * Each application decorated with its canonical view link (mirrors CommitteeInvitationsComponent).
    */
-  protected readonly applicationRows = computed(() =>
+  protected readonly applicationRows: Signal<PendingApplicationRowVm[]> = computed(() =>
     this.applications().map((app) => ({
       ...app,
       viewCommands: getEntityCommands('groups', app.committee_uid, app.is_foundation) ?? ['/groups', app.committee_uid],
-      viewQueryParams: app.project_slug ? { project: app.project_slug } : ({} as Record<string, string>),
+      viewQueryParams: app.project_slug ? { project: app.project_slug } : null,
     }))
   );
 

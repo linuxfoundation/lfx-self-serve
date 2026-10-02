@@ -141,7 +141,7 @@
       }
 
       <!-- Next Meeting — shown to visitors when the group's calendar is public (same gate as the Meetings tab) -->
-      @if (!isVisitor() || committee().calendar?.public) {
+      @if (!isVisitor() || canEdit() || committee().calendar?.public) {
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -180,7 +180,7 @@
       }
 
       <!-- Past Meeting — shown to visitors when the group's calendar is public (same gate as the Meetings tab) -->
-      @if (!isVisitor() || committee().calendar?.public) {
+      @if (!isVisitor() || canEdit() || committee().calendar?.public) {
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">

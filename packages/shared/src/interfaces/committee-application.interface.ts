@@ -52,7 +52,7 @@ export interface CreateCommitteeJoinApplicationRequest {
 
 /**
  * A pending join application enriched by the BFF with committee display fields.
- * Returned by GET /api/committees/applications/my.
+ * Returned by GET /api/committees/my-applications.
  */
 export interface MyPendingApplication extends CommitteeJoinApplication {
   /** Committee display name — populated by the BFF via committee base record. */
@@ -61,4 +61,15 @@ export interface MyPendingApplication extends CommitteeJoinApplication {
   is_foundation?: boolean;
   /** Committee project slug — used by getEntityCommands / ?project= query param. */
   project_slug?: string;
+}
+
+/**
+ * MyPendingApplication decorated with navigation fields for the My Groups page row.
+ * Mirrors {@link PendingInvitationRowVm} from committee.interface.ts.
+ */
+export interface PendingApplicationRowVm extends MyPendingApplication {
+  /** Canonical route commands for the group's view page. */
+  viewCommands: (string | object)[];
+  /** Query params for the group's view page, or null when no project context is available. */
+  viewQueryParams: { project: string } | null;
 }

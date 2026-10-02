@@ -22,7 +22,7 @@ import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
@@ -1393,9 +1393,13 @@ export class CommitteeController {
       const application = await this.committeeService.getMyApplication(req, id);
 
       if (!application) {
-        logger.success(req, 'get_my_committee_application', startTime, { committee_id: id, found: false });
-        res.status(404).json({ message: 'No pending application found for this committee.' });
-        return;
+        return next(
+          new ResourceNotFoundError('Committee application', id, {
+            operation: 'get_my_committee_application',
+            service: 'committee_controller',
+            path: `/committees/${id}/my-applications`,
+          })
+        );
       }
 
       logger.success(req, 'get_my_committee_application', startTime, { committee_id: id, found: true, application_uid: application.uid });
