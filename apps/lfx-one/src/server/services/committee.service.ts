@@ -1578,12 +1578,15 @@ export class CommitteeService {
       return null;
     }
 
-    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'committee_application',
-        tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
     // Return the most recent pending application, if any.
