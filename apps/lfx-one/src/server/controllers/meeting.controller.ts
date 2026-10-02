@@ -550,19 +550,22 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/my-meeting-registrants
-   * Retrieves registrants for a meeting with access control based on show_meeting_attendees setting
-   * Only returns registrants if the authenticated user is a registrant of the meeting
+   * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
+   * organizers. Does NOT check `show_meeting_attendees` — callers gate attendee visibility in the UI.
+   * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id } = req.query;
+    const { include_rsvp, occurrence_id, preview } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const isPreview = preview === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_my_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
       occurrence_id: occurrenceId,
+      preview: isPreview,
     });
 
     try {
@@ -651,9 +654,21 @@ export class MeetingController {
 
       // The join page treats this roster's length as an authoritative denominator (GH-1731) —
       // a partial query-service page failure must surface as an error, not a silently truncated list.
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, true, undefined, {
+      // A preview only draws a few faces and a "+N", so a short roster beats an empty one there.
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, !isPreview, undefined, {
         bearerToken: m2mToken,
       });
+
+      if (isPreview) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          preview: true,
+          registrant_count: registrants.length,
+          include_rsvp: includeRsvp,
+        });
+        res.json(registrants);
+        return;
+      }
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,
