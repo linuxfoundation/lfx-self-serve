@@ -6,6 +6,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipProgramDetail } from '@lfx-one/shared/interfaces';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -61,11 +62,12 @@ describe('ProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
+        { provide: MentorshipAdminService, useValue: { getProgram: () => of(program) } },
         {
           provide: MentorshipService,
           // The Mentors tab loads its invite picker on construction, and the persistence
           // test renders that tab to prove notes survive one being destroyed.
-          useValue: { getProgram: () => of(program), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
+          useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
         },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
@@ -177,10 +179,8 @@ describe('ProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
-        {
-          provide: MentorshipService,
-          useValue: { getProgram: () => of(detail()), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
-        },
+        { provide: MentorshipAdminService, useValue: { getProgram: () => of(detail()) } },
+        { provide: MentorshipService, useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });

@@ -8,52 +8,9 @@ import type {
   MENTORSHIP_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
-  MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
-  MENTORSHIP_PROGRAM_STATUSES,
-  MENTORSHIP_TERM_ROW_STATUSES,
   MENTORSHIP_UPSTREAM_PROGRAM_STATUSES,
 } from '../constants/mentorship.constants';
-
-/**
- * Enrollment / graduation counters shown on the admin program card.
- */
-export interface MentorshipProgramStats {
-  mentors: number;
-  mentees: number;
-  graduated: number;
-}
-
-/**
- * Program status lifecycle:
- * - `open` — accepting applications / active
- * - `pending-review` — submitted, awaiting admin approval
- * - `completed` — cohort finished
- */
-export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
-
-/** Core program fields as returned by the LFX One BFF for the mentorship admin list. */
-export interface MentorshipProgram {
-  id: string;
-  /** URL-safe identifier. `/mentorship/admin/:programId` accepts `id` (default) or `slug`. */
-  slug: string;
-  /** Program name, e.g. "GridFlow: Time-Series Ingestion Pipeline". */
-  name: string;
-  /** Foundation / project sponsoring the program, e.g. "LF Energy". */
-  projectName: string;
-  term: string;
-  status: MentorshipProgramStatus;
-  stats: MentorshipProgramStats;
-  /** Optional program logo. When absent, the card renders an initials avatar. */
-  logoUrl?: string;
-  createdOn: string;
-  updatedOn: string;
-}
-
-export type MentorshipProgramsResponse = {
-  data: MentorshipProgram[];
-  total: number;
-};
 
 /** Wizard step keys for `/mentorship/admin/enroll`. */
 export type MentorshipEnrollStep = 'details' | 'setup' | 'prerequisites';
@@ -186,17 +143,6 @@ export interface MentorshipCiiBadge {
 
 export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid' | 'unavailable';
 
-/** Admin program-detail underline tabs. */
-export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
-
-/** Count badges shown next to each program-detail tab label. */
-export interface MentorshipProgramTabCounts {
-  mentees: number;
-  applicants: number;
-  mentors: number;
-  terms: number;
-}
-
 /** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
 export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
@@ -204,19 +150,11 @@ export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number]
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
 /** Shared row fields consumed by the admin program-detail people tables. */
-interface MentorshipProgramPersonBase {
+export interface MentorshipProgramPersonBase {
   id: string;
   name: string;
   email: string;
   avatarUrl?: string;
-}
-
-/** Mentor row on the Mentors tab. */
-export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
-  status: MentorshipMentorStatus;
-  /** ISO `YYYY-MM-DD` invitation date. */
-  invitedOn?: string;
-  profileCreated?: boolean;
 }
 
 /** Mentee row on the Current Mentees / Past Mentees / Applicants tabs. */
@@ -389,38 +327,6 @@ export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
   createdOn: string;
   updatedOn: string;
   otherApplications?: MentorshipApplicantOtherApplication[];
-}
-
-/** Term lifecycle on the admin program-detail Terms tab. */
-export type MentorshipTermRowStatus = (typeof MENTORSHIP_TERM_ROW_STATUSES)[number];
-
-/** Term row on the admin program-detail Terms tab. */
-export interface MentorshipProgramTermRow {
-  id: string;
-  name: string;
-  status: MentorshipTermRowStatus;
-  pending: number;
-  declined: number;
-  accepted: number;
-  graduated: number;
-  startDate: string;
-  endDate: string;
-  applicationStartDate: string;
-  applicationEndDate: string;
-}
-
-/** Tab lists returned with a program-detail payload. */
-export interface MentorshipProgramLists {
-  mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
-  mentors: MentorshipProgramMentor[];
-  terms: MentorshipProgramTermRow[];
-}
-
-/** Full admin program-detail payload from `GET /api/mentorship/programs/:slug`. */
-export interface MentorshipProgramDetail extends MentorshipProgramLists {
-  program: MentorshipProgram;
-  tabCounts: MentorshipProgramTabCounts;
 }
 
 // -- Program review (approver approve/reject email link) ---------------------

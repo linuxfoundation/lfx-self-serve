@@ -43,7 +43,7 @@ MentorProgramsComponent · MentorProgramDetailComponent · MentorProfileComponen
 | Server service | `apps/lfx-one/src/server/services/mentorship-mentor.service.ts`                                            |
 | App service    | `apps/lfx-one/src/app/shared/services/mentorship-mentor.service.ts`                                        |
 
-The register page and the profile edit drawer read the program picker through `GET /open-programs`, not the admin `MentorshipService.getPrograms`.
+The register page and the profile edit drawer read the program picker through `GET /open-programs`, not the admin `MentorshipAdminService.getPrograms`.
 
 ## Behavior
 

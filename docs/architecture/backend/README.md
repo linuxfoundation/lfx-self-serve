@@ -54,6 +54,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Public Meetings](./public-meetings.md)                               | Unauthenticated meeting access, M2M token flow                                  |
 | [Mentorship Mentee Registration](./mentorship-mentee-registration.md) | Register BFF, replace-all upsert pre-check, error mapping, impersonation block  |
 | [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source              |
+| [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |
 | [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
 | [Gatewaze Embed Proxy](./gw-proxy.md)                                 | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
 | [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, M2M Key Contact check, fail-closed eligibility               |
