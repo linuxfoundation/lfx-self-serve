@@ -11,7 +11,7 @@ function isCredentialKey(key: string): boolean {
 }
 
 /** Reads one property, turning a throwing getter into a placeholder so logging never throws into the caller. */
-function read(target: object, key: PropertyKey): unknown {
+export function readLogField(target: object, key: PropertyKey): unknown {
   try {
     return (target as Record<PropertyKey, unknown>)[key];
   } catch {
@@ -26,20 +26,19 @@ function read(target: object, key: PropertyKey): unknown {
  * by shape wherever it appears, so only the command name is ever logged.
  */
 function isRedisCommand(value: object): boolean {
-  return typeof read(value, 'name') === 'string' && Array.isArray(read(value, 'args'));
+  return typeof readLogField(value, 'name') === 'string' && Array.isArray(readLogField(value, 'args'));
 }
 
 function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (state.ancestors.has(value)) return '[Circular]';
-  if (depth >= LOG_SCRUB_LIMITS.MAX_DEPTH || state.visited >= LOG_SCRUB_LIMITS.MAX_NODES) return '[Truncated]';
-  state.visited++;
+  if (depth >= LOG_SCRUB_LIMITS.MAX_DEPTH) return '[Truncated]';
 
-  if (isRedisCommand(value)) return { name: read(value, 'name') };
+  if (isRedisCommand(value)) return { name: readLogField(value, 'name') };
 
   // Mirror JSON.stringify: an object with toJSON (Date, Buffer, AxiosError, …) is logged as whatever
   // toJSON returns, so scrub that instead of the raw object. One returning itself is walked as-is.
-  const toJSON = read(value, 'toJSON');
+  const toJSON = readLogField(value, 'toJSON');
   if (typeof toJSON === 'function') {
     let json: unknown;
     try {
@@ -53,16 +52,20 @@ function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
   state.ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      return Array.from({ length: value.length }, (_, index) => scrub(read(value, index), depth + 1, state));
+      const result: unknown[] = [];
+      for (let index = 0; index < value.length; index++) {
+        if (!spend(state)) {
+          result.push('[Truncated]');
+          break;
+        }
+        result.push(scrub(readLogField(value, index), depth + 1, state));
+      }
+      return result;
     }
 
     // Own enumerable string keys only — the same set JSON.stringify (and so pino) would emit, which
     // keeps an Error's non-enumerable `message`/`stack` out exactly as before.
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(value)) {
-      result[key] = scrubEntry(key, read(value, key), depth + 1, state);
-    }
-    return result;
+    return scrubProperties(value, Object.keys(value), depth + 1, state, {});
   } finally {
     state.ancestors.delete(value);
   }
@@ -70,6 +73,25 @@ function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
 
 function scrubEntry(key: string, value: unknown, depth: number, state: LogScrubState): unknown {
   return isCredentialKey(key) ? '[REDACTED]' : scrub(value, depth, state);
+}
+
+/** Charges one array element or object property to the walk's budget; false once `LOG_SCRUB_LIMITS.MAX_NODES` is spent. */
+function spend(state: LogScrubState): boolean {
+  if (state.visited >= LOG_SCRUB_LIMITS.MAX_NODES) return false;
+  state.visited++;
+  return true;
+}
+
+/** Scrubs `keys` of `source` into `result`; once the budget is spent the rest collapse into a single `[Truncated]` key. */
+function scrubProperties(source: object, keys: string[], depth: number, state: LogScrubState, result: Record<string, unknown>): Record<string, unknown> {
+  for (const key of keys) {
+    if (!spend(state)) {
+      result['[Truncated]'] = '[Truncated]';
+      break;
+    }
+    result[key] = scrubEntry(key, readLogField(source, key), depth, state);
+  }
+  return result;
 }
 
 /**
@@ -123,12 +145,6 @@ export const customErrorSerializer = (err: any) => {
   if (typeof err !== 'object') return serialized;
 
   // Include any additional custom properties from error object
-  const state: LogScrubState = { ancestors: new WeakSet([err]), visited: 0 };
-  Object.keys(err).forEach((key) => {
-    if (!['message', 'stack', 'name', 'constructor'].includes(key)) {
-      serialized[key] = scrubEntry(key, read(err, key), 1, state);
-    }
-  });
-
-  return serialized;
+  const keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  return scrubProperties(err, keys, 1, { ancestors: new WeakSet([err]), visited: 0 }, serialized);
 };

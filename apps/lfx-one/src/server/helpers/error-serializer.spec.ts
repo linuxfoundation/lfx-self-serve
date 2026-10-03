@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LOG_SCRUB_LIMITS } from '@lfx-one/shared/constants';
 import { ReplyError } from 'ioredis';
 import { describe, expect, it } from 'vitest';
 
@@ -127,5 +128,54 @@ describe('scrubLogField', () => {
       sid: '[REDACTED]',
       page_size: 10,
     });
+  });
+
+  it('redacts password fields under any prefix', () => {
+    const scrubbed = scrubLogField('data', {
+      password: 'a',
+      current_password: 'b',
+      new_password: 'c',
+      confirmPassword: 'd',
+      meeting_passwd: 'e',
+      password_policy: 'strict',
+    });
+
+    expect(scrubbed).toEqual({
+      password: '[REDACTED]',
+      current_password: '[REDACTED]',
+      new_password: '[REDACTED]',
+      confirmPassword: '[REDACTED]',
+      meeting_passwd: '[REDACTED]',
+      password_policy: 'strict',
+    });
+  });
+
+  it('stops walking a wide array at the node budget, ending it with one truncation marker', () => {
+    const scrubbed = scrubLogField(
+      'items',
+      Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES * 2 }, (_, index) => `item-${index}`)
+    ) as unknown[];
+
+    expect(scrubbed).toHaveLength(LOG_SCRUB_LIMITS.MAX_NODES + 1);
+    expect(scrubbed[0]).toBe('item-0');
+    expect(scrubbed.at(-1)).toBe('[Truncated]');
+  });
+
+  it('stops walking a wide object at the node budget, collapsing the rest into one truncation key', () => {
+    const wide = Object.fromEntries(Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES * 2 }, (_, index) => [`k${index}`, index]));
+    const scrubbed = scrubLogField('data', wide) as Record<string, unknown>;
+
+    expect(Object.keys(scrubbed)).toHaveLength(LOG_SCRUB_LIMITS.MAX_NODES + 1);
+    expect(scrubbed['k0']).toBe(0);
+    expect(scrubbed['[Truncated]']).toBe('[Truncated]');
+  });
+
+  it('shares one node budget across nested containers', () => {
+    const rows = Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES }, () => ({ a: 1, b: 2 }));
+    const scrubbed = scrubLogField('rows', rows) as unknown[];
+
+    // Each row costs three entries (itself, `a`, `b`), so the budget runs out a third of the way in.
+    expect(scrubbed.length).toBeLessThan(LOG_SCRUB_LIMITS.MAX_NODES / 2);
+    expect(scrubbed.at(-1)).toBe('[Truncated]');
   });
 });
