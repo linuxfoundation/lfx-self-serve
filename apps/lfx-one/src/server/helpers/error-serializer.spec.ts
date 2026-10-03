@@ -236,6 +236,27 @@ describe('scrubLogRecord', () => {
     expect(scrubbed['[Truncated]']).toBe('[Truncated]');
   });
 
+  it('stops at the budget without walking the remaining fields, but keeps a passthrough field listed after the cut-off', () => {
+    let reads = 0;
+    const record: Record<string, unknown> = { a: Object.fromEntries(Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES }, (_, index) => [`k${index}`, index])) };
+    for (let index = 0; index < 100; index++) {
+      Object.defineProperty(record, `late${index}`, {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return index;
+        },
+      });
+    }
+    const err = new Error('boom');
+    record['err'] = err;
+    const scrubbed = scrubLogRecord(record, ['err']);
+
+    expect(reads).toBe(0);
+    expect(scrubbed['[Truncated]']).toBe('[Truncated]');
+    expect(scrubbed['err']).toBe(err);
+  });
+
   it('copies passthrough fields as-is without charging them, and still scrubs the rest', () => {
     const err = new Error('boom');
     const scrubbed = scrubLogRecord({ err, access_token: ACCESS_TOKEN, data: { refresh_token: REFRESH_TOKEN } }, ['err']);
