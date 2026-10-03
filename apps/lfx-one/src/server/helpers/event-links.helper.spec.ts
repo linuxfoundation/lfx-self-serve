@@ -179,6 +179,18 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     expect([...links.values()], 'an unknown element was treated as a script').toEqual(['https://events.linuxfoundation.org/real']);
   });
 
+  it('reads the real href when the decoy is hidden behind MISMATCHED quotes', () => {
+    // A pattern like `["']([^"']*)["']` lets the opening and closing quote differ, so `title="x'`
+    // closes on the apostrophe and the scan resumes inside the title -- where the decoy then
+    // matches as a real `href` attribute. The three alternations each pin their own quote
+    // character, so the title's value is consumed as one unit.
+    const html = `<a title="x' href='https://evil.example/agenda'" href="/real">Agenda</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], "a decoy behind mismatched quotes was read as the page's link").toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
   it('reads the real href, not one hidden inside another attribute value', () => {
     // A regex that scans the tag for `href=` finds it inside ANOTHER attribute's value, because
     // the quotes around that value are just characters to it. `verifyPageLink` would then vouch

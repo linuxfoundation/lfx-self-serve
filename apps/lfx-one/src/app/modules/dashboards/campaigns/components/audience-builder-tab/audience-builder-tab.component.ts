@@ -560,14 +560,6 @@ export class AudienceBuilderTabComponent {
   });
 
   /**
-   * A single included list can be sent to as-is; only several lists need combining into a master.
-   *
-   * Gated on a settled suppression fetch, for the same fail-closed reason as `canCompose`: the
-   * exclusions this attach records are the ones ticked from that fetch, so attaching while it is in
-   * flight or failed records a send with no GDPR/CASL suppression. A past send's lists are not
-   * gated here — they carry the suppression that send actually used.
-   */
-  /**
    * Reusing an EXISTING master list needs the same settled suppression read that composing does.
    *
    * Separate from `canUseSelectionDirectly` only because that one additionally requires exactly
@@ -575,6 +567,14 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly canUseExistingMaster = computed(() => this.canAttach() && !this.suppressionLoading() && !this.suppressionFailed());
 
+  /**
+   * A single included list can be sent to as-is; only several lists need combining into a master.
+   *
+   * Gated on a settled suppression fetch, for the same fail-closed reason as `canCompose`: the
+   * exclusions this attach records are the ones ticked from that fetch, so attaching while it is in
+   * flight or failed records a send with no GDPR/CASL suppression. A past send's lists are not
+   * gated here — they carry the suppression that send actually used.
+   */
   protected readonly canUseSelectionDirectly = computed(
     () =>
       this.canAttach() &&

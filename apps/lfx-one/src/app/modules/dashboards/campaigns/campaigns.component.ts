@@ -2723,6 +2723,12 @@ export class CampaignsComponent {
       this.emailAudienceOrigin.set(null);
       this.emailAudienceUnattached.set(null);
       this.emailAudienceSkipped.set(false);
+      // Scoped to ONE brief like the signals above it. A failed read for brief A left this true
+      // with no restore pending -- a new brief clears `emailBriefId`, and `restoreEmailAudience`
+      // returns early on an empty id -- so compose stayed locked for every LATER brief whose
+      // audience had never been read and never failed. It fails closed, so no duplicate list is
+      // created, but the operator loses the primary action with nothing explaining why.
+      this.emailAudienceReadFailed.set(false);
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
@@ -3612,6 +3618,15 @@ export class CampaignsComponent {
       // was, and there is no action to offer for an audience the operator has not asked about. It
       // is still logged, for the same reason as the `result.error` arm above.
       console.error('[campaigns] Failed to restore the email audience', err);
+      // RECORDED here too. A read can fail two ways -- upstream answering with `error`, or the
+      // call rejecting -- and guarding only the first left this arm failing OPEN: `emailAudience`
+      // stays null, which is byte-identical to a brief that never had one, so the Audience tab
+      // offered compose and an outage that hid an existing audience let the operator create a
+      // SECOND HubSpot master list for the same brief. It is the same consequence either way, so
+      // it is the same guard either way.
+      if (isCurrent()) {
+        this.emailAudienceReadFailed.set(true);
+      }
     }
   }
 
@@ -4970,6 +4985,9 @@ export class CampaignsComponent {
     // Scoped to one brief like everything around it: the operator skipped THIS send's
     // audience, and carrying that onto the next brief would claim a decision never made.
     this.emailAudienceSkipped.set(false);
+    // Scoped to ONE brief, for the reason the stage switch clears it: a failed read for the brief
+    // just left would otherwise lock compose for every later brief. See `restoreEmailAudience`.
+    this.emailAudienceReadFailed.set(false);
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');

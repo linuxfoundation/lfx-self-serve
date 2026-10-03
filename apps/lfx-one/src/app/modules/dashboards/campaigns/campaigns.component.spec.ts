@@ -1875,12 +1875,14 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailAudienceOrigin: WritableSignal<'composed' | 'restored' | null>;
     emailAudienceUnattached: WritableSignal<AudienceComposedList | null>;
     emailAudienceSkipped: WritableSignal<boolean>;
+    emailAudienceReadFailed: WritableSignal<boolean>;
     onSkipAudienceStep(): void;
     onContinueToEmailStep(): void;
     onGoToAudienceStep(): void;
     onAudienceComposed(audience: CampaignAudience): void;
     onAudienceComposeUnattached(master: AudienceComposedList): void;
     restoreEmailAudience(projectSlug: string, briefId: string): Promise<void>;
+    resetEmailBriefDerivedState(): void;
     emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
     emailCopyError: WritableSignal<string>;
     canGenerateEmailCopy: Signal<boolean>;
@@ -3770,6 +3772,38 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       await expect(internals().restoreEmailAudience('tlf', 'brief-77')).resolves.toBeUndefined();
       expect(internals().emailAudience()).toBeNull();
+    });
+
+    // A read fails two ways -- upstream answering with `error`, or the call rejecting -- and the
+    // guard covered only the first. The thrown arm left the flag false, so compose was offered for
+    // a brief whose existing audience the outage had hidden, which is how a SECOND HubSpot master
+    // list gets created for one brief. Silent on screen and fail-closed underneath are both true.
+    it.each([
+      ['upstream answers with an error', { enabled: true, error: 'The saved audience could not be read.' }],
+      ['the call rejects', 'throw'],
+    ])('records the failure when %s', async (_label, outcome) => {
+      selectEmail();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(
+        (outcome === 'throw' ? throwError(() => new Error('network')) : of(outcome)) as never
+      );
+
+      await internals().restoreEmailAudience('tlf', 'brief-77');
+
+      expect(internals().emailAudienceReadFailed(), 'an unverified audience was treated as a verified absence').toBe(true);
+    });
+
+    // The failure belongs to ONE brief. Left set, it locked compose for every LATER brief whose
+    // audience had never been read and never failed -- a new brief clears `emailBriefId`, and the
+    // restore returns early on an empty id, so nothing would ever clear it but a page reload.
+    it('stops reporting a failure once the brief it belonged to is left', async () => {
+      selectEmail();
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(throwError(() => new Error('network')) as never);
+      await internals().restoreEmailAudience('tlf', 'brief-77');
+      expect(internals().emailAudienceReadFailed(), 'fixture precondition').toBe(true);
+
+      internals().resetEmailBriefDerivedState();
+
+      expect(internals().emailAudienceReadFailed(), "one brief's failed read locked compose for the next brief").toBe(false);
     });
   });
 
