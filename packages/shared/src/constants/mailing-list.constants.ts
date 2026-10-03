@@ -98,3 +98,9 @@ export const MAILING_LIST_TOTAL_STEPS = MAILING_LIST_STEP_TITLES.length;
  * explicitly. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
  */
 export const MAILING_LIST_DETAIL_CACHE_TTL_MS = 10 * 1000;
+
+/**
+ * Delay before re-fetching membership after a self-service join, giving the query-service index
+ * time to catch up with the write (PR #3211 review).
+ */
+export const MAILING_LIST_JOIN_REFRESH_DELAY_MS = 1000;

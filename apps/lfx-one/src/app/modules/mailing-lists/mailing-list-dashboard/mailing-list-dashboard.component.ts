@@ -81,6 +81,7 @@ export class MailingListDashboardComponent {
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
   public myMailingListsLoading = signal<boolean>(true);
+  public myMailingListsError = signal<boolean>(false);
 
   // Foundation + Project filter (Me lens only)
   public foundationFilter: WritableSignal<string | null> = signal<string | null>(null);
@@ -435,9 +436,10 @@ export class MailingListDashboardComponent {
       this.refresh.pipe(
         switchMap(() => {
           this.myMailingListsLoading.set(true);
+          this.myMailingListsError.set(false);
           return this.mailingListService.getMyMailingLists().pipe(
             catchError(() => {
-              this.myMailingListsLoading.set(false);
+              this.myMailingListsError.set(true);
               return of([] as MyMailingList[]);
             }),
             finalize(() => this.myMailingListsLoading.set(false))

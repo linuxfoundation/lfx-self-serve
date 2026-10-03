@@ -13,7 +13,13 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { COMMITTEE_LABEL, MAILING_LIST_DELIVERY_MODE_LABELS, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
+import {
+  COMMITTEE_LABEL,
+  MAILING_LIST_DELIVERY_MODE_LABELS,
+  MAILING_LIST_JOIN_REFRESH_DELAY_MS,
+  MAILING_LIST_LABEL,
+  MAILING_LIST_MAX_VISIBLE_GROUPS,
+} from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
 import { FilterOption, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
 import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
@@ -74,6 +80,7 @@ export class MailingListTableComponent {
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public loading = input<boolean>(false);
+  public membershipError = input<boolean>(false);
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
@@ -176,7 +183,7 @@ export class MailingListTableComponent {
           this.messageService.add({ severity: 'success', summary: 'Joined mailing list', detail: `You have joined ${listName}.` });
           // createMember intentionally skips index-poll wait on the hot path (LFXV2-2712), so an
           // immediate refetch can race the query-service index — give it a beat to catch up.
-          setTimeout(() => this.refresh.emit(), 1000);
+          setTimeout(() => this.refresh.emit(), MAILING_LIST_JOIN_REFRESH_DELAY_MS);
         },
         error: (err) => {
           console.error('Failed to join mailing list', err);
@@ -188,17 +195,18 @@ export class MailingListTableComponent {
   private initTableRows(): Signal<MailingListTableRowVm[]> {
     return computed(() => {
       const joinedUids = this.myMailingListUids();
-      // While myMailingListUids is still loading, it may not yet reflect the caller's actual
-      // memberships — don't show Join (which would incorrectly offer it for lists they already
-      // belong to) until it's settled.
+      // While myMailingListUids is still loading — or failed to load — it may not reflect the
+      // caller's actual memberships — don't show Join (which would incorrectly offer it for lists
+      // they already belong to) until a successful fetch has settled.
       const stillLoading = this.loading();
+      const membershipUnknown = this.membershipError();
       return this.mailingLists().map((mailingList) => {
         const myDeliveryMode = (mailingList as Partial<MyMailingList>).my_delivery_mode;
         return {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
-          canJoin: !stillLoading && mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
+          canJoin: !stillLoading && !membershipUnknown && mailingList.audience_access === MailingListAudienceAccess.PUBLIC && !joinedUids.has(mailingList.uid),
           mySubscriptionLabel: myDeliveryMode ? this.deliveryModeLabels[myDeliveryMode] : 'Subscribed',
         };
       });

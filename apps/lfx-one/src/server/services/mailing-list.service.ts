@@ -17,7 +17,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { AuthorizationError, ResourceNotFoundError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -545,6 +545,13 @@ export class MailingListService {
    * Creates a new member in a mailing list
    */
   public async createMember(req: Request, mailingListId: string, data: CreateMailingListMemberRequest): Promise<MailingListMember> {
+    if (typeof data.email !== 'string' || !data.email.trim()) {
+      throw ServiceValidationError.forField('email', 'A valid email is required', {
+        operation: 'create_mailing_list_member',
+        service: 'mailing_list_service',
+      });
+    }
+
     const grant = await this.assertMemberWriteAccess(req, mailingListId, data.email);
 
     if (grant === 'self') {

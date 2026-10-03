@@ -108,11 +108,19 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       const refreshSpy = vi.fn();
       fixture.componentInstance.refresh.subscribe(refreshSpy);
 
-      fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
+      vi.useFakeTimers();
+      try {
+        fixture.componentInstance['onJoin'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
-      expect(createMember).toHaveBeenCalledWith('list-1', expect.objectContaining({ email: 'me@example.com' }));
-      expect(refreshSpy).toHaveBeenCalled();
-      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+        expect(createMember).toHaveBeenCalledWith('list-1', expect.objectContaining({ email: 'me@example.com' }));
+        expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+        expect(refreshSpy).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(1000);
+        expect(refreshSpy).toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('shows an error toast and does not call createMember when the caller has no email', async () => {
