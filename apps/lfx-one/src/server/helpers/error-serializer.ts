@@ -159,25 +159,45 @@ export const scrubLogRecord = (record: object, passthrough: readonly string[]): 
 export const customErrorSerializer = (err: any) => {
   if (!err) return err;
 
+  // Every read is guarded: pino does not catch a serializer that throws, so one throwing getter
+  // (e.g. `code`) would otherwise make the whole `logger.error(...)` call throw.
+  const read = (key: string): any => readLogField(err, key);
+  const ctor = read('constructor');
+
   const serialized: any = {
-    type: err.constructor?.name || err.name || 'Error',
-    message: err.message || String(err),
+    type: (ctor ? readLogField(ctor, 'name') : undefined) || read('name') || 'Error',
+    message: read('message') || describe(err),
   };
 
   // Add common error properties if they exist
-  if (err.code) serialized.code = err.code;
-  if (err.statusCode) serialized.statusCode = err.statusCode;
-  if (err.status) serialized.status = err.status;
+  for (const key of ['code', 'statusCode', 'status']) {
+    const value = read(key);
+    if (value) serialized[key] = value;
+  }
 
   // Include stack trace in development or when debug logging is enabled
   if (process.env['NODE_ENV'] !== 'production' || process.env['LOG_LEVEL'] === 'debug') {
-    serialized.stack = err.stack;
+    serialized.stack = read('stack');
   }
 
   // Only an object has custom properties — a thrown string is fully described by `message` above.
   if (typeof err !== 'object') return serialized;
 
   // Include any additional custom properties from error object
-  const keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  let keys: string[];
+  try {
+    keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  } catch {
+    return serialized;
+  }
   return scrubProperties(err, keys, 1, { ancestors: new WeakSet([err]), visited: 0 }, serialized);
 };
+
+/** `String(value)`, or `[Unserializable]` when its `toString` throws. */
+function describe(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return '[Unserializable]';
+  }
+}
