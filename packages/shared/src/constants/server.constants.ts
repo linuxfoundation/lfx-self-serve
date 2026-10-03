@@ -48,18 +48,35 @@ export const SENSITIVE_FIELDS = [
  * `confirmPassword`, `x-api-key`, `SNOWFLAKE_API_KEY`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` and the like (and, as a deliberate over-redaction, pagination cursors such as
  * `next_page_token`).
  *
+ * Meeting secrets are listed as exact keys — `passcode`, `host_key`/`hostKey` and
+ * `chat_webhook_url` (a Slack Incoming Webhook URL is itself a bearer credential) — rather than
+ * suffixes, so flags such as `can_view_host_key` stay visible.
+ *
  * Deliberately exact-match (unlike `SENSITIVE_FIELDS`' substring match): this runs on every log
  * line, so a broad substring like `key` would mask harmless fields such as `cache_key`.
  */
-export const LOG_CREDENTIAL_KEYS = ['authorization', 'proxyauthorization', 'cookie', 'setcookie', 'bearer', 'jwt', 'sid', 'credentials'] as const;
+export const LOG_CREDENTIAL_KEYS = [
+  'authorization',
+  'proxyauthorization',
+  'cookie',
+  'setcookie',
+  'bearer',
+  'jwt',
+  'sid',
+  'credentials',
+  'passcode',
+  'hostkey',
+  'chatwebhookurl',
+] as const;
 
 /** Normalised-key suffixes that mark a value as a credential for the server's log scrubber. See `LOG_CREDENTIAL_KEYS`. */
 export const LOG_CREDENTIAL_KEY_SUFFIXES = ['token', 'tokens', 'secret', 'password', 'passwd', 'passphrase', 'apikey', 'privatekey'] as const;
 
 /**
  * Bounds for the server's log scrubber walk, so a huge or deeply nested object handed to the logger
- * cannot make each log call unboundedly expensive. `MAX_NODES` is charged per array element and
- * object property; once it is spent the rest of the container is replaced by a single `[Truncated]`
+ * cannot make each log call unboundedly expensive. `MAX_NODES` is one budget per log call (or per
+ * error, or per set of child bindings), charged per top-level field, array element and object
+ * property; once it is spent the rest of the container is replaced by a single `[Truncated]`
  * (array entry or object key), and anything nested deeper than `MAX_DEPTH` is logged as
  * `[Truncated]` — never passed through unscrubbed. So a very large logged array loses its tail; log
  * a count or a sample instead of a whole result set.

@@ -5,6 +5,6 @@
 export interface LogScrubState {
   /** Objects on the current path — a revisit is a cycle. */
   ancestors: WeakSet<object>;
-  /** Objects visited so far across the whole walk, capped at `LOG_SCRUB_LIMITS.MAX_NODES`. */
+  /** Array elements and object properties charged so far across the whole walk, capped at `LOG_SCRUB_LIMITS.MAX_NODES`. */
   visited: number;
 }

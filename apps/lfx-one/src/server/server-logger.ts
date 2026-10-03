@@ -9,7 +9,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
 
-import { customErrorSerializer, readLogField, scrubLogField } from './helpers/error-serializer';
+import { customErrorSerializer, readLogField, scrubLogRecord } from './helpers/error-serializer';
 import { SERVICE_NAME } from './server-tracer';
 
 /**
@@ -39,18 +39,14 @@ export function resSerializer(res: ServerResponse) {
 }
 
 /**
- * Deep-scrubs every log field except the ones a serializer owns — `err`/`error` run
- * `customErrorSerializer`, which applies the same scrub, and must still receive the raw Error so its
- * type/message/stack survive; `req`/`res` serializers are allowlists already. Each top-level read is
- * guarded too, so a throwing getter is logged as `[Unserializable]` instead of escaping the logger.
+ * Deep-scrubs every log field, under one node budget per call, except the ones a serializer owns —
+ * `err`/`error` run `customErrorSerializer`, which applies the same scrub under its own budget, and
+ * must still receive the raw Error so its type/message/stack survive; `req`/`res` serializers are
+ * allowlists already. Each top-level read is guarded too, so a throwing getter is logged as
+ * `[Unserializable]` instead of escaping the logger.
  */
 function scrubLogFields(object: Record<string, unknown>): Record<string, unknown> {
-  const scrubbed: Record<string, unknown> = {};
-  for (const key of Object.keys(object)) {
-    const value = readLogField(object, key);
-    scrubbed[key] = ['err', 'error', 'req', 'res'].includes(key) ? value : scrubLogField(key, value);
-  }
-  return scrubbed;
+  return scrubLogRecord(object, ['err', 'error', 'req', 'res']);
 }
 
 /**

@@ -102,8 +102,8 @@ function scrubProperties(source: object, keys: string[], depth: number, state: L
  *
  * Keys are matched, string contents are not: a token interpolated into a message or a string value
  * (e.g. a pre-serialized request body) is not detected, so never build log text from credentials.
- * Used by the pino `formatters.log` hook and child-binding scrub; `customErrorSerializer` applies
- * the same scrub to error properties.
+ * `scrubLogRecord` applies it to every field of a log call or child binding under one shared
+ * budget; `customErrorSerializer` applies the same scrub to error properties.
  */
 export const scrubLogField = (key: string, value: unknown): unknown => {
   try {
@@ -111,6 +111,32 @@ export const scrubLogField = (key: string, value: unknown): unknown => {
   } catch {
     return '[Unserializable]';
   }
+};
+
+/**
+ * Applies `scrubLogField` to every own enumerable field of one log call (or one set of child
+ * bindings), sharing a single `LOG_SCRUB_LIMITS.MAX_NODES` budget across all of them so the whole
+ * call stays bounded; each top-level field is charged too, and once the budget is spent the
+ * remaining fields collapse into a single `[Truncated]` key. `passthrough` fields are copied as-is
+ * (read guarded) without being charged — they are left for a pino serializer that bounds them itself.
+ */
+export const scrubLogRecord = (record: object, passthrough: readonly string[]): Record<string, unknown> => {
+  const state: LogScrubState = { ancestors: new WeakSet(), visited: 0 };
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(record)) {
+    if (passthrough.includes(key)) {
+      result[key] = readLogField(record, key);
+    } else if (!spend(state)) {
+      result['[Truncated]'] = '[Truncated]';
+    } else {
+      try {
+        result[key] = scrubEntry(key, readLogField(record, key), 0, state);
+      } catch {
+        result[key] = '[Unserializable]';
+      }
+    }
+  }
+  return result;
 };
 
 /**
