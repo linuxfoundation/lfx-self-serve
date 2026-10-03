@@ -9,7 +9,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
 
-import { customErrorSerializer } from './helpers/error-serializer';
+import { customErrorSerializer, scrubLogField } from './helpers/error-serializer';
 import { SERVICE_NAME } from './server-tracer';
 
 /**
@@ -36,6 +36,19 @@ export function resSerializer(res: ServerResponse) {
   return {
     statusCode: res.statusCode,
   };
+}
+
+/**
+ * Deep-scrubs every log field except the ones a serializer owns — `err`/`error` run
+ * `customErrorSerializer`, which applies the same scrub, and must still receive the raw Error so its
+ * type/message/stack survive; `req`/`res` serializers are allowlists already.
+ */
+function scrubLogFields(object: Record<string, unknown>): Record<string, unknown> {
+  const scrubbed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(object)) {
+    scrubbed[key] = ['err', 'error', 'req', 'res'].includes(key) ? value : scrubLogField(key, value);
+  }
+  return scrubbed;
 }
 
 /**
@@ -90,14 +103,18 @@ export const serverLogger = pino(
       req: reqSerializer,
       res: resSerializer,
     },
+    // Exact-path backstop; nested credentials are handled by `formatters.log` / the err serializer below.
     redact: {
-      paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
+      paths: ['access_token', 'refresh_token', 'id_token', 'authorization', 'cookie', 'err.command.args', 'error.command.args'],
       remove: true,
     },
     formatters: {
       level: (label) => {
         return { level: label.toUpperCase() };
       },
+      // `redact.paths` only matches exact paths, so a token nested under `data` (or anywhere else)
+      // would slip through. Deep-scrub every field instead (see `scrubLogFields`).
+      log: scrubLogFields,
       bindings: (bindings) => ({
         pid: bindings['pid'],
         hostname: bindings['hostname'],
@@ -107,3 +124,11 @@ export const serverLogger = pino(
   },
   prettyStream
 );
+
+// pino serializes `child()` bindings once, when the child is created, through neither
+// `formatters.log` nor (for children) `formatters.bindings` — scrub them here. Every child is an
+// `Object.create` of its parent, so children (pino-http's `req.log` included) inherit this override.
+const createChild = serverLogger.child;
+serverLogger.child = function (this: typeof serverLogger, bindings, options) {
+  return createChild.call(this, scrubLogFields(bindings), options);
+} as typeof serverLogger.child;

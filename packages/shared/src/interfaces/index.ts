@@ -405,3 +405,6 @@ export * from './project-application.interface';
 
 // LFX Insights API tokens (IN-1233)
 export * from './insights-tokens.interface';
+
+// Server log scrubber walk state
+export * from './log-scrub.interface';

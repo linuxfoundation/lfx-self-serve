@@ -39,6 +39,48 @@ export const SENSITIVE_FIELDS = [
 ] as const;
 
 /**
+ * Key names whose values are credentials and must never reach a log line, at any nesting depth.
+ * Matched by the server's log scrubber (`scrubLogField` in `helpers/error-serializer.ts`) after
+ * normalising the key — lowercased with every non-alphanumeric character stripped — so
+ * `set-cookie`, `Set-Cookie` and `setCookie` all match `setcookie`. Any normalised key ending in
+ * one of `LOG_CREDENTIAL_KEY_SUFFIXES` is treated as a credential too, which covers `access_token`,
+ * `refresh_token`, `id_token`, `impersonationToken`, `tokens`, `client_secret` and the like (and,
+ * as a deliberate over-redaction, pagination cursors such as `next_page_token`).
+ *
+ * Deliberately exact-match (unlike `SENSITIVE_FIELDS`' substring match): this runs on every log
+ * line, so a broad substring like `key` would mask harmless fields such as `cache_key`.
+ */
+export const LOG_CREDENTIAL_KEYS = [
+  'authorization',
+  'proxyauthorization',
+  'cookie',
+  'setcookie',
+  'password',
+  'passwd',
+  'bearer',
+  'apikey',
+  'xapikey',
+  'jwt',
+  'sid',
+  'credentials',
+  'privatekey',
+] as const;
+
+/** Normalised-key suffixes that mark a value as a credential for the server's log scrubber. See `LOG_CREDENTIAL_KEYS`. */
+export const LOG_CREDENTIAL_KEY_SUFFIXES = ['token', 'tokens', 'secret'] as const;
+
+/**
+ * Bounds for the server's log scrubber walk, so a huge or deeply nested object handed to the logger
+ * cannot make each log call unboundedly expensive. Anything past either bound is logged as
+ * `[Truncated]` rather than passed through unscrubbed — so a very large logged array loses its
+ * tail; log a count or a sample instead of a whole result set.
+ */
+export const LOG_SCRUB_LIMITS = {
+  MAX_DEPTH: 20,
+  MAX_NODES: 10_000,
+} as const;
+
+/**
  * Standard HTTP header names with correct casing
  */
 export const HTTP_HEADERS = {
