@@ -122,6 +122,63 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     expect(elapsed).toBeLessThan(500);
   });
 
+  // The inert-region blanker had the SAME quadratic shape the anchor bound above fixed, and the
+  // anchor test did not cover it: a lazy `[\s\S]*?` runs to the end of the input for every opener
+  // with no closer. Measured on the regex version: 20k chars 19ms, 40k 75ms, 80k 297ms, 160k
+  // 1250ms -- a clean 4x per doubling against a 5 MiB cap. It is an `indexOf` scan now, so each
+  // opener is consumed once.
+  it.each([
+    ['comment openers', '<!--'],
+    ['script openers', '<script>'],
+    ['style openers', '<style>'],
+  ])('stays linear on a page of unclosed %s', (_label, unit) => {
+    const html = unit.repeat(Math.floor(160_000 / unit.length));
+
+    const started = Date.now();
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+    const elapsed = Date.now() - started;
+
+    expect(links.size).toBe(0);
+    // An order of magnitude under the 1250ms the regex version took at this size, so relaxing it
+    // back to a lazy quantifier fails here loudly.
+    expect(elapsed).toBeLessThan(300);
+  });
+
+  it.each([
+    ['comment', '<!--'],
+    ['script', '<script>'],
+    ['style', '<style>'],
+  ])('ignores anchors after an unterminated %s, as a browser does', (_label, opener) => {
+    // An unterminated opener swallows the rest of the document in a browser, so nothing after it
+    // is a link the page shows. Stopping at the opener instead left every later anchor in the map
+    // and `verifyPageLink` vouched for destinations the page never renders.
+    const html = `<a href="https://events.linuxfoundation.org/real">Real</a>${opener}<a href="https://evil.example/fake">Fake</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('closes a script whose end tag carries trailing characters', () => {
+    // A browser ends the element at the tag NAME, so `</script >` closes it. Requiring the exact
+    // `</script>` left the rest of the document inert and dropped every real link after it.
+    const html = `<script><a href="https://evil.example/fake">x</a></script ><a href="https://events.linuxfoundation.org/real">Real</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()]).toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('treats an element that merely starts with a reserved name as ordinary markup', () => {
+    // `<scriptfoo>` is an unknown element a browser renders normally. Matching the opener as a bare
+    // prefix blanked from there to the end of the document, so every real link after it vanished.
+    const html = `<scriptfoo><a href="https://events.linuxfoundation.org/real">Real</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], 'an unknown element was treated as a script').toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
   it('reads the real href, not one hidden inside another attribute value', () => {
     // A regex that scans the tag for `href=` finds it inside ANOTHER attribute's value, because
     // the quotes around that value are just characters to it. `verifyPageLink` would then vouch

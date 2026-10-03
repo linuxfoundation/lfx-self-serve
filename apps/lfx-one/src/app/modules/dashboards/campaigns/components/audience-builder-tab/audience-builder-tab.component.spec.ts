@@ -1577,6 +1577,67 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="audience-last-sent-attach-unavailable"]')).not.toBeNull();
     });
 
+    // A second send on the SAME master, differing only in its exclusions -- the pair that made
+    // matching on the master alone wrong.
+    const SIBLING_SEND: AudienceLastSentEmail = {
+      ...PAST_SEND,
+      emailId: 'em-8',
+      emailName: 'Synthetic Summit 2026 - Final call',
+      sentAt: '2026-02-01T15:00:00Z',
+      suppressionLists: [{ listId: '888', name: 'Synthetic Summit - Opened already', size: 90, missing: false }],
+    };
+
+    /** Renders with BOTH sends on master 501, so only the exclusions tell them apart. */
+    async function renderWithSiblingSends(): Promise<void> {
+      getAudienceLastSent.mockReturnValue(of([PAST_SEND, SIBLING_SEND]));
+      await render({ briefId: 'brief-1' });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    function badgeFor(emailId: string): string {
+      return host().querySelector(`[data-testid="audience-last-sent-use-${emailId}"]`)?.textContent?.trim() ?? '';
+    }
+
+    it('marks only the send whose exclusions were actually recorded', async () => {
+      await renderWithSiblingSends();
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['201', '777'],
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+
+      click('audience-last-sent-use-em-7');
+
+      expect(badgeFor('em-7')).toContain('Same lists used for this email');
+      expect(badgeFor('em-8'), 'a send sharing the master but not the exclusions read as attached').toContain('Use these lists for this email');
+    });
+
+    // The exclusions are read off the attach RESULT, not off what was sent, so a failed attach
+    // cannot leave the master from the successful write beside the exclusions from the failed one.
+    it('keeps describing the recorded selection after a later attach fails', async () => {
+      await renderWithSiblingSends();
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['201', '777'],
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+      click('audience-last-sent-use-em-7');
+      expect(badgeFor('em-7'), 'fixture precondition').toContain('Same lists used for this email');
+
+      attachExistingAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { message: 'HubSpot rejected the list' } })));
+      click('audience-last-sent-use-em-8');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]'), 'fixture precondition').not.toBeNull();
+      expect(badgeFor('em-8'), "the failed attempt's exclusions were reported as the brief's").toContain('Use these lists for this email');
+      expect(badgeFor('em-7'), 'the recorded selection stopped being reported after an unrelated failure').toContain('Same lists used for this email');
+    });
+
     it('shows the server error when an attach fails', async () => {
       await renderWithPastSend('brief-1');
       attachExistingAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { message: 'HubSpot rejected the list' } })));

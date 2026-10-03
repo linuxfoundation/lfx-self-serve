@@ -22,12 +22,123 @@ const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
  *
  * Blanked to SPACES rather than removed, so every surviving tag keeps its original offset and the
  * `MAX_PAGE_LINKS` bound still measures the same document.
+ *
+ * Scanned with `indexOf` rather than `/<!--[\s\S]*?-->/g` and friends. A lazy `[\s\S]*?` runs to
+ * the end of the input for every opener that has no closer, so an opener repeated k times costs
+ * O(n^2): measured on `'<!--'.repeat(k)`, 20k chars took 19ms, 40k 75ms, 80k 297ms and 160k
+ * 1250ms -- a clean 4x per doubling, and the fetch cap is 5 MiB. `extractPageLinks` runs this
+ * synchronously on an operator-supplied URL's body, so one hostile page stalls every other
+ * request on the single-threaded SSR process. Same class as the `ANCHOR_TAG_RE` bound above.
+ * Each opener is consumed exactly once here, so the whole pass is linear.
+ *
+ * An opener with NO closer blanks to the end of the input, which is what a browser renders: an
+ * unterminated `<!--` or `<script>` swallows the rest of the document. Stopping at the opener
+ * instead left every later anchor in the map, so one trailing `<!--` was enough to make
+ * `verifyPageLink` vouch for destinations the page never shows.
  */
 function withoutInertRegions(html: string): string {
-  return html
-    .replace(/<!--[\s\S]*?-->/g, (match) => ' '.repeat(match.length))
-    .replace(/<script\b[^<>]*>[\s\S]*?<\/script\s*>/gi, (match) => ' '.repeat(match.length))
-    .replace(/<style\b[^<>]*>[\s\S]*?<\/style\s*>/gi, (match) => ' '.repeat(match.length));
+  // Lower-cased once, not per region kind per iteration. Lower-casing cannot change the length of
+  // an ASCII tag name, so every offset found in it indexes the same character in `html`.
+  const lower = html.toLowerCase();
+  const out: string[] = [];
+  let at = 0;
+  for (;;) {
+    const region = nextInertRegion(html, lower, at);
+    if (region === null) {
+      out.push(html.slice(at));
+      return out.join('');
+    }
+    out.push(html.slice(at, region.start), ' '.repeat(region.end - region.start));
+    at = region.end;
+  }
+}
+
+/**
+ * Whether a matched tag-name prefix actually ENDS at `at` -- the `\b` the old regex carried.
+ *
+ * `<script>` and `<script src=x>` open an element; `<scriptfoo>` does not, and treating it as one
+ * blanked to the end of the document. A tag name ends at `>`, `/`, or whitespace.
+ */
+function opensAnElement(lower: string, at: number): boolean {
+  const next = lower[at];
+  return next === undefined || next === '>' || next === '/' || /\s/.test(next);
+}
+
+/** Every region kind, with the closer that ends it and how that closer is spelled. */
+const INERT_REGIONS: readonly {
+  readonly opener: string;
+  readonly closer: string;
+  readonly isTagName: boolean;
+  readonly closerNeedsGt: boolean;
+}[] = [
+  // `<!--` is not a tag name, so no name boundary follows it: `<!--<a href=...` opens a comment.
+  // Its closer is COMPLETE as written -- `-->` already carries its own `>`.
+  { opener: '<!--', closer: '-->', isTagName: false, closerNeedsGt: false },
+  // These closers stop at the tag NAME, so the region ends at the first `>` after it.
+  { opener: '<script', closer: '</script', isTagName: true, closerNeedsGt: true },
+  { opener: '<style', closer: '</style', isTagName: true, closerNeedsGt: true },
+];
+
+/**
+ * The first inert region at or after `from`, or `null` when none remains.
+ *
+ * The opener search is case-insensitive because `<SCRIPT>` is the same element, and so is the
+ * closer search: `</Script >` ends it. `indexOf` is case-SENSITIVE, so both sides work on a
+ * lower-cased copy and index back into the original -- lower-casing cannot change the length of
+ * an ASCII tag name, so the offsets stay aligned with `html`.
+ *
+ * The closer is matched WITHOUT its `>`, so `</script foo>` and `</script\n>` both close. A
+ * browser ends the element at the tag name; requiring the exact `>` meant `</script >` did not
+ * close and the rest of the document stayed live.
+ *
+ * A tag-name opener only counts when the NAME ends there -- see `opensAnElement`. A bare `indexOf`
+ * prefix matched `<scriptfoo>`, which is an unknown element a browser renders normally, and blanked
+ * the rest of the document: every real link on a page containing that string disappeared. `<!--`
+ * carries `isTagName: false` and is exempt, because it is not a tag name and `<!--<a href=...` is
+ * a comment; applying the check to it left unterminated comments entirely unblanked.
+ */
+function nextInertRegion(html: string, lower: string, from: number): { start: number; end: number } | null {
+  // The EARLIEST opener is chosen first, and only then is its own closer looked up. Taking the
+  // closer from whichever kind was examined last instead let a later kind overwrite the winner,
+  // so a `<script>` body between a comment and a `<style>` survived the pass entirely.
+  let winner: { start: number; kind: (typeof INERT_REGIONS)[number] } | null = null;
+  for (const kind of INERT_REGIONS) {
+    const start = openerIndex(lower, kind, from);
+    if (start !== -1 && (winner === null || start < winner.start)) {
+      winner = { start, kind };
+    }
+  }
+  if (winner === null) {
+    return null;
+  }
+  const { start, kind } = winner;
+  const closeAt = lower.indexOf(kind.closer, start + kind.opener.length);
+  if (closeAt === -1) {
+    // No closer: the region runs to the end of the document, exactly as a browser treats it.
+    return { start, end: html.length };
+  }
+  const afterCloser = closeAt + kind.closer.length;
+  if (!kind.closerNeedsGt) {
+    return { start, end: afterCloser };
+  }
+  // `</script` stops at the tag name, so the region ends at the first `>` after it -- that is what
+  // lets `</script >` close. Searching for a `>` after a closer that ALREADY ends in one (`-->`)
+  // ran on past it and swallowed the next tag's `>`: `<!--x--><script>` had the script's own
+  // opening tag consumed by the comment, so the script body was never recognised as inert.
+  const gt = html.indexOf('>', afterCloser);
+  return { start, end: gt === -1 ? html.length : gt + 1 };
+}
+
+/** The first real opener of this kind at or after `from`, skipping tag-name prefix matches. */
+function openerIndex(lower: string, kind: (typeof INERT_REGIONS)[number], from: number): number {
+  let at = from;
+  for (;;) {
+    at = lower.indexOf(kind.opener, at);
+    if (at === -1 || !kind.isTagName || opensAnElement(lower, at + kind.opener.length)) {
+      return at;
+    }
+    at += kind.opener.length;
+  }
 }
 
 /**

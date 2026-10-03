@@ -241,7 +241,6 @@ export class AudienceBuilderTabComponent {
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
    */
-  private readonly attachedExclusionIds = signal<readonly string[]>([]);
 
   /**
    * Which of the two audience writes recorded LAST.
@@ -460,6 +459,28 @@ export class AudienceBuilderTabComponent {
     return composedForThisBrief && composed ? composed.master.listId : (attached?.master.listId ?? null);
   });
 
+  /**
+   * The exclusions behind the current attachment, so a prior send can be matched on its FULL
+   * selection rather than its master alone.
+   *
+   * Two sends can share master 501 with different exclusions, and comparing masters alone marked
+   * both "Same lists used for this email" -- disabling both reuse buttons and leaving the operator
+   * unable to pick the other send's suppressions.
+   *
+   * Read off the SAME result `attachedListId` reads, and off the attach arm only. Recording what
+   * was SENT at dispatch time let a failed attach leave the master from the successful write beside
+   * the exclusions from the failed one, describing a selection the brief does not have -- which is
+   * the mismatch this is here to remove. Upstream returns what it persisted, so a successful attach
+   * is the only thing that can move either half, and the two cannot disagree.
+   */
+  protected readonly attachedExclusions = computed<readonly string[]>(() => {
+    const attached = this.attachResult();
+    if (attached === null || this.attachedListId() !== attached.master.listId) {
+      return [];
+    }
+    return [...new Set(attached.suppressionListIds)].filter((id) => id !== attached.master.listId);
+  });
+
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
   private readonly sizeIndex = computed(() => {
     const sizes = new Map<string, number>();
@@ -552,9 +573,6 @@ export class AudienceBuilderTabComponent {
    * Separate from `canUseSelectionDirectly` only because that one additionally requires exactly
    * one inclusion; the readiness half is identical and is the half that matters here.
    */
-  /** The exclusions behind the current attachment, for matching a prior send's full selection. */
-  protected readonly attachedExclusions = computed<readonly string[]>(() => (this.attachedListId() === null ? [] : this.attachedExclusionIds()));
-
   protected readonly canUseExistingMaster = computed(() => this.canAttach() && !this.suppressionLoading() && !this.suppressionFailed());
 
   protected readonly canUseSelectionDirectly = computed(
@@ -1214,11 +1232,6 @@ export class AudienceBuilderTabComponent {
     const sentExclusions = [...new Set(suppressionListIds)].filter((id) => id !== masterListId);
     this.attachingId.set(busyId);
     this.attachError.set(null);
-    // Remembered so a prior send can be matched on its FULL selection, not its master alone.
-    // Two sends can share master 501 with different exclusions, and comparing ids alone marked
-    // both "Same lists used for this email" -- disabling both reuse buttons and leaving the
-    // operator unable to pick the other send's suppressions.
-    this.attachedExclusionIds.set(sentExclusions);
     this.campaignService
       .attachExistingAudience(this.projectSlug(), {
         briefId,
