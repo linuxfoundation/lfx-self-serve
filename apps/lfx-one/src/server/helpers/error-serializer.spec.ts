@@ -150,6 +150,17 @@ describe('scrubLogField', () => {
     expect(JSON.parse(line)).toEqual({ value: { access_token: '[REDACTED]', note: 'kept' }, list: [null] });
   });
 
+  it('passes toJSON the key JSON.stringify would — root, property or index — and calls it once', () => {
+    const keyed = () => ({ toJSON: (key: string) => ({ key }) });
+    const root = keyed();
+    const nested = { inner: keyed(), list: [keyed()], once: { toJSON: () => ({ id: 1, toJSON: () => 'second call' }) } };
+
+    expect(scrubLogField('data', root)).toEqual({ key: '' });
+    expect(scrubLogField('data', nested)).toEqual({ inner: { key: 'inner' }, list: [{ key: '0' }], once: { id: 1 } });
+    expect(JSON.parse(JSON.stringify(scrubLogField('data', nested)))).toEqual(JSON.parse(JSON.stringify(nested)));
+    expect(customErrorSerializer(Object.assign(new Error('failed'), { details: keyed() })).details).toEqual({ key: 'details' });
+  });
+
   it('reduces a Redis command to its name under any key, leaving other `command` values alone', () => {
     const scrubbed = scrubLogField('data', { cmd: { name: 'set', args: [RAW_KEY, ACCESS_TOKEN] }, command: { name: 'deploy', target: 'prod' } });
 
@@ -304,5 +315,18 @@ describe('scrubLogRecord', () => {
     expect(scrubbed['err']).toBe(err);
     expect(scrubbed['access_token']).toBe('[REDACTED]');
     expect(scrubbed['data']).toEqual({ refresh_token: '[REDACTED]' });
+  });
+
+  it('logs a marker instead of throwing when listing the fields throws', () => {
+    const record = new Proxy(
+      { access_token: ACCESS_TOKEN },
+      {
+        ownKeys() {
+          throw new Error('ownKeys failed');
+        },
+      }
+    );
+
+    expect(scrubLogRecord(record, ['err'])).toEqual({ '[Unserializable]': '[Unserializable]' });
   });
 });
