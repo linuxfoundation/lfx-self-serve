@@ -1104,10 +1104,19 @@ export class CampaignServiceClient {
       // for `list-audiences`, so reading `response.data` as the array would always see nothing.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceListResponse>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
 
-      // An absent array is an empty one, not an error: a brief with no audience yet is the
-      // ordinary first-visit state, and reporting it as a failure would put an error banner on
-      // every new campaign.
-      const rows = Array.isArray(response.data?.audiences) ? response.data.audiences : [];
+      // An absent array is MALFORMED, not empty. `design/audience.go` declares
+      // `Required("audiences")` on list-audiences and the implementation returns `[]` when a
+      // brief has no rows -- so the ordinary first-visit state arrives as an explicit empty
+      // array, and a missing field means the response is not the one this contract promises.
+      //
+      // Coercing it to `[]` reported an unreadable response as a successful empty read, which
+      // CLEARED the restore failure guard and re-permitted a non-idempotent HubSpot compose --
+      // the exact duplicate-master path that guard exists to close.
+      if (!Array.isArray(response.data?.audiences)) {
+        logger.warning(req, 'list_audiences', 'Audience read-back returned no audiences array', {});
+        return { enabled: true, error: 'The saved audience for this brief could not be read. Reload to try again.' };
+      }
+      const rows = response.data.audiences;
       return {
         enabled: true,
         audiences: rows.filter((row): row is CampaignServiceAudienceList => Boolean(row?.id)).map((row) => this.toCampaignAudience(row)),

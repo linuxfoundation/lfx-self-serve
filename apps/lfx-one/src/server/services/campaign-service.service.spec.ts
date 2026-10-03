@@ -2386,12 +2386,27 @@ describe('CampaignServiceClient.listAudiences', () => {
     expect(result.audiences?.[0].etag).toBeUndefined();
   });
 
-  it('treats an absent or non-array list as empty, not as an error', async () => {
+  it('reports a response with no audiences array as an error, not as empty', async () => {
+    // `design/audience.go` declares `Required("audiences")` and the implementation returns `[]`
+    // for a brief with no rows -- so the ordinary first-visit state arrives as an EXPLICIT empty
+    // array, and a missing field means the response is not the one the contract promises.
+    //
+    // Coercing it to `[]` reported an unreadable response as a successful empty read, which
+    // cleared the restore failure guard and re-permitted a non-idempotent HubSpot compose: the
+    // exact duplicate-master path that guard exists to close.
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({}));
 
     const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    // A brief with no audience yet is the ordinary first-visit state.
+    expect(result.audiences, 'a malformed response was reported as a verified empty read').toBeUndefined();
+    expect(result.error).toBeTruthy();
+  });
+
+  it('treats an EXPLICIT empty array as the ordinary first-visit state', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
     expect(result).toEqual({ enabled: true, audiences: [] });
   });
 

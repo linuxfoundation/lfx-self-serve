@@ -123,6 +123,13 @@ export class EmailBodyPreviewComponent {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Every link opens in a NEW tab.
+     The callers' \`stripResourceLoadingHtml\` keeps only \`href\` on an anchor, so no link here
+     carries a target of its own and all of them default to \`_self\` -- clicking one REPLACES the
+     preview inside the sandbox, with no way back, and a site that refuses framing cannot be
+     checked there at all. \`allow-popups\` permits a new tab but does not choose one; this does.
+     Set on \`base\` rather than per anchor because the anchors are not ours to rewrite. -->
+<base target="_blank">
 <style>
   html, body { margin: 0; padding: 0; background: #ffffff; }
   body {

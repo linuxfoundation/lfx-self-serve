@@ -13,6 +13,24 @@
 const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
 
 /**
+ * `html` with the regions a browser never renders as markup blanked out.
+ *
+ * Scanning the raw source treated an anchor inside a COMMENT or a `<script>`/`<style>` body as a
+ * real link, so `<!-- <a href="https://evil.example/fake">x</a> -->` entered the map and
+ * `verifyPageLink` then vouched for a destination the page does not link to at all. A page author
+ * -- or a model reading the same source -- can put anything there.
+ *
+ * Blanked to SPACES rather than removed, so every surviving tag keeps its original offset and the
+ * `MAX_PAGE_LINKS` bound still measures the same document.
+ */
+function withoutInertRegions(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, (match) => ' '.repeat(match.length))
+    .replace(/<script\b[^<>]*>[\s\S]*?<\/script\s*>/gi, (match) => ' '.repeat(match.length))
+    .replace(/<style\b[^<>]*>[\s\S]*?<\/style\s*>/gi, (match) => ' '.repeat(match.length));
+}
+
+/**
  * One attribute inside an already-isolated tag: its name, and its quoted value.
  *
  * Walked attribute by attribute rather than searched for `href=` directly. A regex that scans
@@ -28,7 +46,7 @@ const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
  * `\s` before the name, not `\b`: `\b` also matches the tail of `data-href`, so a framework's
  * lazy-load attribute was read as the link the page renders.
  */
-const ATTR_RE = /\s([a-zA-Z][\w:-]*)\s*=\s*["']([^"']*)["']/g;
+const ATTR_RE = /\s([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
 
 /**
  * HTML entities for `&` as they appear in an href.
@@ -58,7 +76,12 @@ function hrefOf(tag: string): string {
   ATTR_RE.lastIndex = 0;
   for (let attr = ATTR_RE.exec(tag); attr !== null; attr = ATTR_RE.exec(tag)) {
     if (attr[1].toLowerCase() === 'href') {
-      return attr[2].replace(AMP_ENTITY_RE, '&');
+      // Three alternations: double-quoted, single-quoted, and UNQUOTED. HTML permits
+      // `href=/agenda` with no quotes, and a pattern that required them dropped a real event
+      // link -- rejecting the page's own destination is the same failure as accepting a forged
+      // one, just quieter.
+      const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+      return value.replace(AMP_ENTITY_RE, '&');
     }
   }
   return '';
@@ -87,9 +110,14 @@ function normalizeForCompare(candidate: string, baseUrl: string): string | null 
     if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
       return null;
     }
+    // The FRAGMENT is kept, because on a single-page event site it is the whole destination.
+    // Dropping it merged `#agenda` and `#cfp` into one key, so the map held only whichever came
+    // first and `verifyPageLink('…#cfp')` returned the AGENDA link -- a generated email sending
+    // readers to the wrong section of a page the model had quoted exactly.
+    const hash = resolved.hash;
     resolved.hash = '';
     const path = resolved.pathname.length > 1 ? resolved.pathname.replace(/\/$/, '') : resolved.pathname;
-    return `${resolved.protocol}//${resolved.host.toLowerCase()}${path}${resolved.search}`;
+    return `${resolved.protocol}//${resolved.host.toLowerCase()}${path}${resolved.search}${hash}`;
   } catch {
     return null;
   }
@@ -123,7 +151,7 @@ function pageHref(resolved: URL): string {
 export function extractPageLinks(html: string, baseUrl: string): Map<string, string> {
   const links = new Map<string, string>();
   try {
-    for (const tag of html.matchAll(ANCHOR_TAG_RE)) {
+    for (const tag of withoutInertRegions(html).matchAll(ANCHOR_TAG_RE)) {
       if (links.size >= MAX_PAGE_LINKS) break;
       const raw = hrefOf(tag[0]);
       if (raw === '') continue;
@@ -166,5 +194,31 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
   if (!normalized) {
     return '';
   }
-  return pageLinks.get(normalized) ?? '';
+  const exact = pageLinks.get(normalized);
+  if (exact !== undefined) {
+    return exact;
+  }
+
+  // Fragment-less fallback, allowed ONLY when it is unambiguous.
+  //
+  // Keys carry their fragment, so a model that wrote `/agenda` for a page whose only link is
+  // `/agenda#schedule` would otherwise fail verification on a link the page really does render.
+  // But if the page links to `/agenda#day1` AND `/agenda#day2`, there is no single destination
+  // `/agenda` means -- picking one would send readers to a section nobody chose, which is the
+  // defect this fallback must not reintroduce. Ambiguity therefore refuses.
+  if (normalized.includes('#')) {
+    return '';
+  }
+  const prefix = `${normalized}#`;
+  let onlyMatch = '';
+  for (const [key, href] of pageLinks) {
+    if (!key.startsWith(prefix)) {
+      continue;
+    }
+    if (onlyMatch !== '') {
+      return '';
+    }
+    onlyMatch = href;
+  }
+  return onlyMatch;
 }

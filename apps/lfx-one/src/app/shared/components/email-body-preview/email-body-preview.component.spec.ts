@@ -46,6 +46,19 @@ describe('EmailBodyPreviewComponent', () => {
   // The regression this component exists to prevent. `[innerHTML]` stripped `style` through
   // `SecurityContext.HTML`; the campaign service's email styling is entirely inline, so a preview
   // that drops it shows the operator layout the recipient will never see.
+  //
+  // SCOPE, because this test is easy to over-read: it proves THIS component does not strip a
+  // style it is handed. It does NOT prove the operator sees styling, and today they do not --
+  // every caller passes the body through `stripResourceLoadingHtml` first, whose
+  // `allowedAttributes` (html-utils.ts) permits only `href`, `colspan` and `rowspan`. Measured
+  // against the real allowlist, `<p style="color:#2563eb">Join us</p>` arrives here as
+  // `<p>Join us</p>`, so all four real previews lose the generated colours and typography.
+  //
+  // Restoring them means admitting a safe SUBSET of inline CSS through that sanitizer -- `url()`,
+  // `expression()` and `position:fixed` all have to be refused -- which is a security decision
+  // about the shared helper rather than a change to this component. Tracked separately; this
+  // comment exists so the next reader does not take a green test here as evidence the preview is
+  // styled.
   it('carries inline styles into the frame instead of stripping them', async () => {
     const srcdoc = (await render('<p style="color:#2563eb;font-weight:bold">Join us</p>'))?.getAttribute('srcdoc');
 

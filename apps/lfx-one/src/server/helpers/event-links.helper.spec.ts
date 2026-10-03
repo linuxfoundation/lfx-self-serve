@@ -26,15 +26,56 @@ describe('extractPageLinks', () => {
     expect(extractPageLinks(html, BASE_URL).size).toBe(0);
   });
 
-  it('keeps the query string but drops the fragment from the key', () => {
-    const html = `<a href="/agenda?day=2#morning">Day 2</a>`;
-    const links = extractPageLinks(html, BASE_URL);
-    expect(links.has('https://example.com/agenda?day=2')).toBe(true);
+  it('keeps the query string AND the fragment in the key', () => {
+    // The fragment is part of the key now. Dropping it merged distinct destinations on one page:
+    // `#agenda` and `#cfp` collapsed to a single entry, so verification returned whichever
+    // anchor came first and a generated email sent readers to the wrong section.
+    const links = extractPageLinks(`<a href="/agenda?day=2#morning">Day 2</a>`, BASE_URL);
+
+    expect(links.has('https://example.com/agenda?day=2#morning')).toBe(true);
   });
 
-  it('keeps the fragment on the stored href', () => {
-    const links = extractPageLinks(`<a href="/program#day-2">Day 2</a>`, BASE_URL);
-    expect(links.get('https://example.com/program')).toBe('https://example.com/program#day-2');
+  it('keeps two fragments on one page apart', () => {
+    const links = extractPageLinks(`<a href="/info#agenda">A</a><a href="/info#cfp">C</a>`, BASE_URL);
+
+    expect(verifyPageLink('https://example.com/info#cfp', links, BASE_URL)).toBe('https://example.com/info#cfp');
+    expect(verifyPageLink('https://example.com/info#agenda', links, BASE_URL)).toBe('https://example.com/info#agenda');
+  });
+
+  it('resolves a fragment-less candidate only when one fragment link matches', () => {
+    // The page links `/agenda#schedule` and a model writes `/agenda`: one destination, so it
+    // resolves. Two fragments under the same path mean no single destination `/agenda` names, and
+    // picking one would send readers to a section nobody chose.
+    const one = extractPageLinks(`<a href="/agenda#schedule">S</a>`, BASE_URL);
+    expect(verifyPageLink('https://example.com/agenda', one, BASE_URL)).toBe('https://example.com/agenda#schedule');
+
+    const two = extractPageLinks(`<a href="/agenda#day1">1</a><a href="/agenda#day2">2</a>`, BASE_URL);
+    expect(verifyPageLink('https://example.com/agenda', two, BASE_URL), 'an ambiguous fallback picked a section nobody chose').toBe('');
+  });
+
+  it('ignores anchors inside comments, scripts and styles', () => {
+    // Scanning the raw source treated inert text as markup, so a commented-out or
+    // script-embedded anchor entered the map and `verifyPageLink` vouched for a destination the
+    // page does not link to at all.
+    const html =
+      `<!-- <a href="https://evil.example/fake">x</a> -->` +
+      `<script>var s = '<a href="https://evil.example/js">y</a>';</script>` +
+      `<style>/* <a href="https://evil.example/css">z</a> */</style>` +
+      `<a href="/real">Agenda</a>`;
+
+    const links = extractPageLinks(html, BASE_URL);
+
+    expect(links.size, 'an anchor a browser never renders was collected').toBe(1);
+    expect(verifyPageLink('https://evil.example/fake', links, BASE_URL)).toBe('');
+    expect(verifyPageLink('https://example.com/real', links, BASE_URL)).toBe('https://example.com/real');
+  });
+
+  it('accepts an unquoted href', () => {
+    // HTML permits `href=/agenda`. Requiring quotes dropped a real event link -- rejecting the
+    // page's own destination is the same failure as accepting a forged one, just quieter.
+    const links = extractPageLinks(`<a href=/agenda>Agenda</a>`, BASE_URL);
+
+    expect(verifyPageLink('https://example.com/agenda', links, BASE_URL)).toBe('https://example.com/agenda');
   });
 
   it('keeps the first href when two hrefs share one key', () => {
