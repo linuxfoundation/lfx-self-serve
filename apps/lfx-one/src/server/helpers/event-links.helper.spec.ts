@@ -144,6 +144,49 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     expect(elapsed).toBeLessThan(300);
   });
 
+  // The unclosed-opener specs above passed while CLOSED regions were still quadratic: re-searching
+  // all three kinds from the cursor on every region made a document of k closed regions O(n*k),
+  // because a kind with no remaining opener scanned to the end of the input each time. Measured
+  // before the opener cache: 70k chars 365ms, 140k 1442ms, 280k 5741ms. Now 5ms at 280k.
+  it.each([
+    ['closed comments', '<!---->'],
+    ['closed scripts', '<script></script>'],
+    ['closed styles', '<style></style>'],
+  ])('stays linear on a page of %s', (_label, unit) => {
+    const html = unit.repeat(Math.floor(560_000 / unit.length));
+
+    const started = Date.now();
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+    const elapsed = Date.now() - started;
+
+    expect(links.size).toBe(0);
+    // 560k is 4x the size at which the uncached scan already took 1.4s, so a regression here is
+    // measured in seconds and cannot hide under this bound.
+    expect(elapsed).toBeLessThan(300);
+  });
+
+  // `toLowerCase()` lower-cases the WHOLE document and some characters change length doing so --
+  // `İ` (U+0130) becomes two code units -- so every later offset drifted relative to the original.
+  // The blanked span landed in the wrong place: a real link was dropped, and an attacker-controlled
+  // prefix could shift a blank region off its script onto live markup. LF runs İstanbul events.
+  it('keeps offsets aligned when the page contains a length-changing character', () => {
+    const html = 'İİİİİ<script>x</script><a href="https://events.linuxfoundation.org/real">Real</a>';
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], 'a length-changing character shifted the blanked region off its script').toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('still blanks a script that follows a length-changing character', () => {
+    // The other direction of the same drift: the region must not slide OFF the script either, or a
+    // decoy inside it becomes a link the page is said to carry.
+    const html = 'İ<script><a href="https://evil.example/fake">x</a></script><a href="https://events.linuxfoundation.org/real">Real</a>';
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], 'a decoy inside a script was collected').toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
   it.each([
     ['comment', '<!--'],
     ['script', '<script>'],

@@ -29,7 +29,11 @@ const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
  * 1250ms -- a clean 4x per doubling, and the fetch cap is 5 MiB. `extractPageLinks` runs this
  * synchronously on an operator-supplied URL's body, so one hostile page stalls every other
  * request on the single-threaded SSR process. Same class as the `ANCHOR_TAG_RE` bound above.
- * Each opener is consumed exactly once here, so the whole pass is linear.
+ * Each opener is found at most once across the whole pass -- which takes BOTH the `indexOf` scan
+ * and the opener cache in `withoutInertRegions`. The scan alone was still quadratic on CLOSED
+ * regions (measured at 365ms / 1442ms / 5741ms over 70k / 140k / 280k of `'<!---->'`), because
+ * re-searching every kind from the cursor made a kind with no remaining opener scan to the end
+ * of the input on each region. Both halves are needed; neither is linear by itself.
  *
  * An opener with NO closer blanks to the end of the input, which is what a browser renders: an
  * unterminated `<!--` or `<script>` swallows the rest of the document. Stopping at the opener
@@ -37,13 +41,24 @@ const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
  * `verifyPageLink` vouch for destinations the page never shows.
  */
 function withoutInertRegions(html: string): string {
-  // Lower-cased once, not per region kind per iteration. Lower-casing cannot change the length of
-  // an ASCII tag name, so every offset found in it indexes the same character in `html`.
-  const lower = html.toLowerCase();
+  // ASCII-only, NOT `toLowerCase()`. `toLowerCase()` lower-cases the whole document, and some
+  // characters CHANGE LENGTH doing so -- `İ` (U+0130) becomes two code units -- which shifted every
+  // later offset relative to `html`. `İİİİİ<script>x</script><a href="...">` lost the real link,
+  // and an attacker-controlled prefix could shift a blank region off its script onto live markup.
+  // LF runs İstanbul events, so this was live rather than theoretical. A tag name is ASCII, so
+  // folding only `A-Z` is enough to match one and is guaranteed length-preserving.
+  const lower = asciiLower(html);
+  // Each kind's next opener, carried ACROSS iterations. Re-searching all three from `at` every
+  // time made a document of k CLOSED regions O(n*k): a kind with no remaining opener scanned to
+  // the end of the input on every one. Measured before this: 70k chars 365ms, 140k 1442ms, 280k
+  // 5741ms -- the same 4x per doubling as the lazy regex it replaced, just on a different input.
+  // A -1 stays -1 for the rest of the pass, and any other index is only re-searched once `at`
+  // passes it, so every opener is found at most once across the whole scan.
+  const next = INERT_REGIONS.map((kind) => openerIndex(lower, kind, 0));
   const out: string[] = [];
   let at = 0;
   for (;;) {
-    const region = nextInertRegion(html, lower, at);
+    const region = nextInertRegion(html, lower, at, next);
     if (region === null) {
       out.push(html.slice(at));
       return out.join('');
@@ -51,6 +66,17 @@ function withoutInertRegions(html: string): string {
     out.push(html.slice(at, region.start), ' '.repeat(region.end - region.start));
     at = region.end;
   }
+}
+
+/**
+ * `html` with `A-Z` folded to lower case and every other character untouched.
+ *
+ * Length-preserving by construction, which is the whole point: the offsets found in the result
+ * index the same characters in the original. See `withoutInertRegions` for what went wrong when
+ * this was `toLowerCase()`.
+ */
+function asciiLower(html: string): string {
+  return html.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
 }
 
 /**
@@ -97,13 +123,18 @@ const INERT_REGIONS: readonly {
  * carries `isTagName: false` and is exempt, because it is not a tag name and `<!--<a href=...` is
  * a comment; applying the check to it left unterminated comments entirely unblanked.
  */
-function nextInertRegion(html: string, lower: string, from: number): { start: number; end: number } | null {
+function nextInertRegion(html: string, lower: string, from: number, next: number[]): { start: number; end: number } | null {
   // The EARLIEST opener is chosen first, and only then is its own closer looked up. Taking the
   // closer from whichever kind was examined last instead let a later kind overwrite the winner,
   // so a `<script>` body between a comment and a `<style>` survived the pass entirely.
   let winner: { start: number; kind: (typeof INERT_REGIONS)[number] } | null = null;
-  for (const kind of INERT_REGIONS) {
-    const start = openerIndex(lower, kind, from);
+  for (const [i, kind] of INERT_REGIONS.entries()) {
+    // Re-searched only when the cached hit now lies BEHIND the cursor. -1 is terminal: a kind with
+    // no opener left never has one again, so it is never searched for a second time.
+    if (next[i] !== -1 && (next[i] as number) < from) {
+      next[i] = openerIndex(lower, kind, from);
+    }
+    const start = next[i] as number;
     if (start !== -1 && (winner === null || start < winner.start)) {
       winner = { start, kind };
     }
