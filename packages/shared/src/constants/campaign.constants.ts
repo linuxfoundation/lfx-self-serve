@@ -1485,7 +1485,8 @@ export const MAX_SPONSOR_NAME_LENGTH = 100;
  * The route has no body validator, so without this the only bound on what reaches
  * `stripResourceLoadingHtml` is express.json's 15 MB limit, and any super-linear step in the
  * sanitiser or its HTML parser is reachable at that size before any upstream or ownership check.
- * 128 KiB is still above the ~100 KB at which Gmail already clips a message, so no deliverable
- * email body is refused.
+ * The ceiling (131,072 code units) is a resource bound, not a content rule: it sits above the
+ * ~102 KB message size at which Gmail starts clipping, so typical campaign bodies fit with room
+ * to spare.
  */
 export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
