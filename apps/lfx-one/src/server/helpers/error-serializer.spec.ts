@@ -83,6 +83,20 @@ describe('customErrorSerializer', () => {
 
     expect(customErrorSerializer(err).detail).toBe('[Unserializable]');
   });
+
+  it('survives throwing standard fields, a throwing toString and throwing key enumeration', () => {
+    const throwing = () => {
+      throw new Error('getter');
+    };
+    const err = new Error('boom');
+    for (const key of ['code', 'statusCode', 'status', 'stack']) Object.defineProperty(err, key, { get: throwing });
+    const unprintable = Object.defineProperties({}, { message: { get: throwing }, toString: { value: throwing } });
+    const unlistable = new Proxy(new Error('proxied'), { ownKeys: throwing });
+
+    expect(customErrorSerializer(err)).toEqual(expect.objectContaining({ type: 'Error', message: 'boom', code: '[Unserializable]' }));
+    expect(customErrorSerializer(unprintable)).toEqual(expect.objectContaining({ message: '[Unserializable]' }));
+    expect(customErrorSerializer(unlistable)).toEqual(expect.objectContaining({ type: 'Error', message: 'proxied' }));
+  });
 });
 
 describe('scrubLogField', () => {

@@ -595,18 +595,24 @@ Includes stack traces in development and when DEBUG logging is enabled. Producti
 export const customErrorSerializer = (err: any) => {
   if (!err) return err;
 
+  // Every read is guarded (readLogField / try-catch): pino does not catch a throwing serializer,
+  // so one throwing getter would otherwise make the whole logger.error(...) call throw.
+  const read = (key: string): any => readLogField(err, key);
+  const ctor = read('constructor');
+
   const serialized: any = {
-    type: err.constructor?.name || err.name || 'Error',
-    message: err.message || String(err),
+    type: (ctor ? readLogField(ctor, 'name') : undefined) || read('name') || 'Error',
+    message: read('message') || describe(err), // String(err), or [Unserializable] if toString throws
   };
 
-  if (err.code) serialized.code = err.code;
-  if (err.statusCode) serialized.statusCode = err.statusCode;
-  if (err.status) serialized.status = err.status;
+  for (const key of ['code', 'statusCode', 'status']) {
+    const value = read(key);
+    if (value) serialized[key] = value;
+  }
 
   // Stack traces in dev or when debug logging is enabled
   if (process.env['NODE_ENV'] !== 'production' || process.env['LOG_LEVEL'] === 'debug') {
-    serialized.stack = err.stack;
+    serialized.stack = read('stack');
   }
 
   // A thrown string has no custom properties
@@ -614,7 +620,12 @@ export const customErrorSerializer = (err: any) => {
 
   // Preserve custom error properties, deep-scrubbed (credential keys redacted, Redis commands reduced
   // to their name) under a LOG_SCRUB_LIMITS node budget of their own
-  const keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  let keys: string[];
+  try {
+    keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  } catch {
+    return serialized;
+  }
   return scrubProperties(err, keys, 1, { ancestors: new WeakSet([err]), visited: 0 }, serialized);
 };
 ```
