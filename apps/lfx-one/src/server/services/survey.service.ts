@@ -7,12 +7,12 @@ import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, Su
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { AuthenticationError, ResourceNotFoundError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
-import { resolveUserIdentity } from '../utils/auth-helper';
+import { getEffectiveName, getEffectiveUsername, resolveUserIdentity } from '../utils/auth-helper';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -187,13 +187,21 @@ export class SurveyService {
    * Creates a new survey
    */
   public async createSurvey(req: Request, surveyData: CreateSurveyRequest): Promise<Survey> {
-    // Enrich creator fields from the OIDC session (not expected from the frontend)
-    const user = req.oidc?.user;
+    // Enrich creator fields from the effective (impersonation-aware) identity, not the frontend.
+    // Matches the bearer token sent upstream, and refuses to create a survey with no creator LFID.
+    const creatorLfid = getEffectiveUsername(req);
+    if (!creatorLfid) {
+      throw new AuthenticationError('User authentication required', {
+        operation: 'create_survey',
+        service: 'survey_service',
+        path: req.path,
+      });
+    }
     const enrichedData: CreateSurveyRequest = {
       ...surveyData,
-      creator_id: (user?.['https://sso.linuxfoundation.org/claims/username'] as string) || '',
-      creator_username: (user?.['https://sso.linuxfoundation.org/claims/username'] as string) || '',
-      creator_name: (user?.['name'] as string) || '',
+      creator_id: creatorLfid,
+      creator_username: creatorLfid,
+      creator_name: getEffectiveName(req) || '',
     };
 
     const sanitizedPayload = logger.sanitize({ surveyData: enrichedData });
