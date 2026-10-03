@@ -29,7 +29,12 @@ function isRedisCommand(value: object): boolean {
   return typeof readLogField(value, 'name') === 'string' && Array.isArray(readLogField(value, 'args'));
 }
 
-function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
+/**
+ * `jsonKey` is the key JSON.stringify would pass to the value's `toJSON`: the property name or
+ * array index it is serialized under, or `''` for a value serialized on its own. `applyToJSON` is
+ * false for a `toJSON` result, which JSON.stringify serializes without calling `toJSON` again.
+ */
+function scrub(value: unknown, jsonKey: string, depth: number, state: LogScrubState, applyToJSON = true): unknown {
   // JSON.stringify drops functions, and a `toJSON` left on a scrubbed clone would run a second time
   // on serialization — free to return anything — so no callable survives the walk.
   if (typeof value === 'function') return undefined;
@@ -40,16 +45,16 @@ function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
   if (isRedisCommand(value)) return { name: readLogField(value, 'name') };
 
   // Mirror JSON.stringify: an object with toJSON (Date, Buffer, AxiosError, …) is logged as whatever
-  // toJSON returns, so scrub that instead of the raw object. One returning itself is walked as-is.
-  const toJSON = readLogField(value, 'toJSON');
+  // toJSON(key) returns, so scrub that instead of the raw object. One returning itself is walked as-is.
+  const toJSON = applyToJSON ? readLogField(value, 'toJSON') : undefined;
   if (typeof toJSON === 'function') {
     let json: unknown;
     try {
-      json = toJSON.call(value);
+      json = toJSON.call(value, jsonKey);
     } catch {
       return '[Unserializable]';
     }
-    if (json !== value) return scrub(json, depth + 1, state);
+    if (json !== value) return scrub(json, jsonKey, depth + 1, state, false);
   }
 
   state.ancestors.add(value);
@@ -61,7 +66,7 @@ function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
           result.push('[Truncated]');
           break;
         }
-        result.push(scrub(readLogField(value, index), depth + 1, state));
+        result.push(scrub(readLogField(value, index), String(index), depth + 1, state));
       }
       return result;
     }
@@ -74,8 +79,12 @@ function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
   }
 }
 
-function scrubEntry(key: string, value: unknown, depth: number, state: LogScrubState): unknown {
-  return isCredentialKey(key) ? '[REDACTED]' : scrub(value, depth, state);
+/**
+ * pino stringifies each top-level log field (and each child binding) on its own, so its `toJSON`
+ * sees the root key `''`; a nested property sees its own name. Callers at the top pass `''`.
+ */
+function scrubEntry(key: string, value: unknown, depth: number, state: LogScrubState, jsonKey = key): unknown {
+  return isCredentialKey(key) ? '[REDACTED]' : scrub(value, jsonKey, depth, state);
 }
 
 /** Charges one array element or object property to the walk's budget; false once `LOG_SCRUB_LIMITS.MAX_NODES` is spent. */
@@ -115,7 +124,7 @@ function scrubProperties(source: object, keys: string[], depth: number, state: L
  */
 export const scrubLogField = (key: string, value: unknown): unknown => {
   try {
-    return scrubEntry(key, value, 0, { ancestors: new WeakSet(), visited: 0 });
+    return scrubEntry(key, value, 0, { ancestors: new WeakSet(), visited: 0 }, '');
   } catch {
     return '[Unserializable]';
   }
@@ -131,7 +140,15 @@ export const scrubLogField = (key: string, value: unknown): unknown => {
 export const scrubLogRecord = (record: object, passthrough: readonly string[]): Record<string, unknown> => {
   const state: LogScrubState = { ancestors: new WeakSet(), visited: 0 };
   const result: Record<string, unknown> = {};
-  for (const key of Object.keys(record)) {
+  // A Proxy's `ownKeys` (or descriptor) trap can throw while the fields are listed; log a marker instead.
+  let keys: string[];
+  try {
+    keys = Object.keys(record);
+  } catch {
+    result['[Unserializable]'] = '[Unserializable]';
+    return result;
+  }
+  for (const key of keys) {
     if (passthrough.includes(key)) {
       result[key] = readLogField(record, key);
     } else if (!spend(state)) {
@@ -139,7 +156,7 @@ export const scrubLogRecord = (record: object, passthrough: readonly string[]): 
       break;
     } else {
       try {
-        result[key] = scrubEntry(key, readLogField(record, key), 0, state);
+        result[key] = scrubEntry(key, readLogField(record, key), 0, state, '');
       } catch {
         result[key] = '[Unserializable]';
       }
@@ -147,7 +164,7 @@ export const scrubLogRecord = (record: object, passthrough: readonly string[]): 
   }
   // Stopping early must not drop a serializer-owned field (e.g. `err`) listed after the cut-off.
   for (const key of passthrough) {
-    if (!(key in result) && Object.prototype.propertyIsEnumerable.call(record, key)) {
+    if (!(key in result) && keys.includes(key)) {
       result[key] = readLogField(record, key);
     }
   }

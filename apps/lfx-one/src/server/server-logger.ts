@@ -51,11 +51,19 @@ function scrubLogFields(object: Record<string, unknown>): Record<string, unknown
 
 /**
  * pino merges the mixin into the log object with `Object.assign` before `formatters.log` runs, which
- * would invoke a throwing getter unguarded. Same merge (call fields win over mixin fields), guarded reads.
+ * would invoke a throwing getter unguarded. Same merge (call fields win over mixin fields), guarded
+ * reads and a guarded key listing (a Proxy's `ownKeys` trap can throw too).
  */
 function mergeMixin(object: object, mixinData: object): object {
   const merged = mixinData as Record<string, unknown>;
-  for (const key of Object.keys(object)) {
+  let keys: string[];
+  try {
+    keys = Object.keys(object);
+  } catch {
+    merged['[Unserializable]'] = '[Unserializable]';
+    return merged;
+  }
+  for (const key of keys) {
     merged[key] = readLogField(object, key);
   }
   return merged;

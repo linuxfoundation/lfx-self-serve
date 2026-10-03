@@ -89,4 +89,25 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
     expect(JSON.parse(lines[0])).toMatchObject({ ok: 1, boom: '[Unserializable]', msg: 'call' });
     expect(JSON.parse(lines[1])).toMatchObject({ ok: 2, boom: '[Unserializable]', msg: 'child' });
   });
+
+  it('logs a marker instead of throwing when listing a log object or child bindings throws', async () => {
+    const { serverLogger } = await import('./server-logger');
+    const unlistable = () =>
+      new Proxy(
+        { access_token: 'tok-unlistable' },
+        {
+          ownKeys() {
+            throw new Error('ownKeys failed');
+          },
+        }
+      );
+
+    expect(() => serverLogger.info(unlistable(), 'call')).not.toThrow();
+    expect(() => serverLogger.child(unlistable()).info('child')).not.toThrow();
+
+    expect(lines.length).toBe(2);
+    expect(lines.join('')).not.toContain('tok-unlistable');
+    expect(JSON.parse(lines[0])).toMatchObject({ '[Unserializable]': '[Unserializable]', msg: 'call' });
+    expect(JSON.parse(lines[1])).toMatchObject({ '[Unserializable]': '[Unserializable]', msg: 'child' });
+  });
 });
