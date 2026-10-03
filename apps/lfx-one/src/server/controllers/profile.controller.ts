@@ -214,7 +214,8 @@ export class ProfileController {
             email: oidcUser['email'] as string,
             first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
             last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
-            username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
+            // The resolved LFID above — not the OIDC username/preferred_username display claims.
+            username: username as string,
             // created_at: use the real NATS-sourced join date. Never fabricate a timestamp (e.g.
             // new Date()) — an unavailable date must surface as '' so the UI can hide the field,
             // not a moving value. (updated_at below is unrelated and out of scope for this rule.)
@@ -1300,7 +1301,7 @@ export class ProfileController {
       // Extract username from sub by removing provider prefix (e.g., "auth0|fghiasy" → "fghiasy").
       // During impersonation these resolve to the target user so CDP/auth-service reads return the
       // target's identities.
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
       const auth0Sub = (isImpersonating(req) ? getEffectiveSub(req) : req.oidc?.user?.['sub']) as string;
 
       // Fetch CDP identities and auth-service identities in parallel
@@ -1355,7 +1356,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
 
@@ -1389,7 +1390,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       const affiliations = await this.cdpService.getProjectAffiliationsForUser(req, lfid);
 
@@ -1436,7 +1437,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
       const { provider, auth0UserId, email } = req.body || {};
@@ -1567,7 +1568,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       await this.cdpService.confirmWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1622,7 +1623,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       await this.cdpService.patchProjectAffiliationForUser(req, lfid, projectId, req.body);
 
@@ -1665,7 +1666,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       await this.cdpService.deleteWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1720,7 +1721,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1773,7 +1774,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1926,25 +1927,27 @@ export class ProfileController {
                 await this.userService.syncVerifiedEmailToUserService(req, pending.email);
 
                 // Fire-and-forget CDP verification
-                const lfid = this.resolveEffectiveLfid(req, currentUserSub);
+                const lfid = getEffectiveUsername(req);
 
-                this.cdpService
-                  .getIdentitiesForUser(req, lfid)
-                  .then((identities) => {
-                    const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === pending.email);
-                    if (emailIdentity) {
-                      this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
-                        logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
-                          err,
+                if (lfid) {
+                  this.cdpService
+                    .getIdentitiesForUser(req, lfid)
+                    .then((identities) => {
+                      const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === pending.email);
+                      if (emailIdentity) {
+                        this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
+                          logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
+                            err,
+                          });
                         });
+                      }
+                    })
+                    .catch((err: unknown) => {
+                      logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
+                        err,
                       });
-                    }
-                  })
-                  .catch((err: unknown) => {
-                    logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-                      err,
                     });
-                  });
+                }
 
                 logger.info(req, 'profile_auth_callback', 'Pending email verification completed', { email: pending.email });
               } else {
@@ -2147,8 +2150,7 @@ export class ProfileController {
       }
 
       // Fire-and-forget CDP identity verification
-      const currentUserSub = req.oidc?.user?.['sub'] as string;
-      const lfid = this.resolveEffectiveLfid(req, currentUserSub);
+      const lfid = getEffectiveUsername(req);
 
       if (lfid) {
         this.cdpService
@@ -2394,7 +2396,7 @@ export class ProfileController {
       await this.userService.syncVerifiedEmailToUserService(req, email);
 
       // Step 4: Fire-and-forget CDP identity verification
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      const lfid = this.resolveEffectiveLfid(req);
 
       // Find the newly linked email identity in CDP and verify it
       this.cdpService
@@ -2526,16 +2528,21 @@ export class ProfileController {
   }
 
   /**
-   * Resolves the effective LFID for CDP/auth-service reads. During impersonation this is the target
-   * user's username (from the impersonation session); otherwise it mirrors the pre-existing
-   * derivation (OIDC username/preferred_username, falling back to the prefix-stripped sub).
+   * Resolves the effective LFID for CDP/auth-service calls. During impersonation this is the target
+   * user's username (from the impersonation session); otherwise it is the IdP-asserted LF username
+   * claim. Never derived from display claims or the `sub`, since CDP writes are keyed on it — throws
+   * when no LFID can be resolved.
    */
-  private resolveEffectiveLfid(req: Request, sub: string): string {
-    const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-    if (isImpersonating(req)) {
-      return (getEffectiveUsername(req) || subUsername) as string;
+  private resolveEffectiveLfid(req: Request): string {
+    const lfid = getEffectiveUsername(req);
+    if (!lfid) {
+      throw new AuthenticationError('User authentication required', {
+        operation: 'resolve_effective_lfid',
+        service: 'profile_controller',
+        path: req.path,
+      });
     }
-    return (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+    return lfid;
   }
 
   /**
