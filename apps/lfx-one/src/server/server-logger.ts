@@ -9,7 +9,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
 
-import { customErrorSerializer, scrubLogField } from './helpers/error-serializer';
+import { customErrorSerializer, readLogField, scrubLogField } from './helpers/error-serializer';
 import { SERVICE_NAME } from './server-tracer';
 
 /**
@@ -41,14 +41,28 @@ export function resSerializer(res: ServerResponse) {
 /**
  * Deep-scrubs every log field except the ones a serializer owns — `err`/`error` run
  * `customErrorSerializer`, which applies the same scrub, and must still receive the raw Error so its
- * type/message/stack survive; `req`/`res` serializers are allowlists already.
+ * type/message/stack survive; `req`/`res` serializers are allowlists already. Each top-level read is
+ * guarded too, so a throwing getter is logged as `[Unserializable]` instead of escaping the logger.
  */
 function scrubLogFields(object: Record<string, unknown>): Record<string, unknown> {
   const scrubbed: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(object)) {
+  for (const key of Object.keys(object)) {
+    const value = readLogField(object, key);
     scrubbed[key] = ['err', 'error', 'req', 'res'].includes(key) ? value : scrubLogField(key, value);
   }
   return scrubbed;
+}
+
+/**
+ * pino merges the mixin into the log object with `Object.assign` before `formatters.log` runs, which
+ * would invoke a throwing getter unguarded. Same merge (call fields win over mixin fields), guarded reads.
+ */
+function mergeMixin(object: object, mixinData: object): object {
+  const merged = mixinData as Record<string, unknown>;
+  for (const key of Object.keys(object)) {
+    merged[key] = readLogField(object, key);
+  }
+  return merged;
 }
 
 /**
@@ -97,6 +111,7 @@ export const serverLogger = pino(
 
       return mixinData;
     },
+    mixinMergeStrategy: mergeMixin,
     serializers: {
       err: customErrorSerializer,
       error: customErrorSerializer,

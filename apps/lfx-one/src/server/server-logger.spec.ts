@@ -69,4 +69,22 @@ describe('serverLogger credential scrubbing', () => {
     expect(output).not.toContain(RAW_KEY);
     expect(JSON.parse(lines[0]).meta.command).toEqual({ name: 'set' });
   });
+
+  it('logs a throwing top-level getter as [Unserializable] instead of throwing', async () => {
+    const { serverLogger } = await import('./server-logger');
+    const throwing = (extra: Record<string, unknown>) =>
+      Object.defineProperty(extra, 'boom', {
+        enumerable: true,
+        get() {
+          throw new Error('getter failed');
+        },
+      });
+
+    expect(() => serverLogger.info(throwing({ ok: 1 }), 'call')).not.toThrow();
+    expect(() => serverLogger.child(throwing({ ok: 2 })).info('child')).not.toThrow();
+
+    expect(lines.length).toBe(2);
+    expect(JSON.parse(lines[0])).toMatchObject({ ok: 1, boom: '[Unserializable]', msg: 'call' });
+    expect(JSON.parse(lines[1])).toMatchObject({ ok: 2, boom: '[Unserializable]', msg: 'child' });
+  });
 });
