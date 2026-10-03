@@ -25,6 +25,7 @@ import {
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
+  resolveJoinModeSeverity,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -194,6 +195,25 @@ describe('resolveGroupsCardRoleSeverity', () => {
     expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.SECRETARY)).toBe('secondary');
     expect(resolveGroupsCardRoleSeverity('Member')).toBe('secondary');
     expect(resolveGroupsCardRoleSeverity(undefined)).toBe('secondary');
+  });
+});
+
+describe('resolveJoinModeSeverity', () => {
+  it('maps open to success', () => {
+    expect(resolveJoinModeSeverity('open')).toBe('success');
+  });
+
+  it('maps application to info', () => {
+    expect(resolveJoinModeSeverity('application')).toBe('info');
+  });
+
+  it('maps invite_only to warn', () => {
+    expect(resolveJoinModeSeverity('invite_only')).toBe('warn');
+  });
+
+  it('maps closed and undefined to secondary', () => {
+    expect(resolveJoinModeSeverity('closed')).toBe('secondary');
+    expect(resolveJoinModeSeverity(undefined)).toBe('secondary');
   });
 });
 

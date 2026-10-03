@@ -61,7 +61,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, map, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -113,6 +113,12 @@ export class CommitteeMembersComponent implements OnInit {
   public applicationsLoading = input<boolean>(false);
   /** Non-writer members in invite_only groups may send invites. */
   public canSendMemberInvites = input<boolean>(false);
+  /**
+   * True when the viewer is a visitor (not a member of this committee). Visitors admitted via
+   * BASIC_PROFILE visibility must not see member emails or management actions — the public-groups
+   * projection intentionally limits visible profile fields to name, organisation, and role.
+   */
+  public readonly isVisitor = input<boolean>(false);
   // Engagement rollup (LFXV2-1705, behind wg-engagement-metrics). Fetched once at the page level
   // (committee-view) and shared with the Overview summary; flag off = no engagement UI at all.
   public engagementEnabled = input<boolean>(false);
@@ -236,7 +242,8 @@ export class CommitteeMembersComponent implements OnInit {
   // Both empty-state rows must span every rendered column: 5 base, +2 when the voting columns
   // render, +2 when the flag-gated engagement columns render.
   public readonly emptyStateColspan: Signal<number> = computed(() => {
-    let count = 5;
+    // Base columns: Name, Email (hidden for visitors), Organization, Permission, Actions
+    let count = this.isVisitor() ? 4 : 5;
     if (this.committee()?.enable_voting) {
       count += 2;
     }
@@ -344,6 +351,10 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
+    // Snapshot member count before opening — used by the poll to detect when the
+    // query-service index has caught up with the write (indexing lag).
+    const countBeforeAdd = this.members().length;
+
     const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
       header: 'Add Member',
       width: '540px',
@@ -360,11 +371,15 @@ export class CommitteeMembersComponent implements OnInit {
     dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result === true) {
         this.refreshMembers();
+        this.pollUntilMemberAdded(countBeforeAdd);
       }
     });
   }
 
   public openInviteMemberDialog(): void {
+    // Snapshot invite count — used by the poll to detect when the new invite is indexed.
+    const countBeforeInvite = this.invites().length;
+
     const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
       header: 'Invite Someone',
       width: '540px',
@@ -381,6 +396,7 @@ export class CommitteeMembersComponent implements OnInit {
     dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result === true) {
         this.refreshMembers();
+        this.pollUntilInviteAdded(countBeforeInvite);
       }
     });
   }
@@ -637,6 +653,74 @@ export class CommitteeMembersComponent implements OnInit {
 
   private refreshMembers(): void {
     this.refresh.emit();
+  }
+
+  /**
+   * Polls getCommitteeMembers until the count exceeds `countBefore`, absorbing the
+   * query-service indexing lag after a direct-add write (same pattern as
+   * refreshCommitteeAfterMembershipChange in committee-view.component.ts).
+   * Fires a final refreshMembers() when the new row is detected, or gives up after 6 attempts.
+   */
+  private pollUntilMemberAdded(countBefore: number): void {
+    const committeeUid = this.committee()?.uid;
+    if (!committeeUid) return;
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommitteeMembers(committeeUid).pipe(catchError(() => of(null as CommitteeMember[] | null)))),
+        filter((members): members is CommitteeMember[] => Array.isArray(members) && members.length > countBefore),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
+  /**
+   * Same as pollUntilMemberAdded but watches the invite list, absorbing query-service
+   * indexing lag after a new invite is created.
+   */
+  private pollUntilInviteAdded(countBefore: number): void {
+    const committeeUid = this.committee()?.uid;
+    if (!committeeUid) return;
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
+        // Filter to pending-only to match this.invites() which only holds pending invites.
+        // Without this filter, accepted/revoked invites in the API response inflate the count
+        // and the condition would fire immediately on the first poll regardless of the new invite.
+        map((invites) => (Array.isArray(invites) ? invites.filter((i) => i.status === 'pending') : null)),
+        filter((invites): invites is CommitteeInvite[] => Array.isArray(invites) && invites.length > countBefore),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
   }
 
   /**

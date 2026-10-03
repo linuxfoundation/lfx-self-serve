@@ -592,6 +592,17 @@ export const JOIN_MODE_LABELS: Record<JoinMode, string> = {
 };
 
 /**
+ * Plain-language tooltip descriptions for each join mode, shown on the join-mode tag in group list/card views.
+ * Tells the viewer what they can actually do, not just what the mode is called.
+ */
+export const JOIN_MODE_TOOLTIPS: Record<JoinMode, string> = {
+  open: 'Anyone can join this group directly',
+  invite_only: 'You need an invitation from a member or admin to join',
+  application: 'You can apply to join; an admin will review your request',
+  closed: 'Only admins can add members to this group',
+};
+
+/**
  * Join-mode options for the Group settings form (Step 3).
  * Maps to the JoinMode type in committee.interface.ts.
  */

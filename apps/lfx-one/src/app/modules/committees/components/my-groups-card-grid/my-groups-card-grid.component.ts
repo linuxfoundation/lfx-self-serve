@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { COMMITTEE_LABEL, GROUPS_CARD_GRID_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MyCommittee, MyGroupsCardVm } from '@lfx-one/shared/interfaces';
-import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity } from '@lfx-one/shared/utils';
+import { formatRelativeTime, getGroupCommands, resolveGroupsCardRoleSeverity, resolveTypeDisplay } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
@@ -38,7 +38,6 @@ export class MyGroupsCardGridComponent {
   protected readonly cards: Signal<MyGroupsCardVm[]> = this.initCards();
   protected readonly visibleCards = computed(() => this.cards().slice(0, this.expandedPages() * GROUPS_CARD_GRID_PAGE_SIZE));
   protected readonly hasMore = computed(() => this.visibleCards().length < this.cards().length);
-
   protected showMore(): void {
     this.expandedPages.update((pages) => pages + 1);
   }
@@ -57,9 +56,10 @@ export class MyGroupsCardGridComponent {
         const memberCount = committee.total_members;
         const lastActivityLabel = formatRelativeTime(new Date(committee.updated_at));
         const scopeLabel = committee.project_name || committee.foundation_name;
+        const typeDisplay = resolveTypeDisplay(committee);
         const parts = [
           `Open ${committee.name || 'group'}`,
-          ...(committee.classDisplay ? [committee.classDisplay.label] : []),
+          typeDisplay,
           ...(scopeLabel ? [scopeLabel] : []),
           committee.my_role || 'Member',
           `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`,
@@ -75,6 +75,7 @@ export class MyGroupsCardGridComponent {
           viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
           viewQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
           ariaLabel: parts.join(', '),
+          typeDisplay,
         };
       })
     );

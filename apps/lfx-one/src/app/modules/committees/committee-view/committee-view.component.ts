@@ -75,6 +75,7 @@ import {
   finalize,
   firstValueFrom,
   map,
+  merge,
   Observable,
   of,
   switchMap,
@@ -168,6 +169,13 @@ export class CommitteeViewComponent {
   private readonly transferState = inject(TransferState);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
+  /**
+   * True when the user arrived from the Me Lens My Groups page — used to show a context-transition notice.
+   * Reads an explicit `fromMeLens` boolean from navigation state (set by both the table anchor and
+   * the card grid link) rather than inferring it from the display label, so renaming the label
+   * can never silently suppress the notice (addresses GH review on coupling to a label literal).
+   */
+  protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.
@@ -310,7 +318,10 @@ export class CommitteeViewComponent {
 
   public hasChannels: Signal<boolean> = computed(() => {
     const c = this.committee();
-    return this.associatedMailingLists().length > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
+    // Visitors only see public mailing lists — don't show the card wrapper when a visitor
+    // would land on an empty card (private-only lists, no chat channel, no website).
+    const visibleListCount = this.isVisitor() ? this.associatedMailingLists().filter((ml) => ml.public).length : this.associatedMailingLists().length;
+    return visibleListCount > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
   });
 
   // -- Associated mailing lists (rich objects filtered by ml.committees[]) --
@@ -330,7 +341,10 @@ export class CommitteeViewComponent {
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(
-    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
+    // Non-visitors (members, chairs, etc.) always see the Members tab.
+    // Visitors see it only when the group admin has opted into BASIC_PROFILE visibility,
+    // or when they have edit / invite-send access (edge case: ED in admin mode).
+    () => !this.isVisitor() || this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
   );
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
@@ -347,12 +361,21 @@ export class CommitteeViewComponent {
         return count != null ? `Members (${count})` : 'Members';
       },
       icon: 'fa-users',
-      visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
+      // Visitors may see the Members tab when the group admin has opted into basic_profile
+      // visibility — isMembersTabVisible() encodes the full check:
+      //   !isVisitor() || BASIC_PROFILE || canEdit() || canSendMemberInvites()
+      // Delegating directly to isMembersTabVisible() is correct; no additional gate needed.
+      visible: () => this.isMembersTabVisible(),
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
-    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
+    // Visitors see the Meetings tab when the group's calendar is marked public.
+    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public },
     { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
-    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
+    // Visitors can see the Documents tab — committee#viewer FGA (the same check that gates the
+    // group page itself) also governs /committees/:id/folders, /links, and committee_document
+    // query-service resources, so a viewer of a public committee already has read access to all
+    // three document sub-types. No separate document-level visibility flag exists in the model.
+    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => true },
     { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
   ];
 
@@ -396,6 +419,55 @@ export class CommitteeViewComponent {
         this.joinApplicationSession.clearPending(committeeUid);
       });
 
+    // When a visitor lands on a group with application join-mode, check the server for an
+    // existing pending application so the CTA reflects the real state on first load (not
+    // just what's recorded in sessionStorage for this browser session). Browser-only:
+    // SSR cannot make authenticated user-scoped API calls for this secondary enrichment.
+    //
+    // Implementation note: we observe a *computed trigger* rather than toObservable(this.committee)
+    // directly. In initializeCommittee(), `committee` emits its value *before* finalize() runs and
+    // clears `loading`. If we filtered on this.committee() directly, myRoleLoading() would still be
+    // true at filter time (finalize hasn't fired yet), so the predicate would fail and the fetch
+    // would never happen. The computed signal re-evaluates whenever ANY of committee, myRole, or
+    // myRoleLoading changes — including when loading settles — so the pipeline fires once the full
+    // visitor state is confirmed.
+    if (isPlatformBrowser(this.platformId)) {
+      const applicationCheckTrigger = computed(() => {
+        const committee = this.committee();
+        // Emit the committee UID only when loading has settled and the caller is confirmed visitor.
+        const isVisitorReady = this.myRole() === null && !this.myRoleLoading();
+        if (!committee?.uid || committee.join_mode !== 'application' || !isVisitorReady) {
+          return null;
+        }
+        return committee.uid;
+      });
+
+      toObservable(applicationCheckTrigger)
+        .pipe(
+          filter((uid): uid is string => !!uid),
+          distinctUntilChanged(),
+          switchMap((uid) =>
+            this.committeeService.getMyApplication(uid).pipe(
+              // getMyApplication already converts 404 → null; any other error is re-thrown.
+              // Use EMPTY so transient 5xx / network failures do not emit and therefore
+              // do not trigger clearPending (which would re-enable Apply-to-Join prematurely).
+              catchError(() => EMPTY),
+              map((application) => ({ uid, application }))
+            )
+          ),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe(({ uid, application }) => {
+          if (application?.status === 'pending') {
+            this.joinApplicationSession.markPending(uid);
+          } else {
+            // null = no pending application (rejected / withdrawn / never applied).
+            // Clear any stale session marker so the Apply-to-Join CTAs are re-enabled.
+            this.joinApplicationSession.clearPending(uid);
+          }
+        });
+    }
+
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
       for (const inviteUid of [...this.pendingDeclines.keys()]) {
@@ -406,6 +478,9 @@ export class CommitteeViewComponent {
 
   // -- Public methods --
   public goBack(): void {
+    if (this.fromMeLens) {
+      this.lensService.setLens('me');
+    }
     this.router.navigate(['/', 'groups']);
   }
 
@@ -797,38 +872,43 @@ export class CommitteeViewComponent {
       data: { committeeName },
     }) as DynamicDialogRef;
 
-    ref.onClose.pipe(take(1)).subscribe((result: JoinApplicationDialogResult | null) => {
-      if (!result) {
-        this.joiningOrLeaving.set(false);
-        return;
-      }
+    // PrimeNG DynamicDialog fires destroy() — not close() — when the user dismisses via the
+    // header X button (onDialogHide path). In that case onClose never emits. Merge onDestroy
+    // as a null fallback so joiningOrLeaving is always reset on every dismiss path.
+    merge(ref.onClose, ref.onDestroy.pipe(map(() => null as JoinApplicationDialogResult | null)))
+      .pipe(take(1))
+      .subscribe((result: JoinApplicationDialogResult | null) => {
+        if (!result) {
+          this.joiningOrLeaving.set(false);
+          return;
+        }
 
-      this.committeeService
-        .submitApplication(committeeUid, result.message, organization)
-        .pipe(finalize(() => this.joiningOrLeaving.set(false)))
-        .subscribe({
-          next: () => {
-            this.joinApplicationSession.markPending(committeeUid);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Application Submitted',
-              detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
-              life: 8000,
-            });
-          },
-          error: (err: HttpErrorResponse) => {
-            const upstream = err.error?.message as string | undefined;
-            let detail: string;
-            if (err.status === 409) {
+        this.committeeService
+          .submitApplication(committeeUid, result.message, organization)
+          .pipe(finalize(() => this.joiningOrLeaving.set(false)))
+          .subscribe({
+            next: () => {
               this.joinApplicationSession.markPending(committeeUid);
-              detail = 'You already have a pending application for this group.';
-            } else {
-              detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
-            }
-            this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
-          },
-        });
-    });
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Application Submitted',
+                detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
+                life: 8000,
+              });
+            },
+            error: (err: HttpErrorResponse) => {
+              const upstream = err.error?.message as string | undefined;
+              let detail: string;
+              if (err.status === 409) {
+                this.joinApplicationSession.markPending(committeeUid);
+                detail = 'You already have a pending application for this group.';
+              } else {
+                detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
+              }
+              this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
+            },
+          });
+      });
   }
 
   private async openOrganizationDialog(committeeName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
@@ -865,7 +945,11 @@ export class CommitteeViewComponent {
       return Promise.resolve(null);
     }
     return new Promise((resolve) => {
-      ref.onClose.pipe(take(1)).subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
+      // Same PrimeNG destroy()-vs-close() issue: X button fires onDestroy, not onClose.
+      // Merge onDestroy as a null fallback so resolvingOrg is always cleared on dismiss.
+      merge(ref.onClose, ref.onDestroy.pipe(map(() => null as AcceptInviteOrganizationDialogResult | null)))
+        .pipe(take(1))
+        .subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
     });
   }
 
