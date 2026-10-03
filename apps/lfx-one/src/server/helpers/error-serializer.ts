@@ -128,12 +128,19 @@ export const scrubLogRecord = (record: object, passthrough: readonly string[]): 
       result[key] = readLogField(record, key);
     } else if (!spend(state)) {
       result['[Truncated]'] = '[Truncated]';
+      break;
     } else {
       try {
         result[key] = scrubEntry(key, readLogField(record, key), 0, state);
       } catch {
         result[key] = '[Unserializable]';
       }
+    }
+  }
+  // Stopping early must not drop a serializer-owned field (e.g. `err`) listed after the cut-off.
+  for (const key of passthrough) {
+    if (!(key in result) && Object.prototype.propertyIsEnumerable.call(record, key)) {
+      result[key] = readLogField(record, key);
     }
   }
   return result;
