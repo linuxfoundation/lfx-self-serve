@@ -1477,3 +1477,15 @@ export const MAX_SPONSORS = 10;
  * reaches a sent email as alt text and is caller-supplied display text with no upstream cap.
  */
 export const MAX_SPONSOR_NAME_LENGTH = 100;
+
+/**
+ * Longest HubSpot email body (`bodyHtml` / `bodyHtmlB`) the campaign create route will sanitise,
+ * in UTF-16 code units.
+ *
+ * The route has no body validator, so without this the only bound on what reaches
+ * `stripResourceLoadingHtml` is express.json's 15 MB limit, and any super-linear step in the
+ * sanitiser or its HTML parser is reachable at that size before any upstream or ownership check.
+ * 128 KiB is still above the ~100 KB at which Gmail already clips a message, so no deliverable
+ * email body is refused.
+ */
+export const MAX_HUBSPOT_BODY_HTML_LENGTH = 128 * 1024;
