@@ -93,8 +93,11 @@
       } @else {
         <lfx-mailing-list-table
           [mailingLists]="filteredMailingLists()"
-          [loading]="isMeLens() && myMailingListsLoading()"
+          [loading]="myMailingListsLoading()"
+          [membershipError]="myMailingListsError()"
           [isMaintainer]="canWrite()"
+          [isMeLens]="isMeLens()"
+          [myMailingListUids]="myMailingListUids()"
           [mailingListLabel]="mailingListLabel"
           [searchForm]="searchForm"
           [committeeFilterOptions]="committeeOptions()"
