@@ -1286,22 +1286,11 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_identities');
 
     try {
-      const sub = await getUsernameFromAuth(req);
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_identities',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      // Extract username from sub by removing provider prefix (e.g., "auth0|fghiasy" → "fghiasy").
       // During impersonation these resolve to the target user so CDP/auth-service reads return the
       // target's identities.
-      const lfid = this.resolveEffectiveLfid(req);
       const auth0Sub = (isImpersonating(req) ? getEffectiveSub(req) : req.oidc?.user?.['sub']) as string;
 
       // Fetch CDP identities and auth-service identities in parallel
@@ -1344,18 +1333,7 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_work_experiences');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_work_experiences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
       const lfid = this.resolveEffectiveLfid(req);
 
       const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
@@ -1378,18 +1356,7 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_project_affiliations');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_project_affiliations',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
       const lfid = this.resolveEffectiveLfid(req);
 
       const affiliations = await this.cdpService.getProjectAffiliationsForUser(req, lfid);
@@ -1413,17 +1380,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'reject_identity');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'reject_identity',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const identityId = req.params['identityId'];
 
@@ -1436,8 +1394,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req);
 
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
       const { provider, auth0UserId, email } = req.body || {};
@@ -1527,7 +1483,7 @@ export class ProfileController {
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
       if (isEmailIdentity) {
-        await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
+        await withMeetingInviteLock(req, lfid, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
       } else {
         await finishRejectIdentity();
       }
@@ -1544,17 +1500,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'confirm_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'confirm_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperienceId = req.params['workExperienceId'];
 
@@ -1567,8 +1514,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req);
 
       await this.cdpService.confirmWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1587,17 +1532,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'patch_project_affiliation');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'patch_project_affiliation',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const projectId = req.params['projectId'];
 
@@ -1623,8 +1559,6 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req);
-
       await this.cdpService.patchProjectAffiliationForUser(req, lfid, projectId, req.body);
 
       logger.success(req, 'patch_project_affiliation', startTime, { lfid, project_id: projectId, affiliation_count: affiliations.length });
@@ -1642,17 +1576,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'delete_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'delete_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperienceId = req.params['workExperienceId'];
 
@@ -1665,8 +1590,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req);
 
       await this.cdpService.deleteWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1685,17 +1608,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'update_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'update_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperienceId = req.params['workExperienceId'];
 
@@ -1720,8 +1634,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1750,17 +1662,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'create_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'create_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const body = req.body as WorkExperienceCreateUpdateBody;
 
@@ -1773,8 +1676,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -2275,17 +2176,8 @@ export class ProfileController {
     });
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'verify_and_link_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const { email, otp } = req.body as { email: string; otp: string };
 
@@ -2396,8 +2288,6 @@ export class ProfileController {
       await this.userService.syncVerifiedEmailToUserService(req, email);
 
       // Step 4: Fire-and-forget CDP identity verification
-      const lfid = this.resolveEffectiveLfid(req);
-
       // Find the newly linked email identity in CDP and verify it
       this.cdpService
         .getIdentitiesForUser(req, lfid)

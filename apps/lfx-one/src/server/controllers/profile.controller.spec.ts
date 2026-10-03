@@ -593,6 +593,8 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
   });
 
   it('fails closed with a 401, touching no CDP record, when no IdP-asserted LFID resolves', async () => {
+    // A claimless session resolves to null through both helpers (getUsernameFromAuth delegates).
+    getUsernameFromAuthMock.mockResolvedValue(null);
     getEffectiveUsernameMock.mockReturnValue(null);
     const res = buildRes();
     const next = vi.fn();
