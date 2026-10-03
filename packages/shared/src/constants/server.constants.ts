@@ -45,28 +45,16 @@ export const SENSITIVE_FIELDS = [
  * `set-cookie`, `Set-Cookie` and `setCookie` all match `setcookie`. Any normalised key ending in
  * one of `LOG_CREDENTIAL_KEY_SUFFIXES` is treated as a credential too, which covers `access_token`,
  * `refresh_token`, `id_token`, `impersonationToken`, `tokens`, `client_secret`, `current_password`,
- * `confirmPassword` and the like (and, as a deliberate over-redaction, pagination cursors such as
+ * `confirmPassword`, `x-api-key`, `SNOWFLAKE_API_KEY`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` and the like (and, as a deliberate over-redaction, pagination cursors such as
  * `next_page_token`).
  *
  * Deliberately exact-match (unlike `SENSITIVE_FIELDS`' substring match): this runs on every log
  * line, so a broad substring like `key` would mask harmless fields such as `cache_key`.
  */
-export const LOG_CREDENTIAL_KEYS = [
-  'authorization',
-  'proxyauthorization',
-  'cookie',
-  'setcookie',
-  'bearer',
-  'apikey',
-  'xapikey',
-  'jwt',
-  'sid',
-  'credentials',
-  'privatekey',
-] as const;
+export const LOG_CREDENTIAL_KEYS = ['authorization', 'proxyauthorization', 'cookie', 'setcookie', 'bearer', 'jwt', 'sid', 'credentials'] as const;
 
 /** Normalised-key suffixes that mark a value as a credential for the server's log scrubber. See `LOG_CREDENTIAL_KEYS`. */
-export const LOG_CREDENTIAL_KEY_SUFFIXES = ['token', 'tokens', 'secret', 'password', 'passwd'] as const;
+export const LOG_CREDENTIAL_KEY_SUFFIXES = ['token', 'tokens', 'secret', 'password', 'passwd', 'passphrase', 'apikey', 'privatekey'] as const;
 
 /**
  * Bounds for the server's log scrubber walk, so a huge or deeply nested object handed to the logger

@@ -10,9 +10,11 @@ const RAW_KEY = 'lfx:session:v1:alice-session-id';
 
 /**
  * Drives the real serverLogger (production stream → stdout) end to end, so the assertion is on
- * the emitted line rather than on a serializer called in isolation.
+ * the emitted line rather than on a serializer called in isolation. Each test re-imports the logger
+ * (and its OpenTelemetry graph) after `resetModules`; a cold first import can approach vitest's 5s
+ * default, hence the longer timeout.
  */
-describe('serverLogger credential scrubbing', () => {
+describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
   let lines: string[];
 
   beforeEach(() => {

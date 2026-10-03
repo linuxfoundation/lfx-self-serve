@@ -612,15 +612,10 @@ export const customErrorSerializer = (err: any) => {
   // A thrown string has no custom properties
   if (typeof err !== 'object') return serialized;
 
-  // Preserve custom error properties, deep-scrubbed (credential keys redacted, Redis commands reduced to their name)
-  const state: LogScrubState = { ancestors: new WeakSet([err]), visited: 0 };
-  Object.keys(err).forEach((key) => {
-    if (!['message', 'stack', 'name', 'constructor'].includes(key)) {
-      serialized[key] = scrubEntry(key, read(err, key), 1, state);
-    }
-  });
-
-  return serialized;
+  // Preserve custom error properties, deep-scrubbed (credential keys redacted, Redis commands reduced
+  // to their name) and charged to the same LOG_SCRUB_LIMITS node budget as every other log field
+  const keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  return scrubProperties(err, keys, 1, { ancestors: new WeakSet([err]), visited: 0 }, serialized);
 };
 ```
 
@@ -672,7 +667,7 @@ The following top-level paths are removed via Pino's `redact` config:
 
 `redact` only matches exact paths, so credentials are also scrubbed at **any nesting depth** by `scrubLogField` / `customErrorSerializer` (`helpers/error-serializer.ts`). It is wired in three places: `formatters.log` for every non-serializer field of a log call, an override of `serverLogger.child` for child-logger bindings (pino serializes those once, outside `formatters.log`; every child inherits the override), and the `err`/`error` serializer for errors:
 
-- Any key whose normalised name (lowercased, non-alphanumerics stripped) is in `LOG_CREDENTIAL_KEYS` (`authorization`, `cookie`, `set-cookie`, `apiKey`, `jwt`, `sid`, …) or ends in one of `LOG_CREDENTIAL_KEY_SUFFIXES` (`access_token`, `refreshToken`, `tokens`, `client_secret`, `password`, `current_password`, `confirmPassword`, …) is replaced with `[REDACTED]`. Pagination cursors such as `next_page_token` are redacted too.
+- Any key whose normalised name (lowercased, non-alphanumerics stripped) is in `LOG_CREDENTIAL_KEYS` (`authorization`, `cookie`, `set-cookie`, `jwt`, `sid`, …) or ends in one of `LOG_CREDENTIAL_KEY_SUFFIXES` (`access_token`, `refreshToken`, `tokens`, `client_secret`, `password`, `current_password`, `confirmPassword`, `apiKey`, `x-api-key`, `SNOWFLAKE_API_KEY`, `privateKey`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`, …) is replaced with `[REDACTED]`. Pagination cursors such as `next_page_token` are redacted too.
 - A Redis client command — any object with a string `name` and an array `args`, which ioredis attaches as `command` to every `ReplyError` with the raw cache key and the full stored value in `args` (for the session store, the user's OIDC tokens) — is reduced to `{ name }`.
 - The walk mirrors `JSON.stringify` (own enumerable keys, `toJSON` honoured), turns a throwing getter — top-level or nested — into `[Unserializable]`, and is bounded by `LOG_SCRUB_LIMITS`. `MAX_NODES` is charged per array element and object property: once spent, the rest of the container collapses into a single `[Truncated]` array entry or object key. Anything nested deeper than `MAX_DEPTH` is logged as `[Truncated]`. Log counts or samples rather than whole result sets.
 - Keys are matched, string contents are not. A credential interpolated into a log message or held in a string value (e.g. a pre-serialized request body) is **not** detected — never build log text from credentials.

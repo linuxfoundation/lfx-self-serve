@@ -150,6 +150,28 @@ describe('scrubLogField', () => {
     });
   });
 
+  it('redacts API keys, private keys and passphrases under any prefix', () => {
+    const scrubbed = scrubLogField('data', {
+      SNOWFLAKE_API_KEY: 'a',
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: 'b',
+      privateKey: 'c',
+      signing_private_key: 'd',
+      apiKey: 'e',
+      SNOWFLAKE_ACCOUNT: 'acct',
+      cache_key: 'lfx:cache',
+    });
+
+    expect(scrubbed).toEqual({
+      SNOWFLAKE_API_KEY: '[REDACTED]',
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: '[REDACTED]',
+      privateKey: '[REDACTED]',
+      signing_private_key: '[REDACTED]',
+      apiKey: '[REDACTED]',
+      SNOWFLAKE_ACCOUNT: 'acct',
+      cache_key: 'lfx:cache',
+    });
+  });
+
   it('stops walking a wide array at the node budget, ending it with one truncation marker', () => {
     const scrubbed = scrubLogField(
       'items',
