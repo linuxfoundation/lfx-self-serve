@@ -2403,9 +2403,22 @@ export class CampaignsComponent {
    * name of this method says "from planning" rather than naming a destination, because which tab
    * comes next is a flow decision and the previous name went stale the moment it changed.
    */
-  protected onEmailProceedFromPlanning(brief: CampaignBriefOutput): void {
+  protected onEmailProceedFromPlanning(brief: CampaignBriefOutput, restoringBriefId?: string): void {
     this.emailBriefOutput.set(brief);
     this.resetEmailBriefDerivedState();
+    // Reinstalled IMMEDIATELY after the reset that cleared it, before the warm-up below.
+    //
+    // `warmEmailBriefId` skips when `emailBriefId` is non-empty, and for a brief being RESTORED
+    // the id is already known -- there is nothing to mint. Left to the caller to set afterwards,
+    // the reset had cleared it, the warm-up's guard passed, and `ensureEmailBriefId` sent a
+    // replacement-and-approval request for a brief the operator had only OPENED. The ownership
+    // cache supplied an id and ETag, so the write succeeded rather than failing loudly.
+    //
+    // Only an APPROVED restore passes an id here, matching the rule at the call site: an
+    // unapproved brief must stay empty so the next action re-persists and re-approves it.
+    if (restoringBriefId !== undefined && restoringBriefId !== '') {
+      this.emailBriefId.set(restoringBriefId);
+    }
     this.selectedEmailTab.set('audience');
     // Set directly rather than through `selectTab`, so the two things that tab's entry does have
     // to be done here as well. Saving the plan is the one that matters: a compose with no brief
@@ -2513,17 +2526,18 @@ export class CampaignsComponent {
     // wiped by the very call meant to carry it, and the next save would arrive with an empty id
     // and mint a SECOND row for an event that already has one. Restoring the id after the reset
     // is what makes the following save a PUT against the row just opened.
-    this.onEmailProceedFromPlanning(brief);
-    // The id is cached ONLY for an approved brief, which is the same rule `persistEmailBrief`
-    // applies at its own call site. `ensureEmailBriefId` short-circuits on a non-empty
-    // `emailBriefId`, so caching an unapproved one means the persist -- which is what approves --
-    // never runs again, and audience, copy and staging keep failing against a brief
-    // campaign-service refuses to create from. Leaving it empty lets the next action re-persist
-    // and re-approve; ownership is still recorded above, so that save is an edit of the row just
-    // opened rather than an attempt to mint a second one.
-    if (approved) {
-      this.emailBriefId.set(briefId);
-    }
+    // The id is handed THROUGH the handoff rather than set after it. The handoff resets derived
+    // state -- which clears `emailBriefId` -- and then warms it, so an id set afterwards arrives
+    // too late to stop the warm-up persisting a brief that was only opened.
+    //
+    // Passed ONLY for an approved brief, which is the same rule `persistEmailBrief` applies at
+    // its own call site. `ensureEmailBriefId` short-circuits on a non-empty `emailBriefId`, so
+    // installing an unapproved one means the persist -- which is what approves -- never runs
+    // again, and audience, copy and staging keep failing against a brief campaign-service
+    // refuses to create from. Leaving it empty lets the next action re-persist and re-approve;
+    // ownership is recorded above, so that save is an edit of the row just opened rather than an
+    // attempt to mint a second one.
+    this.onEmailProceedFromPlanning(brief, approved ? briefId : undefined);
 
     // Read back the saved audience with the id this restore was HANDED, not with `emailBriefId`.
     // The signal is left empty for an unapproved brief on purpose (see just above), so reading it

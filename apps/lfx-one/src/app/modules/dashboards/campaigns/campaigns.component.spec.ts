@@ -4561,6 +4561,28 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBriefId()).toBe('brief-approved');
     });
 
+    // Restoring an approved brief must not WRITE to it. The handoff resets derived state --
+    // which clears `emailBriefId` -- and then calls `warmEmailBriefId`, whose only guard is that
+    // the id is non-empty. With the id installed AFTER the handoff, that guard passed and
+    // `ensureEmailBriefId` sent a replacement-and-approval request for a brief the operator had
+    // only OPENED. The ownership cache supplied an id and ETag, so it succeeded rather than
+    // failing loudly.
+    //
+    // The id is now handed THROUGH the handoff, so the warm-up sees it and skips.
+    it('does not persist the brief when an approved one is restored', () => {
+      selectEmail();
+      persistBrief.mockClear();
+
+      (
+        internals() as unknown as {
+          onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        }
+      ).onRestoreSavedEmailBrief(emailBrief, 'brief-approved', 'W/"2"', true);
+
+      expect(persistBrief, 'restoring an approved brief wrote to it; the operator only opened it').not.toHaveBeenCalled();
+      expect(internals().emailBriefId(), 'the restored id must still be installed').toBe('brief-approved');
+    });
+
     // A live staging POLL must be cancelled by a stage change, not merely counted past.
     // `pollStagingJob` never reads `emailStagingGeneration`, so bumping it only guards the awaits
     // BEFORE the poll starts. A subscription already running keeps writing `done`/`error` — and
