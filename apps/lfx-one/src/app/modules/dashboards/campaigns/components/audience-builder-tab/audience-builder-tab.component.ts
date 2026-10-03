@@ -237,6 +237,11 @@ export class AudienceBuilderTabComponent {
   /** The send / master list id an attach is in flight for; null when idle. */
   protected readonly attachingId = signal<string | null>(null);
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
+  /**
+   * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
+   * selection rather than on its master list id.
+   */
+  private readonly attachedExclusionIds = signal<readonly string[]>([]);
 
   /**
    * Which of the two audience writes recorded LAST.
@@ -547,6 +552,9 @@ export class AudienceBuilderTabComponent {
    * Separate from `canUseSelectionDirectly` only because that one additionally requires exactly
    * one inclusion; the readiness half is identical and is the half that matters here.
    */
+  /** The exclusions behind the current attachment, for matching a prior send's full selection. */
+  protected readonly attachedExclusions = computed<readonly string[]>(() => (this.attachedListId() === null ? [] : this.attachedExclusionIds()));
+
   protected readonly canUseExistingMaster = computed(() => this.canAttach() && !this.suppressionLoading() && !this.suppressionFailed());
 
   protected readonly canUseSelectionDirectly = computed(
@@ -1203,13 +1211,19 @@ export class AudienceBuilderTabComponent {
       return;
     }
     const run = this.runGeneration;
+    const sentExclusions = [...new Set(suppressionListIds)].filter((id) => id !== masterListId);
     this.attachingId.set(busyId);
     this.attachError.set(null);
+    // Remembered so a prior send can be matched on its FULL selection, not its master alone.
+    // Two sends can share master 501 with different exclusions, and comparing ids alone marked
+    // both "Same lists used for this email" -- disabling both reuse buttons and leaving the
+    // operator unable to pick the other send's suppressions.
+    this.attachedExclusionIds.set(sentExclusions);
     this.campaignService
       .attachExistingAudience(this.projectSlug(), {
         briefId,
         masterListId,
-        suppressionListIds: [...new Set(suppressionListIds)].filter((id) => id !== masterListId),
+        suppressionListIds: sentExclusions,
         ...(summary ? { inclusionSummary: summary } : {}),
       })
       .pipe(takeUntilDestroyed(this.destroyRef))

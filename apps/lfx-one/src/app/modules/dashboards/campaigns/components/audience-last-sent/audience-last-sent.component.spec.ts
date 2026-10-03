@@ -56,9 +56,13 @@ describe('AudienceLastSentComponent', () => {
       emailsFailed?: boolean;
       canAttach?: boolean;
       canUseExistingMaster?: boolean;
+      attachedListId?: string | null;
+      attachedExclusionIds?: readonly string[];
     } = {}
   ): void {
     fixture.componentRef.setInput('emails', inputs.emails ?? []);
+    fixture.componentRef.setInput('attachedListId', inputs.attachedListId ?? null);
+    fixture.componentRef.setInput('attachedExclusionIds', inputs.attachedExclusionIds ?? []);
     // Defaults to `canAttach`: most tests here predate the separate master-reuse gate and mean
     // "attaching is possible", not "the suppression lookup has not settled".
     fixture.componentRef.setInput('canUseExistingMaster', inputs.canUseExistingMaster ?? inputs.canAttach ?? false);
@@ -188,6 +192,47 @@ describe('AudienceLastSentComponent', () => {
     const text = host().textContent ?? '';
     expect(text).toContain('size unknown');
     expect(text).not.toContain('0 contacts');
+  });
+
+  describe('matching a prior send against the current attachment', () => {
+    // Matching on the include list ALONE treated two sends that share a master but suppress
+    // differently as the same audience: attaching either marked BOTH "Same lists used for this
+    // email" and disabled both reuse buttons, so the operator could not then pick the other
+    // send's exclusions. The full selection is what identifies a send.
+    it('does not mark a send attached when its exclusions differ', () => {
+      render({
+        emails: [email({ emailId: 'em-other', suppressionLists: [brief({ listId: '901', name: 'Opt-outs' })] })],
+        attachedListId: '301',
+        attachedExclusionIds: ['902'],
+      });
+
+      const text = host().textContent ?? '';
+      expect(text, 'a send with different exclusions was reported as the attached one').not.toContain('Same lists used for this email');
+    });
+
+    it('marks a send attached when the whole selection matches', () => {
+      render({
+        emails: [email({ suppressionLists: [brief({ listId: '901', name: 'Opt-outs' })] })],
+        attachedListId: '301',
+        attachedExclusionIds: ['901'],
+      });
+
+      expect(host().textContent ?? '').toContain('Same lists used for this email');
+    });
+
+    it("ignores exclusion ORDER, which is the portal's and not the operator's", () => {
+      render({
+        emails: [
+          email({
+            suppressionLists: [brief({ listId: '901', name: 'A' }), brief({ listId: '902', name: 'B' })],
+          }),
+        ],
+        attachedListId: '301',
+        attachedExclusionIds: ['902', '901'],
+      });
+
+      expect(host().textContent ?? '').toContain('Same lists used for this email');
+    });
   });
 
   describe('reported list memberships', () => {

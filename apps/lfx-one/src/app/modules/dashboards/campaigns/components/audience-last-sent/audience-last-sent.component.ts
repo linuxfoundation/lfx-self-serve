@@ -85,6 +85,15 @@ export class AudienceLastSentComponent {
   public readonly attachingId = input<string | null>(null);
   /** The master list id currently recorded as this email's send list, if any. */
   public readonly attachedListId = input<string | null>(null);
+  /**
+   * The exclusions behind the current attachment.
+   *
+   * Matching a prior send on its include list ALONE treated two sends that share a master but
+   * suppress differently as the same audience: attaching either marked both "Same lists used for
+   * this email" and disabled both reuse buttons, so the operator could not then pick the other
+   * send's exclusions. The full selection is what identifies a send.
+   */
+  public readonly attachedExclusionIds = input<readonly string[]>([]);
 
   // === Outputs ===
   /** Add one of a past send's lists to the inclusion set. */
@@ -139,13 +148,20 @@ export class AudienceLastSentComponent {
       // incomplete.
       const accountedFor = email.includedLists.length;
       const blocked = this.attachBlockedReason(email);
+      // Compared as SETS: order is the portal's, not the operator's, and a different order is
+      // the same selection.
+      const sameExclusions = (lists: readonly AudienceListBrief[]): boolean => {
+        const sent = new Set(this.attachedExclusionIds());
+        const theirs = new Set(lists.map((list) => list.listId));
+        return sent.size === theirs.size && [...theirs].every((id) => sent.has(id));
+      };
       return {
         ...email,
         includedLists: email.includedLists.map(decorate),
         suppressionLists: email.suppressionLists.map(decorate),
         copyable: !email.listsUnavailable && usable.length > 0,
         attachBlocked: blocked,
-        attached: blocked === null && attached !== null && usable[0]?.listId === attached,
+        attached: blocked === null && attached !== null && usable[0]?.listId === attached && sameExclusions(email.suppressionLists),
         reachText: reportedMembershipsLabel(sized.length, accountedFor, knownMemberships),
       };
     });
