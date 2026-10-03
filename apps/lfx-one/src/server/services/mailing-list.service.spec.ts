@@ -34,7 +34,7 @@ vi.mock('../utils/auth-helper', async () => {
 
 import { MailingListService } from './mailing-list.service';
 
-const req = {} as unknown as Request;
+const req = { log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } } as unknown as Request;
 
 const existingMember: MailingListMember = {
   uid: 'member-1',
