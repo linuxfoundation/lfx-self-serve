@@ -5,7 +5,7 @@ import { LOG_SCRUB_LIMITS } from '@lfx-one/shared/constants';
 import { ReplyError } from 'ioredis';
 import { describe, expect, it } from 'vitest';
 
-import { customErrorSerializer, scrubLogField } from './error-serializer';
+import { customErrorSerializer, scrubLogField, scrubLogRecord } from './error-serializer';
 
 const ACCESS_TOKEN = 'eyJ-access-token-secret';
 const REFRESH_TOKEN = 'v1.refresh-token-secret';
@@ -172,6 +172,26 @@ describe('scrubLogField', () => {
     });
   });
 
+  it('redacts meeting passcodes, host keys and chat webhook URLs, leaving host-key flags visible', () => {
+    const scrubbed = scrubLogField('meeting', {
+      passcode: 'a',
+      host_key: 'b',
+      hostKey: 'c',
+      chat_webhook_url: 'https://hooks.example/abc',
+      can_view_host_key: true,
+      showHostKey: false,
+    });
+
+    expect(scrubbed).toEqual({
+      passcode: '[REDACTED]',
+      host_key: '[REDACTED]',
+      hostKey: '[REDACTED]',
+      chat_webhook_url: '[REDACTED]',
+      can_view_host_key: true,
+      showHostKey: false,
+    });
+  });
+
   it('stops walking a wide array at the node budget, ending it with one truncation marker', () => {
     const scrubbed = scrubLogField(
       'items',
@@ -199,5 +219,29 @@ describe('scrubLogField', () => {
     // Each row costs three entries (itself, `a`, `b`), so the budget runs out a third of the way in.
     expect(scrubbed.length).toBeLessThan(LOG_SCRUB_LIMITS.MAX_NODES / 2);
     expect(scrubbed.at(-1)).toBe('[Truncated]');
+  });
+});
+
+describe('scrubLogRecord', () => {
+  it('shares one node budget across every top-level field of a log call', () => {
+    const wide = () => Object.fromEntries(Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES / 2 }, (_, index) => [`k${index}`, index]));
+    const record = { a: wide(), b: wide(), c: wide(), d: wide() };
+    const scrubbed = scrubLogRecord(record, []);
+
+    // `a` costs half the budget plus its own entry, so `b` is cut short and `c`/`d` never get walked.
+    expect(Object.keys(scrubbed['a'] as object)).toHaveLength(LOG_SCRUB_LIMITS.MAX_NODES / 2);
+    expect((scrubbed['b'] as Record<string, unknown>)['[Truncated]']).toBe('[Truncated]');
+    expect(scrubbed).not.toHaveProperty('c');
+    expect(scrubbed).not.toHaveProperty('d');
+    expect(scrubbed['[Truncated]']).toBe('[Truncated]');
+  });
+
+  it('copies passthrough fields as-is without charging them, and still scrubs the rest', () => {
+    const err = new Error('boom');
+    const scrubbed = scrubLogRecord({ err, access_token: ACCESS_TOKEN, data: { refresh_token: REFRESH_TOKEN } }, ['err']);
+
+    expect(scrubbed['err']).toBe(err);
+    expect(scrubbed['access_token']).toBe('[REDACTED]');
+    expect(scrubbed['data']).toEqual({ refresh_token: '[REDACTED]' });
   });
 });
