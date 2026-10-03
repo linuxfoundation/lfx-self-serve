@@ -30,6 +30,9 @@ function isRedisCommand(value: object): boolean {
 }
 
 function scrub(value: unknown, depth: number, state: LogScrubState): unknown {
+  // JSON.stringify drops functions, and a `toJSON` left on a scrubbed clone would run a second time
+  // on serialization — free to return anything — so no callable survives the walk.
+  if (typeof value === 'function') return undefined;
   if (value === null || typeof value !== 'object') return value;
   if (state.ancestors.has(value)) return '[Circular]';
   if (depth >= LOG_SCRUB_LIMITS.MAX_DEPTH) return '[Truncated]';
@@ -89,7 +92,12 @@ function scrubProperties(source: object, keys: string[], depth: number, state: L
       result['[Truncated]'] = '[Truncated]';
       break;
     }
-    result[key] = scrubEntry(key, readLogField(source, key), depth, state);
+    // A nested Proxy can throw from any trap; lose that one property, not the whole log call.
+    try {
+      result[key] = scrubEntry(key, readLogField(source, key), depth, state);
+    } catch {
+      result[key] = '[Unserializable]';
+    }
   }
   return result;
 }

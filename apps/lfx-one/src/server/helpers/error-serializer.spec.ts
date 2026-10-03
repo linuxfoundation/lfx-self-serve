@@ -97,6 +97,20 @@ describe('customErrorSerializer', () => {
     expect(customErrorSerializer(unprintable)).toEqual(expect.objectContaining({ message: '[Unserializable]' }));
     expect(customErrorSerializer(unlistable)).toEqual(expect.objectContaining({ type: 'Error', message: 'proxied' }));
   });
+
+  it('replaces a nested value whose Proxy traps throw, keeping the rest of the error', () => {
+    const throwing = () => {
+      throw new Error('trap');
+    };
+    const err = Object.assign(new Error('boom'), {
+      detail: new Proxy({}, { ownKeys: throwing }),
+      rows: new Proxy([], { get: throwing }),
+      code: 'E_FAIL',
+    });
+    const serialized = customErrorSerializer(err);
+
+    expect(serialized).toEqual(expect.objectContaining({ message: 'boom', code: 'E_FAIL', detail: '[Unserializable]', rows: '[Unserializable]' }));
+  });
 });
 
 describe('scrubLogField', () => {
@@ -122,6 +136,18 @@ describe('scrubLogField', () => {
     };
 
     expect(JSON.stringify(scrubLogField('data', value))).not.toContain(ACCESS_TOKEN);
+  });
+
+  it('drops functions, so a toJSON cannot run again on the scrubbed clone and reintroduce a secret', () => {
+    const value: Record<string, unknown> = { access_token: ACCESS_TOKEN, note: 'kept' };
+    value['toJSON'] = function (this: unknown) {
+      return this === value ? this : { leaked: ACCESS_TOKEN };
+    };
+    const scrubbed = scrubLogField('data', { value, callback: () => ACCESS_TOKEN, list: [() => ACCESS_TOKEN] });
+    const line = JSON.stringify(scrubbed);
+
+    expect(line).not.toContain(ACCESS_TOKEN);
+    expect(JSON.parse(line)).toEqual({ value: { access_token: '[REDACTED]', note: 'kept' }, list: [null] });
   });
 
   it('reduces a Redis command to its name under any key, leaving other `command` values alone', () => {
