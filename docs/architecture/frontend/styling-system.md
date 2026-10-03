@@ -206,6 +206,71 @@ When utilities aren't sufficient, use component-specific styles:
 }
 ```
 
+### Scoped design token layers
+
+A feature that deliberately diverges from the app's look — a redesign shipping behind a flag,
+for example — confines that divergence to a **scoped token layer** rather than spreading raw
+values across components or widening the global palette.
+
+The rules:
+
+- Declare the tokens under **one container class**, never on `:root` and never in
+  `styles.scss`. The layer must revert by deleting the file and its `@use`.
+- Name tokens by **role, not hue** — `--md-status-good`, never `--md-green-500` — so the
+  palette can be swapped without renaming a token or touching a consumer.
+- **Literal colour values belong in the token file and nowhere else.** That file is the
+  definition boundary; every consumer resolves `var(--*)`, which is what satisfies the
+  repo-wide "never hard-code hex" rule.
+- Record each token's nearest `lfxColors` equivalent next to it, and mark deliberate
+  divergences explicitly, with the full table and the convergence path in the feature's
+  `specs/` directory. A divergence that isn't written down becomes permanent by default.
+- **Measure contrast before adopting a value, including values taken from a prototype.**
+  Record the ratio next to each ink, status and focus token. A token named for a text role
+  will be used as text, so one that cannot clear 4.5:1 belongs in a non-text group under a
+  name that says so. Focus rings need 3:1 against the adjacent surface (WCAG 2.2 SC 1.4.11),
+  which a low-alpha tint of an accent will not give. Consumers may not write raw colour
+  values, so they cannot correct a token locally — it has to be right here.
+
+Custom properties inherit through the DOM regardless of Angular's view encapsulation, so
+descendant components — including `lfx-*` wrappers — resolve the tokens without importing
+anything. The scope class goes on a wrapper element **inside** the owning component's own
+template: an emulated-encapsulation stylesheet rewrites selectors with a `_ngcontent`
+attribute, so a plain class selector cannot reach its own host element.
+
+That inheritance stops at anything rendered **outside** the scoped subtree. `lfx-select` and
+`lfx-multi-select` default `appendTo` to `'body'`, and PrimeNG tooltips attach to `body` as well,
+so their panels are DOM siblings of the app root and every `var(--md-*)` inside them resolves as
+unset. A scoped-token consumer that opens an overlay must keep it inside the scope: pass
+`appendTo` a template reference to an element within the scope container (or `'self'` where the
+panel can overflow its trigger without being clipped). Do not work around it by redefining the
+tokens on `body` or `:root` — that leaks the layer into the whole app.
+
+The same rewrite applies to **every** compound in a selector, not just the rightmost one.
+That matters whenever a token block keys off an ancestor outside the component — a
+`.dark-mode` class on the document root, say. Written plainly, `.dark-mode .scope { … }`
+compiles to `.dark-mode[_ngcontent-x] .scope[_ngcontent-x]`, and the root element never
+carries that attribute, so the block matches nothing and looks merely dormant rather than
+broken. Use `:host-context()`, whose ancestor part is deliberately left unscoped:
+
+```scss
+:host-context(.dark-mode) .feature-scope {
+  --feature-surface: #17191f;
+}
+```
+
+```scss
+// feature.component.scss
+@use './feature.tokens';
+```
+
+```html
+<!-- feature.component.html -->
+<div class="feature-scope">…</div>
+```
+
+Worked example: `apps/lfx-one/src/app/modules/meetings/meeting-details-page/meeting-details-page.tokens.scss`,
+with its deviation table in `specs/010-meeting-details-redesign/design-token-deviations.md`.
+
 ## 🎭 Icon System
 
 ### Font Awesome Pro
