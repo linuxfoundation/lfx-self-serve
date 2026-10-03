@@ -1,0 +1,332 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { LOG_SCRUB_LIMITS } from '@lfx-one/shared/constants';
+import { ReplyError } from 'ioredis';
+import { describe, expect, it } from 'vitest';
+
+import { customErrorSerializer, scrubLogField, scrubLogRecord } from './error-serializer';
+
+const ACCESS_TOKEN = 'eyJ-access-token-secret';
+const REFRESH_TOKEN = 'v1.refresh-token-secret';
+const RAW_KEY = 'lfx:session:v1:alice-session-id';
+
+/** The error ioredis rejects a failed `SET key value EX ttl` with — `DataHandler.returnError` attaches `command`. */
+function valkeyReplyError(): Error {
+  const err = new ReplyError("OOM command not allowed when used memory > 'maxmemory'.");
+  err.command = {
+    name: 'set',
+    args: [RAW_KEY, JSON.stringify({ data: { access_token: ACCESS_TOKEN, refresh_token: REFRESH_TOKEN } }), 'EX', 3600],
+  };
+  return err;
+}
+
+describe('customErrorSerializer', () => {
+  it('drops the raw key and stored value from an ioredis ReplyError, keeping the command name', () => {
+    const serialized = customErrorSerializer(valkeyReplyError());
+    const line = JSON.stringify(serialized);
+
+    expect(line).not.toContain(ACCESS_TOKEN);
+    expect(line).not.toContain(REFRESH_TOKEN);
+    expect(line).not.toContain(RAW_KEY);
+    expect(serialized.command).toEqual({ name: 'set' });
+    expect(serialized.message).toContain('OOM command not allowed');
+    expect(serialized.type).toBe('ReplyError');
+  });
+
+  it('scrubs a Redis command on an error nested inside another error', () => {
+    const wrapper = Object.assign(new Error('wrapped'), { originalError: valkeyReplyError(), previousErrors: [valkeyReplyError()] });
+    const line = JSON.stringify(customErrorSerializer(wrapper));
+
+    expect(line).not.toContain(ACCESS_TOKEN);
+    expect(line).not.toContain(RAW_KEY);
+  });
+
+  it('redacts credential-named properties at any depth', () => {
+    const err = Object.assign(new Error('upstream failed'), {
+      errorBody: { session: { access_token: ACCESS_TOKEN, nested: [{ refreshToken: REFRESH_TOKEN }] } },
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}`, 'set-cookie': ['appSession=abc'] },
+      impersonationToken: ACCESS_TOKEN,
+    });
+    const serialized = customErrorSerializer(err);
+    const line = JSON.stringify(serialized);
+
+    expect(line).not.toContain(ACCESS_TOKEN);
+    expect(line).not.toContain(REFRESH_TOKEN);
+    expect(line).not.toContain('appSession=abc');
+    expect(serialized.errorBody.session.access_token).toBe('[REDACTED]');
+  });
+
+  it('keeps non-credential properties and survives cycles', () => {
+    const err: any = Object.assign(new Error('boom'), { cache_key: 'lfx:session:v1:***', token_type: 'Bearer', metadata: { count: 2 } });
+    err.self = err;
+    const serialized = customErrorSerializer(err);
+
+    expect(serialized.cache_key).toBe('lfx:session:v1:***');
+    expect(serialized.token_type).toBe('Bearer');
+    expect(serialized.metadata).toEqual({ count: 2 });
+    expect(serialized.self).toBe('[Circular]');
+  });
+
+  it('serializes a thrown string without splitting it into character keys', () => {
+    expect(customErrorSerializer('boom')).toEqual(expect.objectContaining({ type: 'String', message: 'boom' }));
+    expect(customErrorSerializer('boom')).not.toHaveProperty('0');
+  });
+
+  it('replaces a throwing getter instead of throwing into the caller', () => {
+    const err = Object.defineProperty(new Error('boom'), 'detail', {
+      enumerable: true,
+      get: () => {
+        throw new Error('getter');
+      },
+    });
+
+    expect(customErrorSerializer(err).detail).toBe('[Unserializable]');
+  });
+
+  it('survives throwing standard fields, a throwing toString and throwing key enumeration', () => {
+    const throwing = () => {
+      throw new Error('getter');
+    };
+    const err = new Error('boom');
+    for (const key of ['code', 'statusCode', 'status', 'stack']) Object.defineProperty(err, key, { get: throwing });
+    const unprintable = Object.defineProperties({}, { message: { get: throwing }, toString: { value: throwing } });
+    const unlistable = new Proxy(new Error('proxied'), { ownKeys: throwing });
+
+    expect(customErrorSerializer(err)).toEqual(expect.objectContaining({ type: 'Error', message: 'boom', code: '[Unserializable]' }));
+    expect(customErrorSerializer(unprintable)).toEqual(expect.objectContaining({ message: '[Unserializable]' }));
+    expect(customErrorSerializer(unlistable)).toEqual(expect.objectContaining({ type: 'Error', message: 'proxied' }));
+  });
+
+  it('replaces a nested value whose Proxy traps throw, keeping the rest of the error', () => {
+    const throwing = () => {
+      throw new Error('trap');
+    };
+    const err = Object.assign(new Error('boom'), {
+      detail: new Proxy({}, { ownKeys: throwing }),
+      rows: new Proxy([], { get: throwing }),
+      code: 'E_FAIL',
+    });
+    const serialized = customErrorSerializer(err);
+
+    expect(serialized).toEqual(expect.objectContaining({ message: 'boom', code: 'E_FAIL', detail: '[Unserializable]', rows: '[Unserializable]' }));
+  });
+});
+
+describe('scrubLogField', () => {
+  it('redacts a session bundle nested under log data', () => {
+    const scrubbed = scrubLogField('data', { session: { data: { id_token: 'id', access_token: ACCESS_TOKEN, refresh_token: REFRESH_TOKEN } } });
+
+    expect(JSON.stringify(scrubbed)).not.toMatch(/eyJ-access|v1\.refresh|"id"/);
+  });
+
+  it('redacts a top-level credential field and mirrors toJSON', () => {
+    const when = new Date('2026-01-01T00:00:00Z');
+
+    expect(scrubLogField('access_token', ACCESS_TOKEN)).toBe('[REDACTED]');
+    expect(scrubLogField('data', { when })).toEqual({ when: when.toJSON() });
+  });
+
+  it('walks an object whose toJSON returns itself', () => {
+    const value = {
+      access_token: ACCESS_TOKEN,
+      toJSON() {
+        return this;
+      },
+    };
+
+    expect(JSON.stringify(scrubLogField('data', value))).not.toContain(ACCESS_TOKEN);
+  });
+
+  it('drops functions, so a toJSON cannot run again on the scrubbed clone and reintroduce a secret', () => {
+    const value: Record<string, unknown> = { access_token: ACCESS_TOKEN, note: 'kept' };
+    value['toJSON'] = function (this: unknown) {
+      return this === value ? this : { leaked: ACCESS_TOKEN };
+    };
+    const scrubbed = scrubLogField('data', { value, callback: () => ACCESS_TOKEN, list: [() => ACCESS_TOKEN] });
+    const line = JSON.stringify(scrubbed);
+
+    expect(line).not.toContain(ACCESS_TOKEN);
+    expect(JSON.parse(line)).toEqual({ value: { access_token: '[REDACTED]', note: 'kept' }, list: [null] });
+  });
+
+  it('passes toJSON the key JSON.stringify would — root, property or index — and calls it once', () => {
+    const keyed = () => ({ toJSON: (key: string) => ({ key }) });
+    const root = keyed();
+    const nested = { inner: keyed(), list: [keyed()], once: { toJSON: () => ({ id: 1, toJSON: () => 'second call' }) } };
+
+    expect(scrubLogField('data', root)).toEqual({ key: '' });
+    expect(scrubLogField('data', nested)).toEqual({ inner: { key: 'inner' }, list: [{ key: '0' }], once: { id: 1 } });
+    expect(JSON.parse(JSON.stringify(scrubLogField('data', nested)))).toEqual(JSON.parse(JSON.stringify(nested)));
+    expect(customErrorSerializer(Object.assign(new Error('failed'), { details: keyed() })).details).toEqual({ key: 'details' });
+  });
+
+  it('reduces a Redis command to its name under any key, leaving other `command` values alone', () => {
+    const scrubbed = scrubLogField('data', { cmd: { name: 'set', args: [RAW_KEY, ACCESS_TOKEN] }, command: { name: 'deploy', target: 'prod' } });
+
+    expect(scrubbed).toEqual({ cmd: { name: 'set' }, command: { name: 'deploy', target: 'prod' } });
+  });
+
+  it('redacts other credential key spellings', () => {
+    const scrubbed = scrubLogField('data', { apiKey: 'a', 'x-api-key': 'b', client_secret: 'c', tokens: { a: 'd' }, jwt: 'e', sid: 'f', page_size: 10 });
+
+    expect(scrubbed).toEqual({
+      apiKey: '[REDACTED]',
+      'x-api-key': '[REDACTED]',
+      client_secret: '[REDACTED]',
+      tokens: '[REDACTED]',
+      jwt: '[REDACTED]',
+      sid: '[REDACTED]',
+      page_size: 10,
+    });
+  });
+
+  it('redacts password fields under any prefix', () => {
+    const scrubbed = scrubLogField('data', {
+      password: 'a',
+      current_password: 'b',
+      new_password: 'c',
+      confirmPassword: 'd',
+      meeting_passwd: 'e',
+      password_policy: 'strict',
+    });
+
+    expect(scrubbed).toEqual({
+      password: '[REDACTED]',
+      current_password: '[REDACTED]',
+      new_password: '[REDACTED]',
+      confirmPassword: '[REDACTED]',
+      meeting_passwd: '[REDACTED]',
+      password_policy: 'strict',
+    });
+  });
+
+  it('redacts API keys, private keys and passphrases under any prefix', () => {
+    const scrubbed = scrubLogField('data', {
+      SNOWFLAKE_API_KEY: 'a',
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: 'b',
+      privateKey: 'c',
+      signing_private_key: 'd',
+      apiKey: 'e',
+      SNOWFLAKE_ACCOUNT: 'acct',
+      cache_key: 'lfx:cache',
+    });
+
+    expect(scrubbed).toEqual({
+      SNOWFLAKE_API_KEY: '[REDACTED]',
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: '[REDACTED]',
+      privateKey: '[REDACTED]',
+      signing_private_key: '[REDACTED]',
+      apiKey: '[REDACTED]',
+      SNOWFLAKE_ACCOUNT: 'acct',
+      cache_key: 'lfx:cache',
+    });
+  });
+
+  it('redacts meeting passcodes, host keys and chat webhook URLs, leaving host-key flags visible', () => {
+    const scrubbed = scrubLogField('meeting', {
+      passcode: 'a',
+      host_key: 'b',
+      hostKey: 'c',
+      chat_webhook_url: 'https://hooks.example/abc',
+      can_view_host_key: true,
+      showHostKey: false,
+    });
+
+    expect(scrubbed).toEqual({
+      passcode: '[REDACTED]',
+      host_key: '[REDACTED]',
+      hostKey: '[REDACTED]',
+      chat_webhook_url: '[REDACTED]',
+      can_view_host_key: true,
+      showHostKey: false,
+    });
+  });
+
+  it('stops walking a wide array at the node budget, ending it with one truncation marker', () => {
+    const scrubbed = scrubLogField(
+      'items',
+      Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES * 2 }, (_, index) => `item-${index}`)
+    ) as unknown[];
+
+    expect(scrubbed).toHaveLength(LOG_SCRUB_LIMITS.MAX_NODES + 1);
+    expect(scrubbed[0]).toBe('item-0');
+    expect(scrubbed.at(-1)).toBe('[Truncated]');
+  });
+
+  it('stops walking a wide object at the node budget, collapsing the rest into one truncation key', () => {
+    const wide = Object.fromEntries(Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES * 2 }, (_, index) => [`k${index}`, index]));
+    const scrubbed = scrubLogField('data', wide) as Record<string, unknown>;
+
+    expect(Object.keys(scrubbed)).toHaveLength(LOG_SCRUB_LIMITS.MAX_NODES + 1);
+    expect(scrubbed['k0']).toBe(0);
+    expect(scrubbed['[Truncated]']).toBe('[Truncated]');
+  });
+
+  it('shares one node budget across nested containers', () => {
+    const rows = Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES }, () => ({ a: 1, b: 2 }));
+    const scrubbed = scrubLogField('rows', rows) as unknown[];
+
+    // Each row costs three entries (itself, `a`, `b`), so the budget runs out a third of the way in.
+    expect(scrubbed.length).toBeLessThan(LOG_SCRUB_LIMITS.MAX_NODES / 2);
+    expect(scrubbed.at(-1)).toBe('[Truncated]');
+  });
+});
+
+describe('scrubLogRecord', () => {
+  it('shares one node budget across every top-level field of a log call', () => {
+    const wide = () => Object.fromEntries(Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES / 2 }, (_, index) => [`k${index}`, index]));
+    const record = { a: wide(), b: wide(), c: wide(), d: wide() };
+    const scrubbed = scrubLogRecord(record, []);
+
+    // `a` costs half the budget plus its own entry, so `b` is cut short and `c`/`d` never get walked.
+    expect(Object.keys(scrubbed['a'] as object)).toHaveLength(LOG_SCRUB_LIMITS.MAX_NODES / 2);
+    expect((scrubbed['b'] as Record<string, unknown>)['[Truncated]']).toBe('[Truncated]');
+    expect(scrubbed).not.toHaveProperty('c');
+    expect(scrubbed).not.toHaveProperty('d');
+    expect(scrubbed['[Truncated]']).toBe('[Truncated]');
+  });
+
+  it('stops at the budget without walking the remaining fields, but keeps a passthrough field listed after the cut-off', () => {
+    let reads = 0;
+    const record: Record<string, unknown> = { a: Object.fromEntries(Array.from({ length: LOG_SCRUB_LIMITS.MAX_NODES }, (_, index) => [`k${index}`, index])) };
+    for (let index = 0; index < 100; index++) {
+      Object.defineProperty(record, `late${index}`, {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return index;
+        },
+      });
+    }
+    const err = new Error('boom');
+    record['err'] = err;
+    const scrubbed = scrubLogRecord(record, ['err']);
+
+    expect(reads).toBe(0);
+    expect(scrubbed['[Truncated]']).toBe('[Truncated]');
+    expect(scrubbed['err']).toBe(err);
+  });
+
+  it('copies passthrough fields as-is without charging them, and still scrubs the rest', () => {
+    const err = new Error('boom');
+    const scrubbed = scrubLogRecord({ err, access_token: ACCESS_TOKEN, data: { refresh_token: REFRESH_TOKEN } }, ['err']);
+
+    expect(scrubbed['err']).toBe(err);
+    expect(scrubbed['access_token']).toBe('[REDACTED]');
+    expect(scrubbed['data']).toEqual({ refresh_token: '[REDACTED]' });
+  });
+
+  it('logs a marker instead of throwing when listing the fields throws', () => {
+    const record = new Proxy(
+      { access_token: ACCESS_TOKEN },
+      {
+        ownKeys() {
+          throw new Error('ownKeys failed');
+        },
+      }
+    );
+
+    expect(scrubLogRecord(record, ['err'])).toEqual({ '[Unserializable]': '[Unserializable]' });
+  });
+});
