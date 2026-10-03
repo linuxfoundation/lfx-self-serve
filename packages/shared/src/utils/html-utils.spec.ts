@@ -820,6 +820,15 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(leaked).toEqual([]);
   });
 
+  it('judges a long interior whitespace run in linear time', () => {
+    // Guards the trailing-whitespace trim in `normalizeHrefForJudgement` against a regression to
+    // an end-anchored regex: the run must survive the leading strip and not reach the end.
+    const href = `a${' '.repeat(1_000_000)}b`;
+    const started = performance.now();
+    stripResourceLoadingHtml(`<a href="${href}">x</a>`, BRIEF);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   it('keeps a legitimate url whose PATH contains a space', () => {
     // The normalisation must not become an over-denial: stripping control characters is about
     // how the host is read, and an ordinary path is untouched.
