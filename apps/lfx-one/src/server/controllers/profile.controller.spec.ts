@@ -10,6 +10,7 @@ import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valke
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   getUsernameFromAuthMock,
+  getEffectiveUsernameMock,
   generateM2MTokenMock,
   getEffectiveEmailMock,
   getEffectiveSubMock,
@@ -29,6 +30,7 @@ const {
   authStateSvc,
 } = vi.hoisted(() => ({
   getUsernameFromAuthMock: vi.fn(),
+  getEffectiveUsernameMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
   getEffectiveEmailMock: vi.fn(),
   getEffectiveSubMock: vi.fn(),
@@ -48,6 +50,7 @@ const {
   cdpSvc: {
     getIdentitiesForUser: vi.fn(),
     verifyIdentityForUser: vi.fn(),
+    rejectIdentityForUser: vi.fn(),
   },
   userSvc: {
     updateUserMetadata: vi.fn(),
@@ -130,7 +133,7 @@ vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth: getUsernameFromAuthMock,
   getEffectiveEmail: getEffectiveEmailMock,
   getEffectiveSub: getEffectiveSubMock,
-  getEffectiveUsername: vi.fn(),
+  getEffectiveUsername: getEffectiveUsernameMock,
   isImpersonating: isImpersonatingMock,
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
@@ -585,7 +588,20 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
   beforeEach(() => {
     vi.clearAllMocks();
     getUsernameFromAuthMock.mockResolvedValue('testuser');
+    getEffectiveUsernameMock.mockReturnValue('testuser');
     controller = new ProfileController();
+  });
+
+  it('fails closed with a 401, touching no CDP record, when no IdP-asserted LFID resolves', async () => {
+    getEffectiveUsernameMock.mockReturnValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(buildRejectReq({}), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+    expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('skips the guard entirely for a non-email identity removal (no email in the body)', async () => {
@@ -1238,6 +1254,7 @@ describe('ProfileController.verifyAndLinkEmail — v1 verified-email sync (lfx-s
     controller = new ProfileController();
 
     getUsernameFromAuthMock.mockResolvedValue('auth0|user-1');
+    getEffectiveUsernameMock.mockReturnValue('user-1');
     profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
     profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
     emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'id-token' } });

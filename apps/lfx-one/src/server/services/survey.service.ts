@@ -192,7 +192,7 @@ export class SurveyService {
     const enrichedData: CreateSurveyRequest = {
       ...surveyData,
       creator_id: (user?.['https://sso.linuxfoundation.org/claims/username'] as string) || '',
-      creator_username: (user?.['nickname'] as string) || (user?.['name'] as string) || '',
+      creator_username: (user?.['https://sso.linuxfoundation.org/claims/username'] as string) || '',
       creator_name: (user?.['name'] as string) || '',
     };
 
