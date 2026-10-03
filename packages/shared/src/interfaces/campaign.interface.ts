@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type { CAMPAIGN_EMAIL_SEGMENTS, CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -218,6 +218,26 @@ export interface CampaignEventDetails {
   speakers: string[];
   slug: string;
   formatNotes: string;
+  /**
+   * The event's own summary of itself, 1-3 sentences.
+   *
+   * This is the single richest fact the scrape produces, and email copy generation is its main
+   * consumer: campaign-service's generator refuses to invent facts, so without a description it
+   * can only write from the name, dates and location and the resulting email is three lines long.
+   */
+  description: string;
+  /**
+   * Links the event page itself publishes, beyond `registrationUrl`.
+   *
+   * Empty string means "the page did not state one", which is NOT the same as "the model could
+   * not find one": every value here survived `verifyPageLink`, so it is a URL the fetched HTML
+   * actually links to. A link the extraction invented is dropped before it reaches this type.
+   * See `event-links.helper.ts` for why that check exists rather than trusting the extraction.
+   */
+  agendaUrl: string;
+  cfpUrl: string;
+  venueUrl: string;
+  sponsorshipUrl: string;
   heroImageUrl?: string;
   sponsors?: CampaignEventSponsor[];
 }
@@ -731,7 +751,16 @@ export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
  */
 export interface CampaignAudience {
   id: string;
-  projectId: string;
+  /**
+   * Optional because one producer genuinely cannot know it. A recorded compose
+   * (`AudienceComposeMasterResult.audience`) returns a deliberately slim row — id, status,
+   * version and master list — and the BFF that fills the rest holds the project SLUG, not its id.
+   * Fabricating one there would put an unusable value on a field callers are entitled to trust.
+   *
+   * Nothing in the UI reads it today; it is carried because the build and read-back paths do
+   * return it and dropping it would lose real information those paths have.
+   */
+  projectId?: string;
   briefId: string;
   platform: string;
   platformMasterListId?: string;
@@ -742,10 +771,20 @@ export interface CampaignAudience {
   etag?: string;
 }
 
-/** Result of asking campaign-service to build a brief's audience. */
-export interface BuildAudienceResult {
+/**
+ * Result of reading back the audiences campaign-service already holds for a brief.
+ *
+ * `enabled: false` is a steady state rather than a failure: the flag being dark is an ordinary
+ * deployment state, and the caller branches on it the same way as on an empty list.
+ *
+ * `audiences` is newest-first, as upstream returns it. No `etag`: `list-audiences` declares no
+ * `Header("etag:ETag")`, so a caller that means to PATCH one of these rows must re-read the
+ * SINGLE audience first to obtain a concurrency token — a row from this list carries none, and
+ * inventing one here would be a token that means nothing upstream.
+ */
+export interface ListAudiencesResult {
   enabled: boolean;
-  audience?: CampaignAudience;
+  audiences?: CampaignAudience[];
   error?: string;
 }
 
@@ -2558,6 +2597,21 @@ export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 export type CampaignEmailVariant = (typeof CAMPAIGN_EMAIL_VARIANTS)[number];
 
 /**
+ * Narrows which of a `generate-email-copy` draft's content blocks are relevant to a named
+ * audience -- `'developer'`, `'business-decision-maker'`, `'alumni'` or `'prospect'`.
+ *
+ * Orthogonal to `CampaignEmailVariant`: variant restyles the whole draft's framing, segment
+ * narrows which blocks within that draft matter to this audience. Both may be set together,
+ * either alone, or neither. Same free-text, lenient-fallback shape as `CampaignEmailStage` and
+ * `CampaignEmailVariant`: an unrecognised or absent value produces the normal stage-based copy
+ * under a 200 rather than an error.
+ *
+ * Derived from `CAMPAIGN_EMAIL_SEGMENTS` rather than restated, so the UI's selector and this type
+ * cannot drift apart.
+ */
+export type CampaignEmailSegment = (typeof CAMPAIGN_EMAIL_SEGMENTS)[number];
+
+/**
  * One selectable email type.
  *
  * The TYPE is what an operator recognises ("Thank You + Survey"); the STAGE is what
@@ -2687,6 +2741,8 @@ export interface AudienceListBrief {
   size?: number;
   missing: boolean;
   resolvedFromLegacyId?: string;
+  /** Deep link to the list in HubSpot; absent when the list no longer resolves. */
+  hubspotUrl?: string;
 }
 
 /**
@@ -2761,6 +2817,16 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /**
+   * Attach the composed master to this brief, as its built send audience.
+   *
+   * Optional because the builder is deliberately usable with no campaign to attach to — the
+   * routes are project-scoped for exactly that reason. When it is set, campaign-service records
+   * the audience row itself INSIDE the compose: that is the only point at which the HubSpot
+   * portal the lists were created in is provably known, and an audience with no recorded portal
+   * is refused at dispatch and cannot be repaired by a later PATCH.
+   */
+  briefId?: string;
 }
 
 /** A list this request created in HubSpot. */
@@ -2793,11 +2859,29 @@ export interface AudienceComposeMasterResult {
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * Whether the master was recorded as the brief's built send audience.
+   *
+   * Explicit rather than inferred from `audience` being present, and it is not the same question
+   * as "was a `briefId` sent": an upstream that predates this field composes normally and returns
+   * nothing, which the proxy reads as `false`. A caller that inferred "attached" from an absent
+   * object would tell the operator their send is wired up against a deployment that never wired
+   * anything.
+   */
+  recorded: boolean;
+  /**
+   * The recorded audience row, present exactly when `recorded` is true.
+   *
+   * The same `CampaignAudience` the build path returns, so the parent can set it on the one signal
+   * that gates staging without an adapter. It carries no `etag` — upstream does not return one on
+   * this response, and a PATCH would have to re-read the single audience first.
+   */
+  audience?: CampaignAudience;
 }
 
 /** A partial `compose-master` failure: what was created before the failure, and why it failed. */
 /**
- * A compose that did not complete. FOUR shapes are reachable and the field that is set tells the
+ * A compose that did not complete. FIVE shapes are reachable and the field that is set tells the
  * caller which (`docs/api-catalog.md` in campaign-service):
  *
  *  - `suppression` alone — the suppression list definitely exists and the master create failed.
@@ -2806,6 +2890,10 @@ export interface AudienceComposeMasterResult {
  *  - `masterName` alone — no exclusions were requested (or the suppression create failed
  *    outright) and the master create is unconfirmed.
  *  - `suppression` + `masterName` — the suppression list exists and the master is unconfirmed.
+ *  - `master` (with `suppression` when one was created) — BOTH lists exist and are confirmed, and
+ *    the attempt to record them as the brief's audience failed. Reachable only on a compose that
+ *    asked to attach. It is a partial rather than a 500 precisely because a 500 invites the retry
+ *    that would mint a second master list for one send.
  *
  * `suppression` and `suppressionName` are never both set: an id is only reported once a create is
  * confirmed, at which point there is no unconfirmed name left to report. None of these is a bare
@@ -2819,7 +2907,39 @@ export interface AudienceComposeMasterPartial {
   suppressionName?: string;
   /** Deterministic name of a master list whose creation could not be confirmed. */
   masterName?: string;
+  /**
+   * The confirmed master list, when the lists exist but attaching them to the brief failed.
+   *
+   * Never set together with `masterName`: one says the master is confirmed, the other says it is
+   * not. This is the one shape whose lists are both real and usable — the operator's route out is
+   * attaching this list by hand, not composing again.
+   */
+  master?: AudienceComposedList;
   error: string;
+}
+
+/**
+ * Record lists that ALREADY exist as a brief's send audience — "send to the same lists as this
+ * earlier email" — without composing a new master list.
+ *
+ * Nothing is created in HubSpot. Upstream reads every id back from the project's portal before
+ * recording it, so a mistyped or foreign id is a 404 rather than a send that fails at dispatch.
+ */
+export interface AudienceAttachExistingRequest {
+  briefId: string;
+  /** The single include list the send goes to. */
+  masterListId: string;
+  /** Existing lists the send suppresses. */
+  suppressionListIds?: string[];
+  /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
+  inclusionSummary?: string;
+}
+
+/** The result of attaching existing lists: the verified include list and the recorded audience. */
+export interface AudienceAttachExistingResult {
+  master: AudienceComposedList;
+  suppressionListIds: string[];
+  audience: CampaignAudience;
 }
 
 // --- Audience QA -----------------------------------------------------------

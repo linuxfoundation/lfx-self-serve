@@ -9,11 +9,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS, AUDIENCE_UNION_EXACT_CAP } from '@lfx-one/shared/constants';
 import type {
+  AudienceComposedList,
   AudienceComposeMasterPartial,
+  CampaignAudience,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
   AudienceDiscoveryResult,
   AudienceDiscoverySSEEventType,
+  AudienceLastSentEmail,
   AudienceSuppressionList,
   SSEEvent,
 } from '@lfx-one/shared/interfaces';
@@ -50,6 +53,7 @@ describe('AudienceBuilderTabComponent', () => {
   const previewAudienceCount = vi.fn();
   const composeAudienceMaster = vi.fn();
   const runAudienceQa = vi.fn();
+  const attachExistingAudience = vi.fn();
 
   beforeEach(async () => {
     for (const mock of [
@@ -62,6 +66,7 @@ describe('AudienceBuilderTabComponent', () => {
       previewAudienceCount,
       composeAudienceMaster,
       runAudienceQa,
+      attachExistingAudience,
     ]) {
       mock.mockReset();
     }
@@ -101,6 +106,7 @@ describe('AudienceBuilderTabComponent', () => {
             previewAudienceCount,
             composeAudienceMaster,
             runAudienceQa,
+            attachExistingAudience,
           },
         },
       ],
@@ -118,11 +124,16 @@ describe('AudienceBuilderTabComponent', () => {
    * constructor, which flushes on the FIRST change-detection pass, so the response only reaches
    * the view on the second.
    */
-  async function render(inputs: { active?: boolean; initialEventUrl?: string } = {}): Promise<void> {
+  async function render(inputs: { active?: boolean; initialEventUrl?: string; briefId?: string; audienceReadFailed?: boolean } = {}): Promise<void> {
     fixture = TestBed.createComponent(AudienceBuilderTabComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('active', inputs.active ?? true);
     fixture.componentRef.setInput('initialEventUrl', inputs.initialEventUrl ?? '');
+    // Defaults to EMPTY, which is the brief-less exploratory state the builder is reachable in.
+    // Tests that care about attaching opt in, so every other test here keeps exercising the path
+    // where a compose creates lists that no send points at.
+    fixture.componentRef.setInput('briefId', inputs.briefId ?? '');
+    fixture.componentRef.setInput('audienceReadFailed', inputs.audienceReadFailed ?? false);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -341,8 +352,8 @@ describe('AudienceBuilderTabComponent', () => {
   });
 
   describe('selection, preview and compose', () => {
-    async function renderWithDiscovery(): Promise<void> {
-      await render();
+    async function renderWithDiscovery(inputs: { audienceReadFailed?: boolean } = {}): Promise<void> {
+      await render(inputs);
       typeEventUrl('https://events.example.org/synthetic-summit');
       click('campaigns-audience-discover');
       completeDiscovery();
@@ -685,6 +696,30 @@ describe('AudienceBuilderTabComponent', () => {
 
       const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
       expect(btn?.disabled, 'compose stayed enabled with an unresolved include/exclude conflict').toBe(true);
+    });
+
+    it("refuses to compose when the brief's existing audience could not be read", async () => {
+      // A failed audience read leaves the parent's `emailAudience` null, which is byte-identical
+      // to a brief that never had one. Offering compose there let an outage that HID an existing
+      // audience produce a SECOND HubSpot master list for the same brief -- irreversible, not
+      // idempotent, and real work to unpick.
+      //
+      // Same fail-closed reasoning as `suppressionFailed`: an unverifiable absence is not an
+      // absence.
+      await renderWithDiscovery({ audienceReadFailed: true });
+      click('audience-card-grid-toggle-101');
+
+      const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(btn?.disabled, 'compose stayed enabled while the existing audience was unreadable').toBe(true);
+    });
+
+    it('allows compose once the audience read has actually answered', async () => {
+      // The counterpart, so the guard cannot be satisfied by disabling compose permanently.
+      await renderWithDiscovery({ audienceReadFailed: false });
+      click('audience-card-grid-toggle-101');
+
+      const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(btn?.disabled, 'a verified-absent audience must not block compose').toBe(false);
     });
 
     it('does not re-enable compose after an ordinary failure', async () => {
@@ -1190,6 +1225,427 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(host().querySelector('[data-testid="campaigns-audience-compose-error"]')?.textContent).toContain('Not authorized for this portal.');
       expect(host().querySelector('[data-testid="campaigns-audience-compose-partial"]')).toBeNull();
+    });
+  });
+
+  /**
+   * The compose -> attach handoff.
+   *
+   * The composed master used to be a dead end: this tab created two real HubSpot lists and
+   * nothing carried their ids out, so the send still went to an audience the service derived on
+   * its own. Upstream now records the master as the brief's send audience inside the compose
+   * call, and these tests cover the two things only decidable at this boundary -- WHICH output
+   * fires for each outcome, and whether it fires at all once the run it belongs to is stale.
+   */
+  describe('attaching the composed master to the brief', () => {
+    async function renderWithDiscovery(briefId: string): Promise<void> {
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+    }
+
+    const RECORDED_AUDIENCE: CampaignAudience = {
+      id: 'aud-1',
+      briefId: 'brief-1',
+      platform: 'hubspot',
+      platformMasterListId: '900',
+      status: 'built',
+      version: 1,
+    };
+
+    function listen(): { attached: CampaignAudience[]; unattached: AudienceComposedList[] } {
+      const attached: CampaignAudience[] = [];
+      const unattached: AudienceComposedList[] = [];
+      fixture.componentInstance.audienceAttached.subscribe((a) => attached.push(a));
+      fixture.componentInstance.audienceComposeUnattached.subscribe((l) => unattached.push(l));
+      return { attached, unattached };
+    }
+
+    it('sends the brief id with the compose so upstream can attach what it creates', async () => {
+      // Read at DISPATCH. Upstream attaches inside the same call that creates the lists, so an id
+      // arriving any later cannot be used -- there is no second call to put it in.
+      await renderWithDiscovery('brief-1');
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
+      );
+
+      click('campaigns-audience-compose');
+
+      expect(composeAudienceMaster.mock.calls.at(-1)?.[1]?.briefId).toBe('brief-1');
+    });
+
+    it('omits the brief id entirely when there is no saved plan', async () => {
+      // A present-but-EMPTY brief id is a different request upstream: it reads it as an attach,
+      // fails the brief lookup and 404s -- refusing to create anything for the exploratory
+      // compose these project-scoped routes exist for.
+      await renderWithDiscovery('');
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'] }));
+
+      click('campaigns-audience-compose');
+
+      expect(composeAudienceMaster.mock.calls.at(-1)?.[1]?.briefId).toBeUndefined();
+    });
+
+    it('hands the recorded audience row to the parent', async () => {
+      await renderWithDiscovery('brief-1');
+      const seen = listen();
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
+      );
+
+      click('campaigns-audience-compose');
+
+      expect(seen.attached).toEqual([RECORDED_AUDIENCE]);
+      expect(seen.unattached, 'a reconcile warning was raised for a list that IS attached').toEqual([]);
+    });
+
+    it('offers a way on to the email once the master is composed, and says it is attached', async () => {
+      await renderWithDiscovery('brief-1');
+      let continued = 0;
+      fixture.componentInstance.continueToEmail.subscribe(() => continued++);
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
+      );
+      expect(host().querySelector('[data-testid="campaigns-audience-continue"]'), 'offered before anything was composed').toBeNull();
+
+      click('campaigns-audience-compose');
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-attached"]')).not.toBeNull();
+      click('campaigns-audience-continue');
+
+      expect(continued).toBe(1);
+    });
+
+    it('says an unrecorded compose is not attached, and still lets the operator move on', async () => {
+      await renderWithDiscovery('');
+      let continued = 0;
+      fixture.componentInstance.continueToEmail.subscribe(() => continued++);
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'] }));
+
+      click('campaigns-audience-compose');
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-not-attached"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-attached"]')).toBeNull();
+      click('campaigns-audience-continue');
+
+      expect(continued).toBe(1);
+    });
+
+    /**
+     * `recorded` is read, never inferred from the presence of `audience`. Goa ignores unknown
+     * body fields, so a campaign-service deployed before this feature accepts the brief id,
+     * composes normally and answers without either -- and reporting that as attached would tell
+     * the operator a send is wired up to a list nothing points at.
+     */
+    it('reports an unrecorded compose as a loose list rather than an attachment', async () => {
+      await renderWithDiscovery('brief-1');
+      const seen = listen();
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'] }));
+
+      click('campaigns-audience-compose');
+
+      expect(seen.attached).toEqual([]);
+      expect(seen.unattached).toEqual([master]);
+    });
+
+    it('reports a compose the operator ran with no saved plan as a loose list', async () => {
+      await renderWithDiscovery('');
+      const seen = listen();
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'] }));
+
+      click('campaigns-audience-compose');
+
+      expect(seen.unattached).toEqual([master]);
+    });
+
+    /**
+     * The fifth partial shape: both lists exist and only the attach failed. It is the one partial
+     * whose master is CONFIRMED, so the operator's route out is that exact list -- a generic
+     * failure would leave them with nothing to act on.
+     */
+    it('carries a confirmed master out of a failed attach', async () => {
+      await renderWithDiscovery('brief-1');
+      const seen = listen();
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      const partial = { master, error: 'Lists created but not attached.' } as unknown as AudienceComposeMasterPartial;
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+
+      click('campaigns-audience-compose');
+
+      expect(seen.unattached).toEqual([master]);
+      expect(seen.attached).toEqual([]);
+    });
+
+    it('emits nothing for a partial that confirmed no master', async () => {
+      await renderWithDiscovery('brief-1');
+      const seen = listen();
+      const partial = {
+        suppression: { listId: '201', name: 'Combined Suppression', hubspotUrl: 'u' },
+        error: 'The master list was not created.',
+      } as unknown as AudienceComposeMasterPartial;
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+
+      click('campaigns-audience-compose');
+
+      expect(seen.unattached, 'the parent was pointed at a master list that was never created').toEqual([]);
+    });
+
+    /**
+     * THE REASON both emissions sit inside the run-generation guard. The reply arrives after a
+     * project switch has already reset this tab, and the parent has moved to another project's
+     * brief by then -- so an emission here would attach one project's HubSpot list to a different
+     * project's send, or raise a reconcile warning on a campaign that composed nothing.
+     */
+    it('emits nothing when a project switch has already superseded the run', async () => {
+      await renderWithDiscovery('brief-1');
+      const seen = listen();
+      const slowCompose = new Subject<{ master: AudienceComposedList; sourceListIds: string[]; recorded: boolean; audience: CampaignAudience }>();
+      composeAudienceMaster.mockReturnValue(slowCompose);
+      click('campaigns-audience-compose');
+
+      fixture.componentRef.setInput('projectSlug', 'another-foundation');
+      fixture.detectChanges();
+      slowCompose.next({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE });
+      fixture.detectChanges();
+
+      expect(seen.attached, "a late reply attached one project's list to another project's brief").toEqual([]);
+      expect(seen.unattached).toEqual([]);
+    });
+
+    /**
+     * The note that replaced the old "go and attach it yourself" cross-link. Two states, because
+     * an empty brief id genuinely means something different rather than being a not-ready version
+     * of the same thing -- and saying so BEFORE the compose is the only point at which it is
+     * still free to act on. The testid is unchanged on purpose.
+     */
+    it('promises the attach once a plan is saved', async () => {
+      await render({ briefId: 'brief-1' });
+
+      const note = host().querySelector('[data-testid="campaigns-audience-crosslink"]');
+      expect(note?.textContent).toContain('attaches it to this campaign');
+    });
+
+    it('warns that a compose with no saved plan attaches nothing', async () => {
+      await render({ briefId: '' });
+
+      const note = host().querySelector('[data-testid="campaigns-audience-crosslink"]');
+      expect(note?.textContent).toContain('not attached');
+    });
+  });
+
+  /**
+   * Reusing an earlier send's lists, or one already-built list, as this email's audience with
+   * NO compose — the path that avoids creating yet another master list in HubSpot.
+   */
+  describe('attaching existing lists without composing', () => {
+    const PAST_SEND: AudienceLastSentEmail = {
+      emailId: 'em-7',
+      emailName: 'Synthetic Summit 2026 - Early bird',
+      sentAt: '2026-01-10T15:00:00Z',
+      hubspotUrl: 'https://app.hubspot.com/email/1/details/em-7/performance',
+      includedLists: [{ listId: '501', name: 'Synthetic Summit - Prospects', size: 3000, missing: false }],
+      suppressionLists: [
+        { listId: '201', name: 'LF Events - GDPR Suppression', size: 5000, missing: false },
+        { listId: '777', name: 'Synthetic Summit - Already registered', size: 40, missing: false },
+      ],
+    };
+
+    const ATTACHED_AUDIENCE: CampaignAudience = {
+      id: 'aud-2',
+      briefId: 'brief-1',
+      platform: 'hubspot',
+      platformMasterListId: '501',
+      status: 'built',
+      version: 1,
+    };
+
+    async function renderWithPastSend(briefId: string): Promise<void> {
+      getAudienceLastSent.mockReturnValue(of([PAST_SEND]));
+      await render({ briefId });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    it("attaches a past send's include and suppression lists as they are", async () => {
+      await renderWithPastSend('brief-1');
+      const attached: CampaignAudience[] = [];
+      fixture.componentInstance.audienceAttached.subscribe((a) => attached.push(a));
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['201', '777'],
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+
+      click('audience-last-sent-use-em-7');
+
+      const [project, request] = attachExistingAudience.mock.calls.at(-1) ?? [];
+      expect(project).toBe('tlf');
+      expect(request).toMatchObject({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201', '777'] });
+      expect(composeAudienceMaster, 'a compose ran for lists that already exist').not.toHaveBeenCalled();
+      expect(attached).toEqual([ATTACHED_AUDIENCE]);
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-attached"]')).not.toBeNull();
+
+      let continued = 0;
+      fixture.componentInstance.continueToEmail.subscribe(() => continued++);
+      click('campaigns-audience-attach-continue');
+      expect(continued).toBe(1);
+    });
+
+    it('blocks attach while a compose is still in flight', async () => {
+      // Compose and attach both RECORD an audience against the same brief, and neither guard
+      // used to know about the other -- `canAttach` ignored `composing()`. Started together, the
+      // displayed selection and the recorded audience are decided by response arrival order, so
+      // the operator can be looking at one list while the send points at another.
+      //
+      // There is no correct merge of two audiences for one brief, so they are serialized.
+      await renderWithPastSend('brief-1');
+
+      // A compose that never settles: the window the race lives in.
+      composeAudienceMaster.mockReturnValue(new Subject().asObservable());
+      click('audience-card-grid-toggle-101');
+      click('campaigns-audience-compose');
+
+      click('audience-last-sent-use-em-7');
+
+      expect(attachExistingAudience, 'an attach started while a compose was still writing').not.toHaveBeenCalled();
+    });
+
+    it("copies a past send's selection into include AND exclude", async () => {
+      await renderWithPastSend('brief-1');
+
+      click('audience-last-sent-copy-em-7');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-501"]'), 'the include list was not copied').not.toBeNull();
+      // 201 is a standard grid row, so it is ticked THROUGH that row; 777 is not, so it gets its own key.
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-exclude-lf_events_gdpr"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-remove-exclude-copied:777"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-excluded"]')?.textContent?.trim()).toBe('2');
+    });
+
+    it('sends to a single selected list directly, with the ticked suppression', async () => {
+      await renderWithPastSend('brief-1');
+      click('audience-card-grid-toggle-101');
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['201'], audience: ATTACHED_AUDIENCE })
+      );
+
+      click('campaigns-audience-use-direct');
+
+      expect(attachExistingAudience.mock.calls.at(-1)?.[1]).toMatchObject({ masterListId: '101', suppressionListIds: ['201'] });
+      expect(composeAudienceMaster).not.toHaveBeenCalled();
+    });
+
+    it('holds the direct attach while the suppression fetch has failed', async () => {
+      getAudienceSuppressionLists.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+      await renderWithPastSend('brief-1');
+      click('audience-card-grid-toggle-101');
+
+      click('campaigns-audience-use-direct');
+
+      expect(attachExistingAudience, 'a send was recorded with its GDPR/CASL exclusions unread').not.toHaveBeenCalled();
+    });
+
+    it('drops the attach result when the parent moves to another brief', async () => {
+      await renderWithPastSend('brief-1');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' }, suppressionListIds: ['201'], audience: ATTACHED_AUDIENCE })
+      );
+      click('audience-last-sent-use-em-7');
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]'), 'fixture precondition').not.toBeNull();
+
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]'), "brief-1's attach read as brief-2's").toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-summary-attached"]')).toBeNull();
+    });
+
+    it('offers no direct attach without a saved plan', async () => {
+      await renderWithPastSend('');
+      click('audience-card-grid-toggle-101');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-use-direct"]')).toBeNull();
+      expect(host().querySelector('[data-testid="audience-last-sent-attach-unavailable"]')).not.toBeNull();
+    });
+
+    // A second send on the SAME master, differing only in its exclusions -- the pair that made
+    // matching on the master alone wrong.
+    const SIBLING_SEND: AudienceLastSentEmail = {
+      ...PAST_SEND,
+      emailId: 'em-8',
+      emailName: 'Synthetic Summit 2026 - Final call',
+      sentAt: '2026-02-01T15:00:00Z',
+      suppressionLists: [{ listId: '888', name: 'Synthetic Summit - Opened already', size: 90, missing: false }],
+    };
+
+    /** Renders with BOTH sends on master 501, so only the exclusions tell them apart. */
+    async function renderWithSiblingSends(): Promise<void> {
+      getAudienceLastSent.mockReturnValue(of([PAST_SEND, SIBLING_SEND]));
+      await render({ briefId: 'brief-1' });
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+    }
+
+    function badgeFor(emailId: string): string {
+      return host().querySelector(`[data-testid="audience-last-sent-use-${emailId}"]`)?.textContent?.trim() ?? '';
+    }
+
+    it('marks only the send whose exclusions were actually recorded', async () => {
+      await renderWithSiblingSends();
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['201', '777'],
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+
+      click('audience-last-sent-use-em-7');
+
+      expect(badgeFor('em-7')).toContain('Same lists used for this email');
+      expect(badgeFor('em-8'), 'a send sharing the master but not the exclusions read as attached').toContain('Use these lists for this email');
+    });
+
+    // The exclusions are read off the attach RESULT, not off what was sent, so a failed attach
+    // cannot leave the master from the successful write beside the exclusions from the failed one.
+    it('keeps describing the recorded selection after a later attach fails', async () => {
+      await renderWithSiblingSends();
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['201', '777'],
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+      click('audience-last-sent-use-em-7');
+      expect(badgeFor('em-7'), 'fixture precondition').toContain('Same lists used for this email');
+
+      attachExistingAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { message: 'HubSpot rejected the list' } })));
+      click('audience-last-sent-use-em-8');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]'), 'fixture precondition').not.toBeNull();
+      expect(badgeFor('em-8'), "the failed attempt's exclusions were reported as the brief's").toContain('Use these lists for this email');
+      expect(badgeFor('em-7'), 'the recorded selection stopped being reported after an unrelated failure').toContain('Same lists used for this email');
+    });
+
+    it('shows the server error when an attach fails', async () => {
+      await renderWithPastSend('brief-1');
+      attachExistingAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { message: 'HubSpot rejected the list' } })));
+
+      click('audience-last-sent-use-em-7');
+
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-error"]')).not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-attach-result"]')).toBeNull();
     });
   });
 

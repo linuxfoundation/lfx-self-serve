@@ -1,11 +1,26 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4" data-testid="audience-last-sent">
+<div class="flex flex-col gap-5" data-testid="audience-last-sent">
+  <!-- How reuse works, stated once: the two direct actions create nothing in HubSpot, which is the
+       whole reason to prefer them over a compose. -->
+  <div class="flex items-start gap-2 rounded-md bg-blue-50 p-3 text-xs text-blue-900" data-testid="audience-last-sent-howto">
+    <i class="fa-light fa-circle-info mt-0.5 text-blue-600" aria-hidden="true"></i>
+    <div class="flex flex-col gap-1">
+      <span><span class="font-medium">Use for this email</span> attaches existing lists to this email as-is. No new list is created in HubSpot.</span>
+      <span><span class="font-medium">Copy selection</span> ticks the same lists in steps 2–3 so you can adjust them before composing.</span>
+      @if (!canAttach()) {
+        <span class="text-amber-800" data-testid="audience-last-sent-attach-unavailable">
+          Save the plan on the Plan tab first. Lists can only be attached to an email once a plan exists.
+        </span>
+      }
+    </div>
+  </div>
+
   <!-- Existing master lists first: reusing one is cheaper and safer than a rebuild, so it is the
        option offered before the send history that would justify building a new one. -->
   <div class="flex flex-col gap-2" data-testid="audience-last-sent-masters">
-    <h5 class="text-sm font-semibold text-gray-900">Master lists already built</h5>
+    <h5 class="text-sm font-semibold text-gray-900">Master lists already built ({{ masterLists().length }})</h5>
     @if (mastersLoading()) {
       <div class="flex items-center gap-2 text-sm text-gray-500">
         <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
@@ -16,33 +31,56 @@
         Existing master lists could not be read from HubSpot, so this list may be incomplete. Retry before rebuilding.
       </p>
     } @else if (masterLists().length === 0) {
-      <p class="text-sm text-gray-500">No master list has been built for this event yet.</p>
+      <p class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-xs text-gray-500">No master list has been built for this event yet.</p>
     } @else {
-      <div class="flex flex-col gap-2">
+      <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
         @for (list of masterRows(); track list.listId) {
-          <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3">
-            <div class="flex min-w-0 flex-col gap-1">
-              <span class="text-xs font-medium break-words text-gray-900">{{ list.name }}</span>
-              <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                <span>{{ list.sizeText }}</span>
-                <a
-                  [href]="list.hubspotUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-blue-600 hover:underline"
-                  [attr.data-testid]="'audience-last-sent-master-link-' + list.listId">
-                  Open in HubSpot
-                </a>
+          <div
+            class="flex flex-col gap-2 rounded-lg border bg-white p-3"
+            [class.border-emerald-300]="list.attached"
+            [class.border-gray-200]="!list.attached"
+            [attr.data-testid]="'audience-last-sent-master-' + list.listId">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex min-w-0 flex-col gap-0.5">
+                <span class="text-sm font-medium break-words text-gray-900">{{ list.name }}</span>
+                <span class="text-xs text-gray-500">{{ list.sizeText }} · List {{ list.listId }}</span>
               </div>
+              @if (list.attached) {
+                <span class="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">Attached</span>
+              }
             </div>
-            <button
-              type="button"
-              (click)="onAddMasterList(list)"
-              [disabled]="disabled() || list.selected"
-              class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              [attr.data-testid]="'audience-last-sent-master-add-' + list.listId">
-              {{ list.selected ? 'Added' : 'Add to selection' }}
-            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                (click)="onUseMasterList(list)"
+                [disabled]="!canUseExistingMaster() || attachingId() !== null || list.attached"
+                class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                [attr.data-testid]="'audience-last-sent-master-use-' + list.listId">
+                @if (attachingId() === list.listId) {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  Attaching...
+                } @else {
+                  <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
+                  {{ list.attached ? 'Used for this email' : 'Use for this email' }}
+                }
+              </button>
+              <button
+                type="button"
+                (click)="onAddMasterList(list)"
+                [disabled]="disabled() || list.selected"
+                class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                [attr.data-testid]="'audience-last-sent-master-add-' + list.listId">
+                {{ list.selected ? 'Added' : 'Add to selection' }}
+              </button>
+              <a
+                [href]="list.hubspotUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                [attr.data-testid]="'audience-last-sent-master-link-' + list.listId">
+                Open in HubSpot <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+              </a>
+            </div>
           </div>
         }
       </div>
@@ -50,7 +88,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="audience-last-sent-emails">
-    <h5 class="text-sm font-semibold text-gray-900">Recent sends for this event</h5>
+    <h5 class="text-sm font-semibold text-gray-900">Recent sends for this event ({{ emails().length }})</h5>
     @if (loading()) {
       <div class="flex items-center gap-2 text-sm text-gray-500">
         <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
@@ -61,32 +99,53 @@
         The send history could not be read from HubSpot. This is not a confirmation that nothing was sent.
       </p>
     } @else if (emails().length === 0) {
-      <p class="text-sm text-gray-500">No past marketing email for this event was found in HubSpot.</p>
+      <p class="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-xs text-gray-500">
+        No past marketing email for this event was found in HubSpot.
+      </p>
     } @else {
       @for (email of emailRows(); track email.emailId) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'audience-last-sent-email-' + email.emailId">
-          <div class="flex flex-wrap items-center justify-between gap-2">
+        <div
+          class="flex flex-col gap-3 rounded-lg border bg-white p-4"
+          [class.border-emerald-300]="email.attached"
+          [class.border-gray-200]="!email.attached"
+          [attr.data-testid]="'audience-last-sent-email-' + email.emailId">
+          <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="flex min-w-0 flex-col gap-0.5">
               <span class="text-sm font-medium break-words text-gray-900">{{ email.emailName }}</span>
-              <!--
-                `sentAt` is optional upstream and the adapter maps an omission to ''. It is
-                absent exactly when reading the email's selection failed, so the unqualified
-                "Sent " rendered a blank date on the rows that are already least trustworthy.
-              -->
-              @if (email.sentAt) {
-                <span class="text-xs text-gray-500">Sent {{ email.sentAt | date: 'mediumDate' }}</span>
-              } @else {
-                <span class="text-xs text-gray-500" data-testid="audience-last-sent-no-date">Send date unavailable</span>
+              <div class="flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                <!--
+                  `sentAt` is optional upstream and the adapter maps an omission to ''. It is
+                  absent exactly when reading the email's selection failed, so the unqualified
+                  "Sent " rendered a blank date on the rows that are already least trustworthy.
+                -->
+                @if (email.sentAt) {
+                  <span>Sent {{ email.sentAt | date: 'mediumDate' }}</span>
+                } @else {
+                  <span data-testid="audience-last-sent-no-date">Send date unavailable</span>
+                }
+                @if (!email.listsUnavailable) {
+                  <span>· {{ email.includedLists.length }} included · {{ email.suppressionLists.length }} suppressed</span>
+                }
+                @if (email.reachText) {
+                  <span>· {{ email.reachText }}</span>
+                }
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              @if (email.attached) {
+                <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">Attached</span>
+              }
+              @if (email.hubspotUrl) {
+                <a
+                  [href]="email.hubspotUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                  [attr.data-testid]="'audience-last-sent-email-link-' + email.emailId">
+                  View send in HubSpot <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                </a>
               }
             </div>
-            <a
-              [href]="email.hubspotUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-xs text-blue-600 hover:underline"
-              [attr.data-testid]="'audience-last-sent-email-link-' + email.emailId">
-              Open in HubSpot
-            </a>
           </div>
 
           <!--
@@ -106,9 +165,20 @@
                   <p class="text-xs text-gray-400">None recorded.</p>
                 } @else {
                   @for (list of email.includedLists; track list.listId) {
-                    <div class="flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1.5">
+                    <div class="flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5">
                       <div class="flex min-w-0 flex-col">
-                        <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
+                        @if (list.hubspotUrl) {
+                          <a
+                            [href]="list.hubspotUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-xs break-words text-blue-700 hover:underline"
+                            [attr.data-testid]="'audience-last-sent-list-link-' + list.listId">
+                            {{ list.name }}
+                          </a>
+                        } @else {
+                          <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
+                        }
                         <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
                       </div>
                       @if (list.missing) {
@@ -125,7 +195,7 @@
                           type="button"
                           (click)="onAddList(list)"
                           [disabled]="disabled() || list.selected"
-                          class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white disabled:opacity-50"
+                          class="shrink-0 rounded border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                           [attr.data-testid]="'audience-last-sent-add-' + list.listId">
                           {{ list.selected ? 'Added' : 'Add' }}
                         </button>
@@ -141,7 +211,7 @@
                   <p class="text-xs text-gray-400">None recorded.</p>
                 } @else {
                   @for (list of email.suppressionLists; track list.listId) {
-                    <div class="flex flex-col rounded-md bg-gray-50 px-2 py-1.5">
+                    <div class="flex flex-col rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5">
                       <!--
                         `missing` applies here exactly as it does to inclusions, and matters more:
                         an unresolvable EXCLUSION is a regulatory list the reconstruction cannot
@@ -156,13 +226,50 @@
                           No longer resolvable
                         </span>
                       } @else {
-                        <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
+                        @if (list.hubspotUrl) {
+                          <a [href]="list.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-xs break-words text-blue-700 hover:underline">
+                            {{ list.name }}
+                          </a>
+                        } @else {
+                          <span class="text-xs break-words text-gray-800">{{ list.name }}</span>
+                        }
                         <span class="text-xs text-gray-500">{{ list.sizeText }}</span>
                       }
                     </div>
                   }
                 }
               </div>
+            </div>
+
+            <div class="flex flex-col gap-1.5 border-t border-gray-100 pt-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  (click)="onUseSendLists(email)"
+                  [disabled]="!canAttach() || attachingId() !== null || email.attachBlocked !== null || email.attached"
+                  class="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  [attr.data-testid]="'audience-last-sent-use-' + email.emailId">
+                  @if (attachingId() === email.emailId) {
+                    <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                    Attaching...
+                  } @else {
+                    <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
+                    {{ email.attached ? 'Same lists used for this email' : 'Use these lists for this email' }}
+                  }
+                </button>
+                <button
+                  type="button"
+                  (click)="onCopySelection(email)"
+                  [disabled]="disabled() || !email.copyable"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  [attr.data-testid]="'audience-last-sent-copy-' + email.emailId">
+                  <i class="fa-light fa-copy" aria-hidden="true"></i>
+                  Copy selection
+                </button>
+              </div>
+              @if (email.attachBlocked; as reason) {
+                <p class="text-xs text-gray-500" [attr.data-testid]="'audience-last-sent-use-blocked-' + email.emailId">{{ reason }}</p>
+              }
             </div>
           }
         </div>

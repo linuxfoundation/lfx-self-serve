@@ -102,4 +102,5 @@ export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './sha256.utils';
 export * from './auth-fragment.utils';
+export * from './campaign-event-details.utils';
 export * from './campaign.utils';

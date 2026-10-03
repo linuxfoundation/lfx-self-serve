@@ -854,12 +854,15 @@
 
       <!-- Edit Mode Actions -->
       <div class="flex items-center gap-3">
+        <!-- Named per flow, because the two now go to different places: Email hands off to the
+             Audience step and Paid still goes straight to Implement. A shared "Proceed to
+             Implement" was the kind of label an operator only discovers is wrong by pressing it. -->
         <lfx-button
-          label="Save & Proceed to Implement"
+          [label]="isEmail() ? 'Save & Choose Audience' : 'Save & Proceed to Implement'"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          ariaLabel="Save edits and proceed to implement"
+          [ariaLabel]="isEmail() ? 'Save edits and choose the send audience' : 'Save edits and proceed to implement'"
           data-testid="planning-save-proceed-btn" />
         <lfx-button
           label="Save Edits"
@@ -1155,12 +1158,13 @@
 
       <!-- Read-Only Actions -->
       <div class="flex items-center gap-3">
+        <!-- See the edit-mode button above: the destination differs by flow, so the label does. -->
         <lfx-button
-          label="Proceed to Implement"
+          [label]="isEmail() ? 'Choose Audience' : 'Proceed to Implement'"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          ariaLabel="Proceed to implement with this brief"
+          [ariaLabel]="isEmail() ? 'Choose the send audience for this brief' : 'Proceed to implement with this brief'"
           data-testid="planning-proceed-btn" />
         <!--
           The three copy actions, hidden together for email because all three operate on ad copy

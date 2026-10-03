@@ -61,6 +61,15 @@ function briefWithSlug(slug: string): CampaignBriefOutput {
       speakers: [],
       slug,
       formatNotes: '',
+      // The five event-link/description fields are required on `CampaignEventDetails` and are
+      // blank here deliberately: this fixture exists to exercise SLUG derivation, and a blank
+      // string is what `coerceCampaignEventDetails` yields for a brief whose upstream payload
+      // omits them -- so it is the realistic shape, not a placeholder.
+      description: '',
+      agendaUrl: '',
+      cfpUrl: '',
+      venueUrl: '',
+      sponsorshipUrl: '',
     },
     structuredCopy: { headline: 'Register now' },
     keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
@@ -2321,7 +2330,7 @@ describe('CampaignServiceClient brief country mapping', () => {
   });
 });
 
-describe('CampaignServiceClient.buildAudience', () => {
+describe('CampaignServiceClient.listAudiences', () => {
   const audience = {
     id: 'aud-1',
     project_id: 'p-1',
@@ -2342,39 +2351,97 @@ describe('CampaignServiceClient.buildAudience', () => {
   it('answers enabled:false without calling upstream when the flag is off', async () => {
     isServerFeatureEnabled.mockReturnValue(false);
 
-    await expect(new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    await expect(new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
     // The flag being dark is an ordinary deployment state, so it must not spend an upstream call.
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  it('takes the etag off the ETag HEADER, not the body', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(audience, { etag: '"7"' }));
+  it('refuses a dot-segment identifier instead of letting it climb the path', async () => {
+    // `encodeURIComponent` passes `..` through unchanged, and percent-decoding happens BEFORE
+    // path normalization -- so `/projects/../briefs/b-1/audiences` resolves upstream to
+    // `/briefs/b-1/audiences`, dropping the project scope entirely. `encodePathSegment` refuses
+    // it as a 400 rather than sending it on to be resolved. Every other path in this client
+    // already uses that guard; this one is the only call site that has to be held to it.
+    await expect(new CampaignServiceClient().listAudiences(req, '..', 'b-1')).rejects.toThrow(/path_segment/i);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+  it('refuses an identifier the encoder cannot represent', async () => {
+    // `JSON.parse` accepts a lone UTF-16 surrogate, `encodeURIComponent` throws `URIError` on
+    // one. Unguarded that surfaces as a 500 for what is a malformed request.
+    await expect(new CampaignServiceClient().listAudiences(req, 'tlf', '\uD800')).rejects.toThrow(/path_segment/i);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
 
-    // `design/audience.go` maps it as `Header("etag:ETag")` on the 202, so a body read would be
-    // `undefined` forever -- the same trap the brief wire-type comment records.
-    expect(result.audience?.etag).toBe('"7"');
-    expect(result.audience?.status).toBe('built');
+  it('reads the rows from the `audiences` wrapper upstream returns', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [audience] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    // Goa's `ListAudiencesResponseBody` wraps the list. Reading the body as a bare array would
+    // report "no saved audience" forever, and a reload would push the operator into a duplicate.
+    expect(result.enabled).toBe(true);
+    expect(result.audiences).toHaveLength(1);
+    expect(result.audiences?.[0]).toMatchObject({ id: 'aud-1', briefId: 'b-1', platformMasterListId: 'list-9', status: 'built' });
+    expect(result.audiences?.[0].etag).toBeUndefined();
+  });
+
+  it('reports a response with no audiences array as an error, not as empty', async () => {
+    // `design/audience.go` declares `Required("audiences")` and the implementation returns `[]`
+    // for a brief with no rows -- so the ordinary first-visit state arrives as an EXPLICIT empty
+    // array, and a missing field means the response is not the one the contract promises.
+    //
+    // Coercing it to `[]` reported an unreadable response as a successful empty read, which
+    // cleared the restore failure guard and re-permitted a non-idempotent HubSpot compose: the
+    // exact duplicate-master path that guard exists to close.
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({}));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result.audiences, 'a malformed response was reported as a verified empty read').toBeUndefined();
+    expect(result.error).toBeTruthy();
+  });
+
+  it('treats an EXPLICIT empty array as the ordinary first-visit state', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result).toEqual({ enabled: true, audiences: [] });
+  });
+
+  it('drops rows with no id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, id: '' }, null, audience] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result.audiences?.map((row) => row.id)).toEqual(['aud-1']);
   });
 
   it('does not let an unrecognised status masquerade as usable', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'queued' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, status: 'queued' }] }));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
     // `canStageEmail` admits only `built`, so an unknown wire value must not pass through as one.
-    // `failed` is the honest landing spot -- it is the arm that offers the operator a rebuild.
-    expect(result.audience?.status).toBe('failed');
+    expect(result.audiences?.[0].status).toBe('failed');
   });
 
-  it('passes through the statuses upstream actually declares', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'building' }));
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    // Narrowing must not collapse the legitimate in-flight state into a failure.
-    expect(result.audience?.status).toBe('building');
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(result.audiences).toBeUndefined();
+  });
+});
+
+describe('CampaignServiceClient.generateEmailCopy upstream messages', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
   });
 
   it('keeps a controlled upstream message instead of saying "try again"', async () => {
@@ -2416,26 +2483,6 @@ describe('CampaignServiceClient.buildAudience', () => {
     // read, and "try again" is honest advice for it.
     expect(result.error).not.toContain('panic');
     expect(result.error).toContain('Try again');
-  });
-
-  it('reports an error result rather than throwing when upstream fails', async () => {
-    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
-
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
-
-    // A graceful degradation: the caller renders the message instead of the panel exploding.
-    expect(result.enabled).toBe(true);
-    expect(result.error).toBeTruthy();
-    expect(result.audience).toBeUndefined();
-  });
-
-  it('rejects a response with no audience id', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, id: '' }));
-
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
-
-    expect(result.error).toBeTruthy();
-    expect(result.audience).toBeUndefined();
   });
 });
 

@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import type {
+  AudienceAttachExistingRequest,
   AudienceComposeMasterPartial,
   AudienceComposeMasterRequest,
   AudienceDiscoverRequest,
@@ -21,6 +22,24 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Highest `limit` `/last-sent` honours; more sends than this is a research task, not a picker. */
 const LAST_SENT_MAX_LIMIT = 10;
+
+/**
+ * The most list ids one request may carry, and the longest a single one may be.
+ *
+ * Every id here is forwarded upstream and a 201 audience row is created, so an unbounded array is
+ * an unbounded upstream payload reachable by any campaign manager. A HubSpot list id is a short
+ * numeric string and the picker cannot select anywhere near 50 lists, so both bounds are far above
+ * any real selection and only a malformed or hostile body reaches them.
+ *
+ * Refused rather than truncated: silently dropping ids past the cap would record a send with LESS
+ * suppression than the caller asked for, which is the same failure `strictStringArray` refuses a
+ * blank entry to avoid.
+ */
+const MAX_LIST_IDS = 50;
+const MAX_LIST_ID_LENGTH = 64;
+
+/** Free text forwarded upstream and stored on the audience row, so it needs a ceiling too. */
+const MAX_INCLUSION_SUMMARY_LENGTH = 2_000;
 
 /** Default number of past sends returned when the caller does not ask for a specific count. */
 const LAST_SENT_DEFAULT_LIMIT = 3;
@@ -49,7 +68,8 @@ function queryString(req: Request, field: string): string {
  */
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
-  if (value.some((entry) => typeof entry !== 'string')) return null;
+  if (value.length > MAX_LIST_IDS) return null;
+  if (value.some((entry) => typeof entry !== 'string' || entry.length > MAX_LIST_ID_LENGTH)) return null;
   return value.map((entry) => (entry as string).trim()).filter(Boolean);
 }
 
@@ -63,7 +83,10 @@ function stringArray(value: unknown): string[] | null {
  */
 function strictStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
-  if (value.some((entry) => typeof entry !== 'string')) return null;
+  // Bounded in BOTH helpers, not just the reported caller: they carry the same list ids to the
+  // same upstream create, so a cap on one leaves the other as the way in.
+  if (value.length > MAX_LIST_IDS) return null;
+  if (value.some((entry) => typeof entry !== 'string' || entry.length > MAX_LIST_ID_LENGTH)) return null;
   const trimmed = value.map((entry) => (entry as string).trim());
   return trimmed.some((entry) => entry === '') ? null : trimmed;
 }
@@ -73,7 +96,7 @@ function strictStringArray(value: unknown): string[] | null {
  *
  * Separate from `CampaignController` rather than added to it: that class is 1700 lines of
  * paid-ad and brief plumbing, and this feature shares no state with it. It deliberately does NOT
- * touch `buildAudience` / `getAudience` — those resolve the SEND audience by brief id, which is a
+ * touch `listAudiences` — that reads the SEND audience rows by brief id, which is a
  * different record from the HubSpot lists this flow explores and composes. The two are
  * cross-linked in the UI, never wired together.
  *
@@ -391,7 +414,11 @@ export class AudienceBuilderController {
     // A PROVIDED optional field that is mistyped is a client bug, not an absent field. Dropping
     // it silently changed what the request means on a non-idempotent create — `{ name: {} }`
     // proceeded under an auto-derived name and created a real HubSpot list nobody asked for.
-    const mistyped = (['name', 'brandShort', 'eventName'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
+    // `briefId` belongs in this guard more than any other field here. Dropping a mistyped one
+    // silently would compose two real HubSpot lists and leave them ATTACHED TO NOTHING, while the
+    // operator watches a success banner — and compose is not idempotent, so the correction costs
+    // a second master list.
+    const mistyped = (['name', 'brandShort', 'eventName', 'briefId'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
     if (mistyped) {
       next(invalid(req, 'audience_compose_master', mistyped, `${mistyped} must be a string when provided`));
       return;
@@ -404,7 +431,14 @@ export class AudienceBuilderController {
     }
 
     if (!excludeListIds) {
-      next(invalid(req, 'audience_compose_master', 'excludeListIds', 'excludeListIds must be an array of non-blank strings'));
+      next(
+        invalid(
+          req,
+          'audience_compose_master',
+          'excludeListIds',
+          `excludeListIds must be an array of at most ${MAX_LIST_IDS} non-blank strings of at most ${MAX_LIST_ID_LENGTH} characters`
+        )
+      );
       return;
     }
 
@@ -423,9 +457,14 @@ export class AudienceBuilderController {
         ...(typeof body.brandShort === 'string' ? { brandShort: body.brandShort } : {}),
         ...(typeof body.eventName === 'string' ? { eventName: body.eventName } : {}),
         ...(eventDates ? { eventDates } : {}),
+        // Forwarded only when NON-EMPTY. A blank string passes the string check above and would
+        // be sent as an attach request naming no brief, which upstream answers with a 404 after
+        // refusing to create anything — a worse outcome than the exploratory compose the caller
+        // plainly meant.
+        ...(typeof body.briefId === 'string' && body.briefId !== '' ? { briefId: body.briefId } : {}),
       });
 
-      logger.success(req, 'audience_compose_master', startTime, { masterListId: result.master.listId });
+      logger.success(req, 'audience_compose_master', startTime, { masterListId: result.master.listId, recorded: result.recorded });
       // 201, matching the upstream contract and the repo's other create controllers: this
       // creates real HubSpot lists, and a 200 describes it as an ordinary read.
       res.status(201).json(result);
@@ -435,16 +474,86 @@ export class AudienceBuilderController {
           suppressionListId: error.suppression?.listId,
           suppressionName: error.suppressionName,
           masterName: error.masterName,
+          masterListId: error.master?.listId,
         });
         const partial: AudienceComposeMasterPartial = {
           suppression: error.suppression,
           suppressionName: error.suppressionName,
           masterName: error.masterName,
+          master: error.master,
           error: error.message,
         };
         res.status(502).json(partial);
         return;
       }
+      next(error);
+    }
+  }
+
+  /**
+   * Records lists that already exist — typically an earlier send's include list and its
+   * suppressions — as the brief's send audience, so no new master list has to be composed.
+   */
+  public async attachExisting(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = this.projectSlug(req);
+
+    if (!projectSlug) {
+      next(invalid(req, 'audience_attach_existing', 'project', 'project is required'));
+      return;
+    }
+
+    const body = (req.body ?? {}) as AudienceAttachExistingRequest;
+    const briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
+    const masterListId = typeof body.masterListId === 'string' ? body.masterListId.trim() : '';
+
+    if (!briefId) {
+      next(invalid(req, 'audience_attach_existing', 'briefId', 'briefId is required'));
+      return;
+    }
+    if (!masterListId) {
+      next(invalid(req, 'audience_attach_existing', 'masterListId', 'masterListId is required'));
+      return;
+    }
+    if (masterListId.length > MAX_LIST_ID_LENGTH) {
+      next(invalid(req, 'audience_attach_existing', 'masterListId', `masterListId must be at most ${MAX_LIST_ID_LENGTH} characters`));
+      return;
+    }
+
+    // Strict for the same reason compose is: a blank suppression id silently dropped would send
+    // to a list with LESS suppression than the operator chose.
+    const suppressionListIds = strictStringArray(body.suppressionListIds ?? []);
+    if (!suppressionListIds) {
+      next(
+        invalid(
+          req,
+          'audience_attach_existing',
+          'suppressionListIds',
+          `suppressionListIds must be an array of at most ${MAX_LIST_IDS} non-blank strings of at most ${MAX_LIST_ID_LENGTH} characters`
+        )
+      );
+      return;
+    }
+    if (body.inclusionSummary !== undefined && typeof body.inclusionSummary !== 'string') {
+      next(invalid(req, 'audience_attach_existing', 'inclusionSummary', 'inclusionSummary must be a string when provided'));
+      return;
+    }
+    if (typeof body.inclusionSummary === 'string' && body.inclusionSummary.length > MAX_INCLUSION_SUMMARY_LENGTH) {
+      next(invalid(req, 'audience_attach_existing', 'inclusionSummary', `inclusionSummary must be at most ${MAX_INCLUSION_SUMMARY_LENGTH} characters`));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'audience_attach_existing', { suppressions: suppressionListIds.length });
+
+    try {
+      const result = await this.audienceBuilder.attachExisting(req, projectSlug, {
+        briefId,
+        masterListId,
+        suppressionListIds,
+        ...(body.inclusionSummary ? { inclusionSummary: body.inclusionSummary } : {}),
+      });
+      logger.success(req, 'audience_attach_existing', startTime, { masterListId: result.master.listId });
+      res.status(201).json(result);
+    } catch (error) {
       next(error);
     }
   }

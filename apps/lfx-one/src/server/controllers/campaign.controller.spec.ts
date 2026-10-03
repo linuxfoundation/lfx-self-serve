@@ -24,6 +24,7 @@ const {
   toggleCampaignStatus,
   listBriefCampaigns,
   getBriefMetrics,
+  svcListAudiences,
   svcGetKeywords,
   svcResolveCampaign,
   svcApplyKeywordActions,
@@ -51,6 +52,7 @@ const {
   toggleCampaignStatus: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  svcListAudiences: vi.fn(),
   svcGetKeywords: vi.fn(),
   svcResolveCampaign: vi.fn(),
   svcApplyKeywordActions: vi.fn(),
@@ -85,6 +87,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public toggleCampaignStatus = toggleCampaignStatus;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public listAudiences = svcListAudiences;
       public getGoogleAdsKeywords = svcGetKeywords;
       public resolveGoogleAdsCampaign = svcResolveCampaign;
       public applyKeywordActions = svcApplyKeywordActions;
@@ -1703,7 +1706,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // The whole selector is inert if this argument is dropped, and nothing else would say so:
     // generation still succeeds, just with default-stage copy under the operator's chosen label.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined, undefined);
   });
 
   it('forwards the body variant to the campaign-service client', async () => {
@@ -1713,7 +1716,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // Same inert-if-dropped hazard as `stage`: generation still succeeds, silently producing
     // variant-A copy for an operator who asked for B, and the A/B test compares A against A.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B');
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B', undefined);
   });
 
   it.each([
@@ -1725,7 +1728,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined, undefined);
   });
 
   it.each([
@@ -1739,7 +1742,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     // `undefined`, not '' -- upstream reads absence as "the caller did not say" and defaults,
     // while an empty string would fail its enum and 400 a request the operator did not make.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined, undefined);
   });
 
   it('forwards the generated subject, body, and preheader to the dispatcher', async () => {
@@ -2922,6 +2925,112 @@ describe('CampaignController.getBriefMetrics', () => {
     const next = vi.fn() as unknown as NextFunction;
 
     await controller.getBriefMetrics(metricsReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The audience read-back behind `GET /api/campaigns/audiences`.
+ *
+ * What is only decidable HERE is the layer boundary. The mapping and the flag-off shape are the
+ * client's and have their own tests; this block covers the part a mapper test cannot see: that a
+ * request with no usable scope never reaches upstream, that the two query params arrive as the
+ * client's positional arguments in the right ORDER, and that a read failure reaches the error
+ * middleware rather than a 200 the restore path would read as "this brief has no audience".
+ *
+ * That last one matters more here than on most reads. The caller is the restore path, and an
+ * empty-looking answer there does not merely show less -- it offers a Build button, and a build
+ * mints a SECOND HubSpot contact list for a brief that already has one.
+ */
+describe('CampaignController.listAudiences', () => {
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+  });
+
+  function audiencesReq(query: Record<string, unknown>): Request {
+    return { query, path: '/api/campaigns/audiences' } as unknown as Request;
+  }
+
+  it('passes both scope params through in the order the client reads them', async () => {
+    const payload = { enabled: true, audiences: [{ id: 'aud-1', briefId: 'b-1', platform: 'hubspot', status: 'built', version: 1 }] };
+    svcListAudiences.mockResolvedValue(payload);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(svcListAudiences).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1');
+    expect(res.json).toHaveBeenCalledWith(payload);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Trimmed before forwarding, because both values become PATH segments upstream. A slug with
+   * surrounding whitespace percent-encodes into a different project than the one asked for, and
+   * that 404 is indistinguishable here from "this brief has no audience".
+   */
+  it('trims the scope params rather than encoding whitespace into the upstream path', async () => {
+    svcListAudiences.mockResolvedValue({ enabled: true, audiences: [] });
+
+    await controller.listAudiences(audiencesReq({ project: ' cncf ', brief_id: ' b-1 ' }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(svcListAudiences).toHaveBeenCalledWith(expect.anything(), 'cncf', 'b-1');
+  });
+
+  /**
+   * Both params are required and neither may default. `brief_id` scopes the read to one campaign;
+   * `project` is the authorisation boundary -- `/foundation/campaigns` is reachable by an ED of
+   * any foundation, so a defaulted project would read another foundation's audience on their
+   * behalf.
+   */
+  it.each([
+    ['no project', { brief_id: 'b-1' }],
+    ['no brief_id', { project: 'cncf' }],
+    ['a blank project', { project: '   ', brief_id: 'b-1' }],
+    ['a blank brief_id', { project: 'cncf', brief_id: '   ' }],
+    // Repeated params, which Express parses as arrays. Neither is a string, so both collapse to
+    // '' and are refused by the same guard -- asserted rather than assumed, because the guard
+    // reads `typeof === 'string'` and an array that stringified would slip past it.
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'], brief_id: 'b-1' }],
+    ['a repeated brief_id param, which Express parses as an array', { project: 'cncf', brief_id: ['b-1', 'b-2'] }],
+  ])('refuses a request with %s without reading anything upstream', async (_label, query) => {
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq(query), res, next);
+
+    expect(svcListAudiences).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /**
+   * The flag being off is NOT a failure and must reach the caller intact. `{ enabled: false }` is
+   * how the restore path knows to stay silent; turning it into an error would put a banner on
+   * every campaign in an environment where the feature simply is not on.
+   */
+  it('passes a flag-off result through untouched', async () => {
+    svcListAudiences.mockResolvedValue({ enabled: false });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ enabled: false });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards a thrown read to next rather than answering with a body', async () => {
+    svcListAudiences.mockRejectedValue(new Error('upstream exploded'));
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.listAudiences(audiencesReq({ project: 'cncf', brief_id: 'b-1' }), res, next);
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
