@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Request } from 'express';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { LfxAccessTokenClaims, User } from '@lfx-one/shared/interfaces';
 
@@ -38,6 +38,8 @@ function buildReq(opts: { impersonating?: boolean; target?: TargetUser; oidc?: R
 // The impersonator's own OIDC identity — present in every impersonation case to prove the
 // helpers never fall back to it when the target's stored field is empty.
 const OPERATOR_OIDC = { email: 'Operator@Example.com', nickname: 'operatornick', username: 'operatorname', sub: 'auth0|operator' };
+
+const LF_USERNAME_CLAIM = 'https://sso.linuxfoundation.org/claims/username';
 
 describe('isImpersonating', () => {
   it('keeps the authentication-time decision after the session expiry passes mid-request', () => {
@@ -104,9 +106,29 @@ describe('getEffectiveUsername', () => {
     expect(getEffectiveUsername(req)).toBeNull();
   });
 
-  it('falls back to the OIDC nickname when not impersonating', () => {
-    const req = buildReq({ oidc: { nickname: 'usernick', username: 'username' } });
-    expect(getEffectiveUsername(req)).toBe('usernick');
+  it('returns the LF username claim, not the display claims, when not impersonating', () => {
+    const req = buildReq({ oidc: { nickname: 'displayname', username: 'displayname', preferred_username: 'displayname', [LF_USERNAME_CLAIM]: 'lfuser' } });
+    expect(getEffectiveUsername(req)).toBe('lfuser');
+  });
+
+  describe('by session issuer', () => {
+    const original = process.env['PCC_AUTH0_ISSUER_BASE_URL'];
+    afterEach(() => {
+      if (original === undefined) delete process.env['PCC_AUTH0_ISSUER_BASE_URL'];
+      else process.env['PCC_AUTH0_ISSUER_BASE_URL'] = original;
+    });
+
+    it('returns null, with no nickname/username/preferred_username fallback, when an Auth0 session has no LF username claim', () => {
+      process.env['PCC_AUTH0_ISSUER_BASE_URL'] = 'https://sso.linuxfoundation.org/';
+      const req = buildReq({ oidc: { nickname: 'displayname', username: 'displayname', preferred_username: 'displayname', sub: 'github|123' } });
+      expect(getEffectiveUsername(req)).toBeNull();
+    });
+
+    it('falls back to preferred_username (never nickname) on an Authelia (local dev) issuer when the LF claim is absent', () => {
+      process.env['PCC_AUTH0_ISSUER_BASE_URL'] = 'https://auth.k8s.orb.local';
+      expect(getEffectiveUsername(buildReq({ oidc: { nickname: 'usernick', preferred_username: 'localuser' } }))).toBe('localuser');
+      expect(getEffectiveUsername(buildReq({ oidc: { nickname: 'usernick' } }))).toBeNull();
+    });
   });
 });
 
@@ -388,12 +410,12 @@ describe('buildImpersonationIdentityOverride', () => {
 
 describe('resolveUserIdentity', () => {
   it('resolves the lowercased effective email and the prefix-stripped username together', async () => {
-    const req = buildReq({ oidc: { email: 'User@Example.com', username: 'auth0|someuser' } });
+    const req = buildReq({ oidc: { email: 'User@Example.com', [LF_USERNAME_CLAIM]: 'auth0|someuser' } });
     await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'user@example.com', username: 'someuser' });
   });
 
   it('returns null for whichever side the auth context lacks', async () => {
-    await expect(resolveUserIdentity(buildReq({ oidc: { username: 'auth0|someuser' } }))).resolves.toEqual({ email: null, username: 'someuser' });
+    await expect(resolveUserIdentity(buildReq({ oidc: { [LF_USERNAME_CLAIM]: 'auth0|someuser' } }))).resolves.toEqual({ email: null, username: 'someuser' });
     await expect(resolveUserIdentity(buildReq({ oidc: { email: 'user@example.com' } }))).resolves.toEqual({ email: 'user@example.com', username: null });
   });
 
