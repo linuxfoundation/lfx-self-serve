@@ -292,6 +292,17 @@ export function extractPageLinks(html: string, baseUrl: string): Map<string, str
  * a real foundation's name. So a candidate is a HINT about which of the page's real links matters,
  * never itself a source of truth.
  *
+ * What it does NOT check is the HOST. Any absolute http(s) anchor the page carries passes,
+ * including off-site sponsor, social and third-party links, so a hostile page can still steer
+ * WHICH of its real links a model labels `agenda_url`. That is deliberate: events legitimately
+ * drive agendas and registration from Sched, Cvent, CFP platforms, the registration domain and
+ * each foundation's own site, and an allowlist of those hosts is long, moving, and rejects a REAL
+ * event link for every entry it is missing -- the same failure as accepting a forged one, just
+ * quieter. A host rule would also only narrow the threat, never close it: a decoy can be hosted on
+ * an allowlisted domain. So the claim here is deliberately the narrow one -- THE PAGE LINKS TO
+ * THIS -- which holds regardless of host; mis-selection among links the page really carries is a
+ * known accepted risk, not something this defends against.
+ *
  * `registrationUrl` is deliberately NOT routed through this. It predates the check, it is the
  * primary call-to-action's href, and event pages commonly drive registration from a scripted
  * button rather than an `<a href>` — so verifying it would strip working CTAs from existing
