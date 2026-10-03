@@ -60,6 +60,18 @@ describe('MailingListService member authorization', () => {
   });
 
   describe('createMember', () => {
+    it('rejects a non-string email', async () => {
+      await expect(service.createMember(req, 'list-1', { email: 1 as unknown as string })).rejects.toMatchObject({
+        statusCode: 400,
+      });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('rejects a blank email', async () => {
+      await expect(service.createMember(req, 'list-1', { email: '   ' })).rejects.toMatchObject({ statusCode: 400 });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
     it('allows a self-service caller to add themselves as a plain direct subscriber to a public list', async () => {
       getEffectiveEmail.mockReturnValue('self@example.com');
       proxyRequest.mockImplementation(async (_req: unknown, _svc: unknown, path: string, method: string) => {

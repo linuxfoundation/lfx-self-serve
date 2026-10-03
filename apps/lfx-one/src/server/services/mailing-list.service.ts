@@ -604,13 +604,24 @@ export class MailingListService {
       }
     }
 
+    // `data` is typed as UpdateMailingListMemberRequest but originates from req.body with no
+    // runtime stripping — email is deliberately not part of that interface (immutable once
+    // created), so forward only the fields the interface actually declares (#3211 review).
+    const sanitizedData: UpdateMailingListMemberRequest = {
+      name: data.name,
+      organization: data.organization,
+      job_title: data.job_title,
+      delivery_mode: data.delivery_mode,
+      mod_status: data.mod_status,
+    };
+
     const updatedMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
       req,
       'LFX_V2_SERVICE',
       `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
       'PUT',
       undefined,
-      data
+      sanitizedData
     );
 
     logger.debug(req, 'update_mailing_list_member', 'Mailing list member updated successfully', {

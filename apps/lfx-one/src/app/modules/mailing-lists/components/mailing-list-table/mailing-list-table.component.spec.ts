@@ -100,6 +100,15 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
 
       expect(fixture.componentInstance['tableRows']()[0].canJoin).toBe(false);
     });
+
+    it('does not mark a list as joinable when membership lookup failed', async () => {
+      await render([baseList]);
+      fixture.componentRef.setInput('membershipError', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance['tableRows']()[0].canJoin).toBe(false);
+    });
   });
 
   describe('onJoin', () => {
