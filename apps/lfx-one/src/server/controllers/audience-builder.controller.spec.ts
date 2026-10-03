@@ -449,6 +449,19 @@ describe('composeMaster', () => {
     expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'excludeListIds' }]);
   });
 
+  // compose shares the array helper with attach, so the bound is pinned at BOTH callers -- a cap
+  // on one leaves the other as the way in, and compose is the one that CREATES a HubSpot list.
+  it.each([
+    ['too many ids', { listIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'listIds'],
+    ['too many exclusions', { listIds: ['10'], excludeListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'excludeListIds'],
+    ['an over-long exclusion id', { listIds: ['10'], excludeListIds: ['5'.repeat(65)] }, 'excludeListIds'],
+  ])('refuses %s', async (_label, body, field) => {
+    await controller.composeMaster(buildReq({ eventName: 'Synthetic Summit', ...body }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster, 'an unbounded payload reached a non-idempotent create').not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
   it('forwards the naming inputs alongside the cleaned selections', async () => {
     proxyMethods.composeMaster.mockResolvedValue({ master: created, sourceListIds: ['10'] });
 
@@ -604,6 +617,36 @@ describe('attachExisting', () => {
 
     expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
     expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'suppressionListIds' }]);
+  });
+
+  // Every id here is forwarded upstream and a 201 audience row is created, so an unbounded array
+  // is an unbounded upstream payload reachable by any campaign manager. REFUSED, not truncated:
+  // dropping ids past a cap would record a send with less suppression than was asked for.
+  it.each([
+    ['too many suppression ids', { suppressionListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'suppressionListIds'],
+    ['an over-long suppression id', { suppressionListIds: ['2'.repeat(65)] }, 'suppressionListIds'],
+    ['an over-long master list id', { masterListId: '5'.repeat(65) }, 'masterListId'],
+    ['an over-long inclusion summary', { inclusionSummary: 'x'.repeat(2_001) }, 'inclusionSummary'],
+  ])('refuses %s', async (_label, overrides, field) => {
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', ...overrides }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting, 'an unbounded payload reached upstream').not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
+  it.each([
+    ['the largest allowed selection', Array.from({ length: 50 }, (_unused, i) => `${i}`)],
+    ['the longest allowed id', ['2'.repeat(64)]],
+  ])('still accepts %s', async (_label, suppressionListIds) => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting, 'a legitimate selection was refused').toHaveBeenCalledWith(
+      expect.anything(),
+      'tlf',
+      expect.objectContaining({ suppressionListIds })
+    );
   });
 
   it('forwards the trimmed request and answers 201', async () => {

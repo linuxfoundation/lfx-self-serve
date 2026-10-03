@@ -23,6 +23,24 @@ import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 /** Highest `limit` `/last-sent` honours; more sends than this is a research task, not a picker. */
 const LAST_SENT_MAX_LIMIT = 10;
 
+/**
+ * The most list ids one request may carry, and the longest a single one may be.
+ *
+ * Every id here is forwarded upstream and a 201 audience row is created, so an unbounded array is
+ * an unbounded upstream payload reachable by any campaign manager. A HubSpot list id is a short
+ * numeric string and the picker cannot select anywhere near 50 lists, so both bounds are far above
+ * any real selection and only a malformed or hostile body reaches them.
+ *
+ * Refused rather than truncated: silently dropping ids past the cap would record a send with LESS
+ * suppression than the caller asked for, which is the same failure `strictStringArray` refuses a
+ * blank entry to avoid.
+ */
+const MAX_LIST_IDS = 50;
+const MAX_LIST_ID_LENGTH = 64;
+
+/** Free text forwarded upstream and stored on the audience row, so it needs a ceiling too. */
+const MAX_INCLUSION_SUMMARY_LENGTH = 2_000;
+
 /** Default number of past sends returned when the caller does not ask for a specific count. */
 const LAST_SENT_DEFAULT_LIMIT = 3;
 
@@ -50,7 +68,8 @@ function queryString(req: Request, field: string): string {
  */
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
-  if (value.some((entry) => typeof entry !== 'string')) return null;
+  if (value.length > MAX_LIST_IDS) return null;
+  if (value.some((entry) => typeof entry !== 'string' || entry.length > MAX_LIST_ID_LENGTH)) return null;
   return value.map((entry) => (entry as string).trim()).filter(Boolean);
 }
 
@@ -64,7 +83,10 @@ function stringArray(value: unknown): string[] | null {
  */
 function strictStringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
-  if (value.some((entry) => typeof entry !== 'string')) return null;
+  // Bounded in BOTH helpers, not just the reported caller: they carry the same list ids to the
+  // same upstream create, so a cap on one leaves the other as the way in.
+  if (value.length > MAX_LIST_IDS) return null;
+  if (value.some((entry) => typeof entry !== 'string' || entry.length > MAX_LIST_ID_LENGTH)) return null;
   const trimmed = value.map((entry) => (entry as string).trim());
   return trimmed.some((entry) => entry === '') ? null : trimmed;
 }
@@ -409,7 +431,14 @@ export class AudienceBuilderController {
     }
 
     if (!excludeListIds) {
-      next(invalid(req, 'audience_compose_master', 'excludeListIds', 'excludeListIds must be an array of non-blank strings'));
+      next(
+        invalid(
+          req,
+          'audience_compose_master',
+          'excludeListIds',
+          `excludeListIds must be an array of at most ${MAX_LIST_IDS} non-blank strings of at most ${MAX_LIST_ID_LENGTH} characters`
+        )
+      );
       return;
     }
 
@@ -485,16 +514,31 @@ export class AudienceBuilderController {
       next(invalid(req, 'audience_attach_existing', 'masterListId', 'masterListId is required'));
       return;
     }
+    if (masterListId.length > MAX_LIST_ID_LENGTH) {
+      next(invalid(req, 'audience_attach_existing', 'masterListId', `masterListId must be at most ${MAX_LIST_ID_LENGTH} characters`));
+      return;
+    }
 
     // Strict for the same reason compose is: a blank suppression id silently dropped would send
     // to a list with LESS suppression than the operator chose.
     const suppressionListIds = strictStringArray(body.suppressionListIds ?? []);
     if (!suppressionListIds) {
-      next(invalid(req, 'audience_attach_existing', 'suppressionListIds', 'suppressionListIds must be an array of non-blank strings'));
+      next(
+        invalid(
+          req,
+          'audience_attach_existing',
+          'suppressionListIds',
+          `suppressionListIds must be an array of at most ${MAX_LIST_IDS} non-blank strings of at most ${MAX_LIST_ID_LENGTH} characters`
+        )
+      );
       return;
     }
     if (body.inclusionSummary !== undefined && typeof body.inclusionSummary !== 'string') {
       next(invalid(req, 'audience_attach_existing', 'inclusionSummary', 'inclusionSummary must be a string when provided'));
+      return;
+    }
+    if (typeof body.inclusionSummary === 'string' && body.inclusionSummary.length > MAX_INCLUSION_SUMMARY_LENGTH) {
+      next(invalid(req, 'audience_attach_existing', 'inclusionSummary', `inclusionSummary must be at most ${MAX_INCLUSION_SUMMARY_LENGTH} characters`));
       return;
     }
 

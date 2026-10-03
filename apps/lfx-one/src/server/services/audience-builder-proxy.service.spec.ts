@@ -28,6 +28,8 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 
+import { AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS } from '@lfx-one/shared/constants';
+
 import { AudienceBuilderProxyService, AudienceComposePartialError } from './audience-builder-proxy.service';
 
 const req = {} as unknown as Request;
@@ -55,6 +57,29 @@ describe('AudienceBuilderProxyService wire mapping', () => {
 
     expect(caps.hubspotConfigured).toBe(false);
     expect(caps.detail, "upstream's remediation detail was dropped").toBe('The HubSpot connection for this project is inactive.');
+  });
+
+  // A hung upstream holds a socket and a request for the whole ceiling, and the page fires several
+  // reads at once. `capabilities` answers one boolean about whether a connection row exists, so it
+  // opts down. Everything else walks the HubSpot Marketing API -- `last-sent` was measured at 32s
+  // at the limit the panel asks for -- and keeps the long ceiling, which is why that ceiling
+  // exists: at 30s the call aborted mid-flight while upstream went on to answer 200.
+  it('reads configuration on a shorter ceiling than a portal walk', async () => {
+    proxyRequest.mockResolvedValue({ hubspot_configured: true });
+
+    await service.getCapabilities(req, 'tlf');
+
+    expect(proxyRequest.mock.calls.at(-1)?.at(7), 'a config read could hold a socket for two minutes').toEqual({ timeoutMs: 30_000 });
+  });
+
+  it('keeps the long ceiling on a call that walks the portal', async () => {
+    proxyRequest.mockResolvedValue({ emails: [] });
+
+    await service.getLastSent(req, 'tlf', 'Synthetic Summit', 'LF', 3);
+
+    expect(proxyRequest.mock.calls.at(-1)?.at(7), 'a measured 32s read was put back on a 30s ceiling').toEqual({
+      timeoutMs: AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS,
+    });
   });
 
   it('omits detail rather than carrying an empty string', async () => {

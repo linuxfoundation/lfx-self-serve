@@ -66,6 +66,20 @@ describe('EmailBodyPreviewComponent', () => {
     expect(srcdoc).toContain('<!doctype html>');
   });
 
+  // The sandbox blocks script; it does NOT block subresource loads or a meta-refresh navigation,
+  // and the body is interpolated raw -- so until this, an operator-typed variant-B body was held
+  // back only by a client-side stripper. `default-src 'none'` is exact rather than cautious: the
+  // stripper's allow-list carries no `img`, no `src` and no `style` attribute, so a legitimate
+  // preview loads nothing external. `style-src 'unsafe-inline'` is the one opening, and it cannot
+  // fetch. This holds for whatever the stripper misses, including a tag HTML gains later.
+  it('forbids every subresource and navigation the sandbox still allows', async () => {
+    const srcdoc = (await render('<p>Join us</p>'))?.getAttribute('srcdoc') ?? '';
+
+    expect(srcdoc, 'a pasted body could still reach a third-party host').toContain(
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'none'">`
+    );
+  });
+
   // A blank body must read as blank. Rendering the placeholder inside the frame would make an
   // ungenerated email look like a one-line email that was generated.
   it('renders the placeholder as text with no frame when there is no body', async () => {

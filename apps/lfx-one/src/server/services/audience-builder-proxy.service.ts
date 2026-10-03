@@ -467,7 +467,9 @@ export class AudienceBuilderProxyService {
   }
 
   public async getCapabilities(req: Request, projectSlug: string): Promise<AudienceBuilderCapabilities> {
-    const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(req, projectSlug, 'capabilities');
+    // Opted down from the shared ceiling: this answers one boolean about whether a connection row
+    // exists, so it never legitimately runs long -- see `timeout()`.
+    const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(req, projectSlug, 'capabilities', undefined, CAPABILITIES_TIMEOUT_MS);
     // `detail` was declared here and then dropped, so every unusable connection rendered as
     // "no credentials configured" — the wrong remediation for an inactive or undecryptable one.
     const detail = typeof wire.detail === 'string' ? wire.detail.trim() : '';
@@ -692,7 +694,7 @@ export class AudienceBuilderProxyService {
     return `/projects/${encodeURIComponent(projectSlug)}/audience-builder/${suffix}`;
   }
 
-  private get<T>(req: Request, projectSlug: string, suffix: string, query?: Record<string, unknown>): Promise<T> {
+  private get<T>(req: Request, projectSlug: string, suffix: string, query?: Record<string, unknown>, timeoutMs?: number): Promise<T> {
     // Query params go in the FIFTH argument. `proxyRequest(req, service, path, method, query,
     // data)` — passing them sixth would send them as a body, which a GET discards. The eighth
     // carries the raised timeout every audience-builder call needs — see `timeout()` below.
@@ -704,7 +706,7 @@ export class AudienceBuilderProxyService {
       query,
       undefined,
       undefined,
-      timeout()
+      timeout(timeoutMs)
     );
   }
 
@@ -727,10 +729,26 @@ export class AudienceBuilderProxyService {
  *
  * A function rather than a shared const so no caller can mutate the options object out from
  * under the others. See AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS for why 30s was not enough.
+ *
+ * The long ceiling is the DEFAULT, and an endpoint opts down only where its cost is known from
+ * this repo. `capabilities` is the one that qualifies -- it answers a single boolean about whether
+ * a connection row exists. Everything else walks the HubSpot Marketing API, and `last-sent` was
+ * MEASURED at 32s (the limit the panel asks for) and 58s against the live TLF portal, which is
+ * why the ceiling was raised in the first place: at 30s it aborted mid-flight and the panel
+ * rendered a failure on every load while upstream went on to answer 200. Lowering a call on the
+ * assumption that it is cheap is how that regression comes back.
  */
-function timeout(): { timeoutMs: number } {
-  return { timeoutMs: AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS };
+function timeout(timeoutMs: number = AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS): { timeoutMs: number } {
+  return { timeoutMs };
 }
+
+/**
+ * The ceiling for a call that reads CONFIGURATION rather than walking a portal.
+ *
+ * A hung upstream otherwise holds a socket and a request for two minutes on a call that cannot
+ * legitimately take that long, and the page fires several reads at once.
+ */
+const CAPABILITIES_TIMEOUT_MS = 30_000;
 
 /**
  * Does this wire object describe a list whose creation was CONFIRMED?

@@ -123,6 +123,20 @@ export class EmailBodyPreviewComponent {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The sandbox blocks script; it does NOT block subresource loads or a meta-refresh navigation.
+     Until this, the only thing standing between an operator-typed variant-B body and a third-party
+     request was \`stripResourceLoadingHtml\`, a client-side best-effort -- and \`body\` is
+     interpolated raw below, so anything that stripper misses reached the frame.
+
+     \`default-src 'none'\` is exact rather than cautious: the stripper's allow-list carries no
+     \`img\`, no \`src\` on any element and no \`style\` attribute, so a legitimate preview loads
+     NOTHING external and has nothing to lose here. \`style-src 'unsafe-inline'\` is the one opening,
+     for the \`<style>\` reset below and the inline styles an email carries; it cannot fetch.
+     \`form-action 'none'\` and the \`frame-src\`/\`child-src\` omissions fall out of \`default-src\`.
+
+     This is a SECOND line, not the first. The stripper still runs, and this holds for whatever it
+     misses -- including a tag HTML gains after this was written. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'none'">
 <!-- Every link opens in a NEW tab.
      The callers' \`stripResourceLoadingHtml\` keeps only \`href\` on an anchor, so no link here
      carries a target of its own and all of them default to \`_self\` -- clicking one REPLACES the
