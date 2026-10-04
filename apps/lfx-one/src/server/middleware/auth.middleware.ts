@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenExtractionResult } from '@lfx-one/shared/interfaces';
+import { redactInviteToken } from '@lfx-one/shared/utils/auth-fragment.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
@@ -456,7 +457,7 @@ async function executeAuthDecision(decision: AuthDecision, req: Request, res: Re
       // Log user out due to token refresh failure
       logger.debug(req, 'auth_logout_execution', 'Executing logout due to token refresh failure', {
         path: req.path,
-        originalUrl: req.originalUrl,
+        originalUrl: redactInviteToken(req.originalUrl, 'http://localhost'),
       });
       // Redirect to home page after logout to avoid redirect loops
       res.oidc.logout({ returnTo: '/' });

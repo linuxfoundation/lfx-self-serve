@@ -309,4 +309,12 @@ export interface MailingListTableRowVm extends GroupsIOMailingList {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the list carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
+  /** Me-lens subscription fields, present only when the row was sourced from `MyMailingList` */
+  my_delivery_mode?: MailingListMemberDeliveryMode;
+  my_mod_status?: MailingListMemberModStatus;
+  my_member_uid?: string;
+  /** Whether the current user can self-join this list (public audience access, not already a member) */
+  canJoin: boolean;
+  /** Precomputed display label for the My Subscription column (avoids a template-bound lookup) */
+  mySubscriptionLabel: string;
 }

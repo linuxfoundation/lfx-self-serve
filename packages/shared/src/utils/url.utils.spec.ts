@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { canonicalHttpUrl, extractUrls, isInviteLandingPath, isPrivateHost, isProfileHubPath, isRelativeInAppPath } from './url.utils';
+import {
+  canonicalHttpUrl,
+  extractUrls,
+  isInviteLandingPath,
+  isMentorshipMentorInvitePath,
+  isPrivateHost,
+  isProfileHubPath,
+  isRelativeInAppPath,
+} from './url.utils';
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {
@@ -77,6 +85,19 @@ describe('isProfileHubPath', () => {
     expect(isProfileHubPath('/org/profile')).toBe(false);
     expect(isProfileHubPath('/meetings')).toBe(false);
     expect(isProfileHubPath('/')).toBe(false);
+  });
+});
+
+describe('isMentorshipMentorInvitePath', () => {
+  it.each(['/mentorship/mentor/invites', '/mentorship/mentor/invites/', '/mentorship/mentor/invites?token=a.b', '/mentorship/mentor/invites#x'])(
+    'matches %s',
+    (url) => {
+      expect(isMentorshipMentorInvitePath(url)).toBe(true);
+    }
+  );
+
+  it.each(['/invite', '/mentorship/mentor/invites-extra', '/mentorship/mentor', '/x/mentorship/mentor/invites'])('does not match %s', (url) => {
+    expect(isMentorshipMentorInvitePath(url)).toBe(false);
   });
 });
 

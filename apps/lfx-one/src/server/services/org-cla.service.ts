@@ -82,7 +82,7 @@ import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-fea
 import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
-import { getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
+import { getEffectiveLfUsername, isImpersonating } from '../utils/auth-helper';
 
 const SERVICE = 'org_cla_service';
 
@@ -266,22 +266,15 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
 }
 
 /**
- * The username EasyCLA compares against a CCLA roster: the Auth0 username, which the ID token
- * carries on the LF username claim. `nickname`, which the general username getter prefers, is not
- * tied to it. While impersonating, the session's own claims are the impersonator's, so the
- * target's stored username is used instead.
+ * The one comparison for "this CLA manager entry is the viewer": exact, like EasyCLA's
+ * `CurrentUserInACL`, and never true without a username.
  */
-async function rosterUsername(req: Request): Promise<string> {
-  if (!isImpersonating(req)) {
-    const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
-    if (typeof claim === 'string' && claim) return claim;
-  }
-  return (await getUsernameFromAuth(req)) ?? '';
+function isViewerUsername(lfUsername: unknown, viewerUsername: string): boolean {
+  return !!viewerUsername && lfUsername === viewerUsername;
 }
 
 function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
-  if (!username) return false;
-  return claManagers.some((manager) => manager?.lfUsername === username);
+  return claManagers.some((manager) => isViewerUsername(manager?.lfUsername, username));
 }
 
 /**
@@ -487,7 +480,7 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
-    const viewerUsername = await rosterUsername(req);
+    const viewerUsername = getEffectiveLfUsername(req);
 
     return {
       orgUid,
@@ -1031,6 +1024,11 @@ export class OrgClaService {
    * agreements accept the write, because the flag lives on the corporate signature record —
    * an unsigned row has no record for the producer to update.
    *
+   * A caller not named on the agreement's CLA Manager list gets `forbidden` before the producer is
+   * called, the same early refusal `updateApprovalList` makes. EasyCLA would refuse that write on
+   * its ACL check anyway, with a bare "Forbidden"; refusing here names the requirement. A row
+   * with no CLA Manager list is passed through, because EasyCLA re-checks the list on this write.
+   *
    * The write path runs with the caller's own token (no impersonation forwarding). The route
    * has `blockDuringImpersonation` in front of it; the direction is the same as the peer
    * approval-list write, because a support engineer flipping this flag against an ordinary
@@ -1170,12 +1168,12 @@ export class OrgClaService {
       });
     }
 
-    const viewerUsername = await rosterUsername(req);
+    const viewerUsername = getEffectiveLfUsername(req);
     return {
       signatureId,
       managers: upstream.list
         .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
-        .map((entry) => ({ ...toOrgClaManager(entry), ...(viewerUsername && entry.lf_username === viewerUsername ? { isViewer: true as const } : {}) })),
+        .map((entry) => ({ ...toOrgClaManager(entry), ...(isViewerUsername(entry.lf_username, viewerUsername) ? { isViewer: true as const } : {}) })),
     };
   }
 
@@ -1850,7 +1848,7 @@ export class OrgClaService {
       return true;
     }
 
-    return rosterNamesUsername(entry.claManagers, await rosterUsername(req));
+    return rosterNamesUsername(entry.claManagers, getEffectiveLfUsername(req));
   }
 
   private requireApprovalListProject(context: ApprovalContext, operation: string): void {
@@ -2129,6 +2127,13 @@ export type OrgClaApprovalUpdateOutcome =
 
 /**
  * Result of an Auto ECLA toggle write (#1988).
+ *
+ * A union rather than a bare boolean plus a thrown error, because the ordinary outcomes map to
+ * distinct HTTP answers: a signature the organization does not hold is a 404, an unsigned
+ * agreement is a 400 with its own copy, and a caller not on the agreement's CLA Manager list is
+ * a 403 with this application's own sentence, refused before EasyCLA is called. `updated` is the
+ * success shape and carries the state the producer now records — the caller sends the target,
+ * the service echoes it back so the client can trust the new value without a re-read.
  *
  * Producer refusals (sanctions, ACL) travel as thrown 403s carrying the producer's own sentence
  * on `clientMessage`; they are not one of these outcomes. Splitting them out here would force the

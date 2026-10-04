@@ -9,22 +9,56 @@
 
   <div class="flex flex-col gap-1">
     <label id="mentorship-mentor-program-label" class="text-sm font-medium text-gray-700">Select LFX Mentorship</label>
+    <!-- The filter searches upstream: the select's own filtering then matches what came back. -->
     <lfx-select
       [form]="pickerForm"
       control="programId"
-      [options]="availablePrograms()"
+      [options]="programOptions()"
       optionLabel="label"
       optionValue="value"
-      [placeholder]="loading() ? 'Loading programs…' : 'Select LFX Mentorship'"
-      [loading]="loading()"
+      optionDisabled="disabled"
+      [placeholder]="programsState().loading ? 'Loading programs…' : 'Select LFX Mentorship'"
+      [loading]="programsState().loading || programsState().loadingMore"
       [filter]="true"
+      filterPlaceholder="Search programs"
+      [emptyMessage]="emptyMessage()"
+      [emptyFilterMessage]="emptyMessage()"
+      [resetFilterOnHide]="true"
+      [overlayOptions]="overlayOptions"
+      [lazy]="true"
+      [virtualScroll]="true"
+      [virtualScrollItemSize]="itemSize"
+      [virtualScrollOptions]="scrollerOptions"
+      [scrollHeight]="scrollHeight()"
       styleClass="w-full"
       ariaLabelledBy="mentorship-mentor-program-label"
-      dataTest="mentorship-mentor-program" />
+      (onFilter)="onFilter($event)"
+      (onLazyLoad)="onLazyLoad($event)"
+      dataTest="mentorship-mentor-program">
+      <ng-template #item let-option>
+        <div class="flex w-full items-center justify-between gap-3" [attr.data-testid]="'mentorship-mentor-program-option-' + option.value">
+          <span class="truncate">{{ option.label }}</span>
+          @if (option.note) {
+            <span class="shrink-0 text-xs text-gray-500" [attr.data-testid]="'mentorship-mentor-program-option-note-' + option.value">{{ option.note }}</span>
+          }
+        </div>
+      </ng-template>
+    </lfx-select>
+    @if (programsState().failed) {
+      <div class="flex flex-wrap items-center gap-3" role="alert" data-testid="mentorship-mentor-programs-failed">
+        <p class="text-sm text-red-600">{{ programsFailedMessage }}</p>
+        <lfx-button label="Retry" size="small" [text]="true" (onClick)="onRetryPrograms()" data-testid="mentorship-mentor-programs-retry" />
+      </div>
+    }
     <p class="text-xs text-gray-500 mt-1">{{ helper }}</p>
   </div>
 
-  @if (rows().length) {
+  @if (requestsFailed()) {
+    <div class="flex flex-wrap items-center gap-3" role="alert" data-testid="mentorship-mentor-requests-failed">
+      <p class="text-sm text-red-600">{{ requestsFailedMessage }}</p>
+      <lfx-button label="Retry" size="small" [text]="true" (onClick)="retry.emit()" data-testid="mentorship-mentor-requests-retry" />
+    </div>
+  } @else if (rows().length) {
     <div class="overflow-x-auto rounded-xl border border-gray-200">
       <!-- 36rem is the width the three columns need before the program name starts wrapping; below it the wrapper scrolls. -->
       <table class="w-full min-w-[36rem] text-left">
@@ -50,14 +84,18 @@
                 </span>
               </td>
               <td class="px-4 py-4">
-                <lfx-button
-                  label="Withdraw"
-                  severity="danger"
-                  size="small"
-                  [text]="true"
-                  [ariaLabel]="'Withdraw request to join ' + row.programName"
-                  (onClick)="withdraw.emit(row.id)"
-                  [attr.data-testid]="'mentorship-mentor-withdraw-' + row.id" />
+                @if (row.canWithdraw) {
+                  <lfx-button
+                    label="Withdraw"
+                    severity="danger"
+                    size="small"
+                    [text]="true"
+                    [loading]="withdrawingId() === row.id"
+                    [disabled]="withdrawingId() !== null"
+                    [ariaLabel]="'Withdraw request to join ' + row.programName"
+                    (onClick)="withdraw.emit(row.id)"
+                    [attr.data-testid]="'mentorship-mentor-withdraw-' + row.id" />
+                }
               </td>
             </tr>
           }

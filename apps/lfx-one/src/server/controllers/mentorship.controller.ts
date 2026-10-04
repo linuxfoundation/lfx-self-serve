@@ -6,75 +6,13 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
-import { parseTrimmedString } from '../helpers/mentorship-params.helper';
-import { isMentorshipProgramReviewDecision, isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
+import { parseIntQuery, parseTrimmedString } from '../helpers/mentorship-params.helper';
+import { isMentorshipProgramReviewDecision, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
-const parseIntQuery = (val: unknown): number | undefined => {
-  const raw = parseTrimmedString(val);
-  if (raw === undefined) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
-
 export class MentorshipController {
   private readonly mentorshipService = new MentorshipService();
-
-  // GET /api/mentorship/programs
-  public async getPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_programs');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_programs' });
-      }
-
-      const { search, status } = req.query;
-
-      const rawStatus = parseTrimmedString(status);
-      if (rawStatus !== undefined && !isMentorshipProgramStatus(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: open, pending-review, completed`, {
-          operation: 'get_mentorship_programs',
-        });
-      }
-
-      const programs = await this.mentorshipService.getPrograms(req, {
-        search: parseTrimmedString(search),
-        status: rawStatus,
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
-      });
-
-      logger.success(req, 'get_mentorship_programs', startTime, { result_count: programs.data.length });
-
-      res.json(programs);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/programs/:programId — id (default) or slug
-  public async getProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_program');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_program' });
-      }
-
-      const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_program' });
-      }
-
-      const program = await this.mentorshipService.getProgram(req, programId);
-      logger.success(req, 'get_mentorship_program', startTime, { programId });
-      res.json(program);
-    } catch (error) {
-      next(error);
-    }
-  }
 
   // GET /api/mentorship/programs/name-available
   public async isProgramNameAvailable(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -187,10 +125,11 @@ export class MentorshipController {
 
   // PATCH /api/mentorship/me/lfx-profile
   // Auth: logged-in user required (401 otherwise); refused while impersonating by the route. The
-  // body is the name and logo the profile card shows after an Edit LFX Profile save, checked with
-  // the rules the browser applies (400 with per-field errors); any email in it is ignored. Copies
-  // them, with the caller's verified primary email, onto every mentor and mentee profile the
-  // caller holds; 204 whether or not there were any.
+  // body is the name and logo the profile card shows after an Edit LFX Profile save, or empty after
+  // a Connect, checked with the rules the browser applies (400 with per-field errors); any email or
+  // link in it is ignored. Copies them, with the caller's verified primary email and connected
+  // GitHub link, onto every mentor and mentee profile the caller holds; 204 whether or not there
+  // were any.
   public async syncLfxProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'sync_mentorship_lfx_profile');
 

@@ -232,6 +232,37 @@ describe('CommitteeSettingsComponent — Slack webhook card', () => {
   });
 });
 
+describe('CommitteeSettingsComponent — org-requirement notes on voting and business-email features', () => {
+  let fixture: ComponentFixture<CommitteeSettingsComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsComponent],
+      providers: [provideRouter([]), provideNoopAnimations()],
+    }).compileComponents();
+    fixture = TestBed.createComponent(CommitteeSettingsComponent);
+    fixture.componentRef.setInput('form', buildForm());
+    await fixture.whenStable();
+  });
+
+  it('shows an org-requirement note on the business_email_required feature card', () => {
+    const note = fixture.nativeElement.querySelector('[data-testid="feature-org-note-business_email_required"]');
+    expect(note).not.toBeNull();
+    expect(note?.textContent?.trim()).toContain('organization name and URL');
+  });
+
+  it('shows an org-requirement note on the enable_voting feature card', () => {
+    const note = fixture.nativeElement.querySelector('[data-testid="feature-org-note-enable_voting"]');
+    expect(note).not.toBeNull();
+    expect(note?.textContent?.trim()).toContain('organization name and URL');
+  });
+
+  it('does not show an org-requirement note on features that have no note (e.g. is_audit_enabled, public)', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="feature-org-note-is_audit_enabled"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="feature-org-note-public"]')).toBeNull();
+  });
+});
+
 describe('CommitteeSettingsComponent — chat-channel / website label association', () => {
   let fixture: ComponentFixture<CommitteeSettingsComponent>;
 

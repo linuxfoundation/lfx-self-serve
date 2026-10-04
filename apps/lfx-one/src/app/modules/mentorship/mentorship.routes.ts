@@ -61,6 +61,14 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./mentor/mentor-program-detail/mentor-program-detail.component').then((m) => m.MentorProgramDetailComponent),
   },
   {
+    // Landing page for the link in the mentor invite email (`?token=`). Like program-review, it
+    // only answers the invitation on a click, so a mail scanner prefetching the link changes
+    // nothing. A sibling listed before the prefix-matched shell, so the shell does not swallow it.
+    path: 'mentor/invites',
+    title: 'Mentor Invitation',
+    loadComponent: () => import('./mentor/mentor-invite/mentor-invite.component').then((m) => m.MentorInviteComponent),
+  },
+  {
     // Register form — matches `/mentorship/mentee` exactly. `canActivate` checks whether
     // the user already has a mentee profile; if so it redirects to the apply page when
     // both apply ids are on the URL, otherwise to the shell's overview. No profile, or a
@@ -114,9 +122,6 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'mentor',
     loadComponent: () => import('./mentor/mentor-page/mentor-page.component').then((m) => m.MentorPageComponent),
     children: [
-      // `/mentorship/mentor/` (trailing slash) lands here rather than 404, matching the
-      // shell's default view. Wildcard below covers unknown children the same way.
-      { path: '', pathMatch: 'full', redirectTo: 'programs' },
       {
         path: 'programs',
         title: 'My Programs',
@@ -127,6 +132,7 @@ export const MENTORSHIP_ROUTES: Routes = [
         title: 'Mentor Profile',
         loadComponent: () => import('./mentor/mentor-profile/mentor-profile.component').then((m) => m.MentorProfileComponent),
       },
+      // Unknown children, and the empty path, fall to the shell's default view rather than 404.
       { path: '**', redirectTo: 'programs' },
     ],
   },

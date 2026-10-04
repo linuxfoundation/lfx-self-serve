@@ -1,0 +1,108 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="training-courses">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Courses unavailable"
+      subtitle="We could not load this foundation's courses. Refresh the page to try again."
+      data-testid="training-courses-error" />
+  } @else if (!loading() && !scopeTotal()) {
+    <lfx-empty-state
+      icon="fa-light fa-graduation-cap"
+      title="No course enrollments this period"
+      subtitle="No course or certification at this foundation had an enrollment in the selected period."
+      data-testid="training-courses-empty" />
+  } @else {
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="training-courses-controls">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div class="w-full sm:w-64">
+          <label class="sr-only" for="training-courses-search">Search course</label>
+          <lfx-input-text
+            [form]="searchForm"
+            control="search"
+            inputId="training-courses-search"
+            placeholder="Search course..."
+            icon="fa-light fa-search"
+            size="small"
+            styleClass="w-full"
+            dataTest="training-courses-search" />
+        </div>
+        <lfx-filter-pills [options]="typeOptions" [selectedFilter]="type()" (filterChange)="onTypeChange($event)" data-testid="training-courses-types" />
+      </div>
+      <span class="text-[13px] text-gray-500" data-testid="training-courses-count">
+        @if (loading()) {
+          &mdash;
+        } @else {
+          {{ countLabel() }}
+        }
+      </span>
+    </div>
+
+    @if (!loading() && totalRecords() === 0) {
+      <lfx-empty-state
+        icon="fa-light fa-magnifying-glass"
+        title="No matching courses"
+        subtitle="No course matches the selected filter or search. Clear the search or pick another filter."
+        data-testid="training-courses-no-match" />
+    } @else {
+      <lfx-table
+        [value]="rowViews()"
+        [loading]="loading()"
+        [lazy]="true"
+        [lazyLoadOnInit]="false"
+        [paginator]="totalRecords() > size()"
+        [rows]="size()"
+        [first]="first()"
+        [totalRecords]="totalRecords()"
+        [showCurrentPageReport]="true"
+        [showFirstLastIcon]="false"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+        (onPage)="onTablePage($event)"
+        data-testid="training-courses-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Course</span></th>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Type</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Enrollments</span></th>
+            <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Revenue</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-view>
+          <tr [attr.data-testid]="'training-courses-row-' + view.courseKey">
+            <td>
+              <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-name'">{{
+                view.courseName
+              }}</span>
+            </td>
+            <td>
+              <span
+                class="inline-flex rounded-full px-2 py-0.5 text-[12px] font-medium"
+                [class]="view.typeClass"
+                [attr.data-testid]="'training-courses-row-' + view.courseKey + '-type'"
+                >{{ view.typeLabel }}</span
+              >
+            </td>
+            <td class="text-right">
+              <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'training-courses-row-' + view.courseKey + '-enrollments'">{{
+                view.enrollmentsLabel
+              }}</span>
+            </td>
+            <td class="text-right">
+              <span
+                class="text-sm tabular-nums"
+                [class.text-gray-800]="view.revenueMeasured"
+                [class.text-gray-500]="!view.revenueMeasured"
+                [attr.data-testid]="'training-courses-row-' + view.courseKey + '-revenue'"
+                >{{ view.revenueLabel }}</span
+              >
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  }
+</div>

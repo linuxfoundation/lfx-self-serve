@@ -519,7 +519,9 @@ export class OrgClasController {
    * PUT /api/orgs/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create
    *
    * Turns Auto ECLA on or off for one signed CCLA (#1988). The route is behind
-   * `blockDuringImpersonation` + `requireOrgLensAccess`; the service raises a 403 with the
+   * `blockDuringImpersonation` + `requireOrgLensAccess`. A caller not named on the agreement's
+   * CLA Manager list comes back from the service as `forbidden`, answered here as a 403 with
+   * this application's own sentence before EasyCLA is called. The service raises a 403 with the
    * producer's own refusal sentence on the sanctions path, and this handler leaves that error
    * to the shared error handler rather than translating it here — the producer's copy is what
    * belongs on screen.
