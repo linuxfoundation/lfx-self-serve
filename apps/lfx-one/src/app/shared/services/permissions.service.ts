@@ -115,17 +115,28 @@ export class PermissionsService {
   // A v1 permission sync can legitimately leave a user with both auditor (view) and writer
   // (manage) entries for the same project — the backend does not collapse this. Show a single
   // row per user, with 'manage' taking precedence over 'view' (see #3218).
+  //
+  // Key on email first: the auditor and writer arrays are normalized independently above
+  // (username falls back to email per-array), so the same person can end up with a real
+  // username on one entry and an email-as-username on the other — keying on username first
+  // would miss that pairing. A user with neither username nor email can't be identified at
+  // all; leave those rows uncollapsed rather than merging unrelated anonymous users together.
   private collapseDuplicateUsers(users: ProjectPermissionUser[]): ProjectPermissionUser[] {
     const byIdentifier = new Map<string, ProjectPermissionUser>();
+    const unidentified: ProjectPermissionUser[] = [];
 
     for (const user of users) {
-      const identifier = (user.username || user.email || '').toLowerCase();
+      const identifier = (user.email || user.username || '').toLowerCase();
+      if (!identifier) {
+        unidentified.push(user);
+        continue;
+      }
       const existing = byIdentifier.get(identifier);
       if (!existing || (existing.role === 'view' && user.role === 'manage')) {
         byIdentifier.set(identifier, user);
       }
     }
 
-    return Array.from(byIdentifier.values());
+    return [...byIdentifier.values(), ...unidentified];
   }
 }
