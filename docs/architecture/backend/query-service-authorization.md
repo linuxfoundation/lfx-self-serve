@@ -112,8 +112,14 @@ meeting composer's Guests editor (which reconciles edits against the saved list)
 result without warning would silently misrepresent the data. The checks enforce stricter
 business-logic constraints beyond the viewer-level FGA filter that the tolerant listing relies on:
 organizer for the composer; committee writer, or committee member when the committee's
-`join_mode === 'invite_only'`, for the import flow. The default listing path also
-goes through query-service and relies on its built-in FGA filtering.
+`join_mode === 'invite_only'`, for the import flow.
+
+**Meeting guest lists.** The tolerant registrant listing (`GET /api/meetings/:uid/registrants`) and
+`GET /api/meetings/:uid/rsvp` also go through query-service, but its viewer filter lets anyone who
+can view the meeting list the guests. Both endpoints first call
+`MeetingService.canViewMeetingRoster`: organizers always pass, and invitees pass only when
+`show_meeting_attendees` is on. Everyone else gets `[]`. `my-meeting-registrants` applies the same
+rule. Invitees still see the invited count, from `registrant_count` on the public meeting response.
 
 ---
 
@@ -122,7 +128,8 @@ goes through query-service and relies on its built-in FGA filtering.
 When reviewing this codebase:
 
 - **Do not flag** the absence of a BFF-side FGA check on read endpoints that call query-service.
-  The query-service filter is the authoritative gate for those resources.
+  The query-service filter is the authoritative gate for those resources. Meeting guest lists are
+  the exception: see **Meeting guest lists** above.
 - **Do flag** read endpoints that call upstream APIs (ITX, NATS request/reply) without a BFF-side
   check when those APIs do not perform per-user filtering.
 - **Do flag** write endpoints that have no BFF-side check.

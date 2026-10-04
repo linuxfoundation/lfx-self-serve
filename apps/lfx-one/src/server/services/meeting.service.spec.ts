@@ -80,6 +80,7 @@ vi.mock('../utils/auth-helper', () => ({
   getUsernameFromAuth: vi.fn(),
   stripAuthPrefix: (v: string) => v,
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn(async () => 'm2m-token') }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -88,7 +89,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
-import { getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -791,6 +792,80 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
 
     await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow();
+  });
+});
+
+describe('MeetingService.canViewMeetingRoster', () => {
+  let service: MeetingService;
+  const MEETING_UID = 'meeting-1';
+
+  beforeEach(() => {
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    vi.mocked(getEffectiveEmail).mockReturnValue('ada@example.com');
+    service = new MeetingService();
+  });
+
+  const stubInvitee = (showMeetingAttendees: boolean, ownRows: Partial<MeetingRegistrant>[]) => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, show_meeting_attendees: showMeetingAttendees } as unknown as Meeting);
+    return vi.spyOn(service, 'getMeetingRegistrantsByEmail').mockResolvedValue(ownRows as MeetingRegistrant[]);
+  };
+
+  it('lets an organizer see the guests without looking the meeting up', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    const getMeetingById = vi.spyOn(service, 'getMeetingById');
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(getMeetingById).not.toHaveBeenCalled();
+  });
+
+  it('lets an invitee see the guests when the organizer shares them', async () => {
+    const byEmail = stubInvitee(true, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(byEmail).toHaveBeenCalledWith(req, MEETING_UID, 'ada@example.com', 'm2m-token');
+  });
+
+  it('hides the guests from an invitee when the organizer does not share them', async () => {
+    const byEmail = stubInvitee(false, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+    expect(byEmail).not.toHaveBeenCalled();
+  });
+
+  // Sharing is with the guests, not with everyone who can view the meeting.
+  it('hides the guests from a viewer who is not invited, even when they are shared', async () => {
+    stubInvitee(true, []);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).rejects.toThrow('access-check unreachable');
+  });
+});
+
+describe('MeetingService.getMeetingRegistrantCount', () => {
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  it('counts the registrants under the given M2M token without reading rows', async () => {
+    proxyRequest.mockResolvedValue({ count: 12, has_more: false });
+
+    await expect(new MeetingService().getMeetingRegistrantCount(req, 'meeting-1', 'm2m-token')).resolves.toBe(12);
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources/count',
+      'GET',
+      { type: 'v1_meeting_registrant', parent: 'meeting:meeting-1' },
+      undefined,
+      undefined,
+      { bearerToken: 'm2m-token' }
+    );
   });
 });
 

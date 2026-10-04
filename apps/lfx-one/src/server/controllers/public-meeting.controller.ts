@@ -127,8 +127,15 @@ export class PublicMeetingController {
       // client. m2mToken is still active on req.bearerToken.
       const parent = await this.resolveParentProject(req, project);
 
-      // Registrant counts are no longer derived here — the full roster read was purely to derive
-      // two integers with no consumer once the join page holds its own roster (GH-1731).
+      // An invitee who cannot see the guest list still sees how many people are invited, so the
+      // count comes from the query-service count endpoint rather than a roster read (GH-1731).
+      if (meeting.invited && !meeting.organizer) {
+        try {
+          meeting.registrant_count = await this.meetingService.getMeetingRegistrantCount(req, id, m2mToken);
+        } catch (error) {
+          logger.warning(req, 'get_public_meeting_by_id', 'Registrant count unavailable', { meeting_id: id, err: error });
+        }
+      }
 
       // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);

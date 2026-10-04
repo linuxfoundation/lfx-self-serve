@@ -42,6 +42,7 @@ const {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    getMeetingRegistrantCount: vi.fn(),
     // Called by enrichMeetingsWithCreatedBy (#1155); empty map => enrich is a no-op.
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
@@ -376,6 +377,62 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.invited).toBe(true);
     expect(payload.meeting.host_key).toBeUndefined();
+  });
+});
+
+// An invitee may not see the guest list, but the invited count is not personal data, so the page
+// response carries it for them instead of the rows.
+describe('PublicMeetingController.getMeetingById registrant count', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    meetingSvc.getMeetingRegistrantCount.mockResolvedValue(12);
+    checkSingleAccessMock.mockResolvedValue(false);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: true }));
+  });
+
+  it('gives an invitee the registrant count under the M2M token', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantCount).toHaveBeenCalledWith(req, MEETING_ID, 'm2m-token');
+    expect(res.json.mock.calls[0][0].meeting.registrant_count).toBe(12);
+  });
+
+  it('skips the count for an organizer, who reads the roster itself', async () => {
+    checkSingleAccessMock.mockResolvedValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantCount).not.toHaveBeenCalled();
+  });
+
+  it('skips the count for a viewer who is not invited', async () => {
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantCount).not.toHaveBeenCalled();
+  });
+
+  it('still serves the meeting when the count is unavailable', async () => {
+    meetingSvc.getMeetingRegistrantCount.mockRejectedValue(new Error('query service down'));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].meeting.registrant_count).toBeUndefined();
   });
 });
 

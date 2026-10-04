@@ -215,6 +215,21 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
     });
 
+    it('still shows how many are invited, from the server count, when the meeting hides its attendees', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }),
+          project: buildProject(),
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const page = fixture.nativeElement as HTMLElement;
+      expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
+    });
+
     it('fetches and offers the guest list when the meeting shares its attendees', async () => {
       const page = await renderInvitee(true);
 

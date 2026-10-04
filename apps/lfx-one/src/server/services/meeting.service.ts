@@ -63,6 +63,7 @@ import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -905,6 +906,50 @@ export class MeetingService {
     }
 
     return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+  }
+
+  /**
+   * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
+   * @description Organizers always may. Anyone else must be a registrant of the meeting, and the
+   * organizer must have turned on `show_meeting_attendees`, the same rule
+   * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
+   * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
+   * unresolvable access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewMeetingRoster(req: Request, meetingUid: string): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
+    const email = getEffectiveEmail(req);
+    if (!meeting.show_meeting_attendees || !email) {
+      return false;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    const ownRows = await this.getMeetingRegistrantsByEmail(req, meetingUid, email, m2mToken);
+    return ownRows.length > 0;
+  }
+
+  /**
+   * Counts a meeting's registrants without reading any rows, under the M2M token so the total does
+   * not depend on what the caller may list. A count is not personal data, so callers may show it to
+   * invitees who cannot see the guest list itself.
+   */
+  public async getMeetingRegistrantCount(req: Request, meetingUid: string, m2mToken: string): Promise<number> {
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources/count',
+      'GET',
+      { type: 'v1_meeting_registrant', parent: `meeting:${meetingUid}` },
+      undefined,
+      undefined,
+      { bearerToken: m2mToken }
+    );
+    return count;
   }
 
   /**

@@ -331,7 +331,8 @@ export class MeetingJoinComponent implements OnInit {
   // instead of leaking a previous meeting's roster into the new one.
   private registrantsRosterKey = signal<string | null>(null);
   // Counts from actual data
-  protected totalInvitees = computed(() => this.registrants().length);
+  // An invitee who may not see the guests gets no roster, only the server's count.
+  protected totalInvitees = computed(() => (this.canViewGuests() ? this.registrants().length : (this.meeting()?.registrant_count ?? 0)));
   // The roster the child component holds is now the base count — this pad is purely optimistic,
   // covering the window between an add and the query-service refetch catching up.
   public additionalRegistrantsCount = computed(() => this.optimisticAdditional());

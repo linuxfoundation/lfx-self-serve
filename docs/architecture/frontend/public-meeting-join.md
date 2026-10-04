@@ -35,7 +35,7 @@ Attachments for upcoming meetings are fetched via a separate authenticated endpo
 
 ### Members / registrants gating
 
-The "Show Members" button is only rendered for `authenticated() && canViewGuests()`: organizers always, and invitees only when `meeting.show_meeting_attendees` is on. The roster fetch uses the same rule, matching `GET /api/meetings/:uid/my-meeting-registrants`, which returns `[]` to a non-organizer when the setting is off. Because the "N invited" count is derived from that roster, invitees don't see it on meetings that hide their attendees. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
+The "Show Members" button is only rendered for `authenticated() && canViewGuests()`: organizers always, and invitees only when `meeting.show_meeting_attendees` is on. The roster fetch uses the same rule, matching `GET /api/meetings/:uid/my-meeting-registrants`, which returns `[]` to a non-organizer when the setting is off. When the viewer can't see the guests, the "N invited" count comes from `meeting.registrant_count` instead, which `GET /public/api/meetings/:id` sets for invitees from the query-service count endpoint. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
 
 ---
 
@@ -144,7 +144,7 @@ Key signals and their gating:
 | `registrantsLoading` | `WritableSignal<boolean>`       | starts `true`; set by `initializeRegistrants` around the roster fetch, cleared via `finalize` (or immediately on the no-fetch branch) so the RSVP card doesn't hang on a skeleton |
 | `fetchedJoinUrl`     | `Signal<string\|undefined>`     | `initializeFetchedJoinUrl` — triggers on guest form submission                                                                                                                    |
 
-**Registrant counts are not read from the meeting object.** `getMeetingById` / `getPublicMeeting` no longer populate `individual_registrants_count` or `committee_members_count` — those fields are omitted from the response entirely (see [GH-1731](https://github.com/linuxfoundation/lfx-self-serve/issues/1731)). The join page derives its own counts from the `registrants` roster it fetches (`totalInvitees`, `additionalRegistrantsCount`), with `reconcileOptimisticPad` reconciling an optimistic guest-add pad against the roster length once a refetch lands. See `packages/shared/src/utils/meeting.utils.ts` for the reconciliation logic and its documented count-delta heuristic limitations.
+**Registrant counts are not read from the meeting object.** `getMeetingById` / `getPublicMeeting` no longer populate `individual_registrants_count` or `committee_members_count` — those fields are omitted from the response entirely (see [GH-1731](https://github.com/linuxfoundation/lfx-self-serve/issues/1731)). The join page derives its own counts from the `registrants` roster it fetches (`totalInvitees`, `additionalRegistrantsCount`). The one exception is an invitee who can't see the guests: `totalInvitees` then reads `registrant_count`, which the response sets for invitees. `reconcileOptimisticPad` reconciles an optimistic guest-add pad against the roster length once a refetch lands. See `packages/shared/src/utils/meeting.utils.ts` for the reconciliation logic and its documented count-delta heuristic limitations.
 
 **Template structure:**
 
