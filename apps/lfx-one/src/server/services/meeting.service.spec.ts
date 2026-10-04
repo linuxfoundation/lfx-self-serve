@@ -655,7 +655,29 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     proxyRequest.mockReset();
     committeeSvc.getCommitteeById.mockReset();
     accessCheckSvc.checkSingleAccess.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
     service = new MeetingService();
+  });
+
+  it('rejects a committee writer who does not organize the meeting, before reading the roster', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toThrow('access-check unreachable');
   });
 
   it('rejects when the caller lacks writer access and the committee is not invite_only', async () => {
