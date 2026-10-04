@@ -355,6 +355,8 @@ export class MeetingJoinComponent implements OnInit {
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
+  // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
+  protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && !!this.meeting()?.show_meeting_attendees));
   public canRegisterForMeeting: Signal<boolean>;
   public canToggleRsvpView: Signal<boolean>;
   public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
@@ -1702,9 +1704,10 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.optimisticInvited),
       ]).pipe(
         switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
-          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
-            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
-            // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
+          const canViewGuests = meeting?.organizer || ((meeting?.invited || optimisticInvited) && meeting?.show_meeting_attendees);
+          if (!meeting?.id || !authenticated || !canViewGuests || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
+            // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);
           }

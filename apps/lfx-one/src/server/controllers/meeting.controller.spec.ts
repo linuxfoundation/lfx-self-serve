@@ -752,6 +752,38 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
+    // The roster is read under an M2M token, so this handler is the only place the organizer's
+    // attendee-visibility choice can hold: a UI-only gate lets any invitee read the list via the API.
+    describe('attendee visibility', () => {
+      it('returns no roster to an invitee when the meeting hides its attendees', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: false, committees: [] });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([]);
+        expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+      });
+
+      it('returns the roster to an invitee when the meeting shares its attendees', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [] });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([registrant]);
+      });
+
+      it('returns the roster to an organizer even when the meeting hides its attendees', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: true, show_meeting_attendees: false, committees: [] });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([registrant]);
+      });
+    });
+
     // The privileged registrant and committee reads run under the M2M token, but that token is
     // scoped to each individual upstream call via `ApiRequestOptions.bearerToken` rather than
     // swapped onto `req` (#1903). `req` outlives this handler — SSR rendering and any later

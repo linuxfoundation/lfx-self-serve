@@ -597,7 +597,7 @@ export class MeetingController {
   /**
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
-   * organizers. Does NOT check `show_meeting_attendees` — callers gate attendee visibility in the UI.
+   * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on.
    * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -682,6 +682,21 @@ export class MeetingController {
           user_email: userEmail,
           is_registrant: false,
           is_organizer: false,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
+      // The roster below is read with an M2M token, so this is the only place the meeting's
+      // attendee-visibility setting can be enforced: a registrant sees the other guests only when
+      // the organizer chose to share them.
+      if (!meeting.organizer && !meeting.show_meeting_attendees) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          is_registrant: true,
+          is_organizer: false,
+          attendees_hidden: true,
           registrant_count: 0,
         });
         res.json([]);

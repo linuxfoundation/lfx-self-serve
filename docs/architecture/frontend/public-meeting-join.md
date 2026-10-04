@@ -35,7 +35,7 @@ Attachments for upcoming meetings are fetched via a separate authenticated endpo
 
 ### Members / registrants gating
 
-The "Show Members" button is only rendered for `authenticated() && (meeting.organizer || meeting.invited)`. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
+The "Show Members" button is only rendered for `authenticated() && canViewGuests()`: organizers always, and invitees only when `meeting.show_meeting_attendees` is on. The roster fetch uses the same rule, matching `GET /api/meetings/:uid/my-meeting-registrants`, which returns `[]` to a non-organizer when the setting is off. Because the "N invited" count is derived from that roster, invitees don't see it on meetings that hide their attendees. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
 
 ---
 

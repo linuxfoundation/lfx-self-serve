@@ -194,6 +194,35 @@ describe('MeetingJoinComponent', () => {
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
   });
 
+  // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
+  // offer a guest list it cannot fill.
+  describe('guest list visibility for invitees', () => {
+    const renderInvitee = async (showMeetingAttendees: boolean): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: showMeetingAttendees }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('neither fetches nor offers the guest list when the meeting hides its attendees', async () => {
+      const page = await renderInvitee(false);
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+
+    it('fetches and offers the guest list when the meeting shares its attendees', async () => {
+      const page = await renderInvitee(true);
+
+      expect(getMyMeetingRegistrants).toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).not.toBeNull();
+    });
+  });
+
   it('establishes a fresh baseline instead of treating growth as absorption when a guest is added before the roster has ever loaded', async () => {
     const pendingFirstFetch = new Subject<MeetingRegistrant[]>();
     getMyMeetingRegistrants.mockReturnValueOnce(pendingFirstFetch.asObservable()).mockReturnValueOnce(of(buildRegistrants(10)));

@@ -13,10 +13,9 @@ import { catchError, combineLatest, filter, finalize, Observable, of, startWith,
 
 /**
  * Attendee preview for an invitee's meeting card, plus the read-only guest drawer behind "View all".
- * @description Uses `GET /api/meetings/:uid/my-meeting-registrants`, which only checks that the
- * caller is a registrant or organizer of the meeting. It does NOT check `show_meeting_attendees`:
- * the parent card enforces that by rendering this component only when the flag is on, inside
- * `@defer (on viewport)` so only visible cards fetch.
+ * @description Uses `GET /api/meetings/:uid/my-meeting-registrants`, which returns the roster to an
+ * invitee only when `show_meeting_attendees` is on. The parent card renders this component only
+ * when the flag is on, inside `@defer (on viewport)` so only visible cards fetch.
  *
  * The card fetches a `preview` roster (no committee enrichment, partial roster tolerated). The
  * full enriched roster is fetched once, the first time the drawer opens. A refused or failed

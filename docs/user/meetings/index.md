@@ -58,7 +58,7 @@ Empty states differ by lens:
 
 - **Materials** lists the files and links for the meeting. On a recurring meeting, the "all dates" note means the same materials apply to every occurrence. Organizers see **Edit materials**.
 - **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
-- Invitees see the same faces and **View all** under their RSVP buttons, but only when the organizer turned on **Show Attendees** for the meeting.
+- Invitees see the same faces and **View all** under their RSVP buttons, but only when the organizer turned on **Show Attendees** for the meeting. The same setting controls **Show Members** and the invited count on the meeting's page: without it, invitees can't see who else is invited.
 
 ## Key concepts
 
