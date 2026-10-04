@@ -15,7 +15,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
  * itself: v1 mounts first and removes the `meetingJoinState` key on read, so E1-01 must have the
  * gate snapshot the seed before either tree mounts and pass it in. State is derived
  * through the `meeting-view-model.utils` resolvers (E0-02, PR #2909) — not by lifting logic out of the v1
- * component, which stays byte-identical. Layout and conventions: `specs/010-meeting-details-redesign/v2-scaffold.md`.
+ * component, which stays byte-identical. Layout and conventions: `specs/011-meeting-details-redesign/v2-scaffold.md`.
  */
 @Component({
   selector: 'lfx-meeting-details-page',
