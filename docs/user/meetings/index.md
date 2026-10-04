@@ -44,9 +44,9 @@ Me, Foundation, and Project lenses share the same dashboard, just scoped differe
 
 - **Pending RSVP** (Upcoming only) — meetings that collect RSVPs and that you haven't answered yet.
 - **Organized by me** (Upcoming and Past) — meetings you created.
-- **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list. The filter appears only when you have declined meetings.
+- **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list, and a meeting you organized always stays in your list even if you declined every date. The filter appears only when you have declined meetings.
 
-At the top of My Meetings, the Upcoming stats show **Meetings in the Next 7 Days**, which counts each date (a weekly series adds one per week), and **Need Your RSVP**. Select **Need Your RSVP** to turn on the Pending RSVP filter. Both stats leave out meetings you declined for every date.
+At the top of My Meetings, the Upcoming stats show **Meetings in the Next 7 Days**, which counts each date (a weekly series adds one per week), and **Need Your RSVP**. Select **Need Your RSVP** to turn on the Pending RSVP filter. Both stats leave out meetings you declined for every date, except meetings you organized.
 
 Empty states differ by lens:
 

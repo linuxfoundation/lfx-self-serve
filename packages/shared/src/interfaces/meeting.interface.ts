@@ -299,8 +299,9 @@ export interface Meeting {
    * Share the guest list in calendar invites: when on, each guest's ICS lists the other
    * attendees and their last known RSVP instead of the recipient alone. Board and restricted
    * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
-   * forces the field off on write. This does not currently change what the LFX meeting page or
-   * the BFF roster endpoints return; that gating is tracked separately.
+   * forces the field off on write. In LFX it also gates the attendee preview and guest drawer on
+   * an invitee's meeting card: the card renders `lfx-meeting-invitee-attendees` only when this is
+   * on. The BFF roster endpoints do not check it; that gating is tracked separately.
    */
   show_meeting_attendees?: boolean | null;
   /**
