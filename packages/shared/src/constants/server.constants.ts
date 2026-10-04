@@ -45,8 +45,8 @@ export const SENSITIVE_FIELDS = [
  * `set-cookie`, `Set-Cookie` and `setCookie` all match `setcookie`. Any normalised key ending in
  * one of `LOG_CREDENTIAL_KEY_SUFFIXES` is treated as a credential too, which covers `access_token`,
  * `refresh_token`, `id_token`, `impersonationToken`, `tokens`, `client_secret`, `current_password`,
- * `confirmPassword`, `x-api-key`, `SNOWFLAKE_API_KEY`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` and the like (and, as a deliberate over-redaction, pagination cursors such as
- * `next_page_token`).
+ * `confirmPassword`, `x-api-key`, `SNOWFLAKE_API_KEY`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` and the
+ * like (and, as a deliberate over-redaction, pagination cursors such as `next_page_token`).
  *
  * Meeting secrets are listed as exact keys — `passcode`, `host_key`/`hostKey` and
  * `chat_webhook_url` (a Slack Incoming Webhook URL is itself a bearer credential) — rather than
