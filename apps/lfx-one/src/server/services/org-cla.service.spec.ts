@@ -54,17 +54,14 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const orgLensUrl = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-lens-url.utils')>(
     '../../../../../packages/shared/src/utils/org-lens-url.utils'
   );
-  const email = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/email.utils')>(
-    '../../../../../packages/shared/src/utils/email.utils'
-  );
   return {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
+    validateOrgClaApprovalValue: approval.validateOrgClaApprovalValue,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
     classifyOrgClaDesigneeRefusal: designee.classifyOrgClaDesigneeRefusal,
     isOrgClaDesigneeLfLoginRequired: designee.isOrgClaDesigneeLfLoginRequired,
-    isPlainEmailAddress: email.isPlainEmailAddress,
     orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
     // The return-address builders ship as written: the spec asserts the minted shapes.
     orgEasyclaReturnPath: orgLensUrl.orgEasyclaReturnPath,
@@ -3035,7 +3032,9 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(row?.gitlabUsername).toBeUndefined();
   });
 
-  it.each(['contributor@example.org', "o'brien@example.org"])('keeps a plain single-recipient email %s', async (email) => {
+  // Every address the producer's approval-list validator accepts is relayed, so an approval entry
+  // added for it can still be matched for removal on invalidation.
+  it.each(['contributor@example.org', "o'brien@example.org", 'r&d@example.org', 'tag#1@example.org'])('keeps a valid email %s', async (email) => {
     stageAckRead(contributorPage({ list: [contributor({ email: `  ${email}  ` })] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
@@ -3043,10 +3042,10 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]?.email).toBe(email);
   });
 
-  // The email reaches client `mailto:` hrefs, so a value carrying mailto query fields, extra
-  // recipients or percent escapes is dropped rather than relayed.
+  // A value carrying mailto query fields, extra recipients or percent escapes after the domain is
+  // not a valid address, so it is dropped rather than relayed.
   it.each(['a@example.com?bcc=b@example.org', 'victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com,attacker@example.org'])(
-    'drops a non-plain email %s',
+    'drops an invalid email %s',
     async (email) => {
       stageAckRead(contributorPage({ list: [contributor({ email })] }));
 

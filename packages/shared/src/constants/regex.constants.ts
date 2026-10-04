@@ -86,12 +86,5 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
  */
 export const MAILTO_SAFE_EMAIL_REGEX = /^[A-Za-z0-9._+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/;
 
-/**
- * Characters that change the meaning of a `mailto:` URI (recipient separators, query/fragment,
- * percent escapes, quoting) or of a header line (whitespace, control characters). An upstream
- * address containing any of them is not a plain single address.
- */
-export const MAILTO_STRUCTURAL_CHARS_REGEX = /[\s\p{Cc}?&#%,;:<>"\\]/u;
-
 /** Org People `person_key` — LFID or opaque `cdp:`-prefixed id; 4–128 URL-safe chars (request-boundary bound, not a schema). */
 export const PERSON_KEY_PATTERN = /^(cdp:)?[A-Za-z0-9_-]{4,128}$/;

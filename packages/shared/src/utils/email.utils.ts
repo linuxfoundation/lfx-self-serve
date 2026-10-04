@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MEETING_INVITE_PRIMARY_SENTINEL } from '../constants/profile.constants';
-import { EMAIL_REGEX, MAILTO_SAFE_EMAIL_REGEX, MAILTO_STRUCTURAL_CHARS_REGEX } from '../constants/regex.constants';
+import { EMAIL_REGEX, MAILTO_SAFE_EMAIL_REGEX } from '../constants/regex.constants';
 import type { EmailListParseResult } from '../interfaces';
 
 /** True when `value` is a syntactically valid email address. Trims before testing. */
@@ -20,16 +20,6 @@ export function isValidEmail(value: string | null | undefined): boolean {
  */
 export function isMailtoSafeEmail(value: string | null | undefined): value is string {
   return !!value && MAILTO_SAFE_EMAIL_REGEX.test(value);
-}
-
-/**
- * True when `value` is a single plain address: valid email shape and none of the characters that
- * add recipients or header fields to a `mailto:` URI. Looser than `isMailtoSafeEmail` (it keeps
- * legitimate addresses such as `o'brien@example.com`), so use it to decide whether to relay an
- * upstream address at all, and `isMailtoSafeEmail` before building a link. Does not trim.
- */
-export function isPlainEmailAddress(value: string | null | undefined): value is string {
-  return !!value && EMAIL_REGEX.test(value) && !MAILTO_STRUCTURAL_CHARS_REGEX.test(value);
 }
 
 /**

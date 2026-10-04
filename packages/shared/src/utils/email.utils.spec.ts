@@ -7,7 +7,6 @@ import {
   emailsEqual,
   isMailtoSafeEmail,
   isMeetingInvitePrimarySentinel,
-  isPlainEmailAddress,
   isValidEmail,
   maskEmailForLogs,
   parseEmailList,
@@ -34,7 +33,7 @@ describe('isValidEmail', () => {
 });
 
 describe('isMailtoSafeEmail', () => {
-  it.each([['alice@example.com'], ['first.last+tag@mail.example.co.uk'], ['a_b-c@sub-domain.example.org']])('accepts %p', (value) => {
+  it.each([['alice@example.com'], ['first.last+tag@mail.corp.example'], ['a_b-c@sub-domain.example.org']])('accepts %p', (value) => {
     expect(isMailtoSafeEmail(value)).toBe(true);
   });
 
@@ -53,30 +52,6 @@ describe('isMailtoSafeEmail', () => {
     [undefined],
   ])('rejects %p', (value) => {
     expect(isMailtoSafeEmail(value)).toBe(false);
-  });
-});
-
-describe('isPlainEmailAddress', () => {
-  it.each([['alice@example.com'], ["o'brien@example.com"], ['first.last+tag@mail.example.co.uk']])('accepts %p', (value) => {
-    expect(isPlainEmailAddress(value)).toBe(true);
-  });
-
-  it.each([
-    ['a@example.com?bcc=b@example.org'],
-    ['a@example.com&subject=hi'],
-    ['victim@example.com%0D%0ABcc:attacker@example.com'],
-    ['a@example.com,b@example.org'],
-    ['a@example.com;b@example.org'],
-    ['a@example.com#frag'],
-    ['a@example.com\r\nBcc: b@example.org'],
-    ['a@b@example.com'],
-    [' alice@example.com'],
-    ['alice@example'],
-    [''],
-    [null],
-    [undefined],
-  ])('rejects %p', (value) => {
-    expect(isPlainEmailAddress(value)).toBe(false);
   });
 });
 

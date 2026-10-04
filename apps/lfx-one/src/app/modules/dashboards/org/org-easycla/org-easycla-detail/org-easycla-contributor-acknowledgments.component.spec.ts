@@ -284,8 +284,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(identity?.getAttribute('href')).toBe('mailto:contributor@example.org');
     });
 
-    it.each(['victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com?bcc=b@example.org'])(
-      'renders a suspicious email %s as plain text with no mailto link',
+    it.each(['victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com?bcc=b@example.org', 'r&d@example.org', 'tag#1@example.org'])(
+      'renders an email %s that is not mailto-safe as plain text with no mailto link',
       async (email) => {
         getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ email })])));
         const fixture = await render();
@@ -757,6 +757,16 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         { kind: 'email', value: 'ada@example.org' },
         { kind: 'github-username', value: 'ADA-L' },
       ]);
+    });
+
+    it('matches the approval-list entry of a valid email that is not mailto-safe', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', email: 'r&d@example.org' })], { canEdit: true })));
+      getApprovalList.mockReturnValueOnce(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'email', value: 'r&d@example.org' }], canEdit: false }));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog.mock.calls[0][1].data.matchingEntries()).toEqual([{ kind: 'email', value: 'r&d@example.org' }]);
     });
 
     it('offers the also-remove option when ACS allows approval-list-update', async () => {

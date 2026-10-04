@@ -15,12 +15,12 @@ import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
   isOrgClaDesigneeLfLoginRequired,
-  isPlainEmailAddress,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
   orgClaPairProjectSfid,
   orgEasyclaReturnPath,
   sortOrgClaApprovalEntries,
+  validateOrgClaApprovalValue,
 } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
@@ -2229,9 +2229,11 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     const trimmed = value?.trim() ?? '';
     return trimmed.length > 0 ? trimmed : undefined;
   };
-  // The producer's email reaches client `mailto:` hrefs. A value that is not a plain single
-  // address (query fields, separators, percent escapes) is dropped so it can never inject
-  // recipients or mail headers, whichever panel renders it.
+  // Only an address the producer's own approval-list email validator accepts is relayed: anything
+  // else (a query string or extra recipient after the domain, percent escapes, separators) is
+  // dropped. Valid addresses whose local part holds `&`, `#` or `?` are kept so approval-list
+  // matching still finds their entries; the client builds a `mailto:` link only for the stricter
+  // `isMailtoSafeEmail` subset.
   const email = nonEmpty(row?.email);
 
   return {
@@ -2239,7 +2241,7 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     lfLogin: nonEmpty(row?.linux_foundation_id),
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
-    email: isPlainEmailAddress(email) ? email : undefined,
+    email: email && validateOrgClaApprovalValue('email', email) === null ? email : undefined,
     name: nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),
