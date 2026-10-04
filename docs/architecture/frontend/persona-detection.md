@@ -94,7 +94,7 @@ Two server services own persona resolution, both exported as singletons from `ap
 
 `getPersonas(req)` derives the request payload from the **effective identity** (`apps/lfx-one/src/server/utils/auth-helper.ts`):
 
-- `getEffectiveUsername(req)` — impersonation target's username if impersonating, else the OIDC `nickname` / `username` / `preferred_username`.
+- `getEffectiveUsername(req)` — impersonation target's username if impersonating, else the OIDC LF username claim (`https://sso.linuxfoundation.org/claims/username`; Authelia local dev: `preferred_username`), or null when absent — never the `nickname` / `username` display claims.
 - `getEffectiveEmail(req)` — impersonation target's email if impersonating, else the OIDC `email`, **lowercased**.
 
 Because these are impersonation-aware, persona detection automatically reflects the impersonated user. See [Impersonation](../backend/impersonation.md).

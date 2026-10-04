@@ -1624,8 +1624,8 @@ export class MeetingService {
       // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
       // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
       // unlike username which is often null on RSVP records.
-      // Use getEffectiveUsername (returns LFID nickname) rather than getUsernameFromAuth
-      // (returns OIDC `sub`) since registrant.username stores the plain LFID.
+      // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
+      // username claim, or the impersonation target's username).
       const email = getEffectiveEmail(req) ?? undefined;
       const username = getEffectiveUsername(req) ?? undefined;
 
