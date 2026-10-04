@@ -37,6 +37,12 @@ own namespace; the two never share a value.
 | `meeting-action-slot`               | The action rail container (see below)              |
 | `meeting-error-state`               | Terminal error state                               |
 | `meeting-invitation-required-state` | The signed-in-outsider / invitation-required state |
+| `meeting-occurrence-edit-button`    | Organizer's "Edit this occurrence" control         |
+| `meeting-occurrence-cancel-button`  | Organizer's "Cancel this occurrence" control       |
+
+The two occurrence controls port V1's (#3040, #3206): organizer only, on a recurring meeting, for the
+selected upcoming occurrence. V1 names them `meeting-reschedule-occurrence-button` and
+`meeting-cancel-occurrence-button`; V2 uses its own names, as for everything else here.
 
 `meeting-privacy-chip` is deliberately **one** testid, not four. E1-04 renders a single chip whose
 copy and icon come from the existing `getMeetingPrivacyLabel` / `getMeetingPrivacyIcon` helpers, so
@@ -170,22 +176,23 @@ names here; adding one would imply an affordance the epic is not building.
 
 ## V1 testids
 
-V1's template carries 56 distinct testids — 38 static `data-testid` values and 18 bound through
-`[attr.data-testid]`. **None of them is consumed by a spec that visits
+V1's template carries 55 distinct testids — 37 static `data-testid` values and 18 bound through
+`[attr.data-testid]` (recounted against `main` on 2026-10-04, after #3040 and #3206). **None of them is consumed by a spec that visits
 `/meetings/:id`** — verified by exact-match search for `getByTestId('<name>')` across
 `apps/lfx-one/e2e/`. They are not a contract. They stay because V1 stays, and they retire with it.
 
-Two names are worth calling out because a substring search makes them look like details-page
-consumers when they are not:
+Three names are worth calling out because a search makes them look like details-page consumers when
+they are not:
 
 | `data-testid`                | Where the spec actually exercises it                                      |
 | ---------------------------- | ------------------------------------------------------------------------- |
 | `meeting-registrants-drawer` | `meeting-card.component.html`, via `/meetings` (the list) — not this page |
 | `toggle-rsvp-view-button`    | `meeting-card.component.html`, via `/meetings` (the list) — not this page |
+| `meeting-title`              | `meeting-card.component.html`, via `/meetings` (the list) — not this page |
 
-Both names exist in `meeting-join.component.html` **and** `meeting-card.component.html`.
-`meeting-rsvp-pre-feature.spec.ts` navigates to `/meetings` (line 122) and scopes both locators to
-`organizerCard`, so it asserts on the card's copies. `meeting-card` owns its own names and is out of
+All three names exist in `meeting-join.component.html` **and** `meeting-card.component.html`.
+`meeting-rsvp-pre-feature.spec.ts` and `meeting-card-title-datetime-link.spec.ts` navigate to
+`/meetings` and scope their locators to a card, so they assert on the card's copies. `meeting-card` owns its own names and is out of
 scope for this epic — V2 of the details page does not inherit them.
 
 The practical consequence for rollout: no existing spec breaks whichever tree the flag serves,
