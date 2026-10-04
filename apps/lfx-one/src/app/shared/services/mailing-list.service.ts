@@ -15,7 +15,7 @@ import {
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { map, Observable, shareReplay, take, tap } from 'rxjs';
 
 /**
  * Service for managing mailing list data
@@ -43,8 +43,12 @@ export class MailingListService {
     return this.http.get<GroupsIOMailingList[]>(this.baseUrl);
   }
 
+  /**
+   * No `catchError` here — the dashboard's `myMailingListsError` signal is the error handler for
+   * this stream (GH-2984 review); swallowing it here would make that signal permanently dead.
+   */
   public getMyMailingLists(): Observable<MyMailingList[]> {
-    return this.http.get<MyMailingList[]>(`${this.baseUrl}/my-mailing-lists`).pipe(catchError(() => of([])));
+    return this.http.get<MyMailingList[]>(`${this.baseUrl}/my-mailing-lists`);
   }
 
   /**

@@ -18,8 +18,8 @@ describe('HEALTH_METRICS_NON_MEMBERS_SECTIONS', () => {
     expect(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.key)).toEqual(['orgs', 'people', 'conversion']);
   });
 
-  it('waits on Company participation, the one section reading data', () => {
-    expect(HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS).toEqual(['orgs']);
+  it('waits on every section, since each reads data', () => {
+    expect(HEALTH_METRICS_NON_MEMBERS_DATA_SECTIONS).toEqual(['orgs', 'people', 'conversion']);
   });
 });
 
@@ -47,5 +47,10 @@ describe('HEALTH_METRICS_NON_MEMBERS_ORGS_FILTER_OPTIONS', () => {
 describe('HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS', () => {
   it('namespaces every param to the tab', () => {
     expect(Object.values(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS).every((param) => param.startsWith('non'))).toBe(true);
+  });
+
+  it('gives every section its own params', () => {
+    const params = Object.values(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS);
+    expect(new Set(params).size).toBe(params.length);
   });
 });

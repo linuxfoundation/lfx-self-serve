@@ -1592,6 +1592,30 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
   });
 });
 
+describe('MeetingService.cancelOccurrence', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue(undefined);
+    service = new MeetingService();
+  });
+
+  it('sends the note as the DELETE body', async () => {
+    await service.cancelOccurrence(req, 'mtg 1', '1893456000', 'Holiday week');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg%201/occurrences/1893456000', 'DELETE', undefined, {
+      note: 'Holiday week',
+    });
+  });
+
+  it('sends no body without a note', async () => {
+    await service.cancelOccurrence(req, 'mtg-1', '1893456000');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/occurrences/1893456000', 'DELETE', undefined, undefined);
+  });
+});
+
 describe('MeetingService.updateOccurrence', () => {
   let service: MeetingService;
 
@@ -1601,7 +1625,7 @@ describe('MeetingService.updateOccurrence', () => {
     service = new MeetingService();
   });
 
-  it('PUTs only start_time and duration to the occurrence endpoint', async () => {
+  it('PUTs start_time and duration but never a recurrence to the occurrence endpoint', async () => {
     const payload = { start_time: '2030-01-08T15:00:00.000Z', duration: 45, recurrence: { type: 2 } } as never;
 
     await service.updateOccurrence(req, 'mtg 1', '1893456000', payload);
@@ -1609,6 +1633,22 @@ describe('MeetingService.updateOccurrence', () => {
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg%201/occurrences/1893456000', 'PUT', undefined, {
       start_time: '2030-01-08T15:00:00.000Z',
       duration: 45,
+    });
+  });
+
+  it('sends a title and agenda as upstream topic and agenda', async () => {
+    await service.updateOccurrence(req, 'mtg-1', '1893456000', {
+      start_time: '2030-01-08T15:00:00.000Z',
+      duration: 45,
+      title: 'Special session',
+      description: 'Demo day',
+    });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/occurrences/1893456000', 'PUT', undefined, {
+      start_time: '2030-01-08T15:00:00.000Z',
+      duration: 45,
+      topic: 'Special session',
+      agenda: 'Demo day',
     });
   });
 

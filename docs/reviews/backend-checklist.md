@@ -283,7 +283,7 @@ Broad categories the hook protects (non-exhaustive, see the hook for the authori
 - **Git hooks / lint / format:** `.husky/*`, `eslint.config.*`, `.prettierrc*`, `check-headers.sh`
 - **Build config:** `turbo.json`, `angular.json`
 - **Package files:** `package.json`, `yarn.lock`
-- **AI guidance:** `CLAUDE.md`
+- **AI guidance:** `AGENTS.md`
 
 When a PR modifies any of these, flag as NIT with the hook's warning reason attached so the reviewer knows this file affects core infrastructure.
 

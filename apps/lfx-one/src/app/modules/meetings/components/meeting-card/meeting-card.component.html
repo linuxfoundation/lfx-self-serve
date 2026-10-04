@@ -506,6 +506,7 @@
           [visible]="showRegistrants()"
           [showAddRegistrant]="!pastMeeting()"
           [openAddFormOnShow]="openRegistrantsOnAddForm()"
+          [occurrence]="occurrence()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">

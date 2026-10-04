@@ -26,6 +26,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     updateMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
     updateOccurrence: vi.fn(),
+    cancelOccurrence: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -55,10 +56,11 @@ vi.mock('@lfx-one/shared/enums', () => ({
   },
 }));
 // Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
-// module-level bindings. Kept in sync with `MEETING_AGENDA_*` and `*_CUSTOM_DURATION` in the shared constants barrel.
+// module-level bindings. Kept in sync with `MEETING_AGENDA_*`, `MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH` and `*_CUSTOM_DURATION` in the shared constants barrel.
 vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_AGENDA_MAX_LENGTH: 2000,
   MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000,
+  MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH: 4000,
   MIN_CUSTOM_DURATION: 5,
   MAX_CUSTOM_DURATION: 480,
 }));
@@ -68,6 +70,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+  codePointLength: (await import('../../../../../packages/shared/src/utils/string.utils')).codePointLength,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
@@ -833,6 +836,48 @@ describe('MeetingController', () => {
     });
   });
 
+  describe('cancelOccurrence', () => {
+    const OCCURRENCE_ID = '1893456000';
+    const buildCancelReq = (body: unknown): Request => buildReq({ params: { uid: MEETING_ID, occurrenceId: OCCURRENCE_ID }, body } as Partial<Request>);
+    const fieldsIn = (error: unknown): string[] => ((error as FakeValidationError).validationErrors ?? []).map((e) => e.field);
+
+    beforeEach(() => {
+      meetingSvc.cancelOccurrence.mockResolvedValue(undefined);
+    });
+
+    it('forwards a trimmed note and answers 204', async () => {
+      const res = buildRes();
+
+      await controller.cancelOccurrence(buildCancelReq({ note: '  Holiday week ' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.cancelOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, 'Holiday week');
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it.each([[undefined], [{}], [{ note: null }], [{ note: '   ' }]])('cancels without a note for body %o', async (body) => {
+      await controller.cancelOccurrence(buildCancelReq(body), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.cancelOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, undefined);
+    });
+
+    it.each([[{ note: 42 }], [{ note: 'x'.repeat(4001) }]])('rejects %o without calling upstream', async (body) => {
+      await controller.cancelOccurrence(buildCancelReq(body), buildRes(), next);
+
+      expect(meetingSvc.cancelOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['note']);
+    });
+
+    // A cancel is destructive: a malformed body must fail rather than cancel with the reason dropped.
+    it.each([[['note']], ['reason'], [42]])('rejects the non-object body %o without calling upstream', async (body) => {
+      await controller.cancelOccurrence(buildCancelReq(body), buildRes(), next);
+
+      expect(meetingSvc.cancelOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['body']);
+    });
+  });
+
   describe('updateOccurrence', () => {
     const OCCURRENCE_ID = '1893456000';
     const futureStart = (): string => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -846,15 +891,60 @@ describe('MeetingController', () => {
       meetingSvc.updateOccurrence.mockResolvedValue(undefined);
     });
 
-    it('forwards only the normalized start time and duration and answers 204', async () => {
+    it('forwards the normalized start time and duration, never a recurrence, and answers 204', async () => {
       const start = futureStart();
       const res = buildRes();
 
-      await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 45, recurrence: { type: 2 }, title: 'x' }), res, next);
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: start, duration: 45, recurrence: { type: 2 } }), res, next);
 
       expect(next).not.toHaveBeenCalled();
       expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, { start_time: start, duration: 45 });
       expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it('forwards a trimmed title and agenda when they are sent', async () => {
+      const start = futureStart();
+
+      await controller.updateOccurrence(
+        buildOccurrenceReq({ start_time: start, duration: 45, title: '  Special session ', description: ' Demo day ' }),
+        buildRes(),
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, {
+        start_time: start,
+        duration: 45,
+        title: 'Special session',
+        description: 'Demo day',
+      });
+    });
+
+    // Upstream drops an empty agenda, so accepting one would answer 204 for a change that never happens.
+    it.each([
+      [{ title: '   ' }, 'title'],
+      [{ title: 42 }, 'title'],
+      [{ description: '' }, 'description'],
+      [{ description: 'x'.repeat(MEETING_AGENDA_MAX_LENGTH + 1) }, 'description'],
+    ])('rejects %o without calling upstream', async (extra, field) => {
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration: 30, ...extra }), buildRes(), next);
+
+      expect(meetingSvc.updateOccurrence).not.toHaveBeenCalled();
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual([field]);
+    });
+
+    it("accepts an occurrence's own start once it has begun, so a live occurrence can still be retitled", async () => {
+      const liveOccurrenceId = String(Math.floor((Date.now() - 10 * 60_000) / 1000));
+      const ownStart = new Date(Number(liveOccurrenceId) * 1000).toISOString();
+
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: ownStart, duration: 30, title: 'Live demo' }, liveOccurrenceId), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, liveOccurrenceId, {
+        start_time: ownStart,
+        duration: 30,
+        title: 'Live demo',
+      });
     });
 
     it('rejects a start time in the past without calling upstream', async () => {

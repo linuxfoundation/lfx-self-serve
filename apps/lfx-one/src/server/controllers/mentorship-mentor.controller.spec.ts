@@ -11,6 +11,7 @@ import type {
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramsResponse,
 } from '@lfx-one/shared/interfaces';
+import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,6 +34,7 @@ const { MentorshipMentorController } = await import('./mentorship-mentor.control
 const { MentorshipMentorService } = await import('../services/mentorship-mentor.service');
 const { AuthenticationError, ServiceValidationError } = await import('../errors');
 const { getUsernameFromAuth } = await import('../utils/auth-helper');
+const { logger } = await import('../services/logger.service');
 
 describe('MentorshipMentorController', () => {
   let controller: InstanceType<typeof MentorshipMentorController>;
@@ -312,18 +314,20 @@ describe('MentorshipMentorController', () => {
   });
 
   describe('getMentorProgram', () => {
+    const PROGRAM_ID = '1a2b3c4d-0000-4000-8000-000000000001';
+
     it('trims the program id and answers with the program detail', async () => {
-      const detail = { program: { id: 'mp_test' } } as unknown as MentorshipMentorProgramDetail;
+      const detail = { program: { id: PROGRAM_ID } } as unknown as MentorshipMentorProgramDetail;
       const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorProgram').mockResolvedValue(detail);
 
-      await controller.getMentorProgram(buildReq({ programId: '  mp_test  ' }), res, next);
+      await controller.getMentorProgram(buildReq({ programId: `  ${PROGRAM_ID}  ` }), res, next);
 
-      expect(read).toHaveBeenCalledWith(expect.anything(), 'mp_test');
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID);
       expect(res.json).toHaveBeenCalledWith(detail);
       expect(next).not.toHaveBeenCalled();
     });
 
-    it.each([undefined, '', '   '])('passes a ServiceValidationError to next for the program id %j', async (programId) => {
+    it.each([undefined, '', '   ', 'gridflow', '../applications'])('passes a ServiceValidationError to next for the program id %j', async (programId) => {
       const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorProgram');
 
       await controller.getMentorProgram(buildReq({ programId }), res, next);
@@ -336,7 +340,7 @@ describe('MentorshipMentorController', () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
       const read = vi.spyOn(MentorshipMentorService.prototype, 'getMentorProgram');
 
-      await controller.getMentorProgram(buildReq({ programId: 'mp_test' }), res, next);
+      await controller.getMentorProgram(buildReq({ programId: PROGRAM_ID }), res, next);
 
       expect(read).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
@@ -410,6 +414,197 @@ describe('MentorshipMentorController', () => {
       await controller.updateMentorProfile(buildUpdateReq({ introduction: '<p>Updated</p>' }), res, next);
 
       expect(update).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('updateApplicationNote', () => {
+    const APPLICATION_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+    const buildNoteReq = (requestBody: unknown, applicationId: unknown = APPLICATION_ID): Request =>
+      ({ body: requestBody, params: { applicationId }, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it('saves the trimmed note and answers 204, logging only the id and whether it was cleared', async () => {
+      const save = vi.spyOn(MentorshipMentorService.prototype, 'updateApplicationNote').mockResolvedValue(undefined);
+
+      await controller.updateApplicationNote(buildNoteReq({ note: '  Strong screening call.  ' }, ` ${APPLICATION_ID} `), res, next);
+
+      expect(save).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { note: 'Strong screening call.' });
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'update_mentorship_application_note', expect.anything(), {
+        applicationId: APPLICATION_ID,
+        cleared: false,
+      });
+    });
+
+    it('clears the note when it is blank once trimmed', async () => {
+      const save = vi.spyOn(MentorshipMentorService.prototype, 'updateApplicationNote').mockResolvedValue(undefined);
+
+      await controller.updateApplicationNote(buildNoteReq({ note: '   ' }), res, next);
+
+      expect(save).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { note: '' });
+      expect(res.status).toHaveBeenCalledWith(204);
+    });
+
+    it('accepts a note of exactly the maximum length', async () => {
+      const save = vi.spyOn(MentorshipMentorService.prototype, 'updateApplicationNote').mockResolvedValue(undefined);
+      const note = 'x'.repeat(MENTORSHIP_MENTEE_NOTE_MAX);
+
+      await controller.updateApplicationNote(buildNoteReq({ note }), res, next);
+
+      expect(save).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { note });
+    });
+
+    it.each([
+      ['an application id that is not a UUID', { note: 'Note' }, 'application-1'],
+      ['a missing note', {}, APPLICATION_ID],
+      ['a note that is not a string', { note: 42 }, APPLICATION_ID],
+      ['a note over the maximum length', { note: 'x'.repeat(MENTORSHIP_MENTEE_NOTE_MAX + 1) }, APPLICATION_ID],
+    ])('rejects %s before calling the service', async (_label, requestBody, applicationId) => {
+      const save = vi.spyOn(MentorshipMentorService.prototype, 'updateApplicationNote');
+
+      await controller.updateApplicationNote(buildNoteReq(requestBody, applicationId), res, next);
+
+      expect(save).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'updateApplicationNote').mockRejectedValue(error);
+
+      await controller.updateApplicationNote(buildNoteReq({ note: 'Note' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const save = vi.spyOn(MentorshipMentorService.prototype, 'updateApplicationNote');
+
+      await controller.updateApplicationNote(buildNoteReq({ note: 'Note' }), res, next);
+
+      expect(save).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('createMenteeTasks', () => {
+    const APPLICATION_ID = '5d1c8e2f-3a4b-4c6d-8e9f-0a1b2c3d4e5f';
+    const OTHER_APPLICATION_ID = '7a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d';
+    const buildTaskReq = (requestBody: unknown): Request => ({ body: requestBody, params: {}, query: {} }) as unknown as Request;
+    const body = { applicationIds: [APPLICATION_ID, OTHER_APPLICATION_ID], name: '  Write a design doc  ', description: 'One page on the plan.' };
+
+    it('creates the parsed task and answers with the outcome, logging only counts', async () => {
+      const create = vi
+        .spyOn(MentorshipMentorService.prototype, 'createMenteeTasks')
+        .mockResolvedValue({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] });
+
+      await controller.createMenteeTasks(buildTaskReq(body), res, next);
+
+      expect(create).toHaveBeenCalledWith(expect.anything(), {
+        applicationIds: [APPLICATION_ID, OTHER_APPLICATION_ID],
+        name: 'Write a design doc',
+        description: 'One page on the plan.',
+      });
+      expect(res.json).toHaveBeenCalledWith({ created: [APPLICATION_ID], failed: [OTHER_APPLICATION_ID] });
+      expect(next).not.toHaveBeenCalled();
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'create_mentorship_mentor_tasks', expect.anything(), {
+        application_count: 2,
+        created_count: 1,
+        failed_count: 1,
+      });
+    });
+
+    it('rejects an invalid body before calling the service', async () => {
+      const create = vi.spyOn(MentorshipMentorService.prototype, 'createMenteeTasks');
+
+      await controller.createMenteeTasks(buildTaskReq({ ...body, applicationIds: ['application-1'] }), res, next);
+
+      expect(create).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'createMenteeTasks').mockRejectedValue(error);
+
+      await controller.createMenteeTasks(buildTaskReq(body), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const create = vi.spyOn(MentorshipMentorService.prototype, 'createMenteeTasks');
+
+      await controller.createMenteeTasks(buildTaskReq(body), res, next);
+
+      expect(create).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+    });
+  });
+
+  describe('reviewMenteeTask', () => {
+    const TASK_ID = '9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+    const buildReviewReq = (requestBody: unknown, taskId: unknown = TASK_ID): Request =>
+      ({ body: requestBody, params: { taskId }, query: {} }) as unknown as Request;
+
+    beforeEach(() => {
+      res = { json: vi.fn(), status: vi.fn(), send: vi.fn() } as unknown as Response;
+      vi.mocked(res.status).mockReturnValue(res);
+    });
+
+    it.each(['complete', 'incomplete'] as const)('sends %s for the trimmed task id and answers 204, logging only the id and status', async (status) => {
+      const review = vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask').mockResolvedValue(undefined);
+
+      await controller.reviewMenteeTask(buildReviewReq({ status, comment: 'ignored' }, ` ${TASK_ID} `), res, next);
+
+      expect(review).toHaveBeenCalledWith(expect.anything(), TASK_ID, status);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'review_mentorship_mentee_task', expect.anything(), { taskId: TASK_ID, status });
+    });
+
+    it.each([
+      ['a task id that is not a UUID', { status: 'complete' }, 'task-1'],
+      ['a missing status', {}, TASK_ID],
+      ['a missing body', undefined, TASK_ID],
+      ['a mentee status', { status: 'submitted' }, TASK_ID],
+      ['the app status name', { status: 'completed' }, TASK_ID],
+    ])('rejects %s before calling the service', async (_label, requestBody, taskId) => {
+      const review = vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask');
+
+      await controller.reviewMenteeTask(buildReviewReq(requestBody, taskId), res, next);
+
+      expect(review).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask').mockRejectedValue(error);
+
+      await controller.reviewMenteeTask(buildReviewReq({ status: 'complete' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('passes an AuthenticationError to next when no user is signed in', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const review = vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask');
+
+      await controller.reviewMenteeTask(buildReviewReq({ status: 'complete' }), res, next);
+
+      expect(review).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
     });
   });

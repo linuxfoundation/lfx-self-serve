@@ -6,7 +6,17 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { BOARD_SCOPED_PERSONA_PRIORITY, LENS_DEFAULT_ROUTES, NAV_SEARCH_DEBOUNCE_MS, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
-import { LensItem, LensItemsResponse, LensPage, LensState, NavLens, PersonaType, TaggedLensPage } from '@lfx-one/shared/interfaces';
+import {
+  LensItem,
+  LensItemsResponse,
+  LensPage,
+  LensState,
+  NavLens,
+  PersonaType,
+  PreferenceReadResponse,
+  PreferenceUpsertRequest,
+  TaggedLensPage,
+} from '@lfx-one/shared/interfaces';
 import { lensItemToProjectContext, shouldSkipNavDefaultSelection } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
@@ -127,6 +137,22 @@ export class NavigationService {
     const state = this.getState(lens);
     state.pendingDefaultSelection.set(true);
     state.reload$.next();
+  }
+
+  /** Reads the current user's favorited foundation/project uids (`null` when unset) — `UserPreferenceStore` transport (GH-2995). */
+  public getFavoriteProjectsPreference(): Observable<string | null> {
+    return this.http.get<PreferenceReadResponse>('/api/nav/favorite-projects').pipe(map((response) => response.value));
+  }
+
+  /** Upserts the current user's favorited uids (stringified JSON array). */
+  public upsertFavoriteProjectsPreference(value: string): Observable<void> {
+    const body: PreferenceUpsertRequest = { value };
+    return this.http.put<PreferenceReadResponse>('/api/nav/favorite-projects', body).pipe(map(() => undefined));
+  }
+
+  /** Clears the current user's favorited uids (idempotent server-side). */
+  public deleteFavoriteProjectsPreference(): Observable<void> {
+    return this.http.delete<PreferenceReadResponse>('/api/nav/favorite-projects').pipe(map(() => undefined));
   }
 
   private preloadSibling(lens: NavLens): void {

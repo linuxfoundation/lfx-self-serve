@@ -31,6 +31,13 @@ import {
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
@@ -41,6 +48,7 @@ import type {
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
   HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsTrainingCoursesType,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -58,6 +66,7 @@ import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../s
 import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
 import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
+import { HealthMetricsTrainingService, isSupportedTrainingRange } from '../services/health-metrics-training.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -76,6 +85,7 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
+const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
 
 /** Bridge bars whose organizations the Members movements list serves. */
 const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
@@ -111,6 +121,7 @@ export class AnalyticsController {
   private readonly healthMetricsEventsService: HealthMetricsEventsService;
   private readonly healthMetricsMembersService: HealthMetricsMembersService;
   private readonly healthMetricsNonMembersService: HealthMetricsNonMembersService;
+  private readonly healthMetricsTrainingService: HealthMetricsTrainingService;
 
   public constructor() {
     this.userService = new UserService();
@@ -121,6 +132,7 @@ export class AnalyticsController {
     this.healthMetricsEventsService = new HealthMetricsEventsService();
     this.healthMetricsMembersService = new HealthMetricsMembersService();
     this.healthMetricsNonMembersService = new HealthMetricsNonMembersService();
+    this.healthMetricsTrainingService = new HealthMetricsTrainingService();
   }
 
   /**
@@ -4164,6 +4176,158 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         range,
         filter,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-people` — one page of the non-member individuals who attended meetings in a period. */
+  public async getNonMembersPeople(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_people');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_people');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_people');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'People has no data for this range', { operation: 'get_non_members_people' });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsNonMembersService.getPeople(req, { foundationSlug, range, search, offset, pageSize });
+
+      // Counts only: the search text can name a person, so it stays out of this metadata.
+      logger.success(req, 'get_non_members_people', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest high-fit organizations. */
+  public async getNonMembersConversion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_conversion');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_conversion');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_conversion');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Conversion opportunity has no data for this range', { operation: 'get_non_members_conversion' });
+      }
+
+      const response = await this.healthMetricsNonMembersService.getConversion(req, { foundationSlug, range });
+
+      // Counts only: the warmest list names organizations, so it stays out of this metadata.
+      logger.success(req, 'get_non_members_conversion', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        measured: response.measured,
+        high_fit_count: response.highFitCount,
+        warmest_count: response.warmest.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-presence` — whether the foundation runs a training programme, which decides the Training tab's shell. */
+  public async getTrainingPresence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_presence');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_presence');
+
+      const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
+
+      logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-enrollment` — every period's enrollment, certification and revenue KPIs, by-type split and yearly trend. */
+  public async getTrainingEnrollment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_enrollment');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_enrollment');
+
+      const response = await this.healthMetricsTrainingService.getEnrollment(req, { foundationSlug });
+
+      logger.success(req, 'get_training_enrollment', startTime, {
+        foundation_slug: foundationSlug,
+        measured: response.measured,
+        delivery_type_count: response.periods.YTD.byType.length,
+        trend_year_count: response.trend.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-courses` — one page of the foundation's courses with enrollments in a period. */
+  public async getTrainingCourses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_courses');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_courses');
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_training_courses');
+      if (!isSupportedTrainingRange(range)) {
+        throw ServiceValidationError.forField('range', 'Training courses have no data for this range', { operation: 'get_training_courses' });
+      }
+
+      const type = getStringQueryParam(req, 'type') || 'all';
+      if (!TRAINING_COURSES_TYPES.has(type)) {
+        throw ServiceValidationError.forField('type', `Invalid type value. Allowed: ${[...TRAINING_COURSES_TYPES].join(', ')}`, {
+          operation: 'get_training_courses',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsTrainingService.getCourses(req, {
+        foundationSlug,
+        range,
+        type: type as HealthMetricsTrainingCoursesType,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match course names, which the request URL also logs.
+      logger.success(req, 'get_training_courses', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        type,
         has_search: search.length > 0,
         total_records: response.totalRecords,
         scope_total: response.scopeTotal,

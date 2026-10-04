@@ -17,13 +17,13 @@ This project has guided skills for common workflows, plus one repo-owned Self Se
 | `/lfx-self-serve-pr-readiness` | Before opening a PR — PR-shape sanity (branch, ticket reference [GitHub Issue], conventional commits, rebase, DCO + GPG, diff size, protected files touched) |
 | `/preflight`                   | Mechanical pre-PR checks — license headers, format, lint, build, protected files, commit signoff                                                             |
 
-There is no skill for reviewing an existing PR: once a PR is open, work follows `CLAUDE.md`'s **Post-PR review** section (below).
+There is no skill for reviewing an existing PR: once a PR is open, work follows `AGENTS.md`'s **Post-PR review** section (below).
 
 ## Reviewer Children (skill-loading subagents)
 
-The pre-PR sequence lives in `CLAUDE.md` § **Pre-PR review** (the review round via `/lfx-skills:lfx-pre-pr-review`, then the repo's `Preflight` value, then the PR). Do not restate or improvise it here.
+The pre-PR sequence lives in `AGENTS.md` § **Pre-PR review** (the review round via `/lfx-skills:lfx-pre-pr-review`, then the repo's `Preflight` value, then the PR). Do not restate or improvise it here.
 
-**Guidance requirement:** when a pre-PR review intent matches, follow `CLAUDE.md`'s **Pre-PR review** section exactly. Once a PR is open, follow `CLAUDE.md`'s **Post-PR review** section instead of launching any local reviewer.
+**Guidance requirement:** when a pre-PR review intent matches, follow `AGENTS.md`'s **Pre-PR review** section exactly. Once a PR is open, follow `AGENTS.md`'s **Post-PR review** section instead of launching any local reviewer.
 
 ## Trigger Phrases
 
@@ -50,7 +50,7 @@ The pre-PR sequence lives in `CLAUDE.md` § **Pre-PR review** (the review round 
 - "What would CodeRabbit flag?", "What would Copilot say?"
 - Any "is this ready" question where no PR number is given
 
-Follow `CLAUDE.md`'s **Pre-PR review** section exactly. If the user asks to review a single commit mid-branch, explain that this repo reviews the whole branch once, before the PR.
+Follow `AGENTS.md`'s **Pre-PR review** section exactly. If the user asks to review a single commit mid-branch, explain that this repo reviews the whole branch once, before the PR.
 
 **`/lfx-self-serve-pr-readiness`** — pre-PR, shape focus; named first in the **Pre-PR review** `Preflight` value. Match any of these intents:
 
@@ -72,7 +72,7 @@ Follow `CLAUDE.md`'s **Pre-PR review** section exactly. If the user asks to revi
 
 **Reviewer-side questions** on a PR the user did not author — "Review this PR", "Audit PR #123", "Is PR #123 ready to merge?" — get no local review and no writes: summarise the PR's existing review threads and CI state, and do not commit, push, comment on or resolve anything unless the user explicitly asks.
 
-Follow `CLAUDE.md`'s **Post-PR review** section exactly: process the PR's bot and human review threads (verify each finding against the current head, fix or rebut, comment, then resolve). Do not launch any local reviewer for an open PR — the former `/lfx-review-pr` skill did exactly that and is retired.
+Follow `AGENTS.md`'s **Post-PR review** section exactly: process the PR's bot and human review threads (verify each finding against the current head, fix or rebut, comment, then resolve). Do not launch any local reviewer for an open PR — the former `/lfx-review-pr` skill did exactly that and is retired.
 
 ## For Cowork Sessions
 
@@ -80,6 +80,6 @@ Non-developer contributors use these skills as guided workflows. Follow these ru
 
 - If the user describes a feature they want to build, suggest `/self-serve-dev` — it walks them through the full process step-by-step
 - If the user asks about setup or getting started, suggest `/setup`
-- For pre-PR and post-PR review behavior, follow `CLAUDE.md`'s **Pre-PR review** and **Post-PR review** sections exactly; do not reconstruct the protocol from this routing file.
+- For pre-PR and post-PR review behavior, follow `AGENTS.md`'s **Pre-PR review** and **Post-PR review** sections exactly; do not reconstruct the protocol from this routing file.
 - If you are unsure which workflow applies, ask the user what they're trying to accomplish.
 - When a skill references architecture docs in `docs/`, read those docs before generating code — they are the source of truth.

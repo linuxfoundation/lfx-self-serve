@@ -819,6 +819,8 @@ environment:
   GUILD_API_KEY:
     value:
 
+  # Workspace owner/name default in code to the LF Marketing OS workspace
+  # (linux-foundation / marketing-os). Set these only to target a different one.
   GUILD_WORKSPACE_OWNER:
     value:
 

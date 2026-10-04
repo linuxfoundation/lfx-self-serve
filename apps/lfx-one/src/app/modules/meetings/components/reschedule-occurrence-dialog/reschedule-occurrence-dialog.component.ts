@@ -8,10 +8,12 @@ import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, Validatio
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputNumberComponent } from '@components/input-number/input-number.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
-import { MAX_CUSTOM_DURATION, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
-import { Meeting, MeetingOccurrence, MeetingRescheduleOccurrenceResult } from '@lfx-one/shared/interfaces';
+import { MAX_CUSTOM_DURATION, MEETING_AGENDA_MAX_LENGTH, MIN_CUSTOM_DURATION, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { Meeting, MeetingOccurrence, MeetingRescheduleOccurrenceResult, UpdateMeetingOccurrenceRequest } from '@lfx-one/shared/interfaces';
 import {
   combineDateTime,
   formatTo12HourInTimezone,
@@ -20,15 +22,26 @@ import {
   toZonedDateCarrier,
   wallTimeExistsInTimezone,
 } from '@lfx-one/shared/utils';
-import { futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
+import { editModeDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { map, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-reschedule-occurrence-dialog',
-  imports: [ReactiveFormsModule, ButtonComponent, CalendarComponent, InputNumberComponent, MessageComponent, TimePickerComponent, MeetingTimePipe],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    CalendarComponent,
+    InputNumberComponent,
+    InputTextComponent,
+    MessageComponent,
+    TextareaComponent,
+    TimePickerComponent,
+    MeetingTimePipe,
+  ],
   templateUrl: './reschedule-occurrence-dialog.component.html',
 })
 export class RescheduleOccurrenceDialogComponent {
@@ -43,6 +56,12 @@ export class RescheduleOccurrenceDialogComponent {
   public readonly timezone: string = this.meeting.timezone || getUserTimezone();
   public readonly minDuration = MIN_CUSTOM_DURATION;
   public readonly maxDuration = MAX_CUSTOM_DURATION;
+  public readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
+  // YouTube uploads title the video from the meeting, so the series' shorter cap applies here too.
+  public readonly titleMaxLength: number | null = this.meeting.youtube_upload_enabled ? YOUTUBE_MAX_MEETING_TITLE_LENGTH : null;
+  // What the occurrence shows today: its own override if it has one, else the series value.
+  private readonly initialTitle: string = this.occurrence.title || this.meeting.title || '';
+  private readonly initialDescription: string = this.occurrence.description || this.meeting.description || '';
   // The picker shows the series' local calendar, so "today" has to be today in that zone, not the viewer's.
   public readonly minDate: Date = this.initMinDate();
   public readonly form: FormGroup = this.initializeForm();
@@ -58,7 +77,14 @@ export class RescheduleOccurrenceDialogComponent {
   public readonly showNonexistentTimeError: Signal<boolean> = this.initShowNonexistentTimeError();
   public readonly showTimeFormatError: Signal<boolean> = this.initShowTimeFormatError();
   public readonly showDurationError: Signal<boolean> = this.initShowDurationError();
+  public readonly showTitleError: Signal<boolean> = this.initShowTitleError();
+  public readonly showAgendaError: Signal<boolean> = this.initShowAgendaError();
   public readonly canSave: Signal<boolean> = this.initCanSave();
+
+  public constructor() {
+    // Closing mid-save would drop the result, so the parent never refreshes onto the new time.
+    lockDynamicDialogWhile(this.isSaving);
+  }
 
   public onCancel(): void {
     const result: MeetingRescheduleOccurrenceResult = { confirmed: false };
@@ -72,13 +98,21 @@ export class RescheduleOccurrenceDialogComponent {
     }
 
     const startTime = this.newStartTime();
-    const duration = Number(this.form.get('duration')?.value);
+    const payload: UpdateMeetingOccurrenceRequest = { start_time: startTime, duration: Number(this.form.get('duration')?.value) };
+    const title = this.trimmedValue('title');
+    if (title !== this.initialTitle.trim()) {
+      payload.title = title;
+    }
+    const description = this.trimmedValue('description');
+    if (description !== this.initialDescription.trim()) {
+      payload.description = description;
+    }
 
     this.isSaving.set(true);
     this.errorMessage.set(null);
 
     this.meetingService
-      .updateOccurrence(this.meeting.id, this.occurrence.occurrence_id, { start_time: startTime, duration })
+      .updateOccurrence(this.meeting.id, this.occurrence.occurrence_id, payload)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
@@ -106,17 +140,31 @@ export class RescheduleOccurrenceDialogComponent {
           Validators.max(MAX_CUSTOM_DURATION),
           Validators.pattern(/^\d+$/),
         ]),
-        // Not user-editable; present only because `futureDateTimeValidator` reads the zone off the group.
+        title: new FormControl(this.initialTitle, [
+          Validators.required,
+          Validators.pattern(/\S/),
+          ...(this.titleMaxLength ? [Validators.maxLength(this.titleMaxLength)] : []),
+        ]),
+        // Upstream drops an empty agenda, so one that exists can be changed but not cleared.
+        description: new FormControl(this.initialDescription, [
+          Validators.maxLength(MEETING_AGENDA_MAX_LENGTH),
+          ...(this.initialDescription.trim() ? [Validators.required, Validators.pattern(/\S/)] : []),
+        ]),
+        // Not user-editable; present only because `editModeDateTimeValidator` reads the zone off the group.
         timezone: new FormControl(this.timezone),
       },
-      { validators: [futureDateTimeValidator(), this.wallTimeExistsValidator()] }
+      // The occurrence's own start stays valid once it has begun, so a live occurrence can still be retitled.
+      { validators: [editModeDateTimeValidator(this.occurrence.start_time), this.wallTimeExistsValidator()] }
     );
 
-    // An occurrence created elsewhere can carry a duration outside what this form accepts; show why
-    // Save is disabled up front instead of waiting for the organizer to touch a field they didn't change.
-    const duration = form.get('duration');
-    if (duration?.invalid) {
-      duration.markAsTouched();
+    // An occurrence created elsewhere can carry a duration outside what this form accepts, and a series
+    // title can exceed the YouTube cap; show why Save is disabled up front instead of waiting for the
+    // organizer to touch a field they didn't change.
+    for (const name of ['duration', 'title']) {
+      const control = form.get(name);
+      if (control?.invalid) {
+        control.markAsTouched();
+      }
     }
 
     return form;
@@ -176,7 +224,9 @@ export class RescheduleOccurrenceDialogComponent {
       return (
         !!start &&
         new Date(start).getTime() === new Date(this.occurrence.start_time).getTime() &&
-        Number(this.form.get('duration')?.value) === this.occurrence.duration
+        Number(this.form.get('duration')?.value) === this.occurrence.duration &&
+        this.trimmedValue('title') === this.initialTitle.trim() &&
+        this.trimmedValue('description') === this.initialDescription.trim()
       );
     });
   }
@@ -211,11 +261,31 @@ export class RescheduleOccurrenceDialogComponent {
     });
   }
 
+  private initShowTitleError(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      const control = this.form.get('title');
+      return !!control?.touched && control.invalid;
+    });
+  }
+
+  private initShowAgendaError(): Signal<boolean> {
+    return computed(() => {
+      this.formRevision();
+      const control = this.form.get('description');
+      return !!control?.touched && control.invalid;
+    });
+  }
+
   private initCanSave(): Signal<boolean> {
     return computed(() => {
       this.formRevision();
       return this.form.valid && !!this.newStartTime() && !this.isUnchanged() && !this.isSaving();
     });
+  }
+
+  private trimmedValue(control: 'title' | 'description'): string {
+    return String(this.form.get(control)?.value ?? '').trim();
   }
 
   private isStartTouched(): boolean {
@@ -225,10 +295,12 @@ export class RescheduleOccurrenceDialogComponent {
   private describeError(error: HttpErrorResponse): string {
     if (error.status === 400) {
       const upstreamMessage = error.error?.message ?? error.error?.error;
-      return typeof upstreamMessage === 'string' && upstreamMessage ? upstreamMessage : 'This time could not be used for the occurrence. Please pick another.';
+      return typeof upstreamMessage === 'string' && upstreamMessage
+        ? upstreamMessage
+        : 'These changes could not be saved for the occurrence. Please review them and try again.';
     }
     if (error.status === 403) {
-      return 'You do not have permission to reschedule this occurrence.';
+      return 'You do not have permission to edit this occurrence.';
     }
     if (error.status === 404) {
       return 'This occurrence no longer exists. Please refresh the page.';
@@ -236,6 +308,6 @@ export class RescheduleOccurrenceDialogComponent {
     if (error.status === 0) {
       return 'Network error. Please check your connection and try again.';
     }
-    return 'Failed to reschedule the occurrence. Please try again.';
+    return 'Failed to update the occurrence. Please try again.';
   }
 }

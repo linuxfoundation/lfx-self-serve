@@ -15,12 +15,12 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Use the lens switcher to choose a project or foundation.
 3. Select **Documents** from the left navigation sidebar.
-4. The documents dashboard lists the folders, files, and links for that project or foundation.
+4. The documents dashboard lists documents from all sources associated with that project or foundation: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts.
 5. Select a folder to open it, open a link, or download a file.
 
 ## Filter and search documents
 
-Use the search box to find documents by name. Use the **All Sources** dropdown to show only links or only files.
+Use the search box to find documents by name. Use the **All Sources** dropdown to filter by source: **Project** (files and links uploaded directly to the project), **Committee** (documents from project committees), **Meeting** (meeting attachments, recordings, transcripts, and summaries), or **Mailing List** (artifacts from the project's Groups.io mailing lists).
 
 ## Upload a document
 

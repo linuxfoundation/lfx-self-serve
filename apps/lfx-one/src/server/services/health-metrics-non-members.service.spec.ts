@@ -19,7 +19,13 @@ vi.mock('./logger.service', () => ({
 // `validation.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
-import { HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
+} from '@lfx-one/shared/constants';
 
 import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from './health-metrics-non-members.service';
 
@@ -170,5 +176,247 @@ describe('HealthMetricsNonMembersService.getOrgs', () => {
     const response = await new HealthMetricsNonMembersService().getOrgs(req, { ...query, offset: 500 });
 
     expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 1412, newCount: 37 });
+  });
+});
+
+describe('HealthMetricsNonMembersService.getPeople', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, search: '', offset: 0, pageSize: 10 };
+
+  function personRow(overrides: Record<string, unknown> = {}) {
+    return {
+      SCOPE_TOTAL: 214,
+      TOTAL_RECORDS: 214,
+      IS_PAGE_ROW: true,
+      PERSON_KEY: 'person-0001',
+      PERSON_DISPLAY_NAME: 'Jane Doe',
+      PERSON_JOB_TITLE: 'Staff Engineer',
+      ACCOUNT_ID: '0014100000AcmeAAAA',
+      ACCOUNT_NAME: 'Acme Motors',
+      LAST_ATTENDED_DATE: new Date(Date.UTC(2026, 2, 14)),
+      MEETINGS_ATTENDED_COUNT: 42,
+      SORT_RANK: 1,
+      ...overrides,
+    };
+  }
+
+  function peopleRead(): [string, unknown[]] {
+    return execute.mock.calls[0] as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [personRow()] });
+  });
+
+  it('reads the period columns for the range and binds only the foundation without a search', async () => {
+    for (const [range, suffix] of [
+      ['YTD', 'ytd'],
+      ['COMPLETED_YEAR', 'last_completed_year'],
+      ['COMPLETED_YEAR_2', 'prev_completed_year'],
+      ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
+    ] as const) {
+      execute.mockClear();
+      await new HealthMetricsNonMembersService().getPeople(req, { ...query, range });
+
+      const [sql, binds] = peopleRead();
+      expect(binds).toEqual(['acme']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.NON_MEMBER_PEOPLE p');
+      expect(sql).toContain(`p.meetings_attended_count_${suffix} AS meetings_attended_count`);
+      expect(sql).toContain(`p.sort_rank_${suffix} AS sort_rank`);
+      expect(sql).toContain(`AND COALESCE(p.meetings_attended_count_${suffix}, 0) > 0`);
+      expect(sql).toContain('SELECT * FROM scoped \n');
+    }
+  });
+
+  it('never selects an email address', async () => {
+    await new HealthMetricsNonMembersService().getPeople(req, { ...query, search: 'jane' });
+
+    expect(peopleRead()[0]).not.toMatch(/email/i);
+  });
+
+  it('binds one escaped search to the person and organization names', async () => {
+    await new HealthMetricsNonMembersService().getPeople(req, { ...query, search: '50%_off!' });
+
+    const [sql, binds] = peopleRead();
+    expect(binds).toEqual(['acme', '%50!%!_off!!%', '%50!%!_off!!%']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain("WHERE person_display_name ILIKE ? ESCAPE '!' OR account_name ILIKE ? ESCAPE '!'");
+  });
+
+  it("counts the scope before the search and pages in the view's sort_rank order", async () => {
+    await new HealthMetricsNonMembersService().getPeople(req, query);
+
+    const [sql] = peopleRead();
+    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
+    expect(scoped).toContain('AND p.person_key IS NOT NULL');
+    expect(scoped).toContain("AND p.person_key <> ''");
+    expect(sql).toContain('(SELECT COUNT(*) FROM scoped) AS scope_total');
+    expect(sql).toContain('(SELECT COUNT(*) FROM matched) AS total_records');
+    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, person_key ASC\n        LIMIT 10 OFFSET 0');
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('clamps an oversized page and offset before interpolating them', async () => {
+    await new HealthMetricsNonMembersService().getPeople(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const size = HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE;
+    expect(peopleRead()[0]).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
+  });
+
+  it('maps a person with an ISO date and keeps missing values null', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        personRow(),
+        personRow({
+          PERSON_KEY: 'jane.doe@acme-motors.example',
+          PERSON_JOB_TITLE: null,
+          ACCOUNT_ID: null,
+          ACCOUNT_NAME: '',
+          LAST_ATTENDED_DATE: null,
+          MEETINGS_ATTENDED_COUNT: null,
+        }),
+      ],
+    });
+
+    const response = await new HealthMetricsNonMembersService().getPeople(req, query);
+
+    expect(response).toEqual({
+      totalRecords: 214,
+      scopeTotal: 214,
+      rows: [
+        {
+          rowKey: '1',
+          displayName: 'Jane Doe',
+          jobTitle: 'Staff Engineer',
+          accountId: '0014100000AcmeAAAA',
+          accountName: 'Acme Motors',
+          lastAttendedDate: '2026-03-14',
+          meetingsAttended: 42,
+        },
+        {
+          rowKey: '2',
+          displayName: 'Jane Doe',
+          jobTitle: null,
+          accountId: null,
+          accountName: null,
+          lastAttendedDate: null,
+          meetingsAttended: null,
+        },
+      ],
+    });
+    // The warehouse key can be an email address, so it must not reach the response.
+    expect(JSON.stringify(response)).not.toMatch(/person-0001|@/);
+  });
+
+  it('keys rows by their rank position across pages', async () => {
+    execute.mockResolvedValue({ rows: [personRow(), personRow({ PERSON_KEY: 'person-0002' })] });
+
+    const response = await new HealthMetricsNonMembersService().getPeople(req, { ...query, offset: 20 });
+
+    expect(response.rows.map((row) => row.rowKey)).toEqual(['21', '22']);
+  });
+
+  it('keeps the totals when the page is past the end', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 214, TOTAL_RECORDS: 30, IS_PAGE_ROW: null, PERSON_KEY: null }] });
+
+    const response = await new HealthMetricsNonMembersService().getPeople(req, { ...query, offset: 500 });
+
+    expect(response).toEqual({ rows: [], totalRecords: 30, scopeTotal: 214 });
+  });
+});
+
+describe('HealthMetricsNonMembersService.getConversion', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const };
+
+  const summaryRow = {
+    ENTRY_TIER_NAME: 'Silver',
+    ENTRY_TIER_FEE_USD: 25000,
+    ORGANIZATIONS_TRACKED_COUNT: 412,
+    HIGH_FIT_ORG_COUNT: 2,
+    NEW_ORG_COUNT: 37,
+    ESTIMATED_PIPELINE_USD: 50000,
+  };
+
+  const warmRow = { ACCOUNT_ID: '0014100000AcmeAAAA', ACCOUNT_NAME: 'Acme Motors', MEETINGS_ATTENDED_COUNT: 12, CONTRIBUTIONS_COUNT: 400 };
+
+  // The two reads run in parallel; route each mock result by the view it reads.
+  function mockReads(summary: unknown[], warmest: unknown[]) {
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('NON_MEMBER_CONVERSION_OPPORTUNITY') ? summary : warmest }));
+  }
+
+  function readFor(view: string): [string, unknown[]] {
+    return execute.mock.calls.find(([sql]) => (sql as string).includes(view)) as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReads([summaryRow], [warmRow]);
+  });
+
+  it('reads the period columns for the range, binding only the foundation', async () => {
+    for (const [range, suffix] of [
+      ['YTD', 'ytd'],
+      ['COMPLETED_YEAR', 'last_completed_year'],
+      ['COMPLETED_YEAR_2', 'prev_completed_year'],
+      ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
+    ] as const) {
+      execute.mockClear();
+      await new HealthMetricsNonMembersService().getConversion(req, { ...query, range });
+
+      const [summarySql, summaryBinds] = readFor('NON_MEMBER_CONVERSION_OPPORTUNITY');
+      expect(summarySql).toContain(`high_fit_org_count_${suffix} AS high_fit_org_count`);
+      expect(summarySql).toContain(`estimated_pipeline_usd_${suffix} AS estimated_pipeline_usd`);
+      expect(summarySql).toContain('LIMIT 1');
+      expect(summaryBinds).toEqual(['acme']);
+
+      const [warmSql, warmBinds] = readFor('NON_MEMBER_FIT_SCORE');
+      expect(warmSql).toContain(`AND is_high_fit_${suffix}`);
+      expect(warmSql).toContain(`ORDER BY sort_rank_${suffix} ASC NULLS LAST, account_id ASC`);
+      expect(warmSql).toContain('LIMIT 10');
+      expect(warmBinds).toEqual(['acme']);
+    }
+  });
+
+  it('maps the summary and the warmest organizations, dropping a row without an account', async () => {
+    mockReads([summaryRow], [warmRow, { ...warmRow, ACCOUNT_ID: null }, { ...warmRow, ACCOUNT_ID: '0014100000VendAAAA', ACCOUNT_NAME: null }]);
+
+    const response = await new HealthMetricsNonMembersService().getConversion(req, query);
+
+    expect(response).toEqual({
+      measured: true,
+      entryTierName: 'Silver',
+      entryTierFeeUsd: 25000,
+      organizationsTracked: 412,
+      highFitCount: 2,
+      newCount: 37,
+      estimatedPipelineUsd: 50000,
+      warmest: [
+        { accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors', meetingsAttended: 12, contributions: 400 },
+        { accountId: '0014100000VendAAAA', accountName: '0014100000VendAAAA', meetingsAttended: 12, contributions: 400 },
+      ],
+    });
+  });
+
+  it('keeps a NULL fee and estimate as NULL, never zero', async () => {
+    mockReads([{ ...summaryRow, ENTRY_TIER_NAME: null, ENTRY_TIER_FEE_USD: null, ESTIMATED_PIPELINE_USD: null }], []);
+
+    const response = await new HealthMetricsNonMembersService().getConversion(req, query);
+
+    expect(response).toMatchObject({ measured: true, entryTierName: null, entryTierFeeUsd: null, estimatedPipelineUsd: null, warmest: [] });
+  });
+
+  it('reports a foundation with no conversion row as not measured', async () => {
+    mockReads([], [warmRow]);
+
+    const response = await new HealthMetricsNonMembersService().getConversion(req, query);
+
+    expect(response).toEqual(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
+  });
+
+  it('rethrows a failed read', async () => {
+    execute.mockRejectedValue(new Error('warehouse down'));
+
+    await expect(new HealthMetricsNonMembersService().getConversion(req, query)).rejects.toThrow();
   });
 });

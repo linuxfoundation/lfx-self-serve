@@ -3,18 +3,27 @@
 
 import {
   MentorshipMentorProgram,
+  MentorshipMentorProgramApplicant,
+  MentorshipMentorProgramLists,
   MentorshipMentorProgramRows,
   MentorshipMentorProgramTermChoice,
+  MentorshipProgramMentee,
   MentorshipUpstreamMentorProgram,
   MentorshipUpstreamMentorProgramTerm,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 
-import { MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES, MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER } from '../constants';
+import {
+  MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP,
+  MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES,
+  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER,
+} from '../constants';
 import { toIsoDate } from './date-format.helper';
 import { isMentorshipMentorTermUnderway, latestStartingMentorshipMentorTerm, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
+import { mapMentorshipProgramApplicationRow } from './mentorship-program-application.helper';
 
 /** The open term that starts first; a term with no start loses to any term with one. Ties keep the first. */
 const earliestStart = (terms: readonly MentorshipUpstreamMentorProgramTerm[]): MentorshipUpstreamMentorProgramTerm =>
@@ -89,3 +98,54 @@ export const mapMentorshipMentorProgramCard = (
 export const compareMentorshipMentorProgramCards = (a: MentorshipMentorProgram, b: MentorshipMentorProgram): number =>
   MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER.indexOf(a.termStatus) - MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_ORDER.indexOf(b.termStatus) ||
   a.name.localeCompare(b.name, 'en-US');
+
+/**
+ * Each listed application's tasks, every listed application starting with none. A task on any other
+ * application is dropped: the term listing also carries the prerequisite tasks of mentor-role
+ * applications, which the mentor is not shown (H3).
+ */
+export const groupMentorshipMentorProgramTasks = (
+  applicationIds: readonly string[],
+  tasks: readonly MentorshipUpstreamTask[]
+): Map<string, MentorshipUpstreamTask[]> => {
+  const grouped = new Map<string, MentorshipUpstreamTask[]>(applicationIds.map((id) => [id, []]));
+  for (const task of tasks) {
+    if (task.application_id !== undefined) grouped.get(task.application_id)?.push(task);
+  }
+  return grouped;
+};
+
+/**
+ * The program detail's Mentees and Applicants rows, from the chosen term's applications, split the way
+ * `sortMentorshipMentorProgramRows` splits them for the card. Each row's id is its application id. A row
+ * carries tasks when `tasksByApplication` holds its application and none when they were not read. Other
+ * applications keep the program id (only when it is a UUID, since it ends up in a link), name and status.
+ */
+export const mapMentorshipMentorProgramLists = (
+  applications: readonly MentorshipUpstreamProgramApplicationRow[],
+  termName: string,
+  tasksByApplication: ReadonlyMap<string, readonly MentorshipUpstreamTask[]>
+): MentorshipMentorProgramLists => {
+  const mentees: MentorshipProgramMentee[] = [];
+  const applicants: MentorshipMentorProgramApplicant[] = [];
+  for (const application of applications) {
+    const mentee = mapMentorshipProgramApplicationRow(
+      application,
+      termName,
+      tasksByApplication.get(application.application_id),
+      MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP
+    );
+    applicants.push({
+      ...mentee,
+      createdOn: toIsoDate(application.created_on) ?? '',
+      updatedOn: toIsoDate(application.updated_on) ?? '',
+      otherApplications: (application.other_applications ?? []).map((other) => ({
+        ...(isUuid(other.program_id) ? { programId: other.program_id } : {}),
+        programName: other.program_name,
+        status: MENTORSHIP_MENTOR_PROGRAM_APPLICATION_STATUS_MAP[other.status],
+      })),
+    });
+    if (MENTORSHIP_MENTOR_PROGRAM_MENTEE_STATUSES.includes(application.status)) mentees.push(mentee);
+  }
+  return { mentees, applicants };
+};

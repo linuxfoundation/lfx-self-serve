@@ -160,6 +160,11 @@ describe.each([
   ['/members-churn', 'foundationSlug'],
   ['/members-churn-departures', 'year=2025&foundationSlug'],
   ['/non-members-orgs', 'foundationSlug'],
+  ['/non-members-people', 'foundationSlug'],
+  ['/non-members-conversion', 'foundationSlug'],
+  ['/training-presence', 'foundationSlug'],
+  ['/training-enrollment', 'foundationSlug'],
+  ['/training-courses', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

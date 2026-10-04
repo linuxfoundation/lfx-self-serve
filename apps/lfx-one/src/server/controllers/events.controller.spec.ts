@@ -5,11 +5,12 @@ import { MAX_EVENTS_PAGE_SIZE, MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/sh
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-const { getMyEvents, getEvents, getVisaRequests, getTravelFundRequests, logger } = vi.hoisted(() => ({
+const { getMyEvents, getEvents, getVisaRequests, getTravelFundRequests, generateVisaLetter, logger } = vi.hoisted(() => ({
   getMyEvents: vi.fn(),
   getEvents: vi.fn(),
   getVisaRequests: vi.fn(),
   getTravelFundRequests: vi.fn(),
+  generateVisaLetter: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -25,6 +26,11 @@ vi.mock('../services/events.service', () => ({
   },
 }));
 vi.mock('../services/certificate.service', () => ({ CertificateService: class {} }));
+vi.mock('../services/visa-letter.service', () => ({
+  VisaLetterService: class {
+    public generateVisaLetter = generateVisaLetter;
+  },
+}));
 vi.mock('../services/persona-detection.service', () => ({ PersonaDetectionService: class {} }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: () => 'user@example.com', getEffectiveName: () => 'User' }));
@@ -38,7 +44,7 @@ function buildReq(query: Record<string, unknown>): Request {
 }
 
 function buildRes(): Response {
-  return { setHeader: vi.fn(), json: vi.fn() } as unknown as Response;
+  return { setHeader: vi.fn(), json: vi.fn(), send: vi.fn() } as unknown as Response;
 }
 
 // [endpoint, service mock, index of the options argument, handler]
@@ -69,5 +75,50 @@ describe('EventsController pagination', () => {
       pageSize: MAX_EVENTS_PAGE_SIZE,
     });
     expect(serviceMethod.mock.calls[1][optionsIndex]).toMatchObject({ offset: 0, pageSize: MAX_EVENTS_PAGE_SIZE });
+  });
+});
+
+describe('EventsController.getVisaLetter', () => {
+  const controller = new EventsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects a missing eventId before calling the service', async () => {
+    const next = vi.fn();
+
+    await controller.getVisaLetter(buildReq({}), buildRes(), next);
+
+    expect(generateVisaLetter).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+  });
+
+  it('sends the PDF as an uncached attachment', async () => {
+    const pdf = Buffer.from('pdf');
+    generateVisaLetter.mockResolvedValue({ pdf, fileName: 'visa-letter-test.pdf' });
+    const req = buildReq({ eventId: 'evt-1' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getVisaLetter(req, res, next);
+
+    expect(generateVisaLetter).toHaveBeenCalledWith(req, 'evt-1');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('visa-letter-test.pdf'));
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Length', pdf.length);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.send).toHaveBeenCalledWith(pdf);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards service errors to the error handler', async () => {
+    const error = new Error('manual');
+    generateVisaLetter.mockRejectedValue(error);
+    const next = vi.fn();
+
+    await controller.getVisaLetter(buildReq({ eventId: 'evt-1' }), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(error);
   });
 });

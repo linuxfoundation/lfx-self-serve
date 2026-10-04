@@ -155,7 +155,7 @@ export class TravelFundApplicationDialogComponent {
 
     this.resolvingDeepLink.set(true);
     resolveDeepLinkedEvent$(
-      this.eventsService.getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, excludePastTravelFundDeadline: true }),
+      this.eventsService.getMyEvents({ eventId, isPast: false, registeredOnly: true, isTravelFundRequestAccepted: true, anyRegistrationStatus: true }),
       eventId,
       'travel fund request'
     )

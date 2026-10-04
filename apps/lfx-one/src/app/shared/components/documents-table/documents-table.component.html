@@ -74,11 +74,31 @@
               [attr.data-testid]="testIdPrefix() + '-name-' + doc.id"
               >{{ doc.name }}</span
             >
+          } @else if (doc.source === 'meeting' && doc.url) {
+            <button
+              type="button"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
+              (click)="downloadDocument(doc)"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
+              {{ doc.name }}
+            </button>
           } @else if (doc.url) {
             <button
               type="button"
               class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
               (click)="openDocument(doc)"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
+              {{ doc.name }}
+            </button>
+          } @else if (doc.downloadUrl) {
+            <button
+              type="button"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
+              (click)="downloadDocument(doc)"
               [pTooltip]="doc.name"
               tooltipPosition="top"
               [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
@@ -186,6 +206,28 @@
               (onClick)="openDocument(doc)"
               [attr.data-testid]="testIdPrefix() + '-open-' + doc.id"
               tooltip="Open"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if ((doc.source === 'meeting' || doc.source === 'committee') && doc.downloadUrl) {
+            <lfx-button
+              icon="fa-solid fa-arrow-down-to-line"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="downloadDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-download-' + doc.id"
+              tooltip="Download"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if (doc.source === 'committee' && doc.url) {
+            <lfx-button
+              icon="fa-solid fa-arrow-up-right-from-square"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="openDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-open-' + doc.id"
+              tooltip="Open link"
               tooltipPosition="top">
             </lfx-button>
           } @else if (doc.url) {

@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@switch (state()) {
+  @case ('present') {
+    <!-- The design sets this note at an exact 12px. -->
+    <p class="mb-4 flex items-center gap-2 text-[12px] text-gray-500" data-testid="training-scope-note">
+      <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+      {{ scopeNote }}
+    </p>
+
+    <!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
+    <lfx-health-metrics-l2-shell
+      #shell
+      [sections]="sections"
+      [idPrefix]="idPrefix"
+      [dataSections]="dataSections"
+      [subNavItems]="subNavItems()"
+      navLabel="Training sections"
+      testIdPrefix="training"
+      [crossReference]="crossReference">
+      <ng-template lfxHealthMetricsL2Section="enroll">
+        <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll')" />
+      </ng-template>
+      <ng-template lfxHealthMetricsL2Section="courses">
+        <lfx-training-courses
+          (reading)="shell.sectionReading('courses')"
+          (settled)="shell.sectionSettled('courses')"
+          (countChange)="coursesCount.set($event)" />
+      </ng-template>
+    </lfx-health-metrics-l2-shell>
+  }
+  @case ('absent') {
+    <div class="flex flex-col gap-3" data-testid="training-no-programme">
+      <lfx-empty-state icon="fa-light fa-graduation-cap" [title]="noProgramme.title" [subtitle]="noProgramme.body" />
+      <p class="flex items-center gap-2 text-[12px] text-gray-500" data-testid="training-no-programme-hint">
+        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+        {{ noProgramme.hint }}
+      </p>
+    </div>
+  }
+  @case ('failed') {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Training unavailable"
+      subtitle="We could not load training for this foundation. Refresh the page to try again."
+      data-testid="training-error" />
+  }
+  @default {
+    <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="training-loading" aria-hidden="true" />
+  }
+}

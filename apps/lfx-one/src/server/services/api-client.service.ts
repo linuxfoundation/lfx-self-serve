@@ -28,7 +28,7 @@ export class ApiClientService {
   ): Promise<ApiResponse<T>> {
     const fullUrl = this.getFullUrl(url, query);
 
-    if (['GET', 'DELETE'].includes(type)) {
+    if (type === 'GET') {
       return this.makeRequest<T>(type, fullUrl, bearerToken, undefined, customHeaders, options);
     }
 
@@ -268,7 +268,7 @@ export class ApiClientService {
       signal: AbortSignal.timeout(timeoutMs),
     };
 
-    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')) {
       // `!Array.isArray` is redundant against `Buffer.isBuffer` at runtime; kept for CodeQL's
       // js/type-confusion, which only clears this assignment once the array shape is excluded.
       if (isBuffer && !Array.isArray(data)) {

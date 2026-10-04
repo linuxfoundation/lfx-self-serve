@@ -134,6 +134,24 @@ export function getEffectiveUsername(req: Request): string | null {
 }
 
 /**
+ * The LF username EasyCLA compares a CCLA's CLA Manager list against: the Auth0 username, which
+ * the ID token carries on the LF username claim and the gateway forwards to EasyCLA.
+ *
+ * While impersonating, the session's own claims are the impersonator's, so the impersonated user's
+ * stored username is returned. Returns '' when neither is present, so a roster match fails closed.
+ * Deliberately no fallback to `nickname` or `getEffectiveUsername`: nothing ties those to the
+ * value EasyCLA compares.
+ */
+export function getEffectiveLfUsername(req: Request): string {
+  if (isImpersonating(req)) {
+    const target = req.appSession?.['impersonationUser']?.username;
+    return typeof target === 'string' ? target : '';
+  }
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  return typeof claim === 'string' ? claim : '';
+}
+
+/**
  * Gets the effective sub (user ID) for the current request context.
  * During impersonation, returns the target user's sub from the impersonation session,
  * or null when unset — it never falls back to the impersonator's own OIDC sub.

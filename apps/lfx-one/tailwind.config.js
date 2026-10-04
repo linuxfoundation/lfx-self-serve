@@ -38,8 +38,11 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
+  HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
+  HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
+  HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
@@ -198,8 +201,14 @@ export default {
     HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
+    // Non-Members warmest-organization bar fill (HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
     // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
+    // Training enrollments-by-type bar fill (HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
+    // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does
