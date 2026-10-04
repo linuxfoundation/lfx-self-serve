@@ -1,4 +1,4 @@
-# 010 — Meeting details redesign (V2)
+# 011 — Meeting details redesign (V2)
 
 **Epic**: [#1765](https://github.com/linuxfoundation/lfx-self-serve/issues/1765) ·
 **Meetings V2 epic**: [#1451](https://github.com/linuxfoundation/lfx-self-serve/issues/1451)
