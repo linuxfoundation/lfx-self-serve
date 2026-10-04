@@ -24,7 +24,7 @@ Before every meaningful edit:
 
 1. **Re-read the file with `view`** — do not trust prior conversation history. Files change; context drifts.
 2. **Run `yarn check-types` after multi-file changes** to catch type drift early.
-3. **Stop and ask** if the request conflicts with conventions in `CLAUDE.md` or `.claude/rules/`.
+3. **Stop and ask** if the request conflicts with conventions in `AGENTS.md` or `.claude/rules/`.
 
 Default to small, atomic changes. If a request spans more than one module or touches both client and SSR server, surface that and ask whether to split.
 
@@ -137,7 +137,7 @@ Read the relevant architecture docs **before generating code**. These are the so
 
 ### Always Read
 
-- **`CLAUDE.md`** → "Component Organization Pattern" section — class structure ordering, signal patterns
+- **`.claude/rules/component-organization.md`** — class structure ordering, signal patterns
 
 ### For Frontend Work
 
@@ -254,4 +254,4 @@ Provide a clear summary:
 - Any actions needed from code owners (route registration, routing changes, etc.)
 - How to use the new code (inject services, import components, etc.)
 
-**Next step:** commit the work — `git commit --signoff -S` until `git status --porcelain` prints nothing (formatting and lint fixes from step 8 included) — then follow `CLAUDE.md` § **Pre-PR review** exactly (the one review round, then the `Preflight` value, then the PR). The review round stops on a dirty tree. Do not run `/preflight` on its own here.
+**Next step:** commit the work — `git commit --signoff -S` until `git status --porcelain` prints nothing (formatting and lint fixes from step 8 included) — then follow `AGENTS.md` § **Pre-PR review** exactly (the one review round, then the `Preflight` value, then the PR). The review round stops on a dirty tree. Do not run `/preflight` on its own here.

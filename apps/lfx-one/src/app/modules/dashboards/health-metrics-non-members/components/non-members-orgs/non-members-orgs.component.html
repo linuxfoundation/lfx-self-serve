@@ -1,0 +1,146 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="non-members-orgs">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Company participation unavailable"
+      subtitle="We could not load this foundation's non-member organizations. Refresh the page to try again."
+      data-testid="non-members-orgs-error" />
+  } @else if (!loading() && !scopeTotal()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="No active non-member organizations"
+      subtitle="No non-member organization attended a meeting or contributed in this period."
+      data-testid="non-members-orgs-empty" />
+  } @else {
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-orgs-controls">
+      <div class="w-full sm:w-64">
+        <label class="sr-only" for="non-members-orgs-search">Search organizations</label>
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          inputId="non-members-orgs-search"
+          [maxlength]="maxSearchLength"
+          placeholder="Search organizations…"
+          icon="fa-light fa-search"
+          size="small"
+          styleClass="w-full"
+          dataTest="non-members-orgs-search" />
+      </div>
+      <lfx-filter-pills [options]="filterOptions" [selectedFilter]="filter()" (filterChange)="onFilterChange($event)" data-testid="non-members-orgs-filter" />
+    </div>
+
+    <p class="text-[13px] text-gray-500" data-testid="non-members-orgs-count">
+      @if (loading()) {
+        &mdash;
+      } @else if (filtered()) {
+        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ scopeTotalLabel() }} organizations match &middot;
+        <button type="button" class="text-blue-600 hover:underline" (click)="clearFilters()" data-testid="non-members-orgs-clear">clear</button>
+      } @else {
+        {{ summary() }}
+      }
+    </p>
+
+    <lfx-table
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > pageSizeOptions[0]"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [rowsPerPageOptions]="pageSizeOptions"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      [scrollable]="true"
+      [tableStyle]="{ 'min-width': '900px' }"
+      (onPage)="onTablePage($event)"
+      data-testid="non-members-orgs-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Membership</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Active channels</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">People</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Contributions</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged (all time)</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'non-members-orgs-row-' + view.accountId">
+          <td>
+            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-name'">{{
+              view.accountName
+            }}</span>
+          </td>
+          <td>
+            <span class="whitespace-nowrap text-[11.5px] text-gray-400">&#9675; Non-member</span>
+          </td>
+          <td>
+            <div class="flex flex-wrap gap-1" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-channels'">
+              @for (channel of view.channels; track channel.key) {
+                <span class="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[10.5px] text-blue-600">{{ channel.label }}</span>
+              }
+            </div>
+          </td>
+          <td class="text-right">
+            <span
+              class="text-sm tabular-nums"
+              [class.text-gray-800]="view.meetingsLabel !== '—'"
+              [class.text-gray-400]="view.meetingsLabel === '—'"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-meetings'"
+              >{{ view.meetingsLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="text-sm tabular-nums"
+              [class.text-gray-800]="view.peopleLabel !== '—'"
+              [class.text-gray-400]="view.peopleLabel === '—'"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-people'"
+              >{{ view.peopleLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="text-sm tabular-nums"
+              [class.text-gray-800]="view.contributionsLabel !== '—'"
+              [class.text-gray-400]="view.contributionsLabel === '—'"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-contributions'"
+              >{{ view.contributionsLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="whitespace-nowrap text-sm tabular-nums text-gray-500"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-last-engaged'"
+              >{{ view.lastEngagedLabel }}</span
+            >
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-orgs-no-match">
+            @if (!loading()) {
+              {{ noMatchLabel() }}
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+
+    <p class="flex items-center gap-2 border-t border-slate-100 pt-3 text-[12px] text-gray-400" data-testid="non-members-orgs-provisional">
+      <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+      {{ provisionalNote }}
+    </p>
+  }
+</div>

@@ -22,7 +22,6 @@ describe('mapMentorshipMenteeProfile', () => {
       ...baseProfile,
       introduction: 'Test mentee introduction.',
       skill_set: { skills: ['Go', 'Python'], improvementSkills: ['Code Review'], comments: 'Test notes.' },
-      profile_links: { resumeLink: 'https://example.com/files/test%20resume.pdf' },
       demographics: { age: '20-39', gender: 'prefer-not-to-say', race: 'prefer-not-to-say' },
       socioeconomics: { income: 'prefer-not-to-say', educationLevel: 'college' },
     });
@@ -33,8 +32,6 @@ describe('mapMentorshipMenteeProfile', () => {
         skillsHave: ['Go', 'Python'],
         skillsWant: ['Code Review'],
         additionalNotes: 'Test notes.',
-        resumeUrl: 'https://example.com/files/test%20resume.pdf',
-        resumeFileName: 'test resume.pdf',
       },
       history: [],
       demographics: { age: '20-39', gender: 'prefer-not-to-say', raceEthnicity: 'prefer-not-to-say', income: 'prefer-not-to-say', education: 'college' },
@@ -43,7 +40,7 @@ describe('mapMentorshipMenteeProfile', () => {
 
   it('returns an empty profile for a row with no answers', () => {
     expect(mapMentorshipMenteeProfile(baseProfile)).toEqual({
-      profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: undefined, resumeUrl: undefined, resumeFileName: undefined },
+      profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: undefined },
       history: [],
       demographics: undefined,
     });
@@ -54,7 +51,6 @@ describe('mapMentorshipMenteeProfile', () => {
       ...baseProfile,
       introduction: '   ',
       skill_set: { skills: ['Go', '', 42, null], improvementSkills: 'Code Review', comments: '' },
-      profile_links: { resumeLink: 7 },
       demographics: { age: '', gender: 3 },
     });
 
@@ -63,8 +59,6 @@ describe('mapMentorshipMenteeProfile', () => {
       skillsHave: ['Go'],
       skillsWant: [],
       additionalNotes: undefined,
-      resumeUrl: undefined,
-      resumeFileName: undefined,
     });
     expect(result.demographics).toBeUndefined();
   });
@@ -80,16 +74,5 @@ describe('mapMentorshipMenteeProfile', () => {
     const result = mapMentorshipMenteeProfile({ ...baseProfile, demographics: { age: '20-39' }, socioeconomics: { educationLevel: 'college' } });
 
     expect(result.demographics).toEqual({ age: '20-39', education: 'college' });
-  });
-
-  it('leaves the resume file name empty when the link has no file segment or is not a URL', () => {
-    expect(mapMentorshipMenteeProfile({ ...baseProfile, profile_links: { resumeLink: 'https://example.com/' } }).profile).toMatchObject({
-      resumeUrl: 'https://example.com/',
-      resumeFileName: undefined,
-    });
-    expect(mapMentorshipMenteeProfile({ ...baseProfile, profile_links: { resumeLink: 'not a url' } }).profile).toMatchObject({
-      resumeUrl: 'not a url',
-      resumeFileName: undefined,
-    });
   });
 });

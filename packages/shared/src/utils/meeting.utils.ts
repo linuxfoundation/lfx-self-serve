@@ -1114,6 +1114,38 @@ export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invit
 }
 
 /**
+ * True when the viewer's applicable RSVP declines every occurrence (`scope: 'all'`).
+ * @description Reads the BFF-resolved `my_rsvp`, which already prefers the RSVP that applies to the
+ * current/next occurrence. A `single` or `this_and_following` decline leaves other dates open, so
+ * it does not count. Declining does not remove the viewer's access grant, so the meeting keeps
+ * coming back from the query service; My Meetings uses this to hide it by default.
+ */
+export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rsvp'> | null | undefined): boolean {
+  const rsvp = meeting?.my_rsvp;
+  return rsvp?.response_type === 'declined' && rsvp.scope === 'all';
+}
+
+/**
+ * Counts individual meeting dates that have not ended and start before `endMs`.
+ * @description Recurring meetings contribute one per active occurrence in the window (cancelled
+ * occurrences excluded); one-time meetings contribute one. In-progress meetings count, matching
+ * {@link hasMeetingEnded}'s end buffer.
+ */
+export function countMeetingDatesBefore(meetings: ReadonlyArray<Meeting>, endMs: number): number {
+  let count = 0;
+  for (const meeting of meetings) {
+    if (meeting.occurrences && meeting.occurrences.length > 0) {
+      count += getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).filter(
+        (occurrence) => !hasMeetingEnded(meeting, occurrence) && new Date(occurrence.start_time).getTime() < endMs
+      ).length;
+    } else if (meeting.start_time && !hasMeetingEnded(meeting) && new Date(meeting.start_time).getTime() < endMs) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
  * Derives top-level AI-summary fields from indexed `zoom_config` when the query-service projection omits them.
  * Explicit top-level values win (`??`); returns the input unchanged when `zoom_config` is absent.
  */

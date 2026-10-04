@@ -46,6 +46,30 @@ describe('IntercomService', () => {
     expect(service).toBeTruthy();
   });
 
+  it('should take the invite token out of the address bar before an on-demand boot', () => {
+    window.history.pushState({}, '', '/mentorship/mentor/invites?token=SUPER.SECRET');
+    try {
+      service.openMessenger('test-app-id');
+
+      expect(window.location.href).not.toContain('SECRET');
+      expect(new URL(window.location.href).searchParams.get('token')).toBe('redacted');
+      expect(queuedCommands()[0]?.[0]).toBe('boot');
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('should leave an ordinary URL alone on boot', () => {
+    window.history.pushState({}, '', '/meetings?token=keep');
+    try {
+      service.openMessenger('test-app-id');
+
+      expect(window.location.search).toBe('?token=keep');
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('should boot anonymously and queue boot before show when startup boot was skipped', () => {
     service.openMessenger('test-app-id');
 

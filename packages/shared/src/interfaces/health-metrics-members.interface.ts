@@ -319,18 +319,20 @@ export interface HealthMetricsMembersDirectoryCellView {
   tracked: boolean;
 }
 
-/** The directory's filter and page state in the URL. */
+/** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
 export interface HealthMetricsMembersQueryParams {
-  memTier: string;
-  memNps: string;
-  memSearch: string;
-  memPage: string;
-  riskBucket: string;
-  riskPage: string;
-  renewalsPage: string;
-  boardCohort: string;
-  boardPage: string;
-  npsAudience: string;
+  memTier?: string | null;
+  memNps?: HealthMetricsMembersNpsCategory | null;
+  memSearch?: string | null;
+  memPage?: number | null;
+  riskBucket?: HealthMetricsMembersAtRiskBucket | null;
+  riskPage?: number | null;
+  renewalsPage?: number | null;
+  boardCohort?: HealthMetricsMembersBoardCohort | null;
+  boardPage?: number | null;
+  npsAudience?: string | null;
+  churnMode?: HealthMetricsMembersChurnMode | null;
+  churnPage?: number | null;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
@@ -646,4 +648,147 @@ export interface HealthMetricsMembersNpsTrendNote {
   scoreChangeLabel: string;
   fromRateLabel: string;
   toRateLabel: string;
+}
+
+/** `GET /api/analytics/members-churn` — every year's churn; the section re-projects it per period client-side. */
+export interface HealthMetricsMembersChurnQuery {
+  foundationSlug: string;
+}
+
+/** One all-tiers `MEMBERSHIP_CHURN` row. Rates are percentages (0–100); `null` is unmeasured, never zero. */
+export interface HealthMetricsMembersChurnYear {
+  year: number;
+  isPartialYear: boolean;
+  lostCount: number | null;
+  openingCount: number | null;
+  duesLostUsd: number | null;
+  duesLostPriorUsd: number | null;
+  revenueChurnRate: number | null;
+  revenueChurnRatePrior: number | null;
+  revenueChurnRateChangePp: number | null;
+  logoChurnRate: number | null;
+}
+
+/** One tier's `MEMBERSHIP_CHURN` row for a year. Rates are percentages (0–100). */
+export interface HealthMetricsMembersChurnTier {
+  year: number;
+  tier: string;
+  tierSortRank: number;
+  lostCount: number | null;
+  churnRate: number | null;
+  duesLostUsd: number | null;
+  shareOfLossPct: number | null;
+}
+
+export interface HealthMetricsMembersChurn {
+  /** Newest year first. */
+  years: HealthMetricsMembersChurnYear[];
+  /** Newest year first, then `tier_sort_rank`. */
+  tiers: HealthMetricsMembersChurnTier[];
+}
+
+/** `GET /api/analytics/members-churn-departures` — one page of the organizations that lapsed in a year. */
+export interface HealthMetricsMembersChurnDeparturesQuery {
+  foundationSlug: string;
+  year: number;
+  offset: number;
+  pageSize: number;
+}
+
+/** One churned `MEMBERSHIP_MOVEMENT_DETAIL` row. Dates are ISO `YYYY-MM-DD`. */
+export interface HealthMetricsMembersChurnDeparture {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  duesLostUsd: number | null;
+  lapsedDate: string | null;
+  lastEngagedDate: string | null;
+}
+
+export interface HealthMetricsMembersChurnDepartures {
+  rows: HealthMetricsMembersChurnDeparture[];
+  /** Every organization that lapsed in the year, so the table can check it against the churn count. */
+  totalRecords: number;
+}
+
+/** The toggle over the hero: revenue churn leads, logo churn counts each loss once. */
+export type HealthMetricsMembersChurnMode = 'revenue' | 'logo';
+
+export interface HealthMetricsMembersChurnModeOption extends FilterPillOption {
+  id: HealthMetricsMembersChurnMode;
+}
+
+/** One figure beside the hero; `note` is the muted aside after the value. */
+export interface HealthMetricsMembersChurnSideView {
+  key: string;
+  label: string;
+  value: string;
+  note: string | null;
+  isLoss: boolean;
+}
+
+/** One tier of "Where the loss sits"; `shareWidthPct` keeps a visible stub for a tiny share. */
+export interface HealthMetricsMembersChurnTierRowView {
+  tier: string;
+  lostLabel: string;
+  rateLabel: string;
+  isHighRate: boolean;
+  duesLabel: string;
+  shareLabel: string;
+  shareWidthPct: number;
+}
+
+/** The note under the tier table, set only when the tier that lost most members is not the one that lost most dues. */
+export interface HealthMetricsMembersChurnInversionView {
+  /** Bolded, e.g. "Silver lost 83 memberships". */
+  countLead: string;
+  /** Bolded, e.g. "Gold lost the money". */
+  duesLead: string;
+  text: string;
+}
+
+/** One year of the churn trend, oldest first; `value` is the mode's rate, `null` when unmeasured. */
+export interface HealthMetricsMembersChurnTrendPointView {
+  year: number;
+  label: string;
+  value: number | null;
+  valueLabel: string;
+  isSelected: boolean;
+}
+
+/** `#churn`, re-projected per period and mode from the every-year response. */
+export interface HealthMetricsMembersChurnView {
+  /** Any year has churn figures. */
+  measured: boolean;
+  /** The selected period's year has churn figures. */
+  yearMeasured: boolean;
+  year: number;
+  /** The year lost at least one membership. */
+  hasChurn: boolean;
+  lostCount: number;
+  metaLabel: string;
+  heroLabel: string;
+  /** `null` renders no change: the prior year is not in the read. */
+  changeLabel: string | null;
+  /** A rise in churn is bad, so it renders red. */
+  changeTone: 'bad' | 'good' | 'neutral';
+  caption: string;
+  sides: HealthMetricsMembersChurnSideView[];
+  tiers: HealthMetricsMembersChurnTierRowView[];
+  inversion: HealthMetricsMembersChurnInversionView | null;
+  trendTitle: string;
+  trendSubtitle: string;
+  trend: HealthMetricsMembersChurnTrendPointView[];
+  /** The selected year's churn rose on the year before, so its bar warns. */
+  trendRose: boolean;
+}
+
+/** One organization in "Who left". */
+export interface HealthMetricsMembersChurnDepartureRowView {
+  accountId: string;
+  accountName: string;
+  tierLabel: string;
+  duesLabel: string;
+  lapsedLabel: string;
+  lastEngagedLabel: string;
 }

@@ -8,6 +8,8 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+  HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
@@ -42,6 +44,17 @@ import type {
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeTone,
   HealthMetricsMembersBridgeView,
+  HealthMetricsMembersChurn,
+  HealthMetricsMembersChurnDeparture,
+  HealthMetricsMembersChurnDepartureRowView,
+  HealthMetricsMembersChurnInversionView,
+  HealthMetricsMembersChurnMode,
+  HealthMetricsMembersChurnSideView,
+  HealthMetricsMembersChurnTier,
+  HealthMetricsMembersChurnTierRowView,
+  HealthMetricsMembersChurnTrendPointView,
+  HealthMetricsMembersChurnView,
+  HealthMetricsMembersChurnYear,
   HealthMetricsMembersDirectoryCellView,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryRowView,
@@ -507,6 +520,217 @@ export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembe
   const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
   if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
   return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+}
+
+/**
+ * The selected period's churn in one mode. A change against the year before needs that year in the read;
+ * without it the hero shows no change rather than one the data cannot back.
+ */
+export function buildHealthMetricsMembersChurnView(
+  churn: HealthMetricsMembersChurn,
+  range: HealthMetricsRange,
+  mode: HealthMetricsMembersChurnMode
+): HealthMetricsMembersChurnView {
+  const year = getYearForRange(range);
+  const current = churn.years.find((row) => row.year === year) ?? null;
+  const prior = churn.years.find((row) => row.year === year - 1) ?? null;
+  const lostCount = Math.max(0, Math.round(current?.lostCount ?? 0));
+  const rateOf = (row: HealthMetricsMembersChurnYear | null): number | null => (mode === 'revenue' ? row?.revenueChurnRate : row?.logoChurnRate) ?? null;
+  const rate = rateOf(current);
+  const priorRate = rateOf(prior);
+  const change = mode === 'revenue' ? churnRevenueChange(current, prior) : churnDifference(rate, priorRate);
+  const isCurrentYear = year === getYearForRange('YTD');
+  const changeTone = churnChangeTone(change);
+
+  return {
+    measured: churn.years.length > 0,
+    // A null count is unmeasured, so it must not read as "no churn".
+    yearMeasured: current !== null && current.lostCount !== null,
+    year,
+    hasChurn: lostCount > 0,
+    lostCount,
+    metaLabel:
+      current?.openingCount === null || current?.openingCount === undefined
+        ? `${pluralize(lostCount, 'membership')} lost`
+        : `${formatCount(lostCount)} of ${pluralize(Math.round(current.openingCount), 'membership')} lost`,
+    heroLabel: formatChurnRate(rate),
+    changeLabel: change === null ? null : `${formatChurnChange(change)} vs ${year - 1}`,
+    changeTone,
+    caption: buildChurnCaption(mode, year, isCurrentYear),
+    sides: buildChurnSides(current, mode, year, isCurrentYear),
+    tiers: buildChurnTierRows(churn.tiers.filter((row) => row.year === year)),
+    inversion: buildChurnInversion(churn.tiers.filter((row) => row.year === year)),
+    trendTitle: mode === 'revenue' ? 'Revenue churn trend' : 'Logo churn trend',
+    trendSubtitle: mode === 'revenue' ? 'share of dues not renewed, by year' : 'share of memberships lost, by year',
+    trend: buildChurnTrend(churn.years, year, rateOf),
+    // Follows the hero's change, so the bar and the hero never disagree on direction.
+    trendRose: changeTone === 'bad',
+  };
+}
+
+/** "Who left" rows: dues lost, the lapse and the last engagement, a dash where the model has none. */
+export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsMembersChurnDeparture[]): HealthMetricsMembersChurnDepartureRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    duesLabel: formatUsd(row.duesLostUsd),
+    lapsedLabel: formatIsoDate(row.lapsedDate),
+    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
+  }));
+}
+
+/** "Who left"'s subtitle; it claims the churn count only when the list carries exactly that many. */
+export function buildHealthMetricsMembersChurnDeparturesSubtitle(totalRecords: number, lostCount: number): string {
+  return totalRecords === lostCount ? `largest dues lost first · the same ${formatCount(lostCount)} as lost above` : 'largest dues lost first';
+}
+
+/** Shown when "Who left" and the churn count disagree, so the gap reads as a counting difference. */
+export function buildHealthMetricsMembersChurnCountNote(totalRecords: number, lostCount: number): string | null {
+  if (totalRecords === lostCount) return null;
+
+  return `${pluralize(totalRecords, 'organization')} listed, while churn counts ${formatCount(lostCount)} lost. The list and the churn count are counted separately, so they can differ slightly.`;
+}
+
+/** The view's own point change, read only when the year before is in the read to compare against. */
+function churnRevenueChange(current: HealthMetricsMembersChurnYear | null, prior: HealthMetricsMembersChurnYear | null): number | null {
+  return prior === null ? null : (current?.revenueChurnRateChangePp ?? null);
+}
+
+function churnDifference(current: number | null, previous: number | null): number | null {
+  return current === null || previous === null ? null : current - previous;
+}
+
+function buildChurnCaption(mode: HealthMetricsMembersChurnMode, year: number, isCurrentYear: boolean): string {
+  if (mode === 'logo')
+    return isCurrentYear ? 'of the memberships held at the start of the year lapsed' : `of the memberships held at the start of ${year} lapsed`;
+  return isCurrentYear ? "of last year's dues did not renew" : `of ${year - 1}'s dues did not renew`;
+}
+
+/** Dues lost this year and last, then the other mode's rate, so the toggle never hides a figure. */
+function buildChurnSides(
+  current: HealthMetricsMembersChurnYear | null,
+  mode: HealthMetricsMembersChurnMode,
+  year: number,
+  isCurrentYear: boolean
+): HealthMetricsMembersChurnSideView[] {
+  const lost = current?.lostCount ?? null;
+  const opening = current?.openingCount ?? null;
+  const other: HealthMetricsMembersChurnSideView =
+    mode === 'revenue'
+      ? {
+          key: 'logo',
+          label: 'Logo churn',
+          value: formatChurnRate(current?.logoChurnRate ?? null),
+          note: lost === null || opening === null ? null : `(${formatCount(lost)} of ${formatCount(opening)})`,
+          isLoss: false,
+        }
+      : { key: 'revenue', label: 'Revenue churn', value: formatChurnRate(current?.revenueChurnRate ?? null), note: null, isLoss: false };
+
+  return [
+    {
+      key: 'dues-lost',
+      label: isCurrentYear ? 'Dues lost this year' : `Dues lost in ${year}`,
+      value: formatUsd(current?.duesLostUsd ?? null),
+      note: null,
+      isLoss: true,
+    },
+    {
+      key: 'dues-lost-prior',
+      label: isCurrentYear ? 'Dues lost last year' : `Dues lost in ${year - 1}`,
+      value: formatUsd(current?.duesLostPriorUsd ?? null),
+      note: null,
+      isLoss: false,
+    },
+    other,
+  ];
+}
+
+/** Most dues lost first, then the model's tier order; a tiny share keeps a visible stub, a zero share none. */
+function buildChurnTierRows(tiers: HealthMetricsMembersChurnTier[]): HealthMetricsMembersChurnTierRowView[] {
+  return [...tiers]
+    .sort((a, b) => (b.duesLostUsd ?? -1) - (a.duesLostUsd ?? -1) || a.tierSortRank - b.tierSortRank || a.tier.localeCompare(b.tier, 'en-US'))
+    .map((row) => {
+      const raw = row.shareOfLossPct === null ? null : Math.min(100, Math.max(0, row.shareOfLossPct));
+      const share = raw === null ? null : Math.round(raw);
+      return {
+        tier: row.tier,
+        lostLabel: formatCount(row.lostCount),
+        rateLabel: formatChurnRate(row.churnRate),
+        isHighRate: row.churnRate !== null && row.churnRate >= HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+        duesLabel: formatUsd(row.duesLostUsd),
+        shareLabel: formatChurnShare(raw, share),
+        shareWidthPct: raw === null || raw === 0 ? 0 : Math.max(raw, 1),
+      };
+    });
+}
+
+/** Set only when one tier clearly lost the most memberships and another clearly lost the most dues. */
+function buildChurnInversion(tiers: HealthMetricsMembersChurnTier[]): HealthMetricsMembersChurnInversionView | null {
+  const lost = tiers.filter((row) => (row.lostCount ?? 0) > 0);
+  const byCount = soleTop(lost, (row) => row.lostCount ?? 0);
+  const byDues = soleTop(lost, (row) => row.duesLostUsd ?? 0);
+  if (!byCount || !byDues || byCount === byDues) return null;
+
+  const duesTierLost = Math.round(byDues.lostCount ?? 0);
+  return {
+    countLead: `${byCount.tier} lost ${pluralize(Math.round(byCount.lostCount ?? 0), 'membership')}`,
+    duesLead: `${byDues.tier} lost the money`,
+    text: `${formatCount(duesTierLost)} ${byDues.tier} ${duesTierLost === 1 ? 'departure' : 'departures'} cost ${formatUsd(byDues.duesLostUsd)} against ${byCount.tier}'s ${formatUsd(byCount.duesLostUsd)}. That inversion is the whole argument for leading on revenue churn rather than logo churn.`,
+  };
+}
+
+/** The row with the highest value, or `null` when none is positive or the top is tied. */
+function soleTop<T>(rows: T[], value: (row: T) => number): T | null {
+  const sorted = [...rows].sort((a, b) => value(b) - value(a));
+  const [first, second] = sorted;
+  if (!first || value(first) <= 0 || (second && value(second) === value(first))) return null;
+  return first;
+}
+
+/** The years up to the selected one, oldest first, capped to the trend's window. */
+function buildChurnTrend(
+  years: HealthMetricsMembersChurnYear[],
+  year: number,
+  rateOf: (row: HealthMetricsMembersChurnYear | null) => number | null
+): HealthMetricsMembersChurnTrendPointView[] {
+  return years
+    .filter((row) => row.year <= year && row.year > year - HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS)
+    .sort((a, b) => a.year - b.year)
+    .map((row) => {
+      const value = rateOf(row);
+      return {
+        year: row.year,
+        label: String(row.year),
+        value,
+        valueLabel: value === null ? '—' : `${Math.round(value)}%`,
+        isSelected: row.year === year,
+      };
+    });
+}
+
+/** A percentage to one decimal, dropping a trailing `.0`. */
+function formatChurnRate(pct: number | null): string {
+  return pct === null ? '—' : `${pct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
+
+/** A whole-percent share; a loss too small to round up still reads as one. */
+function formatChurnShare(raw: number | null, share: number | null): string {
+  if (raw === null || share === null) return '—';
+  return raw > 0 && share === 0 ? '<1%' : `${share}%`;
+}
+
+/** A point change to one decimal with its sign, e.g. `+1.4pp`. */
+function formatChurnChange(pp: number): string {
+  const rounded = Math.round(pp * 10) / 10;
+  if (rounded === 0) return '0.0pp';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}pp`;
+}
+
+/** A rise in churn is bad; a change that rounds to zero is neither. */
+function churnChangeTone(pp: number | null): HealthMetricsMembersChurnView['changeTone'] {
+  if (pp === null || Math.round(pp * 10) === 0) return 'neutral';
+  return pp > 0 ? 'bad' : 'good';
 }
 
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {

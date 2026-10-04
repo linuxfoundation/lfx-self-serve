@@ -21,8 +21,6 @@ import {
   MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX,
   MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX,
   MENTORSHIP_MENTEE_REGISTER_TITLE,
-  MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY,
-  MENTORSHIP_MENTEE_RESUME_INTRO,
   MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL,
   MENTORSHIP_MENTEE_SKILLS_INTRO,
   MENTORSHIP_MENTEE_SKILLS_WANT_LABEL,
@@ -48,7 +46,6 @@ import { MessageService } from 'primeng/api';
 import { startWith } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
-import { ResumeSectionComponent } from '../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MenteeDemographicsSectionComponent } from './components/mentee-demographics-section/mentee-demographics-section.component';
@@ -76,7 +73,6 @@ import { MenteeEligibilitySectionComponent } from './components/mentee-eligibili
     MenteeDemographicsSectionComponent,
     MenteeEligibilitySectionComponent,
     ProfileCardComponent,
-    ResumeSectionComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
   ],
@@ -98,8 +94,6 @@ export class MenteeRegisterComponent {
   protected readonly skillsIntro = MENTORSHIP_MENTEE_SKILLS_INTRO;
   protected readonly skillsHaveLabel = MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL;
   protected readonly skillsWantLabel = MENTORSHIP_MENTEE_SKILLS_WANT_LABEL;
-  protected readonly resumeIntro = MENTORSHIP_MENTEE_RESUME_INTRO;
-  protected readonly resumeComingSoonSummary = MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY;
   protected readonly additionalNotesLabel = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL;
   protected readonly additionalNotesPlaceholder = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
@@ -118,7 +112,6 @@ export class MenteeRegisterComponent {
     skillsHave: new FormControl<string[]>([], { nonNullable: true }),
     skillsWant: new FormControl<string[]>([], { nonNullable: true }),
     additionalNotes: new FormControl('', { nonNullable: true }),
-    resumeFileName: new FormControl('', { nonNullable: true }),
     ageConsent: new FormControl(false, { nonNullable: true }),
     age: new FormControl('', { nonNullable: true }),
     raceEthnicityConsent: new FormControl(false, { nonNullable: true }),

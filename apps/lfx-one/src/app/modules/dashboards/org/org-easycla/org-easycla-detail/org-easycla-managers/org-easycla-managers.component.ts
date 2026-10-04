@@ -283,7 +283,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} is no longer a CLA Manager for this CLA.`,
           });
           this.fetchManagers();
-          this.rosterChanged.emit();
+          if (this.isSelf(manager)) this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;

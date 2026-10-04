@@ -58,7 +58,6 @@ A user can carry both board and project roles simultaneously. In the sidebar len
 |                   | My Newsletters                | `/newsletters/my`                |
 |                   | My Votes                      | `/votes`                         |
 |                   | My Surveys                    | `/surveys`                       |
-|                   | My Documents                  | `/documents`                     |
 | Education         | Training & Certifications     | `/me/training`                   |
 |                   | Badges                        | `/badges`                        |
 | Crowdfunding      | My Initiatives                | `/crowdfunding/initiatives`      |
