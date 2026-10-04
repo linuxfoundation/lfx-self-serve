@@ -714,6 +714,23 @@ describe('MeetingJoinComponent', () => {
       expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
     });
 
+    it('shows the server attendance counts when the participants are hidden from the viewer', async () => {
+      paramMap$.next(convertToParamMap({ id: '1-1700000000000' }));
+      getPublicPastMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ participant_count: 8, attended_count: 6, individual_registrants_count: 7 }), project: buildProject(), full_access: true })
+      );
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      const summary = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="attendance-summary"]');
+      expect(summary?.textContent).toContain('6');
+      expect(summary?.textContent).toContain('2');
+      expect(summary?.textContent).toContain('75%');
+    });
+
     it('persists the resolved meeting to TransferState on the server once the fetch settles', async () => {
       TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
 

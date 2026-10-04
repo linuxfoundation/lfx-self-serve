@@ -1304,6 +1304,32 @@ export class MeetingService {
   }
 
   /**
+   * Whether the caller may read a past meeting's participant rows (names, emails, attendance).
+   * @description Organizers always may. Anyone else must appear in `participants`, invited or
+   * attended, matched by email or username like `isUserPastMeetingParticipant`. Deliberately
+   * independent of `show_meeting_attendees`: it defaults off, so keying on it would blank the
+   * attendance of every meeting already held. The organizer probe is strict, so an unresolvable
+   * access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewPastMeetingParticipants(req: Request, pastMeetingUid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_past_meeting', id: pastMeetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const email = getEffectiveEmail(req)?.toLowerCase();
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername).toLowerCase() : null;
+    if (!email && !username) {
+      return false;
+    }
+
+    return participants.some(
+      (participant) => (!!email && participant.email?.toLowerCase() === email) || (!!username && participant.username?.toLowerCase() === username)
+    );
+  }
+
+  /**
    * Checks if a user was a participant in a past meeting by email or username.
    * Uses `filters` (AND on meeting id) + `filters_or` (OR across email/username) to resolve the
    * match in a single query. `tags_all` can't be used here because `username` is not synthesized

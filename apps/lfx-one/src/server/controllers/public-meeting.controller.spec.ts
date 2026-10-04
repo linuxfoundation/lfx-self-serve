@@ -47,6 +47,7 @@ const {
     resolveCreatedByForMeetings: vi.fn().mockResolvedValue(new Map()),
     getMeetingHostKey: vi.fn(),
     getPastMeetingById: vi.fn(),
+    getPastMeetingParticipants: vi.fn(),
     getPastOccurrencesForMeeting: vi.fn(),
     addMeetingRegistrantSelf: vi.fn(),
   },
@@ -77,6 +78,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // Real too, so the kept-real helper's host-key gate runs the actual window check. Deep import —
   // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
+  getPastMeetingResourceId: (await import('@lfx-one/shared/utils/past-meeting.utils')).getPastMeetingResourceId,
 }));
 // The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
 // the full constants module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
@@ -691,6 +693,71 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     expect(payload.meeting.organizers).toBeUndefined();
     expect(payload.meeting.created_by).toEqual(createdBy);
     expect(payload.meeting.owner).toEqual(owner);
+  });
+});
+
+describe('PublicMeetingController.getPublicPastMeetingById participant counts (#2827)', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ meeting_and_occurrence_id: 'occ-key' } as Partial<PastMeeting>));
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
+    checkPastMeetingAccessMock.mockResolvedValue(true);
+    meetingSvc.getPastMeetingParticipants.mockResolvedValue([
+      { uid: 'p1', is_invited: true, is_attended: true },
+      { uid: 'p2', is_invited: true, is_attended: false },
+      { uid: 'p3', is_invited: false, is_attended: true },
+    ]);
+  });
+
+  // The participants endpoint hides the rows from a viewer who is not on them, so the join
+  // page's attendance stats come from these counts.
+  it('counts the participants for a full-access viewer who is not an organizer', async () => {
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getPastMeetingParticipants).toHaveBeenCalledWith(req, 'occ-key');
+    const { meeting } = res.json.mock.calls[0][0];
+    expect(meeting.participant_count).toBe(3);
+    expect(meeting.attended_count).toBe(2);
+    expect(meeting.individual_registrants_count).toBe(2);
+  });
+
+  it('skips the count for organizers, who get the participants themselves', async () => {
+    addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(meetingSvc.getPastMeetingParticipants).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].meeting.participant_count).toBeUndefined();
+  });
+
+  it('skips the count without full access', async () => {
+    checkPastMeetingAccessMock.mockResolvedValue(false);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(meetingSvc.getPastMeetingParticipants).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].meeting.participant_count).toBeUndefined();
+  });
+
+  it('still serves the past meeting when the count fails', async () => {
+    meetingSvc.getPastMeetingParticipants.mockRejectedValue(new Error('query-service down'));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].full_access).toBe(true);
+    expect(res.json.mock.calls[0][0].meeting.participant_count).toBeUndefined();
   });
 });
 
