@@ -15,7 +15,7 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 ### Rollout and page lifecycle
 
 - **FR-001**: V2 MUST render only for a signed-in viewer for whom `MEETING_V2_ENABLED_FLAG`
-  evaluates true after hydration. Everyone else, and **during rollout** every anonymous visitor, MUST
+  evaluates true after hydration. Everyone else, and **until stage 5 of `rollout.md`** every anonymous visitor, MUST
   get V1, and the V1 component MUST stay byte-identical (R01, R05). The visitor cells elsewhere in
   this document describe V2 once anonymous traffic moves to it; until then they are verified by the
   resolver's table test, not in the browser.
@@ -241,4 +241,4 @@ are not filed yet.
 | O-01 – O-04 organizer dialogs | —     | FR-051                          |
 | M-01 / M-02 magic link        | —     | FR-052                          |
 | S-01 / S-02 spikes (Phase 3)  | —     | none: spikes produce decisions  |
-| V1 retirement (after rollout) | #3266 | FR-001, SC-006                  |
+| V1 retirement (after rollout) | #3266 | FR-001, SC-006 (ends them)      |

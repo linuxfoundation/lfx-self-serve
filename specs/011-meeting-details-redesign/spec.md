@@ -54,7 +54,7 @@ app's look belongs in tokens and layout, not in a parallel component library.
 | R02 | `MEETING_V2_ENABLED_FLAG` is UI-only. It gates no endpoint.                                                               |
 | R03 | Fail closed — an unready flag provider renders V1.                                                                        |
 | R04 | LaunchDarkly targeting is the switch. The code default is never the switch.                                               |
-| R05 | Anonymous visitors always get V1 during rollout.                                                                          |
+| R05 | Anonymous visitors get V1 until the anonymous stage of `rollout.md` (stage 5).                                            |
 | R06 | Security changes never ride along with feature work.                                                                      |
 | R07 | Every test must be proven binding: mutate the source, confirm the test fails, confirm the mutation landed via `git diff`. |
 
