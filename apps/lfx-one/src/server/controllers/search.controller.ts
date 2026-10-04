@@ -66,6 +66,21 @@ export class SearchController {
         return;
       }
 
+      // `tags` must be a single string — a repeated `tags` param arrives as an array and is
+      // forwarded upstream as OR'd tags. Committee-member search only supports the exact
+      // `email:<address>` lookup; any other tag (e.g. `committee_uid:<uid>`) would list a
+      // committee's roster regardless of its `member_visibility`.
+      if (tags !== undefined && (typeof tags !== 'string' || (type === 'committee_member' && !/^email:[^\s,]+$/.test(tags)))) {
+        const validationError = ServiceValidationError.forField('tags', 'Tags parameter must be a single email:<address> value', {
+          operation: 'search_users',
+          service: 'search_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
       // Build search parameters
       // A name typeahead asks for relevance ordering; the upstream default (`name_asc`) would hand
       // back the alphabetically first page instead (see `UserSearchParams.sort`).

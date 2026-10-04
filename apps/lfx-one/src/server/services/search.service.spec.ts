@@ -83,7 +83,7 @@ describe('SearchService (server)', () => {
     });
   });
 
-  it('maps committee members and collapses repeated memberships of the same person', async () => {
+  it('maps committee members without committee attribution and collapses repeated memberships of the same person', async () => {
     proxyRequest.mockResolvedValue(
       upstream([
         member({}),
@@ -102,7 +102,7 @@ describe('SearchService (server)', () => {
       last_name: 'Park',
       job_title: 'Counsel',
       organization: { name: 'Partner Corp', website: 'https://partner-corp.example' },
-      committee: { uid: 'committee:1', name: 'Governing Board' },
+      committee: null,
       type: 'committee_member',
       username: 'kim.park',
     });

@@ -74,10 +74,9 @@ export class SearchService {
               website: member.organization.website || null,
             }
           : null,
-        committee: {
-          uid: member.committee_uid,
-          name: member.committee_name,
-        },
+        // Committee attribution is withheld: this is a people directory, and naming the committee
+        // would disclose roster membership the committee's `member_visibility` may hide.
+        committee: null,
         type: 'committee_member',
         username: member.username || null,
       };
