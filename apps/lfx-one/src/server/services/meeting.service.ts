@@ -45,6 +45,7 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  isMeetingAttendeeListShared,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
@@ -911,7 +912,7 @@ export class MeetingService {
   /**
    * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
    * @description Organizers always may. Anyone else must be a registrant of the meeting, and the
-   * organizer must have turned on `show_meeting_attendees`, the same rule
+   * meeting must share its guest list (`isMeetingAttendeeListShared`), the same rule
    * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
    * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
    * unresolvable access check throws rather than reading as a denial; callers decide how to fail.
@@ -924,7 +925,7 @@ export class MeetingService {
 
     const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
     const email = getEffectiveEmail(req);
-    if (!meeting.show_meeting_attendees || !email) {
+    if (!isMeetingAttendeeListShared(meeting) || !email) {
       return false;
     }
 

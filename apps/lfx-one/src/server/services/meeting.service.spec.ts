@@ -833,6 +833,15 @@ describe('MeetingService.canViewMeetingRoster', () => {
     expect(byEmail).not.toHaveBeenCalled();
   });
 
+  it('hides the guests of a legacy Board meeting still stored as shared', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, meeting_type: 'Board', show_meeting_attendees: true } as unknown as Meeting);
+    const byEmail = vi.spyOn(service, 'getMeetingRegistrantsByEmail').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+    expect(byEmail).not.toHaveBeenCalled();
+  });
+
   // Sharing is with the guests, not with everyone who can view the meeting.
   it('hides the guests from a viewer who is not invited, even when they are shared', async () => {
     stubInvitee(true, []);
