@@ -282,7 +282,7 @@ After `/compact`, re-invoke `/self-serve-dev` if continuing work that depends on
 
 - ❌ Edit a file without re-reading it if 5+ turns have passed
 - ❌ Replace components in place — for full component replacements use DELETE → CREATE (in-place edits remain fine for non-breaking changes; see `.claude/rules/component-organization.md`)
-- ❌ Hard-code brand hex values (reference `lfxColors` scales)
+- ❌ Hard-code brand hex values (reference `lfxColors` scales). The one exception is a scoped design token layer (`*.tokens.scss`), the only file where literal values may live; see `.claude/rules/styling.md` and `docs/architecture/frontend/styling-system.md` § Scoped design token layers
 - ❌ Reference browser-only APIs without `isPlatformBrowser`
 - ❌ Mix module concerns in one change
 - ❌ Deviate from or bypass the **Pre-PR review** section above — including any local review once the PR is open

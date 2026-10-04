@@ -269,7 +269,7 @@ broken. Use `:host-context()`, whose ancestor part is deliberately left unscoped
 ```
 
 Worked example: `apps/lfx-one/src/app/modules/meetings/meeting-details-page/meeting-details-page.tokens.scss`,
-with its deviation table in `specs/010-meeting-details-redesign/design-token-deviations.md`.
+with its deviation table in `specs/011-meeting-details-redesign/design-token-deviations.md`.
 
 ## 🎭 Icon System
 
