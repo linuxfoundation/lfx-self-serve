@@ -449,4 +449,11 @@ describe('MeetingCardComponent — invitee panels', () => {
     expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
+
+  it('hides attendees on a Board meeting that still carries a legacy opt-in', async () => {
+    const card = await render({ ...INVITED, meeting_type: 'Board', is_invite_responses_enabled: true, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
 });

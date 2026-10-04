@@ -46,7 +46,10 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // factories are hoisted, so they can't import the real enum to derive from. A member added upstream
 // and missed here shows up as a narrowing test that rejects a type the controller actually accepts,
 // not as a false pass: every assertion below tests a value against the stub's own member list.
-vi.mock('@lfx-one/shared/enums', () => ({
+// The other members are the real enums: `isMeetingAttendeeListShared` is the real implementation and
+// its constants module reads them at load.
+vi.mock('@lfx-one/shared/enums', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   MeetingType: {
     BOARD: 'Board',
     MAINTAINERS: 'Maintainers',
@@ -73,6 +76,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
   codePointLength: (await import('../../../../../packages/shared/src/utils/string.utils')).codePointLength,
+  isMeetingAttendeeListShared: (await import('../../../../../packages/shared/src/utils/meeting-attendee-lock.utils')).isMeetingAttendeeListShared,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
@@ -825,6 +829,19 @@ describe('MeetingController', () => {
         await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
         expect(res.json).toHaveBeenCalledWith([registrant]);
+      });
+
+      it.each([
+        ['a Board meeting', { meeting_type: 'Board' }],
+        ['a restricted meeting', { restricted: true }],
+      ])('returns no roster to an invitee of %s that still carries a legacy opt-in', async (_label, lock) => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], ...lock });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([]);
+        expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
       });
 
       it('returns the roster to an organizer even when the meeting hides its attendees', async () => {
