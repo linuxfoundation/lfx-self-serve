@@ -121,14 +121,19 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   silently.
 - **FR-045**: "Discover more" MUST use the existing public project-meetings feed and groups
   directory, and MUST link to the public project calendar rather than rebuild it.
+- **FR-046**: An organizer of a recurring meeting MUST get "Edit this occurrence" (reschedule,
+  title, agenda) and "Cancel this occurrence" for the selected upcoming occurrence, as V1 does since
+  #3040 and #3206: signed in, `organizer`, `recurrence` set, not past, with an occurrence selected.
+  This is a port, not new scope.
 
 ### Scope guards
 
 - **FR-050**: V2 MUST NOT add: add-to-calendar, `.ics` download, share beyond copy-link, passcode
   display, dial-in numbers, recording download, an inline video player, approve/edit of the AI
   summary, or attendance export.
-- **FR-051**: Edit, delete, cancel-occurrence and in-page organizer editing (O-01 to O-04) are new
-  scope on this page, not a port, and MUST be organizer-only.
+- **FR-051**: Editing or deleting the whole series, and in-page organizer editing (O-01 to O-04),
+  are new scope on this page, not a port, and MUST be organizer-only. Single-occurrence edit and
+  cancel are V1 behaviour and are covered by FR-046.
 - **FR-052**: Magic-link arrival (M-01) MUST NOT ship before upstream U-08 (#2934) and the M-02 security
   requirements.
 - **FR-053**: A security change (e.g. E10-01, matching restricted meetings against all verified
@@ -204,6 +209,7 @@ Issue numbers are given where the issue exists; plan IDs without a number are no
 | E5-03 V2 specs                | —     | FR-062                          |
 | E5-04 E2E                     | —     | FR-063, SC-001, SC-002, SC-003  |
 | E6-03 / E6-04 / E6-05         | —     | FR-044                          |
+| V1 parity: occurrence actions | —     | FR-046                          |
 | E7-01 / E7-02 join details    | —     | FR-042, FR-043                  |
 | E8-04 / E8-05 discover more   | —     | FR-045                          |
 | E9-01 / E9-02 agenda items    | —     | FR-030 (blocked on U-07, #2933) |
