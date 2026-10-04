@@ -1,6 +1,6 @@
 # Feature Specification: Meeting details redesign (V2)
 
-**Feature Branch**: `010-meeting-details-redesign`
+**Feature Branch**: `011-meeting-details-redesign`
 **Epic**: [#1765](https://github.com/linuxfoundation/lfx-self-serve/issues/1765)
 **Plan ID**: E0-01 · **Issue**: [#1766](https://github.com/linuxfoundation/lfx-self-serve/issues/1766)
 **Design**: `Meeting Details.dc.html` (Cowork design share; HTML is the visual spec, not Figma)
@@ -112,10 +112,13 @@ the Meetings dashboard. That does not make them in scope here.)
 
 ```text
 add-to-calendar    .ics download     share beyond copy-link
-passcode display   dial-in numbers   download recording
-inline video player                  approve / edit AI summary
+download recording inline video player approve / edit AI summary
 export attendance
 ```
+
+Passcode display and dial-in numbers are **not** permanent exclusions. They are planned join-details
+work (E7-01, E7-03) that is blocked upstream: U-04 (#2930) exposes the Zoom meeting ID and passcode,
+U-05 (#2931) adds dial-in numbers. Until those land, V2 must not render either (FR-043).
 
 Single-occurrence actions **are** on the V1 details page, so V2 must port them. Since PRs #3040
 and #3206, an organizer of a recurring meeting gets "Edit this occurrence" (reschedule, title, agenda)
@@ -152,12 +155,13 @@ it. Phase 1 work does not wait for it.
 
 ### Phase 1 — shell, header, action slot, content
 
-| Group                       | Plan IDs (issues)                                                                                                                                                                                    |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                        |
-| Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01                                                                                                 |
-| Content                     | E3-01 agenda · E3-02 materials · E3-04 people · E3-05 attachment categories · E4-01 recording + transcript · E4-03 inline AI summary · E4-05 align with admin page · N-02 participant identity tiers |
-| Quality                     | E5-02 a11y · E5-03 V2 specs · E5-04 E2E (content + robust)                                                                                                                                           |
+| Group                       | Plan IDs (issues)                                                                                                                                                                                                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                                                                                                      |
+| Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01 pre-2024 RSVP state                                                                                                                                                           |
+| Content                     | E3-01 agenda · E3-02 materials · E3-03 public attachments endpoint (BFF) · E3-04 people · E3-05 attachment categories · E4-01 recording + transcript · E4-02 recording duration (BFF) · E4-03 inline AI summary · E4-04 public artifact routes (BFF) · E4-05 align with admin page |
+| Identity & admin            | N-02 participant identity tiers · N-03 auth guard on the past-meeting admin route                                                                                                                                                                                                  |
+| Quality                     | E5-02 a11y · E5-03 V2 specs · E5-04 E2E (content + robust). E5-01 shipped before the epic (#2046) and is not filed                                                                                                                                                                 |
 
 E1-04 renders a **single** 4-way privacy chip built on the existing `getMeetingPrivacyLabel` /
 `getMeetingPrivacyIcon` helpers — four values of one element, not four elements.
@@ -171,15 +175,27 @@ verified · unknown/needs-review · auto-matched · AI-reconciled — plus the `
 
 ### Phase 2
 
-E6-03 · E6-04 · E6-05 · E7-01 · E7-02 · E8-04 · E8-05 · E9-01 · E9-02 · E10-02 · E10-03 ·
-O-01…O-04 · M-01.
+| Sub-epic              | Plan IDs                                      | Upstream blocker                                                                 |
+| --------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| E6 Occurrence UI      | E6-01 · E6-02 · E6-03 · E6-04 · E6-05 · E6-06 | U-01 (#2927) → E6-06 · U-02 (#2928) → E6-04 (soft) · U-03 (#2929) → E6-03 marker |
+| E7 Join details       | E7-01 · E7-02 · E7-03                         | U-04 (#2930) → E7-01, E7-03 · U-05 (#2931) → E7-01                               |
+| E8 Discover more      | E8-01 · E8-02 · E8-03 · E8-04 · E8-05         | U-06 (#2932) → E8-04 (soft; the glyph fallback works)                            |
+| E9 Structured agenda  | E9-01 · E9-02 · E9-03                         | U-07 (#2933) → all three                                                         |
+| E10 Identity matching | E10-01 · E10-02 · E10-03                      | none. The plan recommends pulling E10-01 into Phase 1                            |
+| O Organizer dialogs   | O-01 · O-02 · O-03 · O-04                     | none                                                                             |
+| M Magic link          | M-01 · M-02                                   | U-08 (#2934) → M-01; M-02 defines its security requirements                      |
+
+### Phase 3
+
+Spikes S-01 (colleague meetings feasibility and privacy) and S-02 (occurrence timeline scale), and
+the hygiene bugs the plan lists in § 10. They are independent and can be filed at any time.
 
 Plan IDs listed without an issue number, here and in Phase 1, are **not filed yet**. The issue
 bodies are drafted in the implementation plan; file each before starting it.
 
 The `U-` series is upstream API blockers: changes owned by `lfx-v2-meeting-service` and
-`lfx-v2-committee-service`, tracked here as U-01 to U-08 (#2927 to #2934). E9-01 / E9-02 are blocked
-on U-07 (#2933, structured agenda items); M-01 is blocked on U-08 (#2934, magic-link tokens).
+`lfx-v2-committee-service`, tracked here as U-01 to U-08 (#2927 to #2934). The Phase 2 table shows
+which item each one blocks.
 
 ## Outstanding from #1766
 
