@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// meeting-calendar.utils imports meeting.utils, which transitively imports @angular/common/http
+// (HttpParams) — its declarations need the Angular JIT compiler when loaded outside an Angular
+// bootstrap (as under Vitest). Importing the compiler first provides that facade.
 import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
