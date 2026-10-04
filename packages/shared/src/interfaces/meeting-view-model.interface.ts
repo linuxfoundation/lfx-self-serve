@@ -20,10 +20,11 @@ export type MeetingTimeState = 'before' | 'live' | 'ended';
  * - `registrant` — on the meeting's registrant list (`Meeting.invited`).
  * - `organizer` — has write access to the meeting (`Meeting.organizer`).
  *
- * The epic's viewer axis also names a `host` tier. It is deliberately absent: nothing on the
- * meeting payload distinguishes a host from an organizer today, and inventing the distinction here
- * would put a state in the view model that no resolver can ever return. Add it when the payload
- * can answer it.
+ * The epic's viewer axis also names a `host` tier. It is deliberately absent because host-key
+ * entitlement is orthogonal to this role, not a rung on it: the payload already carries it as
+ * `Meeting.can_view_host_key` / `Meeting.host_key`, which the BFF sets for whoever holds the FGA
+ * `host` relation, including co-hosts who are not organizers. Read those two fields directly;
+ * never treat `organizer` as the host-key gate.
  */
 export type MeetingViewerRole = 'visitor' | 'outsider' | 'registrant' | 'organizer';
 
@@ -63,7 +64,8 @@ export interface MeetingPrivacyState {
   /** True only when the meeting is public AND unrestricted. */
   openToPublic: boolean;
   restricted: boolean;
-  visibility: MeetingVisibility | null;
+  /** Never null: `resolvePrivacy` reads an absent visibility as private, so the state fails closed. */
+  visibility: MeetingVisibility;
 }
 
 /** Inputs to `resolveViewerRole` — the viewer-context fields the detail payload carries. */
@@ -128,8 +130,10 @@ export interface MeetingSectionVisibility {
   agenda: boolean;
   /**
    * The join region — visible until the meeting ends, the live window included, and only for
-   * people on the meeting. Scoped to what the product already has (the join link and the host
-   * key); passcodes and dial-in numbers exist nowhere in LFX One and are not implied here.
+   * people on the meeting. Covers the join link only. The host key is **not** gated by this flag:
+   * a co-host who is not an organizer can hold it while resolving as `outsider`, so render it from
+   * `Meeting.can_view_host_key` / `Meeting.host_key` directly. Passcodes and dial-in numbers wait for
+   * upstream U-04 / U-05 and are not implied here.
    */
   joinDetails: boolean;
   materials: boolean;
