@@ -103,12 +103,29 @@ export class PermissionsService {
           );
         }
 
-        return users.sort((a, b) => {
+        return this.collapseDuplicateUsers(users).sort((a, b) => {
           const aKey = (a.username || a.email || '').toLowerCase();
           const bKey = (b.username || b.email || '').toLowerCase();
           return aKey.localeCompare(bKey);
         });
       })
     );
+  }
+
+  // A v1 permission sync can legitimately leave a user with both auditor (view) and writer
+  // (manage) entries for the same project — the backend does not collapse this. Show a single
+  // row per user, with 'manage' taking precedence over 'view' (see #3218).
+  private collapseDuplicateUsers(users: ProjectPermissionUser[]): ProjectPermissionUser[] {
+    const byIdentifier = new Map<string, ProjectPermissionUser>();
+
+    for (const user of users) {
+      const identifier = (user.username || user.email || '').toLowerCase();
+      const existing = byIdentifier.get(identifier);
+      if (!existing || (existing.role === 'view' && user.role === 'manage')) {
+        byIdentifier.set(identifier, user);
+      }
+    }
+
+    return Array.from(byIdentifier.values());
   }
 }
