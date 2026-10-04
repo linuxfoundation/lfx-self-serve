@@ -17,14 +17,14 @@ import {
   Vote,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import { compareVotesByRecency, computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -123,6 +123,18 @@ export class VoteService {
    */
   private static readonly createVoteRequestTimeoutMs = 16000;
 
+  /**
+   * Upstream page size for the getVotes drain (GH-1558): the query-service's documented maximum
+   * (lfx-v2-query-service design/types.go), so real vote volumes (dev's largest project: 77 votes,
+   * verified 2026-09-23) drain in a single round trip and the helper's page_token loop stays cold.
+   */
+  private static readonly voteListUpstreamPageSize = 1000;
+
+  /**
+   * Page size for the BFF's internal offset pagination when the client omits `page_size` (GH-1558).
+   */
+  private static readonly voteListDefaultPageSize = 50;
+
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
@@ -132,12 +144,92 @@ export class VoteService {
   }
 
   /**
-   * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
-   * `includeProject` (default true) enriches rows with `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the caller discards them.
+   * Fetches one page of the canonically ordered vote list (GH-1558). The query-service's default
+   * `name_asc` ordering is the alphabetical ordering the issue reports and it has no created_at
+   * sort, so the BFF drains the full filtered upstream set, sorts with `compareVotesByRecency`
+   * (active first, `creation_time` desc, `uid` tiebreak), and slices the requested page itself.
+   * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
+   * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
+   * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
+   * drained set upstream, so the sorted set is exactly the filtered set and ordering holds across
+   * pagination and filters. Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
+   * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
+   * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
+   * surface it on page 1 when more than a page of active votes exists). Accepted: tier-2's
+   * `creation_time`-desc puts a just-created vote first within its tier, the carrier TTL (30 s) bounds
+   * the window, and reconciling client carrier state pre-sort would bleed optimistic UI state into
+   * this endpoint's contract. `includeProject` (default true) enriches the returned slice with
+   * `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the
+   * caller discards them.
    */
   public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
     const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
+      query_params: Object.keys(query),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
+
+    // Unscoped calls drain the entire vote index and re-sort per request (GH-1558 review) — every
+    // first-party caller narrows, so log the unscoped path to make a stray caller visible before it
+    // shows up in a latency graph. DEBUG, not WARN: the param set is caller-controlled.
+    if (Object.keys(upstreamParams).length === 0) {
+      logger.debug(req, 'get_votes', 'Unscoped vote list request drains the full vote index');
+    }
+
+    // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
+    // a later page failing must surface as an error, not a 200 with votes silently missing.
+    const drained = await fetchAllQueryResources<IndexedVote>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...upstreamParams,
+          type: 'vote',
+          page_size: VoteService.voteListUpstreamPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    const sorted = drained.map((vote) => this.normalizeIndexedVote(req, vote)).sort(compareVotesByRecency);
+
+    const pageSize = this.parseVoteListPageSize(rawPageSize);
+    const offset = this.parseVoteListOffset(rawPageToken);
+    const page = sorted.slice(offset, offset + pageSize);
+    // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
+    // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
+    // Runs on the returned slice only, not the full drained set.
+    const votes = includeProject ? await this.enrichWithProjectMetadata(req, page) : page;
+
+    const nextOffset = offset + pageSize;
+    const pageToken = nextOffset < sorted.length ? `offset:${nextOffset}` : undefined;
+
+    logger.debug(req, 'get_votes', 'Completed vote fetch', {
+      drained_count: sorted.length,
+      final_count: votes.length,
+      has_more_pages: !!pageToken,
+    });
+
+    return { data: votes, page_token: pageToken };
+  }
+
+  /**
+   * Fetches a single upstream cursor page of votes, forwarding the caller's params verbatim — the
+   * pre-GH-1558 `getVotes` behavior, kept for internal consumers only (not mounted on any route).
+   * Committee-activity's vote leg needs the query-service's `sort=updated_desc` truncation order and
+   * the real upstream `page_token` for its `date_to`-windowed saturation walk; the canonical
+   * drain+sort in `getVotes` would silently change which rows its `fetchSize` truncation keeps.
+   * `includeProject` (default true) enriches rows with `project_name`, `project_slug`,
+   * `is_foundation` and `parent_project_uid`; opt out when the caller discards them.
+   */
+  public async getVotesUpstreamPage(
+    req: Request,
+    query: Record<string, unknown> = {},
+    options: { includeProject?: boolean } = {}
+  ): Promise<PaginatedResponse<Vote>> {
+    const { includeProject = true } = options;
+    logger.debug(req, 'get_votes_upstream_page', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
@@ -155,11 +247,9 @@ export class VoteService {
     );
 
     const normalized = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
-    // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
-    // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
     const votes = includeProject ? await this.enrichWithProjectMetadata(req, normalized) : normalized;
 
-    logger.debug(req, 'get_votes', 'Completed vote fetch', {
+    logger.debug(req, 'get_votes_upstream_page', 'Completed vote fetch', {
       final_count: votes.length,
       has_more_pages: !!page_token,
     });
@@ -393,6 +483,9 @@ export class VoteService {
       req,
       operation: 'create_vote_response_poll',
       pollFn: async () => {
+        // Known gap (GH #2985): filter_grants=direct never matches email-only invitees (the voting
+        // service emits no invitee FGA tuple for them), so this poll always times out for those
+        // users — see fetchCurrentUserVoteResponses.
         const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(
           req,
           'LFX_V2_SERVICE',
@@ -428,45 +521,20 @@ export class VoteService {
    * Queries vote_response records by user_email and username using filters_or.
    */
   public async getMyVotes(req: Request): Promise<Vote[]> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
+    // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
 
-    logger.debug(req, 'get_my_votes', 'Fetching votes for current user', {
-      username,
-      has_email: !!email,
-    });
-
-    if (!username && !email) {
-      return [];
-    }
-
-    // vote_response uses 'user_email' not 'email'.
-    const filtersOr: string[] = [];
-    if (email) filtersOr.push(`user_email:${email}`);
-    if (username) filtersOr.push(`username:${username}`);
-
-    const responses = await fetchAllQueryResources<{ vote_uid: string; vote_status?: IndexedVoteResponseStatus }>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ vote_uid: string; vote_status?: IndexedVoteResponseStatus }>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          type: 'vote_response',
-          filters_or: filtersOr,
-          ...(pageToken && { page_token: pageToken }),
-        }
-      )
-    );
-
+    // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
+    // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
+    // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
     for (const r of responses) {
-      if (r.vote_uid && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(r.vote_uid);
+      const id = getParentVoteId(r);
+      if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.filter((r) => r.vote_uid).map((r) => r.vote_uid))];
+    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return [];
@@ -499,52 +567,51 @@ export class VoteService {
       })
     );
 
-    // Sort: active votes first, then by end_time descending
-    const sorted = votes
-      .filter((v): v is Vote => v !== null)
-      .sort((a, b) => {
-        const aActive = a.status === 'active' ? 0 : 1;
-        const bActive = b.status === 'active' ? 0 : 1;
-        if (aActive !== bActive) {
-          return aActive - bActive;
-        }
-        return new Date(b.end_time).getTime() - new Date(a.end_time).getTime();
-      });
+    // Canonical vote list ordering (GH-1558): active first, then creation_time desc — the same
+    // comparator the project/committee list reads apply, so Me lens agrees with every other surface.
+    const sorted = votes.filter((v): v is Vote => v !== null).sort(compareVotesByRecency);
 
     return this.enrichWithProjectMetadata(req, sorted);
   }
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req);
-
-    if (!username && !email) return null;
-
-    const filtersOr: string[] = [];
-    if (email) filtersOr.push(`user_email:${email}`);
-    if (username) filtersOr.push(`username:${username}`);
+    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
+    // the list surfaced this vote under) and requires a usable row id.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
+      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
-    // `filters_or` then disjuncts the user-identity match. Both AND together.
-    const responses = await fetchAllQueryResources<MyVoteResponse>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MyVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'vote_response',
-        filters: [`vote_uid:${voteUid}`],
-        filters_or: filtersOr,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
+    // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
+    let match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`vote_uid:${voteUid}`] }));
+
+    // Legacy poll_id-only rows carry no `vote_uid` (GH #2985): fall back to a poll_id-scoped
+    // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
+    // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
+    // The query service supports a single `filters_or` group (spent on identity), so the two
+    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
+    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
+    // non-match must still fall through to the legacy key.
+    if (!match) {
+      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+    }
+
+    if (!match) return null;
+
+    // A legacy poll_id-only row carries no `vote_uid`, but `MyVoteResponse.vote_uid` is required —
+    // normalize it to the validated parent key (`findMatch` guarantees `getParentVoteId(match) ===
+    // voteUid`, the key the list surfaced this vote under) so the payload honors the shared
+    // response contract. The cast still narrows the indexer's broader `vote_status` string
+    // unchecked (pre-existing).
+    const response = { ...match, vote_uid: voteUid } as MyVoteResponse;
 
     // Defensive: `r.uid` should always be populated by the indexer, but fall back to `vote_id`
     // (the v1 alias) if it isn't — logging the anomaly so we catch any indexer drift.
-    const match = responses.find((r) => r?.vote_uid === voteUid && (!!r?.uid || !!r?.vote_id));
-    if (match && !match.uid && match.vote_id) {
+    if (!match.uid && match.vote_id) {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
-      return { ...match, uid: match.vote_id };
+      response.uid = match.vote_id;
     }
-    return match ?? null;
+    return response;
   }
 
   // ============================================
@@ -704,5 +771,32 @@ export class VoteService {
       throw ServiceValidationError.forField('uid', 'Invalid vote UID', { operation: 'encode_vote_uid', service: 'vote_service' });
     }
     return encodeURIComponent(uid);
+  }
+
+  /** Client-requested page size for getVotes' internal slicing — first value wins; missing/invalid → the default; capped at the upstream max so a client can't pull an unbounded slice in one response. */
+  private parseVoteListPageSize(raw: unknown): number {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    const parsed = Number.parseInt(typeof value === 'string' ? value : '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, VoteService.voteListUpstreamPageSize) : VoteService.voteListDefaultPageSize;
+  }
+
+  /** Decodes getVotes' opaque `offset:<n>` page token — an omitted token starts at the first page; an explicit-but-malformed one (garbage, foreign cursor) is a 400, never a silent fallback for a bad explicit value (committee-activity's `decodePageToken` rule): silently restarting at page 1 would hand a page-2 caller page 1's rows labeled as page 2. */
+  private parseVoteListOffset(raw: unknown): number {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (value === undefined) {
+      return 0;
+    }
+    const match = typeof value === 'string' ? /^offset:(\d+)$/.exec(value) : null;
+    if (!match) {
+      throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
+    }
+    // \d+ also passes 309+-digit tokens whose parseInt overflows float64 to Infinity (and
+    // 16+-digit ones to unsafe integers) — slice() would answer those with an empty terminal
+    // page instead of the malformed-token 400 this decoder promises.
+    const offset = Number.parseInt(match[1], 10);
+    if (!Number.isSafeInteger(offset)) {
+      throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
+    }
+    return offset;
   }
 }

@@ -1,35 +1,37 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, ElementRef, inject, Injector, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL,
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
+  MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX,
   MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS,
   MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL,
   MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL,
   MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
+  MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY,
+  MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL,
-  MENTORSHIP_MENTEE_RESUME_INTRO,
 } from '@lfx-one/shared/constants';
-import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
-import { capCodePointEdit, codePointLength, htmlClipboardToText, normalizeToUrl } from '@lfx-one/shared/utils';
-import { maxCodePointsValidator } from '@lfx-one/shared/validators';
+import { MentorshipMenteeProfileDetails, MentorshipMenteeProfileUpdateResponse } from '@lfx-one/shared/interfaces';
+import { buildMentorshipMenteeProfileUpdate, getMentorshipMenteeIntroductionError, isMentorshipMenteeProfileUpdateEmpty } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { filter, merge, startWith } from 'rxjs';
 
-import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
-import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
+import { MenteeProfileSaveService } from '../../../../services/mentee-profile-save.service';
 import { MenteeProfileEditDrawerService } from './mentee-profile-edit-drawer.service';
 
 /** Angular `minLength` skips empty values, so `[]` would otherwise pass as valid. */
@@ -37,25 +39,42 @@ function requiredStringList(): ValidatorFn {
   return (control) => (Array.isArray(control.value) && control.value.length > 0 ? null : { required: true });
 }
 
+/** Rejects a list with too many skills or a skill that is too long; the BFF enforces the same caps. */
+function boundedStringList(): ValidatorFn {
+  return (control) => {
+    const value: unknown = control.value;
+    if (!Array.isArray(value)) return null;
+    const tooLong = value.some((item) => typeof item === 'string' && item.trim().length > MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH);
+    return value.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS || tooLong ? { boundedList: true } : null;
+  };
+}
+
 /**
  * Right-side mentee profile edit drawer, opened from the "Edit Mentee Profile" button
  * on the standalone mentee profile page. Fields map to `user_profiles`: About Me ←
  * `introduction`, skills ← `skill_set.skills` / `improvementSkills`, additional notes
- * ← `skill_set.comments`, resume filename as display-only from `profile_links.resumeLink`.
+ * ← `skill_set.comments`. About Me uses the register form's rich editor and rule, so the stored HTML
+ * round-trips unchanged.
  *
- * Save fires the coming-soon toast until the update endpoint is wired; the drawer does
- * not persist anything.
+ * Save sends only the groups the mentee changed (see `buildMentorshipMenteeProfileUpdate`) and
+ * emits `saved` with the response, so the host can show it in place. On a failure the drawer stays open with the mentee's input and shows the message inline.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
-  imports: [DrawerModule, ButtonComponent, TextareaComponent, SkillsPickerComponent, ResumeSectionComponent],
+  imports: [DrawerModule, ButtonComponent, RichEditorComponent, TextareaComponent, SkillsPickerComponent],
   templateUrl: './mentee-profile-edit-drawer.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeProfileEditDrawerComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
+  private readonly saveService = inject(MenteeProfileSaveService);
   private readonly drawer = inject(MenteeProfileEditDrawerService);
+  private readonly injector = inject(Injector);
+  private readonly errorRef = viewChild<ElementRef<HTMLElement>>('errorRef');
   protected readonly isOpen = this.drawer.isOpen;
+  protected readonly saving = this.saveService.saving;
+
+  /** Emits the saved profile once the update succeeds, just before the drawer closes. */
+  public readonly saved = output<MentorshipMenteeProfileUpdateResponse>();
 
   protected readonly title = MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL;
   protected readonly subtitle = MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE;
@@ -63,28 +82,27 @@ export class MenteeProfileEditDrawerComponent {
   protected readonly cancelLabel = MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL;
   protected readonly aboutIntro = MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO;
   protected readonly aboutPrompts = MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS;
-  protected readonly aboutMeMax = MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX;
+  protected readonly introductionPlaceholder = MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER;
   protected readonly skillsIntro = MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO;
   protected readonly skillsHaveLabel = MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL;
   protected readonly skillsWantLabel = MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL;
   protected readonly additionalNotesLabel = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
-  protected readonly resumeIntro = MENTORSHIP_MENTEE_RESUME_INTRO;
 
-  // Code-point cap (not Validators.maxLength, which counts UTF-16 units). Native maxlength
-  // is omitted on the About Me textarea for the same reason.
+  // The introduction is checked by `getMentorshipMenteeIntroductionError` on Save rather than by a validator,
+  // so a stored introduction the mentee leaves untouched never blocks a skills-only save.
   protected readonly form = new FormGroup({
-    introduction: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX)] }),
-    skillsHave: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList()] }),
-    skillsWant: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList()] }),
+    introduction: new FormControl('', { nonNullable: true }),
+    skillsHave: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList(), boundedStringList()] }),
+    skillsWant: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList(), boundedStringList()] }),
     additionalNotes: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX)] }),
-    resumeFileName: new FormControl('', { nonNullable: true }),
   });
 
-  protected readonly aboutMeLength = signal(0);
-  private lastValidIntroduction = '';
-  private seededIntroduction = '';
+  /** The message for the last failed Save, shown inline. Cleared on the next Save, on any edit and on re-seed. */
+  protected readonly errorMessage = signal('');
+  private readonly seedProfile = signal<MentorshipMenteeProfileDetails | null>(null);
   private readonly saveAttempted = signal(false);
+  private readonly introductionValue = toSignal(this.form.controls.introduction.valueChanges, { initialValue: '' });
   // Per-control ticks: parent `form.statusChanges` does not emit when overall
   // status stays INVALID, so filling one required picker would leave its error up.
   private readonly skillPickerTick = toSignal(
@@ -99,70 +117,91 @@ export class MenteeProfileEditDrawerComponent {
 
   protected readonly skillsHaveError = computed(() => this.skillPickerError('skillsHave', 'Add at least one skill you currently have.'));
   protected readonly skillsWantError = computed(() => this.skillPickerError('skillsWant', 'Add at least one skill you would like to improve.'));
+  /** Shown after a Save attempt, and only for an edited introduction: the stored one is never sent unless changed. */
+  protected readonly introductionError = computed(() => {
+    const introduction = this.introductionValue();
+    const seed = this.seedProfile();
+    if (!this.saveAttempted() || !seed || introduction === (seed.aboutMe ?? '')) return undefined;
+    return getMentorshipMenteeIntroductionError(introduction);
+  });
 
   public constructor() {
     toObservable(this.drawer.context)
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe((profile) => this.seedForm(profile));
 
-    this.form.controls.introduction.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      const next = value ?? '';
-      if (codePointLength(next) > MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX) {
-        const capped = capCodePointEdit(this.lastValidIntroduction, next, MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
-        this.form.controls.introduction.setValue(capped, { emitEvent: false });
-        this.lastValidIntroduction = capped;
-        this.aboutMeLength.set(codePointLength(capped));
-        if (capped === this.seededIntroduction) {
-          this.form.controls.introduction.markAsPristine();
-        }
-        return;
-      }
-      this.lastValidIntroduction = next;
-      this.aboutMeLength.set(codePointLength(next));
-    });
+    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.errorMessage.set(''));
   }
 
   protected onSave(): void {
-    this.form.markAllAsTouched();
-    this.saveAttempted.set(true);
-    if (this.form.invalid) {
+    if (this.saving()) {
       return;
     }
-    // TODO: persist the mentee profile (introduction, skills, notes, resume) when the
-    // update endpoint is wired. Until then Save stays a coming-soon stub, same as withdraw.
-    this.comingSoon.notify(MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL);
-    this.drawer.close();
+
+    this.errorMessage.set('');
+    this.form.markAllAsTouched();
+    this.saveAttempted.set(true);
+    const profile = this.seedProfile();
+    if (this.form.invalid || !profile) {
+      return;
+    }
+
+    const request = buildMentorshipMenteeProfileUpdate(profile, this.form.getRawValue());
+    if (isMentorshipMenteeProfileUpdateEmpty(request)) {
+      this.drawer.close();
+      return;
+    }
+
+    // The same rule the BFF applies; `introductionError` already shows the message under the editor.
+    if (request.introduction !== undefined && getMentorshipMenteeIntroductionError(request.introduction)) {
+      return;
+    }
+
+    this.saveService.save(request, MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY).subscribe({
+      next: (response) => {
+        this.saved.emit(response);
+        this.drawer.close();
+      },
+      error: (err: unknown) => this.showError(this.saveService.errorMessage(err)),
+    });
   }
 
   protected onCancel(): void {
+    if (this.saving()) {
+      return;
+    }
     this.drawer.close();
   }
 
   protected onVisibleChange(visible: boolean): void {
-    if (!visible) {
+    if (!visible && !this.saving()) {
       this.drawer.close();
     }
   }
 
+  /**
+   * Shows the message and moves focus to it once rendered: the disabled Save button drops focus while
+   * saving, and the alert can sit below the fold of a long form. `afterNextRender` never runs on the server.
+   */
+  private showError(message: string): void {
+    this.errorMessage.set(message);
+    afterNextRender(() => this.errorRef()?.nativeElement.focus(), { injector: this.injector });
+  }
+
   private seedForm(profile: MentorshipMenteeProfileDetails): void {
-    // Register and the drawer share the 3000 code-point cap. Convert block boundaries
-    // to newlines, then cap, *before* patching so the control, counter, and baselines
-    // share one value. patchValue must emit so skills pickers and the resume section
-    // (which snapshot `valueChanges`) pick up the seeded skills and filename.
-    const introduction = capCodePointEdit('', htmlClipboardToText(profile.aboutMe ?? ''), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
-    this.lastValidIntroduction = introduction;
-    this.seededIntroduction = introduction;
+    // The stored HTML seeds the editor as is, so an untouched introduction equals `aboutMe` and is not sent.
+    // patchValue must emit so the skills pickers (which snapshot `valueChanges`) pick up the seeded skills.
+    this.seedProfile.set(profile);
     this.saveAttempted.set(false);
     this.form.patchValue({
-      introduction,
+      introduction: profile.aboutMe ?? '',
       skillsHave: profile.skillsHave ?? [],
       skillsWant: profile.skillsWant ?? [],
       additionalNotes: profile.additionalNotes ?? '',
-      resumeFileName: this.resumeFileNameFromProfile(profile),
     });
-    this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
+    this.errorMessage.set('');
   }
 
   private skillPickerError(control: 'skillsHave' | 'skillsWant', message: string): string | undefined {
@@ -170,24 +209,6 @@ export class MenteeProfileEditDrawerComponent {
     this.saveAttempted();
     const field = this.form.controls[control];
     if (!field.touched || field.valid) return undefined;
-    return message;
-  }
-
-  /**
-   * `resumeFileName` is display-only and independently optional from `resumeUrl`.
-   * When the BFF only has the URL, derive the last path segment so the resume
-   * section is not seeded empty.
-   */
-  private resumeFileNameFromProfile(profile: MentorshipMenteeProfileDetails): string {
-    const named = profile.resumeFileName?.trim();
-    if (named) return named;
-    const normalized = normalizeToUrl(profile.resumeUrl?.trim() ?? '');
-    if (!normalized) return '';
-    try {
-      const last = new URL(normalized).pathname.split('/').filter(Boolean).pop();
-      return last ? decodeURIComponent(last) : '';
-    } catch {
-      return '';
-    }
+    return field.hasError('boundedList') ? MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE : message;
   }
 }

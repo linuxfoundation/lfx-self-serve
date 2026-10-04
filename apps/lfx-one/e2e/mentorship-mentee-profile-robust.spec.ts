@@ -32,12 +32,11 @@ const POPULATED_PROFILE = {
     skillsHave: ['Python'],
     skillsWant: ['Go'],
     additionalNotes: 'Notes',
-    resumeFileName: 'test-user-1-resume.pdf',
-    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
   history: [
     {
       id: PENDING_APPLICATION_ID,
+      programId: 'prog-a',
       programName: 'Program A',
       termName: 'Fall 2026',
       submittedOn: 'Jul 2, 2026',
@@ -45,6 +44,7 @@ const POPULATED_PROFILE = {
     },
     {
       id: ACCEPTED_APPLICATION_ID,
+      programId: 'prog-b',
       programName: 'Program B',
       termName: 'Fall 2026',
       submittedOn: 'Jun 28, 2026',
@@ -54,7 +54,7 @@ const POPULATED_PROFILE = {
 };
 
 const EMPTY_PROFILE = {
-  profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: '', resumeFileName: null, resumeUrl: null },
+  profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: '' },
   history: [],
 };
 
@@ -97,7 +97,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
       await expect(details.getByTestId('mentorship-mentee-profile-details-skills')).toBeAttached();
       await expect(details.getByTestId('mentorship-mentee-profile-details-areas')).toBeAttached();
       await expect(details.getByTestId('mentorship-mentee-profile-details-notes')).toBeAttached();
-      await expect(details.getByTestId('mentorship-mentee-profile-details-resume')).toBeAttached();
+      await expect(details.getByTestId('mentorship-mentee-profile-details-resume')).toHaveCount(0);
     });
 
     test('renders one application row per id, with nested name/term/status/view ids', async ({ page }) => {
@@ -118,6 +118,10 @@ test.describe('Mentee Profile — Robust Tests', () => {
     test('scopes withdraw to the pending row only', async ({ page }) => {
       await expect(page.getByTestId(`mentorship-application-history-withdraw-${PENDING_APPLICATION_ID}`)).toBeAttached();
       await expect(page.getByTestId(`mentorship-application-history-withdraw-${ACCEPTED_APPLICATION_ID}`)).toHaveCount(0);
+    });
+
+    test('attaches the withdraw confirm dialog', async ({ page }) => {
+      await expect(page.getByTestId('mentorship-mentee-profile-withdraw-confirm-dialog')).toBeAttached();
     });
   });
 
@@ -150,14 +154,12 @@ test.describe('Mentee Profile — Robust Tests', () => {
       await expect(page.getByTestId('mentorship-mentee-profile-details-skills-empty')).toBeAttached();
       await expect(page.getByTestId('mentorship-mentee-profile-details-areas-empty')).toBeAttached();
       await expect(page.getByTestId('mentorship-mentee-profile-details-notes-empty')).toBeAttached();
-      await expect(page.getByTestId('mentorship-mentee-profile-details-resume-empty')).toBeAttached();
       await expect(page.getByTestId('mentorship-application-history-empty')).toBeAttached();
 
       await expect(page.getByTestId('mentorship-mentee-profile-details-about-text')).toHaveCount(0);
       await expect(page.getByTestId('mentorship-mentee-profile-details-skills-list')).toHaveCount(0);
       await expect(page.getByTestId('mentorship-mentee-profile-details-areas-list')).toHaveCount(0);
       await expect(page.getByTestId('mentorship-mentee-profile-details-notes-text')).toHaveCount(0);
-      await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toHaveCount(0);
       await expect(page.getByTestId('mentorship-application-history-list')).toHaveCount(0);
     });
   });

@@ -5,17 +5,13 @@ import { Component, inject } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, RecurringMeetingEditScope, RecurringMeetingEditScopeResult } from '@lfx-one/shared/interfaces';
+import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-
-export interface RecurringEditOption {
-  editType: 'single' | 'future';
-  proceed: boolean;
-}
 
 @Component({
   selector: 'lfx-recurring-meeting-edit-options',
-  imports: [ReactiveFormsModule, ButtonComponent, RadioButtonComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, RadioButtonComponent, MeetingTimePipe],
   templateUrl: './recurring-meeting-edit-options.component.html',
 })
 export class RecurringMeetingEditOptionsComponent {
@@ -23,19 +19,20 @@ export class RecurringMeetingEditOptionsComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
 
   public readonly meeting: Meeting = this.dialogConfig.data?.meeting;
+  public readonly occurrence: MeetingOccurrence = this.dialogConfig.data?.occurrence;
   public readonly editForm: FormGroup = this.initializeEditForm();
 
   public onConfirm(): void {
-    const result: RecurringEditOption = {
-      editType: this.editForm.get('editType')?.value || 'single',
+    const result: RecurringMeetingEditScopeResult = {
+      scope: this.editForm.get('scope')?.value || 'occurrence',
       proceed: true,
     };
     this.dialogRef.close(result);
   }
 
   public onCancel(): void {
-    const result: RecurringEditOption = {
-      editType: 'single',
+    const result: RecurringMeetingEditScopeResult = {
+      scope: 'occurrence',
       proceed: false,
     };
     this.dialogRef.close(result);
@@ -43,7 +40,7 @@ export class RecurringMeetingEditOptionsComponent {
 
   private initializeEditForm(): FormGroup {
     return new FormGroup({
-      editType: new FormControl('single'),
+      scope: new FormControl<RecurringMeetingEditScope>('occurrence'),
     });
   }
 }

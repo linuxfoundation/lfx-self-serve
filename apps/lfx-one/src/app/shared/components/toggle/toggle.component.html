@@ -1,15 +1,40 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<ng-container [formGroup]="form()">
+@if (form(); as formGroup) {
+  <ng-container [formGroup]="formGroup">
+    <div class="flex items-center gap-2">
+      <p-toggleSwitch
+        [formControlName]="control()!"
+        [inputId]="id()"
+        [readonly]="readonly()"
+        [styleClass]="styleClass()"
+        [trueValue]="trueValue()"
+        [falseValue]="falseValue()"
+        [ariaLabel]="ariaLabel()"
+        [attr.data-test]="dataTest()"></p-toggleSwitch>
+      @if (label()) {
+        <label [for]="id()" class="text-sm font-medium text-gray-700 cursor-pointer">
+          {{ label() }}
+        </label>
+      }
+
+      @if (tooltip()) {
+        <div class="tooltip">
+          <i class=" text-sm fa-light fa-{{ tooltipIcon() }}" [pTooltip]="tooltip()" [tooltipPosition]="tooltipPosition()"></i>
+        </div>
+      }
+    </div>
+  </ng-container>
+} @else {
   <div class="flex items-center gap-2">
     <p-toggleSwitch
-      [formControlName]="control()"
-      [id]="id()"
+      [ngModel]="checked()"
+      (ngModelChange)="checkedChange.emit($event)"
+      [disabled]="disabled()"
+      [inputId]="id()"
       [readonly]="readonly()"
       [styleClass]="styleClass()"
-      [trueValue]="trueValue()"
-      [falseValue]="falseValue()"
       [ariaLabel]="ariaLabel()"
       [attr.data-test]="dataTest()"></p-toggleSwitch>
     @if (label()) {
@@ -17,11 +42,10 @@
         {{ label() }}
       </label>
     }
-
     @if (tooltip()) {
       <div class="tooltip">
         <i class=" text-sm fa-light fa-{{ tooltipIcon() }}" [pTooltip]="tooltip()" [tooltipPosition]="tooltipPosition()"></i>
       </div>
     }
   </div>
-</ng-container>
+}

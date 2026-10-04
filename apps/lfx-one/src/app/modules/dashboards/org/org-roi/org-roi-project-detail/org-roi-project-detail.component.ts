@@ -26,9 +26,11 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -49,6 +51,10 @@ export class OrgRoiProjectDetailComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
+
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = inject(OrgRoleGrantsService).correlationId;
 
   protected readonly noValue = ORG_LENS_ROI_NO_VALUE;
   protected readonly explanation = ORG_LENS_ROI_KPI_EXPLANATION;
@@ -96,8 +102,8 @@ export class OrgRoiProjectDetailComponent {
 
   protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
 
-  /** The shared state to render instead of the figures, or `null` when the last read succeeded. */
-  protected readonly emptyState = computed(() => sectionEmptyState(this.loadOutcome()));
+  /** The shared section state to render instead of the figures, or `null` when the last read succeeded. */
+  protected readonly sectionState = computed(() => sectionEmptyState(this.loadOutcome()));
 
   private readonly payload = this.initPayload();
 

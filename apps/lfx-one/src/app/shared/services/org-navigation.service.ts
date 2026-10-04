@@ -56,7 +56,7 @@ export class OrgNavigationService {
 
   /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
   private pendingDefaultWrite: Subscription | null = null;
-  /** The one default still waiting for the grant set to settle (`whenGrantsSettled`); cleared when it fires, when a later default supersedes it, or when `resetAndReload` starts a new page. */
+  /** The one first-page decision still waiting for the grant set to settle (`whenGrantsSettled`): a default selection or the empty-list handling (#2961). Cleared when it fires, when a newer decision supersedes it, or when `resetAndReload` starts a new page. */
   private pendingDefaultSelectionSub: Subscription | null = null;
 
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
@@ -321,10 +321,27 @@ export class OrgNavigationService {
       // the pending selection, and an empty result for it would otherwise sign the caller out. A
       // search that matched nothing is reported by the list's own empty state instead. Narrow enough
       // that a genuine upstream failure still reports.
-      if (this.orgRoleGrantsService.isStaff() && !page.upstreamFailed) {
-        return;
-      }
-      this.handleEmptyOrgResponse(page);
+      //
+      // #2961: the same holds for an LF contractor. The page explains their empty list
+      // (`contractor-no-grant`); the toast would repeat it as employee copy, and clearing the selection
+      // would drop the persona-seeded organization the page asks the read gate about.
+      //
+      // Decided once the role grants have answered: a persona seed can start this list before they do,
+      // and reading `isStaff`/`isContractor` early would toast and clear the selection for exactly the
+      // callers these exemptions exist for.
+      // Like the deferred default below, it re-checks before acting: an address adopted, or a selection
+      // made, while it waited wins over clearing it.
+      const uidWhenDeferred = this.accountContextService.selectedAccount().uid ?? null;
+      this.whenGrantsSettled(() => {
+        const now = this.accountContextService.selectedAccount().uid ?? null;
+        if (this.accountContextService.isAdoptedFromAddress() || now !== uidWhenDeferred) {
+          return;
+        }
+        if ((this.orgRoleGrantsService.isStaff() || this.orgRoleGrantsService.isContractor()) && !page.upstreamFailed) {
+          return;
+        }
+        this.handleEmptyOrgResponse(page);
+      });
       return;
     }
 
@@ -391,7 +408,8 @@ export class OrgNavigationService {
   }
 
   private whenGrantsSettled(then: () => void): void {
-    // A newer default always supersedes an older one still waiting, whichever path this one takes.
+    // A newer first-page decision (default selection or empty-list handling) always supersedes an older
+    // one still waiting, whichever path this one takes.
     this.pendingDefaultSelectionSub?.unsubscribe();
     this.pendingDefaultSelectionSub = null;
     if (this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null) {

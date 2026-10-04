@@ -62,6 +62,7 @@ export class ProjectDashboardComponent {
   protected readonly isConfidential = this.projectContextService.isActiveProjectConfidential;
 
   /** Shared with `FormationCardComponent` via `ProjectContextService` — no duplicate fetch. */
+  protected readonly announcementDateReadable = this.projectContextService.activeProjectAnnouncementDateReadable;
   protected readonly announcementDateLoading = this.projectContextService.activeProjectAnnouncementDateLoading;
   protected readonly announcementDateHasError = this.projectContextService.activeProjectAnnouncementDateHasError;
   protected readonly announcementDateLabel: Signal<string> = computed(() =>

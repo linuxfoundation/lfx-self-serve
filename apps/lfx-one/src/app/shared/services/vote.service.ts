@@ -50,26 +50,8 @@ export class VoteService {
     error: unknown;
   } | null = null;
 
-  public getVotes(params?: HttpParams): Observable<PaginatedResponse<Vote>> {
-    return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(
-      catchError(() => {
-        return of({ data: [] as Vote[], page_token: undefined });
-      })
-    );
-  }
-
   public getMyVotes(): Observable<Vote[]> {
     return this.http.get<Vote[]>('/api/votes/my-votes').pipe(catchError(() => of([])));
-  }
-
-  public getVotesByProject(projectUid: string, pageSize?: number, orderBy?: string): Observable<Vote[]> {
-    let params = new HttpParams().set('parent', `project:${projectUid}`);
-
-    if (orderBy) {
-      params = params.set('order', orderBy);
-    }
-
-    return this.getVotes(params).pipe(map((response) => response.data));
   }
 
   public getVotesByProjectPaginated(
@@ -99,7 +81,7 @@ export class VoteService {
       }
     }
 
-    // Deliberately bypasses getVotes' catchError fallback: the votes dashboard's cursor walk must distinguish a
+    // Deliberately carries no catchError fallback: the votes dashboard's cursor walk must distinguish a
     // failed request from cursor exhaustion (empty result with no token), so HTTP errors propagate to the caller.
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params });
   }
@@ -124,19 +106,11 @@ export class VoteService {
   }
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
-  public getVotesByCommittee(committeeUid: string, orderBy?: string): Observable<Vote[]> {
-    // page_size=100 keeps the drain-all UX after VoteService.getVotes switched to single-page; committees over 100 are out of scope (LFXV2-1969).
-    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`).set('page_size', '100');
-
-    if (orderBy) {
-      params = params.set('order', orderBy);
-    }
+  public getVotesByCommittee(committeeUid: string): Observable<Vote[]> {
+    // page_size=100 caps the committee list at the first 100 rows of the canonically sorted set; committees over 100 are out of scope (LFXV2-1969).
+    const params = new HttpParams().set('tags', `committee_uid:${committeeUid}`).set('page_size', '100');
 
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(map((response) => response.data));
-  }
-
-  public getRecentVotesByProject(projectUid: string, pageSize: number = 3): Observable<Vote[]> {
-    return this.getVotesByProject(projectUid, pageSize, 'updated_at.desc');
   }
 
   public getVote(voteUid: string): Observable<Vote> {

@@ -9,14 +9,15 @@ import { codePointLength } from '../utils/string.utils';
  * Caps a string control by Unicode code-point count (like Go's `[]rune(s)`), not the UTF-16 units
  * `Validators.maxLength` counts, with the maxlength error shape `{ maxCodePoints: { requiredLength, actualLength } }`.
  * @param max - The maximum allowed number of code points
+ * @param options.trim - Count the trimmed value, for fields whose consumer trims before applying the same cap
  */
-export function maxCodePointsValidator(max: number): ValidatorFn {
+export function maxCodePointsValidator(max: number, options: { trim?: boolean } = {}): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
     const value = control.value;
     if (value === null || value === undefined || value === '') return null;
     if (typeof value !== 'string') return null;
 
-    const actualLength = codePointLength(value);
+    const actualLength = codePointLength(options.trim ? value.trim() : value);
     return actualLength > max ? { maxCodePoints: { requiredLength: max, actualLength } } : null;
   };
 }

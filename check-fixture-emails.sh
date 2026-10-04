@@ -3,39 +3,80 @@
 # Copyright The Linux Foundation and each contributor to LFX.
 # SPDX-License-Identifier: MIT
 
-# Flags emails from known real customer/vendor domains introduced by a change to test/fixture files.
-# Test fixtures should use synthetic data (e.g. acme-motors.example, vendor-corp.example),
-# never real customer or personal emails. Scoped to *added* lines only — the repo already has
-# pre-existing, harmless placeholder domains (acme.io, x.org, corp.com, ...) that a whole-file
-# scan would flag as false positives, and scanning the whole staged blob (rather than just what
-# changed) would also permanently block any future edit to a file that happens to contain an
-# old, already-fixed match elsewhere.
+# Flags real-looking organization data introduced by a change to test/fixture files.
+# Test fixtures must use synthetic data: invented organizations and account ids from
+# apps/lfx-one/e2e/fixtures/mock-data/synthetic-org.mock.ts, and reserved domains
+# (acme-motors.example, user@example.com). Three checks run on each added line:
+#   1. org name   — a known real organization name (hashed denylist below).
+#   2. account id — a known real Salesforce-style account id (hashed denylist below).
+#   3. domain     — an email address, or a quoted value assigned to `website` or to any field or
+#                   constant whose name ends in "domain" (primaryDomain, SYNTHETIC_ORG_DOMAIN, ...),
+#                   whose domain is not reserved.
+#
+# Scanned files: every file under apps/lfx-one/e2e/ (specs, helpers, mock data) plus any
+# *.spec.ts, *.fixture.ts or *.ndjson file elsewhere.
+#
+# Scoped to *added* lines only — the repo already has pre-existing, harmless placeholder domains
+# (acme.io, x.org, corp.com, ...) that a whole-file scan would flag as false positives, and scanning
+# the whole staged blob (rather than just what changed) would also permanently block any future edit
+# to a file that happens to contain an old match elsewhere. Editing a line that holds one of those
+# placeholders does flag it; switch it to a reserved domain in the same change.
 #
 # Two modes:
 #   Local pre-commit (no args): diffs the git index (git diff --cached) for staged fixture files.
 #   CI (pass a base ref, e.g. "origin/main"): diffs that ref against HEAD — CI has no staged index.
 #
-# Add a domain here whenever a real-PII incident surfaces one (see GH-1674).
-# Exits 0 if no denylisted domain appears in added lines.
-# Exits 1 and prints the offending file:line matches otherwise.
+# Exits 0 if no added line trips a check.
+# Exits 1 and prints the offending file:line matches, grouped by check, otherwise.
+# Exits 2 if the check cannot run (a failed git diff, scan or hash pass), so it never passes by default.
+
+# A failed git diff anywhere in a pipeline must fail the check, not read as "nothing changed".
+set -o pipefail
 
 base_ref="${1:-}"
 
-# Intentionally real domains — these ARE the blocklist, sourced from incidents (GH-1674). Do not "scrub" them.
-denylisted_domains=(
-  toyota.com
-  intel.com
-  openai.com
-  linuxfoundation.org
-  contractor.linuxfoundation.org
+# The denylists below ARE the blocklist, sourced from incidents. Do not "scrub" them. Both hold only
+# SHA-256 hashes, so this public file names no organization and pairs no id with one.
+#
+# Organization names: lowercase the name, keep only letters and digits, and drop a legal suffix
+# (inc, llc, ...), then hash it — "Acme Motors, Inc." becomes "acmemotors":
+#   printf '%s' 'acmemotors' | shasum -a 256
+# Every run of one to three consecutive words in an added line is joined the same way and compared,
+# so an entry for "acmemotors" catches "Acme Motors, Inc.", "acme-motors", "ACME_MOTORS" and
+# "acmemotors.com" alike. Keep the legal suffix when the bare name is also a product or platform the
+# app legitimately names in tests (an ad platform, a meeting tool), so the entry matches the
+# organization without blocking every mention of the product.
+denylisted_org_name_sha256=(
+  7d3b5c83009fadf734c06eeecd7fbe256c69f71c8ba0429e4d7ad5f54b2e4097
+  337b8d2c1e132acd75171f1acf0e73b20bc9541720d5003813f59ef0ad51f86f
+  e4b42aa06408849925ab1aed0fbb50a93b3d844444eeca9792bc00067e4699fa
+  c38c199c1a55d87677fd7ba6774fee62be04faaf15dac8f60c0f1e25495cab1d
+  cce4a2de03e82358f0c511461103adb0ccf0e4517fdff3945131b060b4afe84e
 )
 
-denylist_pattern=$(printf '%s\n' "${denylisted_domains[@]}" | sed 's/\./\\./g' | paste -sd '|' -)
+# Account ids, each in both its 18- and 15-character forms, since fixtures may carry either. The
+# 18-character form is case-insensitive, so it is hashed lowercased; the 15-character form is
+# case-sensitive and hashed exactly as written:
+#   printf '%s' '<18-char id>' | tr 'A-Z' 'a-z' | shasum -a 256
+#   printf '%s' '<15-char id>' | shasum -a 256
+# Fixtures must take ids from apps/lfx-one/e2e/fixtures/mock-data/synthetic-org.mock.ts (invented
+# ids of the same shape). The id SHAPE itself ("001" + 15 alphanumerics) cannot be blocked: the app
+# validates that shape, so synthetic ids must satisfy it too.
+denylisted_account_id_sha256=(
+  b20ce6d16699c8b1032e715b03cf087bed002cdd5dba02ce961f85a5ff36d5bb
+  6baf1c8cd5e7798d33bd14e608c4d90d2eec126b2d35d319657bfcaa36c607ae
+  957fb1c7f47ee6e8043e0fe8ba25d54d4f6b1d0efc3fbd57ed379b2b844e438f
+  c4f52af51e918387ebad72930c16b622d5377a62294d2fa8fd4f561af9bd454b
+  50cd12398e2ec69f0f23f65a5523f56927f6a84f9d5137ac949b93e33d16f75f
+  8f16d01aa8c8d57485a1efb7018cb6e0d843a86ab9cb8ee282207a245af7b3c7
+  093f30365465c83e8f2fb98402747bf2ec0e8d42c5b4888e993e83f8834caaec
+  206cbec1997e35bc9a0a3ebc8260172fe54698221a8c1a0e45e8e44bd8ca7554
+)
 
 # -M detects renames (--diff-filter=ACMR still needs R explicit alongside it so a rename-with-edits,
 # which git may classify as R rather than M, isn't skipped from the file list). Deliberately NOT
 # passing -C (copy detection): a new fixture git considers a "copy" of an existing file is shown
-# with only its edited lines as a diff hunk — any denylisted email copied unchanged would never
+# with only its edited lines as a diff hunk — any denylisted value copied unchanged would never
 # appear as an added "+" line and would slip past the added-lines-only scan below. Without -C, a
 # new file is classified as a plain add and its full content shows up as added lines instead.
 if [ -n "${base_ref}" ]; then
@@ -44,39 +85,184 @@ else
   diff_args=(-M --diff-filter=ACMR --cached)
 fi
 
-changed_files=$(git diff "${diff_args[@]}" --name-only | grep -E '\.(spec\.ts|fixture\.ts|ndjson)$')
+if ! all_changed_files=$(git diff "${diff_args[@]}" --name-only); then
+  echo "❌ Fixture data check could not list changed files (git diff ${diff_args[*]} failed)." >&2
+  exit 2
+fi
+changed_files=$(printf '%s\n' "${all_changed_files}" | grep -E '^apps/lfx-one/e2e/|\.(spec\.ts|fixture\.ts|ndjson)$')
 
 if [ -z "${changed_files}" ]; then
   exit 0
 fi
 
-violations=""
+# Reads one file's -U1 diff and, for each added line, prints "<kind> ... <file>:<line>: <text>",
+# where <line> is the line number in the new file: a "domain" hit, plus the "name-candidate" and
+# "id-candidate" tokens the hash pass below checks. Portable across BSD awk, gawk and mawk (POSIX
+# ERE only, no \b or interval expressions). Reserved domains are the TLDs .example, .test, .invalid
+# and .localhost, and example.com/.org/.net, subdomains included.
+read -r -d '' scan_program <<'AWK'
+function reserved(host) {
+  return host ~ /(^|\.)(example|test|invalid|localhost)$/ || host ~ /(^|\.)example\.(com|org|net)$/
+}
+function real_domain(host) {
+  return host ~ /\.[a-z][a-z0-9-]+$/ && !reserved(host)
+}
+function has_real_email(s,    domain, before) {
+  while (match(s, /@[a-z0-9-]+(\.[a-z0-9-]+)+/)) {
+    before = RSTART > 1 ? substr(s, RSTART - 1, 1) : ""
+    domain = substr(s, RSTART + 1, RLENGTH - 1)
+    if (before ~ /[a-z0-9._%+}-]/ && real_domain(domain)) return 1
+    s = substr(s, RSTART + RLENGTH)
+  }
+  return 0
+}
+function has_real_domain_field(s,    value) {
+  # Either a typed assignment (X_DOMAIN: string | null = '...') or a direct ":" / "=" before the quote.
+  while (match(s, /(^|[^a-z0-9_])([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*[a-z0-9_ \t|<>.]+=|[ \t]*[:=])[ \t]*["'`][^"'`]*["'`]/)) {
+    value = substr(s, RSTART, RLENGTH)
+    s = substr(s, RSTART + RLENGTH)
+    # Strip through the assignment's last ":" or "=" before the opening quote, so a type
+    # annotation (X_DOMAIN: string | null = '...') or a quoted JSON key is not taken for the value.
+    sub(/^.*[:=][ \t]*["'`]/, "", value)
+    sub(/["'`]$/, "", value)
+    sub(/^[a-z][a-z0-9+.-]*:\/\//, "", value)
+    sub(/^\/\//, "", value)
+    sub(/^[^@\/]*@/, "", value)
+    sub(/[\/:?#].*$/, "", value)
+    # A fully qualified hostname's trailing dot names the same host.
+    sub(/\.$/, "", value)
+    if (real_domain(value)) return 1
+  }
+  return 0
+}
+function print_name_candidates(s, where,    words, count, i, k, joined) {
+  gsub(/[^a-z0-9]+/, " ", s)
+  count = split(s, words, " ")
+  for (i = 1; i <= count; i++) {
+    joined = ""
+    for (k = 0; k < 3 && i + k <= count; k++) {
+      joined = joined words[i + k]
+      print "name-candidate " joined " " where
+    }
+  }
+}
+function print_id_candidates(s, where,    before, token) {
+  while (match(s, /001[A-Za-z0-9]+/)) {
+    before = RSTART > 1 ? substr(s, RSTART - 1, 1) : ""
+    token = substr(s, RSTART, RLENGTH)
+    s = substr(s, RSTART + RLENGTH)
+    if (before !~ /[A-Za-z0-9]/ && length(token) >= 15) print "id-candidate " token " " where
+  }
+}
+# True when a line ends with a domain key and its operator, the value wrapped onto the next line.
+function opens_domain_value(s) {
+  return s ~ /([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*[a-z0-9_ \t|<>.]+=|[ \t]*[:=])[ \t]*$/
+}
+BEGIN {
+  file = ENVIRON["SCAN_FILE"]
+}
+/^@@ / {
+  start = $0
+  sub(/^@@ -[0-9,]+ \+/, "", start)
+  sub(/[ ,].*$/, "", start)
+  line = start + 0
+  in_hunk = 1
+  pending = ""
+  next
+}
+# A formatter may wrap a long assignment after its operator (X_DOMAIN =\n  'customer.com'). The
+# one line of context lets an open key on an unchanged line reach a changed value on the next;
+# context lines are carried forward but never checked, and removed lines neither set nor clear it.
+in_hunk && /^ / {
+  lower = tolower(substr($0, 2))
+  pending = opens_domain_value(lower) ? lower : ""
+  line++
+  next
+}
+in_hunk && /^\+/ {
+  text = substr($0, 2)
+  lower = tolower(text)
+  shown = text
+  sub(/^[ \t]+/, "", shown)
+  where = file ":" line ": " shown
+  print_name_candidates(lower, where)
+  print_id_candidates(text, where)
+  if (has_real_email(lower) || has_real_domain_field(lower) || (pending != "" && has_real_domain_field(pending " " lower))) print "domain " where
+  pending = opens_domain_value(lower) ? lower : ""
+  line++
+}
+AWK
 
-# Exact-domain match by design (covers @toyota.com, not @sub.toyota.com) — the denylist
-# is seeded from specific incidents, not meant as a comprehensive domain blocklist.
-# Only scans lines *added* by this change (unified diff "+" lines, header lines excluded) so
-# pre-existing matches elsewhere in an untouched file never block an unrelated edit.
+# Hashes every candidate in one pass and keeps only denylisted ones; other lines pass through.
+# Digest::SHA ships with Perl itself (it backs `shasum`), so no extra dependency is needed.
+read -r -d '' hash_program <<'PERL'
+use strict;
+use warnings;
+use Digest::SHA qw(sha256_hex);
+my %names = map { $_ => 1 } split ' ', ($ENV{ORG_NAME_HASHES} // '');
+my %ids = map { $_ => 1 } split ' ', ($ENV{ACCOUNT_ID_HASHES} // '');
+while (my $entry = <STDIN>) {
+  chomp $entry;
+  next if $entry eq '';
+  if ($entry =~ /^name-candidate (\S+) (.*)$/) {
+    print "org-name $2\n" if $names{ sha256_hex($1) };
+  } elsif ($entry =~ /^id-candidate (\S+) (.*)$/) {
+    my ($token, $where) = ($1, $2);
+    for my $form (lc(substr($token, 0, 18)), substr($token, 0, 15)) {
+      if ($ids{ sha256_hex($form) }) {
+        print "account-id $where\n";
+        last;
+      }
+    }
+  } else {
+    print "$entry\n";
+  }
+}
+PERL
+
+candidates=""
+
 while IFS= read -r file; do
   [ -n "${file}" ] || continue
-  matches=$(
-    git diff "${diff_args[@]}" -U0 -- "${file}" |
-      grep -E '^[+]' | grep -v '^[+][+][+]' |
-      grep -Ein "@(${denylist_pattern})" |
-      sed "s|^|${file}: |"
-  )
+  # A scan that fails must fail the check, never pass it silently.
+  if ! matches=$(git diff "${diff_args[@]}" -U1 -- "${file}" | SCAN_FILE="${file}" awk "${scan_program}"); then
+    echo "❌ Fixture data check could not scan ${file}." >&2
+    exit 2
+  fi
   if [ -n "${matches}" ]; then
-    violations="${violations}${matches}
+    candidates="${candidates}${matches}
 "
   fi
 done <<< "${changed_files}"
 
-if [ -n "${violations}" ]; then
-  echo "❌ Found email address(es) using a known real customer/vendor domain in added lines of test/fixture files:"
-  echo "${violations}"
-  echo ""
-  echo "Test fixtures must use synthetic data, not real customer or personal emails."
-  echo "Use a reserved example domain instead (e.g. acme-motors.example, vendor-corp.example)."
-  exit 1
+if ! violations=$(
+  printf '%s' "${candidates}" |
+    ORG_NAME_HASHES="${denylisted_org_name_sha256[*]}" ACCOUNT_ID_HASHES="${denylisted_account_id_sha256[*]}" perl -e "${hash_program}"
+); then
+  echo "❌ Fixture data check could not hash its candidates (perl with Digest::SHA is required)." >&2
+  exit 2
 fi
 
-exit 0
+if [ -z "${violations}" ]; then
+  exit 0
+fi
+
+print_group() {
+  local hits
+  hits=$(printf '%s\n' "${violations}" | sed -n "s/^$1 /  /p" | awk '!seen[$0]++')
+  if [ -n "${hits}" ]; then
+    echo ""
+    echo "$2"
+    echo "${hits}"
+  fi
+}
+
+echo "❌ Found real-looking organization data in added lines of test/fixture files:"
+print_group org-name "Known real organization name:"
+print_group account-id "Known real account id:"
+print_group domain "Non-reserved domain in an email address or organization-domain field:"
+echo ""
+echo "Test fixtures must use synthetic data, not real customer, organization or personal data."
+echo "Take organization names and account ids from apps/lfx-one/e2e/fixtures/mock-data/synthetic-org.mock.ts."
+echo "Use a reserved domain for emails and organization domains (e.g. acme-motors.example, user@example.com)."
+exit 1

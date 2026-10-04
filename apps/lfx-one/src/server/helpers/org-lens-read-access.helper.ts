@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -88,7 +89,7 @@ async function resolveOrgLensRead(req: Request, orgUid: string, operation: strin
     });
 
   const unavailable = (error?: unknown, path?: string): MicroserviceError =>
-    new MicroserviceError("Couldn't verify your access to this organization right now. Please try again.", 503, 'ROLE_GRANTS_UNAVAILABLE', {
+    new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
       operation,
       service: 'LFX_V2_SERVICE',
       ...(path ? { path } : {}),

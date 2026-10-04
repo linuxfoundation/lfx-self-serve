@@ -189,7 +189,7 @@ lfx-one/
 └── package.json              # Root workspace configuration
 ```
 
-For the full directory breakdown (including `src/app/shared/` subdirs and `src/server/` layout) see [CLAUDE.md](CLAUDE.md) and [Architecture Overview](docs/architecture.md).
+For the full directory breakdown (including `src/app/shared/` subdirs and `src/server/` layout) see [AGENTS.md](AGENTS.md) and [Architecture Overview](docs/architecture.md).
 
 ## Feature Modules
 
@@ -308,7 +308,7 @@ The [Architecture Overview](docs/architecture.md) is the jumping-off point. Each
 - **[📋 Architecture Overview](docs/architecture.md)** — High-level map that links to every canonical doc above
 - **[📋 Architecture Navigation Hub](docs/architecture/README.md)** — Same navigation from inside the `architecture/` directory
 - **[🧪 Testing Guide](docs/architecture/testing/e2e-testing.md)** — Comprehensive E2E testing with Playwright
-- **[🤖 CLAUDE.md](CLAUDE.md)** — Gotchas, conventions, and contextual rules for Claude Code sessions
+- **[🤖 AGENTS.md](AGENTS.md)** — Gotchas, conventions, and contextual rules for Claude Code sessions
 
 ## Development Workflow
 

@@ -1,0 +1,148 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="events-revenue">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Event revenue unavailable"
+      subtitle="We could not load event revenue for this foundation. Refresh the page to try again."
+      data-testid="events-revenue-error" />
+  } @else if (loading()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="events-revenue-loading" aria-hidden="true" />
+  } @else if (!view().foundationMeasured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Event revenue unavailable"
+      subtitle="No event revenue has been recorded for this foundation yet."
+      data-testid="events-revenue-foundation-unmeasured" />
+  } @else if (!view().measured) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Event revenue unavailable for this period"
+      subtitle="Revenue for the selected period has not been measured yet. Pick another period to see it."
+      data-testid="events-revenue-unmeasured" />
+  } @else {
+    <span class="self-end text-[12px] text-gray-400" data-testid="events-revenue-pending">{{ pendingNote }}</span>
+
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-revenue-hero">
+      <div class="flex flex-col gap-2" data-testid="events-revenue-headline">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-revenue-headline-value">{{ view().headline.value }}</span>
+          @if (view().headlineUnconverted) {
+            <span class="text-amber-600" aria-hidden="true" data-testid="events-revenue-headline-unconverted">*</span>
+            <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
+          }
+          @if (view().headline.delta !== null) {
+            <span
+              class="text-[13px] font-medium tabular-nums"
+              [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
+              [class.text-red-600]="view().headline.deltaDirection === 'down'"
+              [class.text-gray-400]="view().headline.deltaDirection === 'neutral'"
+              data-testid="events-revenue-headline-delta">
+              {{ view().headline.delta }}
+            </span>
+          }
+        </div>
+        <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+      </div>
+
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-revenue-side">
+        @for (stat of view().side; track stat.key) {
+          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-revenue-side-' + stat.key">
+            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
+              <span [attr.data-testid]="'events-revenue-side-' + stat.key + '-value'">{{ stat.value }}</span>
+              @if (stat.key === 'registration' && view().headlineUnconverted) {
+                <span class="text-amber-600" aria-hidden="true" data-testid="events-revenue-side-registration-unconverted">*</span>
+                <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
+              }
+              @if (stat.delta !== null) {
+                <span
+                  class="text-[12px] font-medium"
+                  [class.text-emerald-600]="stat.deltaDirection === 'up'"
+                  [class.text-red-600]="stat.deltaDirection === 'down'"
+                  [class.text-gray-400]="stat.deltaDirection === 'neutral'"
+                  [attr.data-testid]="'events-revenue-side-' + stat.key + '-delta'">
+                  {{ stat.delta }}
+                </span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+
+    <div class="flex flex-col gap-2" data-testid="events-revenue-by-event">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 data-testid="events-revenue-by-event-heading" class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Revenue by event</h4>
+        <span class="text-[12px] text-gray-400" data-testid="events-revenue-by-event-note">against goal where one is set</span>
+      </div>
+
+      @if (!view().eventsMeasured) {
+        <p class="text-sm text-gray-500" data-testid="events-revenue-events-unmeasured">Per-event revenue is not available for this foundation yet.</p>
+      } @else if (view().rows.length === 0) {
+        <p class="text-sm text-gray-500" data-testid="events-revenue-empty">No event in the selected period.</p>
+      } @else {
+        <lfx-table [value]="view().rows" data-testid="events-revenue-table">
+          <ng-template #header>
+            <tr>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Date</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Registration revenue</span></th>
+              <th scope="col"><span class="text-xs font-medium text-gray-500">Sponsorship revenue</span></th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-view>
+            <tr [attr.data-testid]="'events-revenue-row-' + view.event.eventId">
+              <td>
+                <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
+              </td>
+              <td>
+                <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
+              </td>
+              <td>
+                <span
+                  class="inline-flex items-baseline gap-1 text-sm tabular-nums text-gray-800"
+                  [attr.data-testid]="'events-revenue-registration-' + view.event.eventId">
+                  <span [attr.data-testid]="'events-revenue-registration-value-' + view.event.eventId">{{ view.registrationLabel }}</span>
+                  @if (view.event.hasUnconverted) {
+                    <!-- The footer note explains the marker; screen readers get the same text inline. -->
+                    <span class="text-amber-600" aria-hidden="true" [attr.data-testid]="'events-revenue-unconverted-' + view.event.eventId">*</span>
+                    <span class="sr-only">{{ unconvertedScreenReaderText }}</span>
+                  }
+                  @if (view.registrationGoalLabel) {
+                    <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-registration-goal-' + view.event.eventId"
+                      >/ {{ view.registrationGoalLabel }}</span
+                    >
+                  }
+                </span>
+              </td>
+              <td>
+                <span
+                  class="inline-flex items-baseline gap-1 text-sm tabular-nums text-gray-800"
+                  [attr.data-testid]="'events-revenue-sponsorship-' + view.event.eventId">
+                  <span [attr.data-testid]="'events-revenue-sponsorship-value-' + view.event.eventId">{{ view.sponsorshipLabel }}</span>
+                  @if (view.sponsorshipGoalLabel) {
+                    <span class="text-xs text-gray-400" [attr.data-testid]="'events-revenue-sponsorship-goal-' + view.event.eventId"
+                      >/ {{ view.sponsorshipGoalLabel }}</span
+                    >
+                  }
+                </span>
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+      }
+    </div>
+
+    @if (view().hasUnconverted) {
+      <p class="flex items-start gap-1.5 border-t border-gray-100 pt-3 text-[12px] text-gray-500" data-testid="events-revenue-unconverted-note">
+        <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+        {{ unconvertedNote }}
+      </p>
+    }
+  }
+</div>

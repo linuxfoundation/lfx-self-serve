@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
   <header class="flex flex-col gap-2" data-testid="org-groups-header">
     <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">
-      @if (companyName()) {
+      @if (contentVisible() && companyName()) {
         {{ committeeLabel.plural }} &mdash; {{ companyName() }}
       } @else {
         {{ committeeLabel.plural }}

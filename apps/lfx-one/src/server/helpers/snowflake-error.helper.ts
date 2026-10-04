@@ -25,6 +25,19 @@ export function isPoolQueueFullError(error: unknown): boolean {
   return /max waitingClients count exceeded/i.test(message);
 }
 
+/**
+ * True when Snowflake rejects an out-of-range `LIMIT` (002010) or `OFFSET` (002011) row count.
+ * `LIMIT`/`OFFSET` are interpolated literals, so this error is caused by the request rather than by
+ * Snowflake being unhealthy. Deliberately narrow: other compilation errors — notably "does not exist
+ * or not authorized", which can mean a revoked GRANT — must still reach the circuit breaker.
+ */
+export function isInvalidRowCountError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const errorCode = typeof error === 'object' && error !== null && 'code' in error ? String(error.code ?? '') : '';
+  const normalizedErrorCode = errorCode.replace(/^0+/, '');
+  return normalizedErrorCode === '2010' || normalizedErrorCode === '2011' || /invalid row count '[^']*' in (?:limit|result offset) clause/i.test(message);
+}
+
 /** True when Snowflake rejects a column reference, optionally for one expected identifier. */
 export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);

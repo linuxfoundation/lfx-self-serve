@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isInvalidIdentifierError, isMissingObjectError, isPoolQueueFullError } from './snowflake-error.helper';
+import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError } from './snowflake-error.helper';
 
 describe('isMissingObjectError', () => {
   it('matches a realistically wrapped missing-table error', () => {
@@ -82,5 +82,28 @@ describe('isPoolQueueFullError', () => {
 
   it('does not match a Snowflake query error', () => {
     expect(isPoolQueueFullError(new Error('Network error. Could not reach Snowflake.'))).toBe(false);
+  });
+});
+
+describe('isInvalidRowCountError', () => {
+  it.each([
+    ['OFFSET', "SQL compilation error:\nInvalid row count '10000000000000000000000000' in result offset clause", '002011'],
+    ['LIMIT', "SQL compilation error:\nInvalid row count '10000000000000000000000000' in limit clause", '002010'],
+  ])('matches an out-of-range %s row count by SDK code and by message', (_clause, message, code) => {
+    expect(isInvalidRowCountError(Object.assign(new Error('SQL compilation error'), { code }))).toBe(true);
+    expect(isInvalidRowCountError(new Error(`Snowflake query execution failed: ${message}`))).toBe(true);
+  });
+
+  it.each([
+    ["Object 'ANALYTICS.PLATINUM_LFX_ONE.EXAMPLE' does not exist or not authorized."],
+    ["SQL compilation error: error line 2 at position 13\ninvalid identifier 'MEMBER_EMAIL'"],
+    ["SQL compilation error:\nsyntax error line 1 at position 30 unexpected '-'."],
+    ['Network error. Could not reach Snowflake.'],
+  ])('does not match any other failure: %s', (message) => {
+    expect(isInvalidRowCountError(new Error(message))).toBe(false);
+  });
+
+  it('does not match an unrelated SDK error code', () => {
+    expect(isInvalidRowCountError(Object.assign(new Error('SQL compilation error'), { code: '002003' }))).toBe(false);
   });
 });

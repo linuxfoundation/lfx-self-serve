@@ -12,7 +12,7 @@
       <!-- Page Header -->
       <div class="flex items-start justify-between mt-3">
         <div>
-          <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
+          <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle }}</h1>
           <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
             {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
           </p>
@@ -83,12 +83,12 @@
                     data-testid="documents-search-input">
                   </lfx-input-text>
                 </div>
-                <div class="w-36 shrink-0 overflow-hidden">
+                <div class="w-40 shrink-0 overflow-hidden">
                   <lfx-select
                     [form]="filterForm"
-                    control="projectSource"
+                    control="projectDocumentSource"
                     size="small"
-                    [options]="projectSourceOptions"
+                    [options]="projectDocumentSourceOptions"
                     placeholder="All Sources"
                     [showClear]="true"
                     styleClass="w-full"
@@ -111,7 +111,7 @@
             </lfx-documents-table>
           </div>
         } @else {
-          <!-- ── ME / ORG lens — legacy aggregator UI ───────────────────────── -->
+          <!-- ── No project context — legacy aggregator UI ───────────────────── -->
           <!-- Source Tabs -->
           <lfx-card-tabs-bar
             [options]="sourceTabOptions"

@@ -42,7 +42,11 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[NATS Integration](./backend/nats-integration.md)** - Inter-service messaging and project resolution
 - **[Snowflake Integration](./backend/snowflake-integration.md)** - Singleton pool, query deduplication
 - **[Public Meetings](./backend/public-meetings.md)** - Unauthenticated meeting access, M2M tokens
+- **[Mentorship Mentee Registration](./backend/mentorship-mentee-registration.md)** - Register BFF, existing-profile pre-check, error mapping
+- **[Mentorship Mentor BFF](./backend/mentorship-mentor.md)** - Mentor route map, sub-router, controller and services, data source
+- **[Mentorship Admin BFF](./backend/mentorship-admin.md)** - Admin route map, sub-router, controller and services, shared mappers
 - **[Gatewaze Embed Proxy](./backend/gw-proxy.md)** - Wildcard BFF proxy, authorization, header policy, body limits
+- **[LFX Insights API Tokens](./backend/insights-tokens.md)** - PAT service proxy, M2M Key Contact check, fail-closed eligibility
 - **[Error Handling](./backend/error-handling-architecture.md)** - Comprehensive error handling patterns
 
 ### 📦 Shared Package Architecture
@@ -61,7 +65,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 ### New Developer Onboarding
 
 1. **[System Overview](../architecture.md)** - Start here for complete technical overview
-2. **[Development Setup](../../CLAUDE.md)** - Environment setup and development patterns
+2. **[Development Setup](../../AGENTS.md)** - Environment setup and development patterns
 3. **[Frontend Overview](./frontend/README.md)** - Frontend architecture and patterns
 4. **[Backend Overview](./backend/README.md)** - Backend architecture and services
 
@@ -120,7 +124,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 ## 📚 Related Documentation
 
 - **[Main Project README](../../README.md)** - Project overview and getting started
-- **[Development Guide](../../CLAUDE.md)** - Claude Code assistant and development patterns
+- **[Development Guide](../../AGENTS.md)** - Claude Code assistant and development patterns
 - **[Troubleshooting](../troubleshooting.md)** - Common issues and solutions
 - **[Testing Guide](./testing/e2e-testing.md)** - Comprehensive E2E testing with Playwright
 

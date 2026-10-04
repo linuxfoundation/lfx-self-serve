@@ -1,12 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
-  HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+  HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
+  HEALTH_METRICS_OVERVIEW_TILE_LINKS,
+  HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS,
 } from '../constants/health-metrics-overview.constants';
 
 import { formatIsoDateLabel } from './date-time.utils';
@@ -17,6 +24,7 @@ import type {
   HealthMetricsFinding,
   HealthMetricsOverviewClassification,
   HealthMetricsOverviewFindingGroupRows,
+  HealthMetricsOverviewFindingRoute,
   HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewRevenueStreamViewModel,
@@ -31,21 +39,74 @@ const KPI_STATUS_TO_CLASSIFICATION: Record<string, HealthMetricsOverviewClassifi
 };
 
 /**
- * Resolves an `hm_findings.link_target` key to a full PCC URL: `{pccBaseUrl}/project/{pccProjectId}
- * /reports/health-metrics{anchor}`. `pccBaseUrl` is passed in by the caller (e.g. `environment.urls.pcc`)
- * so this package stays environment-agnostic. Returns `undefined` for `code.insights` (which opens
- * externally via `buildLensAwareInsightsUrl` instead) or a missing `pccProjectId`, so a caller never
- * renders a broken link.
+ * Resolves an `eng.*` `link_target` to its in-app Engagement section: the tab route, the section key
+ * as the fragment, and the arrival filters. `undefined` for every other target.
  */
-export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectId: string, linkTarget: HealthMetricsOverviewLinkTarget): string | undefined {
-  const anchor = Object.hasOwn(HEALTH_METRICS_OVERVIEW_LINK_TARGETS, linkTarget)
-    ? HEALTH_METRICS_OVERVIEW_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS]
-    : undefined;
-  if (!anchor || !pccProjectId) {
+export function buildHealthMetricsOverviewEngagementRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS, linkTarget)) {
     return undefined;
   }
-  const base = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
-  return `${base}/project/${encodeURIComponent(pccProjectId)}/reports/health-metrics${anchor}`;
+  const spec = HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'engagement'], fragment: spec.section, queryParams: spec.queryParams };
+}
+
+/**
+ * Resolves an `evt.*` `link_target` to its in-app Events section: the tab route, the section key as
+ * the fragment, and the arrival params. `undefined` for every other target.
+ */
+export function buildHealthMetricsOverviewEventsRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS, linkTarget)) {
+    return undefined;
+  }
+  const spec = HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: spec.section, queryParams: spec.queryParams };
+}
+
+/**
+ * Resolves a `mem.*` `link_target` to its in-app Members section: the tab route, the section key as
+ * the fragment, and the arrival filters. `undefined` for every other target.
+ */
+export function buildHealthMetricsOverviewMembersRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS, linkTarget)) {
+    return undefined;
+  }
+  const spec = HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'members'], fragment: spec.section, queryParams: spec.queryParams };
+}
+
+/**
+ * Resolves a `non.*` `link_target` to its in-app Non-Members section: the tab route, the section key
+ * as the fragment, and the arrival filters. `undefined` for every other target.
+ */
+export function buildHealthMetricsOverviewNonMembersRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS, linkTarget)) {
+    return undefined;
+  }
+  const spec = HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'non-members'], fragment: spec.section, queryParams: spec.queryParams };
+}
+
+/**
+ * Resolves a `trn.*` `link_target` to its in-app Training section: the tab route, the section key as
+ * the fragment, and the arrival params. `undefined` for every other target.
+ */
+export function buildHealthMetricsOverviewTrainingRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS, linkTarget)) {
+    return undefined;
+  }
+  const spec = HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'training'], fragment: spec.section, queryParams: spec.queryParams };
+}
+
+/** Resolves a `link_target` to its in-app Level 2 route, Engagement, Events, Members, Non-Members then Training; `undefined` for the Insights target. */
+export function buildHealthMetricsOverviewTabRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  return (
+    buildHealthMetricsOverviewEngagementRoute(linkTarget) ??
+    buildHealthMetricsOverviewEventsRoute(linkTarget) ??
+    buildHealthMetricsOverviewMembersRoute(linkTarget) ??
+    buildHealthMetricsOverviewNonMembersRoute(linkTarget) ??
+    buildHealthMetricsOverviewTrainingRoute(linkTarget)
+  );
 }
 
 /**
@@ -53,7 +114,7 @@ export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectI
  * promises one row per area per foundation per period, and a foundation with no data still gets a
  * 'none' row (e.g. a Training tile reading "no data this period") — an area whose row is somehow
  * absent is omitted rather than rendered as an empty tile. `insightsUrl` is attached to the `code`
- * tile only.
+ * tile only, and an in-app `route` to each tile in `HEALTH_METRICS_OVERVIEW_TILE_LINKS`.
  */
 export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaState[], insightsUrl: string | undefined): HealthMetricsOverviewTileViewModel[] {
   const areaStateByKey = new Map(areaStates.map((state) => [state.area, state]));
@@ -62,6 +123,11 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
     if (!state) {
       return null;
     }
+    const tileLink = Object.hasOwn(HEALTH_METRICS_OVERVIEW_TILE_LINKS, areaMeta.key)
+      ? HEALTH_METRICS_OVERVIEW_TILE_LINKS[areaMeta.key as keyof typeof HEALTH_METRICS_OVERVIEW_TILE_LINKS]
+      : undefined;
+    // No drill-in link on a tile with no figure — there is nothing to drill into.
+    const linked = tileLink !== undefined && state.statValue !== HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE;
     const tile: HealthMetricsOverviewTileViewModel = {
       area: state.area,
       name: areaMeta.name,
@@ -72,6 +138,8 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
       showStatus: state.showStatus,
+      route: linked ? buildHealthMetricsOverviewTabRoute(tileLink.linkTarget) : undefined,
+      routeLabel: linked ? tileLink.label : undefined,
     };
     return tile;
   }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);
@@ -132,14 +200,18 @@ export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsO
   return revenue.streams.map((stream) => {
     const streamMeta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS as Record<string, { label: string; dotClass: string }>;
     const meta = Object.hasOwn(streamMeta, stream.key) ? streamMeta[stream.key] : UNKNOWN_REVENUE_STREAM_META;
-    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as
-    // `percent`, kept for the legend text) before sizing can leave the segmented bar short of 100%.
+    // A null stream is unmeasured — show "—" rather than a fabricated "$0 / 0%".
+    if (stream.value === null) {
+      return { key: stream.key, label: meta.label, dotClass: meta.dotClass, percentLabel: '—', widthPercent: 0, valueLabel: '—' };
+    }
+    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as the
+    // legend's percentLabel does) before sizing can leave the segmented bar short of 100%.
     const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
     return {
       key: stream.key,
       label: meta.label,
       dotClass: meta.dotClass,
-      percent: Math.round(widthPercent),
+      percentLabel: `${Math.round(widthPercent)}%`,
       widthPercent,
       valueLabel: formatCurrency(stream.value),
     };

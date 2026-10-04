@@ -118,7 +118,7 @@ export const CAMPAIGN_PACING_THRESHOLDS = {
  * Per-platform thresholds for the Optimize tab's action items.
  *
  * These values are EXACTLY what each platform's service used before they were named — this
- * constant changes no behaviour. It exists because the same two rules carry three different
+ * constant changes no behavior. It exists because the same two rules carry three different
  * numbers, and the divergence is accidental: nothing in the code or the tickets states a reason
  * why LinkedIn should flag a click-through rate Meta considers healthy, or why Reddit should
  * tolerate five times as many unconverted clicks as Meta.
@@ -770,7 +770,7 @@ export function canonicalMicrosoftMatchType(value: unknown): CampaignKeyword['ma
  * the platform as unconfigured rather than naming the real problem.
  *
  * The ORIGINAL value is still forwarded on the wire: upstream canonicalises it anyway, so rewriting
- * it there would be a second normalisation that could only drift. Use `canonicalMicrosoftMatchType`
+ * it there would be a second normalization that could only drift. Use `canonicalMicrosoftMatchType`
  * when the PascalCase form is needed for DISPLAY.
  */
 export function isMicrosoftMatchType(value: unknown): boolean {
@@ -795,8 +795,92 @@ export function isMicrosoftMatchType(value: unknown): boolean {
 export const MICROSOFT_MIN_CPC_BID = 0.01;
 export const MICROSOFT_MAX_CPC_BID = 1000;
 
-/** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalisation. */
+/** ISO 3166-1 alpha-2 shape for a Meta geo target, after normalization. */
 export const META_GEO_CODE_PATTERN = /^[A-Z]{2}$/;
+
+/**
+ * Zero-padded `YYYY-MM-DD` shape for a campaign flight date.
+ *
+ * Shape only — it says nothing about whether the day named actually exists, so a caller that is
+ * about to act on the result must still round-trip the parsed date (see
+ * `CampaignController.isReversedFlightWindow`, which this pattern exists for).
+ */
+export const ISO_CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Country code to Google Ads geo target constant id.
+ *
+ * A curated list, NOT every assigned alpha-2 code: campaign-service ports the same 30 entries in
+ * `internal/platform/googleads/geo.go` (`geoTargetConstants`) and refuses anything absent from it —
+ * "geo target %q is not a supported country code". A well-formed but unlisted code such as `PT` or
+ * `ZA` therefore fails the create upstream, which is why callers gate on this map rather than on
+ * `META_GEO_CODE_PATTERN` alone.
+ *
+ * Shared so the create adapter and the legacy proxy resolve against one list. Keep it in step with
+ * `geo.go` — a code present here and absent there becomes an over-refusal at dispatch.
+ */
+export const GOOGLE_ADS_GEO_TARGET_MAP: Record<string, string> = {
+  US: '2840',
+  CA: '2124',
+  GB: '2826',
+  DE: '2276',
+  FR: '2250',
+  JP: '2392',
+  AU: '2036',
+  IN: '2356',
+  BR: '2076',
+  CN: '2156',
+  KR: '2410',
+  NL: '2528',
+  SE: '2752',
+  CH: '2756',
+  IL: '2376',
+  SG: '2702',
+  IE: '2372',
+  ES: '2724',
+  IT: '2380',
+  AT: '2040',
+  FI: '2246',
+  NO: '2578',
+  DK: '2208',
+  BE: '2056',
+  PL: '2616',
+  CZ: '2203',
+  NZ: '2554',
+  TW: '2158',
+  HK: '2344',
+  MX: '2484',
+};
+
+/**
+ * Upstream's own bound on a Google Ads geo target list (`geo.go`'s `maxGeoTargets`), checked there
+ * BEFORE de-duplication — so a list that is only over the cap because it repeats a code is still
+ * refused.
+ */
+export const GOOGLE_ADS_MAX_GEO_TARGETS = 30;
+
+/**
+ * Micros per whole currency unit, the denomination google-ads bills budgets in.
+ *
+ * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
+ * SAME integer campaign-service computes and refuse exactly what it refuses. campaign-service
+ * scales the budget by this factor, rounds, and rejects a campaign whose rounded budget is zero
+ * micros ("campaign budget must be > 0"). A guard that compared the raw float against zero
+ * instead would pass a positive-but-sub-micro budget straight into that refusal, where the
+ * orchestrator reports it as the opaque "platform campaign creation failed".
+ */
+export const GOOGLE_ADS_MICROS_PER_UNIT = 1_000_000;
+
+/**
+ * LinkedIn's per-campaign budget floors, in USD.
+ *
+ * Mirrored from `internal/platform/linkedin/config.go` (`minDailyBudgetUSD` / `minLifetimeBudgetUSD`),
+ * which the client enforces before any POST. Which floor applies flips with the budget-type toggle,
+ * and nothing in the Implementation tab says the floor exists or that it moves tenfold — hence the
+ * named refusal that reads these.
+ */
+export const LINKEDIN_MIN_DAILY_BUDGET_USD = 10;
+export const LINKEDIN_MIN_LIFETIME_BUDGET_USD = 100;
 
 /**
  * The officially assigned ISO 3166-1 alpha-2 codes, derived from `COUNTRIES`.
@@ -842,13 +926,13 @@ export const META_INELIGIBLE_COUNTRIES: ReadonlySet<string> = new Set<string>([
 ]);
 
 /**
- * Normalise a list of Meta geo targets: trim, uppercase, drop mis-shaped codes, de-dupe.
+ * Normalize a list of Meta geo targets: trim, uppercase, drop mis-shaped codes, de-dupe.
  *
- * The single owner of geo normalisation. Every entry point — the chip add path, the brief seed
+ * The single owner of geo normalization. Every entry point — the chip add path, the brief seed
  * path, and the server's pre-flight validation — routes through this so the same input can never
  * mean two different things depending on which door it came through. That split is exactly what
  * let a stored `us` and a typed `US` become two chips AND two wire entries: the add path
- * normalised, the seed path did not, and the server uppercased without de-duping, so `["us","US"]`
+ * normalized, the seed path did not, and the server uppercased without de-duping, so `["us","US"]`
  * reached Meta as `["US","US"]`.
  *
  * De-duping is FIRST-SEEN order, matching campaign-service.
@@ -879,7 +963,7 @@ export function normalizeGeoTargets(codes: readonly string[] | null | undefined)
 }
 
 /**
- * Normalise geo codes for MICROSOFT: trim, upper-case and de-duplicate, WITHOUT applying Meta's
+ * Normalize geo codes for MICROSOFT: trim, upper-case and de-duplicate, WITHOUT applying Meta's
  * assigned-country allowlist.
  *
  * Separate from `normalizeGeoTargets` because that helper gates on `ASSIGNED_COUNTRY_CODES`, which
@@ -1266,7 +1350,7 @@ export const AUDIENCE_SIGNAL_ORDER = [
  * Bucket heading, caption, and accent per signal.
  *
  * `accentClass` is a Tailwind border utility, not a hex value: the accent has to invert with the
- * theme, and a literal colour baked in here would be the one thing on the page that does not.
+ * theme, and a literal color baked in here would be the one thing on the page that does not.
  *
  * Typed as a total `Record` so adding a member to `AudienceSignal` is a compile error here rather
  * than a bucket that renders with a blank heading.
@@ -1365,3 +1449,31 @@ export const AUDIENCE_UNION_EXACT_CAP = 25_000;
 
 /** Debounce on the list typeahead, so a keystroke is not a HubSpot search. */
 export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;
+
+/**
+ * Recognised `variant` values for `generate-email-copy`. Currently just the one: a differently
+ * styled draft of the same stage's copy (urgency/FOMO-forward structure) instead of the stage's
+ * normal copy. Like `stage`, campaign-service treats an unrecognised or absent value as "no
+ * variant requested" rather than an error, so this list is for the UI's own selector rather than
+ * wire validation.
+ */
+export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
+
+/**
+ * Most sponsor logos carried on a brief.
+ *
+ * Shared rather than helper-local because THREE sites enforce it — the scrape path, the
+ * controller's allow-list, and the client preview — and each entry is a server-side image fetch
+ * downstream. A cap that lives in one of them can silently diverge from the others, and the
+ * preview would then promise a logo the draft drops.
+ */
+export const MAX_SPONSORS = 10;
+
+/**
+ * Longest sponsor name forwarded, in CODE POINTS.
+ *
+ * Shared for the same reason as MAX_SPONSORS: the controller truncates and the preview must show
+ * the truncated form, or the preview promises a name the sent email does not carry. The name
+ * reaches a sent email as alt text and is caller-supplied display text with no upstream cap.
+ */
+export const MAX_SPONSOR_NAME_LENGTH = 100;

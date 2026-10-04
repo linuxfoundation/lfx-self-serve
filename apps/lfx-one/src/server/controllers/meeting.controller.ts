@@ -1,11 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  MAX_CUSTOM_DURATION,
+  MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_MAX_LENGTH,
+  MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
+  MIN_CUSTOM_DURATION,
+} from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
+  CancelMeetingOccurrenceRequest,
   Committee,
   CommitteeMember,
   CreateMeetingAttachmentRequest,
@@ -18,10 +25,11 @@ import {
   MeetingRegistrant,
   PresignAttachmentRequest,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -32,13 +40,7 @@ import {
 } from '../constants';
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
-import {
-  addInvitedStatusToMeeting,
-  applyOrganizerAndHostKeyResult,
-  enrichMeetingsWithCreatedBy,
-  isWithinHostKeyWindow,
-  stripHostKey,
-} from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
@@ -254,13 +256,11 @@ export class MeetingController {
   public async updateMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const meetingData: UpdateMeetingRequest = req.body;
-    const { editType } = req.query;
     const startTime = logger.startOperation(req, 'update_meeting', {
       meeting_id: uid,
       project_uid: meetingData?.project_uid,
       start_time: meetingData?.start_time,
       timezone: meetingData?.timezone,
-      edit_type: editType,
       body_size: JSON.stringify(req.body).length,
     });
 
@@ -276,12 +276,11 @@ export class MeetingController {
       }
 
       // Update the meeting
-      const response = await this.meetingService.updateMeeting(req, uid, meetingData, editType as 'single' | 'future');
+      const response = await this.meetingService.updateMeeting(req, uid, meetingData);
 
       // Log the success
       logger.success(req, 'update_meeting', startTime, {
         meeting_id: uid,
-        edit_type: editType || 'single',
         status_code: response.status,
       });
 
@@ -332,9 +331,12 @@ export class MeetingController {
 
   /**
    * DELETE /meetings/:uid/occurrences/:occurrenceId
+   *
+   * Accepts an optional `{ note }` body; upstream includes the note in the cancellation emails to guests.
    */
   public async cancelOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, occurrenceId } = req.params;
+    const body = (req.body ?? {}) as Partial<CancelMeetingOccurrenceRequest>;
     const startTime = logger.startOperation(req, 'cancel_occurrence', {
       meeting_id: uid,
       occurrence_id: occurrenceId,
@@ -361,13 +363,34 @@ export class MeetingController {
         return next(validationError);
       }
 
+      // Upstream rejects a non-object body; reading `note` off an array would cancel with the reason silently lost.
+      if (req.body != null && (typeof req.body !== 'object' || Array.isArray(req.body))) {
+        return next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'cancel_occurrence',
+            service: 'meeting_controller',
+          })
+        );
+      }
+
+      const note = typeof body.note === 'string' ? body.note.trim() : body.note;
+      if (note != null && (typeof note !== 'string' || codePointLength(note) > MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)) {
+        return next(
+          ServiceValidationError.forField('note', `Note must be text of at most ${MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH} characters`, {
+            operation: 'cancel_occurrence',
+            service: 'meeting_controller',
+          })
+        );
+      }
+
       // Cancel the occurrence
-      await this.meetingService.cancelOccurrence(req, uid, occurrenceId);
+      await this.meetingService.cancelOccurrence(req, uid, occurrenceId, note || undefined);
 
       // Log the success
       logger.success(req, 'cancel_occurrence', startTime, {
         meeting_id: uid,
         occurrence_id: occurrenceId,
+        has_note: !!note,
         status_code: 204,
       });
 
@@ -375,6 +398,94 @@ export class MeetingController {
       res.status(204).send();
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /meetings/:uid/occurrences/:occurrenceId
+   *
+   * Edits one occurrence of a recurring meeting: its start time and duration, and optionally its title
+   * and agenda. No recurrence is forwarded: upstream rejects one here unless `all_following_occurrences`
+   * is set, which would widen the change from this occurrence to every later one.
+   */
+  public async updateOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, occurrenceId } = req.params;
+    const body = (req.body ?? {}) as Partial<UpdateMeetingOccurrenceRequest>;
+    const startTime = logger.startOperation(req, 'update_occurrence', {
+      meeting_id: uid,
+      occurrence_id: occurrenceId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_occurrence',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const newStartTime = typeof body.start_time === 'string' ? body.start_time.trim() : '';
+      const newStartMs = Date.parse(newStartTime);
+      const duration = body.duration;
+      const fieldErrors: Record<string, string> = {};
+
+      if (!/^\d+$/.test(occurrenceId ?? '')) {
+        fieldErrors['occurrenceId'] = 'Occurrence ID must be a Unix timestamp';
+      }
+
+      const startTimeError = this.getOccurrenceStartTimeError(newStartTime, newStartMs, occurrenceId);
+      if (startTimeError) {
+        fieldErrors['start_time'] = startTimeError;
+      }
+
+      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_CUSTOM_DURATION) {
+        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_CUSTOM_DURATION}`;
+      }
+
+      const title = typeof body.title === 'string' ? body.title.trim() : body.title;
+      if (title !== undefined && (typeof title !== 'string' || title.length === 0)) {
+        fieldErrors['title'] = 'Title must be a non-empty string';
+      }
+
+      // Upstream drops an empty agenda, so an empty value would report success and change nothing.
+      const description = typeof body.description === 'string' ? body.description.trim() : body.description;
+      if (description !== undefined && (typeof description !== 'string' || description.length === 0 || description.length > MEETING_AGENDA_MAX_LENGTH)) {
+        fieldErrors['description'] = `Agenda must be between 1 and ${MEETING_AGENDA_MAX_LENGTH} characters`;
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        return next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Occurrence update validation failed', {
+            operation: 'update_occurrence',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const normalizedStartTime = new Date(newStartMs).toISOString();
+      await this.meetingService.updateOccurrence(req, uid, occurrenceId, {
+        start_time: normalizedStartTime,
+        duration: duration as number,
+        ...(title !== undefined && { title: title as string }),
+        ...(description !== undefined && { description: description as string }),
+      });
+
+      logger.success(req, 'update_occurrence', startTime, {
+        meeting_id: uid,
+        occurrence_id: occurrenceId,
+        start_time: normalizedStartTime,
+        duration,
+        title_changed: title !== undefined,
+        agenda_changed: description !== undefined,
+        status_code: 204,
+      });
+
+      res.status(204).send();
+    } catch (error) {
       next(error);
     }
   }
@@ -419,14 +530,15 @@ export class MeetingController {
         return;
       }
 
-      // `fail_on_partial` asks for a *complete* roster, and the upstream query-service applies no
-      // per-user grant filtering to v1_meeting_registrant — so both strict paths are authorized
-      // in MeetingService per the three-file pattern (docs/reviews/backend-checklist.md), never
-      // taken on the caller's word. Scoped to a committee it is the committee "import registrants"
-      // flow, with that flow's own rules and size cap; unscoped it is the composer's Guests
-      // section, which has to be an organizer of the meeting it is editing. Only the tolerant
-      // listing — the one that may come back short — goes straight through on the caller's own
-      // bearer token.
+      // `fail_on_partial` asks for a *complete* roster, which requires stricter business-logic
+      // authorization than the tolerant listing — both strict paths are authorized in MeetingService
+      // per the three-file pattern (docs/reviews/backend-checklist.md), never taken on the caller's
+      // word. The query-service FGA filtering applies to all paths, but complete-roster workflows
+      // enforce additional constraints: scoped to a committee it is the "import registrants" flow
+      // with its own rules and size cap; unscoped it is the composer's Guests section, which
+      // requires the organizer relation. Only the tolerant listing — the one that may come back
+      // short — goes straight through on the caller's own bearer token, relying on query-service
+      // FGA filtering as its authorization boundary.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
@@ -442,9 +554,11 @@ export class MeetingController {
       // Authorized first, and only on the tolerant branch: group attribution says which committee a
       // registrant sits on, which the branches above have already established the caller may see
       // — both authorize before they read. The tolerant listing has not, and never can: it goes
-      // through on the caller's own bearer token against a query-service that applies no grant
-      // filtering to `v1_meeting_registrant`, so without this an authenticated non-organizer
-      // replaying this URL with `include_committee=true` is handed the group attribution too. The
+      // through on the caller's own bearer token; query-service FGA filtering is the authorization
+      // boundary for that listing. Group attribution adds committee-membership data that goes beyond
+      // what the viewer relation protects, so without this an authenticated non-organizer replaying
+      // this URL with `include_committee=true` would receive committee attribution they aren't
+      // entitled to. The
       // check sits inside the try on the same reasoning as the fetch below — this listing's
       // contract is that it may come back short, not that it errors — so a denial, and an
       // organizer check that could not be resolved, both leave the rows unenriched.
@@ -2264,5 +2378,55 @@ export class MeetingController {
     // from the absent header — and anything past `2^53 - 1` has already lost precision, so the value
     // recorded is not the one the header carried.
     return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+
+  /** Returns the validation message for a rescheduled occurrence start, or `null` when it is usable. */
+  /**
+   * A past start is accepted only when it is the occurrence's own start (its id is that instant in Unix
+   * seconds): upstream needs a start on every occurrence write, so a title or agenda edit during a live
+   * occurrence resends it unchanged. Upstream still rejects one for an occurrence that has ended.
+   */
+  private getOccurrenceStartTimeError(value: string, parsedMs: number, occurrenceId: string): string | null {
+    if (!value) {
+      return 'Start time is required';
+    }
+
+    if (Number.isNaN(parsedMs) || !this.isRfc3339CalendarDateTime(value)) {
+      return 'Start time must be an RFC3339 date-time';
+    }
+
+    if (parsedMs <= Date.now() && parsedMs !== Number(occurrenceId) * 1000) {
+      return 'Start time must be in the future';
+    }
+
+    return null;
+  }
+
+  /**
+   * `Date.parse` rolls impossible components forward (`2030-02-30` becomes March 2, `T24:00` the next
+   * day), so the occurrence would silently move to a day the caller never asked for. Each component is
+   * checked against the real calendar instead.
+   */
+  private isRfc3339CalendarDateTime(value: string): boolean {
+    const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/.exec(value);
+    if (!match) {
+      return false;
+    }
+
+    const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+    const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+    const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+    const calendarDay = new Date(Date.UTC(year, month - 1, day));
+
+    return (
+      calendarDay.getUTCFullYear() === year &&
+      calendarDay.getUTCMonth() === month - 1 &&
+      calendarDay.getUTCDate() === day &&
+      hour <= 23 &&
+      minute <= 59 &&
+      second <= 59 &&
+      offsetHour <= 23 &&
+      offsetMinute <= 59
+    );
   }
 }

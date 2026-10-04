@@ -4,14 +4,69 @@
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS,
+  HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
+  HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+  HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS,
   SALESFORCE_ACCOUNT_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type { HealthMetricsEngagementGroupTypeFilter } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEngagementGroupTypeFilter,
+  HealthMetricsEventsOrganizationsSegment,
+  HealthMetricsMembersAtRiskFilter,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersMovementListType,
+  HealthMetricsMembersNpsCategory,
+  HealthMetricsNonMembersOrgsFilter,
+  HealthMetricsTrainingCoursesType,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
+import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
+import {
+  assertHealthMetricsRange,
+  getStringQueryParam,
+  getValidatedClassification,
+  getValidatedPeriod,
+  parseEntityType,
+  parseOffsetPagination,
+} from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
+import { HealthMetricsEventsService, isSupportedEventsRange } from '../services/health-metrics-events.service';
+import { HealthMetricsMembersService, isSupportedMembersRange } from '../services/health-metrics-members.service';
+import { HealthMetricsNonMembersService, isSupportedNonMembersRange } from '../services/health-metrics-non-members.service';
+import { HealthMetricsTrainingService, isSupportedTrainingRange } from '../services/health-metrics-training.service';
 import { logger } from '../services/logger.service';
 import { OrgInvolvementService } from '../services/org-involvement.service';
 import { OrganizationService } from '../services/organization.service';
@@ -22,8 +77,33 @@ import { getEffectiveEmail } from '../utils/auth-helper';
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
 
+/** Allowed pattern for an event id query parameter. */
+const EVENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
 /** Group-type cuts the Engagement group-attendance filter accepts. */
 const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => filter.key));
+
+/** Membership segments the Events organizations table accepts. */
+const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
+const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
+
+/** Bridge bars whose organizations the Members movements list serves. */
+const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
+
+/** NPS categories the Members directory filter accepts. */
+const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
+
+/** Aging buckets the Members at-risk filter accepts, `all` included. */
+const MEMBERS_AT_RISK_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS.map((option) => option.id));
+
+/** Cohorts the Members board-attendance read accepts. */
+const MEMBERS_BOARD_COHORTS: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_BOARD_COHORTS);
+
+/** Filters the Non-Members company participation table accepts, `all` included. */
+const NON_MEMBERS_ORGS_FILTERS: ReadonlySet<string> = new Set(HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS);
+
+/** A four-digit calendar year, the only shape the movements list's `year` accepts. */
+const YEAR_PATTERN = /^\d{4}$/;
 
 /** Maximum allowed length for foundationSlug query parameter */
 const NAME_MAX_LENGTH = 200;
@@ -38,6 +118,10 @@ export class AnalyticsController {
   private readonly orgInvolvementService: OrgInvolvementService;
   private readonly projectService: ProjectService;
   private readonly healthMetricsEngagementService: HealthMetricsEngagementService;
+  private readonly healthMetricsEventsService: HealthMetricsEventsService;
+  private readonly healthMetricsMembersService: HealthMetricsMembersService;
+  private readonly healthMetricsNonMembersService: HealthMetricsNonMembersService;
+  private readonly healthMetricsTrainingService: HealthMetricsTrainingService;
 
   public constructor() {
     this.userService = new UserService();
@@ -45,6 +129,10 @@ export class AnalyticsController {
     this.orgInvolvementService = new OrgInvolvementService();
     this.projectService = new ProjectService();
     this.healthMetricsEngagementService = new HealthMetricsEngagementService();
+    this.healthMetricsEventsService = new HealthMetricsEventsService();
+    this.healthMetricsMembersService = new HealthMetricsMembersService();
+    this.healthMetricsNonMembersService = new HealthMetricsNonMembersService();
+    this.healthMetricsTrainingService = new HealthMetricsTrainingService();
   }
 
   /**
@@ -3225,16 +3313,21 @@ export class AnalyticsController {
    * accounts — one denormalised row per account_id with cdev mapping
    * and highest active corporate membership tier.
    * Query params: accountIds (required) - Comma-separated Salesforce account IDs (max 50)
+   *
+   * Only accounts the caller holds read permission on are resolved (`filterReadableAccountIds`, one
+   * batched `b2b_org#auditor` check); the rest are dropped rather than failing the whole org-selector enrichment.
    */
   public async getOrgLensAccountContext(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_lens_account_context');
 
     try {
       const accountIds = this.parseAccountIdsParam(req, 'get_org_lens_account_context');
-      const response = await this.organizationService.getOrgLensAccountContext(accountIds);
+      const readableIds = await filterReadableAccountIds(req, accountIds, 'get_org_lens_account_context');
+      const response = readableIds.length > 0 ? await this.organizationService.getOrgLensAccountContext(readableIds) : [];
 
       logger.success(req, 'get_org_lens_account_context', startTime, {
         requested_count: accountIds.length,
+        readable_count: readableIds.length,
         resolved_count: response.length,
       });
 
@@ -3446,6 +3539,820 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/events-registration-forecast` — every upcoming event's forecast headline.
+   * The model is a snapshot of now, so no `range` param reaches the wire.
+   */
+  public async getEventsRegistrationForecast(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registration_forecast');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registration_forecast');
+
+      const response = await this.healthMetricsEventsService.getRegistrationForecast(req, { foundationSlug });
+
+      logger.success(req, 'get_events_registration_forecast', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-registration-forecast-curve` — one event's pacing curve per format.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsRegistrationForecastCurve(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registration_forecast_curve');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registration_forecast_curve');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_registration_forecast_curve',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_registration_forecast_curve',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getRegistrationForecastCurve(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_registration_forecast_curve', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        format_count: response.formats.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-past` — every closed event in the four periods, with each period's
+   * header totals. The client picks the period, so no `range` param reaches the wire.
+   */
+  public async getEventsPast(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_past');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_past');
+
+      const response = await this.healthMetricsEventsService.getPastEvents(req, { foundationSlug });
+
+      logger.success(req, 'get_events_past', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-at-a-glance` — the foundation's reach in each of the four periods.
+   * The client picks the period, so no `range` param reaches the wire.
+   */
+  public async getEventsAtAGlance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_at_a_glance');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_at_a_glance');
+
+      const response = await this.healthMetricsEventsService.getAtAGlance(req, { foundationSlug });
+
+      logger.success(req, 'get_events_at_a_glance', startTime, {
+        foundation_slug: foundationSlug,
+        has_events: response.hasEvents,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-registrations-growth` — every year the foundation held events; the section is not period-scoped. */
+  public async getEventsRegistrationsGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_registrations_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_registrations_growth');
+
+      const response = await this.healthMetricsEventsService.getRegistrationsGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_events_registrations_growth', startTime, {
+        foundation_slug: foundationSlug,
+        year_count: response.years.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-revenue` — each period's revenue headline and every event in the four periods. */
+  public async getEventsRevenue(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_revenue');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_revenue');
+
+      const response = await this.healthMetricsEventsService.getRevenue(req, { foundationSlug });
+
+      logger.success(req, 'get_events_revenue', startTime, {
+        foundation_slug: foundationSlug,
+        event_count: response.events.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-speakers` — each period's proposal pipeline, the top organizations and the latest proposals. */
+  public async getEventsSpeakers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_speakers');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_speakers');
+
+      const response = await this.healthMetricsEventsService.getSpeakers(req, { foundationSlug });
+
+      logger.success(req, 'get_events_speakers', startTime, {
+        foundation_slug: foundationSlug,
+        organization_count: response.organizations.length,
+        proposal_count: response.proposals.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-sponsorship` — each period's sponsorship revenue, goal, package counts and tiers. */
+  public async getEventsSponsorship(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_sponsorship');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_sponsorship');
+
+      const response = await this.healthMetricsEventsService.getSponsorship(req, { foundationSlug });
+
+      logger.success(req, 'get_events_sponsorship', startTime, { foundation_slug: foundationSlug, period_count: response.periods.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-geography` — each period's countries represented and top countries by registrations. */
+  public async getEventsGeography(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_geography');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_geography');
+
+      const response = await this.healthMetricsEventsService.getGeography(req, { foundationSlug });
+
+      logger.success(req, 'get_events_geography', startTime, { foundation_slug: foundationSlug, period_count: response.periods.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-tiers` — every year's members, new members and revenue per tier, and the foundation's revenue per period. */
+  public async getMembersTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_tiers');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_tiers');
+
+      const response = await this.healthMetricsMembersService.getTiers(req, { foundationSlug });
+
+      logger.success(req, 'get_members_tiers', startTime, { foundation_slug: foundationSlug, row_count: response.rows.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-bridge` — every year's start total, movements and closing total. */
+  public async getMembersBridge(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_bridge');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_bridge');
+
+      const response = await this.healthMetricsMembersService.getBridge(req, { foundationSlug });
+
+      logger.success(req, 'get_members_bridge', startTime, { foundation_slug: foundationSlug, step_count: response.steps.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-movements` — one page of the organizations behind a bridge bar. */
+  public async getMembersMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_movements');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_movements');
+
+      const rawYear = getStringQueryParam(req, 'year') ?? '';
+      if (!YEAR_PATTERN.test(rawYear)) {
+        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_movements' });
+      }
+
+      const movementType = getStringQueryParam(req, 'movementType') ?? '';
+      if (!MEMBERS_MOVEMENT_LIST_TYPES.has(movementType)) {
+        throw ServiceValidationError.forField('movementType', `Invalid movementType value. Allowed: ${[...MEMBERS_MOVEMENT_LIST_TYPES].join(', ')}`, {
+          operation: 'get_members_movements',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+      });
+
+      const year = Number(rawYear);
+      const response = await this.healthMetricsMembersService.getMovements(req, {
+        foundationSlug,
+        year,
+        movementType: movementType as HealthMetricsMembersMovementListType,
+        offset,
+        pageSize,
+      });
+
+      logger.success(req, 'get_members_movements', startTime, {
+        foundation_slug: foundationSlug,
+        year,
+        movement_type: movementType,
+        row_count: response.rows.length,
+        total_records: response.totalRecords,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-directory` — one page of the foundation's members, with the period's activity. */
+  public async getMembersDirectory(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_directory');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_directory');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_members_directory');
+      if (!isSupportedMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'The members directory has no data for this range', { operation: 'get_members_directory' });
+      }
+
+      const nps = getStringQueryParam(req, 'nps') ?? '';
+      if (nps && !MEMBERS_DIRECTORY_NPS_CATEGORIES.has(nps)) {
+        throw ServiceValidationError.forField('nps', `Invalid nps value. Allowed: ${[...MEMBERS_DIRECTORY_NPS_CATEGORIES].join(', ')}`, {
+          operation: 'get_members_directory',
+        });
+      }
+
+      // Tiers are free text in the view, so the value is only bound, never matched against a list.
+      const tier = (getStringQueryParam(req, 'tier') ?? '').trim();
+      if (tier.length > HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH) {
+        throw ServiceValidationError.forField('tier', 'tier is too long', { operation: 'get_members_directory' });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getDirectory(req, {
+        foundationSlug,
+        range,
+        tier,
+        nps: nps as HealthMetricsMembersNpsCategory | '',
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match member names, which the request URL also logs.
+      logger.success(req, 'get_members_directory', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        has_tier: tier.length > 0,
+        nps: nps || null,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-directory-tiers` — the foundation's tiers for the directory's tier filter. */
+  public async getMembersDirectoryTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_directory_tiers');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_directory_tiers');
+      const response = await this.healthMetricsMembersService.getDirectoryTiers(req, { foundationSlug });
+
+      logger.success(req, 'get_members_directory_tiers', startTime, { foundation_slug: foundationSlug, tier_count: response.tiers.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-at-risk` — the foundation's members 60+ days overdue, one page at a time, with the balance totals. */
+  public async getMembersAtRisk(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_at_risk');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_at_risk');
+
+      const bucket = getStringQueryParam(req, 'bucket') || 'all';
+      if (!MEMBERS_AT_RISK_FILTERS.has(bucket)) {
+        throw ServiceValidationError.forField('bucket', `Invalid bucket value. Allowed: ${[...MEMBERS_AT_RISK_FILTERS].join(', ')}`, {
+          operation: 'get_members_at_risk',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getAtRisk(req, {
+        foundationSlug,
+        bucket: bucket as HealthMetricsMembersAtRiskFilter,
+        offset,
+        pageSize,
+      });
+
+      logger.success(req, 'get_members_at_risk', startTime, {
+        foundation_slug: foundationSlug,
+        bucket,
+        total_records: response.totalRecords,
+        member_count: response.summary.memberCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-renewals` — the foundation's renewals in the next 90 days, one page at a time, with the window's totals. */
+  public async getMembersRenewals(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_renewals');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_renewals');
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getRenewals(req, { foundationSlug, offset, pageSize });
+
+      logger.success(req, 'get_members_renewals', startTime, {
+        foundation_slug: foundationSlug,
+        total_records: response.totalRecords,
+        without_dues_count: response.summary.withoutDuesCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-board-attendance` — both cohorts' figures for a period, and one page of a cohort's meetings. */
+  public async getMembersBoardAttendance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_board_attendance');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_board_attendance');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_members_board_attendance');
+      if (!isSupportedMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Board attendance has no data for this range', { operation: 'get_members_board_attendance' });
+      }
+
+      const cohort = getStringQueryParam(req, 'cohort') || HEALTH_METRICS_MEMBERS_BOARD_COHORTS[0];
+      if (!MEMBERS_BOARD_COHORTS.has(cohort)) {
+        throw ServiceValidationError.forField('cohort', `Invalid cohort value. Allowed: ${[...MEMBERS_BOARD_COHORTS].join(', ')}`, {
+          operation: 'get_members_board_attendance',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsMembersService.getBoardAttendance(req, {
+        foundationSlug,
+        range,
+        cohort: cohort as HealthMetricsMembersBoardCohort,
+        offset,
+        pageSize,
+      });
+
+      logger.success(req, 'get_members_board_attendance', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        cohort,
+        total_records: response.totalRecords,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-nps` — member satisfaction per audience surveyed in a period, and one audience's waves. */
+  public async getMembersNps(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_nps');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_nps');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_members_nps');
+      if (!isSupportedMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Member satisfaction has no data for this range', { operation: 'get_members_nps' });
+      }
+
+      // Audiences are the view's own values, so the read matches against them rather than an allowlist.
+      const audience = (getStringQueryParam(req, 'audience') ?? '').trim().slice(0, HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH) || null;
+
+      const response = await this.healthMetricsMembersService.getNps(req, { foundationSlug, range, audience });
+
+      logger.success(req, 'get_members_nps', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        audience_count: response.audiences.length,
+        trend_count: response.trend.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-churn` — every year's revenue and logo churn, overall and per tier. */
+  public async getMembersChurn(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_churn');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_churn');
+
+      const response = await this.healthMetricsMembersService.getChurn(req, { foundationSlug });
+
+      logger.success(req, 'get_members_churn', startTime, {
+        foundation_slug: foundationSlug,
+        year_count: response.years.length,
+        tier_count: response.tiers.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-churn-departures` — one page of the memberships that lapsed in a year. */
+  public async getMembersChurnDepartures(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_churn_departures');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_churn_departures');
+
+      const rawYear = getStringQueryParam(req, 'year') ?? '';
+      if (!YEAR_PATTERN.test(rawYear)) {
+        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_churn_departures' });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+      });
+
+      const year = Number(rawYear);
+      const response = await this.healthMetricsMembersService.getChurnDepartures(req, { foundationSlug, year, offset, pageSize });
+
+      logger.success(req, 'get_members_churn_departures', startTime, {
+        foundation_slug: foundationSlug,
+        year,
+        row_count: response.rows.length,
+        total_records: response.totalRecords,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/events-organizations` — one page of the organizations active at the foundation's events in a period. */
+  public async getEventsOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_organizations');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_organizations');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_events_organizations');
+      if (!isSupportedEventsRange(range)) {
+        throw ServiceValidationError.forField('range', 'Organizations at events have no data for this range', { operation: 'get_events_organizations' });
+      }
+
+      const segment = getStringQueryParam(req, 'segment') || 'all';
+      if (!EVENTS_ORGANIZATIONS_SEGMENTS.has(segment)) {
+        throw ServiceValidationError.forField('segment', `Invalid segment value. Allowed: ${[...EVENTS_ORGANIZATIONS_SEGMENTS].join(', ')}`, {
+          operation: 'get_events_organizations',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_EVENTS_ORGANIZATIONS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsEventsService.getOrganizations(req, {
+        foundationSlug,
+        range,
+        segment: segment as HealthMetricsEventsOrganizationsSegment,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
+      logger.success(req, 'get_events_organizations', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        segment,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-orgs` — one page of the non-member organizations active in a period. */
+  public async getNonMembersOrgs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_orgs');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_orgs');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_orgs');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Company participation has no data for this range', { operation: 'get_non_members_orgs' });
+      }
+
+      const filter = getStringQueryParam(req, 'filter') || 'all';
+      if (!NON_MEMBERS_ORGS_FILTERS.has(filter)) {
+        throw ServiceValidationError.forField('filter', `Invalid filter value. Allowed: ${[...NON_MEMBERS_ORGS_FILTERS].join(', ')}`, {
+          operation: 'get_non_members_orgs',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_NON_MEMBERS_ORGS_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsNonMembersService.getOrgs(req, {
+        foundationSlug,
+        range,
+        filter: filter as HealthMetricsNonMembersOrgsFilter,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match organization names, which the request URL also logs.
+      logger.success(req, 'get_non_members_orgs', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        filter,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-people` — one page of the non-member individuals who attended meetings in a period. */
+  public async getNonMembersPeople(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_people');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_people');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_people');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'People has no data for this range', { operation: 'get_non_members_people' });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsNonMembersService.getPeople(req, { foundationSlug, range, search, offset, pageSize });
+
+      // Counts only: the search text can name a person, so it stays out of this metadata.
+      logger.success(req, 'get_non_members_people', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/non-members-conversion` — the period's pipeline estimate and its warmest high-fit organizations. */
+  public async getNonMembersConversion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_non_members_conversion');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_non_members_conversion');
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_non_members_conversion');
+      if (!isSupportedNonMembersRange(range)) {
+        throw ServiceValidationError.forField('range', 'Conversion opportunity has no data for this range', { operation: 'get_non_members_conversion' });
+      }
+
+      const response = await this.healthMetricsNonMembersService.getConversion(req, { foundationSlug, range });
+
+      // Counts only: the warmest list names organizations, so it stays out of this metadata.
+      logger.success(req, 'get_non_members_conversion', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        measured: response.measured,
+        high_fit_count: response.highFitCount,
+        warmest_count: response.warmest.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-presence` — whether the foundation runs a training programme, which decides the Training tab's shell. */
+  public async getTrainingPresence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_presence');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_presence');
+
+      const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
+
+      logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-enrollment` — every period's enrollment, certification and revenue KPIs, by-type split and yearly trend. */
+  public async getTrainingEnrollment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_enrollment');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_enrollment');
+
+      const response = await this.healthMetricsTrainingService.getEnrollment(req, { foundationSlug });
+
+      logger.success(req, 'get_training_enrollment', startTime, {
+        foundation_slug: foundationSlug,
+        measured: response.measured,
+        delivery_type_count: response.periods.YTD.byType.length,
+        trend_year_count: response.trend.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/training-courses` — one page of the foundation's courses with enrollments in a period. */
+  public async getTrainingCourses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_courses');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_courses');
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_training_courses');
+      if (!isSupportedTrainingRange(range)) {
+        throw ServiceValidationError.forField('range', 'Training courses have no data for this range', { operation: 'get_training_courses' });
+      }
+
+      const type = getStringQueryParam(req, 'type') || 'all';
+      if (!TRAINING_COURSES_TYPES.has(type)) {
+        throw ServiceValidationError.forField('type', `Invalid type value. Allowed: ${[...TRAINING_COURSES_TYPES].join(', ')}`, {
+          operation: 'get_training_courses',
+        });
+      }
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim().slice(0, HEALTH_METRICS_TRAINING_COURSES_MAX_SEARCH_LENGTH);
+      const { pageSize, offset } = parseOffsetPagination(req, {
+        defaultPageSize: HEALTH_METRICS_TRAINING_COURSES_PAGE_SIZE,
+        maxPageSize: HEALTH_METRICS_TRAINING_COURSES_MAX_PAGE_SIZE,
+      });
+
+      const response = await this.healthMetricsTrainingService.getCourses(req, {
+        foundationSlug,
+        range,
+        type: type as HealthMetricsTrainingCoursesType,
+        search,
+        offset,
+        pageSize,
+      });
+
+      // The search text stays out of this metadata; it can only match course names, which the request URL also logs.
+      logger.success(req, 'get_training_courses', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        type,
+        has_search: search.length > 0,
+        total_records: response.totalRecords,
+        scope_total: response.scopeTotal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** A required, well-formed `foundationSlug` query param for the Events handlers. */
+  private getValidatedFoundationSlug(req: Request, operation: string): string {
+    const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+    if (!foundationSlug) {
+      throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', { operation });
+    }
+    if (!SLUG_PATTERN.test(foundationSlug)) {
+      throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', { operation });
+    }
+
+    return foundationSlug;
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */
@@ -3490,7 +4397,10 @@ export class AnalyticsController {
     return slugs;
   }
 
-  /** Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format. */
+  /**
+   * Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format.
+   * Every route that uses it sits behind `requireOrgAnalyticsAccess`, which already admits only the canonical 18-char id.
+   */
   private parseAccountIdParam(req: Request, operation: string): string {
     const accountId = getStringQueryParam(req, 'accountId');
     if (!accountId) {
@@ -3506,6 +4416,7 @@ export class AnalyticsController {
    * Parse and validate the `accountIds` query parameter (comma-separated
    * Salesforce account IDs). De-duplicates, enforces a 50-id ceiling, and
    * checks each id matches the Salesforce 15/18-char alphanumeric format.
+   * `filterReadableAccountIds` then keeps only canonical 18-char ids the caller holds `b2b_org#auditor` on.
    */
   private parseAccountIdsParam(req: Request, operation: string): string[] {
     const raw = getStringQueryParam(req, 'accountIds');

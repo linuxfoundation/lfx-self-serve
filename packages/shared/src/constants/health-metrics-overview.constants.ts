@@ -4,11 +4,23 @@
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthOverviewKpisRow, HealthOverviewRevenueRow } from '../interfaces/health-metrics-overview.interface';
+import type {
+  HealthMetricsOverviewArea,
+  HealthMetricsOverviewEngagementLinkSpec,
+  HealthMetricsOverviewEventsLinkSpec,
+  HealthMetricsOverviewMembersLinkSpec,
+  HealthMetricsOverviewNonMembersLinkSpec,
+  HealthMetricsOverviewTileLinkSpec,
+  HealthMetricsOverviewTrainingLinkSpec,
+  HealthOverviewKpisRow,
+  HealthOverviewRevenueRow,
+} from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
- * `link_target` prefixes in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS} (`eng.*`, `evt.*`, ...).
+ * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS},
+ * {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS}, {@link HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS},
+ * {@link HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS}.
  * Order here is the tile-strip render order — never re-sorted.
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
@@ -83,38 +95,79 @@ export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
 ] as const satisfies readonly (keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[];
 
 /**
- * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
- * A one-line map so retiring a link when its Level 2 page ships is a one-line change.
- * `code.insights` is not here — it opens LFX Insights externally via `buildLensAwareInsightsUrl`.
+ * `eng.*` `link_target` → the Engagement section that owns it, plus the section filters to apply on
+ * arrival. A filter left `null` is cleared, so a stale cut carried over in the URL cannot hide the
+ * responsible entity.
  */
-export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
-  'eng.board': '/meetings#board',
-  'eng.groups': '/meetings#committees',
-  'eng.orgs': '/meetings#organizations',
-  'eng.participation': '/meetings',
-  'evt.forecast': '/events#forecast',
-  'mem.atrisk': '/members#at-risk',
-  'mem.renewals': '/members#renewals',
-  'mem.list': '/members',
-  'non.orgs': '/non-members',
-  'trn.enrollment': '/training',
-} as const;
+export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS = {
+  'eng.board': { section: 'committees', queryParams: { groupType: 'gov', groupPage: null } },
+  'eng.groups': { section: 'committees', queryParams: { groupType: null, groupPage: null } },
+  'eng.orgs': { section: 'orgs', queryParams: { orgFilter: null } },
+  'eng.participation': { section: 'participation', queryParams: { partMode: null } },
+} as const satisfies Record<string, HealthMetricsOverviewEngagementLinkSpec>;
 
-/** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */
+/**
+ * `evt.*` `link_target` → the Events section that owns it. `event` is cleared until a finding carries
+ * the event it names, so a stale pick in the URL cannot stand in for it.
+ */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS = {
+  'evt.forecast': { section: 'forecast', queryParams: { event: null } },
+} as const satisfies Record<string, HealthMetricsOverviewEventsLinkSpec>;
+
+/**
+ * `mem.*` `link_target` → the Members section that owns it. Its bucket, tier, NPS, search and page
+ * are cleared, so a stale cut carried over in the URL cannot hide the member a finding names.
+ */
+export const HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS = {
+  'mem.atrisk': { section: 'risk', queryParams: { riskBucket: null, riskPage: null } },
+  'mem.renewals': { section: 'renewals', queryParams: { renewalsPage: null } },
+  'mem.list': { section: 'list', queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null } },
+} as const satisfies Record<string, HealthMetricsOverviewMembersLinkSpec>;
+
+/**
+ * `non.*` `link_target` → the Non-Members section that owns it. A fit finding lands on the High fit
+ * filter with search and page cleared, so a stale cut in the URL cannot hide the organizations it counts.
+ */
+export const HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS = {
+  'non.orgs': { section: 'orgs', queryParams: { nonFit: 'high-fit', nonSearch: null, nonPage: null } },
+  'non.conversion': { section: 'conversion', queryParams: {} },
+} as const satisfies Record<string, HealthMetricsOverviewNonMembersLinkSpec>;
+
+/** `trn.*` `link_target` → the Training section that owns it; `trn.enrollment` lands on `#enroll`. */
+export const HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS = {
+  'trn.enrollment': { section: 'enroll', queryParams: {} },
+} as const satisfies Record<string, HealthMetricsOverviewTrainingLinkSpec>;
+
+/** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
+export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
+
+/** Each linked tile's target and link text; Engagement opens the unfiltered group attendance, the source of its counts. */
+export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
+  eng: { linkTarget: 'eng.groups', label: 'View groups' },
+  evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
+  mem: { linkTarget: 'mem.list', label: 'View members' },
+  non: { linkTarget: 'non.orgs', label: 'View organizations' },
+  trn: { linkTarget: 'trn.enrollment', label: 'View enrollment' },
+} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
+
+/** The one `link_target` that opens externally (LFX Insights) instead of an in-app tab. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
 
 /**
- * Areas `getHealthOverviewKpis` returns live rows for (LFXV2-3365): the service builds its returned
- * rows by iterating this set, and the component uses the same set to decide when a missing/failed
- * row means "show a neutral placeholder" rather than "fall back to the fixture".
+ * Areas `ProjectService.buildHealthOverviewKpiAreaStates` builds from `HEALTH_OVERVIEW_KPIS` columns; the
+ * iteration drops any area with no builder (`eng` is built separately from `ENGAGEMENT_GROUP_ATTENDANCE`).
  */
 export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set([
+  'eng',
   'evt',
   'trn',
   'mem',
   'non',
   'code',
 ]);
+
+/** Areas whose tile never renders a status chip — live or neutral — since no rule classifies them yet. */
+export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['eng']);
 
 /**
  * Period-suffixed `HEALTH_OVERVIEW_KPIS` columns, in their aliased uppercase form. `ProjectService`
@@ -150,8 +203,8 @@ export const HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS = {
   training: { label: 'Training', dotClass: 'bg-violet-500' },
 } as const;
 
-/** Fixed 5-tag "Data sources" list in the rail — same tags for every foundation, per `railHTML()`. */
-export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights'] as const;
+/** Fixed "Data sources" list in the rail — only the sources the Overview actually reads today. */
+export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'LFX Insights'] as const;
 
 /**
  * Period selector (design's `.per`) — the 4 most recent options from {@link buildHealthMetricsYearOptions}

@@ -7,6 +7,12 @@ export * from './project.interface';
 // Committee interfaces
 export * from './committee.interface';
 
+// Compact Valkey cache storage shapes (GH-1906)
+export * from './compact-cache.interface';
+
+// Compact Valkey storage shapes for the per-org Org Lens caches (GH-1906)
+export * from './org-cache-compact.interface';
+
 // Member interfaces
 export * from './member.interface';
 
@@ -180,6 +186,8 @@ export * from './my-document.interface';
 
 // API Gateway user profile interfaces
 export * from './api-gateway-user-profile.interface';
+// v1 user-service email sync (upsert) payload interfaces
+export * from './user-service-email-sync.interface';
 // Impersonation interfaces
 export * from './impersonation.interface';
 
@@ -189,8 +197,23 @@ export * from './health-metrics.interface';
 // Health Metrics Engagement page (LFXV2-3366) interfaces
 export * from './health-metrics-engagement.interface';
 
+// Health Metrics Events page interfaces
+export * from './health-metrics-events.interface';
+
+// Health Metrics Level 2 tab shell interfaces
+export * from './health-metrics-l2.interface';
+
+// Health Metrics Members page interfaces
+export * from './health-metrics-members.interface';
+
+// Health Metrics Non-Members page interfaces
+export * from './health-metrics-non-members.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
+
+// Health Metrics Training page interfaces
+export * from './health-metrics-training.interface';
 
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
@@ -246,6 +269,9 @@ export * from './org-key-contacts.internal.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
 
+// Org Lens per-caller cache stored shapes (GH-1906)
+export * from './org-lens-cache.interface';
+
 // Org Lens Access tab (spec 025)
 export * from './org-lens-access.interface';
 
@@ -298,6 +324,9 @@ export * from './crowdfunding.interface';
 
 // Mentorship interfaces
 export * from './mentorship.interface';
+export * from './mentorship-admin.interface';
+export * from './mentorship-mentee.interface';
+export * from './mentorship-mentor.interface';
 export * from './mentorship-lfx-profile-card.interface';
 
 // EasyCLA "CLAs" interfaces (Me lens)
@@ -372,3 +401,7 @@ export * from './feature-flag.interface';
 // Formation checklist + Formations queue interfaces (GH-1958)
 export * from './formation-checklist.interface';
 export * from './formation-people.interface';
+export * from './project-application.interface';
+
+// LFX Insights API tokens (IN-1233)
+export * from './insights-tokens.interface';

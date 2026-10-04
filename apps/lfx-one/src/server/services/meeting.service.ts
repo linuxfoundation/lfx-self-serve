@@ -37,6 +37,7 @@ import {
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -587,7 +588,7 @@ export class MeetingService {
   /**
    * Updates a meeting directly via microservice proxy
    */
-  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
+  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest): Promise<ApiResponse<void>> {
     // Fetch existing meeting to merge organizers
     const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET');
 
@@ -627,17 +628,15 @@ export class MeetingService {
       updatePayload.show_meeting_attendees = false;
     }
 
-    const sanitizedPayload = logger.sanitize({ updatePayload, editType });
+    const sanitizedPayload = logger.sanitize({ updatePayload });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
-
-    const query = editType ? { editType } : undefined;
 
     return await this.microserviceProxy.proxyRequestWithResponse<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}`,
       'PUT',
-      query,
+      undefined,
       updatePayload
     );
   }
@@ -670,18 +669,54 @@ export class MeetingService {
 
   /**
    * Cancels a meeting occurrence directly via microservice proxy
+   * @description An optional note is sent as the DELETE body; upstream includes it in the cancellation
+   * emails to guests. Without one no body is sent, so the request is unchanged from before.
    */
-  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string, note?: string): Promise<void> {
     logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
+      has_note: !!note,
     });
 
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      note ? { note } : undefined
+    );
+  }
+
+  /**
+   * Edits a single occurrence of a recurring meeting directly via microservice proxy
+   * @description Upstream applies the change to this occurrence only; the rest of the series keeps its
+   * schedule, title and agenda. The occurrence id is its start time, so a new `start_time` also gives it
+   * a new id. LFX `title`/`description` map to upstream `topic`/`agenda`.
+   */
+  public async updateOccurrence(req: Request, meetingUid: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Promise<void> {
+    logger.debug(req, 'update_occurrence', 'Rescheduling meeting occurrence', {
+      meeting_id: meetingUid,
+      occurrence_id: occurrenceId,
+      start_time: payload.start_time,
+      duration: payload.duration,
+      title_changed: payload.title !== undefined,
+      agenda_changed: payload.description !== undefined,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'PUT',
+      undefined,
+      {
+        start_time: payload.start_time,
+        duration: payload.duration,
+        ...(payload.title !== undefined && { topic: payload.title }),
+        ...(payload.description !== undefined && { agenda: payload.description }),
+      }
     );
   }
 
@@ -784,10 +819,10 @@ export class MeetingService {
    * (docs/reviews/backend-checklist.md) — this orchestrates two domain resources plus an access
    * check and a security-critical decision, not just HTTP request/response handling.
    *
-   * The upstream query-service has no default per-user grant filtering on v1_meeting_registrant,
-   * so `getMeetingRegistrants` with `failOnPartial: true` would otherwise return any meeting's
-   * full registrant PII to any authenticated caller who supplies its uid. Requires the caller to
-   * either have writer access on `committeeUid`, or be a member of it when it's invite_only
+   * The query-service applies FGA filtering so that any meeting viewer can read registrant records
+   * on the tolerant listing — which is by design for community-facing meetings. The committee import
+   * flow imposes stricter business-logic constraints beyond viewer access: the caller must have
+   * writer access on `committeeUid`, or be a member of it when it's invite_only
    * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
    * authorized to send invites for that committee upstream, via their own bearer token, so
    * letting them populate the invite textarea via import grants no new privilege). Also requires
@@ -832,12 +867,12 @@ export class MeetingService {
    * meeting — the composer's Guests section, which needs the saved list to be whole before it
    * reconciles the organizer's edits against it.
    *
-   * Completeness is the thing that needs authorizing, not the listing. The upstream query-service
-   * applies no per-user grant filtering to v1_meeting_registrant, so a strict, unpaginated roster
-   * is every registrant's PII for any meeting whose uid the caller can name — authentication alone
-   * does not earn it. `organizer` is the right relation to require rather than mere registrant
-   * membership: it is the same access the composer's edit mode is gated on client-side, so the
-   * check refuses exactly the callers who could not have opened the section in the first place.
+   * Completeness is the thing that needs authorizing, not the listing. The query-service applies
+   * FGA filtering so that any meeting viewer can read registrant records on the tolerant listing
+   * — by design. A strict, unpaginated roster for the composer's reconciliation needs a higher
+   * bar: the organizer relation, which is the same access the composer's edit mode is gated on
+   * client-side. This refuses exactly the callers who could not have opened the section in the
+   * first place, and ensures completeness guarantees aren't silently degraded by partial failure.
    *
    * The committee "import registrants" flow has its own, wider rules — see
    * `getAuthorizedRegistrantsForImport`.
@@ -880,9 +915,9 @@ export class MeetingService {
    * which is the committee's membership showing through a meeting the caller may merely be able to
    * list. The listing's own callers never need it — only the organizer surfaces that filter guests
    * by group do — so it is gated on the same organizer relation as
-   * {@link getAuthorizedCompleteRegistrants}, and for the same reason that one gives: the upstream
-   * query-service applies no per-user grant filtering to `v1_meeting_registrant`, so nothing below
-   * this would withhold it.
+   * {@link getAuthorizedCompleteRegistrants}: group attribution reveals committee membership, which
+   * is a superset of what query-service's viewer check covers. Requiring organizer ensures this
+   * richer data reaches only callers already authorized to manage the meeting's guest list.
    *
    * The probe is `v1_meeting` + `checkSingleAccessStrict` on the reasoning spelled out in
    * {@link getAuthorizedCompleteRegistrants} — the organizer tuples hang off the v1 type, and the
@@ -1589,8 +1624,8 @@ export class MeetingService {
       // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
       // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
       // unlike username which is often null on RSVP records.
-      // Use getEffectiveUsername (returns LFID nickname) rather than getUsernameFromAuth
-      // (returns OIDC `sub`) since registrant.username stores the plain LFID.
+      // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
+      // username claim, or the impersonation target's username).
       const email = getEffectiveEmail(req) ?? undefined;
       const username = getEffectiveUsername(req) ?? undefined;
 

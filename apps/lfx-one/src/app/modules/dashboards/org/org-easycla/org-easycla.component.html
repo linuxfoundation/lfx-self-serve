@@ -5,7 +5,7 @@
   <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between" data-testid="org-easycla-header">
     <div class="flex flex-col gap-2">
       <h1 class="font-display font-light text-2xl" data-testid="org-easycla-title">
-        @if (companyName()) {
+        @if (contentVisible() && companyName()) {
           EasyCLA &mdash; {{ companyName() }}
         } @else {
           EasyCLA

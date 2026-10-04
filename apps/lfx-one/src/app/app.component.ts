@@ -23,7 +23,7 @@ import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
-import { isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
+import { isBrowserCredentialUrlPath, isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
 import { identifiedIntercomBootOptions } from './shared/utils/intercom-boot.util';
 
 const ACCESS_DENIED_MESSAGES: Record<string, string> = {
@@ -109,8 +109,10 @@ export class AppComponent {
     });
 
     const onInviteLanding = isBrowserInviteLandingPath();
+    // Segment, Plausible and Intercom record the page URL, which carries the invite token here.
+    const onCredentialUrl = isBrowserCredentialUrlPath();
 
-    if (!onInviteLanding) {
+    if (!onCredentialUrl) {
       this.segmentService.initialize();
       this.plausibleService.initialize();
     }
@@ -153,10 +155,12 @@ export class AppComponent {
 
       const authedUser = this.auth.user;
 
-      if (!onInviteLanding) {
+      if (!onCredentialUrl) {
         this.segmentService.setImpersonating(isImpersonating);
         this.plausibleService.setImpersonating(isImpersonating);
         this.segmentService.identifyUser(authedUser);
+      }
+      if (!onInviteLanding) {
         this.featureFlagService.initialize(authedUser).catch((error) => {
           console.error('Failed to initialize feature flags:', error);
         });
@@ -168,7 +172,7 @@ export class AppComponent {
       // invite landing the identity is staged without booting, so first paint stays off Intercom
       // while the error page's "Contact support" still opens as the signed-in user (GH-2290).
       if (!isImpersonating) {
-        this.prepareIntercom(authedUser, !onInviteLanding);
+        this.prepareIntercom(authedUser, !onCredentialUrl);
       }
 
       this.dataDogRumService.setUser(authedUser);

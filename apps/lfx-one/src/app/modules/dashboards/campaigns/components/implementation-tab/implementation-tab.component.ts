@@ -38,6 +38,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { map, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
@@ -70,7 +71,7 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
  * part of any contract between the tiers. Two repo rules meet here and an intersection is the
- * only form satisfying both — CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule prohibits the local `interface Foo {}` form inside
+ * only form satisfying both — AGENTS.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule prohibits the local `interface Foo {}` form inside
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
@@ -1495,8 +1496,14 @@ export class ImplementationTabComponent implements OnInit {
         this.creationProgress.update((msgs) => [...msgs, `Job started: ${response.jobId}`]);
         this.pollJob(response.jobId, projectSlug);
       },
-      error: () => {
-        this.errors.set(['Unable to reach the campaign service. Please check your connection and try again.']);
+      // Surface the message the SERVER wrote, keeping the connection copy as the fallback for a
+      // response that carried none. This handler took no parameter at all, so EVERY non-2xx was
+      // reported as a connection failure — including the named field refusals this create path
+      // deliberately emits, which arrive with a field and a stated remedy and were being replaced
+      // with advice to check the network. `serverAuthoredMessage` is the shared gate for this:
+      // it forwards a message a person wrote and refuses a status-derived envelope.
+      error: (err) => {
+        this.errors.set([serverAuthoredMessage(err, 'Unable to reach the campaign service. Please check your connection and try again.')]);
         this.step.set('form');
       },
     });

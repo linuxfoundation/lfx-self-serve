@@ -5,7 +5,7 @@ import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_BULK_KEYWORD_ACTIONS } from '@lfx-one/shared/constants';
+import { MAX_BULK_KEYWORD_ACTIONS, MAX_SPONSORS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -14,6 +14,7 @@ import { ServiceValidationError } from '../errors';
 const {
   saveBrief,
   loadBrief,
+  loadBriefById,
   createCampaigns,
   generateEmailCopy,
   legacyCreate,
@@ -40,6 +41,7 @@ const {
 } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
   loadBrief: vi.fn(),
+  loadBriefById: vi.fn(),
   createCampaigns: vi.fn(),
   generateEmailCopy: vi.fn(),
   legacyCreate: vi.fn(),
@@ -75,6 +77,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
       public loadBrief = loadBrief;
+      public loadBriefById = loadBriefById;
       public createCampaigns = createCampaigns;
       public generateEmailCopy = generateEmailCopy;
       public getJobStatus = svcGetJobStatus;
@@ -491,7 +494,7 @@ describe('CampaignController.loadBrief', () => {
   });
 
   // The unrecognised-stage case is asserted above, as a REJECTION. An earlier revision of this
-  // suite pinned the opposite -- that a bad stage silently became `''` -- which is the behaviour
+  // suite pinned the opposite -- that a bad stage silently became `''` -- which is the behavior
   // the fix removed: with `delivery_type` still `email`, `''` is not the paid slot but the real
   // and different key `(email, '')`, so the caller was answered about a brief nobody asked for.
   // The two assertions cannot both stand, so that test is gone rather than left contradicting.
@@ -515,7 +518,7 @@ describe('CampaignController.loadBrief', () => {
 
   it('refuses an explicitly unrecognised delivery_type instead of returning the paid brief', async () => {
     // An earlier revision narrowed a typo to paid, reasoning that failing closed toward the
-    // pre-existing behaviour could not expose a brief that was hidden before. True, and beside the
+    // pre-existing behavior could not expose a brief that was hidden before. True, and beside the
     // point: `?delivery_type=emial` then answered 200 with the PAID brief — a confident answer to a
     // question the caller never asked. Upstream restricts this param to two values, so a third was
     // never the contract, and `stage` already rejects rather than narrows.
@@ -587,6 +590,14 @@ describe('CampaignController.createCampaign cutover', () => {
     // reads this flag directly (for the `?project=` validation), so leaving it unset would make
     // every test in this block depend on a falsy default rather than a stated condition.
     isServerFeatureEnabled.mockReturnValue(true);
+    // The brief-destination guard reads the stored brief on every cutover create. `none` is the
+    // "could not be established" answer, which the guard treats as not-a-refusal — so every test
+    // in this block that is not about that guard dispatches exactly as it did before it existed.
+    // Stubbed explicitly rather than left unset: an unstubbed mock returns undefined, the guard
+    // throws on it, and the catch happens to produce the same outcome — so the tests would pass
+    // for the wrong reason and stop pinning anything the day the catch changes.
+    loadBriefById.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
     controller = new CampaignController();
     res = buildRes();
     next = vi.fn();
@@ -784,8 +795,12 @@ describe('CampaignController.createCampaign cutover', () => {
   /**
    * The legacy LinkedIn object cannot be forwarded unchanged, and both halves fail the dispatch:
    *
-   *   - `adAccountId` is REJECTED on mismatch (`linkedin.go:143`, "cross-account campaigns are not
-   *     allowed"), and the legacy request carries this app's account, not the project connection's.
+   *   - `adAccountId` is an assertion, never a selector: `internal/dispatch/linkedin.go:304-309`
+   *     builds the allowlist from the connection's account alone and honours an override only when
+   *     it matches, so omitting it and matching it reach the SAME account while any other value is
+   *     refused at `:322` ("cross-account campaigns are not allowed"). The id this request carries
+   *     comes from this app's own global account file, which has no per-project relationship to the
+   *     connection, so forwarding it can only ever cost a create. Dropped.
    *   - the dispatcher builds its runtime config from `targetingProfiles` (plural catalogue) and
    *     `employerExclusions` (`linkedin.go:135`); the legacy request carries neither, so an
    *     ordinary profile selection fails with "not found in runtime config".
@@ -832,7 +847,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * The regression guard for a bug I shipped and had to back out.
+   * Regression guard for a bug that shipped and had to be backed out.
    *
    * The unconfigured-platform refusal was briefly in the controller, ABOVE the `createCampaigns`
    * call, where it ran unconditionally. That broke demand-gen-only Google creation with every flag
@@ -1114,7 +1129,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
     // Forwarded UNCHANGED — upstream canonicalises, so rewriting it here would be a second
-    // normalisation that could only drift.
+    // normalization that could only drift.
     expect((sent['keywords'] as { matchType: string }[])[0].matchType).toBe(matchType);
   });
 
@@ -1216,7 +1231,7 @@ describe('CampaignController.createCampaign cutover', () => {
     // `hasPlatformConfig` then refuses the whole create in campaign-service.service (see its
     // `unconfigured` guard) rather than dispatching a zero-value config. That refusal is asserted
     // where it lives — the legacy fall-through is deliberately NOT asserted here, because these
-    // cases run with the cutover dark, where reaching the legacy path is correct behaviour.
+    // cases run with the cutover dark, where reaching the legacy path is correct behavior.
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
   });
 
@@ -1227,6 +1242,446 @@ describe('CampaignController.createCampaign cutover', () => {
    * either side therefore produces a silent zero-value dispatch, not a type error, which is why
    * these assert the exact strings.
    */
+  it.each([
+    ['only a subject', { subjectB: 'S', bodyHtmlB: '' }],
+    ['only a body', { subjectB: '', bodyHtmlB: '<p>b</p>' }],
+    ['a whitespace-only body', { subjectB: 'S', bodyHtmlB: '   ' }],
+    // `.trim()` removes only whitespace-category characters, so each of these is a NON-EMPTY
+    // string that renders blank. Gating on truthiness staged a variant whose body a reader
+    // cannot see; the gate now asks `hasVisibleHtmlText`, the same predicate the service layer uses.
+    ['a body of zero-width spaces', { subjectB: 'S', bodyHtmlB: '<p>\u200B\u200B</p>' }],
+    ['a body of soft hyphens', { subjectB: 'S', bodyHtmlB: '<p>\u00AD</p>' }],
+    ['a body of Hangul filler', { subjectB: 'S', bodyHtmlB: '<p>\u3164</p>' }],
+  ])('refuses to stage an A/B variant from a direct request carrying %s', async (_label, half) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', abTestEnabled: true, ...half } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // This is the boundary that matters: the client gate stops the UI sending a half-filled
+    // variant, but a direct campaign-manager request bypasses it, and upstream reads '' as
+    // "blank this field" -- so the request meant to SET variant B's body would clear it.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['abTestEnabled']).toBeUndefined();
+    expect(sent['subjectB']).toBeUndefined();
+    expect(sent['bodyHtmlB']).toBeUndefined();
+  });
+
+  /**
+   * Two gates in this handler ask the same question about the same value: whether the body has
+   * anything a reader can see. One was switched to the shared predicate and its sibling was left
+   * on `.trim()` truthiness, so a body of invisible characters forwarded no `bodyHtml` and still
+   * attached a hero and sponsors to it -- a rebuild carrying a hero and no body, which upstream
+   * treats as data loss rather than a dropped field.
+   */
+  it('attaches no hero or sponsors to a body that renders nothing', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>\u200B\u200B</p>',
+            heroImageUrl: 'https://cdn.example.com/hero.png',
+            buttonUrl: 'https://example.com/register',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['bodyHtml']).toBeUndefined();
+    expect(sent['heroImageUrl']).toBeUndefined();
+    expect(sent['buttonUrl']).toBeUndefined();
+  });
+
+  it('bounds the sponsor list before parsing, then caps the survivors', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    // 100 entries. The pre-slice bounds the work at MAX_SPONSORS * 2 BEFORE the per-entry
+    // canonicalHttpUrl parse, so a direct request cannot make the controller parse an unbounded
+    // list; the cap after it is what limits what actually ships.
+    const sponsors = Array.from({ length: 100 }, (_, i) => ({ name: `S${i}`, logoUrl: `https://cdn.example.com/${i}.png` }));
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', sponsors } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect((sent['sponsors'] as unknown[]).length).toBe(MAX_SPONSORS);
+    // From the FRONT of the list -- the pre-slice keeps the first 2N, so the first N survive.
+    expect((sent['sponsors'] as { name: string }[])[0].name).toBe('S0');
+  });
+
+  it('forwards a URL-less CTA as text, without its presentational classes', async () => {
+    // What the WIRE carries, as opposed to what the service emits. The service renders a
+    // destination-less button as `<div class="lfx-block lfx-button"><strong>`, but `class` is not
+    // an allowed attribute, so by the time the body reaches campaign-service the classes are
+    // gone. The ELEMENT and the label are the part that survives, and the part that matters --
+    // `<strong>` is what carries the emphasis in a client that drops CSS.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>Hi</p><div class="lfx-block lfx-button"><strong>Submit Your Proposal</strong></div>',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['bodyHtml']).toContain('<strong>Submit Your Proposal</strong>');
+    expect(sent['bodyHtml']).not.toContain('lfx-block');
+    expect(sent['bodyHtml']).not.toContain('class=');
+  });
+
+  it('sanitizes both HTML bodies and every display field at the request boundary', async () => {
+    // This is a public API. The component sanitizes before staging, but a DIRECT request never
+    // runs that code -- so without this the browser-side sanitizer was the only guard on values
+    // that reach the recipient's mail client.
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>A</p><img src="https://evil.test/a.gif">',
+            subject: 'Subj\u202Eevil',
+            preheader: 'Pre\u202Eevil',
+            buttonText: 'Click\u202Eevil',
+            // A buttonUrl is required for buttonText to survive the allow-list -- without it the
+            // pair is dropped and the field could never be observed.
+            buttonUrl: 'https://events.linuxfoundation.org/register/',
+            abTestEnabled: true,
+            subjectB: 'SubjB\u202Eevil',
+            bodyHtmlB: '<p>B</p><img src="https://evil.test/b.gif">',
+            preheaderB: 'PreB\u202Eevil',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, string>;
+    // Both bodies: the fetch is gone, the copy survives.
+    for (const key of ['bodyHtml', 'bodyHtmlB']) {
+      expect(cfg[key]).not.toContain('evil.test');
+      expect(cfg[key]).not.toContain('<img');
+    }
+    expect(cfg['bodyHtml']).toContain('A');
+    expect(cfg['bodyHtmlB']).toContain('B');
+    // Every display field, under the names the CONTROLLER emits: `preheader` is renamed to
+    // `previewText` on the wire (and `preheaderB` to `previewTextB`), so asserting the payload
+    // key rather than the request key is what makes this test about what actually ships.
+    // `buttonText` IS present: the fixture supplies a `buttonUrl`, without which the allow-list
+    // would drop the pair together -- which is why the url above is not incidental to this test.
+    for (const key of ['subject', 'previewText', 'subjectB', 'previewTextB', 'buttonText']) {
+      expect(cfg[key]).not.toContain('\u202E');
+      expect(cfg[key]).toContain('evil');
+    }
+  });
+
+  it('sanitizes a sponsor name from a DIRECT request, not just the scrape path', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>b</p>',
+            sponsors: [{ name: 'Acme <script>alert(1)</script>', logoUrl: 'https://cdn.example.com/a.png' }],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // A direct campaign-manager request bypasses the scrape path entirely, so sanitizing only
+    // there left this sink open -- the name lands in a HubSpot image module's alt attribute in
+    // a sent email.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    const sponsors = sent['sponsors'] as { name: string }[];
+    expect(sponsors[0].name).not.toContain('<');
+    expect(sponsors[0].name).not.toContain('>');
+  });
+
+  it('renames preheaderB to previewTextB on the wire, like preheader to previewText', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            abTestEnabled: true,
+            subjectB: 'S',
+            bodyHtmlB: '<p>b</p>',
+            preheaderB: '  B preheader  ',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // The Go decoder reads `previewTextB` (internal/dispatch/hubspot.go); a `preheaderB` key is
+    // silently dropped. That is exactly the bug the original preheader/previewText rename fixed,
+    // so the B half is tested rather than assumed -- and trimmed, matching the A half.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['previewTextB']).toBe('B preheader');
+    expect(sent['preheaderB']).toBeUndefined();
+  });
+
+  it('omits previewTextB entirely when blank, rather than blanking B preheader', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: { sourceEmailId: 'e-1', abTestEnabled: true, subjectB: 'S', bodyHtmlB: '<p>b</p>', preheaderB: '   ' },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // ABSENT, not ''. Upstream preserves the parent's preview text for an absent value, so an
+    // empty string would BLANK variant B's preheader instead of leaving it alone.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['previewTextB']).toBeUndefined();
+    expect(sent['abTestEnabled']).toBe(true);
+  });
+
+  it('canonicalizes a scheme-relative-looking URL rather than forwarding it verbatim', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', heroImageUrl: 'http:example.com/hero.png' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // WHATWG `URL` accepts `http:example.com` and reports an `http:` protocol, so a validator
+    // that returns the INPUT forwards a non-network-absolute value the Go downloader cannot
+    // use -- and the hero then degrades silently, because the upload is best-effort.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBe('http://example.com/hero.png');
+  });
+
+  it.each([
+    ['cloud metadata', 'http://169.254.169.254/latest/meta-data'],
+    ['loopback', 'http://127.0.0.1/hero.png'],
+    ['localhost with a trailing root dot', 'http://localhost./hero.png'],
+    ['rfc1918', 'http://10.0.0.5/hero.png'],
+    ['ipv4-mapped metadata', 'http://[::ffff:169.254.169.254]/hero.png'],
+  ])('drops a hero image pointing at %s', async (_label, heroImageUrl) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', heroImageUrl } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // This route has no body validator, so a direct campaign-manager request is the whole attack
+    // surface: campaign-service FETCHES heroImageUrl server-side and re-hosts the bytes as a
+    // publicly readable file, which makes an unguarded host a read-back channel out of the
+    // cluster. The trailing-dot case is not decoration — `new URL('http://localhost./x').hostname`
+    // keeps the dot, which evaded the check until the host is normalized.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBeUndefined();
+  });
+
+  it('DOES forward hero, button and sponsors when a body is present', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>Join us</p>',
+            heroImageUrl: 'https://cdn.example.com/hero.png',
+            buttonText: 'Register',
+            buttonUrl: 'https://events.example/register',
+            sponsors: [{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // The POSITIVE case. Every other test around this gate asserts what is WITHHELD, so a gate
+    // that withheld everything unconditionally would have passed all of them -- this is the one
+    // that proves the fields still reach campaign-service when they should.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBe('https://cdn.example.com/hero.png');
+    expect(sent['buttonText']).toBe('Register');
+    expect(sent['buttonUrl']).toBe('https://events.example/register');
+    expect(sent['sponsors']).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+  });
+
+  it.each([
+    ['no body at all', {}],
+    ['a whitespace-only body', { bodyHtml: '   ' }],
+  ])('refuses to forward hero, button or sponsors with %s', async (_label, body) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            ...body,
+            heroImageUrl: 'https://cdn.example.com/hero.png',
+            buttonText: 'Register',
+            buttonUrl: 'https://events.example/register',
+            sponsors: [{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // The client gate stops the UI sending these without a body; a direct campaign-manager
+    // request bypasses it, and this route has no body validator. DATA LOSS rather than a dropped
+    // field: campaign-service's RebuildEmailContent replaces the whole widget tree, so a rebuild
+    // carrying a hero or button and no body drops the cloned template's body.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBeUndefined();
+    expect(sent['buttonUrl']).toBeUndefined();
+    expect(sent['buttonText']).toBeUndefined();
+    expect(sent['sponsors']).toBeUndefined();
+    // The clone itself still proceeds — this withholds content, it does not block staging.
+    expect(sent['sourceEmailId']).toBe('e-1');
+  });
+
+  it('strips userinfo from a forwarded URL rather than carrying credentials into the email', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', heroImageUrl: 'https://user:secret@cdn.example.com/hero.png' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBe('https://cdn.example.com/hero.png');
+    expect(String(sent['heroImageUrl'])).not.toContain('secret');
+  });
+
+  it('caps and sanitizes the sponsor list from a direct request', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const sponsors = [
+      ...Array.from({ length: 14 }, (_, i) => ({ name: `Sponsor ${i}`, logoUrl: `https://cdn.example.com/s${i}.png` })),
+      { name: '   ', logoUrl: 'https://cdn.example.com/blank-name.png' },
+      { name: 'X'.repeat(300), logoUrl: 'https://cdn.example.com/long.png', unexpected: 'dropped' },
+    ];
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', sponsors } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    const got = sent['sponsors'] as { name: string; logoUrl: string }[];
+    // Capped: each entry is a server-side fetch downstream, so an unbounded array is fan-out.
+    expect(got).toHaveLength(10);
+    // Blank names dropped, long names bounded, and no key the allow-list did not name.
+    expect(got.every((sponsor) => sponsor.name.trim() !== '')).toBe(true);
+    expect(got.every((sponsor) => sponsor.name.length <= 100)).toBe(true);
+    expect(got.every((sponsor) => Object.keys(sponsor).sort().join(',') === 'logoUrl,name')).toBe(true);
+  });
+
+  it.each([
+    ['javascript:', 'javascript:alert(1)'],
+    ['data:', 'data:text/html,<script>alert(1)</script>'],
+    ['not a url', 'not-a-url'],
+  ])('drops a sponsor whose logo is %s rather than forwarding it as an image source', async (_label, logoUrl) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            // A body is required for hero/button/sponsors to be forwarded at all, so it is
+            // present here to reach the logo validation this test is about.
+            bodyHtml: '<p>b</p>',
+            sponsors: [
+              { name: 'Bad', logoUrl },
+              { name: 'Good', logoUrl: 'https://cdn.example.com/good.png' },
+            ],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // A sponsor logo becomes an <img src> in a SENT email and is fetched server-side, so a
+    // non-empty check alone let a script URL reach that sink from a direct request.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['sponsors']).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
+  });
+
   it('builds the hubspot envelope key the email dispatcher reads', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
@@ -1242,13 +1697,35 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it('forwards the body stage to the campaign-service client', async () => {
-    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
 
     await controller.generateEmailCopy(buildReq({ stage: 'Post-Event' }, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     // The whole selector is inert if this argument is dropped, and nothing else would say so:
     // generation still succeeds, just with default-stage copy under the operator's chosen label.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event');
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', 'Post-Event', undefined);
+  });
+
+  it('forwards the body variant to the campaign-service client', async () => {
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
+
+    await controller.generateEmailCopy(buildReq({ variant: 'B' }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    // Same inert-if-dropped hazard as `stage`: generation still succeeds, silently producing
+    // variant-A copy for an operator who asked for B, and the A/B test compares A against A.
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, 'B');
+  });
+
+  it.each([
+    ['whitespace only', { variant: '   ' }],
+    ['not a string', { variant: 42 }],
+    ['absent', {}],
+  ])('sends no variant when the body carries %s', async (_label, body) => {
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
+
+    await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
   });
 
   it.each([
@@ -1256,22 +1733,30 @@ describe('CampaignController.createCampaign cutover', () => {
     ['not a string', { stage: 42 }],
     ['absent', {}],
   ])('sends no stage when the body carries %s', async (_label, body) => {
-    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
 
     await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     // `undefined`, not '' -- upstream reads absence as "the caller did not say" and defaults,
     // while an empty string would fail its enum and 400 a request the operator did not make.
-    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined);
+    expect(generateEmailCopy).toHaveBeenCalledWith(expect.anything(), 'tlf', 'b-1', undefined, undefined);
   });
 
-  it('forwards the generated subject and body to the dispatcher', async () => {
+  it('forwards the generated subject, body, and preheader to the dispatcher', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
       buildReq(
-        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: 'Join us in Nairobi', bodyHtml: '<p>Hello</p>' } },
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            subject: 'Join us in Nairobi',
+            bodyHtml: '<p>Hello</p>',
+            preheader: 'Secure your spot in Nairobi',
+          },
+        },
         { project: 'tlf', brief_id: 'b-1' }
       ),
       res,
@@ -1279,22 +1764,24 @@ describe('CampaignController.createCampaign cutover', () => {
     );
 
     // This mapper is an ALLOW-LIST: anything it does not name never reaches campaign-service.
-    // It named only sourceEmailId and utmCampaign, so a staged draft silently kept the cloned
-    // template's own subject and body while the UI showed the generated ones. Observed live on
-    // draft 220597885197.
+    // It once named only sourceEmailId and utmCampaign, so a staged draft silently kept the
+    // cloned template's own subject and body while the UI showed the generated ones (observed
+    // live on draft 220597885197); preheader had the same gap until it was named here too, so a
+    // staged draft kept the clone source's own preview text on a real send.
     expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({
       sourceEmailId: 'e-1',
       subject: 'Join us in Nairobi',
       bodyHtml: '<p>Hello</p>',
+      previewText: 'Secure your spot in Nairobi',
     });
   });
 
-  it('omits subject and bodyHtml when no copy was generated', async () => {
+  it('omits subject, bodyHtml, and preheader when no copy was generated', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
-      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', subject: '   ', preheader: '   ' } }, { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -1403,6 +1890,23 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
   });
 
+  it('drops a non-string preheader rather than throwing on it', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', preheader: 42 } } as unknown as Record<string, unknown>, {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['hubspotConfig']).toEqual({ sourceEmailId: 'e-1' });
+  });
+
   it('omits hubspotConfig entirely when the request carries none', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
@@ -1467,6 +1971,342 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(legacyCreate).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_legacy_1' });
+  });
+
+  /**
+   * The pre-dispatch guards.
+   *
+   * Every one of them converts a refusal the Go side makes BEFORE its first mutate — and which the
+   * orchestrator then collapses into the opaque "platform campaign creation failed" — into a named
+   * field error. So each guard is tested in a pair: the input upstream refuses must be refused
+   * here, and the nearest input upstream ACCEPTS must still dispatch. The second half is the one
+   * that matters, because over-refusing a create the platform would have taken is the only way
+   * these guards can make things worse than they were.
+   */
+  const refusalFrom = (): { field: string; message: string; statusCode: number } => {
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    // The operator-facing reason lives in `validationErrors[0]`, not in `error.message` — the
+    // top-level message is the wire contract's "Validation failed for <field>" prefix that both
+    // frontend readers branch on. Asserting on `error.message` would pass on a guard that named
+    // the right field with the wrong explanation.
+    return { field: error.validationErrors[0].field, message: error.validationErrors[0].message, statusCode: error.statusCode };
+  };
+
+  /** The 30 codes `GOOGLE_ADS_GEO_TARGET_MAP` holds, which are the 30 `geo.go` holds. */
+  const ALL_MAPPED_GEOS = [
+    'US',
+    'CA',
+    'GB',
+    'DE',
+    'FR',
+    'JP',
+    'AU',
+    'IN',
+    'BR',
+    'CN',
+    'KR',
+    'NL',
+    'SE',
+    'CH',
+    'IL',
+    'SG',
+    'IE',
+    'ES',
+    'IT',
+    'AT',
+    'FI',
+    'NO',
+    'DK',
+    'BE',
+    'PL',
+    'CZ',
+    'NZ',
+    'TW',
+    'HK',
+    'MX',
+  ];
+
+  it('names an unsupported-but-well-formed country code instead of letting Google refuse it opaquely', async () => {
+    // `PT` is assigned, two letters, and passes `buildGoogleAdsConfig`'s shape test — and is absent
+    // from `geo.go`'s map, so `validateGeoTargets` hard-errors on it before the first mutate.
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ['US', 'PT'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('countryCode');
+    expect(error.message).toContain('PT');
+    // Only the unsupported code is named — `US` is fine and saying otherwise would send the
+    // operator looking at the wrong field.
+    expect(error.message).not.toContain('US');
+  });
+
+  it('dispatches a list of all 30 supported codes, which is exactly what upstream accepts', async () => {
+    // The contrast for both geo guards at once: every code mapped, and the count at the cap rather
+    // than over it. Without this the two refusals above and below would pass on a controller that
+    // refused every targeted Google create.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ALL_MAPPED_GEOS }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toHaveLength(30);
+  });
+
+  it('refuses a 31-code list even when the 31st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `validateGeoTargets` checks `len(geoTargets) > maxGeoTargets` on the raw slice, so a list
+    // that is only over the cap because it repeats a code is still refused there. Judging the
+    // de-duplicated length here would accept a create Go then kills.
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('countryCode');
+    expect(error.message).toContain('31');
+  });
+
+  it.each([
+    ['a zero budget', 0],
+    ['a negative budget, which no body validator on this route stops', -50],
+    ['a positive budget that rounds to zero micros, the denomination Google bills in', 0.0000004],
+  ])('names %s rather than letting Google refuse it before any mutate', async (_label, budgetUsd) => {
+    await controller.createCampaign(buildReq(googleBody({ budgetUsd }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    // States the CONSTRAINT. A negative budget reported as "is 0" would describe a value the
+    // caller did not send, so the message must not assert one.
+    expect(error.message).not.toContain('is 0');
+  });
+
+  it('dispatches a budget of exactly one micro, which is the smallest Google accepts', async () => {
+    // The boundary that makes the rounding deliberate, and the contrast without which the three
+    // refusals above would pass on a controller that refused every Google create. 0.0000004
+    // rounds DOWN to zero micros and is refused; 0.000001 is one whole micro and is dispatched.
+    // Comparing the raw float against zero would accept both — which is the defect this pins.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ budgetUsd: 0.000001 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const linkedInBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['linkedin-ads'],
+    linkedInConfig: { budgetUsd: 100, ...overrides },
+  });
+
+  it.each([
+    ['a lifetime budget under the 100-dollar floor', { budgetUsd: 25, lifetimeBudget: true }, '$100'],
+    ['a daily budget under the 10-dollar floor', { budgetUsd: 9, lifetimeBudget: false }, '$10'],
+  ])('names %s rather than letting LinkedIn refuse it before any POST', async (_label, config, expectedFloor) => {
+    await controller.createCampaign(buildReq(linkedInBody(config), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    expect(error.message).toContain(expectedFloor);
+  });
+
+  it.each([
+    ['99.999 on a lifetime budget, which Go rounds to 100.00 and accepts', { budgetUsd: 99.999, lifetimeBudget: true }],
+    ['exactly the 10-dollar daily floor', { budgetUsd: 10, lifetimeBudget: false }],
+  ])('dispatches %s', async (_label, config) => {
+    // 99.999 is the boundary that makes the rounding deliberate: Go validates the value it is
+    // about to format to two decimals, so comparing the raw float here would refuse a budget
+    // upstream takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
+
+    await controller.createCampaign(buildReq(linkedInBody(config), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const metaBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['meta-ads'],
+    metaConfig: { budgetUsd: 250, lifetimeBudget: false, geoTargets: ['US'], variants: [{ primaryText: 'p', headline: 'h' }], ...overrides },
+  });
+
+  it('refuses a flight whose end date equals its start date, which Meta compares strictly', async () => {
+    // The likeliest way an operator trips this: a one-day campaign entered as the same date twice.
+    await controller.createCampaign(buildReq(metaBody({ startDate: '2026-03-01', endDate: '2026-03-01' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('endDate');
+  });
+
+  it.each([
+    ['a zero budget', 0],
+    ['a negative budget, which no body validator on this route stops', -250],
+  ])('names %s rather than letting Meta refuse it before any mutate', async (_label, budgetUsd) => {
+    await controller.createCampaign(buildReq(metaBody({ budgetUsd }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    expect(error.message).not.toContain('is 0');
+  });
+
+  it('dispatches a sub-dollar Meta budget, which the account currency may well accept', async () => {
+    // The contrast for the pair above, and the reason Meta is judged as a raw float where Google
+    // is judged in micros: Meta's floor is one MINOR currency unit, and the offset depends on the
+    // ad account's currency — 0.50 is 50 minor units under USD and refused under JPY. This app
+    // cannot see that currency, so anything above zero is passed through for Meta to judge.
+    // Mirroring Google's arithmetic here would refuse creates Meta accepts.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(metaBody({ budgetUsd: 0.5 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const redditBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['reddit-ads'],
+    redditConfig: { budgetUsd: 300, geoTargets: ['US'], ...overrides },
+  });
+
+  it('refuses a reversed Reddit flight, which Reddit compares as strictly as Meta does', async () => {
+    // The Reddit half of the same guard. Without this the loop could be narrowed to meta-ads
+    // alone and the suite would stay green, leaving Reddit's identical refusal opaque again.
+    await controller.createCampaign(buildReq(redditBody({ startDate: '2026-03-10', endDate: '2026-03-04' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('endDate');
+    expect(error.message).toContain('Reddit');
+  });
+
+  it('dispatches a Reddit flight that ends one day after it starts, the nearest window upstream takes', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(redditBody({ startDate: '2026-03-04', endDate: '2026-03-05' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['an impossible calendar date', '2026-02-31', '2026-03-05'],
+    ['a date that is not zero-padded', '2026-1-2', '2026-3-4'],
+  ])('passes %s through to Go rather than judging a shape it cannot read', async (_label, startDate, endDate) => {
+    // A value this guard cannot parse is refused upstream anyway, with a message that names it.
+    // Refusing here could only turn that named refusal into this guard's different one — or, for
+    // `2026-02-31`, refuse a create on a date `new Date` would have silently rolled to March 3.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(buildReq(metaBody({ startDate, endDate }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const briefWithUrl = (registrationUrl: string) => ({
+    status: 'loaded',
+    briefId: 'b-1',
+    brief: { eventDetails: { registrationUrl } },
+    etag: 'W/"1"',
+    approved: true,
+  });
+
+  it('reads the brief the create dispatches against — by id — and not whichever brief the slug names today', async () => {
+    // `POST /projects/{project}/briefs/{brief_id}/campaigns` dispatches against the id. Judging the
+    // slug's brief instead would let this guard refuse a create over a registration URL belonging
+    // to a brief the request never mentioned.
+    loadBriefById.mockResolvedValue(briefWithUrl('https://events.example.org/register'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ eventSlug: 'kubecon-eu-2026' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(loadBriefById).toHaveBeenCalledWith(expect.any(Object), 'tlf', 'b-1');
+    expect(loadBrief, 'the slug lookup ran even though the request carried a brief id').not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the slug lookup only when the request carries no brief id', async () => {
+    loadBrief.mockResolvedValue(briefWithUrl('https://events.example.org/register'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ eventSlug: 'kubecon-eu-2026' }), { project: 'tlf' }), res, next);
+
+    expect(loadBriefById).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
+  });
+
+  it.each([
+    ['has no registration URL at all', '', 'no registration URL'],
+    ['has one typed without a scheme, which every platform validator refuses', 'agenticsday.org', 'not a complete web address'],
+  ])('refuses a create whose stored brief %s', async (_label, registrationUrl, expectedText) => {
+    loadBriefById.mockResolvedValue(briefWithUrl(registrationUrl));
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('registrationUrl');
+    expect(error.message).toContain(expectedText);
+  });
+
+  it('dispatches a plain-http brief URL when Meta is not one of the selected platforms', async () => {
+    // Four of the five platforms accept either scheme, so refusing http outright would refuse a
+    // create those four would have taken.
+    loadBriefById.mockResolvedValue(briefWithUrl('http://events.example.org/register'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the same plain-http brief URL once Meta is selected, because Meta requires HTTPS', async () => {
+    loadBriefById.mockResolvedValue(briefWithUrl('http://events.example.org/register'));
+
+    await controller.createCampaign(buildReq(metaBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('registrationUrl');
+    expect(error.message).toContain('https://');
+  });
+
+  it('dispatches when the brief could not be read, because an unreadable brief is not an operator error', async () => {
+    // The guard exists to name a knowable input error, never to add a new way for a create to
+    // fail. A lookup that could not be ESTABLISHED must therefore not refuse anything.
+    loadBriefById.mockRejectedValue(new Error('campaign-service unreachable'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000010', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read the brief at all for an email-only create, which never reads a destination upstream', async () => {
+    // `internal/dispatch/hubspot.go` takes only an OPTIONAL `ButtonURL` from `hubspotConfig`, so
+    // refusing a hubspot-only create for a missing registration URL would refuse a create the
+    // platform would have accepted.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000011', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig: { emailId: 'e-1' } }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(loadBriefById).not.toHaveBeenCalled();
+    expect(loadBrief).not.toHaveBeenCalled();
   });
 });
 
@@ -1780,7 +2620,7 @@ describe('CampaignController.updateCampaignStatus', () => {
   // The assertion whose absence let a real defect through: the client was called without
   // assignment, so the etag it fetched died one frame later. The service spec asserts the CLIENT's
   // return value and this spec mocks the whole client, so nothing observed the seam between them —
-  // reverting the client fix broke a test while leaving production behaviour identical.
+  // reverting the client fix broke a test while leaving production behavior identical.
   it("propagates the row's fresh etag so a follow-up toggle has a valid If-Match", async () => {
     toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 7, etag: '7' });
 

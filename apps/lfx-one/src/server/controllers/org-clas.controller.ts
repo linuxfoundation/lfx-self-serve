@@ -7,10 +7,14 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT,
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN,
+  ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT,
+  ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX,
+  ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
   ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
+  ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE,
   ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
   ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_REVIEW_COPY_FILENAME,
@@ -20,6 +24,8 @@ import {
   type OrgClaApprovalCriteriaKind,
   type OrgClaApprovalEntryInput,
   type OrgClaApprovalListUpdate,
+  type OrgClaDesigneeNominationRequest,
+  type OrgClaDesigneeRequest,
   type OrgClaInvalidateAcknowledgmentRequest,
   type OrgClaInvalidationReason,
   type OrgClaManagerAddRequest,
@@ -28,12 +34,14 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   codePointLength,
+  hasOrgClaDesigneeNominationErrors,
   hasOrgClaManagerAddErrors,
   isEmailShape,
   isOrgClaManagerLfUsername,
   isOrgClaPermissionAction,
   isSendableAuthorityName,
   validateOrgClaApprovalValue,
+  validateOrgClaDesigneeNomination,
   validateOrgClaManagerAdd,
 } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -45,7 +53,7 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 import { OrgClaPermissionsService } from '../services/org-cla-permissions.service';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
-import { getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 
 const APPROVAL_CRITERIA_KINDS = new Set<string>(ORG_CLA_APPROVAL_CRITERIA.map((option) => option.kind));
 
@@ -91,6 +99,18 @@ function parseApprovalEntries(raw: unknown, side: 'add' | 'remove'): { entries: 
   }
 
   return { entries };
+}
+
+/**
+ * The agreement's signing project, shape-checked for the same reason the Sign write checks it: a
+ * malformed id sent upstream comes back as an authorization refusal instead of a bad request.
+ */
+function requireDesigneeProjectSfid(raw: unknown, operation: string): string {
+  const projectSfid = typeof raw === 'string' ? raw.trim() : '';
+  if (!SALESFORCE_ID_PATTERN.test(projectSfid)) {
+    throw ServiceValidationError.fromFieldErrors({ projectSfid: 'A project identifier is required' }, 'A project identifier is required', { operation });
+  }
+  return projectSfid;
 }
 
 export class OrgClasController {
@@ -495,6 +515,73 @@ export class OrgClasController {
     }
   }
 
+  /**
+   * PUT /api/orgs/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create
+   *
+   * Turns Auto ECLA on or off for one signed CCLA (#1988). The route is behind
+   * `blockDuringImpersonation` + `requireOrgLensAccess`. A caller not named on the agreement's
+   * CLA Manager list comes back from the service as `forbidden`, answered here as a 403 with
+   * this application's own sentence before EasyCLA is called. The service raises a 403 with the
+   * producer's own refusal sentence on the sanctions path, and this handler leaves that error
+   * to the shared error handler rather than translating it here — the producer's copy is what
+   * belongs on screen.
+   *
+   * `Cache-Control: no-store` because the response echoes the just-written state, and a CDN
+   * substituting an earlier body would tell the manager the toggle held a value it does not.
+   */
+  public async updateEclaAutoCreate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_org_cla_ecla_auto_create');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'update_org_cla_ecla_auto_create');
+
+      // Boolean-only body. Coercion is refused: a stringified `"false"` is `true` under `Boolean`,
+      // and the toggle would then always turn on. Same discipline as the approval-list write
+      // above, which rejects a non-string value rather than `String()`-ing it.
+      const body = req.body as { autoCreateEcla?: unknown } | undefined;
+      if (typeof body?.autoCreateEcla !== 'boolean') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          rejected: 'invalid_body',
+        });
+        res.status(400).json({ message: 'Body must include boolean "autoCreateEcla"' });
+        return;
+      }
+
+      const result = await this.orgClaService.updateEclaAutoCreate(req, orgUid, signatureId, body.autoCreateEcla);
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (result.outcome === 'not-found') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      if (result.outcome === 'not-signed') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+        return;
+      }
+
+      if (result.outcome === 'forbidden') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' });
+        return;
+      }
+
+      logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        auto_create_ecla: result.autoCreateEcla,
+      });
+      res.json({ autoCreateEcla: result.autoCreateEcla });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments
   //
   // Reads the paginated contributor acknowledgments (ECLA signatures) for one CCLA. Impersonation
@@ -551,6 +638,70 @@ export class OrgClasController {
       });
       res.json(list);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/activity
+  //
+  // Reads one page of the per-CCLA activity log. Read-only, org-scope: the middleware chain is
+  // `requireOrgLensAccess` only — no `blockDuringImpersonation`, no CLA-manager check. That is
+  // wider than the write tabs on this router by design (see the service header for why the log
+  // is a broader grant than the manager-only writes). `Cache-Control: no-store` on every path
+  // because the body carries actor names and timestamps.
+  public async getActivityLog(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_activity_log');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_activity_log' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_activity_log');
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!signatureId) {
+        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', {
+          operation: 'get_org_cla_activity_log',
+        });
+      }
+
+      const rawPageSize = getStringQueryParam(req, 'pageSize');
+      const parsedPageSize = rawPageSize ? Number(rawPageSize) : NaN;
+      // Silent clamp — a page above 100 protects the producer, a request for zero rows prevents a
+      // runaway zero-loop. Same discipline as the sibling acknowledgments read.
+      const pageSize = Number.isFinite(parsedPageSize)
+        ? Math.min(Math.max(Math.trunc(parsedPageSize), ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN), ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX)
+        : ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT;
+
+      const nextKeyRaw = (getStringQueryParam(req, 'nextKey') ?? '').trim();
+      const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : undefined;
+
+      // `returnAllEvents` only raises the producer's page limit on the same partition.
+      // It is not read or forwarded; the page size this route already clamps is the bound.
+
+      const page = await this.orgClaService.getActivityLog(req, orgUid, signatureId, { pageSize, nextKey });
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!page) {
+        logger.success(req, 'get_org_cla_activity_log', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_activity_log', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        result_count: page.resultCount,
+        has_next: !!page.nextKey,
+      });
+      res.json(page);
+    } catch (error) {
+      // The error handler closes the operation and picks the severity. Logging here first
+      // deletes the registered operation, so the handler then logs again under a path-derived
+      // name — and a client 4xx is recorded at error level. Sibling reads only call `next`.
       next(error);
     }
   }
@@ -629,6 +780,12 @@ export class OrgClasController {
       if (result.outcome === 'forbidden') {
         logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
         res.status(403).json({ message: 'Only a CLA manager named on this CLA can invalidate acknowledgments' });
+        return;
+      }
+
+      if (result.outcome === 'not-approved') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, approved: false });
+        res.status(409).json({ message: ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE });
         return;
       }
 
@@ -768,6 +925,75 @@ export class OrgClasController {
 
       logger.success(req, 'remove_org_cla_manager', startTime, { org_uid: orgUid, signature_id: signatureId });
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/orgs/:orgUid/lens/cla-groups/designee
+  // Yes on "Are you authorized to be a CLA Manager?" (#2780). The designee is the session's own
+  // address; the body names only the signing project, so a caller cannot assign someone else.
+  public async assignDesignee(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'assign_org_cla_designee';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, operation);
+
+      const projectSfid = requireDesigneeProjectSfid((req.body as Partial<OrgClaDesigneeRequest> | undefined)?.projectSfid, operation);
+
+      const userEmail = getEffectiveEmail(req);
+      if (!userEmail) {
+        throw new AuthenticationError('A session email address is required to become a CLA manager designee', { operation });
+      }
+
+      const result = await this.orgClaService.assignDesignee(req, orgUid, projectSfid, userEmail);
+
+      logger.success(req, operation, startTime, { org_uid: orgUid, project_sfid: projectSfid });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/orgs/:orgUid/lens/cla-groups/designee/nominations
+  // No on the question: name the person who should become the initial CLA Manager designee.
+  public async nominateDesignee(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'nominate_org_cla_designee';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, operation);
+
+      const body = (req.body ?? {}) as Partial<OrgClaDesigneeNominationRequest>;
+      const projectSfid = requireDesigneeProjectSfid(body.projectSfid, operation);
+
+      const validation = validateOrgClaDesigneeNomination(body);
+      if (hasOrgClaDesigneeNominationErrors(validation)) {
+        throw ServiceValidationError.fromFieldErrors(validation as Record<string, string>, 'Validation failed', { operation });
+      }
+
+      const result = await this.orgClaService.nominateDesignee(req, orgUid, {
+        projectSfid,
+        fullName: (body.fullName as string).trim(),
+        email: (body.email as string).trim(),
+      });
+
+      // The outcome is one of two fixed values; the named person's address stays out of the log.
+      logger.success(req, operation, startTime, { org_uid: orgUid, project_sfid: projectSfid, outcome: result.outcome });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
     } catch (error) {
       next(error);
     }

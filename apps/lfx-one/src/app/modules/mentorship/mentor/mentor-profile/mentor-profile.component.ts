@@ -8,8 +8,8 @@ import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_MENTOR_PROFILE_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipMentorProfileResponse } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipMentorProfileResponse, MentorshipMentorProfileUpdateResponse } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
@@ -24,12 +24,16 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
  *
  * Composes three sections: the shared `lfx-mentorship-profile-card` (LFX identity
  * summary — name, emails, linked accounts), the mentor's own profile details (About Me,
- * Skills, Resume), and a read-only Mentoring History.
+ * Skills), and a read-only Mentoring History.
  *
  * The profile-card owns its own fetch, so this page only loads the mentorship-side
  * fields. On failure it degrades to the empty response and surfaces a retry so a
  * transient BFF error never leaves the mentor stranded on a spinner. The shell owns
  * the page H1 and the tab bar, so nothing here renders either.
+ *
+ * Saving the edit drawer shows the saved profile in place (`savedProfile`) instead of re-reading it, so the page
+ * never flashes its loading state. The edit cannot change the history, which keeps the loaded rows. A Retry drops
+ * that override so the freshly loaded data wins.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-profile',
@@ -46,20 +50,25 @@ import { MentoringHistoryComponent } from './components/mentoring-history/mentor
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorProfileComponent {
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorService = inject(MentorshipMentorService);
   private readonly drawerService = inject(MentorProfileEditDrawerService);
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
 
   private readonly reloadProfile = signal(0);
+  private readonly savedProfile = signal<MentorshipMentorProfileUpdateResponse | null>(null);
   private readonly profileState: Signal<MentorshipMentorProfileResponse> = this.initProfile();
 
-  protected readonly profile = computed(() => this.profileState().profile);
+  protected readonly profile = computed(() => this.savedProfile()?.profile ?? this.profileState().profile);
   protected readonly history = computed(() => this.profileState().history);
 
   protected onEditProfile(): void {
     this.drawerService.open(this.profile());
+  }
+
+  protected onProfileSaved(response: MentorshipMentorProfileUpdateResponse): void {
+    this.savedProfile.set(response);
   }
 
   protected retry(): void {
@@ -70,11 +79,12 @@ export class MentorProfileComponent {
     return toSignal(
       toObservable(this.reloadProfile).pipe(
         tap(() => {
+          this.savedProfile.set(null);
           this.hasLoaded.set(false);
           this.loadError.set(null);
         }),
         switchMap(() =>
-          this.mentorshipService.getMentorProfile().pipe(
+          this.mentorService.getMentorProfile().pipe(
             map((response) => {
               this.hasLoaded.set(true);
               return response;

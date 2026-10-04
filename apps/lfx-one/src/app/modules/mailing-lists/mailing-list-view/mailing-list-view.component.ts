@@ -18,7 +18,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { getMailingListCommands, getMailingListEmail, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
@@ -139,12 +139,7 @@ export class MailingListViewComponent {
   }
 
   private initEmailAddress(): Signal<string> {
-    return computed(() => {
-      const ml = this.mailingList();
-      if (!ml?.group_name) return '';
-      if (!ml.service?.domain) return ml.group_name;
-      return `${ml.group_name}@${ml.service.domain}`;
-    });
+    return computed(() => getMailingListEmail(this.mailingList()));
   }
 
   private initMemberCount(): Signal<number> {

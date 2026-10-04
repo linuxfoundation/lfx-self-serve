@@ -5,10 +5,18 @@ import { Component, computed, DestroyRef, inject, input, model, output, signal, 
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, UrlTree } from '@angular/router';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL } from '@lfx-one/shared/constants';
+import {
+  PENDING_ACTION_BUTTON_ICON,
+  PENDING_ACTION_FADE_OUT_MS,
+  PENDING_ACTION_LABEL,
+  PENDING_ACTION_SECTION,
+  PENDING_ACTION_SECTION_LABEL,
+  PENDING_ACTION_SECTION_ORDER,
+} from '@lfx-one/shared/constants';
 import { buildFormationPendingActionView } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
@@ -18,11 +26,19 @@ import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, timer } from 'rxjs';
 
-import type { DrawerActionRow, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type {
+  DrawerActionRow,
+  DrawerActionSection,
+  Meeting,
+  MeetingRsvp,
+  PendingActionItem,
+  PendingActionSection,
+  RsvpResponse,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
-  imports: [DrawerModule, SkeletonModule, ButtonComponent, TagComponent, EmptyStateComponent, RsvpButtonGroupComponent],
+  imports: [DrawerModule, SkeletonModule, ButtonComponent, BadgeComponent, TagComponent, EmptyStateComponent, RsvpButtonGroupComponent],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',
 })
@@ -57,6 +73,7 @@ export class PendingActionsDrawerComponent {
 
   protected readonly visibleRows: Signal<DrawerActionRow[]> = this.initVisibleRows();
   protected readonly uncompletedCount: Signal<number> = computed(() => this.visibleRows().length);
+  protected readonly sectionedRows: Signal<DrawerActionSection[]> = this.initSectionedRows();
 
   public constructor() {
     // When the drawer becomes visible, eagerly load Meeting payloads for every RSVP row so the inline RSVP buttons render immediately.
@@ -88,8 +105,9 @@ export class PendingActionsDrawerComponent {
       return;
     }
     // RSVP fallback (meeting load failed): opening the meeting page is not the same as completing the RSVP, so the
-    // reminder stays visible. Only successful RSVP submission hides the row.
-    if (item.type === 'RSVP') return;
+    // reminder stays visible. Only successful RSVP submission hides the row. Same for Survey: the button opens an
+    // external SurveyMonkey tab the app never hears back from — only a stamped `response_datetime` retires it.
+    if (item.type === 'RSVP' || item.type === 'Survey') return;
     this.startCompletion(item);
   }
 
@@ -212,6 +230,32 @@ export class PendingActionsDrawerComponent {
       default:
         return response;
     }
+  }
+
+  // Group the visible rows into their drawer sections in the fixed PENDING_ACTION_SECTION_ORDER, skipping empty
+  // sections. Derives from visibleRows so completing rows keep their section mounted until the fade-out finishes.
+  private initSectionedRows(): Signal<DrawerActionSection[]> {
+    return computed(() => {
+      const rowsBySection = new Map<PendingActionSection, DrawerActionRow[]>();
+      for (const row of this.visibleRows()) {
+        // Totality is compile-time only — a `type` this bundle doesn't know would otherwise drop the row
+        // from every section while the header still counts it; land it in the catch-all instead.
+        const section = PENDING_ACTION_SECTION[row.type] ?? 'other';
+        const bucket = rowsBySection.get(section);
+        if (bucket) {
+          bucket.push(row);
+        } else {
+          rowsBySection.set(section, [row]);
+        }
+      }
+      return PENDING_ACTION_SECTION_ORDER.reduce<DrawerActionSection[]>((sections, section) => {
+        const rows = rowsBySection.get(section);
+        if (rows) {
+          sections.push({ section, label: PENDING_ACTION_SECTION_LABEL[section], rows });
+        }
+        return sections;
+      }, []);
+    });
   }
 
   private initVisibleRows(): Signal<DrawerActionRow[]> {

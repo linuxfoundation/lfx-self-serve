@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_GEO_TARGET_MAP, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -13,6 +13,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignEventSponsor,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
@@ -32,6 +33,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -274,7 +276,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   // And the SAME confidence bar the mapper path applies. Refusing ties alone still auto-applied a
   // lone WEAK match -- a single campaign sharing one long word with the event name scored 1 and
   // won by default, writing its UTM into the brief's links unattended. The mapper requires an
-  // exact normalised match before `found: true`; two paths behind one flag must not disagree
+  // exact normalized match before `found: true`; two paths behind one flag must not disagree
   // about what counts as a match, or flipping the flag silently changes which campaign a brief
   // attributes to (dealako, #2079).
   const confident = isConfidentMatch(best.name, eventName);
@@ -1211,7 +1213,7 @@ function normalizeProse(prose: string): string {
  * A raw event page is mostly not prose. One measured example was 512,384 bytes with the first
  * mention of "Tokyo" at byte 31,204 -- so a fixed slice of the head returned navigation and inline
  * CSS and the extraction reported no date, no venue, nothing. Removing the markup that carries
- * rendering and behaviour rather than facts dropped the same page to 44,829 bytes and moved
+ * rendering and behavior rather than facts dropped the same page to 44,829 bytes and moved
  * "Tokyo" to byte 1,396.
  *
  * The work is done by `scanExtractable`, in one pass. It returns the page's prose and its JSON-LD
@@ -1270,7 +1272,7 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
  */
 const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
-// DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
+// DERIVED from the shared constant, not a second hand-written list. AGENTS.md requires shared
 // constants to live in `@lfx-one/shared`, and the controller already validates against this one —
 // a duplicate here would let a newly-added delivery type be accepted by the controller and
 // rejected by this service, which is the worst version of the drift: it type-checks, and the two
@@ -1309,43 +1311,6 @@ function failJob(jobId: string, error: string): void {
   jobs.set(jobId, { status: 'error', error });
   setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
 }
-
-// ---------------------------------------------------------------------------
-// Country code to Google Ads geo target constant ID
-// ---------------------------------------------------------------------------
-
-const GEO_TARGET_MAP: Record<string, string> = {
-  US: '2840',
-  CA: '2124',
-  GB: '2826',
-  DE: '2276',
-  FR: '2250',
-  JP: '2392',
-  AU: '2036',
-  IN: '2356',
-  BR: '2076',
-  CN: '2156',
-  KR: '2410',
-  NL: '2528',
-  SE: '2752',
-  CH: '2756',
-  IL: '2376',
-  SG: '2702',
-  IE: '2372',
-  ES: '2724',
-  IT: '2380',
-  AT: '2040',
-  FI: '2246',
-  NO: '2578',
-  DK: '2208',
-  BE: '2056',
-  PL: '2616',
-  CZ: '2203',
-  NZ: '2554',
-  TW: '2158',
-  HK: '2344',
-  MX: '2484',
-};
 
 // ---------------------------------------------------------------------------
 // CampaignProxyService — brief generation + campaign creation
@@ -1447,6 +1412,19 @@ export class CampaignProxyService {
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
+    // The URL that actually SERVED the page, after redirects. Declared alongside `html` because
+    // it has the same lifetime.
+    //
+    // Used by the two consumers that describe THIS fetch: the extraction prompt (which tells the
+    // model which URL it is reading) and the event-name fallback (which derives a slug from the
+    // path). Both used `body.url` -- raw user input, a hop further from the truth than even the
+    // requested URL -- so a redirected page was described by a URL it never served.
+    //
+    // The ad-copy prompts further down still use `body.url` deliberately: they run on a separate
+    // request that does no fetch of its own, so there is no final URL to speak of there.
+    let pageUrl = '';
+    let heroImageUrl = '';
+    let sponsors: CampaignEventSponsor[] = [];
 
     if (!isRefinement) {
       yield { type: 'status', data: `Scraping ${body.url}...` };
@@ -1460,12 +1438,16 @@ export class CampaignProxyService {
       }
 
       try {
-        const { html: scrapedHtml, ok, status } = await fetchSafeUrl(safeUrl, signal);
+        const { html: scrapedHtml, ok, status, finalUrl } = await fetchSafeUrl(safeUrl, signal);
+        pageUrl = finalUrl;
         if (!ok) {
           yield { type: 'error', data: `Page returned HTTP ${status}` };
           return;
         }
         html = scrapedHtml;
+        // Resolved against the FINAL url, not the requested one: fetchSafeUrl follows up to 5
+        // redirects, and a relative `og:image` belongs to the page that served it.
+        ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, finalUrl));
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
@@ -1478,7 +1460,7 @@ export class CampaignProxyService {
 
     if (!isRefinement) {
       try {
-        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${extractableHtml(html)}`);
+        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${pageUrl || body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {
@@ -1494,6 +1476,8 @@ export class CampaignProxyService {
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',
+            heroImageUrl,
+            sponsors,
           },
         };
       } catch (error) {
@@ -1506,7 +1490,16 @@ export class CampaignProxyService {
         };
       }
 
-      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
+      // Tries the FINAL url first, then the requested one. A redirect to a MORE specific path is
+      // the case `pageUrl` exists for; one to a bare origin (`/kubecon-eu-2026` -> `/`) yields
+      // '' and now falls back to the slug the operator typed.
+      //
+      // NOT fully solved, and cannot be from here: a redirect to `/events/` yields "Events",
+      // which is a worse name but still a name, so no fallback fires. Distinguishing "a listing
+      // page" from "a legitimately short slug" needs knowledge this function does not have. The
+      // operator can override the name, and this is only a fallback for when the scrape found
+      // none -- so it degrades to a poor default rather than a wrong destination.
+      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(pageUrl || body.url) || extractEventNameFromUrl(body.url);
       if (eventName) {
         yield { type: 'status', data: 'Looking up HubSpot campaign...' };
         try {
@@ -1694,7 +1687,7 @@ export class CampaignProxyService {
 
     // Same rejection as the generate path. Lower stakes here — an unrecognised value falls to the
     // paid branch and refines, which is what this endpoint did before the field existed — but a
-    // caller who misspells the type should be told, not quietly given the other behaviour.
+    // caller who misspells the type should be told, not quietly given the other behavior.
     if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
       yield { type: 'error', data: `Unsupported deliveryType. Supported: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}.` };
       return;
@@ -2166,7 +2159,7 @@ export class CampaignProxyService {
     // 3. Geo targeting
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { campaign: campaignResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);
@@ -2289,7 +2282,7 @@ export class CampaignProxyService {
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { ad_group: adGroupResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);
@@ -2732,7 +2725,7 @@ function buildCampaignName(body: CampaignCreateRequest, campaignType: string): s
 /**
  * The tracking URL a dispatched ad points at.
  *
- * EXPORTED so the utm_campaign omission can be pinned directly. It is the one behaviour here a
+ * EXPORTED so the utm_campaign omission can be pinned directly. It is the one behavior here a
  * caller cannot observe through the create path without a live dispatch, and it decides whether
  * a link is honestly untagged or carries a token HubSpot never issued.
  */
@@ -2748,7 +2741,7 @@ export function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'):
   });
   // utm_campaign is OMITTED when HubSpot issued no token, rather than falling back to the event
   // slug. `hsToken || slug` fabricated a plausible-looking token HubSpot never minted, which is
-  // the exact behaviour this cutover removes from the lookup path -- reinstated one layer down,
+  // the exact behavior this cutover removes from the lookup path -- reinstated one layer down,
   // where it is harder to see. A fabricated token is indistinguishable from a real one and sends
   // the traffic to a campaign HubSpot cannot report on; an ABSENT parameter is visibly absent,
   // and every downstream analytics tool treats it as untagged rather than mis-tagged.

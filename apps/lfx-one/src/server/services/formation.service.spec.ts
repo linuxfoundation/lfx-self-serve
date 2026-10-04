@@ -13,11 +13,14 @@ import type {
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
 import {
+  FORMATION_OPEN_GATE_CEL_FILTER,
   FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
   FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   LF_STAFF_EMAIL_DOMAIN,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
   ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
@@ -2083,6 +2086,176 @@ describe('FormationService', () => {
     });
   });
 
+  describe('Blocking column next open gate (#3066)', () => {
+    /**
+     * Routes `proxyRequest` by query shape: the formation-aggregate read, the caller's assigned-item
+     * read (`assignee:` in `tags_all`), and the next-gate read (`formation_uid:` in `tags`).
+     */
+    function mockGateReads(options: {
+      formations: UpstreamFormationQueueRow[];
+      assigned?: UpstreamFormationItemRow[];
+      gates?: UpstreamFormationItemRow[] | Error;
+    }): void {
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string; tags?: string[]; tags_all?: string[] };
+        if (params.type === 'formation') {
+          return Promise.resolve({ resources: options.formations.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })) });
+        }
+        if (params.tags?.some((tag) => tag.startsWith('formation_uid:'))) {
+          if (options.gates instanceof Error) return Promise.reject(options.gates);
+          const asked = new Set(params.tags.map((tag) => tag.slice('formation_uid:'.length)));
+          const rows = (options.gates ?? []).filter((row) => asked.has(row.formation_uid));
+          return Promise.resolve({ resources: rows.map((row) => ({ type: 'formation_item', id: row.object_id, data: row })) });
+        }
+        return Promise.resolve({ resources: (options.assigned ?? []).map((row) => ({ type: 'formation_item', id: row.object_id, data: row })) });
+      });
+    }
+
+    const gateItem = (overrides: Partial<UpstreamFormationItemRow>): UpstreamFormationItemRow =>
+      itemIndexRow({ gate: true, assignee: undefined, ...overrides });
+
+    it('stamps each queue row with its first open gate in checklist order, skipping done/skipped and non-gating items', async () => {
+      mockGateReads({
+        formations: [
+          formationIndexRow({ formation_uid: 'formation:a', project_uid: 'a' }),
+          formationIndexRow({ formation_uid: 'formation:b', project_uid: 'b', gates_cleared: true }),
+        ],
+        gates: [
+          gateItem({ object_id: 'a-3', formation_uid: 'formation:a', item_key: 'contribution_agreement', title: 'Contribution agreement', status: 'blocked' }),
+          gateItem({ object_id: 'a-1', formation_uid: 'formation:a', item_key: 'formation_review_packet', title: 'Formation review', status: 'done' }),
+          gateItem({ object_id: 'a-2', formation_uid: 'formation:a', item_key: 'charter_agreed', title: 'Charter agreed', status: 'skipped' }),
+          itemIndexRow({ object_id: 'a-0', formation_uid: 'formation:a', item_key: 'preliminary_trademark_search', title: 'Trademark search', gate: false }),
+          gateItem({ object_id: 'b-1', formation_uid: 'formation:b', item_key: 'charter_agreed', title: 'Charter agreed', status: 'done' }),
+        ],
+      });
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      const byUid = new Map(result.rows.map((row) => [row.formation_uid, row]));
+      expect(byUid.get('formation:a')?.next_gate_item).toEqual({ item_key: 'contribution_agreement', title: 'Contribution agreement', status: 'blocked' });
+      expect(byUid.get('formation:b')?.next_gate_item).toBeNull();
+      const gateCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation_item');
+      expect(gateCall?.[4]).toMatchObject({
+        type: 'formation_item',
+        tags: ['formation_uid:formation:a', 'formation_uid:formation:b'],
+        tags_all: ['lifecycle:live'],
+        cel_filter: FORMATION_OPEN_GATE_CEL_FILTER,
+        page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+      });
+    });
+
+    it('partitions more than one batch of formations across item reads with no overlap or omission', async () => {
+      const formations = Array.from({ length: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE + 1 }, (_, i) =>
+        formationIndexRow({ formation_uid: `formation:f-${i}`, project_uid: `f-${i}`, project_name: `F ${i}` })
+      );
+      mockGateReads({
+        formations,
+        gates: formations.map((row, i) =>
+          gateItem({ object_id: `g-${i}`, formation_uid: row.formation_uid, item_key: 'charter_agreed', title: `Charter ${i}` })
+        ),
+      });
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      const gateCalls = proxyRequest.mock.calls.filter((c) => (c[4] as { type: string }).type === 'formation_item');
+      expect(gateCalls).toHaveLength(2);
+      const tagged = gateCalls.flatMap((c) => (c[4] as { tags: string[] }).tags);
+      expect(tagged).toHaveLength(formations.length);
+      expect(new Set(tagged)).toEqual(new Set(formations.map((row) => `formation_uid:${row.formation_uid}`)));
+      expect(result.rows.every((row) => row.next_gate_item?.title === `Charter ${row.project_uid.slice(2)}`)).toBe(true);
+    });
+
+    it('stamps no row from a successful batch when a later batch fails — all or nothing', async () => {
+      const formations = Array.from({ length: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE + 1 }, (_, i) =>
+        formationIndexRow({ formation_uid: `formation:f-${i}`, project_uid: `f-${i}` })
+      );
+      let gateCall = 0;
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string; tags?: string[] };
+        if (params.type === 'formation') {
+          return Promise.resolve({ resources: formations.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })) });
+        }
+        gateCall++;
+        if (gateCall === 2) return Promise.reject(new Error('second batch failed'));
+        const rows = (params.tags ?? []).map((tag, i) =>
+          gateItem({ object_id: `g-${i}`, formation_uid: tag.slice('formation_uid:'.length), item_key: 'charter_agreed', title: 'Charter agreed' })
+        );
+        return Promise.resolve({ resources: rows.map((row) => ({ type: 'formation_item', id: row.object_id, data: row })) });
+      });
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows).toHaveLength(formations.length);
+      expect(result.rows.every((row) => row.next_gate_item === null)).toBe(true);
+    });
+
+    it('degrades instead of throwing when an item document is malformed past the fetch', async () => {
+      mockGateReads({
+        formations: [formationIndexRow({ blocked_item_titles: ['Legal review'] })],
+        gates: [
+          gateItem({ object_id: 'bad-1', item_key: 'unknown_a', title: undefined as unknown as string }),
+          gateItem({ object_id: 'bad-2', item_key: 'unknown_b', title: undefined as unknown as string }),
+        ],
+      });
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].next_gate_item).toBeNull();
+    });
+
+    it('reads gates only for the rows it serves, after search filtering', async () => {
+      mockGateReads({
+        formations: [
+          formationIndexRow({ formation_uid: 'formation:keep', project_uid: 'keep', project_name: 'Keep Me' }),
+          formationIndexRow({ formation_uid: 'formation:drop', project_uid: 'drop', project_name: 'Other' }),
+        ],
+      });
+
+      await service.getFormationsQueue(buildReq(), undefined, 'keep');
+
+      const gateCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation_item');
+      expect(gateCall?.[4]).toMatchObject({ tags: ['formation_uid:formation:keep'] });
+    });
+
+    it('keeps serving the queue with next_gate_item null when the item read fails', async () => {
+      mockGateReads({ formations: [formationIndexRow({ blocked_item_titles: ['Legal review'] })], gates: new Error('query service unavailable') });
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].next_gate_item).toBeNull();
+      expect(result.rows[0].blocked_item_titles).toEqual(['Legal review']);
+    });
+
+    it('fills My Formations blocking_item_title from the next open gate and carries gates_cleared', async () => {
+      mockGateReads({
+        formations: [formationIndexRow({ blocked_item_titles: ['Legal review'], gates_cleared: false })],
+        assigned: [itemIndexRow({ object_id: 'mine-1' })],
+        gates: [gateItem({ object_id: 'g-1', item_key: 'charter_agreed', title: 'Charter agreed', status: 'in_progress' })],
+      });
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.formations[0]).toMatchObject({ blocking_item_title: 'Charter agreed', blocking_item_blocked: false, gates_cleared: false });
+      // The caller's assigned-item read is unchanged — the gate read never feeds items[].
+      expect(result.items.map((item) => item.item_uid)).toEqual(['mine-1']);
+    });
+
+    it('falls back to the first blocked title on My Formations when the gate read fails', async () => {
+      mockGateReads({
+        formations: [formationIndexRow({ blocked_item_titles: ['Legal review'] })],
+        assigned: [itemIndexRow({ object_id: 'mine-1' })],
+        gates: new Error('query service unavailable'),
+      });
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.formations[0]).toMatchObject({ blocking_item_title: 'Legal review', blocking_item_blocked: true });
+    });
+  });
+
   describe('getMyFormationWork (GH-1956)', () => {
     /** Routes `proxyRequest` by `type` so item-query and formation-query mocks stay independent of call order. */
     function mockQueryResources(itemRows: UpstreamFormationItemRow[], formationRows: UpstreamFormationQueueRow[]): void {
@@ -2460,7 +2633,11 @@ describe('FormationService', () => {
         items_total: 8,
         gating_done: 0,
         gating_total: 0,
+        // No gate item in the item index for this formation while gates aren't cleared (#3066) — the
+        // two documents disagree, so the aggregate's first `blocked` title stands in.
         blocking_item_title: 'Legal review',
+        blocking_item_blocked: true,
+        gates_cleared: false,
       });
     });
 

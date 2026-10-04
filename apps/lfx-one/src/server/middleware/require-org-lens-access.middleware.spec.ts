@@ -35,7 +35,7 @@ vi.mock('../services/logger.service', () => ({
 const { requireOrgLensAccess } = await import('./require-org-lens-access.middleware');
 
 const LF = '0014100000Te2ovAAB';
-const RED_HAT = '0014100000Te2QjAAJ';
+const OTHER_ORG = '0014100000BetaAAAA';
 
 function grants(uids: string[], upstreamFailed = false): { resolved: Map<string, unknown>; upstreamFailed: boolean } {
   return { resolved: new Map(uids.map((uid) => [uid, { roleSource: 'direct-writer' }])), upstreamFailed };
@@ -82,7 +82,7 @@ describe('requireOrgLensAccess', () => {
 
   it('refuses an organization the caller holds no relation on (the reported exposure)', async () => {
     // Before this middleware existed, this request returned 3,519 rows of another org's people.
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
     expect(statusOf(next)).toBe(403);
     // A verified denial is not an upstream failure, so it names no failed upstream path.
     expect(errorOf(next)).toMatchObject({ service: 'LFX_V2_SERVICE', operation: 'require_org_lens_access', path: undefined });
@@ -90,11 +90,11 @@ describe('requireOrgLensAccess', () => {
 
   it('allows a cascading (inherited) grant, not only a direct one', async () => {
     getAccessAwareOrgs.mockResolvedValue({
-      resolved: new Map([[RED_HAT, { roleSource: 'inherited-auditor', parentUid: LF, parentName: 'LF' }]]),
+      resolved: new Map([[OTHER_ORG, { roleSource: 'inherited-auditor', parentUid: LF, parentName: 'LF' }]]),
       upstreamFailed: false,
     });
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe('allow');
   });
@@ -140,7 +140,7 @@ describe('requireOrgLensAccess', () => {
     // yet "denied" — answering 403 here would tell a roll-up editor they lost access they hold.
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-writer' }]]), upstreamFailed: false, degraded: true });
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe(503);
   });
@@ -154,10 +154,10 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
     checkSingleAccessStrict.mockResolvedValue(true);
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe('allow');
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: RED_HAT, access: 'auditor' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: OTHER_ORG, access: 'auditor' });
   });
 
   it('allows an authorizer-confirmed auditor even when the grant lookup degraded, because the two resolutions are independent', async () => {
@@ -168,7 +168,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true });
     checkSingleAccessStrict.mockResolvedValue(true);
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe('allow');
   });
@@ -179,7 +179,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
     checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe(503);
   });
@@ -188,7 +188,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: false });
     checkSingleAccessStrict.mockResolvedValue(false);
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe(403);
   });
@@ -200,7 +200,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true });
     checkSingleAccessStrict.mockResolvedValue(false);
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe(403);
   });
@@ -237,7 +237,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
     checkSingleAccessStrict.mockResolvedValue(true);
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe('allow');
   });
@@ -258,7 +258,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
     checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe(503);
     expect(errorOf(next)).toMatchObject({ path: '/access-check' });
@@ -270,7 +270,7 @@ describe('requireOrgLensAccess', () => {
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: true });
     checkSingleAccessStrict.mockResolvedValue(true);
 
-    const { next } = await run(RED_HAT);
+    const { next } = await run(OTHER_ORG);
 
     expect(statusOf(next)).toBe('allow');
   });
@@ -278,7 +278,7 @@ describe('requireOrgLensAccess', () => {
   it('resolves each request and org once, replaying the answer to a second caller on the same request', async () => {
     // The middleware and a handler that also asserts share one request; the second call must not
     // cost a second roster lookup or authorizer round-trip.
-    const req = buildReq(RED_HAT);
+    const req = buildReq(OTHER_ORG);
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
     checkSingleAccessStrict.mockResolvedValue(false);
 

@@ -3,29 +3,82 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
 import {
+  createDefaultMentorshipTerm,
+  createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
+  MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+  MENTORSHIP_SKILL_OPTIONS,
+} from '../constants/mentorship-enroll.constants';
+import {
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
-  MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
-  MOCK_MENTORSHIP_MENTEE_TASKS,
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
+  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
+  MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
+  MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
+  MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
 } from '../constants/mentorship-mentee.constants';
-import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
-import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
-import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
-  buildMentorshipMenteeApplicationViews,
+  createEmptyMentorshipMentorForm,
+  MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+  MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS,
+} from '../constants/mentorship-mentor.constants';
+import {
+  MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+  MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS,
+  MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
+} from '../constants/mentorship.constants';
+import type {
+  MentorshipMenteeApplication,
+  MentorshipMenteeApplicationTask,
+  MentorshipMenteeProfileDetails,
+  MentorshipMenteeProfileFormValue,
+  MentorshipMenteeRegisterForm,
+  MentorshipMenteeTaskStatus,
+  MentorshipMenteeTaskView,
+} from '../interfaces/mentorship-mentee.interface';
+import type { MentorshipProgramApplicant, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
+import type { MentorshipProgram, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
+import type { MentorshipMentorRegisterForm } from '../interfaces/mentorship-mentor.interface';
+import {
+  buildMentorshipMenteeApplicationView,
+  buildMentorshipMenteeDemographicsUpdate,
+  buildMentorshipMenteeProfileUpdate,
+  buildMentorshipMenteeOverview,
+  buildMentorshipMenteeRegisterRequest,
+  buildMentorshipMentorProfileUpdate,
+  buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
-  buildMentorshipMenteeTaskViews,
   buildMentorshipProgramDetail,
+  buildMentorshipProgramsUrl,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
+  getMentorshipMenteeTaskStatusOptions,
+  isMentorshipMenteeUpdatableTaskStatus,
+  isMentorshipMentorTaskReviewDecision,
+  mentorshipMenteeTaskStatusFields,
+  mentorshipTaskDueCutoffMs,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
-  formatMentorshipTaskProgress,
   formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
   mentorshipMentorReviewTasks,
@@ -33,11 +86,15 @@ import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
+  getMentorshipMenteeIntroductionError,
   getMentorshipMenteeRegisterErrors,
+  getMentorshipMenteeRegisterRequestErrors,
+  getMentorshipMentorProfileErrors,
   getMentorshipMentorRegisterErrors,
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
   mentorshipDateOnlyFloor,
+  mentorshipDescriptionLength,
   mentorshipOpenTermCount,
   mentorshipTermHasApplications,
   isMentorshipCiiProjectId,
@@ -45,21 +102,27 @@ import {
   isMentorshipHttpUrl,
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
-  isMentorshipResumeFileName,
+  isMentorshipMentorProfileUpdateEmpty,
+  isMentorshipRichTextOverRawMax,
+  isMentorshipTaskPastDue,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
-  mentorshipApplicantActionsFor,
+  mapMentorshipRegisterFailure,
   mentorshipApplicantDisplayStatus,
-  mentorshipMenteeActionsFor,
-  mentorshipMenteesForProgram,
+  mentorshipMenteeDisplayStatus,
+  isMentorshipMenteeProfileUpdateEmpty,
+  isMentorshipMentorInviteToken,
+  mentorshipMenteeProgressTasks,
   mentorshipMonthYearToStartDate,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
   mentorshipRowActions,
+  mentorshipTermFilterOptions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
+  toMentorshipUtcInstant,
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
@@ -248,6 +311,24 @@ describe('mentorship URL and logo helpers', () => {
   });
 });
 
+describe('buildMentorshipProgramsUrl', () => {
+  it('links the program listing, with or without a trailing slash on the base', () => {
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org')).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org/')).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org//')).toBe('https://mentorship.example.org/programs');
+  });
+
+  it('trims a long run of trailing slashes', () => {
+    expect(buildMentorshipProgramsUrl(`https://mentorship.example.org${'/'.repeat(10_000)}`)).toBe('https://mentorship.example.org/programs');
+    expect(buildMentorshipProgramsUrl('/'.repeat(10_000))).toBe('/programs');
+  });
+
+  it("links one program's page, URL-encoding its id", () => {
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org/', 'prog_gridflow')).toBe('https://mentorship.example.org/programs/prog_gridflow');
+    expect(buildMentorshipProgramsUrl('https://mentorship.example.org', 'prog/with space')).toBe('https://mentorship.example.org/programs/prog%2Fwith%20space');
+  });
+});
+
 describe('getMentorshipTermDateErrors', () => {
   it('rejects a start month before the current month', () => {
     const errors = getMentorshipTermDateErrors(
@@ -383,79 +464,94 @@ describe('mentorship term dates', () => {
 });
 
 describe('program detail helpers', () => {
-  it('derives tab counts from list lengths', () => {
-    const detail = buildMentorshipProgramDetail(
-      {
-        id: 'mp_test',
-        slug: 'test',
-        name: 'Test',
-        projectName: 'LF Energy',
-        term: 'Fall 2026',
-        status: 'open',
-        stats: { mentors: 0, mentees: 0, graduated: 0 },
-        createdOn: '2026-01-01T00:00:00.000Z',
-        updatedOn: '2026-01-01T00:00:00.000Z',
-      },
-      {
-        mentees: [{ id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' }],
-        applicants: [],
-        mentors: [
-          { id: '2', name: 'B', email: 'b@example.com', status: 'pending' },
-          { id: '3', name: 'C', email: 'c@example.com', status: 'accepted' },
-        ],
-        terms: [],
-      }
-    );
-
-    expect(detail.tabCounts).toEqual({ mentees: 1, applicants: 0, mentors: 2, terms: 0 });
+  const detailProgram: MentorshipProgram = {
+    id: 'mp_test',
+    slug: 'test',
+    name: 'Test',
+    projectName: 'LF Energy',
+    term: 'Fall 2026',
+    status: 'open',
+    stats: { mentors: 0, mentees: 0, graduated: 0 },
+    createdOn: '2026-01-01T00:00:00.000Z',
+    updatedOn: '2026-01-01T00:00:00.000Z',
+  };
+  const detailTerm = (name: string, status: MentorshipProgramTermRow['status'], id = name): MentorshipProgramTermRow => ({
+    id,
+    name,
+    status,
+    pending: 0,
+    declined: 0,
+    accepted: 0,
+    graduated: 0,
+    startDate: '2026-01-01',
+    endDate: '2026-06-01',
+    applicationStartDate: '2025-12-01',
+    applicationEndDate: '2025-12-15',
+  });
+  const detailApplication = (id: string, status: MentorshipProgramApplicant['status'], termName: string, termId = termName): MentorshipProgramApplicant => ({
+    id,
+    name: id,
+    email: `${id}@example.com`,
+    status,
+    termId,
+    termName,
+    createdOn: '2026-01-01',
+    updatedOn: '2026-01-01',
   });
 
-  it('scopes mentees to the tab that will render them, so the badge never over-counts', () => {
-    const program = {
-      id: 'mp_test',
-      slug: 'test',
-      name: 'Test',
-      projectName: 'LF Energy',
-      term: 'Fall 2026',
-      stats: { mentors: 0, mentees: 0, graduated: 0 },
-      createdOn: '2026-01-01T00:00:00.000Z',
-      updatedOn: '2026-01-01T00:00:00.000Z',
-    };
-    const mentees: MentorshipProgramMentee[] = [
-      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
-      // Still an applicant, so it belongs to neither mentee tab.
-      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
-      { id: '3', name: 'C', email: 'c@example.com', status: 'withdrawn', termName: 'Fall 2026' },
-    ];
-    const lists = { mentees, applicants: [], mentors: [], terms: [] };
+  it('splits applications by term status, whatever their own status', () => {
+    const detail = buildMentorshipProgramDetail(detailProgram, {
+      applications: [
+        detailApplication('1', 'pending', 'Fall 2026'),
+        detailApplication('2', 'graduated', 'Spring 2026'),
+        detailApplication('3', 'accepted', 'Spring 2026'),
+        detailApplication('4', 'declined', 'Fall 2026'),
+        // A term the program does not list stays current rather than vanishing.
+        detailApplication('5', 'withdrawn', 'Winter 2027'),
+      ],
+      mentors: [{ id: 'm1', name: 'M', email: 'm@example.com', status: 'accepted' }],
+      terms: [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed')],
+    });
 
-    // A live program answers "who is taking part", so the withdrawal is out and the
-    // accepted mentee is in. Whatever the tab renders is what the badge counts.
-    const open = buildMentorshipProgramDetail({ ...program, status: 'open' as const }, lists);
-    expect(open.mentees.map((person) => person.id)).toEqual(['1']);
-    expect(open.tabCounts.mentees).toBe(open.mentees.length);
-
-    // Completing the program inverts it: the withdrawal is now history worth showing,
-    // and no mentee can still be `accepted` by the time a program closes.
-    const completed = buildMentorshipProgramDetail({ ...program, status: 'completed' as const }, lists);
-    expect(completed.mentees.map((person) => person.id)).toEqual(['3']);
-    expect(completed.tabCounts.mentees).toBe(completed.mentees.length);
+    expect(detail.currentMentees.map((person) => person.id)).toEqual(['1', '4', '5']);
+    expect(detail.pastMentees.map((person) => person.id)).toEqual(['2', '3']);
+    expect(detail.tabCounts).toEqual({ currentMentees: 3, pastMentees: 2, mentors: 1, terms: 2 });
   });
 
-  it('splits mentees between the live and completed tabs, keeping graduates on both', () => {
-    const mentees: MentorshipProgramMentee[] = [
-      { id: '1', name: 'A', email: 'a@example.com', status: 'accepted', termName: 'Fall 2026' },
-      { id: '2', name: 'B', email: 'b@example.com', status: 'pending', termName: 'Fall 2026' },
-      { id: '3', name: 'C', email: 'c@example.com', status: 'graduated', termName: 'Fall 2026' },
-      { id: '4', name: 'D', email: 'd@example.com', status: 'declined', termName: 'Fall 2026' },
-    ];
+  it('splits by term id when an open and a closed term share a name', () => {
+    const detail = buildMentorshipProgramDetail(detailProgram, {
+      applications: [detailApplication('1', 'accepted', 'Winter 2026', 'winter-open'), detailApplication('2', 'graduated', 'Winter 2026', 'winter-closed')],
+      mentors: [],
+      terms: [detailTerm('Winter 2026', 'open', 'winter-open'), detailTerm('Winter 2026', 'closed', 'winter-closed')],
+    });
 
-    // Live: taking part or finished early. The declined mentee waits for completion.
-    expect(mentorshipMenteesForProgram(mentees, false).map((person) => person.id)).toEqual(['1', '3']);
-    // Completed: how each participation ended, so the graduate carries over and the
-    // decline appears. `pending` is an applicant either way.
-    expect(mentorshipMenteesForProgram(mentees, true).map((person) => person.id)).toEqual(['3', '4']);
-    expect(mentorshipMenteesForProgram([], false)).toEqual([]);
+    expect(detail.currentMentees.map((person) => person.id)).toEqual(['1']);
+    expect(detail.pastMentees.map((person) => person.id)).toEqual(['2']);
+  });
+
+  it('leaves Past Mentees empty when no term is closed', () => {
+    const detail = buildMentorshipProgramDetail(detailProgram, {
+      applications: [detailApplication('1', 'accepted', 'Fall 2026')],
+      mentors: [],
+      terms: [detailTerm('Fall 2026', 'open')],
+    });
+
+    expect(detail.pastMentees).toEqual([]);
+    expect(detail.tabCounts).toEqual({ currentMentees: 1, pastMentees: 0, mentors: 0, terms: 1 });
+  });
+
+  it('lists only the terms in the requested state as filter options', () => {
+    const terms = [detailTerm('Fall 2026', 'open'), detailTerm('Spring 2026', 'closed'), detailTerm('Spring 2027', 'open')];
+
+    expect(mentorshipTermFilterOptions(terms, 'open', 'All open terms')).toEqual([
+      { label: 'All open terms', value: null },
+      { label: 'Fall 2026', value: 'Fall 2026' },
+      { label: 'Spring 2027', value: 'Spring 2027' },
+    ]);
+    expect(mentorshipTermFilterOptions(terms, 'closed', 'All closed terms')).toEqual([
+      { label: 'All closed terms', value: null },
+      { label: 'Spring 2026', value: 'Spring 2026' },
+    ]);
   });
 
   it('requires an introduction, skills, and both acknowledgements to become a mentor', () => {
@@ -467,12 +563,11 @@ describe('program detail helpers', () => {
     });
   });
 
-  it('registers a mentor who has neither applied to a program nor attached a resume', () => {
-    // Both are optional: a mentor can register a profile now and apply to programs later.
+  it('registers a mentor who has not applied to a program', () => {
+    // Requests are optional: a mentor can register a profile now and apply to programs later.
     const complete: MentorshipMentorRegisterForm = {
       introduction: '<p>Maintainer on two CNCF projects.</p>',
-      skills: ['Go'],
-      resumeFileName: '',
+      skills: ['Kubernetes'],
       complianceAccepted: true,
       termsAccepted: true,
     };
@@ -481,7 +576,7 @@ describe('program detail helpers', () => {
   });
 
   it('treats markup with no text as an empty introduction', () => {
-    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
 
     // The rich editor leaves an empty paragraph behind when the user clears the field.
     expect(getMentorshipMentorRegisterErrors({ ...form, introduction: '<p></p>' }).introduction).toBe('Introduction is required.');
@@ -490,7 +585,7 @@ describe('program detail helpers', () => {
   });
 
   it('caps the introduction, since it reaches a mentor profile the whole platform can read', () => {
-    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Go'], complianceAccepted: true, termsAccepted: true };
+    const form = { ...createEmptyMentorshipMentorForm(), skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
     const atCap = `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX)}</p>`;
 
     expect(getMentorshipMentorRegisterErrors({ ...form, introduction: atCap }).introduction).toBeUndefined();
@@ -499,14 +594,60 @@ describe('program detail helpers', () => {
     );
   });
 
-  it('accepts only document extensions for a resume', () => {
-    expect(isMentorshipResumeFileName('resume.pdf')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.DOCX')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.doc')).toBe(true);
-    expect(isMentorshipResumeFileName('resume.png')).toBe(false);
-    // No extension at all, and a name that only looks like one.
-    expect(isMentorshipResumeFileName('resume')).toBe(false);
-    expect(isMentorshipResumeFileName('')).toBe(false);
+  it('refuses a mentor skill the picker does not offer, since only a tampered request can carry one', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), introduction: '<p>Hi</p>', complianceAccepted: true, termsAccepted: true };
+
+    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes', 'Not A Skill'] }).skills).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
+    expect(getMentorshipMentorRegisterErrors({ ...form, skills: ['Kubernetes'] }).skills).toBeUndefined();
+  });
+
+  it('checks only the mentor profile fields present in an edit', () => {
+    expect(getMentorshipMentorProfileErrors({})).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p>Hi</p>' })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ skills: ['Kubernetes'] })).toEqual({});
+    expect(getMentorshipMentorProfileErrors({ introduction: '<p></p>' })).toEqual({ introduction: 'Introduction is required.' });
+    expect(getMentorshipMentorProfileErrors({ skills: [] })).toEqual({ skills: 'Add at least one skill.' });
+    expect(getMentorshipMentorProfileErrors({ skills: ['Not A Skill'] })).toEqual({ skills: MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL });
+  });
+
+  it('sends only the mentor profile fields that changed', () => {
+    const seed = { aboutMe: '<p>Hi</p>', skills: ['Kubernetes', 'Angular'] };
+
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: [' Kubernetes ', 'Angular', ''] })).toEqual({});
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hello</p>', skills: ['Kubernetes', 'Angular'] })).toEqual({
+      introduction: '<p>Hello</p>',
+    });
+    // Order counts, and the whole list is sent, since upstream replaces it.
+    expect(buildMentorshipMentorProfileUpdate(seed, { introduction: '<p>Hi</p>', skills: ['Angular', 'Kubernetes'] })).toEqual({
+      skills: ['Angular', 'Kubernetes'],
+    });
+    expect(buildMentorshipMentorProfileUpdate({ aboutMe: '', skills: [] }, { introduction: '', skills: [] })).toEqual({});
+  });
+
+  it('treats a mentor profile update with no field present as empty', () => {
+    expect(isMentorshipMentorProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMentorProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMentorProfileUpdateEmpty({ skills: [] })).toBe(false);
+  });
+
+  it('builds the mentor register request from the form', () => {
+    const request = buildMentorshipMentorRegisterRequest({
+      introduction: '<p>Hi</p>',
+      skills: ['Kubernetes'],
+      complianceAccepted: true,
+      termsAccepted: true,
+    });
+
+    expect(request).toEqual({ introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true });
+  });
+
+  it('adds the LFX profile fields to the mentor register request only when there are some', () => {
+    const form = { introduction: '<p>Hi</p>', skills: ['Kubernetes'], complianceAccepted: true, termsAccepted: true };
+    const lfxProfile = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
+
+    expect(buildMentorshipMentorRegisterRequest(form, lfxProfile).lfxProfile).toEqual(lfxProfile);
+    expect(buildMentorshipMentorRegisterRequest(form, {})).not.toHaveProperty('lfxProfile');
+    expect(buildMentorshipMentorRegisterRequest(form)).not.toHaveProperty('lfxProfile');
   });
 
   it('tints an avatar deterministically, and survives an empty name', () => {
@@ -543,11 +684,11 @@ describe('program detail helpers', () => {
     const icons = { accepted: 'fa-check', declined: 'fa-xmark' };
 
     expect(mentorshipRowActions(['accepted', 'declined'], labels, icons)).toEqual([
-      { label: 'Accept', icon: 'fa-check' },
-      { label: 'Decline', icon: 'fa-xmark' },
+      { value: 'accepted', label: 'Accept', icon: 'fa-check' },
+      { value: 'declined', label: 'Decline', icon: 'fa-xmark' },
     ]);
     // Order follows the caller's list, and an empty list means the row shows no menu.
-    expect(mentorshipRowActions(['declined'], labels, icons)).toEqual([{ label: 'Decline', icon: 'fa-xmark' }]);
+    expect(mentorshipRowActions(['declined'], labels, icons)).toEqual([{ value: 'declined', label: 'Decline', icon: 'fa-xmark' }]);
     expect(mentorshipRowActions([], labels, icons)).toEqual([]);
   });
 
@@ -567,14 +708,21 @@ describe('program detail helpers', () => {
     expect(formatMentorshipDateRange('2026-07-01', '2026-08-31')).toBe('Jul 1, 2026 – Aug 31, 2026');
   });
 
-  it('offers mentee row actions that exclude the current status, and none once graduated', () => {
-    expect(mentorshipMenteeActionsFor('accepted')).toEqual(['withdrawn', 'declined', 'graduated']);
-    // Only an accepted mentee can graduate.
-    expect(mentorshipMenteeActionsFor('pending')).toEqual(['withdrawn', 'declined']);
-    expect(mentorshipMenteeActionsFor('declined')).toEqual(['withdrawn']);
-    expect(mentorshipMenteeActionsFor('withdrawn')).toEqual(['declined']);
-    // `graduated` is terminal.
-    expect(mentorshipMenteeActionsFor('graduated')).toEqual([]);
+  it('offers Current Mentees row actions by status, and none once the application ends', () => {
+    const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
+      mentorshipRowActions(
+        MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status],
+        MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+        MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
+      ).map((action) => action.label);
+
+    // An application under review is decided.
+    expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    // Only an accepted mentee is given tasks or graduated.
+    expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
+    expect(labelsFor('declined')).toEqual([]);
+    expect(labelsFor('withdrawn')).toEqual([]);
+    expect(labelsFor('graduated')).toEqual([]);
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {
@@ -594,24 +742,6 @@ describe('program detail helpers', () => {
     // Every resolved status displays as itself, whatever the task counts say.
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'accepted', tasksSubmitted: 1, tasksTotal: 5 }))).toBe('accepted');
     expect(mentorshipApplicantDisplayStatus(applicant({ status: 'graduated' }))).toBe('graduated');
-  });
-
-  it('offers applicant row actions that exclude the current status, and never re-accepts a graduate', () => {
-    expect(mentorshipApplicantActionsFor('pending')).toEqual(['accepted', 'declined', 'withdrawn']);
-    expect(mentorshipApplicantActionsFor('accepted')).toEqual(['declined', 'withdrawn']);
-    expect(mentorshipApplicantActionsFor('declined')).toEqual(['accepted', 'withdrawn']);
-    expect(mentorshipApplicantActionsFor('withdrawn')).toEqual(['accepted', 'declined']);
-    expect(mentorshipApplicantActionsFor('graduated')).toEqual(['declined', 'withdrawn']);
-  });
-
-  it('formats task progress, and reports no label when nothing is assigned', () => {
-    expect(formatMentorshipTaskProgress(7, 12)).toBe('7 of 12 submitted');
-    expect(formatMentorshipTaskProgress(0, 12)).toBe('0 of 12 submitted');
-    // A missing count is a mentee with tasks assigned but none submitted yet.
-    expect(formatMentorshipTaskProgress(undefined, 9)).toBe('0 of 9 submitted');
-    // No assigned tasks must not render as "0 of 0 submitted".
-    expect(formatMentorshipTaskProgress(0, 0)).toBeNull();
-    expect(formatMentorshipTaskProgress(3, undefined)).toBeNull();
   });
 
   it('computes mentee task completion from assigned statuses, excluding prerequisites', () => {
@@ -669,13 +799,42 @@ describe('program detail helpers', () => {
           },
         ],
       },
+      {
+        id: 'mnt_2',
+        name: 'Ravi Patel',
+        email: 'ravi@example.com',
+        status: 'graduated',
+        termName: 'Fall 2026',
+        tasks: [
+          {
+            id: 'tsk_leftover',
+            name: 'Final report',
+            description: 'Submitted after graduating.',
+            status: 'submitted',
+            prerequisite: false,
+            createdOn: '2026-08-01',
+            updatedOn: '2026-09-16',
+          },
+          {
+            id: 'tsk_done',
+            name: 'Demo',
+            description: 'Recorded a demo.',
+            status: 'completed',
+            prerequisite: false,
+            createdOn: '2026-08-01',
+            updatedOn: '2026-09-01',
+          },
+        ],
+      },
     ];
 
+    // A graduated mentee's submitted task is not waiting on the mentor, so it is neither counted nor listed.
     expect(mentorshipMentorSubmittedTaskCount(mentees)).toBe(1);
 
     const rows = mentorshipMentorReviewTasks(mentees);
-    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_1__tsk_old']);
+    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_2__tsk_done', 'mnt_1__tsk_old']);
     expect(rows[0]).toMatchObject({
+      taskId: 'tsk_new',
       menteeName: 'Hana Suzuki',
       taskName: 'Backpressure design note',
       status: 'submitted',
@@ -771,14 +930,13 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     });
   });
 
-  it('accepts a fully populated form — additional notes, resume, and demographic answers stay optional', () => {
-    // `additionalNotes`, `resumeFileName`, and every demographic control are optional
-    // by design: declining a demographic is a valid answer, and the resume is
-    // validated by its picker at selection time.
+  it('accepts a fully populated form — additional notes and demographic answers stay optional', () => {
+    // `additionalNotes` and every demographic control are optional by design:
+    // declining a demographic is a valid answer.
     const complete = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Backend engineer looking to break into distributed systems.</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -797,7 +955,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -812,7 +970,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
   it('treats markup with no text as an empty introduction (rich editor leaves a stray `<p></p>`)', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -829,7 +987,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
   it('caps the introduction at MENTORSHIP_MENTEE_INTRODUCTION_MAX', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -852,7 +1010,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       // Array form, not boolean.
       ageEligible: ['yes'] as unknown as boolean,
@@ -872,7 +1030,7 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     const form = {
       ...createEmptyMentorshipMenteeForm(),
       introduction: '<p>Hi</p>',
-      skillsHave: ['Go'],
+      skillsHave: ['Java'],
       skillsWant: ['Kubernetes'],
       ageEligible: true,
       workAuthorized: true,
@@ -898,6 +1056,245 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     ] as const) {
       expect(errors).not.toHaveProperty(key);
     }
+  });
+});
+
+const VALID_MENTEE_REGISTER_FORM: MentorshipMenteeRegisterForm = {
+  ...createEmptyMentorshipMenteeForm(),
+  introduction: '<p>Test intro</p>',
+  skillsHave: ['Java'],
+  skillsWant: ['Python'],
+  ageEligible: true,
+  workAuthorized: true,
+  noDuplicateProfile: true,
+  complianceAccepted: true,
+  termsAccepted: true,
+};
+
+describe('buildMentorshipMenteeRegisterRequest', () => {
+  it('copies the introduction and both skill lists and trims the additional notes', () => {
+    const request = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, additionalNotes: '  Test notes.  ' });
+
+    expect(request.introduction).toBe('<p>Test intro</p>');
+    expect(request.skillsHave).toEqual(['Java']);
+    expect(request.skillsWant).toEqual(['Python']);
+    expect(request.additionalNotes).toBe('Test notes.');
+  });
+
+  it('includes only the demographic answers whose consent is checked and non-empty', () => {
+    const request = buildMentorshipMenteeRegisterRequest({
+      ...VALID_MENTEE_REGISTER_FORM,
+      ageConsent: true,
+      age: '20-39',
+      raceEthnicityConsent: false,
+      raceEthnicity: 'asian',
+      genderConsent: true,
+      gender: '',
+      incomeConsent: true,
+      income: 'workingClass',
+      educationConsent: false,
+      education: '',
+    });
+
+    expect(request.demographics).toEqual({ age: '20-39', income: 'workingClass' });
+  });
+
+  it('omits demographics when no consent is checked, and sends preferNotToSay as-is when consented', () => {
+    const declined = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, age: '20-39', raceEthnicity: 'asian' });
+    expect(declined).not.toHaveProperty('demographics');
+
+    const optedOut = buildMentorshipMenteeRegisterRequest({ ...VALID_MENTEE_REGISTER_FORM, genderConsent: true, gender: 'preferNotToSay' });
+    expect(optedOut.demographics).toEqual({ gender: 'preferNotToSay' });
+  });
+
+  it('adds the LFX profile fields only when there are some', () => {
+    const lfxProfile = { firstName: 'Test', lastName: 'User' };
+
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, lfxProfile).lfxProfile).toEqual(lfxProfile);
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM, {})).not.toHaveProperty('lfxProfile');
+    expect(buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM)).not.toHaveProperty('lfxProfile');
+  });
+
+  it('coerces the five flags with isMentorshipTermsAccepted', () => {
+    const request = buildMentorshipMenteeRegisterRequest({
+      ...VALID_MENTEE_REGISTER_FORM,
+      ageEligible: ['yes'] as unknown as boolean,
+      workAuthorized: 'true' as unknown as boolean,
+      noDuplicateProfile: 1 as unknown as boolean,
+      complianceAccepted: false,
+      termsAccepted: [] as unknown as boolean,
+    });
+
+    expect(request).toMatchObject({
+      ageEligible: true,
+      workAuthorized: true,
+      noDuplicateProfile: true,
+      complianceAccepted: false,
+      termsAccepted: false,
+    });
+  });
+});
+
+describe('getMentorshipMenteeRegisterRequestErrors', () => {
+  it('reports errors in form order, the order the submit toast reads the first one from', () => {
+    const errors = getMentorshipMenteeRegisterRequestErrors({
+      introduction: '',
+      skillsHave: [],
+      skillsWant: [],
+      ageEligible: false,
+      workAuthorized: false,
+      noDuplicateProfile: false,
+      complianceAccepted: false,
+      termsAccepted: false,
+    });
+
+    expect(Object.keys(errors)).toEqual([
+      'introduction',
+      'skillsHave',
+      'skillsWant',
+      'ageEligible',
+      'workAuthorized',
+      'noDuplicateProfile',
+      'complianceAccepted',
+      'termsAccepted',
+    ]);
+    expect(errors).toEqual(getMentorshipMenteeRegisterErrors(createEmptyMentorshipMenteeForm()));
+  });
+
+  it('rejects a skill outside the catalog on either side', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: ['Java', 'Not A Skill'] }).skillsHave).toBe(
+      MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL
+    );
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: ['not a skill'] }).skillsWant).toBe(MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL);
+  });
+
+  it('accepts every skill in MENTORSHIP_SKILL_OPTIONS', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+    const firstHalf = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const secondHalf = MENTORSHIP_SKILL_OPTIONS.slice(MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: firstHalf, skillsWant: secondHalf })).toEqual({});
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: secondHalf, skillsWant: firstHalf })).toEqual({});
+  });
+
+  it('holds each list to the profile edit skills cap, so a registered profile stays editable', () => {
+    const request = buildMentorshipMenteeRegisterRequest(VALID_MENTEE_REGISTER_FORM);
+    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1);
+
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: atCap, skillsWant: atCap })).toEqual({});
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsHave: overCap }).skillsHave).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
+    expect(getMentorshipMenteeRegisterRequestErrors({ ...request, skillsWant: overCap }).skillsWant).toBe(MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE);
+  });
+
+  it('gives the form validator the same result for the same values', () => {
+    const form = { ...VALID_MENTEE_REGISTER_FORM, skillsHave: ['Not A Skill'], termsAccepted: false };
+
+    expect(getMentorshipMenteeRegisterErrors(form)).toEqual(getMentorshipMenteeRegisterRequestErrors(buildMentorshipMenteeRegisterRequest(form)));
+  });
+});
+
+describe('mapMentorshipRegisterFailure', () => {
+  const menteeOptions = MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS;
+  const mentorOptions = MENTORSHIP_MENTOR_REGISTER_FAILURE_OPTIONS;
+
+  it('maps a 409 with the profile-exists code to profile-exists and any other 409 to conflict', () => {
+    expect(mapMentorshipRegisterFailure(409, { code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE }, menteeOptions)).toEqual({
+      kind: 'profile-exists',
+      message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+    });
+    expect(mapMentorshipRegisterFailure(409, { code: 'CONFLICT', error: 'slug already exists' }, menteeOptions)).toEqual({
+      kind: 'conflict',
+      message: MENTORSHIP_REGISTER_ERROR_CONFLICT,
+    });
+  });
+
+  it('maps a 403 impersonation guard to read-only and any other 403 to the fallback', () => {
+    expect(mapMentorshipRegisterFailure(403, { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE }, menteeOptions)).toEqual({
+      kind: 'read-only',
+      message: MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+    });
+    expect(mapMentorshipRegisterFailure(403, { code: 'FORBIDDEN' }, menteeOptions).kind).toBe('error');
+  });
+
+  it('keeps only known fields from a 400, first message per field', () => {
+    const failure = mapMentorshipRegisterFailure(
+      400,
+      {
+        code: 'VALIDATION_ERROR',
+        errors: [
+          { field: 'demographics', message: 'Not a form field.' },
+          { field: 'skillsHave', message: 'Add at least one skill you currently have.' },
+          { field: 'skillsHave', message: 'Second message for the same field.' },
+          { field: 'introduction', message: '' },
+          { field: 'termsAccepted', message: 42 },
+          { field: 'introduction', message: 'Introduction is required.' },
+        ],
+      },
+      menteeOptions
+    );
+
+    expect(failure).toEqual({
+      kind: 'field-errors',
+      message: 'Add at least one skill you currently have.',
+      fieldErrors: { skillsHave: 'Add at least one skill you currently have.', introduction: 'Introduction is required.' },
+    });
+  });
+
+  it('falls back when a 400 has no errors list or none that maps to a form field', () => {
+    const fallback = { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
+
+    expect(mapMentorshipRegisterFailure(400, { error: 'bad request' }, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(400, { errors: [{ field: 'body', message: 'Body must be an object.' }] }, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(400, { errors: [null, 'text', 3] }, menteeOptions)).toEqual(fallback);
+  });
+
+  it('maps a 422 to the fixed ineligible copy whatever the upstream text says', () => {
+    const expected = { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
+
+    expect(mapMentorshipRegisterFailure(422, { error: 'age eligibility is required' }, menteeOptions)).toEqual(expected);
+    expect(mapMentorshipRegisterFailure(422, null, menteeOptions)).toEqual(expected);
+  });
+
+  it('falls back for status 0, 5xx and unusable bodies', () => {
+    const fallback = { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
+
+    expect(mapMentorshipRegisterFailure(0, null, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(500, { error: 'boom' }, menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(401, 'Unauthorized', menteeOptions)).toEqual(fallback);
+    expect(mapMentorshipRegisterFailure(500, undefined, menteeOptions)).toEqual(fallback);
+  });
+
+  it('reads the profile-exists code and copy from the options, so each role only matches its own code', () => {
+    expect(mapMentorshipRegisterFailure(409, { code: MENTORSHIP_MENTOR_PROFILE_EXISTS_ERROR_CODE }, mentorOptions)).toEqual({
+      kind: 'profile-exists',
+      message: MENTORSHIP_MENTOR_REGISTER_ERROR_PROFILE_EXISTS,
+    });
+    expect(mapMentorshipRegisterFailure(409, { code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE }, mentorOptions).kind).toBe('conflict');
+  });
+
+  it('keeps only the mentor form fields from a mentor 400', () => {
+    const failure = mapMentorshipRegisterFailure(
+      400,
+      {
+        errors: [
+          { field: 'skillsHave', message: 'Mentee field.' },
+          { field: 'skills', message: 'Add at least one skill.' },
+        ],
+      },
+      mentorOptions
+    );
+
+    expect(failure).toEqual({ kind: 'field-errors', message: 'Add at least one skill.', fieldErrors: { skills: 'Add at least one skill.' } });
+  });
+
+  it('falls back on a 422 when the options carry no ineligible copy', () => {
+    expect(mapMentorshipRegisterFailure(422, { error: 'user not found' }, mentorOptions)).toEqual({
+      kind: 'error',
+      message: MENTORSHIP_REGISTER_ERROR_FALLBACK,
+    });
   });
 });
 
@@ -935,6 +1332,23 @@ describe('countSubmittedMentorshipMenteeTasks', () => {
   });
 });
 
+describe('mentorshipMenteeTaskStatusFields', () => {
+  it('derives the flags and pill class from the normalised status', () => {
+    expect(mentorshipMenteeTaskStatusFields('in_progress')).toEqual({
+      status: 'in_progress',
+      submitted: false,
+      inProgress: true,
+      statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.in_progress,
+    });
+    expect(mentorshipMenteeTaskStatusFields('complete')).toEqual({
+      status: 'submitted',
+      submitted: true,
+      inProgress: false,
+      statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.submitted,
+    });
+  });
+});
+
 describe('buildMentorshipMenteeTaskView', () => {
   it('flags a submitted task with an uploaded file', () => {
     const view = buildMentorshipMenteeTaskView({
@@ -956,14 +1370,18 @@ describe('buildMentorshipMenteeTaskView', () => {
   });
 
   it('flags a task that still needs an upload', () => {
-    const view = buildMentorshipMenteeTaskView({
-      id: 't2',
-      title: 'Coding challenge',
-      description: 'Complete the challenge',
-      status: 'in_progress',
-      submitFile: 'required',
-      dueDate: '2026-09-30T00:00:00Z',
-    });
+    const view = buildMentorshipMenteeTaskView(
+      {
+        id: 't2',
+        title: 'Coding challenge',
+        description: 'Complete the challenge',
+        status: 'in_progress',
+        submitFile: 'required',
+        dueDate: '2026-09-30T00:00:00Z',
+      },
+      Date.parse('2026-09-30T23:59:59Z')
+    );
+    expect(view.pastDue).toBe(false);
     expect(view.inProgress).toBe(true);
     expect(view.submitted).toBe(false);
     expect(view.hasUploadedFile).toBe(false);
@@ -1013,45 +1431,645 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.inProgress).toBe(false);
     expect(view.statusClass).not.toBe('');
   });
+
+  it('marks a task past due once its due date has ended, and never one without a due date', () => {
+    const input = { id: 't6', title: 'Late task', description: 'Synthetic task', status: 'in_progress' as const, submitFile: null };
+    const now = Date.parse('2026-10-01T00:00:00Z');
+    expect(buildMentorshipMenteeTaskView({ ...input, dueDate: '2026-09-30T00:00:00Z' }, now).pastDue).toBe(true);
+    expect(buildMentorshipMenteeTaskView({ ...input, dueDate: '2026-10-01T00:00:00Z' }, now).pastDue).toBe(false);
+    expect(buildMentorshipMenteeTaskView(input, now).pastDue).toBe(false);
+  });
 });
 
-describe('buildMentorshipMenteeApplicationViews', () => {
-  it('maps applications into display-ready cards with task rows', () => {
-    const views = buildMentorshipMenteeApplicationViews(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications);
-    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications.length);
-    const [first] = views;
-    expect(first.programName).toBeTruthy();
-    expect(first.statusLabel).toBeTruthy();
-    expect(first.totalCount).toBeGreaterThan(0);
-    expect(first.submittedCount).toBeLessThanOrEqual(first.totalCount);
+describe('isMentorshipTaskPastDue', () => {
+  it('is false without a usable due date', () => {
+    const now = Date.parse('2026-10-01T00:00:00Z');
+    expect(isMentorshipTaskPastDue(undefined, now)).toBe(false);
+    expect(isMentorshipTaskPastDue(null, now)).toBe(false);
+    expect(isMentorshipTaskPastDue('', now)).toBe(false);
+    expect(isMentorshipTaskPastDue('not-a-date', now)).toBe(false);
   });
 
-  it('falls back to the overview counts when the tab-only tasks list is absent', () => {
-    const [view] = buildMentorshipMenteeApplicationViews([
-      {
-        id: 'app_no_tasks',
-        programId: 'prog_x',
-        orgAbbreviation: 'XX',
-        projectName: 'Project X',
-        term: { id: 'term_x', name: 'Fall 2026' },
-        programName: 'Program X',
-        status: 'in-progress',
-        lastTaskUpdatedOn: 'Jul 1, 2026',
-        decisionExpectedDate: 'Aug 1, 2026',
-        prerequisiteTasksCompleted: 2,
-        prerequisiteTasksTotal: 5,
-      },
+  it('stays open through the last millisecond of the due date in UTC', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30T00:00:00Z', Date.parse('2026-09-30T23:59:59.999Z'))).toBe(false);
+  });
+
+  it('closes at midnight UTC after the due date', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30T00:00:00Z', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+
+  it('reads a date-only value as that UTC day', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30', Date.parse('2026-09-30T12:00:00Z'))).toBe(false);
+    expect(isMentorshipTaskPastDue('2026-09-30', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+
+  it('uses the UTC day of a timestamp that carries a time of day', () => {
+    expect(isMentorshipTaskPastDue('2026-09-30T18:00:00Z', Date.parse('2026-09-30T20:00:00Z'))).toBe(false);
+    expect(isMentorshipTaskPastDue('2026-09-30T18:00:00Z', Date.parse('2026-10-01T00:00:00Z'))).toBe(true);
+  });
+});
+
+describe('mentorshipTaskDueCutoffMs', () => {
+  it('is the midnight UTC after the due date', () => {
+    expect(mentorshipTaskDueCutoffMs('2026-09-30')).toBe(Date.parse('2026-10-01T00:00:00Z'));
+    expect(mentorshipTaskDueCutoffMs('2026-09-30T18:00:00Z')).toBe(Date.parse('2026-10-01T00:00:00Z'));
+  });
+
+  it('is null without a usable due date', () => {
+    expect(mentorshipTaskDueCutoffMs(undefined)).toBeNull();
+    expect(mentorshipTaskDueCutoffMs(null)).toBeNull();
+    expect(mentorshipTaskDueCutoffMs('')).toBeNull();
+    expect(mentorshipTaskDueCutoffMs('not-a-date')).toBeNull();
+  });
+});
+
+describe('buildMentorshipMenteeTaskView requiresFile', () => {
+  const build = (submitFile: string | null, fileUrl?: string): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status: 'in_progress', submitFile, fileUrl });
+
+  it('is true for submit_file "required" with no stored file', () => {
+    expect(build('required').requiresFile).toBe(true);
+  });
+
+  it('is true for a URL submit_file with no stored file, even though View and Download show', () => {
+    const view = build('https://files.example.com/template.pdf');
+    expect(view.requiresFile).toBe(true);
+    expect(view.hasUploadedFile).toBe(true);
+  });
+
+  it('is false when a file is stored', () => {
+    expect(build('required', 'https://files.example.com/upload.pdf').requiresFile).toBe(false);
+  });
+
+  it('is false when the task needs no file', () => {
+    expect(build(null).requiresFile).toBe(false);
+  });
+});
+
+describe('isMentorshipMenteeUpdatableTaskStatus', () => {
+  it('accepts in_progress and submitted only', () => {
+    expect(isMentorshipMenteeUpdatableTaskStatus('in_progress')).toBe(true);
+    expect(isMentorshipMenteeUpdatableTaskStatus('submitted')).toBe(true);
+    for (const value of ['pending', 'incomplete', 'complete', 'IN_PROGRESS', '', null, undefined, 1]) {
+      expect(isMentorshipMenteeUpdatableTaskStatus(value)).toBe(false);
+    }
+  });
+});
+
+describe('isMentorshipMentorTaskReviewDecision', () => {
+  it('accepts complete and incomplete only', () => {
+    expect(isMentorshipMentorTaskReviewDecision('complete')).toBe(true);
+    expect(isMentorshipMentorTaskReviewDecision('incomplete')).toBe(true);
+    for (const value of ['completed', 'submitted', 'in_progress', 'COMPLETE', '', null, undefined, 1]) {
+      expect(isMentorshipMentorTaskReviewDecision(value)).toBe(false);
+    }
+  });
+});
+
+describe('getMentorshipMenteeTaskStatusOptions', () => {
+  const taskView = (status: MentorshipMenteeTaskStatus, submitFile: string | null = null, fileUrl?: string): MentorshipMenteeTaskView =>
+    buildMentorshipMenteeTaskView({ id: 't1', title: 'Task', description: 'Synthetic task', status, submitFile, fileUrl });
+  const disabledByValue = (view: MentorshipMenteeTaskView): Record<string, boolean> =>
+    Object.fromEntries(getMentorshipMenteeTaskStatusOptions(view).options.map((option) => [option.value, option.disabled]));
+
+  it('lets a pending task start but not skip to submitted', () => {
+    const state = getMentorshipMenteeTaskStatusOptions(taskView('pending'));
+    expect(disabledByValue(taskView('pending'))).toEqual({ pending: false, in_progress: false, submitted: true });
+    expect(state.locked).toBe(false);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_START_FIRST);
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('lets an in-progress task be submitted, with no way back and no hint', () => {
+    const state = getMentorshipMenteeTaskStatusOptions(taskView('in_progress'));
+    expect(disabledByValue(taskView('in_progress'))).toEqual({ pending: true, in_progress: false, submitted: false });
+    expect(state.locked).toBe(false);
+    expect(state.hint).toBeNull();
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('disables submitted with a visible hint when a file is required and not stored', () => {
+    const view = taskView('in_progress', 'required');
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED);
+    expect(state.hintVisible).toBe(true);
+  });
+
+  it('keeps submitted enabled when the required file is already stored', () => {
+    const view = taskView('in_progress', 'required', 'https://files.example.com/upload.pdf');
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: false });
+    expect(getMentorshipMenteeTaskStatusOptions(view).hint).toBeNull();
+  });
+
+  it('locks a submitted task with every option disabled and a hidden hint', () => {
+    const view = taskView('submitted');
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(state.locked).toBe(true);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: true, submitted: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_LOCKED);
+    expect(state.hintVisible).toBe(false);
+  });
+
+  it('locks a complete task, which normalises to submitted', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), status: 'complete' });
+    expect(state.locked).toBe(true);
+    expect(state.options.every((option) => option.disabled)).toBe(true);
+  });
+
+  it('lets a past-due pending task start but not be submitted, with a visible hint', () => {
+    const view = { ...taskView('pending'), pastDue: true };
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(disabledByValue(view)).toEqual({ pending: false, in_progress: false, submitted: true });
+    expect(state.locked).toBe(false);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
+    expect(state.hintVisible).toBe(true);
+  });
+
+  it('disables submitted on a past-due in-progress task, with a visible hint', () => {
+    const view = { ...taskView('in_progress'), pastDue: true };
+    const state = getMentorshipMenteeTaskStatusOptions(view);
+    expect(disabledByValue(view)).toEqual({ pending: true, in_progress: false, submitted: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
+    expect(state.hintVisible).toBe(true);
+  });
+
+  it('shows the past-due hint over the file-required one', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('in_progress', 'required'), pastDue: true });
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE);
+  });
+
+  it('keeps a past-due submitted task locked rather than past due', () => {
+    const state = getMentorshipMenteeTaskStatusOptions({ ...taskView('submitted'), pastDue: true });
+    expect(state.locked).toBe(true);
+    expect(state.hint).toBe(MENTORSHIP_MENTEE_TASK_HINT_LOCKED);
+  });
+});
+
+function menteeTask(overrides: Partial<MentorshipMenteeApplicationTask> = {}): MentorshipMenteeApplicationTask {
+  return {
+    id: 'task-1',
+    name: 'Task 1',
+    description: 'Synthetic task',
+    category: 'prerequisite',
+    status: 'incomplete',
+    submitFile: null,
+    updatedOn: '2026-07-01T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function menteeApplication(overrides: Partial<MentorshipMenteeApplication> = {}): MentorshipMenteeApplication {
+  return {
+    id: 'app-1',
+    programId: 'prog-1',
+    programName: 'Program One',
+    projectName: 'Project One',
+    term: { id: 'term-1', name: 'Fall 2026' },
+    upstreamStatus: 'pending',
+    createdOn: '2026-06-01T10:00:00Z',
+    updatedOn: '2026-06-02T10:00:00Z',
+    decisionExpectedDate: '2026-08-01',
+    tasks: [],
+    ...overrides,
+  };
+}
+
+describe('mentorshipMenteeDisplayStatus', () => {
+  it('shows an accepted application as active', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus: 'accepted' }))).toBe('active');
+  });
+
+  it('shows a graduated application as graduated', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus: 'graduated' }))).toBe('graduated');
+  });
+
+  it('shows a pending application with an open prerequisite task as in progress', () => {
+    const app = menteeApplication({ tasks: [menteeTask({ status: 'submitted' }), menteeTask({ id: 'task-2', status: 'in_progress' })] });
+    expect(mentorshipMenteeDisplayStatus(app)).toBe('in-progress');
+  });
+
+  it('shows a pending application with every prerequisite submitted as awaiting review', () => {
+    const app = menteeApplication({
+      tasks: [
+        menteeTask({ status: 'submitted' }),
+        menteeTask({ id: 'task-2', status: 'complete' }),
+        menteeTask({ id: 'task-3', category: 'non_prerequisite' }),
+      ],
+    });
+    expect(mentorshipMenteeDisplayStatus(app)).toBe('awaiting-review');
+  });
+
+  it('shows a pending application with no prerequisite tasks as awaiting review', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication())).toBe('awaiting-review');
+  });
+
+  it('shows a pending application whose tasks were not read as in progress', () => {
+    expect(mentorshipMenteeDisplayStatus(menteeApplication({ tasks: undefined }))).toBe('in-progress');
+  });
+
+  it('returns null for statuses that belong in Past Applications', () => {
+    for (const upstreamStatus of ['declined', 'withdrawn', 'hold'] as const) {
+      expect(mentorshipMenteeDisplayStatus(menteeApplication({ upstreamStatus }))).toBeNull();
+    }
+  });
+});
+
+describe('mentorshipMenteeProgressTasks', () => {
+  const tasks = [menteeTask({ id: 'prereq' }), menteeTask({ id: 'regular', category: 'non_prerequisite' })];
+
+  it('tracks prerequisite tasks while pending', () => {
+    expect(mentorshipMenteeProgressTasks(menteeApplication({ tasks })).map((task) => task.id)).toEqual(['prereq']);
+  });
+
+  it('tracks non-prerequisite tasks once accepted or graduated', () => {
+    for (const upstreamStatus of ['accepted', 'graduated'] as const) {
+      const ids = mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus, tasks })).map((task) => task.id);
+      expect(ids).toEqual(['regular']);
+    }
+  });
+
+  it('tracks nothing when the tasks were not read', () => {
+    expect(mentorshipMenteeProgressTasks(menteeApplication({ upstreamStatus: 'accepted', tasks: undefined }))).toEqual([]);
+  });
+});
+
+describe('buildMentorshipMenteeApplicationView', () => {
+  it('counts the tracked tasks and labels the progress by status', () => {
+    const app = menteeApplication({
+      upstreamStatus: 'accepted',
+      tasks: [
+        menteeTask({ id: 'prereq', status: 'incomplete' }),
+        menteeTask({ id: 'a', category: 'non_prerequisite', status: 'complete', submittedOn: '2026-07-02T10:00:00Z' }),
+        menteeTask({ id: 'b', category: 'non_prerequisite', status: 'in_progress' }),
+        menteeTask({ id: 'c', category: 'non_prerequisite', status: 'incomplete' }),
+      ],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'active');
+    expect(view.progressLabel).toBe('Tasks');
+    expect(view.statusLabel).toBe('Active');
+    expect(view.accepted).toBe(true);
+    expect(view.submittedCount).toBe(1);
+    expect(view.totalCount).toBe(3);
+    expect(view.progressPercent).toBe(33);
+    expect(view.tasks.map((task) => task.id)).toEqual(['a', 'b', 'c']);
+    expect(view.tasks[0].submittedDate).toBe('2026-07-02T10:00:00Z');
+  });
+
+  it('orders the tasks by name A to Z, ignoring case and reading numbers as numbers', () => {
+    const app = menteeApplication({
+      tasks: [
+        menteeTask({ id: 'step-10', name: 'Step 10' }),
+        menteeTask({ id: 'write', name: 'write a cover letter' }),
+        menteeTask({ id: 'step-2', name: 'Step 2' }),
+        menteeTask({ id: 'about', name: 'About you' }),
+      ],
+    });
+    const ids = buildMentorshipMenteeApplicationView(app, 'in-progress').tasks.map((task) => task.id);
+    expect(ids).toEqual(['about', 'step-2', 'step-10', 'write']);
+  });
+
+  it('marks each task past due against the time it is given', () => {
+    const app = menteeApplication({
+      tasks: [menteeTask({ id: 'late', name: 'A', dueDate: '2026-09-29' }), menteeTask({ id: 'open', name: 'B', dueDate: '2026-09-30' })],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'in-progress', Date.parse('2026-09-30T12:00:00Z'));
+    expect(view.tasks.map((task) => [task.id, task.pastDue])).toEqual([
+      ['late', true],
+      ['open', false],
     ]);
-    expect(view.submittedCount).toBe(2);
-    expect(view.totalCount).toBe(5);
-    expect(view.tasks).toEqual([]);
+  });
+
+  it('uses the latest application or task change as the last update', () => {
+    const app = menteeApplication({
+      tasks: [menteeTask({ updatedOn: '2026-07-05T10:00:00Z' }), menteeTask({ id: 'task-2', updatedOn: '2026-06-20T10:00:00Z' })],
+    });
+    expect(buildMentorshipMenteeApplicationView(app, 'in-progress').lastUpdatedOn).toBe('2026-07-05T10:00:00Z');
+  });
+
+  it('reports zero progress and a null decision date when there is nothing to track', () => {
+    const view = buildMentorshipMenteeApplicationView(menteeApplication({ decisionExpectedDate: undefined }), 'awaiting-review');
+    expect(view.progressPercent).toBe(0);
+    expect(view.progressLabel).toBe('Prerequisite Tasks');
+    expect(view.accepted).toBe(false);
+    expect(view.decisionExpectedDate).toBeNull();
+  });
+
+  it('drops the decision date once the application is accepted or graduated', () => {
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').decisionExpectedDate).toBe('2026-08-01');
+    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'accepted' }), 'active').decisionExpectedDate).toBeNull();
+    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'graduated' }), 'graduated').decisionExpectedDate).toBeNull();
+  });
+
+  it('labels a graduated card Graduated and tracks its non-prerequisite tasks', () => {
+    const app = menteeApplication({
+      upstreamStatus: 'graduated',
+      tasks: [menteeTask({ id: 'prereq' }), menteeTask({ id: 'a', category: 'non_prerequisite', status: 'complete' })],
+    });
+    const view = buildMentorshipMenteeApplicationView(app, 'graduated');
+    expect(view.statusLabel).toBe('Graduated');
+    expect(view.progressLabel).toBe('Tasks');
+    expect(view.accepted).toBe(true);
+    expect(view.tasks.map((task) => task.id)).toEqual(['a']);
+  });
+
+  it('carries the program logo for the avatar, leaving it absent when the program has none', () => {
+    const withLogo = menteeApplication({ programLogoUrl: 'https://example.com/logo.png' });
+    expect(buildMentorshipMenteeApplicationView(withLogo, 'awaiting-review').programLogoUrl).toBe('https://example.com/logo.png');
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').programLogoUrl).toBeUndefined();
   });
 });
 
-describe('buildMentorshipMenteeTaskViews', () => {
-  it('maps every accepted task into a view', () => {
-    const views = buildMentorshipMenteeTaskViews(MOCK_MENTORSHIP_MENTEE_TASKS.data);
-    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
-    expect(views.every((v) => typeof v.statusClass === 'string')).toBe(true);
+describe('toMentorshipUtcInstant', () => {
+  it('turns a date-only value into its UTC midnight instant', () => {
+    expect(toMentorshipUtcInstant('2026-07-15')).toBe('2026-07-15T00:00:00Z');
+  });
+
+  it('leaves a full timestamp unchanged', () => {
+    expect(toMentorshipUtcInstant('2026-07-15T10:30:00Z')).toBe('2026-07-15T10:30:00Z');
+  });
+});
+
+describe('buildMentorshipMenteeOverview', () => {
+  it('returns the empty phase when there are no applications', () => {
+    expect(buildMentorshipMenteeOverview([])).toEqual({ phase: 'empty', pendingCount: 0, openTaskCount: 0, cards: [], past: [] });
+  });
+
+  it('orders cards active, awaiting review, in progress and sends the rest to Past Applications', () => {
+    const overview = buildMentorshipMenteeOverview([
+      menteeApplication({ id: 'in-progress', tasks: [menteeTask()] }),
+      menteeApplication({ id: 'declined', upstreamStatus: 'declined', createdOn: '2026-01-01T00:00:00Z' }),
+      menteeApplication({ id: 'awaiting' }),
+      menteeApplication({ id: 'hold', upstreamStatus: 'hold', createdOn: '2026-03-01T00:00:00Z' }),
+      menteeApplication({ id: 'accepted', upstreamStatus: 'accepted', tasks: [menteeTask({ category: 'non_prerequisite' })] }),
+      menteeApplication({ id: 'graduated', upstreamStatus: 'graduated', tasks: [menteeTask({ category: 'non_prerequisite', status: 'complete' })] }),
+    ]);
+    expect(overview.phase).toBe('applicant');
+    expect(overview.cards.map((card) => card.id)).toEqual(['accepted', 'graduated', 'awaiting', 'in-progress']);
+    expect(overview.past.map((row) => [row.id, row.outcome, row.outcomeLabel, row.outcomeBadgeClass])).toEqual([
+      ['hold', 'on-hold', 'On Hold', 'bg-blue-100 text-blue-700'],
+      ['declined', 'not-selected', 'Not selected', 'bg-red-100 text-red-600'],
+    ]);
+    expect(overview.pendingCount).toBe(2);
+    expect(overview.openTaskCount).toBe(2);
+  });
+
+  it('stays in the applicant phase when every application is in the past', () => {
+    const overview = buildMentorshipMenteeOverview([menteeApplication({ upstreamStatus: 'withdrawn' })]);
+    expect(overview.phase).toBe('applicant');
+    expect(overview.cards).toEqual([]);
+    expect(overview.past[0].outcome).toBe('withdrawn');
+  });
+});
+
+describe('mentorshipDescriptionLength', () => {
+  it('counts plain-text characters, ignoring tags and decoding entities', () => {
+    expect(mentorshipDescriptionLength('<p>Hi &amp; <strong>bye</strong></p>')).toBe(8);
+    expect(mentorshipDescriptionLength('')).toBe(0);
+  });
+
+  it('still strips tags for input exactly at MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
+    const html = `<p>${'a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX - 7)}</p>`;
+    expect(html.length).toBe(MENTORSHIP_RICH_TEXT_RAW_MAX);
+    expect(mentorshipDescriptionLength(html)).toBe(MENTORSHIP_RICH_TEXT_RAW_MAX - 7);
+  });
+
+  it('returns the raw length for input over MENTORSHIP_RICH_TEXT_RAW_MAX, so it fails every rich-text cap', () => {
+    const html = `<p>${'a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}</p>`;
+    expect(mentorshipDescriptionLength(html)).toBe(html.length);
+    expect(mentorshipDescriptionLength(html)).toBeGreaterThan(MENTORSHIP_ENROLL_DESCRIPTION_MAX);
+  });
+
+  it('rejects adversarial nested-bracket input without running the quadratic strip loop (lfx-self-serve-ops#37)', () => {
+    // The too-large message is only reachable through the raw-cap early return, so it proves the
+    // strip was skipped. Stripping this payload would run for minutes and trip the test timeout.
+    const half = 500_000;
+    const hostile = `${'<'.repeat(half)}${'>'.repeat(half)}`;
+    const length = mentorshipDescriptionLength(hostile);
+    expect(length).toBeGreaterThan(MENTORSHIP_MENTEE_INTRODUCTION_MAX);
+    expect(getMentorshipMenteeRegisterErrors({ ...createEmptyMentorshipMenteeForm(), introduction: hostile }).introduction).toBe(
+      MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE
+    );
+  });
+});
+
+describe('isMentorshipRichTextOverRawMax', () => {
+  it('is false at the raw cap and true one character over it', () => {
+    expect(isMentorshipRichTextOverRawMax('a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX))).toBe(false);
+    expect(isMentorshipRichTextOverRawMax('a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX + 1))).toBe(true);
+  });
+});
+
+describe('rich-text fields over MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
+  // Short visible text wrapped in enough formatting to pass the raw cap — the plain-text limit is not
+  // what the user hit, so the validators must say so instead of quoting a character count.
+  const overRawCap = `<p>${'<strong>a</strong>'.repeat(Math.ceil(MENTORSHIP_RICH_TEXT_RAW_MAX / 18) + 1)}</p>`;
+
+  it('reports formatting as the problem on the enroll description', () => {
+    const form = { ...createEmptyMentorshipEnrollForm(), description: overRawCap };
+    expect(getMentorshipEnrollStepErrors('details', form).description).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+
+  it('reports formatting as the problem on the mentor introduction', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), introduction: overRawCap };
+    expect(getMentorshipMentorRegisterErrors(form).introduction).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+
+  it('reports formatting as the problem on the mentee introduction', () => {
+    const form = { ...createEmptyMentorshipMenteeForm(), introduction: overRawCap };
+    expect(getMentorshipMenteeRegisterErrors(form).introduction).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+});
+
+describe('getMentorshipMenteeIntroductionError', () => {
+  it('requires text, not just markup', () => {
+    expect(getMentorshipMenteeIntroductionError('')).toBe('Introduction is required.');
+    expect(getMentorshipMenteeIntroductionError('<p></p>')).toBe('Introduction is required.');
+  });
+
+  it('counts the visible text against the max, not the markup', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p><strong>${'a'.repeat(3000)}</strong></p>`)).toBeUndefined();
+    expect(getMentorshipMenteeIntroductionError(`<p>${'a'.repeat(3001)}</p>`)).toBe('Introduction must be 3000 characters or fewer.');
+  });
+
+  it('reports formatting as the problem over the raw max', () => {
+    expect(getMentorshipMenteeIntroductionError(`<p>a</p>${'<p></p>'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}`)).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+});
+
+describe('buildMentorshipMenteeProfileUpdate', () => {
+  const seed: MentorshipMenteeProfileDetails = {
+    aboutMe: '<p>Hello world</p>',
+    skillsHave: ['Go', 'Python'],
+    skillsWant: ['Kubernetes'],
+    additionalNotes: 'Evenings only',
+  };
+  const unchanged: MentorshipMenteeProfileFormValue = {
+    introduction: '<p>Hello world</p>',
+    skillsHave: ['Go', 'Python'],
+    skillsWant: ['Kubernetes'],
+    additionalNotes: 'Evenings only',
+  };
+
+  it('returns an empty request when nothing changed', () => {
+    const request = buildMentorshipMenteeProfileUpdate(seed, unchanged);
+    expect(request).toEqual({});
+    expect(isMentorshipMenteeProfileUpdateEmpty(request)).toBe(true);
+  });
+
+  it('sends the introduction HTML as is, only when it differs from the stored HTML', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '<p>Hello <strong>there</strong></p>' })).toEqual({
+      introduction: '<p>Hello <strong>there</strong></p>',
+    });
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, introduction: '' })).toEqual({ introduction: '' });
+  });
+
+  it('leaves an empty stored introduction out while the editor stays empty', () => {
+    const withoutAbout: MentorshipMenteeProfileDetails = { ...seed, aboutMe: '' };
+    expect(buildMentorshipMenteeProfileUpdate(withoutAbout, { ...unchanged, introduction: '' })).toEqual({});
+  });
+
+  it('sends the whole skill set when only the additional notes changed', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: 'Weekends too' })).toEqual({
+      skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'], additionalNotes: 'Weekends too' },
+    });
+  });
+
+  it('compares skills after trimming and detects a reorder', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: [' Go ', 'Python', ' '] })).toEqual({});
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, skillsHave: ['Python', 'Go'] })).toEqual({
+      skillSet: { skillsHave: ['Python', 'Go'], skillsWant: ['Kubernetes'], additionalNotes: 'Evenings only' },
+    });
+  });
+
+  it('omits additional notes when the trimmed notes are blank', () => {
+    expect(buildMentorshipMenteeProfileUpdate(seed, { ...unchanged, additionalNotes: '   ' })).toEqual({
+      skillSet: { skillsHave: ['Go', 'Python'], skillsWant: ['Kubernetes'] },
+    });
+  });
+
+  it('treats missing stored notes and blank notes as the same', () => {
+    const withoutNotes: MentorshipMenteeProfileDetails = { ...seed, additionalNotes: undefined };
+    expect(buildMentorshipMenteeProfileUpdate(withoutNotes, { ...unchanged, additionalNotes: '' })).toEqual({});
+  });
+
+  it('never emits demographics or socioeconomics', () => {
+    const request = buildMentorshipMenteeProfileUpdate(seed, {
+      introduction: '<p>New</p>',
+      skillsHave: ['Rust'],
+      skillsWant: ['Go'],
+      additionalNotes: 'x',
+    });
+    expect(Object.keys(request).sort()).toEqual(['introduction', 'skillSet']);
+  });
+});
+
+describe('buildMentorshipMenteeDemographicsUpdate', () => {
+  const blank = {
+    ageConsent: false,
+    age: '',
+    raceEthnicityConsent: false,
+    raceEthnicity: '',
+    genderConsent: false,
+    gender: '',
+    incomeConsent: false,
+    income: '',
+    educationConsent: false,
+    education: '',
+  };
+  const stored = { age: '20-39', gender: 'female', raceEthnicity: 'asian', income: 'workingClass', education: 'college' };
+  const storedForm = {
+    ageConsent: true,
+    age: '20-39',
+    raceEthnicityConsent: true,
+    raceEthnicity: 'asian',
+    genderConsent: true,
+    gender: 'female',
+    incomeConsent: true,
+    income: 'workingClass',
+    educationConsent: true,
+    education: 'college',
+  };
+
+  it('returns an empty request when no row changed, including a stored preferNotToSay row left unconsented', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, storedForm)).toEqual({});
+    expect(buildMentorshipMenteeDemographicsUpdate({ age: 'preferNotToSay' }, blank)).toEqual({});
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, blank)).toEqual({});
+  });
+
+  it(`returns an empty request when the user picks "I don't want to provide" over an unanswered row`, () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, ageConsent: true, age: 'preferNotToSay' })).toEqual({});
+  });
+
+  it('sends only the demographics group when only age changed and keeps the other rows original values', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, age: '40-60' })).toEqual({
+      demographics: { age: '40-60', gender: 'female', raceEthnicity: 'asian' },
+    });
+  });
+
+  it('sends only the socioeconomics group when only income changed', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, income: 'upperClass' })).toEqual({
+      socioeconomics: { income: 'upperClass', education: 'college' },
+    });
+  });
+
+  it('writes the preferNotToSay token when consent is withdrawn from an answered row', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, educationConsent: false, education: '' })).toEqual({
+      socioeconomics: { income: 'workingClass', education: 'preferNotToSay' },
+    });
+  });
+
+  it('writes the preferNotToSay token when the user picks it over an answered row', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, gender: 'preferNotToSay' })).toEqual({
+      demographics: { age: '20-39', gender: 'preferNotToSay', raceEthnicity: 'asian' },
+    });
+  });
+
+  it('treats consent checked with no answer as unanswered', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, ageConsent: true, age: '' })).toEqual({});
+    expect(buildMentorshipMenteeDemographicsUpdate({ age: '20-39' }, { ...blank, ageConsent: true, age: ' ' })).toEqual({
+      demographics: { age: 'preferNotToSay' },
+    });
+  });
+
+  it('preserves an original preferNotToSay token on an unchanged row inside a changed group', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate({ age: 'preferNotToSay', gender: 'male' }, { ...blank, genderConsent: true, gender: 'nonBinary' })).toEqual({
+      demographics: { age: 'preferNotToSay', gender: 'nonBinary' },
+    });
+  });
+
+  it('omits rows that were never answered and stay unconsented', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, ageConsent: true, age: '61+' })).toEqual({ demographics: { age: '61+' } });
+  });
+
+  it('ignores an answer whose consent box is unchecked, as form.getRawValue reports a disabled control', () => {
+    expect(buildMentorshipMenteeDemographicsUpdate(undefined, { ...blank, incomeConsent: true, income: 'upperMiddleClass', education: 'phd' })).toEqual({
+      socioeconomics: { income: 'upperMiddleClass' },
+    });
+  });
+
+  it('never emits introduction or skillSet', () => {
+    const request = buildMentorshipMenteeDemographicsUpdate(stored, { ...storedForm, age: '61+', income: 'upperClass' });
+    expect(Object.keys(request).sort()).toEqual(['demographics', 'socioeconomics']);
+  });
+});
+
+describe('isMentorshipMenteeProfileUpdateEmpty', () => {
+  it('is true for an empty request and false for any group', () => {
+    expect(isMentorshipMenteeProfileUpdateEmpty({})).toBe(true);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ introduction: '' })).toBe(false);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } })).toBe(false);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ demographics: { age: '61+' } })).toBe(false);
+    expect(isMentorshipMenteeProfileUpdateEmpty({ socioeconomics: { income: 'upperClass' } })).toBe(false);
+  });
+});
+
+describe('isMentorshipMentorInviteToken', () => {
+  it('accepts two base64url parts joined by a dot', () => {
+    expect(isMentorshipMentorInviteToken('eyJwcm9ncmFtX2lkIjoicDEifQ.c2ln-_')).toBe(true);
+  });
+
+  it.each(['', 'nodot', '.sig', 'payload.', 'a.b.c', 'a.b/c', 'a.b=', `${'a'.repeat(512)}.b`])('rejects %j', (value) => {
+    expect(isMentorshipMentorInviteToken(value)).toBe(false);
   });
 });

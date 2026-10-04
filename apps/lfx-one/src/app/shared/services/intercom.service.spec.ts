@@ -14,6 +14,9 @@ import { IntercomService } from './intercom.service';
  * in order once its script loads. A click whose widget script fails to load must invoke the
  * caller's error callback so the CTA can fail visibly — including a click landing while a
  * startup boot is still in flight — and a successful load must clear the callback.
+ * Also covers update() (#2986): a no-op before boot, and once booted a queued
+ * ['reattach_activator'] + ['update', settings] pair so custom launchers router-mounted into
+ * the DOM after boot get re-scanned and bound.
  */
 describe('IntercomService', () => {
   let service: IntercomService;
@@ -41,6 +44,30 @@ describe('IntercomService', () => {
 
   it('should be created', () => {
     expect(service).toBeTruthy();
+  });
+
+  it('should take the invite token out of the address bar before an on-demand boot', () => {
+    window.history.pushState({}, '', '/mentorship/mentor/invites?token=SUPER.SECRET');
+    try {
+      service.openMessenger('test-app-id');
+
+      expect(window.location.href).not.toContain('SECRET');
+      expect(new URL(window.location.href).searchParams.get('token')).toBe('redacted');
+      expect(queuedCommands()[0]?.[0]).toBe('boot');
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('should leave an ordinary URL alone on boot', () => {
+    window.history.pushState({}, '', '/meetings?token=keep');
+    try {
+      service.openMessenger('test-app-id');
+
+      expect(window.location.search).toBe('?token=keep');
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
   });
 
   it('should boot anonymously and queue boot before show when startup boot was skipped', () => {
@@ -115,6 +142,20 @@ describe('IntercomService', () => {
     widgetScript()?.onerror?.call(widgetScript() as GlobalEventHandlers, new Event('error'));
 
     expect(onLoadError).not.toHaveBeenCalled();
+  });
+
+  it('should no-op update when Intercom has not been booted', () => {
+    service.update();
+
+    expect(queuedCommands()).toEqual([]);
+  });
+
+  it('should queue reattach_activator and an update with the current settings once booted, so post-boot DOM insertions re-bind', () => {
+    service.boot({ app_id: 'test-app-id' });
+
+    service.update();
+
+    expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['reattach_activator'], ['update', window.intercomSettings]]);
   });
 
   it('should invoke the load-error callback for a click landing while a startup boot is still loading', () => {

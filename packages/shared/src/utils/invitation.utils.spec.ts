@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PendingInvitation } from '../interfaces/committee.interface';
+import type { WorkExperienceEntry } from '../interfaces/profile.interface';
 import {
   buildCommitteeOrganizationPayload,
   committeeOrganizationFormComplete,
@@ -22,6 +23,33 @@ import {
   formatInviteExpiry,
   invitationRequiresOrganization,
 } from './invitation.utils';
+
+/**
+ * Minimal WorkExperienceEntry builder — `currentEmployerFromWorkExperiences` only reads
+ * `organization`, `organizationId`, `startDate`, and `endDate`, so tests set only those. The
+ * required `id`/`jobTitle`/`source` fields carry placeholder defaults so a required field added
+ * to `WorkExperienceEntry` fails the return object literal's type-check (`TS2322`) rather than
+ * silently arriving as `undefined` at runtime — the drift-catch this PR buys.
+ *
+ * Trailing `...overrides` matches `meeting()` and `invitation()` in shape. Note this pattern does
+ * NOT block callers from wiping a default with an explicit `{ field: undefined }`: `Partial<T>`
+ * permits `undefined` on every field (no `exactOptionalPropertyTypes` in the workspace), and the
+ * trailing spread wins over the preceding default. See
+ * `docs/reviews/shared-and-sql-checklist.md` § 5a; tests that need to model the `undefined`-wiped
+ * variant should pass it explicitly.
+ */
+let workExperienceCounter = 0;
+function workExperience(overrides: Partial<WorkExperienceEntry> = {}): WorkExperienceEntry {
+  workExperienceCounter += 1;
+  return {
+    id: `work-${workExperienceCounter}`,
+    organization: '',
+    startDate: '',
+    jobTitle: '',
+    source: 'cdp-enriched',
+    ...overrides,
+  };
+}
 
 /** Minimal invitation builder — only the fields the helpers read. */
 function invitation(overrides: Partial<PendingInvitation> = {}): PendingInvitation {
@@ -308,45 +336,47 @@ describe('currentEmployerFromWorkExperiences', () => {
 
   it('prefers the entry without an endDate (current job)', () => {
     const result = currentEmployerFromWorkExperiences([
-      { organization: 'Old Corp', organizationId: 'org-old', startDate: 'Jan 2020', endDate: 'Dec 2022' },
-      { organization: 'Current Corp', organizationId: 'org-cur', startDate: 'Jan 2023', endDate: null },
-      { organization: 'Older Corp', organizationId: 'org-older', startDate: 'Jan 2018', endDate: 'Dec 2019' },
+      workExperience({ organization: 'Old Corp', organizationId: 'org-old', startDate: 'Jan 2020', endDate: 'Dec 2022' }),
+      workExperience({ organization: 'Current Corp', organizationId: 'org-cur', startDate: 'Jan 2023' }),
+      workExperience({ organization: 'Older Corp', organizationId: 'org-older', startDate: 'Jan 2018', endDate: 'Dec 2019' }),
     ]);
     expect(result).toEqual({ name: 'Current Corp', id: 'org-cur' });
   });
 
   it('picks the first entry without endDate when multiple are current', () => {
     const result = currentEmployerFromWorkExperiences([
-      { organization: 'Corp A', organizationId: 'a', startDate: 'Jan 2021', endDate: null },
-      { organization: 'Corp B', organizationId: 'b', startDate: 'Jan 2022', endDate: null },
+      workExperience({ organization: 'Corp A', organizationId: 'a', startDate: 'Jan 2021' }),
+      workExperience({ organization: 'Corp B', organizationId: 'b', startDate: 'Jan 2022' }),
     ]);
     expect(result?.name).toBe('Corp A');
   });
 
   it('falls back to the most recent by startDate when all entries have endDates', () => {
     const result = currentEmployerFromWorkExperiences([
-      { organization: 'Older Corp', organizationId: 'org-older', startDate: 'Mar 2019', endDate: 'Dec 2020' },
-      { organization: 'Newest Corp', organizationId: 'org-new', startDate: 'Jan 2023', endDate: 'Jun 2024' },
-      { organization: 'Middle Corp', organizationId: 'org-mid', startDate: 'Jan 2021', endDate: 'Dec 2022' },
+      workExperience({ organization: 'Older Corp', organizationId: 'org-older', startDate: 'Mar 2019', endDate: 'Dec 2020' }),
+      workExperience({ organization: 'Newest Corp', organizationId: 'org-new', startDate: 'Jan 2023', endDate: 'Jun 2024' }),
+      workExperience({ organization: 'Middle Corp', organizationId: 'org-mid', startDate: 'Jan 2021', endDate: 'Dec 2022' }),
     ]);
     expect(result).toEqual({ name: 'Newest Corp', id: 'org-new' });
   });
 
   it('handles a missing organizationId by returning id: null', () => {
-    const result = currentEmployerFromWorkExperiences([{ organization: 'No ID Corp', organizationId: undefined, startDate: 'Jan 2023', endDate: null }]);
+    const result = currentEmployerFromWorkExperiences([workExperience({ organization: 'No ID Corp', organizationId: undefined, startDate: 'Jan 2023' })]);
     expect(result).toEqual({ name: 'No ID Corp', id: null });
   });
 
   it('correctly orders months within the same year (Dec > Jan)', () => {
     const result = currentEmployerFromWorkExperiences([
-      { organization: 'Jan Corp', organizationId: 'jan', startDate: 'Jan 2023', endDate: 'Feb 2023' },
-      { organization: 'Dec Corp', organizationId: 'dec', startDate: 'Dec 2023', endDate: 'Jan 2024' },
+      workExperience({ organization: 'Jan Corp', organizationId: 'jan', startDate: 'Jan 2023', endDate: 'Feb 2023' }),
+      workExperience({ organization: 'Dec Corp', organizationId: 'dec', startDate: 'Dec 2023', endDate: 'Jan 2024' }),
     ]);
     expect(result?.name).toBe('Dec Corp');
   });
 
   it('handles an invalid startDate without throwing (treats as ordinal 0)', () => {
-    expect(() => currentEmployerFromWorkExperiences([{ organization: 'Corp', organizationId: null, startDate: 'invalid', endDate: 'Dec 2020' }])).not.toThrow();
+    expect(() =>
+      currentEmployerFromWorkExperiences([workExperience({ organization: 'Corp', organizationId: undefined, startDate: 'invalid', endDate: 'Dec 2020' })])
+    ).not.toThrow();
   });
 });
 

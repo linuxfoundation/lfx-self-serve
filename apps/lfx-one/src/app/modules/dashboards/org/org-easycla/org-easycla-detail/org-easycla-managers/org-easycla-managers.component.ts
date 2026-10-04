@@ -16,7 +16,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { UserService } from '@services/user.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 
 import {
   orgClaAddManagerDialogConfig,
@@ -35,7 +35,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
-  private readonly userService = inject(UserService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly orgUid = input.required<string>();
@@ -44,6 +44,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public readonly claGroup = input.required<OrgClaGroup>();
 
   public readonly managerCountChanged = output<number>();
+  public readonly rosterChanged = output<void>();
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
 
@@ -55,8 +56,6 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private addDialog: DynamicDialogRef | null = null;
 
   private readonly contextChanged$ = combineLatest([toObservable(this.orgUid), toObservable(this.signatureId), toObservable(this.signed)]).pipe(skip(1));
-
-  protected readonly viewerUsername = computed(() => this.userService.viewerUsername()?.trim().toLowerCase() ?? '');
 
   protected readonly empty = computed(() => this.managers()?.length === 0);
 
@@ -175,8 +174,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected isSelf(manager: OrgClaManager): boolean {
-    const viewer = this.viewerUsername();
-    return !!viewer && manager.lfUsername.trim().toLowerCase() === viewer;
+    return manager.isViewer === true;
   }
 
   private initRows(): OrgClaManagerRow[] | null {
@@ -251,6 +249,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} has been added as a CLA Manager for this CLA and can act immediately.`,
           });
           this.fetchManagers();
+          this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;
@@ -272,6 +271,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
       )
       .subscribe({
         next: () => {
+          if (this.isSelf(manager)) this.selfRemovals.record(target.orgUid, target.signatureId);
           if (this.destroyed || !this.stillOn(target)) return;
           if (this.isSelf(manager)) {
             this.addGrant.set(false);
@@ -283,6 +283,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} is no longer a CLA Manager for this CLA.`,
           });
           this.fetchManagers();
+          if (this.isSelf(manager)) this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;

@@ -7,8 +7,10 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
+import { VisaLetterService } from '../services/visa-letter.service';
 import {
   DEFAULT_EVENTS_PAGE_SIZE,
   MAX_EVENTS_PAGE_SIZE,
@@ -36,6 +38,7 @@ import { getEffectiveEmail, getEffectiveName } from '../utils/auth-helper';
 export class EventsController {
   private readonly eventsService = new EventsService();
   private readonly certificateService = new CertificateService();
+  private readonly visaLetterService = new VisaLetterService();
   private readonly personaDetectionService = new PersonaDetectionService();
 
   /**
@@ -57,8 +60,7 @@ export class EventsController {
         });
       }
 
-      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
-      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase() as EventSortOrder;
       const rawIsPast = req.query['isPast'];
       const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
@@ -74,10 +76,8 @@ export class EventsController {
       const country = req.query['country'] ? String(req.query['country']) : undefined;
       const isVisaRequestAccepted = req.query['isVisaRequestAccepted'] === 'true' ? true : undefined;
       const isTravelFundRequestAccepted = req.query['isTravelFundRequestAccepted'] === 'true' ? true : undefined;
-      const excludePastTravelFundDeadline = req.query['excludePastTravelFundDeadline'] === 'true' ? true : undefined;
+      const anyRegistrationStatus = req.query['anyRegistrationStatus'] === 'true' ? true : undefined;
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
       if (rawIsPast === 'true') {
@@ -112,7 +112,7 @@ export class EventsController {
         affiliatedProjectSlugs,
         isVisaRequestAccepted,
         isTravelFundRequestAccepted,
-        excludePastTravelFundDeadline,
+        anyRegistrationStatus,
       });
 
       logger.success(req, 'get_my_events', startTime, {
@@ -138,8 +138,7 @@ export class EventsController {
     });
 
     try {
-      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
-      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase() as EventSortOrder;
       const rawIsPast = req.query['isPast'];
       const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
@@ -155,8 +154,6 @@ export class EventsController {
       const status = rawStatus && VALID_EVENT_STATUS_VALUES.has(rawStatus) ? (rawStatus as EventStatusFilter) : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
       if (rawIsPast === 'true') {
@@ -328,6 +325,40 @@ export class EventsController {
   }
 
   /**
+   * GET /api/events/visa-letter
+   * Download the authenticated user's issued visa support letter as a PDF
+   * Query params: eventId (string, required)
+   */
+  public async getVisaLetter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
+
+    const startTime = logger.startOperation(req, 'get_visa_letter', { event_id: eventId });
+
+    try {
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_visa_letter',
+          service: 'events_controller',
+          path: req.path,
+        });
+      }
+
+      const { pdf, fileName } = await this.visaLetterService.generateVisaLetter(req, eventId);
+
+      logger.success(req, 'get_visa_letter', startTime, { event_id: eventId });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+      res.setHeader('Content-Length', pdf.length);
+      // The letter carries passport details, so keep it out of shared and browser caches.
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/events/search-organizations
    * Search organizations by name via the API Gateway organization-service.
    * Query params: name (string, required)
@@ -384,6 +415,13 @@ export class EventsController {
         throw ServiceValidationError.forField('termsAccepted', 'termsAccepted must be true', { operation: 'submit_visa_request_application' });
       }
 
+      // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'visa'))) {
+        throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for a visa letter for this event', {
+          operation: 'submit_visa_request_application',
+        });
+      }
+
       // Overwrite client-provided email with session email for data integrity
       payload.applicantInfo.email = userEmail;
 
@@ -427,6 +465,13 @@ export class EventsController {
         throw ServiceValidationError.forField('expenses', 'expenses is required', { operation: 'submit_travel_fund_application' });
       }
 
+      // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'travel-fund'))) {
+        throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for travel funding for this event', {
+          operation: 'submit_travel_fund_application',
+        });
+      }
+
       // Overwrite client-provided email with session email for data integrity
       payload.aboutMe.email = userEmail;
 
@@ -456,12 +501,9 @@ export class EventsController {
         throw new AuthenticationError('User authentication required', { operation: operationName });
       }
 
-      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
-      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'DESC').toUpperCase() as EventSortOrder;
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'DESC';
 
       const options: GetEventRequestsOptions = {

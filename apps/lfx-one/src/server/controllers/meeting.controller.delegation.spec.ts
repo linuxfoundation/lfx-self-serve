@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// meeting-privacy.utils (deep-imported into the shared-utils mock below) transitively imports
+// @angular/common/http — the JIT facade must be present in this plain-Node environment.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
@@ -26,14 +30,13 @@ const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatu
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
-// The real module transitively needs @angular/compiler outside an Angular bootstrap (see
-// meeting.utils.spec.ts); validation.helper only needs resolvePeriodRange from it, and
-// meeting.helper (kept real below, for isWithinHostKeyWindow/applyOrganizerAndHostKeyResult)
-// needs resolveMeetingOrganizer/resolveMeetingOwner — stub all three.
-vi.mock('@lfx-one/shared/utils', () => ({
+// The real barrel needs @angular/compiler outside an Angular bootstrap (loaded top-of-file);
+// stub the helpers the kept-real modules use, but keep isWithinHostKeyWindow real via deep import.
+vi.mock('@lfx-one/shared/utils', async () => ({
   resolvePeriodRange: vi.fn(),
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
+  isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
 }));
 
 vi.mock('../utils/auth-helper', () => ({
@@ -43,8 +46,8 @@ vi.mock('../utils/auth-helper', () => ({
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids: vi.fn() }));
-// Keep the real host-key gate (isWithinHostKeyWindow + applyOrganizerAndHostKeyResult); stub
-// only the registrant-lookup/enrichment helpers so the controller tests don't need M2M plumbing.
+// Keep the real applyOrganizerAndHostKeyResult (isWithinHostKeyWindow stays real via the
+// shared-utils mock above); stub only the registrant-lookup/enrichment helpers — no M2M plumbing.
 vi.mock('../helpers/meeting.helper', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/meeting.helper')>();
   return { ...actual, addInvitedStatusToMeeting: addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedBy: enrichMeetingsWithCreatedByMock };
@@ -198,8 +201,8 @@ function buildMeeting(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-// isWithinHostKeyWindow / applyOrganizerAndHostKeyResult are kept real (see the meeting.helper
-// mock above) so these tests exercise the actual host-key gate, not a stub standing in for it.
+// The host-key gate is kept real — isWithinHostKeyWindow via the shared-utils mock above and
+// applyOrganizerAndHostKeyResult via the meeting.helper mock — not a stub standing in for it.
 describe('MeetingController.getMeetingById host-key gating', () => {
   let controller: MeetingController;
 

@@ -38,7 +38,8 @@ import {
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, isMentorshipLogoFileName, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId, isMentorshipLogoFileName, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import {
   catchError,
@@ -71,6 +72,7 @@ export class EnrollDetailsStepComponent {
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
   private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly lfFilter$ = new Subject<string>();
   private readonly lfLoadMore$ = new Subject<void>();
   protected readonly lfProjectItemSize = 40;
@@ -116,9 +118,9 @@ export class EnrollDetailsStepComponent {
   });
 
   protected readonly nameLength = computed(() => String(this.formSnapshot()['name'] ?? this.form().controls['name']?.value ?? '').length);
-  protected readonly descriptionLength = computed(() =>
-    mentorshipDescriptionLength(String(this.formSnapshot()['description'] ?? this.form().controls['description']?.value ?? ''))
-  );
+  private readonly descriptionHtml = computed(() => String(this.formSnapshot()['description'] ?? this.form().controls['description']?.value ?? ''));
+  protected readonly descriptionTooLarge = computed(() => isMentorshipRichTextOverRawMax(this.descriptionHtml()));
+  protected readonly descriptionLength = computed(() => mentorshipDescriptionLength(this.descriptionHtml()));
   protected readonly technologies = computed(() => {
     const fromSnapshot = this.formSnapshot()['technologies'];
     if (Array.isArray(fromSnapshot)) return fromSnapshot as string[];
@@ -207,7 +209,7 @@ export class EnrollDetailsStepComponent {
         if (found) this.selectedProject.set(found);
       });
 
-    this.mentorshipService
+    this.mentorshipAdminService
       .getPrograms()
       .pipe(takeUntilDestroyed())
       .subscribe({

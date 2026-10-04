@@ -1,0 +1,100 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-program-review">
+  <div class="mx-auto flex max-w-2xl flex-col gap-6 py-8">
+    @if (state() === 'loading') {
+      <lfx-route-loading data-testid="mentorship-program-review-loading" />
+    } @else if (confirming(); as confirm) {
+      <lfx-card data-testid="mentorship-program-review-confirm">
+        <div class="flex flex-col gap-6">
+          <div class="flex flex-col gap-2">
+            <h1 class="text-xl font-semibold text-gray-900" data-testid="mentorship-program-review-title">
+              {{ decisionLabels[confirm.decision] }} this program?
+            </h1>
+            <p class="text-base font-medium text-gray-700" data-testid="mentorship-program-review-program-name">{{ confirm.program.name }}</p>
+            <p class="text-sm text-gray-500">Please confirm this action. This cannot be undone.</p>
+          </div>
+          <div class="flex flex-wrap justify-end gap-3">
+            <lfx-button
+              label="Cancel"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="submitting()"
+              routerLink="/mentorship/admin"
+              data-testid="mentorship-program-review-cancel" />
+            <lfx-button
+              [label]="decisionLabels[confirm.decision]"
+              [severity]="confirmSeverity()"
+              [loading]="submitting()"
+              (onClick)="onConfirm()"
+              data-testid="mentorship-program-review-confirm-button" />
+          </div>
+        </div>
+      </lfx-card>
+    } @else {
+      <div role="status" aria-live="polite" [attr.data-testid]="'mentorship-program-review-' + state()">
+        @switch (state()) {
+          @case ('success') {
+            <lfx-empty-state
+              icon="fa-light fa-circle-check"
+              [title]="'Program ' + doneLabel()"
+              [subtitle]="(program()?.name ?? 'The program') + ' has been ' + doneLabel() + '.'"
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
+          }
+          @case ('already-decided') {
+            <lfx-empty-state
+              icon="fa-light fa-circle-info"
+              title="This program has already been reviewed"
+              [subtitle]="alreadyDecidedMessage()"
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
+          }
+          @case ('forbidden') {
+            <lfx-empty-state
+              icon="fa-light fa-lock"
+              title="You don't have permission to review programs"
+              subtitle="Only members of the mentorship approver team can approve or reject programs."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
+          }
+          @case ('not-found') {
+            <lfx-empty-state
+              icon="fa-light fa-folder-open"
+              title="Program not found"
+              subtitle="The program in this link does not exist or has been removed."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
+          }
+          @case ('invalid-link') {
+            <lfx-empty-state
+              icon="fa-light fa-link-slash"
+              title="This review link is not valid"
+              subtitle="Open the approve or reject link from the review email again."
+              ctaLabel="Back to Mentorship"
+              [ctaRoute]="backRoute" />
+          }
+          @default {
+            @if (program()) {
+              <!-- A failed Confirm: the program is known, so go back to the confirm card. -->
+              <lfx-empty-state
+                icon="fa-light fa-triangle-exclamation"
+                title="Something went wrong"
+                subtitle="The decision was not recorded. Please try again."
+                ctaLabel="Try again"
+                (ctaClick)="onRetry()" />
+            } @else {
+              <lfx-empty-state
+                icon="fa-light fa-triangle-exclamation"
+                title="Something went wrong"
+                subtitle="We couldn't load this program. Please refresh the page to try again."
+                ctaLabel="Back to Mentorship"
+                [ctaRoute]="backRoute" />
+            }
+          }
+        }
+      </div>
+    }
+  </div>
+</div>

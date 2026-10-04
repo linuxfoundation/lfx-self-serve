@@ -7,7 +7,7 @@ export const environment = {
     home: 'https://app.staging.lfx.dev',
     pcc: 'https://pcc.staging.platform.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
-    mentorship: 'https://mentorship.lfx.linuxfoundation.org/',
+    mentorship: 'https://mentorship.dev.lfx.dev',
     crowdfunding: 'https://crowdfunding.staging.lfx.dev/',
     enrollment: 'https://joinnow.staging.platform.linuxfoundation.org/',
     // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).
