@@ -76,5 +76,22 @@ export const FOUNDATION_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
  */
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
+/**
+ * Conservative single-recipient address that is safe to place verbatim after `mailto:`.
+ *
+ * A positive allowlist: it rejects whitespace, recipient separators (`,`/`;`), query/fragment
+ * characters (`?`/`&`/`#`), extra `@`, and percent escapes, so an upstream value such as
+ * `a@x.com?bcc=b@y.com` or `victim@x.com%0D%0ABcc:attacker@x.com` can never become injected
+ * mailto header fields or extra recipients. Domain labels exclude `.` so the match is linear.
+ */
+export const MAILTO_SAFE_EMAIL_REGEX = /^[A-Za-z0-9._+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/;
+
+/**
+ * Characters that change the meaning of a `mailto:` URI (recipient separators, query/fragment,
+ * percent escapes, quoting) or of a header line (whitespace, control characters). An upstream
+ * address containing any of them is not a plain single address.
+ */
+export const MAILTO_STRUCTURAL_CHARS_REGEX = /[\s\p{Cc}?&#%,;:<>"\\]/u;
+
 /** Org People `person_key` — LFID or opaque `cdp:`-prefixed id; 4–128 URL-safe chars (request-boundary bound, not a schema). */
 export const PERSON_KEY_PATTERN = /^(cdp:)?[A-Za-z0-9_-]{4,128}$/;

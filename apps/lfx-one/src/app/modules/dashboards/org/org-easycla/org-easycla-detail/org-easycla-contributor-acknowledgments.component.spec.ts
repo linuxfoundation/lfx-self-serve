@@ -284,6 +284,20 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(identity?.getAttribute('href')).toBe('mailto:contributor@example.org');
     });
 
+    it.each(['victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com?bcc=b@example.org'])(
+      'renders a suspicious email %s as plain text with no mailto link',
+      async (email) => {
+        getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ email })])));
+        const fixture = await render();
+
+        const identity = byTestId(fixture, 'org-easycla-acknowledgment-identity');
+        expect(identity?.tagName).toBe('SPAN');
+        expect(textIn(identity)).toBe(email);
+        expect(identity?.getAttribute('href')).toBeNull();
+        expect(fixture.nativeElement.querySelector('a[href^="mailto:"]')).toBeFalsy();
+      }
+    );
+
     it('renders an em-dash for the ID column when the producer sent nothing usable, rather than dropping the row', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ name: 'Name Only' })])));
       const fixture = await render();

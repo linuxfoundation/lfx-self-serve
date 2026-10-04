@@ -15,6 +15,7 @@ import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
   isOrgClaDesigneeLfLoginRequired,
+  isPlainEmailAddress,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
   orgClaPairProjectSfid,
@@ -2228,13 +2229,17 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     const trimmed = value?.trim() ?? '';
     return trimmed.length > 0 ? trimmed : undefined;
   };
+  // The producer's email reaches client `mailto:` hrefs. A value that is not a plain single
+  // address (query fields, separators, percent escapes) is dropped so it can never inject
+  // recipients or mail headers, whichever panel renders it.
+  const email = nonEmpty(row?.email);
 
   return {
     signatureId,
     lfLogin: nonEmpty(row?.linux_foundation_id),
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
-    email: nonEmpty(row?.email),
+    email: isPlainEmailAddress(email) ? email : undefined,
     name: nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),

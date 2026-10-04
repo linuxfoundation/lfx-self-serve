@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, maskEmailForLogs, parseEmailList, redactEmailAddresses } from './email.utils';
+import {
+  emailsEqual,
+  isMailtoSafeEmail,
+  isMeetingInvitePrimarySentinel,
+  isPlainEmailAddress,
+  isValidEmail,
+  maskEmailForLogs,
+  parseEmailList,
+  redactEmailAddresses,
+} from './email.utils';
 
 describe('isValidEmail', () => {
   it('accepts a well-formed address', () => {
@@ -21,6 +30,53 @@ describe('isValidEmail', () => {
   it('rejects null and undefined', () => {
     expect(isValidEmail(null)).toBe(false);
     expect(isValidEmail(undefined)).toBe(false);
+  });
+});
+
+describe('isMailtoSafeEmail', () => {
+  it.each([['alice@example.com'], ['first.last+tag@mail.example.co.uk'], ['a_b-c@sub-domain.example.org']])('accepts %p', (value) => {
+    expect(isMailtoSafeEmail(value)).toBe(true);
+  });
+
+  it.each([
+    ['a@example.com?bcc=b@example.org'],
+    ['victim@example.com%0D%0ABcc:attacker@example.com'],
+    ['a@example.com,b@example.org'],
+    ['a@example.com;b@example.org'],
+    ['a@example.com#frag'],
+    ['a@b@example.com'],
+    [' alice@example.com'],
+    ['alice@example'],
+    ['alice@.example.com'],
+    [''],
+    [null],
+    [undefined],
+  ])('rejects %p', (value) => {
+    expect(isMailtoSafeEmail(value)).toBe(false);
+  });
+});
+
+describe('isPlainEmailAddress', () => {
+  it.each([['alice@example.com'], ["o'brien@example.com"], ['first.last+tag@mail.example.co.uk']])('accepts %p', (value) => {
+    expect(isPlainEmailAddress(value)).toBe(true);
+  });
+
+  it.each([
+    ['a@example.com?bcc=b@example.org'],
+    ['a@example.com&subject=hi'],
+    ['victim@example.com%0D%0ABcc:attacker@example.com'],
+    ['a@example.com,b@example.org'],
+    ['a@example.com;b@example.org'],
+    ['a@example.com#frag'],
+    ['a@example.com\r\nBcc: b@example.org'],
+    ['a@b@example.com'],
+    [' alice@example.com'],
+    ['alice@example'],
+    [''],
+    [null],
+    [undefined],
+  ])('rejects %p', (value) => {
+    expect(isPlainEmailAddress(value)).toBe(false);
   });
 });
 
