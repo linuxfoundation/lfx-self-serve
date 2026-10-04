@@ -180,7 +180,7 @@ describe('resolveActionSlot', () => {
   // (fullAccess, inviteResponsesEnabled) pair, in the column order of ACCESS_RSVP_COLUMNS. Every
   // cell is written out rather than derived, so changing any single decision in the resolver fails
   // exactly the rows it touches. This table is the executable source of truth; the written state
-  // matrix (specs/011-meeting-details-redesign/state-matrix.md, PR #2935, pending) mirrors it.
+  // matrix (specs/011-meeting-details-redesign/state-matrix.md) mirrors it.
   const ACCESS_RSVP_COLUMNS: { fullAccess: boolean; inviteResponsesEnabled: boolean }[] = [
     { fullAccess: true, inviteResponsesEnabled: true },
     { fullAccess: true, inviteResponsesEnabled: false },
