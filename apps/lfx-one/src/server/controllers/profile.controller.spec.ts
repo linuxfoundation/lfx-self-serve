@@ -27,7 +27,12 @@ const {
   meetingPrefSvc,
   socialVerificationSvc,
   authStateSvc,
+  auth0ToCdpProviderMap,
+  cdpPlatformToTypeMap,
 } = vi.hoisted(() => ({
+  // Empty by default; suites that need provider mappings populate them and clear them afterwards.
+  auth0ToCdpProviderMap: {} as Record<string, string>,
+  cdpPlatformToTypeMap: {} as Record<string, string>,
   getUsernameFromAuthMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
   getEffectiveEmailMock: vi.fn(),
@@ -68,9 +73,13 @@ const {
     sendPasswordResetLink: vi.fn(),
     verifyOtp: vi.fn(),
     linkIdentity: vi.fn(),
+    listIdentities: vi.fn(),
+    addAlias: vi.fn(),
   },
   forwardsSvc: {
     getForward: vi.fn(),
+    checkAlias: vi.fn(),
+    setTarget: vi.fn(),
   },
   enrollmentSvc: {
     hasLinuxComAddon: vi.fn(),
@@ -97,10 +106,10 @@ const {
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
-  AUTH0_TO_CDP_PROVIDER_MAP: {},
+  AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
   CDP_DISPLAYABLE_IDENTITY_COMBOS: [],
   CDP_PLATFORM_ICONS: {},
-  CDP_PLATFORM_TO_TYPE_MAP: {},
+  CDP_PLATFORM_TO_TYPE_MAP: cdpPlatformToTypeMap,
   CDP_TO_AUTH0_PROVIDER_MAP: {},
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
@@ -756,6 +765,180 @@ describe('ProfileController.getLinuxAlias', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: null }));
     expect(res.json.mock.calls[0][0]).not.toHaveProperty('forwardAuthRequired');
     expect(forwardsSvc.getForward).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController Linux.com forward target ownership', () => {
+  let controller: ProfileController;
+
+  const forwardDomain = 'alias.example';
+  const ownedEmails = {
+    primary_email: 'User@Example.com',
+    alternate_emails: [
+      { email: 'verified-alt@example.com', verified: true },
+      { email: 'unverified-alt@example.com', verified: false },
+    ],
+  };
+
+  const claimReq = (forwardTo: string): any => buildReq({ body: { alias: 'myalias', forwardTo }, path: '/api/profile/linux-email/claim' });
+  const updateReq = (forwardTo: string): any => buildReq({ body: { forwardTo }, path: '/api/profile/linux-email/forward' });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.assign(auth0ToCdpProviderMap, { 'google-oauth2': 'google', github: 'github', email: 'email' });
+    Object.assign(cdpPlatformToTypeMap, { google: 'email', email: 'email', github: 'username' });
+    getLinuxForwardDomainMock.mockReturnValue(forwardDomain);
+    getEffectiveSubMock.mockReturnValue('auth0|user123');
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    enrollmentSvc.hasLinuxComAddon.mockResolvedValue(true);
+    forwardsSvc.checkAlias.mockResolvedValue({ exists: false });
+    forwardsSvc.setTarget.mockImplementation(async (_req: unknown, _token: string, target: string) => ({ target_email: target }));
+    emailVerificationSvc.addAlias.mockResolvedValue({ success: true, email: `myalias@${forwardDomain}` });
+    emailVerificationSvc.getUserEmails.mockResolvedValue(ownedEmails);
+    emailVerificationSvc.listIdentities.mockResolvedValue([]);
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    for (const map of [auth0ToCdpProviderMap, cdpPlatformToTypeMap]) {
+      for (const key of Object.keys(map)) {
+        delete map[key];
+      }
+    }
+  });
+
+  describe('claimLinuxAlias', () => {
+    it('rejects a target the caller does not own before claiming the alias', async () => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('someone-else@example.org'), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(emailVerificationSvc.addAlias).not.toHaveBeenCalled();
+      expect(forwardsSvc.setTarget).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('accepts the primary email case-insensitively and forwards to the stored address', async () => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('  USER@example.COM '), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(emailVerificationSvc.getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|user123');
+      expect(forwardsSvc.setTarget).toHaveBeenCalledWith(expect.anything(), 'mgmt-token', 'User@Example.com', forwardDomain);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ state: 'claimed', forwardTo: 'User@Example.com' }));
+    });
+
+    it('accepts a verified alternate email', async () => {
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('verified-alt@example.com'), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(forwardsSvc.setTarget).toHaveBeenCalledWith(expect.anything(), 'mgmt-token', 'verified-alt@example.com', forwardDomain);
+    });
+
+    it('rejects an unverified alternate email', async () => {
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('unverified-alt@example.com'), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(emailVerificationSvc.addAlias).not.toHaveBeenCalled();
+    });
+
+    it('rejects a target on the forward domain itself', async () => {
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq(`other@${forwardDomain}`), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(emailVerificationSvc.getUserEmails).not.toHaveBeenCalled();
+      expect(emailVerificationSvc.addAlias).not.toHaveBeenCalled();
+    });
+
+    it('accepts an email from a linked email-type identity', async () => {
+      emailVerificationSvc.listIdentities.mockResolvedValue([
+        { provider: 'google-oauth2', user_id: 'g-1', profileData: { email: 'linked@example.net' } },
+        { provider: 'github', user_id: 'gh-1', profileData: { email: 'gh-only@example.net', nickname: 'octo' } },
+      ]);
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('linked@example.net'), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(forwardsSvc.setTarget).toHaveBeenCalledWith(expect.anything(), 'mgmt-token', 'linked@example.net', forwardDomain);
+    });
+
+    it('rejects an email that only appears on a non-email identity', async () => {
+      emailVerificationSvc.listIdentities.mockResolvedValue([
+        { provider: 'github', user_id: 'gh-1', profileData: { email: 'gh-only@example.net', nickname: 'octo' } },
+      ]);
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('gh-only@example.net'), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(emailVerificationSvc.addAlias).not.toHaveBeenCalled();
+    });
+
+    it('fails closed with 503 when the caller email list is unavailable', async () => {
+      emailVerificationSvc.getUserEmails.mockResolvedValue(null);
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('user@example.com'), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_UNAVAILABLE' }));
+      expect(emailVerificationSvc.addAlias).not.toHaveBeenCalled();
+    });
+
+    it('propagates an identity-list outage instead of claiming', async () => {
+      const outage = new Error('identity list unavailable');
+      emailVerificationSvc.listIdentities.mockRejectedValue(outage);
+      const next = vi.fn();
+
+      await controller.claimLinuxAlias(claimReq('user@example.com'), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(outage);
+      expect(emailVerificationSvc.addAlias).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateLinuxForward', () => {
+    it('rejects a target the caller does not own without calling set_target', async () => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.updateLinuxForward(updateReq('someone-else@example.org'), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(forwardsSvc.setTarget).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unverified alternate email', async () => {
+      const next = vi.fn();
+
+      await controller.updateLinuxForward(updateReq('unverified-alt@example.com'), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+      expect(forwardsSvc.setTarget).not.toHaveBeenCalled();
+    });
+
+    it('updates the forward to a verified alternate email', async () => {
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.updateLinuxForward(updateReq('Verified-Alt@example.com'), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(forwardsSvc.setTarget).toHaveBeenCalledWith(expect.anything(), 'mgmt-token', 'verified-alt@example.com', forwardDomain);
+      expect(res.json).toHaveBeenCalledWith({ forwardTo: 'verified-alt@example.com' });
+    });
   });
 });
 
