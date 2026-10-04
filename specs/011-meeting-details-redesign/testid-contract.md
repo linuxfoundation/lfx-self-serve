@@ -69,8 +69,11 @@ data-my-rsvp: accepted | maybe | declined | none
 ```
 
 `data-my-rsvp` is the viewer's own answer for the selected occurrence (FR-011), `none` meaning not
-answered yet. It is present **only** for a registrant on a meeting with RSVP tracking on; everywhere
-else it is absent, for the same reason `data-attendance` is (see People).
+answered yet. It is present **only** for a viewer who is on the invite list (`Meeting.invited`) on a
+meeting with RSVP tracking on: a registrant, **or an organizer who is also invited**. The view model
+resolves that organizer as the `organizer` role, and the action slot still returns `rsvp` for them,
+as V1 lets an invited organizer set and see their own RSVP. Key the attribute on `invited`, not on
+the role. Everywhere else it is absent, for the same reason `data-attendance` is (see People).
 
 ### `meeting-privacy-chip[data-visibility]` and `[data-restricted]`
 
