@@ -50,7 +50,9 @@ export const SENSITIVE_FIELDS = [
  *
  * Meeting secrets are listed as exact keys — `passcode`, `host_key`/`hostKey` and
  * `chat_webhook_url` (a Slack Incoming Webhook URL is itself a bearer credential) — rather than
- * suffixes, so flags such as `can_view_host_key` stay visible.
+ * suffixes, so flags such as `can_view_host_key` stay visible. Session-held one-time values are
+ * exact keys for the same reason: the email-verification `otp` and the OAuth CSRF nonces
+ * `profileAuthState` / `socialAuthState` (a broad `state` match would hide ordinary status fields).
  *
  * Deliberately exact-match (unlike `SENSITIVE_FIELDS`' substring match): this runs on every log
  * line, so a broad substring like `key` would mask harmless fields such as `cache_key`.
@@ -67,6 +69,9 @@ export const LOG_CREDENTIAL_KEYS = [
   'passcode',
   'hostkey',
   'chatwebhookurl',
+  'otp',
+  'profileauthstate',
+  'socialauthstate',
 ] as const;
 
 /** Normalised-key suffixes that mark a value as a credential for the server's log scrubber. See `LOG_CREDENTIAL_KEYS`. */

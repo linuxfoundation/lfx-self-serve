@@ -243,6 +243,26 @@ describe('scrubLogField', () => {
     });
   });
 
+  it('redacts the session email-verification OTP and OAuth CSRF state nonces, leaving other state fields visible', () => {
+    const scrubbed = scrubLogField('appSession', {
+      pendingEmailVerification: { email: 'user@example.com', otp: '123456' },
+      profileAuthState: 'profile-nonce',
+      socialAuthState: 'social-nonce',
+      profileAuthReturnTo: '/profile',
+      state: 'active',
+      has_session_state: true,
+    });
+
+    expect(scrubbed).toEqual({
+      pendingEmailVerification: { email: 'user@example.com', otp: '[REDACTED]' },
+      profileAuthState: '[REDACTED]',
+      socialAuthState: '[REDACTED]',
+      profileAuthReturnTo: '/profile',
+      state: 'active',
+      has_session_state: true,
+    });
+  });
+
   it('stops walking a wide array at the node budget, ending it with one truncation marker', () => {
     const scrubbed = scrubLogField(
       'items',
