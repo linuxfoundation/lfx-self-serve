@@ -9,11 +9,10 @@
  * opt-in: the logger service never calls `sanitize()` automatically, each call site must invoke
  * it explicitly.
  *
- * Known gap this does NOT cover: `MicroserviceError#getLogContext()`'s `errorBody` is logged
- * unsanitized by the central error handler. Inert today for `chat_webhook_url` (LFXV2-3080) —
- * it doesn't exist upstream yet, so no upstream validation error can echo it back — but revisit
- * once LFXV2-3094 lands, since an upstream validation error on that field could then put the
- * credential in `errorBody` unredacted.
+ * Separately, the server's log scrubber redacts credential-named keys (`LOG_CREDENTIAL_KEYS`) at any
+ * depth on every log line, so a parsed upstream `errorBody` that echoes `chat_webhook_url` back under
+ * that key is masked without an explicit `sanitize()` call. It matches keys only: a credential quoted
+ * inside a free-text value (e.g. an upstream error message) is not detected.
  */
 export const SENSITIVE_FIELDS = [
   'password',
