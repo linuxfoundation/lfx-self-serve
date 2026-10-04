@@ -1,0 +1,76 @@
+# Meeting details V2 — rollout and retirement
+
+Plan ID **V2-03** · issue [#2875](https://github.com/linuxfoundation/lfx-self-serve/issues/2875) ·
+epic [#1765](https://github.com/linuxfoundation/lfx-self-serve/issues/1765) · Meetings v2 epic
+[#1451](https://github.com/linuxfoundation/lfx-self-serve/issues/1451)
+
+How V2 of the meeting details page gets from code to every viewer, who decides each step, what has
+to be true before the next one, and how V1 and the flag gate are removed at the end.
+
+There are two separate controls, and they do different jobs:
+
+- **The branch controls whether the code is in production at all.** Nothing in this epic reaches
+  `main` until the whole project is built.
+- **The flag controls who sees V2 once the code is in production.** It is UI-only and gates no
+  endpoint (R02).
+
+## Fixed rules
+
+- **The code default never changes.** `MEETING_V2_ENABLED_FLAG` defaults to `false` in code and stays
+  `false`. LaunchDarkly targeting is the only switch (R04). Flipping the code default would ship V2
+  to everyone at once, with no way back short of a deploy.
+- **Fail closed.** An unready, slow or erroring flag provider renders V1 (R03).
+- **Anonymous visitors get V1** until the anonymous stage below (R05).
+- **Rollback is a targeting change, not a deploy.** Removing a viewer from targeting puts them back
+  on V1 on their next page load. Every stage relies on this.
+- **Dev and prod targeting are configured identically**, so what testers see in dev is what they get
+  in prod.
+- The flag is shared with the meeting composer (epic #1451). Changing targeting moves **both**
+  surfaces for the targeted viewer. If the two ever need different audiences, that is the moment to
+  split the flag (open decision D-2 in the plan); until then they move together.
+
+## Stages
+
+Each stage names who decides and what must be true to move on. Do not skip a stage; a stage may be
+repeated with a wider audience.
+
+| #   | Stage                                  | Who sees V2                                                                   | Decides                                                       | Exit criteria (all must hold)                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | -------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | **Build** on `feat/meeting-details-v2` | nobody in production; developers locally                                      | project owner                                                 | Every planned Phase 1 and Phase 2 PR merged into the integration branch. CI green on the release PR #3249. E5-04 E2E suite green and binding. #2920 (SSR flag decision) merged. Code-owner sign-off on the protected `AGENTS.md` line from #2911.                                                                                                                                                             |
+| 1   | **Release**: merge #3249 into `main`   | nobody: targeting is empty, V2 is dark                                        | project owner + code owners (`@linuxfoundation/lfx-platform`) | Production deploy healthy. With the flag off, V1 renders exactly as before (the V1 layout-parity check from #2910, repeated against the deployed build). No new errors in Datadog RUM for `/meetings/:id`.                                                                                                                                                                                                    |
+| 2   | **Internal testers**                   | a named list: the team building it                                            | project owner                                                 | One full week with no open P1/P2 bug against V2. Every legal state in `state-matrix.md` exercised by a tester at least once. Error rate and join success on `/meetings/:id` for testers no worse than V1's for the same week.                                                                                                                                                                                 |
+| 3   | **Extended testers**                   | a named list across personas: maintainers, EDs, board members, organizers     | project owner, with product                                   | Two weeks with no P1/P2. Feedback from each persona reviewed and triaged. Organizer flows checked: RSVP aggregate, occurrence edit and cancel, materials manage.                                                                                                                                                                                                                                              |
+| 4   | **Percentage of signed-in users**      | a rising percentage of authenticated viewers (for example 10 → 25 → 50 → 100) | project owner                                                 | **Requires #2920.** Without it, every newly targeted viewer sees a V1 → V2 swap after hydration. At each step: error rate, join-URL success rate and RSVP submission rate within normal variance of V1; no rise in meeting-related support tickets. Hold each step at least a few days.                                                                                                                       |
+| 5   | **Anonymous visitors**                 | logged-out visitors on public meetings                                        | project owner + code owners                                   | A **code change**, not targeting: the gate hard-codes anonymous viewers to V1 today. Once #2920 evaluates the flag on the server, anonymous visitors can get an anonymous LaunchDarkly context (a random key held in a first-party cookie) and be ramped by percentage like stage 4. Validated by the anonymous E2E presets (visitor rows of `state-matrix.md`) and an SSR parity check. Ships in its own PR. |
+| 6   | **Soak at 100%**                       | everyone                                                                      | project owner                                                 | The agreed soak period (suggested: two release cycles) at 100% of signed-in and anonymous traffic with no rollback. Then V1 retirement starts.                                                                                                                                                                                                                                                                |
+| 7   | **Retire V1**                          | everyone, with no V1 to fall back to                                          | project owner + code owners                                   | Done by [#3266](https://github.com/linuxfoundation/lfx-self-serve/issues/3266), the named V1-deletion checklist. Its preconditions are stages 0–6 above and `v2-scaffold.md` § Definition of done.                                                                                                                                                                                                            |
+
+### What we measure
+
+The comparison is always V2 viewers against V1 viewers over the same window, so seasonal traffic does
+not read as a regression.
+
+- **Errors**: Datadog RUM errors and failed requests on `/meetings/:id`.
+- **Joins**: rate of successful `POST /public/api/meetings/:id/join-url`, including the
+  `NOT_REGISTERED_FOR_MEETING` rate on restricted meetings, which D-1 changes for anonymous
+  invitees.
+- **RSVP**: RSVP submissions per registrant view, on meetings with RSVP tracking on.
+- **Registration**: self-registrations per outsider view on public, unrestricted meetings.
+- **Performance**: LCP for `/meetings/:id`. V2 is a lazy chunk, so the first paint for targeted
+  viewers is the one to watch until #2920 lands.
+- **Support**: meeting-related tickets that mention the details page.
+
+## Rolling back
+
+| Situation                               | Action                                                                                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A V2 bug, any stage from 2 to 6         | Remove the affected audience from targeting. Fix in a normal PR to `main`: V2 is still behind targeting, so the fix reaches only targeted viewers. |
+| A V1 regression after stage 1           | The release changed V1's route target. Revert #3249's merge; V1 had no other change.                                                               |
+| Flag provider outage                    | Nothing to do: the gate fails closed to V1.                                                                                                        |
+| A problem after stage 7 (V1 is deleted) | No flag fallback exists any more. Fix forward, which is why stage 6's soak comes first.                                                            |
+
+## Retiring the flag
+
+Stage 7 removes **this page's** read of `MEETING_V2_ENABLED_FLAG` and the gate component. It does not
+delete the flag: the meeting composer and other meetings v2 surfaces read it too. The flag itself is
+deleted from code and from LaunchDarkly only when the last surface that reads it has retired its V1.
