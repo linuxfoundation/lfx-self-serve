@@ -621,8 +621,9 @@ export interface MeetingRegistrant {
   /**
    * Committee this registrant was added from (present when `type` is `committee`).
    * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID on enriched
-   * reads (`include_committee=true`, and every `/my` registrant response) so the field means the same
-   * thing in both directions. Treat the normalization as best-effort rather than guaranteed — an
+   * reads (`include_committee=true`, and every `/my` registrant response except `preview=true`, which
+   * skips enrichment and always returns the raw SFID) so the field means the same thing in both
+   * directions. Treat the normalization as best-effort rather than guaranteed — an
    * enriched response still returns the raw SFID when the meeting has no committees, when the whole
    * v1↔v2 mapping comes back empty, when this particular SFID has no v2 counterpart, or when
    * enrichment throws (the BFF logs a warning and serves the unenriched rows with a 200 rather than
