@@ -121,9 +121,15 @@ export class PermissionsService {
   // username on one entry and an email-as-username on the other — keying on username first
   // would miss that pairing. A user with neither username nor email can't be identified at
   // all; leave those rows uncollapsed rather than merging unrelated anonymous users together.
+  //
+  // The surviving row's `username` is the identifier later sent to updateUserRole /
+  // removeUserFromProject, so prefer whichever of the two entries carries a real username
+  // over one that only has the email-fallback value (PR #3244 review).
   private collapseDuplicateUsers(users: ProjectPermissionUser[]): ProjectPermissionUser[] {
     const byIdentifier = new Map<string, ProjectPermissionUser>();
     const unidentified: ProjectPermissionUser[] = [];
+
+    const hasRealUsername = (user: ProjectPermissionUser): boolean => !!user.username && user.username !== user.email;
 
     for (const user of users) {
       const identifier = (user.email || user.username || '').toLowerCase();
@@ -132,9 +138,13 @@ export class PermissionsService {
         continue;
       }
       const existing = byIdentifier.get(identifier);
-      if (!existing || (existing.role === 'view' && user.role === 'manage')) {
+      if (!existing) {
         byIdentifier.set(identifier, user);
+        continue;
       }
+      const winner = existing.role === 'view' && user.role === 'manage' ? user : existing;
+      const loser = winner === existing ? user : existing;
+      byIdentifier.set(identifier, !hasRealUsername(winner) && hasRealUsername(loser) ? { ...winner, username: loser.username } : winner);
     }
 
     return [...byIdentifier.values(), ...unidentified];

@@ -80,6 +80,34 @@ describe('PermissionsService', () => {
       ]);
     });
 
+    it('preserves the real username when it is present only on the losing (view) entry (#3244 review)', () => {
+      const settings: ProjectSettings = {
+        uid: 'project-1',
+        announcement_date: '',
+        auditors: [{ name: 'Blair Chen', email: 'bchen@vendor-corp.example', username: 'blairchen' }],
+        writers: [{ name: 'Blair Chen', email: 'bchen@vendor-corp.example' }],
+        created_at: '',
+        updated_at: '',
+      };
+
+      let result: ProjectPermissionUser[] = [];
+      service.getProjectPermissions('project-1').subscribe((users) => {
+        result = users;
+      });
+
+      http.expectOne('/api/projects/project-1/permissions').flush(settings);
+
+      expect(result).toEqual([
+        {
+          name: 'Blair Chen',
+          email: 'bchen@vendor-corp.example',
+          username: 'blairchen',
+          avatar: undefined,
+          role: 'manage',
+        },
+      ]);
+    });
+
     it('keeps distinct users as separate rows', () => {
       const settings: ProjectSettings = {
         uid: 'project-1',
