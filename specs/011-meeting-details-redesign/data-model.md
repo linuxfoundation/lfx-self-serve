@@ -66,10 +66,10 @@ Two invariants tie the resolvers together:
 Two pieces of state are not axes and not part of the detail payload, but the page cannot render
 without them:
 
-| State                 | Source                                                                                                                                               | Notes                                                                                                                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Selected occurrence   | `?occurrence=<id>` on the URL (V1 TS:934), else the current or next active occurrence; a composite `{id}-{13-digit ms}` id selects a past occurrence | cancelled occurrences are never selected; a cancelled `?occurrence=` falls back to the current or next one. Feeds `resolveTimeState`                                                              |
-| The viewer's own RSVP | `GET /api/meetings/:uid/rsvp/me?occurrenceId=<selected occurrence>` (authenticated; registrants)                                                     | the public detail payload does **not** populate `my_rsvp`. Scope the request to the selected occurrence, or a per-occurrence RSVP is lost. Only fetched when RSVP tracking is on (FR-023, FR-024) |
+| State                 | Source                                                                                                                                                                                                                                                                                                                                 | Notes                                                                                                                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Selected occurrence   | `?occurrence=<start-ms>` on the URL: a Unix-**millisecond start timestamp**, not an occurrence ID, matched against `new Date(occurrence.start_time).getTime()` (V1 `meeting-join.component.ts:1022-1027` on current `main`), else the current or next active occurrence; a composite `{id}-{13-digit ms}` id selects a past occurrence | cancelled occurrences are never selected; a cancelled `?occurrence=` falls back to the current or next one. Feeds `resolveTimeState`                                                              |
+| The viewer's own RSVP | `GET /api/meetings/:uid/rsvp/me?occurrenceId=<selected occurrence's occurrence_id>` (the canonical ID, Unix seconds — never the URL's millisecond value) (authenticated; registrants)                                                                                                                                                  | the public detail payload does **not** populate `my_rsvp`. Scope the request to the selected occurrence, or a per-occurrence RSVP is lost. Only fetched when RSVP tracking is on (FR-023, FR-024) |
 
 ## Counts
 
@@ -79,7 +79,9 @@ without them:
 | `individual_registrants_count`, `committee_members_count` | **not populated** on either upcoming detail endpoint (GH-1731)                                                                                                                                                                                                      | nobody — still optional on the interface, so TypeScript will not flag a read                                       |
 | Invitee / participant / attended counts (past)            | the public page derives them from the participants list, `GET /api/past-meetings/:uid/participants` (V1 `pastMeetingParticipants`). `GET /api/past-meetings/:uid` (route `past-meetings.route.ts:65`) also fills count fields, but the public page does not call it | signed-in viewers with access only; V1 fetches participants only when authenticated, so anonymous viewers get none |
 
-Anonymous and outsider viewers have no count source. V2 MUST NOT design one in (FR-032).
+On an **upcoming** meeting, anonymous and outsider viewers have no count source, and V2 MUST NOT
+design one in. On a **past** meeting, any signed-in viewer with access (outsider included) does have
+one, through the participants list; only anonymous viewers have none (FR-032).
 
 ## RSVP
 
@@ -92,11 +94,11 @@ Anonymous and outsider viewers have no count source. V2 MUST NOT design one in (
 
 ## Identifiers
 
-| Identifier                   | Format                                 | Trap                                                                |
-| ---------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| Composite past-occurrence id | `/^\d+-\d{13}$/` — numeric id + **ms** | forces past mode; the base id must be numeric                       |
-| `cancelled_occurrences[]`    | Unix **seconds** (10 digits)           | compared directly against `occurrence_id`, not re-derived from time |
-| Occurrence ids in URLs       | **ms** (13 digits)                     | do not mix with the seconds above                                   |
+| Identifier                                 | Format                                  | Trap                                                                                                                                             |
+| ------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Composite past-occurrence id               | `/^\d+-\d{13}$/` — numeric id + **ms**  | forces past mode; the base id must be numeric                                                                                                    |
+| `cancelled_occurrences[]`                  | Unix **seconds** (10 digits)            | compared directly against `occurrence_id`, not re-derived from time                                                                              |
+| `?occurrence=` and the composite-id suffix | Unix **ms** start timestamp (13 digits) | a start time, not an `occurrence_id`: convert via the matched occurrence before calling RSVP or occurrence APIs, which take the seconds-based ID |
 
 ## Past participants
 
