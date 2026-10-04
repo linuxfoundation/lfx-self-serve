@@ -58,6 +58,30 @@ list below is the contract:
 before | live | ended
 ```
 
+### `meeting-status-pill[data-state]` and `[data-my-rsvp]`
+
+`data-state` carries the same `MeetingTimeState` values as the time banner, so E5-04 can assert the
+pill's phase without reading its copy:
+
+```text
+data-state:   before | live | ended
+data-my-rsvp: accepted | maybe | declined | none
+```
+
+`data-my-rsvp` is the viewer's own answer for the selected occurrence (FR-011), `none` meaning not
+answered yet. It is present **only** for a registrant on a meeting with RSVP tracking on; everywhere
+else it is absent, for the same reason `data-attendance` is (see People).
+
+### `meeting-privacy-chip[data-visibility]` and `[data-restricted]`
+
+One chip, four values, carried as the two fields they come from. They mirror `MeetingPrivacyState`
+from E0-02, so an absent `visibility` already reads as `private`:
+
+```text
+data-visibility: public | private
+data-restricted: true | false
+```
+
 ### `meeting-action-slot[data-kind]`
 
 Values will mirror `ActionSlotKind` exactly — **all nine members**. Like `MeetingTimeState`,
@@ -118,7 +142,13 @@ the row's contents.
 | `people-section`         | The roster section  |
 | `participant-row-${uid}` | One participant row |
 
-### `participant-row-${uid}[data-attendance]` and `[data-invitation]`
+Upcoming and past rows come from different data, so they carry different state attributes. An
+upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
+and no registrant `type`. Never put the upcoming attributes on a past row: calling
+`getRegistrantAttendanceStatus` on a participant returns `pending` for everyone, and
+`data-invitation` has nothing to read.
+
+### Upcoming rows: `participant-row-${uid}[data-attendance]` and `[data-invitation]`
 
 Attendance and invitation are two independent axes and get two attributes; a single fused value
 would force every test to know the whole cross-product.
@@ -131,7 +161,7 @@ data-invitation:  direct | committee
 `data-attendance` mirrors `RegistrantAttendanceStatus` (`packages/shared/src/utils/rsvp-calculator.util.ts`),
 computed by `getRegistrantAttendanceStatus` with `{ inviteResponsesEnabled }` passed. `data-invitation`
 mirrors `MeetingRegistrant.type`: whether the person was invited directly or came in with a
-committee. It is on every row, whatever the RSVP gate says.
+committee. It is on every upcoming row, whatever the RSVP gate says.
 
 `data-attendance` is present **only when `Meeting.is_invite_responses_enabled` is true.** RSVP has a
 hard gate: meetings created before the January 2024 invite-responses release have no RSVP data at
@@ -139,6 +169,18 @@ all, and when the gate is closed every piece of RSVP UI disappears — controls,
 filter and per-avatar badge alike. An absent attribute is therefore the correct assertion for a
 pre-2024 meeting, and a test that expects `data-attendance="none"` there is asserting UI the product
 must not render.
+
+### Past rows: `participant-row-${uid}[data-attended]` and `[data-invited]`
+
+```text
+data-attended: true | false
+data-invited:  true | false
+```
+
+They mirror `PastMeetingParticipant.is_attended` and `.is_invited`, so a test can tell an invited
+no-show from an uninvited attendee. Both are on every past row. The identity tier (verified · needs
+review · auto-matched · AI-reconciled) gets its own attribute when N-02 decides how much of it the
+public page shows; until then it has no name here.
 
 ## Tools, join details and discovery
 
