@@ -53,13 +53,26 @@ export interface MentorshipLfxProfileFields {
 }
 
 /**
+ * The upstream profile's `profile_links` column. Upstream replaces the column whole, so the index
+ * signature carries the stored keys the BFF does not write (`linkedinProfileLink`, the legacy
+ * `resumeLink`), which the sync copies back unchanged.
+ */
+export interface MentorshipUpstreamProfileLinks {
+  /** `https://github.com/<login>`, built by the BFF from the caller's connected GitHub account. */
+  githubProfileLink?: string;
+  [key: string]: unknown;
+}
+
+/**
  * The same fields as `MentorshipLfxProfileFields`, in the upstream profile's column names, plus the
- * `email` the BFF resolves. Part of the `PUT /mentorship/v1/me/profiles/{profileType}` bodies, and
- * the whole `PATCH /mentorship/v1/me/profiles/by-id/{id}` body the sync sends.
+ * `email` and `profile_links` the BFF resolves. Part of the
+ * `PUT /mentorship/v1/me/profiles/{profileType}` bodies, and the whole
+ * `PATCH /mentorship/v1/me/profiles/by-id/{id}` body the sync sends.
  */
 export interface MentorshipUpstreamLfxProfileFields {
   first_name?: string;
   last_name?: string;
   email?: string;
   logo_url?: string;
+  profile_links?: MentorshipUpstreamProfileLinks;
 }

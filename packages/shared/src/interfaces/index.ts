@@ -206,8 +206,14 @@ export * from './health-metrics-l2.interface';
 // Health Metrics Members page interfaces
 export * from './health-metrics-members.interface';
 
+// Health Metrics Non-Members page interfaces
+export * from './health-metrics-non-members.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
+
+// Health Metrics Training page interfaces
+export * from './health-metrics-training.interface';
 
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
@@ -318,6 +324,7 @@ export * from './crowdfunding.interface';
 
 // Mentorship interfaces
 export * from './mentorship.interface';
+export * from './mentorship-admin.interface';
 export * from './mentorship-mentee.interface';
 export * from './mentorship-mentor.interface';
 export * from './mentorship-lfx-profile-card.interface';

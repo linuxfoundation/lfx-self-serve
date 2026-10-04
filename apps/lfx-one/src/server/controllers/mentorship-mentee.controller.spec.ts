@@ -386,9 +386,13 @@ describe('MentorshipMenteeController', () => {
     it('answers 200 with the service result and passes the normalized request to the service', async () => {
       const update = vi.spyOn(MentorshipMenteeService.prototype, 'updateMenteeProfile').mockResolvedValue(updated);
 
-      await controller.updateMenteeProfile(buildUpdateReq({ introduction: '  Hello  ', skillSet: { skillsHave: [' Go '], skillsWant: ['Rust'] } }), res, next);
+      await controller.updateMenteeProfile(
+        buildUpdateReq({ introduction: '<p>Hello</p>', skillSet: { skillsHave: [' Go '], skillsWant: ['Rust'] } }),
+        res,
+        next
+      );
 
-      expect(update).toHaveBeenCalledWith(expect.anything(), { introduction: 'Hello', skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } });
+      expect(update).toHaveBeenCalledWith(expect.anything(), { introduction: '<p>Hello</p>', skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } });
       expect(res.json).toHaveBeenCalledWith(updated);
       expect(next).not.toHaveBeenCalled();
     });

@@ -9,11 +9,10 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MENTORSHIP_NOTE_DIALOG_HEADER } from '@lfx-one/shared/constants';
 import { MentorshipNoteRequest, MentorshipProgramDetail, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { filter, map, switchMap, take, tap } from 'rxjs';
 
-import { ApplicantsTabComponent } from './components/applicants-tab/applicants-tab.component';
 import { CurrentMenteesTabComponent } from './components/current-mentees-tab/current-mentees-tab.component';
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
 import { MentorsTabComponent } from './components/mentors-tab/mentors-tab.component';
@@ -24,8 +23,9 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
 
 /**
  * Admin program-detail page. Loads a program by id (default) or slug and hosts
- * the four underline tabs (mentees, applicants, mentors, terms). The mentees tab
- * shows current mentees for a live program and past mentees once it is completed.
+ * the four underline tabs (current mentees, past mentees, mentors, terms). The two
+ * mentee tabs split the program's applications by their term's status: an open
+ * term's rows are current, a closed term's are past.
  *
  * Reviewer notes are owned here rather than in the tabs: the tab panel is an
  * `@switch`, so a tab component is destroyed the moment the admin looks at another
@@ -40,7 +40,6 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
     ProgramDetailHeaderComponent,
     CurrentMenteesTabComponent,
     PastMenteesTabComponent,
-    ApplicantsTabComponent,
     MentorsTabComponent,
     TermsTabComponent,
   ],
@@ -49,13 +48,13 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
 })
 export class ProgramDetailComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly dialogService = inject(DialogService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly isLoading = signal(true);
-  protected readonly activeTab = signal<MentorshipProgramDetailTab>('mentees');
+  protected readonly activeTab = signal<MentorshipProgramDetailTab>('current-mentees');
 
   /**
    * Notes edited this session, keyed by person id. Local until a write endpoint
@@ -66,13 +65,10 @@ export class ProgramDetailComponent {
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly detail: Signal<MentorshipProgramDetail | null> = this.initDetail();
   protected readonly terms = computed(() => this.detail()?.terms ?? []);
-  protected readonly mentees = computed(() => this.detail()?.mentees ?? []);
-  protected readonly applicants = computed(() => this.detail()?.applicants ?? []);
+  protected readonly currentMentees = computed(() => this.detail()?.currentMentees ?? []);
+  protected readonly pastMentees = computed(() => this.detail()?.pastMentees ?? []);
   protected readonly mentors = computed(() => this.detail()?.mentors ?? []);
-  protected readonly tabCounts = computed(() => this.detail()?.tabCounts ?? { mentees: 0, applicants: 0, mentors: 0, terms: 0 });
-
-  /** A completed program has no enrolled mentees, so the first tab shows past ones. */
-  protected readonly isCompleted = computed(() => this.detail()?.program.status === 'completed');
+  protected readonly tabCounts = computed(() => this.detail()?.tabCounts ?? { currentMentees: 0, pastMentees: 0, mentors: 0, terms: 0 });
 
   protected onTabChange(tab: MentorshipProgramDetailTab): void {
     this.activeTab.set(tab);
@@ -111,7 +107,7 @@ export class ProgramDetailComponent {
       toObservable(this.programId).pipe(
         filter((programId) => !!programId),
         tap(() => this.isLoading.set(true)),
-        switchMap((programId) => this.mentorshipService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
+        switchMap((programId) => this.mentorshipAdminService.getProgram(programId).pipe(tap(() => this.isLoading.set(false))))
       ),
       { initialValue: null }
     );
@@ -122,7 +118,8 @@ export class ProgramDetailComponent {
     const draft = this.noteDrafts()[personId];
     if (draft !== undefined) return draft;
 
-    const person = [...this.mentees(), ...this.applicants()].find((candidate) => candidate.id === personId);
+    // Only the Current Mentees tab offers a note, so only its rows can be asked for one.
+    const person = this.currentMentees().find((candidate) => candidate.id === personId);
     return person?.note ?? '';
   }
 }

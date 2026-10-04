@@ -76,4 +76,16 @@ describe('FilterPillsComponent', () => {
     expect(pill('kubecon').getAttribute('aria-label')).toBe('KubeCon + CloudNativeCon');
     expect(pill('all').getAttribute('aria-label')).toBe('All');
   });
+
+  it('renders the segmented variant as one labelled group with the same pill contract', async () => {
+    fixture.componentRef.setInput('variant', 'segmented');
+    fixture.componentRef.setInput('ariaLabel', 'Time range');
+    await fixture.whenStable();
+
+    const group = fixture.nativeElement.querySelector('[role="group"]') as HTMLElement | null;
+    expect(group?.getAttribute('aria-label')).toBe('Time range');
+    expect(group?.querySelectorAll('[data-testid^="filter-pill-"]')).toHaveLength(2);
+    expect(pill('all').getAttribute('aria-pressed')).toBe('true');
+    expect(pill('kubecon').getAttribute('aria-pressed')).toBe('false');
+  });
 });

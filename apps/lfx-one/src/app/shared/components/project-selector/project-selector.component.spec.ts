@@ -5,12 +5,21 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { LensItem } from '@lfx-one/shared/interfaces';
+import { FavoriteProjectsService } from '@services/favorite-projects.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectSelectorComponent } from './project-selector.component';
+
+// Favorites are out of scope for the ordering contract under test — this stub only satisfies the
+// component's DI requirement so the suite doesn't construct the real service (and its MessageService
+// and NavigationService dependencies, which these tests don't otherwise provide).
+const favoriteProjectsServiceStub = {
+  state: signal({ data: new Set<string>(), loading: false, readOnly: false, error: null }),
+  toggleFavorite: () => undefined,
+};
 
 /**
  * Covers the ordering contract only. Curated mode is used as the harness because it sources items
@@ -53,6 +62,7 @@ describe('ProjectSelectorComponent ordering', () => {
         // `allPersonas` backs the role-badge fallback and is read for every rendered row.
         { provide: PersonaService, useValue: { personaProjects: signal({}), detectedProjects: signal([]), allPersonas: signal([]) } },
         { provide: ProjectContextService, useValue: { isFoundationContext: signal(false) } },
+        { provide: FavoriteProjectsService, useValue: favoriteProjectsServiceStub },
       ],
     }).compileComponents();
 
@@ -152,6 +162,7 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
           },
         },
         { provide: ProjectContextService, useValue: { isFoundationContext: signal(false) } },
+        { provide: FavoriteProjectsService, useValue: favoriteProjectsServiceStub },
       ],
     }).compileComponents();
 

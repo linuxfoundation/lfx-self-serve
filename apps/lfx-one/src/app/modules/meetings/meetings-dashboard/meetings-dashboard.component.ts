@@ -15,14 +15,21 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import {
+  MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
+  MEETING_TYPE_CONFIGS,
+  MEETING_V2_ENABLED_FLAG,
+  MY_MEETINGS_STATS_WINDOW_DAYS,
+} from '@lfx-one/shared/constants';
 import { Lens, MeetingCalendarClickProps, MeLensMeetingFilters, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
+  countMeetingDatesBefore,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   hasMeetingEnded,
+  isMeetingDeclinedForAllOccurrences,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
   meetingToCalendarEvents,
@@ -124,6 +131,7 @@ export class MeetingsDashboardComponent {
   public projectFilter: WritableSignal<string | null>;
   public pendingRsvpOnly: WritableSignal<boolean>;
   public organizerOnly: WritableSignal<boolean>;
+  public showDeclined: WritableSignal<boolean>;
   public showFoundationFilter: Signal<boolean>;
   public showProjectFilter: Signal<boolean>;
   public foundationOptions: Signal<{ label: string; value: string | null }[]>;
@@ -158,6 +166,9 @@ export class MeetingsDashboardComponent {
   private rawUserPastMeetings: Signal<PastMeeting[]>;
   // Pre-filtered/sorted upcoming meetings (shared source for Me lens stat cards)
   private sortedUpcomingUserMeetings: Signal<Meeting[]>;
+  // Upcoming meetings minus the ones the viewer declined for every date — what the stats and
+  // filter-chip counts describe, since those meetings are hidden by default.
+  private attendingUpcomingUserMeetings: Signal<Meeting[]>;
   // Raw FP/project meetings for stat cards (independent of time-filter tab)
   private rawFpUpcomingMeetings: Signal<Meeting[]>;
   private rawFpPastMeetings: Signal<PastMeeting[]>;
@@ -167,13 +178,16 @@ export class MeetingsDashboardComponent {
 
   // Me lens stat cards
   protected readonly meLensStatsLoading: Signal<boolean>;
-  protected readonly upcomingCount: Signal<number>;
-  protected readonly nextMeetingDate: Signal<string>;
+  protected readonly nextWindowCount: Signal<number>;
+  protected readonly nextMeetingLabel: Signal<string>;
+  protected readonly pendingRsvpCount: Signal<number>;
+  protected readonly earliestPendingRsvpLabel: Signal<string>;
+  protected readonly organizerCount: Signal<number>;
+  protected readonly declinedCount: Signal<number>;
   protected readonly pastThisMonthCount: Signal<number>;
-  protected readonly recurringCount: Signal<number>;
   protected readonly recordingsAvailableCount: Signal<number>;
   protected readonly attendanceRate: Signal<number>;
-  protected readonly recurringAcrossLabel: Signal<string>;
+  protected readonly statsWindowDays = MY_MEETINGS_STATS_WINDOW_DAYS;
 
   // Foundation/Project lens stat cards
   protected readonly fpStatsLoading: Signal<boolean>;
@@ -204,6 +218,7 @@ export class MeetingsDashboardComponent {
     this.projectFilter = signal<string | null>(null);
     this.pendingRsvpOnly = signal<boolean>(false);
     this.organizerOnly = signal<boolean>(false);
+    this.showDeclined = signal<boolean>(false);
     this.hasMore = computed(() => this.activeLens() !== 'me' && (this.timeFilter() === 'past' ? !!this.pastPageToken() : !!this.upcomingPageToken()));
 
     // Initialize meeting type options
@@ -214,6 +229,7 @@ export class MeetingsDashboardComponent {
     this.rawUserPastMeetings = this.initializeRawUserPastMeetings();
     // Single shared source for all Me-lens upcoming stats — avoids re-filtering rawUserMeetings on each stat signal
     this.sortedUpcomingUserMeetings = computed(() => this.filterAndSortUpcomingMeetings(this.rawUserMeetings()));
+    this.attendingUpcomingUserMeetings = computed(() => this.sortedUpcomingUserMeetings().filter((m) => !isMeetingDeclinedForAllOccurrences(m)));
     this.timeFilteredMeetings = computed(() => {
       if (this.timeFilter() === 'past') {
         return this.rawUserPastMeetings();
@@ -232,13 +248,15 @@ export class MeetingsDashboardComponent {
     // Only look at the active tab's loading signal — the inactive tab's raw fetch is gated off,
     // so its loading flag stays pinned at its initial `true` and would never resolve.
     this.meLensStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.pastMeetingsLoading() : this.meetingsLoading()));
-    this.upcomingCount = computed(() => this.sortedUpcomingUserMeetings().length);
-    this.nextMeetingDate = this.initNextMeetingDate();
+    this.nextWindowCount = this.initNextWindowCount();
+    this.nextMeetingLabel = this.initNextMeetingLabel();
+    this.pendingRsvpCount = computed(() => this.attendingUpcomingUserMeetings().filter((m) => this.isPendingRsvp(m)).length);
+    this.earliestPendingRsvpLabel = this.initEarliestPendingRsvpLabel();
+    this.organizerCount = this.initOrganizerCount();
+    this.declinedCount = computed(() => this.sortedUpcomingUserMeetings().length - this.attendingUpcomingUserMeetings().length);
     this.pastThisMonthCount = this.initPastThisMonthCount();
-    this.recurringCount = computed(() => this.sortedUpcomingUserMeetings().filter((m) => m.recurrence !== null).length);
     this.recordingsAvailableCount = this.initRecordingsAvailableCount();
     this.attendanceRate = this.initAttendanceRate();
-    this.recurringAcrossLabel = this.initRecurringAcrossLabel();
 
     // Initialize data with reactive pattern
     this.upcomingMeetings = this.initializeUpcomingMeetings();
@@ -353,6 +371,7 @@ export class MeetingsDashboardComponent {
     // Pending RSVP is an upcoming-only concept, so it resets on tab switch. "Organized by me" is
     // valid on both tabs and deliberately persists across them.
     this.pendingRsvpOnly.set(false);
+    this.showDeclined.set(false);
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { time: value === 'past' ? 'past' : null },
@@ -368,6 +387,12 @@ export class MeetingsDashboardComponent {
     this.projectFilter.set(null);
     this.pendingRsvpOnly.set(false);
     this.organizerOnly.set(false);
+    this.showDeclined.set(false);
+  }
+
+  /** "Need Your RSVP" stat: jumps straight to the matching filter rather than only reporting it. */
+  public onPendingRsvpStatClick(): void {
+    this.pendingRsvpOnly.set(!this.pendingRsvpOnly());
   }
 
   public loadMore(): void {
@@ -417,6 +442,7 @@ export class MeetingsDashboardComponent {
     const projectFilter$ = toObservable(this.projectFilter);
     const pendingRsvpOnly$ = toObservable(this.pendingRsvpOnly);
     const organizerOnly$ = toObservable(this.organizerOnly);
+    const showDeclined$ = toObservable(this.showDeclined);
     // The viewer LFID backs the "Organized by me" predicate and can resolve after the meetings do,
     // so it participates in the stream — otherwise the first filtered emission would use a null viewer.
     const viewerUsername$ = toObservable(this.userService.viewerUsername);
@@ -431,22 +457,26 @@ export class MeetingsDashboardComponent {
       pendingRsvpOnly$,
       organizerOnly$,
       viewerUsername$,
+      showDeclined$,
     ]).pipe(
-      switchMap(([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername]) => {
-        if (lens !== 'me' || timeFilter !== 'upcoming') {
-          return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
+      switchMap(
+        ([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername, showDeclined]) => {
+          if (lens !== 'me' || timeFilter !== 'upcoming') {
+            return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
+          }
+          const filtered = this.filterMeLensMeetings(rawMeetings, {
+            searchQuery,
+            meetingType,
+            foundation,
+            project,
+            pendingRsvpOnly,
+            organizerOnly,
+            viewerUsername,
+            showDeclined,
+          });
+          return of<PageResult<Meeting>>({ data: filtered, page_token: undefined, reset: true });
         }
-        const filtered = this.filterMeLensMeetings(rawMeetings, {
-          searchQuery,
-          meetingType,
-          foundation,
-          project,
-          pendingRsvpOnly,
-          organizerOnly,
-          viewerUsername,
-        });
-        return of<PageResult<Meeting>>({ data: filtered, page_token: undefined, reset: true });
-      })
+      )
     );
 
     // Project/foundation lens: server-side filtering with pagination
@@ -546,6 +576,8 @@ export class MeetingsDashboardComponent {
           pendingRsvpOnly: false,
           organizerOnly,
           viewerUsername,
+          // Past meetings are attendance history; an earlier decline doesn't hide them.
+          showDeclined: true,
         });
         return of<PageResult<PastMeeting>>({ data: filtered, page_token: undefined, reset: true });
       })
@@ -707,8 +739,15 @@ export class MeetingsDashboardComponent {
   }
 
   private filterMeLensMeetings<T extends Meeting>(items: T[], filters: MeLensMeetingFilters): T[] {
-    const { searchQuery, meetingType, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername } = filters;
+    const { searchQuery, meetingType, foundation, project, pendingRsvpOnly, organizerOnly, viewerUsername, showDeclined } = filters;
     let filtered = items;
+
+    if (!showDeclined) {
+      // Declining keeps the viewer's access grant, so the series keeps coming back from the query
+      // service and only an organizer can remove the registrant. Hide it here instead; the
+      // "Show declined" chip brings it back.
+      filtered = filtered.filter((m) => !isMeetingDeclinedForAllOccurrences(m));
+    }
 
     if (project) {
       filtered = filtered.filter((m) => m.project_uid === project);
@@ -722,7 +761,7 @@ export class MeetingsDashboardComponent {
     if (pendingRsvpOnly) {
       // Pending = no RSVP recorded on meetings that collect LFX RSVPs. Pre-feature meetings
       // never collected responses, so they must not appear as "pending" (GH-1951).
-      filtered = filtered.filter((m) => isMeetingInviteResponsesEnabled(m) && !m.my_rsvp);
+      filtered = filtered.filter((m) => this.isPendingRsvp(m));
     }
 
     if (organizerOnly) {
@@ -795,13 +834,40 @@ export class MeetingsDashboardComponent {
     });
   }
 
-  private initNextMeetingDate(): Signal<string> {
+  private isPendingRsvp(meeting: Meeting): boolean {
+    return isMeetingInviteResponsesEnabled(meeting) && !meeting.my_rsvp;
+  }
+
+  private meetingStartLabel(meeting: Meeting, options: Intl.DateTimeFormatOptions): string {
+    const occ = getCurrentOrNextOccurrence(meeting);
+    return new Date(occ ? occ.start_time : meeting.start_time).toLocaleString('en-US', options);
+  }
+
+  private initNextWindowCount(): Signal<number> {
+    return computed(() => countMeetingDatesBefore(this.attendingUpcomingUserMeetings(), Date.now() + this.statsWindowDays * 24 * 60 * 60 * 1000));
+  }
+
+  private initNextMeetingLabel(): Signal<string> {
     return computed(() => {
-      const first = this.sortedUpcomingUserMeetings()[0];
+      const first = this.attendingUpcomingUserMeetings()[0];
       if (!first) return '';
-      const occ = getCurrentOrNextOccurrence(first);
-      const d = new Date(occ ? occ.start_time : first.start_time);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const when = this.meetingStartLabel(first, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      return first.title ? `${when} · ${first.title}` : when;
+    });
+  }
+
+  private initEarliestPendingRsvpLabel(): Signal<string> {
+    return computed(() => {
+      const first = this.attendingUpcomingUserMeetings().find((m) => this.isPendingRsvp(m));
+      return first ? this.meetingStartLabel(first, { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    });
+  }
+
+  private initOrganizerCount(): Signal<number> {
+    return computed(() => {
+      const viewer = this.userService.viewerUsername();
+      const meetings = this.timeFilter() === 'past' ? this.rawUserPastMeetings() : this.attendingUpcomingUserMeetings();
+      return meetings.filter((m) => isMeetingOrganizedByViewer(m, viewer)).length;
     });
   }
 
@@ -870,16 +936,6 @@ export class MeetingsDashboardComponent {
       if (pastThisMonth.length === 0) return 0;
       const attended = pastThisMonth.filter((m) => m.user_attended === true).length;
       return Math.round((attended / pastThisMonth.length) * 100);
-    });
-  }
-
-  private initRecurringAcrossLabel(): Signal<string> {
-    return computed(() => {
-      const recurring = this.sortedUpcomingUserMeetings().filter((m) => m.recurrence !== null);
-      const uniqueProjects = new Set(recurring.map((m) => m.project_name).filter(Boolean));
-      const count = uniqueProjects.size;
-      const projectWord = count === 1 ? 'project' : 'projects';
-      return count > 0 ? `Across ${count} ${projectWord}` : '';
     });
   }
 
@@ -1039,6 +1095,7 @@ export class MeetingsDashboardComponent {
               pendingRsvpOnly: this.pendingRsvpOnly(),
               organizerOnly: this.organizerOnly(),
               viewerUsername: this.userService.viewerUsername(),
+              showDeclined: this.showDeclined(),
             })
           : this.filterBySearchAndType([...this.rawFpUpcomingMeetings(), ...this.rawFpPastMeetings()], search, meetingType);
       return filtered.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);

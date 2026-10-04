@@ -120,7 +120,13 @@ export function getRealEmail(req: Request): string | null {
  * Gets the effective username for the current request context.
  * During impersonation, returns the target user's username from the impersonation session,
  * or null when the target has no stored username — it never falls back to the impersonator's
- * own OIDC username. Otherwise returns the OIDC session user's username/nickname.
+ * own OIDC username. Otherwise returns the IdP-asserted LF username claim
+ * (`https://sso.linuxfoundation.org/claims/username`), or null when the session has none
+ * (e.g. an unlinked social / enterprise-SSO session).
+ *
+ * Deliberately no fallback to `nickname` / `username`: those are display claims, not the LFID.
+ * This value keys M2M, NATS, Snowflake and object-store lookups, so it must be the IdP-asserted
+ * identifier only.
  */
 export function getEffectiveUsername(req: Request): string | null {
   // Never fall back to the impersonator's OIDC username: the stored target username can
@@ -128,9 +134,35 @@ export function getEffectiveUsername(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.username as string) || null;
   }
-  // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
-  // (nickname/username) precedence is unchanged. Mirrors `getUsernameFromAuth`.
-  return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || (req.oidc?.user?.['preferred_username'] as string) || null;
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  if (typeof claim === 'string' && claim) {
+    return claim;
+  }
+  // Authelia (local dev) sessions carry no LF username claim; there `preferred_username` is the
+  // provisioned login (#912). Honored only when the session issuer is Authelia, never for Auth0.
+  if ((process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').includes('auth.k8s.orb.local')) {
+    const preferred = req.oidc?.user?.['preferred_username'];
+    return typeof preferred === 'string' && preferred ? preferred : null;
+  }
+  return null;
+}
+
+/**
+ * The LF username EasyCLA compares a CCLA's CLA Manager list against: the Auth0 username, which
+ * the ID token carries on the LF username claim and the gateway forwards to EasyCLA.
+ *
+ * While impersonating, the session's own claims are the impersonator's, so the impersonated user's
+ * stored username is returned. Returns '' when neither is present, so a roster match fails closed.
+ * Deliberately no fallback to `nickname` or `getEffectiveUsername`: nothing ties those to the
+ * value EasyCLA compares.
+ */
+export function getEffectiveLfUsername(req: Request): string {
+  if (isImpersonating(req)) {
+    const target = req.appSession?.['impersonationUser']?.username;
+    return typeof target === 'string' ? target : '';
+  }
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  return typeof claim === 'string' ? claim : '';
 }
 
 /**

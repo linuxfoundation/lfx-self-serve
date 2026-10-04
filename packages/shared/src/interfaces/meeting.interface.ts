@@ -659,6 +659,9 @@ export interface MeetingRegistrant {
  */
 export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;
 
+/** Which dates a guest added from a recurring meeting's guest list is invited to */
+export type GuestInviteScope = 'all' | 'occurrence';
+
 /**
  * Request payload for creating a meeting registrant
  * @description Data required to add a new registrant to a meeting
@@ -1377,6 +1380,52 @@ export interface MeetingCancelOccurrenceResult {
   error?: string;
 }
 
+/** Request body for canceling a single occurrence of a recurring meeting */
+export interface CancelMeetingOccurrenceRequest {
+  /** Note included in the cancellation emails sent to guests */
+  note?: string;
+}
+
+/**
+ * Request body for editing a single occurrence of a recurring meeting
+ * @description Carries no `recurrence`: upstream rejects one unless `all_following_occurrences` is set,
+ * which would widen the change from this occurrence to every later one. `title` and `description`
+ * are sent only when changed, so an untouched field keeps following the series.
+ */
+export interface UpdateMeetingOccurrenceRequest {
+  /** New start time of the occurrence in RFC3339 format */
+  start_time: string;
+  /** New duration of the occurrence in minutes */
+  duration: number;
+  /** Title for this occurrence only (upstream `topic`) */
+  title?: string;
+  /** Agenda for this occurrence only (upstream `agenda`). Upstream drops an empty value, so it can't be cleared. */
+  description?: string;
+}
+
+/**
+ * Result of rescheduling a meeting occurrence
+ * @description `start_time` is the occurrence's new start, which is also its new occurrence id
+ */
+export interface MeetingRescheduleOccurrenceResult {
+  confirmed: boolean;
+  start_time?: string;
+  error?: string;
+}
+
+/**
+ * Which part of a recurring meeting an edit applies to
+ */
+export type RecurringMeetingEditScope = 'occurrence' | 'series';
+
+/**
+ * Result of the recurring meeting edit scope dialog
+ */
+export interface RecurringMeetingEditScopeResult {
+  proceed: boolean;
+  scope: RecurringMeetingEditScope;
+}
+
 /**
  * Recording session information
  * @description Individual session within a past meeting recording
@@ -1852,6 +1901,21 @@ export interface MeLensMeetingFilters {
   organizerOnly: boolean;
   /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
   viewerUsername: string | null;
+  /** Keep meetings the viewer declined for every occurrence; when false they are hidden. */
+  showDeclined: boolean;
+}
+
+/**
+ * One face in the fixed-height attendee preview on a meeting card.
+ * @description Built from either a registrant or an RSVP row, so only display fields are carried.
+ */
+export interface MeetingAttendeePreviewPerson {
+  /** Stable key for `@for` tracking (registrant uid, RSVP id, or email). */
+  key: string;
+  /** Display name shown in the tooltip; falls back to the email. */
+  name: string;
+  /** Profile picture URL; the avatar falls back to the first initial when absent. */
+  avatarUrl: string | null;
 }
 
 /**

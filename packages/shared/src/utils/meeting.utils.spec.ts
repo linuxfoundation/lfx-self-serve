@@ -26,6 +26,7 @@ import type {
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRsvp,
   PastMeeting,
   PastMeetingSummary,
   PastOccurrenceSummary,
@@ -45,11 +46,13 @@ import {
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
+  countMeetingDatesBefore,
   extractRegistrantEmails,
   filterUnlistedEmails,
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
   isCalendarDeadlinePast,
+  isMeetingDeclinedForAllOccurrences,
   isMeetingInviteResponsesEnabled,
   isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
@@ -1698,5 +1701,74 @@ describe('reconcileOptimisticPad', () => {
 
   it('never produces a negative pad when the roster shrinks, rebasing to the new snapshot', () => {
     expect(reconcileOptimisticPad({ pad: 1, before: 10, current: 9 })).toEqual({ pad: 1, before: 9 });
+  });
+});
+
+describe('isMeetingDeclinedForAllOccurrences', () => {
+  const rsvp = (overrides: Partial<MeetingRsvp>): MeetingRsvp => ({
+    id: 'r1',
+    meeting_id: 'm1',
+    registrant_id: 'reg1',
+    username: 'alovelace',
+    email: 'ada@example.com',
+    response_type: 'declined',
+    scope: 'all',
+    created_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('is true for a decline that covers every occurrence', () => {
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({}) }))).toBe(true);
+  });
+
+  it('is false for a decline scoped to one date or onward', () => {
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ scope: 'single' }) }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ scope: 'this_and_following' }) }))).toBe(false);
+  });
+
+  it('is false for accepted, maybe, or no RSVP', () => {
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ response_type: 'accepted' }) }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ response_type: 'maybe' }) }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(null)).toBe(false);
+  });
+});
+
+describe('countMeetingDatesBefore', () => {
+  const NOW = new Date('2026-10-01T12:00:00Z').getTime();
+  const HOUR = 60 * 60_000;
+  const DAY = 24 * HOUR;
+  const iso = (ms: number): string => new Date(ms).toISOString();
+  const occurrence = (startMs: number, overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence =>
+    ({ occurrence_id: String(startMs / 1000), start_time: iso(startMs), duration: 30, ...overrides }) as MeetingOccurrence;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('counts each active occurrence in the window, not each series', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const weekly = buildMeetingFixture({
+      occurrences: [occurrence(NOW + DAY), occurrence(NOW + 3 * DAY), occurrence(NOW + 6 * DAY), occurrence(NOW + 8 * DAY)],
+    });
+    expect(countMeetingDatesBefore([weekly], NOW + 7 * DAY)).toBe(3);
+  });
+
+  it('skips cancelled and ended occurrences but keeps one in progress', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const series = buildMeetingFixture({
+      occurrences: [occurrence(NOW - 2 * DAY), occurrence(NOW - 10 * 60_000), occurrence(NOW + DAY, { status: 'cancel' }), occurrence(NOW + 2 * DAY)],
+    });
+    expect(countMeetingDatesBefore([series], NOW + 7 * DAY)).toBe(2);
+  });
+
+  it('counts a one-time meeting once when it starts inside the window', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const inside = buildMeetingFixture({ start_time: iso(NOW + 2 * HOUR), duration: 60 });
+    const outside = buildMeetingFixture({ start_time: iso(NOW + 9 * DAY), duration: 60 });
+    expect(countMeetingDatesBefore([inside, outside], NOW + 7 * DAY)).toBe(1);
   });
 });
