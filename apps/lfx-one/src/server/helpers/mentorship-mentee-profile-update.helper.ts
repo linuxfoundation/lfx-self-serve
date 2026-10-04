@@ -5,8 +5,6 @@ import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX,
   MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
@@ -21,8 +19,7 @@ import {
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 // Deep imports, not the `@lfx-one/shared/utils` barrel: the barrel transitively pulls in Angular, which does not load in plain Node.
-import { isMentorshipRichTextOverRawMax, mentorshipPlainTextToHtml } from '@lfx-one/shared/utils/mentorship.utils';
-import { codePointLength } from '@lfx-one/shared/utils/string.utils';
+import { getMentorshipMenteeIntroductionError } from '@lfx-one/shared/utils/mentorship.utils';
 
 import { ServiceValidationError } from '../errors';
 
@@ -44,16 +41,15 @@ const requireObject = (value: unknown, field: string, allowed: readonly string[]
   return value;
 };
 
+/**
+ * The introduction HTML, held to the register rule (`getMentorshipMenteeIntroductionError`) so the drawer, the
+ * register form and the BFF cannot drift. Stored as sent, capped but not sanitised: every render path sanitises it.
+ */
 const parseIntroduction = (value: unknown, operation: string): string => {
   if (typeof value !== 'string') return fail('introduction', 'introduction must be a string', operation);
-  const text = value.trim();
-  if (codePointLength(text) > MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX) {
-    return fail('introduction', `introduction must be at most ${MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX} characters`, operation);
-  }
-  if (isMentorshipRichTextOverRawMax(mentorshipPlainTextToHtml(text))) {
-    return fail('introduction', MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE, operation);
-  }
-  return text;
+  const error = getMentorshipMenteeIntroductionError(value);
+  if (error) return fail('introduction', error, operation);
+  return value;
 };
 
 /** Trimmed, case-insensitively de-duplicated skills. A list needs at least one item, and items must be non-blank strings. */
@@ -143,7 +139,7 @@ export const parseMentorshipMenteeProfileUpdate = (body: unknown, operation: str
 
 /**
  * Maps a validated update to the upstream `PATCH /mentorship/v1/me/profiles/mentee` body. Only the present groups
- * are emitted (an omitted column is kept upstream), the introduction becomes escaped HTML, blank notes leave
+ * are emitted (an omitted column is kept upstream), the introduction HTML is sent as is, blank notes leave
  * `comments` out, and `profile_links` is never sent.
  *
  * Upstream replaces a present JSON column whole, so each emitted column is layered over `stored`, the row as it
@@ -159,7 +155,7 @@ export const buildMentorshipUpstreamMenteeProfileUpdate = (
   const upstream: MentorshipUpstreamMenteeProfileUpdate = {};
 
   if (request.introduction !== undefined) {
-    upstream.introduction = mentorshipPlainTextToHtml(request.introduction);
+    upstream.introduction = request.introduction;
   }
 
   if (request.skillSet) {

@@ -7,7 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, MENTORSHIP_PROGRAM_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
-import { MentorshipService } from '@services/mentorship.service';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { merge, share, Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, exhaustMap, finalize, map, scan, switchMap, takeUntil, tap } from 'rxjs/operators';
 
@@ -32,7 +32,7 @@ import { Router } from '@angular/router';
 })
 export class AdminComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
-  private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly router = inject(Router);
 
   // ─── Simple WritableSignals ────────────────────────────────────────────────
@@ -101,7 +101,7 @@ export class AdminComponent {
         this.appliedStatus.set(filters.status);
       }),
       switchMap((filters) =>
-        this.mentorshipService
+        this.mentorshipAdminService
           .getPrograms({
             search: filters.search || undefined,
             status: filters.status ?? undefined,
@@ -121,7 +121,7 @@ export class AdminComponent {
 
     const nextPage$ = this.loadMore$.pipe(
       exhaustMap(() =>
-        this.mentorshipService
+        this.mentorshipAdminService
           .getPrograms({
             search: this.appliedSearch() || undefined,
             status: this.appliedStatus() ?? undefined,

@@ -6,7 +6,7 @@ The project follows a modular file organization pattern where components are org
 
 ### Module Structure
 
-Feature modules live as top-level directories under `apps/lfx-one/src/app/modules/` (not nested under a `project/` parent). The tree below shows a representative slice of how each module is organized — see [CLAUDE.md](../../../CLAUDE.md#feature-modules) for the full current inventory (badges, documents, events, trainings, transactions, etc. follow the same pattern).
+Feature modules live as top-level directories under `apps/lfx-one/src/app/modules/` (not nested under a `project/` parent). The tree below shows a representative slice of how each module is organized — see [AGENTS.md](../../../AGENTS.md#feature-modules) for the full current inventory (badges, documents, events, trainings, transactions, etc. follow the same pattern).
 
 ```text
 apps/lfx-one/src/app/modules/
@@ -215,6 +215,8 @@ Reach for **child routes** only when each tab is a page in its own right — its
     { path: 'engagement', title: '...', loadComponent: ... },      // Engagement (Level 2)
     { path: 'events', title: '...', loadComponent: ... },          // Events (Level 2)
     { path: 'members', title: '...', loadComponent: ... },         // Members (Level 2)
+    { path: 'non-members', title: '...', loadComponent: ... },     // Non-Members (Level 2)
+    { path: 'training', title: '...', loadComponent: ... },        // Training (Level 2)
   ],
 }
 ```

@@ -373,3 +373,20 @@ export function retryTransientHttpError<T>(count: number = 1): MonoTypeOperatorF
     delay: (error: unknown) => (isTransientHttpError(error) ? timer(TRANSIENT_RETRY_DELAY_MS) : throwError(() => error)),
   });
 }
+
+/**
+ * The BFF error `code` from a failed `responseType: 'blob'` request, where Angular hands the JSON
+ * error body back as a Blob. Resolves `undefined` when the body is missing or not JSON.
+ */
+export async function readBlobErrorCode(error: unknown): Promise<string | undefined> {
+  if (!(error instanceof HttpErrorResponse) || !(error.error instanceof Blob)) return undefined;
+
+  try {
+    const body: unknown = JSON.parse(await error.error.text());
+    if (typeof body !== 'object' || body === null) return undefined;
+    const code = (body as Record<string, unknown>)['code'];
+    return typeof code === 'string' ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}

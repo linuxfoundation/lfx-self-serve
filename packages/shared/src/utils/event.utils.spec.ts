@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildCertificateFileName, isBackfillEventSource } from './event.utils';
+import { buildCertificateFileName, buildVisaLetterFileName, isBackfillEventSource } from './event.utils';
 
 describe('isBackfillEventSource', () => {
   it('matches the canonical value', () => {
@@ -145,5 +145,27 @@ describe('buildCertificateFileName', () => {
     const accentedName = 'é'.repeat(100);
     const name = buildCertificateFileName(accentedName, '2025-06-01T00:00:00.000Z', 'evt-14');
     expect(name.endsWith('-2025-06-01.pdf')).toBe(true);
+  });
+});
+
+describe('buildVisaLetterFileName', () => {
+  it('combines the event and attendee slugs', () => {
+    expect(buildVisaLetterFileName('KubeCon + CloudNativeCon India 2026', 'Jane Doe', 'evt-1')).toBe(
+      'visa-letter-kubecon-cloudnativecon-india-2026-jane-doe.pdf'
+    );
+  });
+
+  it('omits a missing attendee name', () => {
+    expect(buildVisaLetterFileName('Open Source Summit', undefined, 'evt-1')).toBe('visa-letter-open-source-summit.pdf');
+  });
+
+  it('falls back to the event id when no names are available', () => {
+    expect(buildVisaLetterFileName(null, '', 'evt-1')).toBe('visa-letter-evt-1.pdf');
+  });
+
+  it('keeps the attendee slug when the event name is very long', () => {
+    const fileName = buildVisaLetterFileName('x'.repeat(400), 'Jane Doe', 'evt-1');
+    expect(fileName.length).toBeLessThanOrEqual(150);
+    expect(fileName.endsWith('-jane-doe.pdf')).toBe(true);
   });
 });

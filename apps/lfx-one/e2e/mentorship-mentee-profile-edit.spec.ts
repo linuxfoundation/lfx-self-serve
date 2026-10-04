@@ -32,8 +32,6 @@ const STORED_PROFILE = {
   skillsHave: ['Python', 'Go'],
   skillsWant: ['Observability'],
   additionalNotes: 'Comfortable working asynchronously.',
-  resumeFileName: null,
-  resumeUrl: null,
 };
 
 interface ProfileStub {

@@ -6,6 +6,20 @@ import { Page } from '@playwright/test';
 const EMPTY_EVENTS_RESPONSE = { data: [], total: 0, pageSize: 10, offset: 0 };
 const EMPTY_COUNTRIES_RESPONSE = { data: [] };
 
+/** Query params the deep-link lookup must send for each request type; `null` means the param must be absent. */
+export const VISA_DEEP_LINK_PARAMS: Record<string, string | null> = {
+  isPast: 'false',
+  registeredOnly: 'true',
+  isVisaRequestAccepted: 'true',
+  anyRegistrationStatus: null,
+};
+export const TRAVEL_FUND_DEEP_LINK_PARAMS: Record<string, string | null> = {
+  isPast: 'false',
+  registeredOnly: 'true',
+  isTravelFundRequestAccepted: 'true',
+  anyRegistrationStatus: 'true',
+};
+
 export interface MockEventRoutesOptions<T extends { id: string }> {
   /** Total returned by the pageSize=1 registered-events probe (default 0 = no registered events). */
   probeTotal?: number;
@@ -13,6 +27,8 @@ export interface MockEventRoutesOptions<T extends { id: string }> {
   mainStatus?: number;
   /** Event returned by the `eventId`-filtered deep-link resolver when its id matches. */
   matchedEvent?: T;
+  /** When set, `matchedEvent` is only returned if the lookup sends exactly these eligibility params. */
+  matchParams?: Record<string, string | null>;
 }
 
 /**
@@ -22,7 +38,7 @@ export interface MockEventRoutesOptions<T extends { id: string }> {
  */
 export async function mockEventRoutes<T extends { id: string }>(
   page: Page,
-  { probeTotal = 0, mainStatus = 200, matchedEvent }: MockEventRoutesOptions<T> = {}
+  { probeTotal = 0, mainStatus = 200, matchedEvent, matchParams = {} }: MockEventRoutesOptions<T> = {}
 ): Promise<void> {
   await page.route('**/api/events**', (route) => {
     const url = route.request().url();
@@ -37,7 +53,8 @@ export async function mockEventRoutes<T extends { id: string }>(
     const parsedUrl = new URL(url);
     const eventId = parsedUrl.searchParams.get('eventId');
     if (eventId) {
-      const data = matchedEvent && eventId === matchedEvent.id ? [matchedEvent] : [];
+      const paramsMatch = Object.entries(matchParams).every(([key, value]) => parsedUrl.searchParams.get(key) === value);
+      const data = matchedEvent && eventId === matchedEvent.id && paramsMatch ? [matchedEvent] : [];
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data, total: data.length, pageSize: 1, offset: 0 }) });
     }
 

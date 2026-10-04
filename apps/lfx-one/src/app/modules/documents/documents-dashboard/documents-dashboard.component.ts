@@ -14,7 +14,15 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
+import {
+  DocumentFormMode,
+  FilterPillOption,
+  MyDocumentItem,
+  MyDocumentSource,
+  ProjectContext,
+  ProjectDocument,
+  ProjectDocumentSource,
+} from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -65,6 +73,7 @@ export class DocumentsDashboardComponent {
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
+  protected readonly pageTitle = DOCUMENT_LABEL.plural;
   protected readonly sourceTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All Sources' },
     { id: 'link', label: 'Links' },
@@ -75,19 +84,21 @@ export class DocumentsDashboardComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(''),
-    /** Project-mode source filter: 'link' | 'file' | null. Folders are never filtered out (they're navigation). */
-    projectSource: new FormControl<MyDocumentSource | null>(null),
+    /** Project-mode source filter by subsystem (project, committee, meeting, mailing_list). */
+    projectDocumentSource: new FormControl<ProjectDocumentSource | null>(null),
     foundation: new FormControl<string | null>(null),
     group: new FormControl<string | null>(null),
     meeting: new FormControl<string | null>(null),
     mailingList: new FormControl<string | null>(null),
   });
 
-  /** Source filter options shown on the Project / Foundation lens (mirrors committee-documents). */
-  protected readonly projectSourceOptions: { label: string; value: MyDocumentSource | null }[] = [
+  /** Source filter options for the Project / Foundation lens — filter by subsystem origin. */
+  protected readonly projectDocumentSourceOptions: { label: string; value: ProjectDocumentSource | null }[] = [
     { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' },
-    { label: 'File', value: 'file' },
+    { label: 'Project', value: 'project' },
+    { label: 'Committee', value: 'committee' },
+    { label: 'Meeting', value: 'meeting' },
+    { label: 'Mailing List', value: 'mailing_list' },
   ];
 
   // === Writable Signals ===
@@ -104,21 +115,33 @@ export class DocumentsDashboardComponent {
   protected readonly personaLoaded = this.personaService.personaLoaded;
   // Toolbar gated only on project-scope so it can't render under the legacy aggregator (no-op clicks).
   protected readonly canUpload = computed(() => this.useProjectSource());
-  /** True when the dashboard is project-scoped (Project / Foundation lens with active context). */
+  /**
+   * True when the dashboard is project-scoped (Project / Foundation lens with active context).
+   *
+   * Prefers `activeRouteLensKind` (set by `projectQueryParamGuard` before the route activates)
+   * over `activeLens()` so that deep-linking or navigating to `/foundation/documents` or
+   * `/project/documents` while the global lens is 'me' or 'org' still enables the project-source
+   * path. `activeLens()` reflects the user's globally-selected lens and is unaffected by route
+   * navigation alone, while `activeRouteLensKind` is scoped to the current route declaration.
+   */
   protected readonly useProjectSource = computed(() => {
+    if (!this.project()?.uid) return false;
+    const routeLensKind = this.projectContextService.activeRouteLensKind();
+    if (routeLensKind) {
+      return routeLensKind === 'project' || routeLensKind === 'foundation';
+    }
     const lens = this.activeLens();
-    return !!this.project()?.uid && (lens === 'project' || lens === 'foundation');
+    return lens === 'project' || lens === 'foundation';
   });
-  protected readonly pageTitle = computed(() => (this.lensService.activeLens() === 'me' ? 'My Documents' : 'Documents'));
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly projectSourceFilter: Signal<MyDocumentSource | null> = this.initProjectSourceFilter();
+  protected readonly projectDocumentSourceFilter: Signal<ProjectDocumentSource | null> = this.initProjectDocumentSourceFilter();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
   protected readonly mailingListFilter: Signal<string | null> = this.initMailingListFilter();
   /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. */
   protected readonly rawProjectDocuments: Signal<ProjectDocument[]> = this.initRawProjectDocuments();
-  /** Aggregator-fed documents (Me / Org lens, or no project context). */
+  /** Aggregator-fed documents, used only when no project context is selected. */
   protected readonly legacyDocuments: Signal<MyDocumentItem[]> = this.initLegacyDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
@@ -145,7 +168,7 @@ export class DocumentsDashboardComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ search: '', foundation: null, group: null, meeting: null, mailingList: null });
+    this.filterForm.reset({ search: '', projectDocumentSource: null, foundation: null, group: null, meeting: null, mailingList: null });
     this.sourceTab.set('all');
   }
 
@@ -199,8 +222,8 @@ export class DocumentsDashboardComponent {
     );
   }
 
-  private initProjectSourceFilter(): Signal<MyDocumentSource | null> {
-    return toSignal(this.filterForm.controls.projectSource.valueChanges.pipe(startWith<MyDocumentSource | null>(null)), { initialValue: null });
+  private initProjectDocumentSourceFilter(): Signal<ProjectDocumentSource | null> {
+    return toSignal(this.filterForm.controls.projectDocumentSource.valueChanges.pipe(startWith<ProjectDocumentSource | null>(null)), { initialValue: null });
   }
 
   private initFoundationFilter(): Signal<string | null> {
@@ -243,7 +266,7 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * Aggregator-fed documents (Me / Org lens, or no project context). Existing behavior —
+   * Aggregator-fed documents, used only when no project context is selected. Existing behavior —
    * queries legacy committee_link, mailing-list, meeting-attachment indexed sources.
    * Skipped entirely when in project mode (returns []).
    */
@@ -323,31 +346,71 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * Maps a ProjectDocument (folder | link | file) to the MyDocumentItem shape the
-   * shared lfx-documents-table renders. Folders carry source 'link' as a placeholder
-   * (the table renders folders specially via `isFolder`). Files get a `downloadUrl`
-   * pointing at the BFF streaming endpoint.
+   * Maps a ProjectDocument to the MyDocumentItem shape the shared lfx-documents-table
+   * renders. Source is derived from document_source (project, committee, meeting, etc.)
+   * and mapped to the MyDocumentSource tag the table uses. Download URLs are only built
+   * for native project files (document_source === 'project'); committee and meeting
+   * documents open via their own URLs.
    */
   private toMyDocumentItem(doc: ProjectDocument, project: ProjectContext | null, isChild: boolean): MyDocumentItem {
     const isFile = doc.type === 'file';
+    const docSource = doc.document_source ?? 'project';
     const ownerProjectUid = project?.uid ?? doc.project_uid ?? '';
-    const groupName = project?.name ?? '';
+
+    let mySource: MyDocumentSource;
+    if (docSource === 'committee') {
+      mySource = 'committee';
+    } else if (docSource === 'mailing_list') {
+      mySource = 'mailing_list';
+    } else if (docSource === 'meeting') {
+      mySource = 'meeting';
+    } else if (docSource === 'recording') {
+      mySource = 'recording';
+    } else if (docSource === 'transcript') {
+      mySource = 'transcript';
+    } else if (docSource === 'summary') {
+      mySource = 'summary';
+    } else {
+      mySource = isFile ? 'file' : 'link';
+    }
+
+    // Show entity name (committee name, meeting title) when available, otherwise project name.
+    const groupName = doc.document_source_name || project?.name || '';
+
+    // Download endpoint is valid for native project files and committee files.
+    const isProjectFile = isFile && docSource === 'project';
+    const isCommitteeFile = isFile && docSource === 'committee' && !!doc.committee_uid;
+
+    // Build download URL: project files use the project BFF endpoint; committee files use the
+    // committee BFF endpoint. Committee doc UIDs carry a "committee_document:" prefix for row
+    // deduplication — strip it before forwarding to the upstream download endpoint.
+    let downloadUrl: string | undefined;
+    if (isProjectFile && ownerProjectUid) {
+      downloadUrl = `/api/projects/${encodeURIComponent(ownerProjectUid)}/documents/${encodeURIComponent(doc.uid)}/download`;
+    } else if (isCommitteeFile && doc.committee_uid) {
+      const rawDocUid = doc.uid.replace(/^committee_document:/, '');
+      downloadUrl = `/api/committees/${encodeURIComponent(doc.committee_uid)}/documents/${encodeURIComponent(rawDocUid)}/download`;
+    }
+
     return {
       id: `project_${doc.type}:${doc.uid}`,
       name: doc.name,
-      source: (isFile ? 'file' : 'link') as MyDocumentSource,
+      source: mySource,
       foundationName: '',
       foundationUid: undefined,
       groupOrMeetingName: groupName,
       groupOrMeetingUid: ownerProjectUid,
       date: doc.created_at ?? doc.updated_at ?? '',
       url: doc.url,
-      attachmentUid: isFile ? doc.uid : undefined,
+      attachmentUid: isProjectFile ? doc.uid : undefined,
       fileType: doc.mime_type,
       parentUid: doc.parent_uid,
       isChild,
-      downloadUrl: isFile && ownerProjectUid ? `/api/projects/${ownerProjectUid}/documents/${doc.uid}/download` : undefined,
+      downloadUrl,
       uploadedBy: doc.uploaded_by,
+      summaryUid: doc.summary_uid,
+      summaryContent: doc.summary_content,
+      projectDocumentSource: docSource,
     };
   }
 
@@ -372,7 +435,7 @@ export class DocumentsDashboardComponent {
       const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const projectMode = this.useProjectSource();
-      const projectSource = this.projectSourceFilter();
+      const projectDocSource = this.projectDocumentSourceFilter();
       const foundation = this.foundationFilter();
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
@@ -391,11 +454,16 @@ export class DocumentsDashboardComponent {
 
         if (projectMode) {
           // Folders are structural navigation — never filtered by source.
-          if (projectSource && !doc.isFolder && doc.source !== projectSource) return false;
+          if (projectDocSource && !doc.isFolder) {
+            const docSource = doc.projectDocumentSource ?? 'project';
+            // "Meeting" filter bucket covers attachments, recordings, transcripts, and summaries.
+            const isMeetingBucket = projectDocSource === 'meeting' && ['meeting', 'recording', 'transcript', 'summary'].includes(docSource);
+            if (!isMeetingBucket && docSource !== projectDocSource) return false;
+          }
           return true;
         }
 
-        // Legacy aggregator filters (Me / Org lens)
+        // Legacy aggregator filters (no project context)
         if (foundation && doc.foundationUid !== foundation) return false;
         if (group && doc.groupOrMeetingUid !== group) return false;
         if (meeting && doc.meetingId !== meeting && doc.pastMeetingId !== meeting) return false;

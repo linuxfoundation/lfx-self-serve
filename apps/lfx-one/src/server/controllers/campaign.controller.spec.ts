@@ -14,6 +14,7 @@ import { ServiceValidationError } from '../errors';
 const {
   saveBrief,
   loadBrief,
+  loadBriefById,
   createCampaigns,
   generateEmailCopy,
   legacyCreate,
@@ -40,6 +41,7 @@ const {
 } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
   loadBrief: vi.fn(),
+  loadBriefById: vi.fn(),
   createCampaigns: vi.fn(),
   generateEmailCopy: vi.fn(),
   legacyCreate: vi.fn(),
@@ -75,6 +77,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
       public loadBrief = loadBrief;
+      public loadBriefById = loadBriefById;
       public createCampaigns = createCampaigns;
       public generateEmailCopy = generateEmailCopy;
       public getJobStatus = svcGetJobStatus;
@@ -587,6 +590,14 @@ describe('CampaignController.createCampaign cutover', () => {
     // reads this flag directly (for the `?project=` validation), so leaving it unset would make
     // every test in this block depend on a falsy default rather than a stated condition.
     isServerFeatureEnabled.mockReturnValue(true);
+    // The brief-destination guard reads the stored brief on every cutover create. `none` is the
+    // "could not be established" answer, which the guard treats as not-a-refusal — so every test
+    // in this block that is not about that guard dispatches exactly as it did before it existed.
+    // Stubbed explicitly rather than left unset: an unstubbed mock returns undefined, the guard
+    // throws on it, and the catch happens to produce the same outcome — so the tests would pass
+    // for the wrong reason and stop pinning anything the day the catch changes.
+    loadBriefById.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
+    loadBrief.mockResolvedValue({ status: 'none', briefId: null, brief: null, etag: null, approved: false });
     controller = new CampaignController();
     res = buildRes();
     next = vi.fn();
@@ -784,8 +795,12 @@ describe('CampaignController.createCampaign cutover', () => {
   /**
    * The legacy LinkedIn object cannot be forwarded unchanged, and both halves fail the dispatch:
    *
-   *   - `adAccountId` is REJECTED on mismatch (`linkedin.go:143`, "cross-account campaigns are not
-   *     allowed"), and the legacy request carries this app's account, not the project connection's.
+   *   - `adAccountId` is an assertion, never a selector: `internal/dispatch/linkedin.go:304-309`
+   *     builds the allowlist from the connection's account alone and honours an override only when
+   *     it matches, so omitting it and matching it reach the SAME account while any other value is
+   *     refused at `:322` ("cross-account campaigns are not allowed"). The id this request carries
+   *     comes from this app's own global account file, which has no per-project relationship to the
+   *     connection, so forwarding it can only ever cost a create. Dropped.
    *   - the dispatcher builds its runtime config from `targetingProfiles` (plural catalogue) and
    *     `employerExclusions` (`linkedin.go:135`); the legacy request carries neither, so an
    *     ordinary profile selection fails with "not found in runtime config".
@@ -1956,6 +1971,342 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(legacyCreate).toHaveBeenCalledTimes(1);
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job_legacy_1' });
+  });
+
+  /**
+   * The pre-dispatch guards.
+   *
+   * Every one of them converts a refusal the Go side makes BEFORE its first mutate — and which the
+   * orchestrator then collapses into the opaque "platform campaign creation failed" — into a named
+   * field error. So each guard is tested in a pair: the input upstream refuses must be refused
+   * here, and the nearest input upstream ACCEPTS must still dispatch. The second half is the one
+   * that matters, because over-refusing a create the platform would have taken is the only way
+   * these guards can make things worse than they were.
+   */
+  const refusalFrom = (): { field: string; message: string; statusCode: number } => {
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    // The operator-facing reason lives in `validationErrors[0]`, not in `error.message` — the
+    // top-level message is the wire contract's "Validation failed for <field>" prefix that both
+    // frontend readers branch on. Asserting on `error.message` would pass on a guard that named
+    // the right field with the wrong explanation.
+    return { field: error.validationErrors[0].field, message: error.validationErrors[0].message, statusCode: error.statusCode };
+  };
+
+  /** The 30 codes `GOOGLE_ADS_GEO_TARGET_MAP` holds, which are the 30 `geo.go` holds. */
+  const ALL_MAPPED_GEOS = [
+    'US',
+    'CA',
+    'GB',
+    'DE',
+    'FR',
+    'JP',
+    'AU',
+    'IN',
+    'BR',
+    'CN',
+    'KR',
+    'NL',
+    'SE',
+    'CH',
+    'IL',
+    'SG',
+    'IE',
+    'ES',
+    'IT',
+    'AT',
+    'FI',
+    'NO',
+    'DK',
+    'BE',
+    'PL',
+    'CZ',
+    'NZ',
+    'TW',
+    'HK',
+    'MX',
+  ];
+
+  it('names an unsupported-but-well-formed country code instead of letting Google refuse it opaquely', async () => {
+    // `PT` is assigned, two letters, and passes `buildGoogleAdsConfig`'s shape test — and is absent
+    // from `geo.go`'s map, so `validateGeoTargets` hard-errors on it before the first mutate.
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ['US', 'PT'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('countryCode');
+    expect(error.message).toContain('PT');
+    // Only the unsupported code is named — `US` is fine and saying otherwise would send the
+    // operator looking at the wrong field.
+    expect(error.message).not.toContain('US');
+  });
+
+  it('dispatches a list of all 30 supported codes, which is exactly what upstream accepts', async () => {
+    // The contrast for both geo guards at once: every code mapped, and the count at the cap rather
+    // than over it. Without this the two refusals above and below would pass on a controller that
+    // refused every targeted Google create.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000a', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: ALL_MAPPED_GEOS }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['geoTargets']).toHaveLength(30);
+  });
+
+  it('refuses a 31-code list even when the 31st is a repeat, because upstream caps before it de-duplicates', async () => {
+    // `validateGeoTargets` checks `len(geoTargets) > maxGeoTargets` on the raw slice, so a list
+    // that is only over the cap because it repeats a code is still refused there. Judging the
+    // de-duplicated length here would accept a create Go then kills.
+    await controller.createCampaign(buildReq(googleBody({ geoTargets: [...ALL_MAPPED_GEOS, 'US'] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('countryCode');
+    expect(error.message).toContain('31');
+  });
+
+  it.each([
+    ['a zero budget', 0],
+    ['a negative budget, which no body validator on this route stops', -50],
+    ['a positive budget that rounds to zero micros, the denomination Google bills in', 0.0000004],
+  ])('names %s rather than letting Google refuse it before any mutate', async (_label, budgetUsd) => {
+    await controller.createCampaign(buildReq(googleBody({ budgetUsd }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    // States the CONSTRAINT. A negative budget reported as "is 0" would describe a value the
+    // caller did not send, so the message must not assert one.
+    expect(error.message).not.toContain('is 0');
+  });
+
+  it('dispatches a budget of exactly one micro, which is the smallest Google accepts', async () => {
+    // The boundary that makes the rounding deliberate, and the contrast without which the three
+    // refusals above would pass on a controller that refused every Google create. 0.0000004
+    // rounds DOWN to zero micros and is refused; 0.000001 is one whole micro and is dispatched.
+    // Comparing the raw float against zero would accept both — which is the defect this pins.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ budgetUsd: 0.000001 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const linkedInBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['linkedin-ads'],
+    linkedInConfig: { budgetUsd: 100, ...overrides },
+  });
+
+  it.each([
+    ['a lifetime budget under the 100-dollar floor', { budgetUsd: 25, lifetimeBudget: true }, '$100'],
+    ['a daily budget under the 10-dollar floor', { budgetUsd: 9, lifetimeBudget: false }, '$10'],
+  ])('names %s rather than letting LinkedIn refuse it before any POST', async (_label, config, expectedFloor) => {
+    await controller.createCampaign(buildReq(linkedInBody(config), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    expect(error.message).toContain(expectedFloor);
+  });
+
+  it.each([
+    ['99.999 on a lifetime budget, which Go rounds to 100.00 and accepts', { budgetUsd: 99.999, lifetimeBudget: true }],
+    ['exactly the 10-dollar daily floor', { budgetUsd: 10, lifetimeBudget: false }],
+  ])('dispatches %s', async (_label, config) => {
+    // 99.999 is the boundary that makes the rounding deliberate: Go validates the value it is
+    // about to format to two decimals, so comparing the raw float here would refuse a budget
+    // upstream takes.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000b', error: null });
+
+    await controller.createCampaign(buildReq(linkedInBody(config), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const metaBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['meta-ads'],
+    metaConfig: { budgetUsd: 250, lifetimeBudget: false, geoTargets: ['US'], variants: [{ primaryText: 'p', headline: 'h' }], ...overrides },
+  });
+
+  it('refuses a flight whose end date equals its start date, which Meta compares strictly', async () => {
+    // The likeliest way an operator trips this: a one-day campaign entered as the same date twice.
+    await controller.createCampaign(buildReq(metaBody({ startDate: '2026-03-01', endDate: '2026-03-01' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('endDate');
+  });
+
+  it.each([
+    ['a zero budget', 0],
+    ['a negative budget, which no body validator on this route stops', -250],
+  ])('names %s rather than letting Meta refuse it before any mutate', async (_label, budgetUsd) => {
+    await controller.createCampaign(buildReq(metaBody({ budgetUsd }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('budgetUsd');
+    expect(error.message).not.toContain('is 0');
+  });
+
+  it('dispatches a sub-dollar Meta budget, which the account currency may well accept', async () => {
+    // The contrast for the pair above, and the reason Meta is judged as a raw float where Google
+    // is judged in micros: Meta's floor is one MINOR currency unit, and the offset depends on the
+    // ad account's currency — 0.50 is 50 minor units under USD and refused under JPY. This app
+    // cannot see that currency, so anything above zero is passed through for Meta to judge.
+    // Mirroring Google's arithmetic here would refuse creates Meta accepts.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(metaBody({ budgetUsd: 0.5 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const redditBody = (overrides: Record<string, unknown> = {}) => ({
+    platforms: ['reddit-ads'],
+    redditConfig: { budgetUsd: 300, geoTargets: ['US'], ...overrides },
+  });
+
+  it('refuses a reversed Reddit flight, which Reddit compares as strictly as Meta does', async () => {
+    // The Reddit half of the same guard. Without this the loop could be narrowed to meta-ads
+    // alone and the suite would stay green, leaving Reddit's identical refusal opaque again.
+    await controller.createCampaign(buildReq(redditBody({ startDate: '2026-03-10', endDate: '2026-03-04' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('endDate');
+    expect(error.message).toContain('Reddit');
+  });
+
+  it('dispatches a Reddit flight that ends one day after it starts, the nearest window upstream takes', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(redditBody({ startDate: '2026-03-04', endDate: '2026-03-05' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['an impossible calendar date', '2026-02-31', '2026-03-05'],
+    ['a date that is not zero-padded', '2026-1-2', '2026-3-4'],
+  ])('passes %s through to Go rather than judging a shape it cannot read', async (_label, startDate, endDate) => {
+    // A value this guard cannot parse is refused upstream anyway, with a message that names it.
+    // Refusing here could only turn that named refusal into this guard's different one — or, for
+    // `2026-02-31`, refuse a create on a date `new Date` would have silently rolled to March 3.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000c', error: null });
+
+    await controller.createCampaign(buildReq(metaBody({ startDate, endDate }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  const briefWithUrl = (registrationUrl: string) => ({
+    status: 'loaded',
+    briefId: 'b-1',
+    brief: { eventDetails: { registrationUrl } },
+    etag: 'W/"1"',
+    approved: true,
+  });
+
+  it('reads the brief the create dispatches against — by id — and not whichever brief the slug names today', async () => {
+    // `POST /projects/{project}/briefs/{brief_id}/campaigns` dispatches against the id. Judging the
+    // slug's brief instead would let this guard refuse a create over a registration URL belonging
+    // to a brief the request never mentioned.
+    loadBriefById.mockResolvedValue(briefWithUrl('https://events.example.org/register'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000d', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ eventSlug: 'kubecon-eu-2026' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(loadBriefById).toHaveBeenCalledWith(expect.any(Object), 'tlf', 'b-1');
+    expect(loadBrief, 'the slug lookup ran even though the request carried a brief id').not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the slug lookup only when the request carries no brief id', async () => {
+    loadBrief.mockResolvedValue(briefWithUrl('https://events.example.org/register'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000e', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ eventSlug: 'kubecon-eu-2026' }), { project: 'tlf' }), res, next);
+
+    expect(loadBriefById).not.toHaveBeenCalled();
+    expect(loadBrief).toHaveBeenCalledWith(expect.any(Object), 'kubecon-eu-2026', 'tlf', 'paid-marketing', '');
+  });
+
+  it.each([
+    ['has no registration URL at all', '', 'no registration URL'],
+    ['has one typed without a scheme, which every platform validator refuses', 'agenticsday.org', 'not a complete web address'],
+  ])('refuses a create whose stored brief %s', async (_label, registrationUrl, expectedText) => {
+    loadBriefById.mockResolvedValue(briefWithUrl(registrationUrl));
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('registrationUrl');
+    expect(error.message).toContain(expectedText);
+  });
+
+  it('dispatches a plain-http brief URL when Meta is not one of the selected platforms', async () => {
+    // Four of the five platforms accept either scheme, so refusing http outright would refuse a
+    // create those four would have taken.
+    loadBriefById.mockResolvedValue(briefWithUrl('http://events.example.org/register'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-00000000000f', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the same plain-http brief URL once Meta is selected, because Meta requires HTTPS', async () => {
+    loadBriefById.mockResolvedValue(briefWithUrl('http://events.example.org/register'));
+
+    await controller.createCampaign(buildReq(metaBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = refusalFrom();
+    expect(error.statusCode).toBe(400);
+    expect(error.field).toBe('registrationUrl');
+    expect(error.message).toContain('https://');
+  });
+
+  it('dispatches when the brief could not be read, because an unreadable brief is not an operator error', async () => {
+    // The guard exists to name a knowable input error, never to add a new way for a create to
+    // fail. A lookup that could not be ESTABLISHED must therefore not refuse anything.
+    loadBriefById.mockRejectedValue(new Error('campaign-service unreachable'));
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000010', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not read the brief at all for an email-only create, which never reads a destination upstream', async () => {
+    // `internal/dispatch/hubspot.go` takes only an OPTIONAL `ButtonURL` from `hubspotConfig`, so
+    // refusing a hubspot-only create for a missing registration URL would refuse a create the
+    // platform would have accepted.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000000011', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig: { emailId: 'e-1' } }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(loadBriefById).not.toHaveBeenCalled();
+    expect(loadBrief).not.toHaveBeenCalled();
   });
 });
 
