@@ -15,7 +15,8 @@
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable (pass/fail, not timings)
 - [x] Every legal state combination has an expected action slot
-- [x] Every illegal combination states its outcome (redirect), not a page state
+- [x] Every illegal Reachability combination states its redirect; impossible input combinations are
+      covered at the resolver level, not as page states
 - [x] Every Phase 1 and Phase 2 plan ID cites at least one `FR-###`
 - [ ] No open decisions remain — six are carried from the plan, each tied to the issue it blocks
       (state-matrix.md § Open questions)

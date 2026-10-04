@@ -128,14 +128,25 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 
 ### Scope guards
 
-- **FR-050**: V2 MUST NOT add: add-to-calendar, `.ics` download, share beyond copy-link, passcode
-  display, dial-in numbers, recording download, an inline video player, approve/edit of the AI
-  summary, or attendance export.
+- **FR-047**: Occurrence data MUST come from the public occurrences endpoint, widened to carry
+  each occurrence's title and registrant count (E6-01) and paginated with a bounded page size
+  (E6-02). A per-occurrence attendance figure on past occurrences MUST wait for upstream U-01 (#2927)
+  rather than fan out one participants call per occurrence (E6-06).
+- **FR-048**: A recording's duration MUST be derived from `recording_end − recording_start` on the
+  matched recording file and shown only when both ends are present; no duration field exists
+  upstream (E4-02).
+- **FR-050**: V2 MUST NOT add: add-to-calendar, `.ics` download, share beyond copy-link, recording
+  download, an inline video player, approve/edit of the AI summary, or attendance export. (Passcode
+  and dial-in numbers are not on this list: they are planned E7 work, held back only until upstream
+  U-04 / U-05 land; see FR-043.)
 - **FR-051**: Editing or deleting the whole series, and in-page organizer editing (O-01 to O-04),
   are new scope on this page, not a port, and MUST be organizer-only. Single-occurrence edit and
   cancel are V1 behaviour and are covered by FR-046.
 - **FR-052**: Magic-link arrival (M-01) MUST NOT ship before upstream U-08 (#2934) and the M-02 security
   requirements.
+- **FR-054**: The admin past-meeting route `/meetings/:id/details` MUST check access to the specific
+  meeting before rendering, not only that a session exists (N-03; E0-03 decides the public/admin
+  boundary). It is a security change and ships in its own PR (R06, FR-053).
 - **FR-053**: A security change (e.g. E10-01, matching restricted meetings against all verified
   emails) MUST ship in its own PR, never inside feature work (R06).
 
@@ -148,7 +159,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 - **FR-062**: V1's specs MUST stay green, and every V2 test MUST be proven binding by a source
   mutation (R07).
 - **FR-063**: E2E MUST cover every preset in the plan (content and robust specs), and assert every
-  illegal combination as its redirect.
+  combination the state matrix's **Reachability** section marks illegal as its redirect. The other
+  illegal combinations (Axis D on a non-ended meeting, RSVP states with tracking off) are impossible
+  inputs, not navigable states; they MUST be covered at the resolver / input-contract level by unit
+  tests, not in the browser.
 
 ## Success criteria
 
@@ -176,6 +190,8 @@ Issue numbers are given where the issue exists; plan IDs without a number are no
 
 | Plan ID                       | Issue | Requirements                    |
 | ----------------------------- | ----- | ------------------------------- |
+| E0-01 this spec               | #1766 | all                             |
+| E0-03 public/admin ADR        | #1767 | FR-041, FR-054                  |
 | V2-01 flag gate               | #2873 | FR-001, FR-002, FR-003          |
 | V2-02 scaffold                | #2874 | FR-001, FR-004                  |
 | V2-03 rollout doc             | #2875 | FR-001, FR-003, SC-006          |
@@ -196,24 +212,31 @@ Issue numbers are given where the issue exists; plan IDs without a number are no
 | E2-06 guest join in the rail  | #2882 | FR-025, SC-003                  |
 | N-01 pre-2024 RSVP            | —     | FR-026, SC-005                  |
 | N-02 identity tiers           | —     | FR-033                          |
+| N-03 admin route guard        | —     | FR-054                          |
 | E3-01 agenda                  | —     | FR-030                          |
 | E3-02 materials               | —     | FR-031                          |
 | E3-03 public attachments      | —     | FR-031                          |
 | E3-04 people                  | —     | FR-032                          |
 | E3-05 attachment categories   | —     | FR-031                          |
 | E4-01 recording + transcript  | —     | FR-028, FR-040                  |
+| E4-02 recording duration      | —     | FR-048                          |
 | E4-03 inline AI summary       | —     | FR-040                          |
 | E4-04 public artifact routes  | —     | FR-028                          |
 | E4-05 align with admin page   | —     | FR-041                          |
+| E5-01 page error state        | —     | shipped before the epic (#2046) |
 | E5-02 accessibility           | —     | FR-061                          |
 | E5-03 V2 specs                | —     | FR-062                          |
 | E5-04 E2E                     | —     | FR-063, SC-001, SC-002, SC-003  |
+| E6-01 / E6-02 / E6-06         | —     | FR-047                          |
 | E6-03 / E6-04 / E6-05         | —     | FR-044                          |
 | V1 parity: occurrence actions | —     | FR-046                          |
 | E7-01 / E7-02 join details    | —     | FR-042, FR-043                  |
+| E7-03 Zoom ID + passcode      | —     | FR-043 (blocked on U-04, #2930) |
+| E8-01 / E8-02 / E8-03         | —     | FR-045                          |
 | E8-04 / E8-05 discover more   | —     | FR-045                          |
-| E9-01 / E9-02 agenda items    | —     | FR-030 (blocked on U-07, #2933) |
+| E9-01 / E9-02 / E9-03         | —     | FR-030 (blocked on U-07, #2933) |
 | E10-01 verified-email match   | —     | FR-053                          |
 | E10-02 / E10-03 identity UX   | —     | FR-013, FR-025                  |
 | O-01 – O-04 organizer dialogs | —     | FR-051                          |
 | M-01 / M-02 magic link        | —     | FR-052                          |
+| S-01 / S-02 spikes (Phase 3)  | —     | none: spikes produce decisions  |
