@@ -38,6 +38,7 @@ import {
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
   assertNeverSilent,
+  canViewCommitteeRoster,
   countVotingReps,
   formatRelativeTime,
   getSurveyDisplayStatus,
@@ -216,6 +217,9 @@ export class CommitteeOverviewComponent {
   // via activityMeetingBadge()), so this stays private rather than following the public-signal
   // convention the rest of this "data fetches" section uses.
   private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
+
+  // Computed: whether the caller may see the roster under member_visibility (gates the Chairs card)
+  public canViewRoster: Signal<boolean> = computed(() => canViewCommitteeRoster(this.committee()));
 
   // Computed: chairs derived from members
   public chairs: Signal<CommitteeMember[]> = this.initChairs();

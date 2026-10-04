@@ -15,6 +15,8 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     // Stub remaining methods so the constructor doesn't fail.
     getCommittees: vi.fn(),
     getCommitteeById: vi.fn(),
+    getCommitteeMembers: vi.fn(),
+    getCommitteeMemberById: vi.fn(),
     resolveCommitteeUid: vi.fn((_req: unknown, id: string) => Promise.resolve(id)),
     getCommitteeSettings: vi.fn(),
     getPendingCommitteeInvites: vi.fn(),
@@ -27,7 +29,14 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/constants', () => ({ ALLOWED_FILE_TYPES: [] }));
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: {} }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => ({ isFileTypeAllowed: vi.fn(() => true) }));
+// canViewCommitteeRoster is a faithful copy of the shared rule (exhaustively covered in
+// packages/shared/src/utils/committee.utils.spec.ts) — importing the real module would pull in the
+// mocked enums/constants barrels above.
+vi.mock('@lfx-one/shared/utils', () => ({
+  isFileTypeAllowed: vi.fn(() => true),
+  canViewCommitteeRoster: (committee: { member_visibility?: string; writer?: boolean; auditor?: boolean } | null | undefined) =>
+    !!committee && (committee.member_visibility === 'basic_profile' || !!committee.writer || committee.auditor === true),
+}));
 
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: getEffectiveEmailMock }));
 vi.mock('../services/committee.service', () => ({
@@ -48,6 +57,7 @@ vi.mock('../services/groups-engagement-stats.service', () => ({
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
+    sanitize: vi.fn((value: unknown) => value),
     success: vi.fn(),
     warning: vi.fn(),
     error: vi.fn(),
@@ -368,5 +378,120 @@ describe('CommitteeController.getMyCommittees — foundation_uid validation (PR 
 
     expect(committeeSvc.getMyCommittees).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
+  });
+});
+
+describe('CommitteeController roster reads — member_visibility', () => {
+  const MEMBER_ID = 'c0000000-0000-0000-0000-000000000003';
+  const ROSTER = [{ uid: MEMBER_ID, first_name: 'Ada', last_name: 'Example', email: 'ada@example.com' }];
+  let controller: CommitteeController;
+
+  function buildMemberReq(): any {
+    return { params: { id: COMMITTEE_ID, memberId: MEMBER_ID }, query: {}, path: '/test', log: {} };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    committeeSvc.getCommitteeMembers.mockResolvedValue(ROSTER);
+    committeeSvc.getCommitteeMemberById.mockResolvedValue(ROSTER[0]);
+  });
+
+  describe('getCommitteeMembers', () => {
+    it.each([
+      ['hidden', { member_visibility: 'hidden' }],
+      ['unset', {}],
+      ['an unknown value', { member_visibility: 'everyone' }],
+    ])('returns an empty list to a non-manager when visibility is %s', async (_label, settings) => {
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, writer: false, auditor: false, ...settings });
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMembers(req, res as any, next);
+
+      expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: true }));
+      expect(committeeSvc.getCommitteeMembers).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([]);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a writer', { writer: true }],
+      ['an auditor', { auditor: true }],
+    ])('returns the roster to %s when visibility is hidden', async (_label, access) => {
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'hidden', ...access });
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMembers(req, res as any, next);
+
+      expect(committeeSvc.getCommitteeMembers).toHaveBeenCalledWith(req, COMMITTEE_ID, req.query);
+      expect(res.json).toHaveBeenCalledWith(ROSTER);
+    });
+
+    it('returns the roster to any viewer when visibility is basic_profile', async () => {
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'basic_profile', writer: false });
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMembers(req, res as any, next);
+
+      expect(res.json).toHaveBeenCalledWith(ROSTER);
+    });
+
+    it('propagates a committee lookup failure without reading the roster', async () => {
+      const failure = new Error('upstream 403');
+      committeeSvc.getCommitteeById.mockRejectedValue(failure);
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMembers(req, res as any, next);
+
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(committeeSvc.getCommitteeMembers).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCommitteeMemberById', () => {
+    it('rejects a non-manager with 403 when visibility is hidden', async () => {
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'hidden', writer: false });
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMemberById(req, res as any, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+      expect(committeeSvc.getCommitteeMemberById).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('returns the member to a writer when visibility is hidden', async () => {
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'hidden', writer: true });
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMemberById(req, res as any, next);
+
+      expect(res.json).toHaveBeenCalledWith(ROSTER[0]);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('returns the member to any viewer when visibility is basic_profile', async () => {
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'basic_profile' });
+      const req = buildMemberReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMemberById(req, res as any, next);
+
+      expect(res.json).toHaveBeenCalledWith(ROSTER[0]);
+    });
   });
 });

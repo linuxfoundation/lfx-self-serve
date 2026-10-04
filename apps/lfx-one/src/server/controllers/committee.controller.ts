@@ -16,13 +16,13 @@ import {
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 
-import { ServiceValidationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
@@ -349,6 +349,18 @@ export class CommitteeController {
         return;
       }
 
+      // Enforce member_visibility: hidden (or unset) rosters are readable only by writers/auditors
+      const committee = await this.committeeService.getCommitteeById(req, id, { includeAuditor: true });
+      if (!canViewCommitteeRoster(committee)) {
+        logger.success(req, 'get_committee_members', startTime, {
+          committee_id: id,
+          member_count: 0,
+          roster_hidden: true,
+        });
+        res.json([]);
+        return;
+      }
+
       // Get the committee members
       const members = await this.committeeService.getCommitteeMembers(req, id, req.query);
 
@@ -403,6 +415,16 @@ export class CommitteeController {
         // Send the validation error to the next middleware
         next(validationError);
         return;
+      }
+
+      // Enforce member_visibility: hidden (or unset) rosters are readable only by writers/auditors
+      const committee = await this.committeeService.getCommitteeById(req, id, { includeAuditor: true });
+      if (!canViewCommitteeRoster(committee)) {
+        throw new AuthorizationError('You do not have permission to view members of this committee', {
+          operation: 'get_committee_member_by_id',
+          service: 'committee_controller',
+          path: req.path,
+        });
       }
 
       // Get the committee member by ID

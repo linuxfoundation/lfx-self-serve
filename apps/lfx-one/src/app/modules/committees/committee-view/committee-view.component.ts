@@ -42,6 +42,7 @@ import {
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
@@ -1090,7 +1091,8 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          if (!committee?.uid) {
+          // Skip the roster fetch when member_visibility hides it from this caller (server enforces too)
+          if (!committee?.uid || !canViewCommitteeRoster(committee)) {
             this.membersLoading.set(false);
             return of([]);
           }
