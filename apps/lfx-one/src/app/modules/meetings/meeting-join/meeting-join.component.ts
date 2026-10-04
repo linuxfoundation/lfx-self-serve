@@ -71,7 +71,14 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
+import {
+  getUserTimezone,
+  isHostKeyVisible,
+  isMeetingAttendeeListShared,
+  isMeetingInviteResponsesEnabled,
+  isPastMeetingCompositeId,
+  reconcileOptimisticPad,
+} from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -356,7 +363,8 @@ export class MeetingJoinComponent implements OnInit {
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
   // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
-  protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && !!this.meeting()?.show_meeting_attendees));
+  protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
   public canRegisterForMeeting: Signal<boolean>;
   public canToggleRsvpView: Signal<boolean>;
   public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
@@ -1704,7 +1712,7 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.optimisticInvited),
       ]).pipe(
         switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
-          const canViewGuests = meeting?.organizer || ((meeting?.invited || optimisticInvited) && meeting?.show_meeting_attendees);
+          const canViewGuests = meeting?.organizer || ((meeting?.invited || optimisticInvited) && isMeetingAttendeeListShared(meeting));
           if (!meeting?.id || !authenticated || !canViewGuests || this.isPastMeeting()) {
             // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
             // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.

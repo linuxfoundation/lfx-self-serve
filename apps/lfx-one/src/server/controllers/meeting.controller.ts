@@ -29,7 +29,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -597,7 +597,8 @@ export class MeetingController {
   /**
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
-   * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on.
+   * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on
+   * and the meeting is neither Board nor restricted.
    * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -691,7 +692,7 @@ export class MeetingController {
       // The roster below is read with an M2M token, so this is the only place the meeting's
       // attendee-visibility setting can be enforced: a registrant sees the other guests only when
       // the organizer chose to share them.
-      if (!meeting.organizer && !meeting.show_meeting_attendees) {
+      if (!meeting.organizer && !isMeetingAttendeeListShared(meeting)) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           is_registrant: true,

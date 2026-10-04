@@ -197,9 +197,12 @@ describe('MeetingJoinComponent', () => {
   // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
   // offer a guest list it cannot fill.
   describe('guest list visibility for invitees', () => {
-    const renderInvitee = async (showMeetingAttendees: boolean): Promise<HTMLElement> => {
+    const renderInvitee = async (showMeetingAttendees: boolean, overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
       getPublicMeeting.mockReturnValue(
-        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: showMeetingAttendees }), project: buildProject() })
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: showMeetingAttendees, ...overrides }),
+          project: buildProject(),
+        })
       );
       getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
       await TestBed.compileComponents();
@@ -220,6 +223,13 @@ describe('MeetingJoinComponent', () => {
 
       expect(getMyMeetingRegistrants).toHaveBeenCalled();
       expect(page.querySelector('[data-testid="view-members-button"]')).not.toBeNull();
+    });
+
+    it('neither fetches nor offers the guest list on a Board meeting that still carries a legacy opt-in', async () => {
+      const page = await renderInvitee(true, { meeting_type: 'Board' });
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
     });
   });
 
