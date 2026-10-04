@@ -1001,6 +1001,13 @@ export class ProfileController {
         return;
       }
 
+      // Enforce the verified-address-only rule server-side before claiming, so a direct call can't
+      // point the new alias at an address the account doesn't own.
+      const verified = await this.validateLinuxForwardTarget(req, forwardTo, domain, 'claim_linux_alias');
+      if ('error' in verified) {
+        return next(verified.error);
+      }
+
       const claim = await this.emailVerificationService.addAlias(req, managementToken, alias, domain);
       if (!claim.success) {
         const { status, message } = this.mapAddAliasError(claim.error);
@@ -1011,7 +1018,7 @@ export class ProfileController {
       const email = claim.email ?? `${alias}@${domain}`;
 
       // forwards-service requires the same Management-API-audience token as add_alias.
-      const forward = await this.forwardsService.setTarget(req, managementToken, forwardTo, domain);
+      const forward = await this.forwardsService.setTarget(req, managementToken, verified.target, domain);
       if (!forward || forward.error) {
         // Alias is claimed but forwarding could not be set — recoverable via the edit path.
         return next(
@@ -1023,7 +1030,7 @@ export class ProfileController {
       }
 
       logger.success(req, 'claim_linux_alias', startTime, { domain });
-      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo } satisfies ClaimAliasResponse);
+      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? verified.target } satisfies ClaimAliasResponse);
     } catch (error) {
       next(error);
     }
@@ -1065,7 +1072,13 @@ export class ProfileController {
         return;
       }
 
-      const forward = await this.forwardsService.setTarget(req, managementToken, forwardTo, domain);
+      // Enforce the verified-address-only rule server-side — the UI dropdown is not a security boundary.
+      const verified = await this.validateLinuxForwardTarget(req, forwardTo, domain, 'update_linux_forward');
+      if ('error' in verified) {
+        return next(verified.error);
+      }
+
+      const forward = await this.forwardsService.setTarget(req, managementToken, verified.target, domain);
       if (!forward || forward.error) {
         return next(
           new MicroserviceError(forward?.error || 'Failed to update forwarding address', 502, 'FORWARD_SET_FAILED', {
@@ -1076,7 +1089,7 @@ export class ProfileController {
       }
 
       logger.success(req, 'update_linux_forward', startTime, { domain });
-      res.status(200).json({ forwardTo: forward.target_email ?? forwardTo });
+      res.status(200).json({ forwardTo: forward.target_email ?? verified.target });
     } catch (error) {
       next(error);
     }
@@ -2648,6 +2661,69 @@ export class ProfileController {
       primaryEmail,
       ...(state === 'not_purchased' ? { purchaseUrl: PURCHASE_LINUX_URL } : {}),
     };
+  }
+
+  /**
+   * Verify a Linux.com forwarding target is one of the caller's own verified addresses — the same
+   * set the claim/edit dropdown offers: the primary email, verified alternate emails from
+   * `user_emails.read`, and email-valued identities linked in auth-service (shown as verified on the
+   * Identities tab). Addresses on the forward domain itself are rejected (an alias can't forward to
+   * itself). A legacy external target stays readable via getLinuxAlias but is never re-accepted here.
+   * Returns the matching owned address (as stored upstream, so the caller forwards to exactly that
+   * address rather than to the raw input), or the error to pass to next(). Throws when the identity
+   * list is unavailable, so an outage surfaces as 503 rather than a misleading validation error.
+   */
+  private async validateLinuxForwardTarget(
+    req: Request,
+    forwardTo: string,
+    domain: string,
+    operation: 'claim_linux_alias' | 'update_linux_forward'
+  ): Promise<{ target: string } | { error: ServiceValidationError | MicroserviceError }> {
+    const userSub = getEffectiveSub(req) ?? undefined;
+    if (!userSub) {
+      return {
+        error: ServiceValidationError.forField('user_id', 'User authentication required', { operation, service: 'profile_controller', path: req.path }),
+      };
+    }
+
+    const notAllowed = ServiceValidationError.forField('forwardTo', 'Choose one of your verified email addresses to forward to', {
+      operation,
+      service: 'profile_controller',
+    });
+    if (forwardTo.trim().toLowerCase().endsWith(`@${domain.toLowerCase()}`)) {
+      return { error: notAllowed };
+    }
+
+    const [emails, identities] = await Promise.all([
+      this.emailVerificationService.getUserEmails(req, userSub),
+      this.emailVerificationService.listIdentities(req, userSub),
+    ]);
+    // Fail closed: without the caller's email list, ownership can't be established.
+    if (emails === null) {
+      return {
+        error: new MicroserviceError('Unable to verify your forwarding address right now. Please try again later.', 503, 'SERVICE_UNAVAILABLE', {
+          operation,
+          service: 'profile_controller',
+        }),
+      };
+    }
+
+    // Same primary fallback as getLinuxAlias, which feeds the dropdown's "(Primary)" option.
+    const primaryEmail = emails.primary_email || getEffectiveEmail(req) || null;
+    const owned = [
+      primaryEmail,
+      ...(emails.alternate_emails ?? []).filter((e) => e.verified === true).map((e) => e.email),
+      ...identities
+        .filter((id) => CDP_PLATFORM_TO_TYPE_MAP[AUTH0_TO_CDP_PROVIDER_MAP[id.provider] ?? ''] === 'email')
+        .map((id) => this.getAuth0IdentityValue(id)),
+    ];
+
+    const match = owned.find((email) => emailsEqual(email, forwardTo));
+    // Re-check the canonical address too: an owned address on the forward domain is never a valid target.
+    if (!match || match.trim().toLowerCase().endsWith(`@${domain.toLowerCase()}`)) {
+      return { error: notAllowed };
+    }
+    return { target: match.trim() };
   }
 
   /** Map an auth-service add_alias error code to an HTTP status + user message. */
