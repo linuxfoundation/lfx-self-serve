@@ -24,7 +24,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(page.getByTestId('my-formations-title')).toHaveText('My Formations', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('my-formations-description')).toContainText("Formations you're invited to");
 
-    // Sidebar: last item of My Engagement, right after My Documents.
+    // Sidebar: last item of My Engagement, right after My Surveys.
     const nav = page.getByTestId('sidebar-my-formations');
     await expect(nav).toBeVisible();
     await expect(nav).toContainText('My Formations');

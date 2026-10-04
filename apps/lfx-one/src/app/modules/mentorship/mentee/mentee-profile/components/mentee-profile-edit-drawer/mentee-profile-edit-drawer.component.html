@@ -36,28 +36,19 @@
         </div>
 
         <div class="flex flex-col gap-1">
-          <!-- No native [maxlength] — it counts UTF-16 units and would block emoji below the 3000 code-point cap. -->
-          <label for="mentee-profile-edit-about-me" class="sr-only">About Me</label>
-          <lfx-textarea
+          <label id="mentee-profile-edit-about-me-label" class="text-sm font-medium text-gray-700">
+            Tell us a little bit about yourself. <span class="text-red-500">*</span>
+          </label>
+          <lfx-rich-editor
             [form]="form"
             control="introduction"
-            [rows]="6"
-            styleClass="w-full min-h-32"
-            inputId="mentee-profile-edit-about-me"
-            [ariaDescribedBy]="'mentee-profile-edit-about-me-counter'"
+            [placeholder]="introductionPlaceholder"
+            [editorStyle]="{ minHeight: '200px' }"
+            ariaLabelledBy="mentee-profile-edit-about-me-label"
             dataTest="mentee-profile-edit-about-me" />
-          <div class="flex justify-end">
-            <span
-              id="mentee-profile-edit-about-me-counter"
-              class="text-xs text-gray-400"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              [attr.aria-label]="aboutMeLength() + ' of ' + aboutMeMax + ' characters used'"
-              data-testid="mentee-profile-edit-about-me-counter">
-              {{ aboutMeLength() }} / {{ aboutMeMax }}
-            </span>
-          </div>
+          @if (introductionError(); as error) {
+            <p role="alert" class="text-xs text-red-600" data-testid="mentee-profile-edit-about-me-error">{{ error }}</p>
+          }
         </div>
       </div>
 
@@ -93,13 +84,6 @@
             dataTest="mentee-profile-edit-additional-notes" />
         </div>
       </div>
-
-      <lfx-mentorship-resume-section
-        [form]="form"
-        [intro]="resumeIntro"
-        [bordered]="false"
-        [comingSoonSummary]="resumeComingSoonSummary"
-        idPrefix="mentee-profile-edit-resume" />
     </div>
 
     <!-- Kept next to the actions, not at the top of the body: Save sits below a long scrolling form, so an error at the top would render off-screen. -->

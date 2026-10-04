@@ -20,6 +20,10 @@ import {
   buildHealthMetricsMembersBoardSummary,
   buildHealthMetricsMembersBoardTrend,
   buildHealthMetricsMembersBridgeView,
+  buildHealthMetricsMembersChurnDepartureRows,
+  buildHealthMetricsMembersChurnCountNote,
+  buildHealthMetricsMembersChurnDeparturesSubtitle,
+  buildHealthMetricsMembersChurnView,
   buildHealthMetricsMembersDirectoryRows,
   buildHealthMetricsMembersDirectorySearchPlaceholder,
   buildHealthMetricsMembersDirectorySummary,
@@ -43,6 +47,9 @@ import type {
   HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersBoardCohortSummary,
   HealthMetricsMembersBridge,
+  HealthMetricsMembersChurn,
+  HealthMetricsMembersChurnTier,
+  HealthMetricsMembersChurnYear,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersNpsAudience,
   HealthMetricsMembersNpsQuarter,
@@ -932,5 +939,196 @@ describe('members nps', () => {
     expect(
       buildHealthMetricsMembersNpsTrendNote(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, null), quarter('2026-01-01', 62, null)]))
     ).toBeNull();
+  });
+});
+
+describe('members churn', () => {
+  const churnYear = (year: number, overrides: Partial<HealthMetricsMembersChurnYear> = {}): HealthMetricsMembersChurnYear => ({
+    year,
+    isPartialYear: year === 2026,
+    lostCount: 12,
+    openingCount: 120,
+    duesLostUsd: 1_500_000,
+    duesLostPriorUsd: 900_000,
+    revenueChurnRate: 16,
+    revenueChurnRatePrior: 11.4,
+    revenueChurnRateChangePp: 4.6,
+    logoChurnRate: 10,
+    ...overrides,
+  });
+  const tier = (year: number, name: string, rank: number, lost: number, dues: number, share: number, rate = 10): HealthMetricsMembersChurnTier => ({
+    year,
+    tier: name,
+    tierSortRank: rank,
+    lostCount: lost,
+    churnRate: rate,
+    duesLostUsd: dues,
+    shareOfLossPct: share,
+  });
+  const CHURN: HealthMetricsMembersChurn = {
+    years: [
+      churnYear(2026),
+      churnYear(2025, { logoChurnRate: 12.5, revenueChurnRate: 11.4 }),
+      churnYear(2024, { revenueChurnRate: 8 }),
+      churnYear(2023, { revenueChurnRate: 6 }),
+      churnYear(2022, { revenueChurnRate: 5 }),
+    ],
+    tiers: [
+      tier(2026, 'Gold', 1, 2, 1_000_000, 66.7, 40),
+      tier(2026, 'Silver', 2, 10, 500_000, 33.3, 25),
+      tier(2026, 'Bronze', 3, 0, 0, 0, 0),
+      tier(2026, 'Associate', 4, 1, 4_000, 0.3, 2),
+      tier(2025, 'Gold', 1, 1, 400_000, 100),
+    ],
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-29T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('builds the revenue hero, meta line and sides for the running year', () => {
+    const view = buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'revenue');
+
+    expect(view).toMatchObject({
+      measured: true,
+      yearMeasured: true,
+      year: 2026,
+      hasChurn: true,
+      lostCount: 12,
+      metaLabel: '12 of 120 memberships lost',
+      heroLabel: '16%',
+      changeLabel: '+4.6pp vs 2025',
+      changeTone: 'bad',
+      caption: "of last year's dues did not renew",
+      trendTitle: 'Revenue churn trend',
+    });
+    expect(view.sides).toEqual([
+      { key: 'dues-lost', label: 'Dues lost this year', value: '$1.5M', note: null, isLoss: true },
+      { key: 'dues-lost-prior', label: 'Dues lost last year', value: '$900K', note: null, isLoss: false },
+      { key: 'logo', label: 'Logo churn', value: '10%', note: '(12 of 120)', isLoss: false },
+    ]);
+  });
+
+  it('derives the logo change from the year before and swaps in the revenue rate', () => {
+    const view = buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'logo');
+
+    expect(view.heroLabel).toBe('10%');
+    expect(view.changeLabel).toBe('−2.5pp vs 2025');
+    expect(view.changeTone).toBe('good');
+    expect(view.caption).toBe('of the memberships held at the start of the year lapsed');
+    expect(view.sides[2]).toEqual({ key: 'revenue', label: 'Revenue churn', value: '16%', note: null, isLoss: false });
+    expect(view.trendSubtitle).toBe('share of memberships lost, by year');
+  });
+
+  it('names past years and shows no change when the year before is not in the read', () => {
+    const view = buildHealthMetricsMembersChurnView(CHURN, 'COMPLETED_YEAR_4', 'revenue');
+
+    expect(view.year).toBe(2022);
+    expect(view.changeLabel).toBeNull();
+    expect(view.changeTone).toBe('neutral');
+    expect(view.caption).toBe("of 2021's dues did not renew");
+    expect(view.sides.map((side) => side.label)).toEqual(['Dues lost in 2022', 'Dues lost in 2021', 'Logo churn']);
+  });
+
+  it('orders tiers by dues lost, flags high rates and keeps a stub only for a non-zero share', () => {
+    const { tiers } = buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'revenue');
+
+    expect(tiers.map((row) => row.tier)).toEqual(['Gold', 'Silver', 'Associate', 'Bronze']);
+    expect(tiers.map((row) => row.isHighRate)).toEqual([true, true, false, false]);
+    expect(tiers.map((row) => row.shareWidthPct)).toEqual([66.7, 33.3, 1, 0]);
+    expect(tiers.map((row) => row.shareLabel)).toEqual(['67%', '33%', '<1%', '0%']);
+    expect(tiers[0]).toMatchObject({ lostLabel: '2', rateLabel: '40%', duesLabel: '$1M', shareLabel: '67%' });
+  });
+
+  it('notes the inversion when the tier losing most members is not the one losing most dues', () => {
+    expect(buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'revenue').inversion).toEqual({
+      countLead: 'Silver lost 10 memberships',
+      duesLead: 'Gold lost the money',
+      text: "2 Gold departures cost $1M against Silver's $500K. That inversion is the whole argument for leading on revenue churn rather than logo churn.",
+    });
+  });
+
+  it('skips the inversion when one tier leads both, or a lead is tied', () => {
+    expect(buildHealthMetricsMembersChurnView(CHURN, 'COMPLETED_YEAR', 'revenue').inversion).toBeNull();
+
+    const tied: HealthMetricsMembersChurn = {
+      years: [churnYear(2026)],
+      tiers: [tier(2026, 'Gold', 1, 5, 1_000_000, 50), tier(2026, 'Silver', 2, 5, 900_000, 50)],
+    };
+    expect(buildHealthMetricsMembersChurnView(tied, 'YTD', 'revenue').inversion).toBeNull();
+  });
+
+  it('plots the trend window ending at the selected year and warns when churn rose', () => {
+    const view = buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'revenue');
+
+    expect(view.trend.map((point) => [point.label, point.valueLabel, point.isSelected])).toEqual([
+      ['2023', '6%', false],
+      ['2024', '8%', false],
+      ['2025', '11%', false],
+      ['2026', '16%', true],
+    ]);
+    expect(view.trendRose).toBe(true);
+    expect(buildHealthMetricsMembersChurnView(CHURN, 'YTD', 'logo').trendRose).toBe(false);
+  });
+
+  it("colours the trend off the hero's change, not the two years' rates", () => {
+    const falling: HealthMetricsMembersChurn = {
+      years: [churnYear(2026, { revenueChurnRate: 16, revenueChurnRateChangePp: -1.2 }), churnYear(2025, { revenueChurnRate: 11.4 })],
+      tiers: [],
+    };
+    expect(buildHealthMetricsMembersChurnView(falling, 'YTD', 'revenue')).toMatchObject({ changeTone: 'good', trendRose: false });
+  });
+
+  it('reports no churn for a year that lost nothing, and an unread year as unmeasured', () => {
+    const quiet: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: 0, openingCount: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(quiet, 'YTD', 'revenue')).toMatchObject({ hasChurn: false, metaLabel: '0 memberships lost' });
+
+    expect(buildHealthMetricsMembersChurnView(CHURN, 'COMPLETED_YEAR_3', 'revenue').yearMeasured).toBe(true);
+    const unmeasured: HealthMetricsMembersChurn = { years: [churnYear(2026, { lostCount: null })], tiers: [] };
+    expect(buildHealthMetricsMembersChurnView(unmeasured, 'YTD', 'revenue')).toMatchObject({ yearMeasured: false, hasChurn: false });
+    expect(buildHealthMetricsMembersChurnView({ years: [], tiers: [] }, 'YTD', 'revenue')).toMatchObject({
+      measured: false,
+      yearMeasured: false,
+      hasChurn: false,
+      heroLabel: '—',
+      inversion: null,
+      trend: [],
+    });
+  });
+
+  it('builds departure rows with a dash for what the model does not have', () => {
+    expect(
+      buildHealthMetricsMembersChurnDepartureRows([
+        {
+          accountId: 'acct-1',
+          accountName: 'Acme Motors',
+          membershipTier: 'Gold',
+          duesLostUsd: 250_000,
+          lapsedDate: '2026-03-31',
+          lastEngagedDate: null,
+        },
+        { accountId: 'acct-2', accountName: 'Vendor Corp', membershipTier: null, duesLostUsd: null, lapsedDate: null, lastEngagedDate: '2025-11-02' },
+      ])
+    ).toEqual([
+      { accountId: 'acct-1', accountName: 'Acme Motors', tierLabel: 'Gold', duesLabel: '$250K', lapsedLabel: 'Mar 31, 2026', lastEngagedLabel: '—' },
+      { accountId: 'acct-2', accountName: 'Vendor Corp', tierLabel: '—', duesLabel: '—', lapsedLabel: '—', lastEngagedLabel: 'Nov 2, 2025' },
+    ]);
+  });
+
+  it('claims the churn count only when the list matches it', () => {
+    expect(buildHealthMetricsMembersChurnDeparturesSubtitle(12, 12)).toBe('largest dues lost first · the same 12 as lost above');
+    expect(buildHealthMetricsMembersChurnDeparturesSubtitle(11, 12)).toBe('largest dues lost first');
+  });
+
+  it('notes a gap between the list and the churn count only when they differ', () => {
+    expect(buildHealthMetricsMembersChurnCountNote(12, 12)).toBeNull();
+    expect(buildHealthMetricsMembersChurnCountNote(11, 12)).toBe(
+      '11 organizations listed, while churn counts 12 lost. The list and the churn count are counted separately, so they can differ slightly.'
+    );
   });
 });

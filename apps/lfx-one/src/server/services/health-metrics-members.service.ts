@@ -13,6 +13,9 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_TREND_MEETINGS,
   HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
@@ -50,6 +53,13 @@ import type {
   HealthMetricsMembersBridgeQuery,
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeStepType,
+  HealthMetricsMembersChurn,
+  HealthMetricsMembersChurnDeparture,
+  HealthMetricsMembersChurnDepartures,
+  HealthMetricsMembersChurnDeparturesQuery,
+  HealthMetricsMembersChurnQuery,
+  HealthMetricsMembersChurnTier,
+  HealthMetricsMembersChurnYear,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryQuery,
@@ -85,6 +95,7 @@ const MEMBERSHIP_BOARD_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_
 const MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING';
 const MEMBERSHIP_NPS_BY_AUDIENCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_NPS_BY_AUDIENCE';
 const MEMBERSHIP_NPS_QUARTERLY_TREND_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_NPS_QUARTERLY_TREND';
+const MEMBERSHIP_CHURN_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURN';
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -229,6 +240,53 @@ interface DirectoryTierRow {
   MEMBERSHIP_TIER: string | null;
 }
 
+interface ChurnRow {
+  YEAR: number | null;
+  IS_PARTIAL_YEAR: boolean | null;
+  IS_ALL_TIERS: boolean | null;
+  MEMBERSHIP_TIER: string | null;
+  TIER_SORT_RANK: number | null;
+  MEMBERSHIPS_LOST_COUNT: number | null;
+  MEMBERSHIPS_OPENING_COUNT: number | null;
+  DUES_LOST_USD: number | null;
+  DUES_LOST_PRIOR_USD: number | null;
+  REVENUE_CHURN_RATE: number | null;
+  REVENUE_CHURN_RATE_PRIOR: number | null;
+  REVENUE_CHURN_RATE_CHANGE_PP: number | null;
+  TIER_CHURN_RATE: number | null;
+  SHARE_OF_LOSS_PCT: number | null;
+  LOGO_CHURN_RATE: number | null;
+}
+
+interface MovementDetailPageRow {
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+}
+
+/** One movement-detail page read; `dateColumn` is the per-read date the page selects. */
+interface MovementDetailPageRead {
+  foundationSlug: string;
+  year: number;
+  movementType: string;
+  dateColumn: 'movement_date' | 'lapsed_date';
+  pageSize: number;
+  offset: number;
+  operation: string;
+  clientMessage: string;
+}
+
+interface ChurnDepartureRow {
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
+  DUES_IMPACT_USD: number | null;
+  LAPSED_DATE: Date | string | null;
+  LAST_ENGAGED_DATE: Date | string | null;
+  SORT_RANK: number | null;
+}
+
 /** True when the Members views carry columns for the range; for a controller to check before binding. */
 export function isSupportedMembersRange(range: string): range is HealthMetricsL2Range {
   return isHealthMetricsL2Range(range);
@@ -299,54 +357,18 @@ export class HealthMetricsMembersService {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
-    const sql = `
-      WITH scoped AS (
-        SELECT *
-        FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
-        WHERE foundation_slug = ?
-          AND year = ?
-          AND movement_type = ?
-          -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
-          AND account_id IS NOT NULL
-          AND account_id <> ''
-      ),
-      totals AS (
-        SELECT COUNT(*) AS total_records
-        FROM scoped
-      ),
-      page AS (
-        SELECT
-          account_id,
-          account_name,
-          membership_tier,
-          dues_impact_usd,
-          movement_date,
-          last_engaged_date,
-          sort_rank,
-          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
-          TRUE AS is_page_row
-        FROM scoped
-        -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
-        ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST
-        LIMIT ${pageSize} OFFSET ${offset}
-      )
-      -- ON TRUE keeps the single totals row when the page selected nothing.
-      SELECT totals.*, page.*
-      FROM totals
-      LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC NULLS LAST
-    `;
-
-    const result = await executeSnowflakeViewRead<MovementRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.year, query.movementType], {
-      view: MEMBERSHIP_MOVEMENT_DETAIL_VIEW,
+    const page = await this.readMovementDetailPage<MovementRow>(req, {
+      foundationSlug: query.foundationSlug,
+      year: query.year,
+      movementType: query.movementType,
+      dateColumn: 'movement_date',
+      pageSize,
+      offset,
       operation: 'get_members_movements',
       clientMessage: 'This list of members is unavailable right now.',
     });
 
-    return {
-      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapMovement),
-      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
-    };
+    return { rows: page.rows.flatMap(mapMovement), totalRecords: page.totalRecords };
   }
 
   /**
@@ -647,6 +669,137 @@ export class HealthMetricsMembersService {
     const [audiences, trend] = await Promise.all([this.getNpsAudiences(req, query), this.getNpsTrend(req, query)]);
     const requested = audiences.find((audience) => audience.audience === query.audience);
     return { audiences, selectedAudience: requested?.audience ?? audiences[0]?.audience ?? null, trend };
+  }
+
+  /**
+   * Every year's churn off `MEMBERSHIP_CHURN`: the all-tiers row and each tier's row. All years come back
+   * at once, so a period or mode change re-projects without a re-read.
+   */
+  public async getChurn(req: Request, query: HealthMetricsMembersChurnQuery): Promise<HealthMetricsMembersChurn> {
+    const sql = `
+      SELECT
+        year,
+        is_partial_year,
+        is_all_tiers,
+        membership_tier,
+        tier_sort_rank,
+        memberships_lost_count,
+        memberships_opening_count,
+        dues_lost_usd,
+        dues_lost_prior_usd,
+        revenue_churn_rate,
+        revenue_churn_rate_prior,
+        revenue_churn_rate_change_pp,
+        tier_churn_rate,
+        share_of_loss_pct,
+        logo_churn_rate
+      FROM ${MEMBERSHIP_CHURN_VIEW}
+      WHERE foundation_slug = ?
+        AND year IS NOT NULL
+      ORDER BY year DESC, is_all_tiers DESC NULLS LAST, tier_sort_rank ASC NULLS LAST, membership_tier ASC NULLS LAST
+      LIMIT ${HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<ChurnRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: MEMBERSHIP_CHURN_VIEW,
+      operation: 'get_members_churn',
+      clientMessage: 'Membership churn is unavailable right now.',
+    });
+
+    let rows = result.rows;
+    if (rows.length > HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP) {
+      logger.warning(req, 'get_members_churn', 'Membership churn rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP,
+      });
+      rows = capWholeYears(rows, HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP);
+    }
+
+    return {
+      years: rows.filter((row) => row.IS_ALL_TIERS === true).flatMap(mapChurnYear),
+      tiers: rows.filter((row) => row.IS_ALL_TIERS === false).flatMap(mapChurnTier),
+    };
+  }
+
+  /**
+   * One page of the organizations that lapsed in a year, in the view's own `sort_rank` order (most dues lost
+   * first). The total is a separate aggregate joined onto the page, so a page past the end still reports it.
+   */
+  public async getChurnDepartures(req: Request, query: HealthMetricsMembersChurnDeparturesQuery): Promise<HealthMetricsMembersChurnDepartures> {
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const page = await this.readMovementDetailPage<ChurnDepartureRow>(req, {
+      foundationSlug: query.foundationSlug,
+      year: query.year,
+      movementType: 'churned',
+      dateColumn: 'lapsed_date',
+      pageSize,
+      offset,
+      operation: 'get_members_churn_departures',
+      clientMessage: 'The list of departed members is unavailable right now.',
+    });
+
+    return { rows: page.rows.flatMap(mapChurnDeparture), totalRecords: page.totalRecords };
+  }
+
+  /**
+   * One page of a year's `MEMBERSHIP_MOVEMENT_DETAIL` rows for a movement type, in `sort_rank` order. The total
+   * is a separate aggregate joined onto the page, so a page past the end still reports it.
+   */
+  private async readMovementDetailPage<T extends MovementDetailPageRow>(
+    req: Request,
+    read: MovementDetailPageRead
+  ): Promise<{ rows: T[]; totalRecords: number }> {
+    // `dateColumn` and the clamped `pageSize`/`offset` come from the callers, never the request, so interpolating them is safe.
+    const sql = `
+      WITH scoped AS (
+        SELECT *
+        FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
+        WHERE foundation_slug = ?
+          AND year = ?
+          AND movement_type = ?
+          -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
+          AND account_id IS NOT NULL
+          AND account_id <> ''
+      ),
+      totals AS (
+        SELECT COUNT(*) AS total_records
+        FROM scoped
+      ),
+      page AS (
+        SELECT
+          account_id,
+          account_name,
+          membership_tier,
+          dues_impact_usd,
+          ${read.dateColumn},
+          last_engaged_date,
+          sort_rank,
+          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
+          TRUE AS is_page_row
+        FROM scoped
+        -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
+        ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST
+        LIMIT ${read.pageSize} OFFSET ${read.offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.sort_rank ASC NULLS LAST, page.account_id ASC NULLS LAST
+    `;
+
+    const result = await executeSnowflakeViewRead<T>(this.snowflakeService, req, sql, [read.foundationSlug, read.year, read.movementType], {
+      view: MEMBERSHIP_MOVEMENT_DETAIL_VIEW,
+      operation: read.operation,
+      clientMessage: read.clientMessage,
+    });
+
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true),
+      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
+    };
   }
 
   private async getTierYears(req: Request, query: HealthMetricsMembersTiersQuery): Promise<HealthMetricsMembersTierYear[]> {
@@ -1092,6 +1245,59 @@ function mapNpsQuarter(row: NpsQuarterRow): HealthMetricsMembersNpsQuarter[] {
       npsScore: isSampleTooSmall ? null : toNullableNumber(row.NPS_SCORE),
       responseRatePct: toNullableNumber(row.RESPONSE_RATE_PCT),
       isSampleTooSmall,
+    },
+  ];
+}
+
+function mapChurnYear(row: ChurnRow): HealthMetricsMembersChurnYear[] {
+  const year = toNullableNumber(row.YEAR);
+  if (year === null) return [];
+
+  return [
+    {
+      year,
+      isPartialYear: row.IS_PARTIAL_YEAR === true,
+      lostCount: toNullableNumber(row.MEMBERSHIPS_LOST_COUNT),
+      openingCount: toNullableNumber(row.MEMBERSHIPS_OPENING_COUNT),
+      duesLostUsd: toNullableNumber(row.DUES_LOST_USD),
+      duesLostPriorUsd: toNullableNumber(row.DUES_LOST_PRIOR_USD),
+      revenueChurnRate: toNullableNumber(row.REVENUE_CHURN_RATE),
+      revenueChurnRatePrior: toNullableNumber(row.REVENUE_CHURN_RATE_PRIOR),
+      revenueChurnRateChangePp: toNullableNumber(row.REVENUE_CHURN_RATE_CHANGE_PP),
+      logoChurnRate: toNullableNumber(row.LOGO_CHURN_RATE),
+    },
+  ];
+}
+
+function mapChurnTier(row: ChurnRow): HealthMetricsMembersChurnTier[] {
+  const year = toNullableNumber(row.YEAR);
+  if (year === null || !row.MEMBERSHIP_TIER) return [];
+
+  return [
+    {
+      year,
+      tier: row.MEMBERSHIP_TIER,
+      // An unranked tier sorts after every ranked one.
+      tierSortRank: toNullableNumber(row.TIER_SORT_RANK) ?? Number.MAX_SAFE_INTEGER,
+      lostCount: toNullableNumber(row.MEMBERSHIPS_LOST_COUNT),
+      churnRate: toNullableNumber(row.TIER_CHURN_RATE),
+      duesLostUsd: toNullableNumber(row.DUES_LOST_USD),
+      shareOfLossPct: toNullableNumber(row.SHARE_OF_LOSS_PCT),
+    },
+  ];
+}
+
+function mapChurnDeparture(row: ChurnDepartureRow): HealthMetricsMembersChurnDeparture[] {
+  if (!row.ACCOUNT_ID) return [];
+
+  return [
+    {
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
+      membershipTier: row.MEMBERSHIP_TIER || null,
+      duesLostUsd: toNullableNumber(row.DUES_IMPACT_USD),
+      lapsedDate: toIsoDate(row.LAPSED_DATE),
+      lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
     },
   ];
 }

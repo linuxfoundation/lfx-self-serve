@@ -405,7 +405,7 @@ export class CampaignServiceClient {
    * Bounds on the lost-write reconciliation: how many times it reads, how long it waits between
    * attempts, and the WALL-CLOCK budget the whole loop may spend.
    *
-   * Instance members rather than module constants: CLAUDE.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule keeps shared values in
+   * Instance members rather than module constants: AGENTS.md's "all shared constants and interfaces live in `@lfx-one/shared`" rule keeps shared values in
    * `@lfx-one/shared`, and these are neither shared nor meaningful outside this client.
    *
    * The wall-clock bound is the one that actually holds. An earlier revision counted only the
@@ -801,6 +801,45 @@ export class CampaignServiceClient {
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
       : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
+  }
+
+  /**
+   * Read back one brief BY ID — `get-brief` (`GET /projects/{project_id}/briefs/{brief_id}`).
+   *
+   * The counterpart to `loadBrief`, for the callers that already hold an id. The distinction is
+   * not a convenience: `loadBrief` resolves `(project, event_slug, delivery_type, stage)` to
+   * whichever row that key names today, while this reads the row a request is actually about. A
+   * caller that holds a `brief_id` and asks by slug is asking a question whose answer can differ
+   * from the brief it is acting on — and when that caller is a pre-dispatch guard, the difference
+   * is a create refused over a different brief's contents.
+   *
+   * Returns the same three outcomes as `loadBrief` so the two are interchangeable at the call
+   * site. No delivery-type or stage check: an id is exact identity upstream, so there is no
+   * sibling row for it to have matched by mistake — that check exists in `loadBrief` only because
+   * a key lookup can answer with one.
+   */
+  public async loadBriefById(req: Request, projectSlug: string, briefId: string): Promise<CampaignBriefLoadResult> {
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}`;
+
+    let response;
+    try {
+      response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(req, 'LFX_V2_CAMPAIGN_SERVICE', path, 'GET');
+    } catch (error) {
+      // Gated on the service's own not-found body for the same reason `findBrief` is: a gateway
+      // 404 means "this deployment could not route the call", which is not evidence the brief is
+      // absent, and reading it as `none` would let a guard draw a conclusion from an outage.
+      if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
+        return { status: 'none', briefId: null, brief: null, etag: null, approved: false };
+      }
+      throw error;
+    }
+
+    const brief = fromBriefResponse(response.data);
+    const approved = response.data.status === 'approved';
+
+    return brief === null
+      ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readEtag(response), approved }
+      : { status: 'loaded', briefId: response.data.id, brief, etag: readEtag(response), approved };
   }
 
   /**

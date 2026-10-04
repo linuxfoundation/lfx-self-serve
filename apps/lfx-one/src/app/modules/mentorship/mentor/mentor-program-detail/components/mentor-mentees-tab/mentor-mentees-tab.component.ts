@@ -18,7 +18,13 @@ import {
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { MentorshipNoteRequest, MentorshipProgramMentee, MentorshipTaskDialogAssignee } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMentorTaskCreateRequest,
+  MentorshipNoteRequest,
+  MentorshipProgramMentee,
+  MentorshipTaskDialogAssignee,
+  MentorshipTaskFormValue,
+} from '@lfx-one/shared/interfaces';
 import {
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
@@ -31,13 +37,13 @@ import { take } from 'rxjs';
 
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
 import { PersonCellComponent } from '../../../../components/person-cell/person-cell.component';
-import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
 
 /**
  * Mentor-facing Mentees tab — current mentees (accepted / graduated) with task
- * progress, View Tasks expansion, per-row create, and Create Group Task. Writes stub
- * to the coming-soon toast until the mentorship write endpoints land.
+ * progress, View Tasks expansion, per-row create, and Create Group Task. Only an
+ * accepted mentee can be given a task; the tab hands the dialog's value to the parent,
+ * which creates the tasks.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-mentees-tab',
@@ -46,14 +52,12 @@ import { MentorshipTaskDialogService } from '../../../../services/mentorship-tas
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MentorMenteesTabComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
   private readonly taskDialog = inject(MentorshipTaskDialogService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly mentees = input.required<MentorshipProgramMentee[]>();
-  /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
-  public readonly noteDrafts = input<Record<string, string>>({});
   public readonly noteRequested = output<MentorshipNoteRequest>();
+  public readonly taskCreateRequested = output<MentorshipMentorTaskCreateRequest>();
 
   protected readonly pageSize = MENTORSHIP_PERSON_PAGE_SIZE;
   protected readonly rowsPerPageOptions = MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS;
@@ -72,7 +76,11 @@ export class MentorMenteesTabComponent {
   protected readonly expandedTaskMenteeIds = signal<Record<string, boolean>>({});
 
   protected readonly rows = this.initRows();
-  protected readonly assignees = computed(() => this.rows().map((row) => this.toAssignee(row)));
+  protected readonly assignees = computed(() =>
+    this.rows()
+      .filter((row) => row.canCreateTask)
+      .map((row) => this.toAssignee(row))
+  );
 
   protected onOpenNote(id: string, name: string): void {
     this.noteRequested.emit({ personId: id, personName: name });
@@ -82,22 +90,14 @@ export class MentorMenteesTabComponent {
     this.taskDialog
       .openCreateGroup(this.assignees())
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => {
-        if (!value) return;
-        const n = value.assignedMenteeIds.length;
-        const noun = n === 1 ? 'mentee' : 'mentees';
-        this.comingSoon.notify(`Create group task "${value.name}" for ${n} ${noun}`);
-      });
+      .subscribe((value) => this.requestTaskCreate(value));
   }
 
   protected onCreateTask(mentee: MentorshipProgramMentee): void {
     this.taskDialog
       .openCreate(this.toAssignee(mentee))
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => {
-        if (!value) return;
-        this.comingSoon.notify(`Create task "${value.name}" for ${mentee.name}`);
-      });
+      .subscribe((value) => this.requestTaskCreate(value));
   }
 
   protected toggleTasksExpanded(menteeId: string): void {
@@ -105,6 +105,17 @@ export class MentorMenteesTabComponent {
       ...current,
       [menteeId]: !current[menteeId],
     }));
+  }
+
+  private requestTaskCreate(value: MentorshipTaskFormValue | undefined): void {
+    if (!value || value.assignedMenteeIds.length === 0) return;
+    this.taskCreateRequested.emit({
+      applicationIds: value.assignedMenteeIds,
+      name: value.name,
+      description: value.description,
+      dueDate: value.dueOn,
+      requiresFileSubmission: value.requiresFileSubmission,
+    });
   }
 
   private initRows() {
@@ -124,11 +135,14 @@ export class MentorMenteesTabComponent {
       avatarStyleClass: mentorshipPersonAvatarClass(person.name),
       statusLabel: MENTORSHIP_MENTEE_STATUS_LABELS[person.status],
       statusBadgeClass: MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES[person.status],
+      // Upstream takes a task only on an accepted mentee's application, so a graduated mentee gets none.
+      canCreateTask: person.status === 'accepted',
       progressMeasured,
       progressPercent: progress.percent,
       progressLabel: progressMeasured ? `${progress.percent}%` : '—',
       progressAriaLabel: progressMeasured ? `${progress.percent}% of tasks completed` : MENTORSHIP_MENTOR_NO_TASKS_ASSIGNED,
-      ...mentorshipNoteDisplay(this.noteDrafts(), person, MENTORSHIP_ADD_NOTE_LABEL),
+      // No drafts: the page saves a note before it shows, so the row's own note is the saved one.
+      ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
       hasTasks: mentorshipApplicantHasTasks(person),
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
     };

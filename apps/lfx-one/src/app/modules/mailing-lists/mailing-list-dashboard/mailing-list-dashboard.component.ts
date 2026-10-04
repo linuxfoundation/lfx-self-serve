@@ -81,6 +81,7 @@ export class MailingListDashboardComponent {
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
   public myMailingListsLoading = signal<boolean>(true);
+  public myMailingListsError = signal<boolean>(false);
 
   // Foundation + Project filter (Me lens only)
   public foundationFilter: WritableSignal<string | null> = signal<string | null>(null);
@@ -93,6 +94,7 @@ export class MailingListDashboardComponent {
   protected readonly canWrite = this.projectContextService.canWrite;
   public readonly mailingLists: Signal<GroupsIOMailingList[]> = this.initMailingLists();
   public readonly myMailingLists: Signal<MyMailingList[]> = this.initMyMailingLists();
+  public readonly myMailingListUids: Signal<Set<string>> = computed(() => new Set(this.myMailingLists().map((ml) => ml.uid)));
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
   public readonly statusOptions: Signal<FilterOption[]> = this.initStatusOptions();
   public readonly filteredMailingLists: Signal<GroupsIOMailingList[]> = this.initFilteredMailingLists();
@@ -425,20 +427,19 @@ export class MailingListDashboardComponent {
     });
   }
 
+  /**
+   * Fetches unconditionally (not gated to Me lens) because `myMailingListUids` — derived from this
+   * signal — feeds the Join/Leave state on the Foundation/Project/Org tables too, not just Me lens.
+   */
   private initMyMailingLists(): Signal<MyMailingList[]> {
-    const lens$ = toObservable(this.lensService.activeLens);
-
     return toSignal(
-      combineLatest([lens$, this.refresh]).pipe(
-        switchMap(([lens]) => {
-          if (lens !== 'me') {
-            this.myMailingListsLoading.set(false);
-            return of([] as MyMailingList[]);
-          }
+      this.refresh.pipe(
+        switchMap(() => {
           this.myMailingListsLoading.set(true);
+          this.myMailingListsError.set(false);
           return this.mailingListService.getMyMailingLists().pipe(
             catchError(() => {
-              this.myMailingListsLoading.set(false);
+              this.myMailingListsError.set(true);
               return of([] as MyMailingList[]);
             }),
             finalize(() => this.myMailingListsLoading.set(false))
