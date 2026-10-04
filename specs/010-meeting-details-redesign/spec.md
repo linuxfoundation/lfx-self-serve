@@ -117,8 +117,11 @@ inline video player                  approve / edit AI summary
 export attendance
 ```
 
-Edit, delete and cancel-occurrence **do** exist — but on the dashboard card and the edit wizard.
-Putting them on the details page is new scope, not a port.
+Single-occurrence actions **are** on the V1 details page, so V2 must port them. Since PRs #3040
+and #3206, an organizer of a recurring meeting gets "Edit this occurrence" (reschedule, title, agenda)
+and "Cancel this occurrence" for the selected upcoming occurrence. Editing or deleting the **whole
+series** still lives on the dashboard card and the edit wizard; putting those on the details page is
+new scope, not a port.
 
 ## Work order
 
