@@ -5,7 +5,7 @@ import { EnvironmentProviders, inject, provideAppInitializer, TransferState } fr
 import { datadogRum } from '@datadog/browser-rum';
 import { environment } from '@environments/environment';
 
-import { redactAuthFragment, redactInviteToken } from '@lfx-one/shared/utils';
+import { redactAuthFragment, redactInviteToken, redactMeetingPassword } from '@lfx-one/shared/utils';
 
 import { getRuntimeConfig } from './runtime-config.provider';
 
@@ -50,13 +50,29 @@ async function initializeDataDogRum(): Promise<void> {
       //
       // Invite landing puts a single-factor accept credential in `?token=` rather than the hash.
       // redactAuthFragment does not touch the query string, so redactInviteToken runs after it.
+      //
+      // Meeting join links carry the private/restricted-meeting passcode in `?password=` on any
+      // path, so redactMeetingPassword runs too — on resource URLs as well, since trackResources
+      // records the initial document load and any request URL that still carries one.
       beforeSend: (event) => {
-        const view = (event as { view?: { url?: string; referrer?: string } }).view;
+        const redact = (url: string): string =>
+          redactMeetingPassword(redactInviteToken(redactAuthFragment(url, window.location.origin), window.location.origin), window.location.origin);
+        const { view, resource, error } = event as {
+          view?: { url?: string; referrer?: string };
+          resource?: { url?: string };
+          error?: { resource?: { url?: string } };
+        };
         if (view?.url) {
-          view.url = redactInviteToken(redactAuthFragment(view.url, window.location.origin), window.location.origin);
+          view.url = redact(view.url);
         }
         if (view?.referrer) {
-          view.referrer = redactInviteToken(redactAuthFragment(view.referrer, window.location.origin), window.location.origin);
+          view.referrer = redact(view.referrer);
+        }
+        if (resource?.url) {
+          resource.url = redact(resource.url);
+        }
+        if (error?.resource?.url) {
+          error.resource.url = redact(error.resource.url);
         }
         return true;
       },

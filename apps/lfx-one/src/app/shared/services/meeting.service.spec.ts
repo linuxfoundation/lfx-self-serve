@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import type { MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingService } from './meeting.service';
@@ -149,5 +150,45 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
     });
+  });
+});
+
+// The passcode gates private/restricted meetings server-side; it travels in a header so request
+// URLs, which Datadog RUM records as resource events, never carry it.
+describe('MeetingService public meeting passcode transport', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  let post: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn(() => of({}));
+    post = vi.fn(() => of({}));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('sends the getPublicMeeting passcode in the header, not the URL', () => {
+    service.getPublicMeeting(MEETING_UID, 'SUPER_SECRET').subscribe();
+
+    const [url, options] = get.mock.calls[0];
+    expect(url).not.toContain('SUPER_SECRET');
+    expect(options.params).toBeUndefined();
+    expect((options.headers as HttpHeaders).get('x-meeting-password')).toBe('SUPER_SECRET');
+  });
+
+  it('sends the getPublicMeetingJoinUrl passcode in the header, not the URL', () => {
+    service.getPublicMeetingJoinUrl(MEETING_UID, 'SUPER_SECRET', { email: 'dana.reyes@acme-motors.example' }).subscribe();
+
+    const [url, , options] = post.mock.calls[0];
+    expect(url).not.toContain('SUPER_SECRET');
+    expect(options.params).toBeUndefined();
+    expect((options.headers as HttpHeaders).get('x-meeting-password')).toBe('SUPER_SECRET');
+  });
+
+  it('sends no passcode header when there is no passcode', () => {
+    service.getPublicMeeting(MEETING_UID, null).subscribe();
+
+    expect(get.mock.calls[0][1].headers).toBeUndefined();
   });
 });

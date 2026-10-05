@@ -382,6 +382,65 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
   });
 });
 
+// The client sends the passcode in a header so it stays out of request URLs; the query param is
+// still read for older client bundles.
+describe('PublicMeetingController.getMeetingById passcode source', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, password: 'pw' } as Partial<Meeting>));
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    checkSingleAccessMock.mockResolvedValue(false);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    validatePasswordMock.mockImplementation((given: string, expected: string) => given === expected);
+  });
+
+  it('accepts the passcode from the x-meeting-password header', async () => {
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(validatePasswordMock).toHaveBeenCalledWith('pw', 'pw');
+    expect(res.json).toHaveBeenCalled();
+  });
+
+  it('still accepts the legacy ?password= query param', async () => {
+    const { req, res, next } = buildReqRes(false);
+    req.query.password = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalled();
+  });
+
+  it('prefers the header over the query param', async () => {
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+    req.query.password = 'wrong';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(validatePasswordMock).toHaveBeenCalledWith('pw', 'pw');
+    expect(res.json).toHaveBeenCalled();
+  });
+
+  it('rejects a caller with no passcode in either place', async () => {
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('password') }));
+  });
+});
+
 // An invitee may not see the guest list, but the invited count is not personal data, so the page
 // response carries it for them instead of the rows.
 describe('PublicMeetingController.getMeetingById registrant count', () => {

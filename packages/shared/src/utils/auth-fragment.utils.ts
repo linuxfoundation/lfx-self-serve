@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUTH_FRAGMENT_KEYS, INVITE_TOKEN_QUERY_PARAM } from '../constants/auth-fragment.constants';
+import { AUTH_FRAGMENT_KEYS, INVITE_TOKEN_QUERY_PARAM, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
 import { isInviteLandingPath, isMentorshipMentorInvitePath } from './url.utils';
 
 const RETURN_TO_QUERY_PARAM = 'returnTo';
@@ -81,5 +81,48 @@ export function redactInviteToken(url: string, base?: string): string {
       return url;
     }
     return url.split('?')[0];
+  }
+}
+
+const MEETING_PASSWORD_PARAM_PATTERN = new RegExp(`[?&](${MEETING_PASSWORD_QUERY_PARAMS.join('|')})=`, 'i');
+
+function isMeetingPasswordParam(key: string): boolean {
+  return (MEETING_PASSWORD_QUERY_PARAMS as readonly string[]).includes(key.toLowerCase());
+}
+
+/**
+ * Returns `url` with every meeting passcode query param (`password`, `passcode`) replaced by a
+ * marker, on any path, or unchanged when none is present. A param value that is itself a URL
+ * carrying a passcode (`returnTo` on the login redirect, for one) is redacted the same way.
+ *
+ * Sibling of {@link redactInviteToken}, called from Datadog RUM `beforeSend` so the passcode for a
+ * private/restricted meeting never reaches the analytics sink through `view.url`, `view.referrer`
+ * or a resource URL. A relative `url` comes back relative.
+ */
+export function redactMeetingPassword(url: string, base?: string): string {
+  try {
+    const parsed = new URL(url, base);
+    const updates: [string, string][] = [];
+    for (const [key, value] of parsed.searchParams) {
+      if (isMeetingPasswordParam(key)) {
+        updates.push([key, 'redacted']);
+      } else if (MEETING_PASSWORD_PARAM_PATTERN.test(value)) {
+        const redactedValue = redactMeetingPassword(value, parsed.origin);
+        if (redactedValue !== value) {
+          updates.push([key, redactedValue]);
+        }
+      }
+    }
+    if (updates.length === 0) {
+      return url;
+    }
+    for (const [key, value] of updates) {
+      parsed.searchParams.set(key, value);
+    }
+    return url.startsWith('/') ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.toString();
+  } catch {
+    // Never throw from `beforeSend`; an unparseable URL that still looks like it carries a
+    // passcode loses its whole query string.
+    return MEETING_PASSWORD_PARAM_PATTERN.test(url) ? url.split('?')[0] : url;
   }
 }

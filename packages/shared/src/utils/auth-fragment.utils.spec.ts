@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTH_FRAGMENT_KEYS } from '../constants/auth-fragment.constants';
-import { hasAuthFragment, redactAuthFragment, redactInviteToken } from './auth-fragment.utils';
+import { AUTH_FRAGMENT_KEYS, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
+import { hasAuthFragment, redactAuthFragment, redactInviteToken, redactMeetingPassword } from './auth-fragment.utils';
 
 /**
  * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh
@@ -82,6 +82,56 @@ describe('redactInviteToken', () => {
     expect(redactInviteToken(`${ORIGIN}/mentorship/mentor/invites?token=SUPER.SECRET`, ORIGIN)).toBe(`${ORIGIN}/mentorship/mentor/invites?token=redacted`);
     expect(redactInviteToken('/mentorship/mentor/invites/?token=SUPER.SECRET', ORIGIN)).toBe('/mentorship/mentor/invites/?token=redacted');
     expect(redactInviteToken(`${ORIGIN}/mentorship/mentor/programs?token=keep-me`, ORIGIN)).toBe(`${ORIGIN}/mentorship/mentor/programs?token=keep-me`);
+  });
+});
+
+/** Guards the private/restricted-meeting passcode, the server's access gate, from the analytics sink. */
+describe('redactMeetingPassword', () => {
+  const ORIGIN = 'https://lfx.example.com';
+
+  it.each(MEETING_PASSWORD_QUERY_PARAMS)('redacts the %s param on the meeting page, keeping every other param', (param) => {
+    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?${param}=SUPER_SECRET&tab=details`, ORIGIN)).toBe(
+      `${ORIGIN}/meetings/m-1?${param}=redacted&tab=details`
+    );
+  });
+
+  it('redacts on any path, including the public API a resource event records', () => {
+    expect(redactMeetingPassword(`${ORIGIN}/public/api/meetings/m-1?password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+    expect(redactMeetingPassword(`${ORIGIN}/public/api/meetings/m-1/join-url?password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+    expect(redactMeetingPassword(`${ORIGIN}/project/acme/meetings?password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+  });
+
+  it('matches the param name case-insensitively', () => {
+    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?Password=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?PASSCODE=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+  });
+
+  it('redacts every occurrence of a repeated param', () => {
+    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?password=AAA&password=BBB`, ORIGIN)).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
+  });
+
+  it('resolves a relative URL against the base and keeps it relative', () => {
+    expect(redactMeetingPassword('/meetings/m-1?password=SUPER_SECRET#join', ORIGIN)).toBe('/meetings/m-1?password=redacted#join');
+  });
+
+  it('redacts a meeting URL carried in returnTo, as the login redirect does', () => {
+    const login = `/login?returnTo=${encodeURIComponent(`${ORIGIN}/meetings/m-1?password=SUPER_SECRET`)}`;
+
+    expect(redactMeetingPassword(login, ORIGIN)).not.toContain('SUPER_SECRET');
+    expect(new URL(redactMeetingPassword(login, ORIGIN), ORIGIN).searchParams.get('returnTo')).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
+  });
+
+  it.each([
+    ['no query string', `${ORIGIN}/meetings/m-1`],
+    ['unrelated params', `${ORIGIN}/meetings?token=keep-me&tab=past`],
+    ['a param that merely contains the name', `${ORIGIN}/settings?password_reset=sent`],
+    ['a returnTo with no passcode', `/login?returnTo=${encodeURIComponent('/meetings/m-1')}`],
+  ])('leaves a URL with %s untouched', (_label, url) => {
+    expect(redactMeetingPassword(url, ORIGIN)).toBe(url);
+  });
+
+  it('drops the query string when the URL cannot be parsed but still carries a passcode param', () => {
+    expect(redactMeetingPassword('http://[not a url?password=SUPER_SECRET')).not.toContain('SUPER_SECRET');
   });
 });
 
