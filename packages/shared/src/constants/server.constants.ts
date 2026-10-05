@@ -9,11 +9,10 @@
  * opt-in: the logger service never calls `sanitize()` automatically, each call site must invoke
  * it explicitly.
  *
- * Known gap this does NOT cover: `MicroserviceError#getLogContext()`'s `errorBody` is logged
- * unsanitized by the central error handler. Inert today for `chat_webhook_url` (LFXV2-3080) —
- * it doesn't exist upstream yet, so no upstream validation error can echo it back — but revisit
- * once LFXV2-3094 lands, since an upstream validation error on that field could then put the
- * credential in `errorBody` unredacted.
+ * Separately, the server's log scrubber redacts credential-named keys (`LOG_CREDENTIAL_KEYS`) at any
+ * depth on every log line, so a parsed upstream `errorBody` that echoes `chat_webhook_url` back under
+ * that key is masked without an explicit `sanitize()` call. It matches keys only: a credential quoted
+ * inside a free-text value (e.g. an upstream error message) is not detected.
  */
 export const SENSITIVE_FIELDS = [
   'password',
@@ -37,6 +36,59 @@ export const SENSITIVE_FIELDS = [
   // credential (anyone holding it can post to the channel).
   'webhook',
 ] as const;
+
+/**
+ * Key names whose values are credentials and must never reach a log line, at any nesting depth.
+ * Matched by the server's log scrubber (`scrubLogField` in `helpers/error-serializer.ts`) after
+ * normalising the key — lowercased with every non-alphanumeric character stripped — so
+ * `set-cookie`, `Set-Cookie` and `setCookie` all match `setcookie`. Any normalised key ending in
+ * one of `LOG_CREDENTIAL_KEY_SUFFIXES` is treated as a credential too, which covers `access_token`,
+ * `refresh_token`, `id_token`, `impersonationToken`, `tokens`, `client_secret`, `current_password`,
+ * `confirmPassword`, `x-api-key`, `SNOWFLAKE_API_KEY`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` and the
+ * like (and, as a deliberate over-redaction, pagination cursors such as `next_page_token`).
+ *
+ * Meeting secrets are listed as exact keys — `passcode`, `host_key`/`hostKey` and
+ * `chat_webhook_url` (a Slack Incoming Webhook URL is itself a bearer credential) — rather than
+ * suffixes, so flags such as `can_view_host_key` stay visible. Session-held one-time values are
+ * exact keys for the same reason: the email-verification `otp` and the OAuth CSRF nonces
+ * `profileAuthState` / `socialAuthState` (a broad `state` match would hide ordinary status fields).
+ *
+ * Deliberately exact-match (unlike `SENSITIVE_FIELDS`' substring match): this runs on every log
+ * line, so a broad substring like `key` would mask harmless fields such as `cache_key`.
+ */
+export const LOG_CREDENTIAL_KEYS = [
+  'authorization',
+  'proxyauthorization',
+  'cookie',
+  'setcookie',
+  'bearer',
+  'jwt',
+  'sid',
+  'credentials',
+  'passcode',
+  'hostkey',
+  'chatwebhookurl',
+  'otp',
+  'profileauthstate',
+  'socialauthstate',
+] as const;
+
+/** Normalised-key suffixes that mark a value as a credential for the server's log scrubber. See `LOG_CREDENTIAL_KEYS`. */
+export const LOG_CREDENTIAL_KEY_SUFFIXES = ['token', 'tokens', 'secret', 'password', 'passwd', 'passphrase', 'apikey', 'privatekey'] as const;
+
+/**
+ * Bounds for the server's log scrubber walk, so a huge or deeply nested object handed to the logger
+ * cannot make each log call unboundedly expensive. `MAX_NODES` is one budget per log call (or per
+ * error, or per set of child bindings), charged per top-level field, array element and object
+ * property; once it is spent the rest of the container is replaced by a single `[Truncated]`
+ * (array entry or object key), and anything nested deeper than `MAX_DEPTH` is logged as
+ * `[Truncated]` — never passed through unscrubbed. So a very large logged array loses its tail; log
+ * a count or a sample instead of a whole result set.
+ */
+export const LOG_SCRUB_LIMITS = {
+  MAX_DEPTH: 20,
+  MAX_NODES: 10_000,
+} as const;
 
 /**
  * Standard HTTP header names with correct casing

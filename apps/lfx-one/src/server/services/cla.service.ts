@@ -276,6 +276,8 @@ export function normalizeGithubId(rawUserId: string): string | null {
  * Two server-side sources are unioned; both are re-verified upstream (EasyCLA drops any email
  * the user does not actually own into `skippedIdentities`), so over-sending is safe:
  *   - the authoritative verified-email list (`user_emails.read`): primary + `verified` alternates.
+ *     That primary carries no verified flag, so it is added only when the session email passed
+ *     the `email_verified` check (`primaryEmail` non-null).
  *   - emails carried on the already-fetched linked identities (`profileData.email`).
  *
  * The session primary is always included as a floor so behaviour never regresses when the
@@ -297,7 +299,9 @@ export function collectClaEmails(primaryEmail: string | null, emailData: EmailMa
   add(primaryEmail);
 
   if (emailData) {
-    add(emailData.primary_email);
+    // The auth-service primary is the same root email as the session claim; skip it when the
+    // session email is unverified (primaryEmail null) so it cannot re-enter as an identity.
+    if (primaryEmail) add(emailData.primary_email);
     for (const alternate of emailData.alternate_emails ?? []) {
       if (alternate.verified) add(alternate.email);
     }

@@ -265,6 +265,15 @@ describe('collectClaEmails', () => {
     expect(collectClaEmails('alice@x.org', emailData as never, [])).toEqual(['alice@x.org', 'verified@x.org']);
   });
 
+  it('omits the auth-service primary when the session email is unverified (primaryEmail null)', () => {
+    const emailData = {
+      primary_email: 'unverified-primary@example.com',
+      alternate_emails: [{ email: 'verified-alt@example.com', verified: true }],
+    };
+
+    expect(collectClaEmails(null, emailData as never, [])).toEqual(['verified-alt@example.com']);
+  });
+
   it('caps the set at the upstream 100-email limit, keeping the session primary first', () => {
     // 150 unique verified alternates would blow past `/v4/my-clas`'s maxItems:100 and 400 the request.
     const emailData = {
