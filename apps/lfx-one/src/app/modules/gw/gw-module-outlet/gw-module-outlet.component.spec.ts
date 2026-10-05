@@ -434,6 +434,16 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('buildLandingUrl project guarantee (GH-3286)', () => {
+    it('injects the project slug so the recovery reload cannot land param-less', () => {
+      // The stored-session recovery branch navigates to buildLandingUrl() directly,
+      // so the guarantee must live here too, not only in the sign-in composition.
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
+      const out = new URL(callPrivate<string>('buildLandingUrl'));
+      expect(out.searchParams.get('project')).toBe('agentic-ai-foundation');
+    });
+  });
+
   describe('buildSignInReturnUrl (GH-3286)', () => {
     // The composition startSignIn navigates with: state nonce + project-param guarantee.
     // jsdom will not let window.location.assign be stubbed, so this pure method is the

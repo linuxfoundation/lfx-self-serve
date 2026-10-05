@@ -21,10 +21,11 @@ import {
   GW_EMBED_SESSION_RECOVERY_KEY,
   GW_EMBED_SIGNIN_STATE_KEY,
   GW_EMBED_SIGNIN_STATE_PARAM,
+  GW_EMBED_PROJECT_QUERY_PARAM,
+  GW_EMBED_PROJECT_ROUTE_PREFIX,
   GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
   GW_EMBED_STORAGE_KEY_PREFIX,
   GW_EMBED_STYLESHEET_PATH,
-  GW_EMBED_PROJECT_ROUTE_PREFIX,
 } from '@lfx-one/shared/constants';
 import { buildGwEmbedStorageSuffix, hasAuthFragment, resolveGwEmbedRoutePrefix } from '@lfx-one/shared/utils';
 import { GwEmbedFatalError, GwEmbedMountHandle, GwEmbedNotification, GwHostContext, GwRuntimeConfig } from '@lfx-one/shared/interfaces';
@@ -634,6 +635,10 @@ export class GwModuleOutletComponent {
     // only risks a later arrival looking like a fresh sign-in return.
     const url = new URL(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}${window.location.search}`);
     url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    // Applied here, not only in buildSignInReturnUrl: the stored-session recovery reload
+    // navigates to this URL directly, and a param-less reload hits the same guard bounce
+    // the sign-in return did (ensureProjectParam is idempotent for the other caller).
+    this.ensureProjectParam(url);
     return url.toString();
   }
 
@@ -664,14 +669,14 @@ export class GwModuleOutletComponent {
    * unchanged — the return then behaves exactly as before this guarantee.
    */
   private ensureProjectParam(url: URL): void {
-    if (url.searchParams.get('project')) {
+    if (url.searchParams.get(GW_EMBED_PROJECT_QUERY_PARAM)) {
       return;
     }
     const context =
       this.routePrefix === GW_EMBED_PROJECT_ROUTE_PREFIX ? this.projectContextService.selectedProject() : this.projectContextService.selectedFoundation();
     const slug = context?.slug;
     if (slug) {
-      url.searchParams.set('project', slug);
+      url.searchParams.set(GW_EMBED_PROJECT_QUERY_PARAM, slug);
     }
   }
 
