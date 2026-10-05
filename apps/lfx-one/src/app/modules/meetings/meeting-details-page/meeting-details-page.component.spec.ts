@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ButtonComponent } from '@components/button/button.component';
 import { Meeting, MeetingDetailsLoadStatus, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsPageComponent } from './meeting-details-page.component';
@@ -23,12 +24,16 @@ describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let refresh: ReturnType<typeof vi.fn>;
+  let retrying: WritableSignal<boolean>;
+  let failureCount: WritableSignal<number>;
 
   const meeting = { id: 'meeting-1', title: 'Weekly Sync', project: {} as PublicMeetingProject } as unknown as Meeting & { project: PublicMeetingProject };
 
   beforeEach(async () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
     refresh = vi.fn();
+    retrying = signal(false);
+    failureCount = signal(1);
 
     await TestBed.configureTestingModule({
       imports: [MeetingDetailsPageComponent],
@@ -36,8 +41,8 @@ describe('MeetingDetailsPageComponent', () => {
     })
       .overrideComponent(MeetingDetailsPageComponent, {
         set: {
-          imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderStubComponent, ImpersonationBannerStubComponent],
-          providers: [{ provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh } }],
+          imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderStubComponent, ImpersonationBannerStubComponent, SkeletonModule],
+          providers: [{ provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount } }],
         },
       })
       .compileComponents();
@@ -86,8 +91,22 @@ describe('MeetingDetailsPageComponent', () => {
     expect(error?.getAttribute('role')).toBe('alert');
     expect(query('meeting-content-column')).toBeNull();
 
-    error?.querySelector('button')?.click();
+    query('meeting-error-retry-button')?.querySelector('button')?.click();
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the retry in progress, and changes the alert copy when a retry fails again', () => {
+    show('error');
+    expect(query('meeting-error-state')?.textContent).toContain('Something went wrong loading this meeting.');
+
+    retrying.set(true);
+    fixture.detectChanges();
+    expect(query('meeting-error-retry-button')?.querySelector('button')?.disabled).toBe(true);
+
+    retrying.set(false);
+    failureCount.set(2);
+    fixture.detectChanges();
+    expect(query('meeting-error-state')?.textContent).toContain("We still couldn't load this meeting.");
   });
 
   it('keeps the page shell in every branch, for the gate e2e to find', () => {

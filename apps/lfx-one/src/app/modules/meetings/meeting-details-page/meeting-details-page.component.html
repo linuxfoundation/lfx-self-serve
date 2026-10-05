@@ -17,9 +17,22 @@
                /meetings/not-found. A later background refresh failing on a working page does not either. -->
           <div class="flex flex-col items-center gap-3 py-24 text-center" role="alert" data-testid="meeting-error-state">
             <i class="fa-light fa-triangle-exclamation text-4xl text-[var(--md-text-muted)]" aria-hidden="true"></i>
-            <p class="text-lg text-[var(--md-text-heading)]">Something went wrong loading this meeting.</p>
+            <!-- The copy changes after a failed retry, so the alert is announced again rather than
+                 staying silent when nothing new appears to happen. -->
+            @if (state.failureCount() > 1) {
+              <p class="text-lg text-[var(--md-text-heading)]">We still couldn't load this meeting.</p>
+            } @else {
+              <p class="text-lg text-[var(--md-text-heading)]">Something went wrong loading this meeting.</p>
+            }
             <p class="text-sm text-[var(--md-text-muted)]">Check your connection and try again.</p>
-            <lfx-button label="Try again" icon="fa-light fa-arrows-rotate" [outlined]="true" size="small" (onClick)="state.refresh()" />
+            <lfx-button
+              label="Try again"
+              icon="fa-light fa-arrows-rotate"
+              [outlined]="true"
+              size="small"
+              [loading]="state.retrying()"
+              (onClick)="state.refresh()"
+              data-testid="meeting-error-retry-button" />
           </div>
         }
         @case ('ready') {
@@ -35,9 +48,9 @@
           <div role="status" aria-live="polite" data-testid="meeting-skeleton">
             <span class="sr-only">Loading meeting details…</span>
             <div class="flex flex-col gap-3" aria-hidden="true">
-              <div class="md-skeleton h-[16px] w-[160px]"></div>
-              <div class="md-skeleton h-[39px] w-3/5"></div>
-              <div class="md-skeleton h-[26px] w-[320px] max-w-full"></div>
+              <p-skeleton height="16px" width="160px" />
+              <p-skeleton height="39px" width="60%" />
+              <p-skeleton height="26px" width="320px" styleClass="max-w-full" />
             </div>
             <ng-container [ngTemplateOutlet]="columns" />
           </div>
@@ -54,16 +67,16 @@
 <ng-template #columns>
   <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row min-[921px]:items-start min-[921px]:gap-[44px]">
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
-      <div class="md-skeleton h-[109px]" aria-hidden="true" data-testid="meeting-section-placeholder-occurrences"></div>
-      <div class="md-skeleton h-[220px]" aria-hidden="true" data-testid="meeting-section-placeholder-agenda"></div>
-      <div class="md-skeleton h-[280px]" aria-hidden="true" data-testid="meeting-section-placeholder-materials"></div>
-      <div class="md-skeleton h-[280px]" aria-hidden="true" data-testid="meeting-section-placeholder-discover"></div>
+      <p-skeleton height="109px" aria-hidden="true" data-testid="meeting-section-placeholder-occurrences" />
+      <p-skeleton height="220px" aria-hidden="true" data-testid="meeting-section-placeholder-agenda" />
+      <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-materials" />
+      <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>
     <aside
       class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:top-[115px] min-[921px]:w-[344px] min-[921px]:flex-none"
       aria-label="Meeting actions"
       data-testid="meeting-rail">
-      <div class="md-skeleton h-[320px]" aria-hidden="true" data-testid="meeting-section-placeholder-rail"></div>
+      <p-skeleton height="320px" aria-hidden="true" data-testid="meeting-section-placeholder-rail" />
     </aside>
   </div>
 </ng-template>

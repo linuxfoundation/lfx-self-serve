@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { HeaderComponent } from '@components/header/header.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { UserService } from '@services/user.service';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
@@ -23,7 +24,7 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
  */
 @Component({
   selector: 'lfx-meeting-details-page',
-  imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderComponent, ImpersonationBannerComponent],
+  imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderComponent, ImpersonationBannerComponent, SkeletonModule],
   providers: [MeetingDetailsStateService],
   templateUrl: './meeting-details-page.component.html',
   styleUrl: './meeting-details-page.component.scss',

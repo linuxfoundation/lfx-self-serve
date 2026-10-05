@@ -40,6 +40,7 @@ own namespace; the two never share a value.
 | `meeting-time-banner`               | The date/time banner                               |
 | `meeting-action-slot`               | The action slot inside the rail (see below)        |
 | `meeting-error-state`               | Terminal error state                               |
+| `meeting-error-retry-button`        | The error state's "Try again" control              |
 | `meeting-invitation-required-state` | The signed-in-outsider / invitation-required state |
 | `meeting-occurrence-edit-button`    | Organizer's "Edit this occurrence" control         |
 | `meeting-occurrence-cancel-button`  | Organizer's "Cancel this occurrence" control       |

@@ -36,7 +36,7 @@ free before naming any V2 component. The URL, `/meetings/:id`, does not change.
 ```text
 modules/meetings/
 ├── meeting-details-gate/        # the flag gate (V2-01, #2873) — the only file that knows both trees
-├── meeting-details-page/        # V2 page — the E1-01 shell replaces the scaffold body
+├── meeting-details-page/        # V2 page — the E1-01 shell and its MeetingDetailsStateService
 │   └── components/              # V2-only components (created by the first Phase 1 PR that needs one)
 ├── meeting-join-v1/             # V1 page — untouched, deleted when V2 ships
 └── components/                  # meetings-module components; V1 already uses several
@@ -47,7 +47,8 @@ modules/meetings/
 - **Shared app wrappers** (`app/shared/components/`: `button`, `card`, `tag`, `avatar`, `select`,
   `table`, `empty-state` and the rest listed in `spec.md` § Reuse before you create) are used by both
   trees. V1 already imports `button`, `card`, `tag`, `expandable-text`, `header` and
-  `impersonation-banner`. The scaffold uses `empty-state`.
+  `impersonation-banner`. The E1-01 shell uses `button`, `header` and `impersonation-banner`, plus
+  PrimeNG's `p-skeleton` (as V1 does; there is no wrapper) pointed at the V2 tokens.
 - **Meetings-module components** (`modules/meetings/components/`) that V1 imports, such as
   `meeting-organizer`, `meeting-registrants-display`, `rsvp-button-group`, `guest-form`,
   `meeting-summary-modal` and `transcript-modal`, are available to V2 as they are. A V2 need they

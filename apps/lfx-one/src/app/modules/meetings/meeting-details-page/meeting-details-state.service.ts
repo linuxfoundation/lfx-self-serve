@@ -44,8 +44,19 @@ export class MeetingDetailsStateService {
   public readonly loadedViaPastMeetingId = signal(false);
   /** The past endpoint's `full_access`; false for an upcoming meeting. */
   public readonly pastMeetingFullAccess = signal(false);
-  /** The meeting password from `?password=`, or else from the composer's navigation state. */
+  /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
   public readonly password = signal<string | null>(null);
+  /**
+   * The password only when it is already in this page's own address bar.
+   * @description Anything that writes a password into a link (an occurrence or join URL) MUST read
+   * this, never `password`: the composer passes its password in navigation state precisely to keep
+   * it out of URLs, the history, `Referer` headers and proxy logs.
+   */
+  public readonly urlPassword = signal<string | null>(null);
+  /** True from a retry until that lookup settles, so the error state can show progress. */
+  public readonly retrying = signal(false);
+  /** Failed lookups in a row for the current route; reset by a success or a route change. */
+  public readonly failureCount = signal(0);
   private readonly loadFailed = signal(false);
   // Route id the pipeline is attempting, set as soon as a route change is observed.
   private readonly routeId = signal<string | null>(null);
@@ -78,6 +89,7 @@ export class MeetingDetailsStateService {
 
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
+    this.retrying.set(true);
     this.refresh$.next();
   }
 
@@ -100,6 +112,7 @@ export class MeetingDetailsStateService {
         const meetingId = params.get('id');
         if (meetingId !== this.routeId()) {
           this.loadFailed.set(false);
+          this.failureCount.set(0);
         }
         this.routeId.set(meetingId);
       }),
@@ -110,6 +123,7 @@ export class MeetingDetailsStateService {
         this.applyPassword(queryParams);
 
         if (!meetingId) {
+          this.retrying.set(false);
           void this.router.navigate(['/meetings/not-found']);
           return EMPTY;
         }
@@ -118,9 +132,11 @@ export class MeetingDetailsStateService {
       }),
       map((res) => ({ ...res.meeting, project: res.project })),
       tap((meeting) => {
-        // Only a settled success clears a terminal error, so a seeded error view is not reset
-        // before the refetch it triggers has actually succeeded.
+        // For the same route only a settled success clears a terminal error (a route change resets
+        // it above), so a seeded error view is not reset before its refetch has succeeded.
         this.loadFailed.set(false);
+        this.failureCount.set(0);
+        this.retrying.set(false);
         this.resolvedRouteId.set(this.routeId());
         if (isPlatformServer(this.platformId)) {
           this.transferState.set(this.stateKey, {
@@ -145,7 +161,7 @@ export class MeetingDetailsStateService {
         this.pastMeetingFullAccess.set(res.full_access);
       }),
       map((res: PublicPastMeetingResponse) => ({ meeting: res.meeting, project: res.project })),
-      catchError((error) => this.handleLookupError(error.status, [400, 403, 404]))
+      catchError((error) => this.handleLookupError(meetingId, error, [400, 403, 404]))
     );
   }
 
@@ -156,17 +172,21 @@ export class MeetingDetailsStateService {
         this.pastMeetingFullAccess.set(false);
       }),
       // An id with no hyphen may still be a past meeting: the upcoming endpoint 404s, the past one answers.
-      catchError((error) => (error.status === 404 ? this.fetchPast(meetingId) : this.handleLookupError(error.status, [400, 403])))
+      catchError((error) => (error.status === 404 ? this.fetchPast(meetingId) : this.handleLookupError(meetingId, error, [400, 403])))
     );
   }
 
-  private handleLookupError(status: number, notFoundStatuses: number[]): Observable<never> {
-    if (notFoundStatuses.includes(status)) {
+  private handleLookupError(meetingId: string, error: { status?: number }, notFoundStatuses: number[]): Observable<never> {
+    this.retrying.set(false);
+    // `getPublicMeeting` logs its own failures; `getPublicPastMeeting` does not, so log here.
+    console.error('Failed to load meeting details', meetingId, error);
+    if (notFoundStatuses.includes(error.status ?? 0)) {
       void this.router.navigate(['/meetings/not-found']);
       return EMPTY;
     }
 
     this.loadFailed.set(true);
+    this.failureCount.update((count) => count + 1);
     if (isPlatformServer(this.platformId)) {
       this.transferState.set(this.stateKey, {
         meeting: null,
@@ -182,7 +202,9 @@ export class MeetingDetailsStateService {
   // composer's post-create link passes the password in navigation state instead, to keep it out of
   // the address bar; `history` is browser-only, so the server only ever sees the param.
   private applyPassword(queryParams: ParamMap): void {
-    this.password.set(queryParams.get('password') || this.statePassword());
+    const fromQuery = queryParams.get('password');
+    this.urlPassword.set(fromQuery);
+    this.password.set(fromQuery || this.statePassword());
   }
 
   private statePassword(): string | null {

@@ -8,7 +8,7 @@ import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
 import { Meeting, MeetingJoinPageState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsSeedService } from '../meeting-details-gate/meeting-details-seed.service';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
@@ -64,7 +64,11 @@ describe('MeetingDetailsStateService', () => {
     getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
+    // Lookup failures are logged on purpose; keep the test output readable.
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   describe('first paint', () => {
     it('shows the skeleton, then the page, when there is no seed', async () => {
@@ -168,6 +172,38 @@ describe('MeetingDetailsStateService', () => {
       expect(state.status()).toBe('ready');
     });
 
+    it.each([400, 403, 404])('sends a %s from the past endpoint to not-found for a composite id', async (status) => {
+      paramMap$.next(convertToParamMap({ id: '99152950841-1700000000000' }));
+      getPublicPastMeeting.mockReturnValue(throwError(() => ({ status })));
+      create();
+
+      await settle();
+
+      expect(navigate).toHaveBeenCalledWith(['/meetings/not-found']);
+    });
+
+    it('shows the error branch, and logs, on a 5xx from the past endpoint', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
+      getPublicPastMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      const state = create();
+
+      await settle();
+
+      expect(state.status()).toBe('error');
+      expect(navigate).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledWith('Failed to load meeting details', MEETING_ID, { status: 500 });
+    });
+
+    it('sends a route with no id to not-found', async () => {
+      paramMap$.next(convertToParamMap({}));
+      create();
+
+      await settle();
+
+      expect(navigate).toHaveBeenCalledWith(['/meetings/not-found']);
+      expect(getPublicMeeting).not.toHaveBeenCalled();
+    });
+
     it('passes the ?password= param to the lookup', async () => {
       queryParamMap$.next(convertToParamMap({ password: 'secret' }));
       create();
@@ -175,6 +211,79 @@ describe('MeetingDetailsStateService', () => {
       await settle();
 
       expect(getPublicMeeting).toHaveBeenCalledWith(MEETING_ID, 'secret');
+    });
+  });
+
+  describe('retry', () => {
+    it('reports progress while a retry is in flight', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      const state = create();
+      await settle();
+
+      const pending$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(pending$);
+      state.refresh();
+      expect(state.retrying()).toBe(true);
+
+      await settle();
+      pending$.next({ meeting: buildMeeting(), project });
+
+      expect(state.retrying()).toBe(false);
+      expect(state.status()).toBe('ready');
+    });
+
+    it('counts a retry that fails again, so the error state can say so', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      const state = create();
+      await settle();
+      expect(state.failureCount()).toBe(1);
+
+      state.refresh();
+      await settle();
+
+      expect(state.status()).toBe('error');
+      expect(state.retrying()).toBe(false);
+      expect(state.failureCount()).toBe(2);
+    });
+  });
+
+  describe('password', () => {
+    let historyState: unknown;
+
+    beforeEach(() => {
+      historyState = null;
+      vi.spyOn(history, 'state', 'get').mockImplementation(() => historyState);
+    });
+
+    it("uses the composer's navigation-state password when the URL has none, but never as urlPassword", async () => {
+      historyState = { password: 'from-composer' };
+      const state = create();
+
+      await settle();
+
+      expect(getPublicMeeting).toHaveBeenCalledWith(MEETING_ID, 'from-composer');
+      expect(state.password()).toBe('from-composer');
+      expect(state.urlPassword()).toBeNull();
+    });
+
+    it('prefers the ?password= param over the navigation state', async () => {
+      historyState = { password: 'from-composer' };
+      queryParamMap$.next(convertToParamMap({ password: 'from-url' }));
+      const state = create();
+
+      await settle();
+
+      expect(getPublicMeeting).toHaveBeenCalledWith(MEETING_ID, 'from-url');
+      expect(state.urlPassword()).toBe('from-url');
+    });
+
+    it.each([{ password: '' }, { password: 42 }, { other: 'x' }])('ignores a navigation state of %o', async (stated) => {
+      historyState = stated;
+      create();
+
+      await settle();
+
+      expect(getPublicMeeting).toHaveBeenCalledWith(MEETING_ID, null);
     });
   });
 
@@ -196,6 +305,21 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.status()).toBe('ready');
       expect(state.meeting()?.title).toBe('Other Sync');
+    });
+
+    it('clears an error from the previous meeting once the next one loads', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      const state = create();
+      await settle();
+      expect(state.status()).toBe('error');
+
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting('meeting-2', 'Other Sync'), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      expect(state.status()).toBe('loading');
+      await settle();
+
+      expect(state.status()).toBe('ready');
+      expect(state.failureCount()).toBe(0);
     });
 
     it('shows the error branch, not the previous meeting, when the new lookup fails', async () => {

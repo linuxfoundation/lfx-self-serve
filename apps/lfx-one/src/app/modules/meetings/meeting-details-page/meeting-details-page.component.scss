@@ -3,23 +3,9 @@
 
 @use './meeting-details-page.tokens';
 
-// Skeleton block for the shell's loading state and its section placeholders. Custom SCSS rather
-// than Tailwind because it is one rule reused across the template, and the reduced-motion case
-// needs its own media query.
-.md-skeleton {
-  border-radius: var(--md-radius-lg);
-  background: var(--md-surface-hover);
-  animation: md-skeleton-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes md-skeleton-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .md-skeleton {
-    animation: none;
-  }
+// Points PrimeNG's skeleton at the V2 tokens, inside the scope wrapper only, so the shell's
+// `<p-skeleton>` blocks match the prototype without touching the app-wide skeleton.
+.meeting-details-v2 {
+  --p-skeleton-background: var(--md-surface-hover);
+  --p-skeleton-border-radius: var(--md-radius-lg);
 }
