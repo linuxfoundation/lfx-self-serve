@@ -101,6 +101,36 @@ describe('AudienceQaPanelComponent', () => {
     expect(listRefValue()).toBe('602');
   });
 
+  it('follows a compose after a reset, so QA does not audit the previous master', () => {
+    // A new discovery clears the compose result, so the suggestion goes 601 -> '' -> 602.
+    // Ignoring the empty step left 601 in the field, and 602 was then refused.
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '602');
+    fixture.detectChanges();
+
+    expect(listRefValue(), 'Run QA would audit the previous master').toBe('602');
+  });
+
+  it('keeps a typed reference across a suggestion reset', () => {
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+    const input = host().querySelector<HTMLInputElement>('[data-testid="audience-qa-panel-list-ref"]');
+    if (input === null) {
+      throw new Error('the list-ref input is not rendered');
+    }
+    input.value = '777';
+    input.dispatchEvent(new Event('input'));
+    fixture.componentRef.setInput('suggestedListRef', '');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '602');
+    fixture.detectChanges();
+
+    expect(listRefValue(), 'an operator-entered reference was overwritten').toBe('777');
+  });
+
   it('does not carry a verdict across a project change', () => {
     // The parent stays mounted across foundation changes and this child watched nothing, so a
     // PASS from portal A was rendered under portal B — and picking a candidate then submitted

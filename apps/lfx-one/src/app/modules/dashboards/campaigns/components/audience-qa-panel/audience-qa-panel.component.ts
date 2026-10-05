@@ -130,8 +130,13 @@ export class AudienceQaPanelComponent {
     toObservable(this.suggestedListRef)
       .pipe(startWith(''), distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previous, next]) => {
+        // Follows the suggestion while the field still MIRRORS it -- including when it clears. A
+        // new discovery clears the compose result, so the suggestion goes 601 -> '' -> 602; ignoring
+        // the empty step left 601 in the field, the next step then compared it against '' and
+        // refused 602, and Run QA audited the previous master. A value the operator typed differs
+        // from the previous suggestion and is never touched.
         const current = this.listRefControl.value.trim();
-        if (next.trim() !== '' && (current === '' || current === previous.trim())) {
+        if (current === '' || current === previous.trim()) {
           this.listRefControl.setValue(next.trim());
         }
       });
