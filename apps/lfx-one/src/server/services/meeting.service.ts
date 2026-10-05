@@ -823,7 +823,9 @@ export class MeetingService {
    *
    * The query-service applies FGA filtering so that any meeting viewer can read registrant records
    * on the tolerant listing — which is by design for community-facing meetings. The committee import
-   * flow imposes stricter business-logic constraints beyond viewer access: the caller must have
+   * flow imposes stricter business-logic constraints beyond viewer access: the caller must be an
+   * organizer of the meeting (#2827 — otherwise any eligible committee member could export the
+   * guest list of a meeting they merely can view), and must have
    * writer access on `committeeUid`, or be a member of it when it's invite_only
    * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
    * authorized to send invites for that committee upstream, via their own bearer token, so
@@ -833,18 +835,21 @@ export class MeetingService {
    * partial-failure states (this exact failure mode broke in PCC).
    *
    * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws MicroserviceError if the organizer check itself could not be resolved.
    * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
    */
   public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
-    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+    // Strict organizer probe on `v1_meeting`, for the reasons in `getAuthorizedCompleteRegistrants`.
+    const [committee, meeting, isCommitteeWriter, isMeetingOrganizer] = await Promise.all([
       this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
       this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
       this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+      this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' }),
     ]);
 
     const isCommitteeMember = !!committee.my_role;
     const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
-    if (!canImport || committee.project_uid !== meeting.project_uid) {
+    if (!isMeetingOrganizer || !canImport || committee.project_uid !== meeting.project_uid) {
       throw new AuthorizationError('Not authorized to import registrants for this meeting', {
         operation: 'get_authorized_registrants_for_import',
         service: 'meeting_service',

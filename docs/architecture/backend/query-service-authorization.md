@@ -111,8 +111,9 @@ meeting composer's Guests editor (which reconciles edits against the saved list)
 "import registrants" flow (which fan-outs invites from the roster) — where returning a partial
 result without warning would silently misrepresent the data. The checks enforce stricter
 business-logic constraints beyond the viewer-level FGA filter that the tolerant listing relies on:
-organizer for the composer; committee writer, or committee member when the committee's
-`join_mode === 'invite_only'`, for the import flow.
+organizer for the composer; for the import flow, organizer of the meeting **and** committee
+writer, or committee member when the committee's `join_mode === 'invite_only'`. The import
+picker lists only meetings the caller organizes, to match.
 
 **Meeting guest lists.** The tolerant registrant listing (`GET /api/meetings/:uid/registrants`) and
 `GET /api/meetings/:uid/rsvp` also go through query-service, but its viewer filter lets anyone who
