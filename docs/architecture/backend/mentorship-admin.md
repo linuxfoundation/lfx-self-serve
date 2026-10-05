@@ -22,15 +22,16 @@ The program list and the program page's header, tab counts and Current Mentees t
 
 `getProgramPage` runs five upstream reads with `Promise.allSettled`, all with the caller's bearer token:
 
-| Read                                                   | Feeds                                                                       |
-| ------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `GET /programs/{id}/header`                            | The program. Required: a failure is rethrown (404 and 403 stay as they are) |
-| `GET /programs/{id}/management-summary`                | `pastMentees` and `terms` counts, and the status flags                      |
-| `GET /programs/{id}/applications?type=current&limit=1` | `currentMentees` (`meta.total`)                                             |
-| `GET /programs/{id}/member-management?limit=1`         | `mentors` (`meta.total`)                                                    |
-| `GET /programs/{id}/terms?limit=100`                   | The term options (open and closed, minus deleted)                           |
+| Read                                                   | Feeds                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------ |
+| `GET /programs/{id}/header`                            | The program. Required: a failure is rethrown (404 stays 404) |
+| `GET /programs/{id}/management-summary`                | `pastMentees` and `terms` counts, and the status flags       |
+| `GET /programs/{id}/applications?type=current&limit=1` | `currentMentees` (`meta.total`)                              |
+| `GET /programs/{id}/member-management?limit=1`         | `mentors` (`meta.total`)                                     |
+| `GET /programs/{id}/terms`, every page at `limit=100`  | The term options (open and closed, minus deleted)            |
 
-- A failed count read gives `null`, which the header shows as `–`. A failed terms read gives `terms: []`.
+- Upstream lets any program viewer read the header and the terms. The other three reads need a manager, so a 403 on any of them is rethrown and the page shows no-access.
+- Any other failed count read gives `null`, which the header shows as `–`. A failed terms read gives `terms: []`.
 - The header has no `admin_status`, so the page status is derived from the header `status` plus the summary's `has_open_term` and `has_closed_term`.
 - `getProgramMentees` makes one upstream read of `GET /programs/{id}/applications` per call, sending `type`, `status`, `term` (the term id), `search`, `offset` and `limit` (at most 50). It never walks every page, and returns upstream's `meta.total` as `total`. `search` is escaped here (trimmed, cut to 100 characters, `\`, `%` and `_` escaped). An unprovisioned caller gets an empty page.
 - `getApplicationTasks` reads `GET /applications/{id}/tasks` through `listAllMentorshipPages` (page size 100). Only the View Tasks click calls it. The page caches the result per application and clears the cache, collapsing every row, whenever the table reloads.

@@ -30,6 +30,7 @@ import {
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
+import { MicroserviceError } from '../errors';
 import { mapMentorshipAdminHeaderProgram, mapMentorshipAdminProgram } from '../helpers/mentorship-admin-program.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
@@ -94,9 +95,11 @@ export class MentorshipAdminService {
 
   /**
    * One program page: the header, the four tab counts and the term options, from five parallel reads. The header is
-   * required, so its error (404 for an unknown program, 403 for a caller who may not manage it) passes on. Every other
-   * read may fail alone: its count reads `null` and the terms read `[]`. The summary also settles whether a published
-   * program reads `open` or `completed`, so a program whose summary failed reads `open`.
+   * required, so its error (404 for an unknown program) passes on. Upstream lets any viewer read the header, so a 403 on
+   * a manager-only read (the summary, the applications or the members) passes on too: the caller may not manage the
+   * program. Any other failure of those reads leaves its count `null`, and a failed terms read leaves the terms `[]`.
+   * The summary also settles whether a published program reads `open` or `completed`, so a program whose summary
+   * failed reads `open`.
    */
   public async getProgramPage(req: Request, programId: string): Promise<MentorshipAdminProgramPage> {
     logger.debug(req, 'mentorship_admin_get_program', 'Loading mentorship program page', { programId });
@@ -108,11 +111,18 @@ export class MentorshipAdminService {
       read<MentorshipUpstreamProgramManagementSummary>('/management-summary'),
       read<MentorshipUpstreamListResponse<unknown>>('/applications', { type: 'current', limit: 1 }),
       read<MentorshipUpstreamListResponse<unknown>>('/member-management', { limit: 1 }),
-      read<MentorshipUpstreamListResponse<MentorshipUpstreamProgramTerm>>('/terms', { limit: MENTORSHIP_ADMIN_TERMS_MAX_LIMIT }),
+      listAllMentorshipPages<MentorshipUpstreamProgramTerm>(this.microserviceProxy, req, `${base}/terms`, {}, MENTORSHIP_ADMIN_TERMS_MAX_LIMIT),
     ]);
 
     if (header.status === 'rejected') {
       throw header.reason;
+    }
+    const forbidden = [summary, applications, members].find(
+      (result): result is PromiseRejectedResult =>
+        result.status === 'rejected' && result.reason instanceof MicroserviceError && result.reason.statusCode === 403
+    );
+    if (forbidden) {
+      throw forbidden.reason;
     }
 
     const failed = [summary, applications, members, terms].filter((result) => result.status === 'rejected').length;
@@ -137,7 +147,7 @@ export class MentorshipAdminService {
     };
     const termOptions: MentorshipAdminTermOption[] =
       terms.status === 'fulfilled'
-        ? (terms.value.data ?? [])
+        ? terms.value
             .filter((term): term is MentorshipUpstreamProgramTerm & { status: MentorshipTermRowStatus } => term.status === 'open' || term.status === 'closed')
             .map((term) => ({ id: term.id, name: term.name, status: term.status }))
         : [];

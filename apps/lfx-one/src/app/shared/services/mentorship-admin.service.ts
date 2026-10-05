@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   MentorshipAdminMenteesQuery,
@@ -12,6 +12,8 @@ import {
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, throwError } from 'rxjs';
+
+import { strictHttpParams } from '../utils/http-params.utils';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/admin/*` endpoints behind the admin pages.
@@ -24,7 +26,8 @@ export class MentorshipAdminService {
   private readonly http = inject(HttpClient);
 
   public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number }): Observable<MentorshipProgramsResponse> {
-    let httpParams = new HttpParams();
+    // The strict codec keeps a `+` in the search text a `+`.
+    let httpParams = strictHttpParams();
     if (params?.search) httpParams = httpParams.set('search', params.search);
     if (params?.status) httpParams = httpParams.set('status', params.status);
     if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
@@ -40,7 +43,7 @@ export class MentorshipAdminService {
 
   /** One page of a program's mentees for one tab, filtered and searched upstream. */
   public getProgramMentees(programId: string, query: MentorshipAdminMenteesQuery): Observable<MentorshipAdminMenteesResponse> {
-    let httpParams = new HttpParams().set('type', query.type);
+    let httpParams = strictHttpParams().set('type', query.type);
     if (query.status) httpParams = httpParams.set('status', query.status);
     if (query.termId) httpParams = httpParams.set('termId', query.termId);
     if (query.search) httpParams = httpParams.set('search', query.search);

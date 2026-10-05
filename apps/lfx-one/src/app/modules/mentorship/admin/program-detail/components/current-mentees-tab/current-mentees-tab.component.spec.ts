@@ -408,6 +408,26 @@ describe('CurrentMenteesTabComponent', () => {
       expect(fixture.componentInstance['tasksByApplication']().has('app_1')).toBe(false);
     });
 
+    it('keeps the newer read when an older one for the same row finishes late', () => {
+      const older = new Subject<MentorshipApplicantTask[]>();
+      const newer = new Subject<MentorshipApplicantTask[]>();
+      getApplicationTasks.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+      clickViewTasks('app_1');
+
+      fixture.componentInstance['onLazyLoad']({ first: 10 });
+      settle();
+      clickViewTasks('app_1');
+      older.next([]);
+      settle();
+
+      expect(fixture.componentInstance['tasksByApplication']().get('app_1')?.status).toBe('loading');
+
+      newer.next(tasks());
+      settle();
+
+      expect(fixture.componentInstance['tasksByApplication']().get('app_1')).toEqual({ status: 'loaded', tasks: tasks() });
+    });
+
     it('does not render View Tasks when the mentee has no assigned tasks', () => {
       getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_no_tasks', tasksTotal: undefined, tasksSubmitted: undefined })], total: 1 }));
       fixture.componentInstance['onRetry']();

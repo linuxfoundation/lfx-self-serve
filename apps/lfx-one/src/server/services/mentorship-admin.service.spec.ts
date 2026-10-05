@@ -217,7 +217,29 @@ describe('MentorshipAdminService.getProgramPage', () => {
     const queries = Object.fromEntries(spy.mock.calls.map(([, , path, , query]) => [path, query]));
     expect(queries[`${PROGRAM_PATH}/applications`]).toEqual({ type: 'current', limit: 1 });
     expect(queries[`${PROGRAM_PATH}/member-management`]).toEqual({ limit: 1 });
-    expect(queries[`${PROGRAM_PATH}/terms`]).toEqual({ limit: 100 });
+    expect(queries[`${PROGRAM_PATH}/terms`]).toEqual({ limit: 100, offset: 0 });
+  });
+
+  it('reads every page of the terms at 100 a page', async () => {
+    const term = (n: number) => ({ id: `t${n}`, name: `Term ${n}`, status: 'closed' });
+    const routes = pageRoutes();
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockImplementation(async (_req, _service, path: string, _method, query) => {
+      if (path === `${PROGRAM_PATH}/terms`) {
+        const offset = (query as { offset: number }).offset;
+        const count = offset === 0 ? 100 : 5;
+        return { data: Array.from({ length: count }, (_, i) => term(offset + i)), meta: { total: 105, limit: 100, offset } } as never;
+      }
+      return routes[path] as never;
+    });
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.terms).toHaveLength(105);
+    const termQueries = spy.mock.calls.filter(([, , path]) => path === `${PROGRAM_PATH}/terms`).map(([, , , , query]) => query);
+    expect(termQueries).toEqual([
+      { limit: 100, offset: 0 },
+      { limit: 100, offset: 100 },
+    ]);
   });
 
   it('reads a published program with only closed terms as completed', async () => {
@@ -248,6 +270,23 @@ describe('MentorshipAdminService.getProgramPage', () => {
     stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/header`]: new MicroserviceError('nope', statusCode, 'UPSTREAM') }));
 
     await expect(service.getProgramPage(buildReq(), PROGRAM_ID)).rejects.toMatchObject({ statusCode });
+  });
+
+  it.each(['management-summary', 'applications', 'member-management'])(
+    'passes a 403 on the manager-only %s read on, since any viewer may read the header',
+    async (route) => {
+      stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/${route}`]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN') }));
+
+      await expect(service.getProgramPage(buildReq(), PROGRAM_ID)).rejects.toMatchObject({ statusCode: 403 });
+    }
+  );
+
+  it('keeps the page when a manager-only read fails with anything but a 403', async () => {
+    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/management-summary`]: new MicroserviceError('Bad gateway', 502, 'UPSTREAM') }));
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.tabCounts).toMatchObject({ pastMentees: null, terms: null, currentMentees: 7 });
   });
 
   it('shows an unrecognised program status as pending review and logs the id and status only', async () => {

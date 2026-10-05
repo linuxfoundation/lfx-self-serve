@@ -181,19 +181,23 @@ export class CurrentMenteesTabComponent {
   }
 
   private loadTasks(applicationId: string): void {
-    this.setTasksState(applicationId, { status: 'loading', tasks: [] });
+    const loading: MentorshipAdminTasksState = { status: 'loading', tasks: [] };
+    this.setTasksState(applicationId, loading);
     this.mentorshipAdminService
       .getApplicationTasks(applicationId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (tasks) => this.setTasksIfCurrent(applicationId, { status: 'loaded', tasks }),
-        error: () => this.setTasksIfCurrent(applicationId, { status: 'failed', tasks: [] }),
+        next: (tasks) => this.setTasksIfCurrent(applicationId, loading, { status: 'loaded', tasks }),
+        error: () => this.setTasksIfCurrent(applicationId, loading, { status: 'failed', tasks: [] }),
       });
   }
 
-  /** A table reload clears the cache; an answer for a row that is no longer cached belongs to the old page, so it is dropped. */
-  private setTasksIfCurrent(applicationId: string, state: MentorshipAdminTasksState): void {
-    if (!this.tasksByApplication().has(applicationId)) return;
+  /**
+   * Applies an answer only while the row still holds the loading state its read set. A table reload clears the cache,
+   * and a later read (after a reload or a Retry) sets its own loading state, so an older answer arriving late is dropped.
+   */
+  private setTasksIfCurrent(applicationId: string, loading: MentorshipAdminTasksState, state: MentorshipAdminTasksState): void {
+    if (this.tasksByApplication().get(applicationId) !== loading) return;
     this.setTasksState(applicationId, state);
   }
 

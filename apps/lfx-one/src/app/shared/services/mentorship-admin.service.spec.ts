@@ -85,6 +85,18 @@ describe('MentorshipAdminService', () => {
     expect(total).toBe(42);
   });
 
+  it('keeps a plus in the search text a plus on the wire, for both searches', () => {
+    service.getPrograms({ search: 'c++' }).subscribe();
+    service.getProgramMentees('p1', { type: 'current', search: 'ada+lfx@mentee.example' }).subscribe();
+
+    const programs = http.expectOne((r) => r.url === '/api/mentorship/admin/programs');
+    const mentees = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentees');
+    expect(programs.request.urlWithParams).toContain('search=c%2B%2B');
+    expect(mentees.request.urlWithParams).toContain('search=ada%2Blfx%40mentee.example');
+    programs.flush({ data: [], total: 0 } satisfies MentorshipProgramsResponse);
+    mentees.flush({ data: [], total: 0 } satisfies MentorshipAdminMenteesResponse);
+  });
+
   it('leaves unset mentee filters off the query', () => {
     service.getProgramMentees('p1', { type: 'current' }).subscribe();
 
