@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, Signal } from '@angular/core';
+import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -43,6 +43,9 @@ export class MeetingIdentityBarComponent {
   /** True once the page header has scrolled out of view; the bar then shows the meeting's identity. */
   public readonly condensed = input(false);
 
+  /** Whether the account menu is open, for the trigger's `aria-expanded`. */
+  protected readonly accountMenuOpen = signal(false);
+
   protected readonly userMenuItems: MenuItem[] = [
     { label: 'Profile', icon: 'fa-light fa-user', routerLink: '/profile' },
     { separator: true },
@@ -73,7 +76,7 @@ export class MeetingIdentityBarComponent {
       if (!meeting) {
         return '';
       }
-      const status = MEETING_TIME_STATE_LABELS[resolveTimeState(meeting, getCurrentOrNextOccurrence(meeting), new Date())];
+      const status = MEETING_TIME_STATE_LABELS[resolveTimeState(meeting, getCurrentOrNextOccurrence(meeting), this.state.now())];
       return [meeting.project?.name, status].filter(Boolean).join(' · ');
     });
   }

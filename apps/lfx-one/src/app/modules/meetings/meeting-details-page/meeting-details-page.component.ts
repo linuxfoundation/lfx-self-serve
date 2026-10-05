@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterRenderEffect, Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { afterRenderEffect, Component, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { UserService } from '@services/user.service';
@@ -36,20 +36,30 @@ export class MeetingDetailsPageComponent {
   /** True once the page header has scrolled behind the sticky identity bar. */
   protected readonly headerOutOfView = signal(false);
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
+  private readonly bar = viewChild('identityBar', { read: ElementRef });
+  private readonly platformId = inject(PLATFORM_ID);
 
   public constructor() {
     // An IntersectionObserver rather than a scroll listener, re-attached whenever the header element
     // changes (it exists only in the `ready` branch). `afterRenderEffect` never runs on the server.
     afterRenderEffect((onCleanup) => {
       const header = this.header()?.nativeElement;
-      if (!header || typeof IntersectionObserver === 'undefined') {
+      // Read so the observer is rebuilt when the impersonation banner moves the bar down.
+      this.userService.impersonating();
+      // The feature check covers runtimes without the API (old browsers, jsdom).
+      if (!header || !isPlatformBrowser(this.platformId) || typeof IntersectionObserver === 'undefined') {
         this.headerOutOfView.set(false);
         return;
       }
 
-      // The top margin is the identity bar's height (83px): the header counts as gone once it is
-      // behind the bar, not once it leaves the viewport.
-      const observer = new IntersectionObserver(([entry]) => this.headerOutOfView.set(!entry.isIntersecting), { rootMargin: '-83px 0px 0px 0px' });
+      // The header counts as gone once it is behind the sticky bar, not once it leaves the viewport,
+      // so the top margin is where the bar ends: measured, because it moves with the impersonation
+      // banner and with the bar's own content.
+      const barBottom = Math.round((this.bar()?.nativeElement as HTMLElement | undefined)?.querySelector('header')?.getBoundingClientRect().bottom ?? 0);
+      // A fast scroll can deliver several entries in one batch; the last is the current state.
+      const observer = new IntersectionObserver((entries) => this.headerOutOfView.set(!entries[entries.length - 1].isIntersecting), {
+        rootMargin: `-${barBottom}px 0px 0px 0px`,
+      });
       observer.observe(header);
       onCleanup(() => observer.disconnect());
     });

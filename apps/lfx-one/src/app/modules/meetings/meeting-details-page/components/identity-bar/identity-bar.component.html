@@ -7,6 +7,7 @@
      secondary copy (sign-in prompt, Create LFX account, account name and email, My Meetings label). -->
 <!-- Sticks below the impersonation banner when it is showing (it is fixed, `min-h-12`). -->
 <header
+  #bar
   class="sticky z-50 bg-[var(--md-surface-page)]"
   [class.top-0]="!userService.impersonating()"
   [class.top-12]="userService.impersonating()"
@@ -44,10 +45,16 @@
               </span>
             }
             <div class="flex min-w-0 flex-col gap-[2px] leading-[1.15]">
-              <span class="max-w-[44vw] truncate text-[14.5px] font-bold text-[var(--md-text-heading)]" data-testid="meeting-identity-bar-title">{{
-                meeting.title
+              <!-- Single line, as the prototype; the native title shows the full text when it is cut. -->
+              <span
+                class="max-w-[44vw] truncate text-[14.5px] font-bold text-[var(--md-text-heading)]"
+                [attr.title]="meeting.title"
+                data-testid="meeting-identity-bar-title"
+                >{{ meeting.title }}</span
+              >
+              <span class="truncate text-[11.5px] text-[var(--md-text-muted)]" [attr.title]="subtitle()" data-testid="meeting-identity-bar-subtitle">{{
+                subtitle()
               }}</span>
-              <span class="truncate text-[11.5px] text-[var(--md-text-muted)]" data-testid="meeting-identity-bar-subtitle">{{ subtitle() }}</span>
             </div>
           </div>
         }
@@ -68,7 +75,9 @@
             (click)="userMenu.toggle($event)"
             class="flex max-w-[260px] flex-none items-center gap-[11px] rounded-full border border-[var(--md-border)] bg-[var(--md-surface-card)] py-[5px] pl-[6px] pr-[6px] text-left hover:border-[var(--md-border-strong)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none min-[641px]:pr-[14px]"
             aria-haspopup="menu"
+            [attr.aria-expanded]="accountMenuOpen()"
             [attr.aria-label]="'Account menu for ' + (userService.user()?.name || 'your account')"
+            [attr.title]="userService.user()?.email"
             data-testid="meeting-identity-bar-account">
             <lfx-avatar [image]="userService.effectiveAvatarUrl()" icon="fa-light fa-user" [label]="userService.user()?.name" shape="circle" />
             <span class="hidden min-w-0 flex-col leading-[1.2] min-[641px]:flex">
@@ -77,7 +86,15 @@
             </span>
             <i class="fa-light fa-chevron-down ml-[2px] text-[12px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
           </button>
-          <lfx-menu #userMenu [model]="userMenuItems" [popup]="true" appendTo="body" ariaLabel="Account" />
+          <!-- Appended inside the bar, so the overlay stays within the V2 token scope (styling-system.md). -->
+          <lfx-menu
+            #userMenu
+            [model]="userMenuItems"
+            [popup]="true"
+            [appendTo]="bar"
+            ariaLabel="Account"
+            (onShow)="accountMenuOpen.set(true)"
+            (onHide)="accountMenuOpen.set(false)" />
         } @else {
           <span
             class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 min-[641px]:inline"
@@ -95,7 +112,7 @@
           </a>
           <a
             [href]="signInHref()"
-            class="inline-flex h-[34px] flex-none items-center whitespace-nowrap rounded-full border border-[var(--md-accent)] px-[15px] text-[13px] font-semibold text-[var(--md-accent)] hover:bg-[var(--md-accent-bg)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            class="inline-flex h-[34px] flex-none items-center whitespace-nowrap rounded-full border border-[var(--md-accent)] px-[15px] text-[13px] font-semibold text-[var(--md-accent)] hover:border-[var(--md-accent-ink)] hover:bg-[var(--md-accent-bg)] hover:text-[var(--md-accent-ink)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
             data-testid="meeting-identity-bar-sign-in">
             Sign in
           </a>

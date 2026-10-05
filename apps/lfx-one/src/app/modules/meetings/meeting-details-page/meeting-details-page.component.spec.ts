@@ -8,13 +8,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { Meeting, MeetingDetailsLoadStatus, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsPageComponent } from './meeting-details-page.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
 // The identity bar and banner have their own specs; stubbing them keeps this spec on the page's branches.
-@Component({ selector: 'lfx-meeting-identity-bar', template: '' })
+@Component({ selector: 'lfx-meeting-identity-bar', template: '<header></header>' })
 class IdentityBarStubComponent {
   public readonly condensed = input(false);
 }
@@ -52,6 +52,8 @@ describe('MeetingDetailsPageComponent', () => {
     fixture = TestBed.createComponent(MeetingDetailsPageComponent);
     fixture.detectChanges();
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
@@ -133,7 +135,7 @@ describe('MeetingDetailsPageComponent', () => {
       class {
         public constructor(cb: IntersectionObserverCallback, options?: IntersectionObserverInit) {
           callback = cb;
-          expect(options?.rootMargin).toBe('-83px 0px 0px 0px');
+          expect(options?.rootMargin).toBe('-131px 0px 0px 0px');
         }
         public observe(el: Element): void {
           observed = el;
@@ -143,6 +145,11 @@ describe('MeetingDetailsPageComponent', () => {
         }
       }
     );
+
+    // Where the sticky bar ends, e.g. an 83px bar under the 48px impersonation banner.
+    vi.spyOn(fixture.nativeElement.querySelector('lfx-meeting-identity-bar header') as HTMLElement, 'getBoundingClientRect').mockReturnValue({
+      bottom: 131,
+    } as DOMRect);
 
     show('ready');
     await fixture.whenStable();
@@ -159,10 +166,14 @@ describe('MeetingDetailsPageComponent', () => {
     fixture.detectChanges();
     expect(bar().condensed()).toBe(false);
 
+    // A batch with several crossings: the last entry is the current state.
+    callback?.([{ isIntersecting: true }, { isIntersecting: false }] as IntersectionObserverEntry[], {} as IntersectionObserver);
+    fixture.detectChanges();
+    expect(bar().condensed()).toBe(true);
+
     // Leaving the ready branch removes the header, so the observer is torn down with it.
     show('loading');
     await fixture.whenStable();
     expect(disconnect).toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 });

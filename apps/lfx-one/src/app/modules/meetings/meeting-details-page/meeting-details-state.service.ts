@@ -9,7 +9,7 @@ import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDetailsLoadStatus, MeetingJoinPageState, PublicMeetingProject, PublicPastMeetingResponse } from '@lfx-one/shared/interfaces';
 import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
-import { BehaviorSubject, catchError, combineLatest, EMPTY, map, Observable, switchMap, tap, timer } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, EMPTY, interval, map, Observable, switchMap, tap, timer } from 'rxjs';
 
 import { MeetingDetailsSeedService } from '../meeting-details-gate/meeting-details-seed.service';
 
@@ -65,6 +65,12 @@ export class MeetingDetailsStateService {
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
   public readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined>;
+  /**
+   * The current time, ticking every 30 seconds on the browser, so anything derived from the time state
+   * (the identity bar's status, E1-05's pill) moves from upcoming to live to ended while the page is
+   * open. Fixed on the server, where a timer would keep the render from ever becoming stable.
+   */
+  public readonly now: Signal<Date> = this.initNow();
   public readonly matchesRoute: Signal<boolean> = computed(() => this.routeId() === this.resolvedRouteId());
   public readonly status: Signal<MeetingDetailsLoadStatus> = this.initStatus();
 
@@ -91,6 +97,13 @@ export class MeetingDetailsStateService {
   public refresh(): void {
     this.retrying.set(true);
     this.refresh$.next();
+  }
+
+  private initNow(): Signal<Date> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal(new Date()).asReadonly();
+    }
+    return toSignal(interval(30_000).pipe(map(() => new Date())), { initialValue: new Date() });
   }
 
   private initStatus(): Signal<MeetingDetailsLoadStatus> {

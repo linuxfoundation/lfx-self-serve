@@ -995,11 +995,11 @@ export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
  * @description Shared by the sticky identity bar's subtitle (E1-02) and the status pill (E1-05), so
  * the two never disagree about what a meeting is called.
  */
-export const MEETING_TIME_STATE_LABELS: Record<MeetingTimeState, string> = {
+export const MEETING_TIME_STATE_LABELS = {
   before: 'Upcoming',
   live: 'Live',
   ended: 'Ended',
-};
+} as const satisfies Record<MeetingTimeState, string>;
 
 /**
  * TransferState key for the public meeting page's SSR-resolved `MeetingJoinPageState`

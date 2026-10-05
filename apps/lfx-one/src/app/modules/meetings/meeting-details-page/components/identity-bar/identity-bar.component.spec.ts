@@ -3,6 +3,7 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { Meeting, MeetingDetailsLoadStatus, PublicMeetingProject, User } from '@lfx-one/shared/interfaces';
@@ -22,6 +23,7 @@ describe('MeetingIdentityBarComponent', () => {
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let setLens: ReturnType<typeof vi.fn>;
+  let now: WritableSignal<Date>;
 
   // A start a year out, so the subtitle's status is "Upcoming" whatever day the suite runs.
   const start = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
@@ -39,7 +41,8 @@ describe('MeetingIdentityBarComponent', () => {
       imports: [MeetingIdentityBarComponent],
       providers: [
         provideRouter([]),
-        { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting) } },
+        provideNoopAnimations(),
+        { provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), now } },
         {
           provide: UserService,
           useValue: {
@@ -77,6 +80,7 @@ describe('MeetingIdentityBarComponent', () => {
     status = signal<MeetingDetailsLoadStatus>('ready');
     queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
     setLens = vi.fn();
+    now = signal(new Date());
   });
 
   describe('signed in', () => {
@@ -86,6 +90,19 @@ describe('MeetingIdentityBarComponent', () => {
       expect(query('meeting-identity-bar-my-meetings')).not.toBeNull();
       expect(query('meeting-identity-bar-account')?.getAttribute('aria-label')).toBe('Account menu for Ada Example');
       expect(query('meeting-identity-bar-sign-in')).toBeNull();
+    });
+
+    it('reports whether the account menu is open', async () => {
+      await create();
+      const account = query('meeting-identity-bar-account');
+      expect(account?.getAttribute('aria-expanded')).toBe('false');
+      expect(account?.getAttribute('title')).toBe('ada@acme-motors.example');
+
+      account?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(account?.getAttribute('aria-expanded')).toBe('true');
     });
 
     it('sends My Meetings to the meetings list under the Me lens', async () => {
@@ -159,11 +176,22 @@ describe('MeetingIdentityBarComponent', () => {
       expect(identity?.getAttribute('aria-hidden')).toBe('false');
     });
 
-    it('shows the title and a "{group} · {status}" subtitle', async () => {
+    it('shows the title and a "{group} · {status}" subtitle, each with its full text as a tooltip', async () => {
       await create();
 
       expect(query('meeting-identity-bar-title')?.textContent?.trim()).toBe('Acme Weekly Sync');
+      expect(query('meeting-identity-bar-title')?.getAttribute('title')).toBe('Acme Weekly Sync');
       expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe('Acme Project · Upcoming');
+      expect(query('meeting-identity-bar-subtitle')?.getAttribute('title')).toBe('Acme Project · Upcoming');
+    });
+
+    it('moves the status on as the clock passes the meeting', async () => {
+      await create();
+
+      now.set(new Date(start.getTime() + 2 * 24 * 60 * 60 * 1000));
+      fixture.detectChanges();
+
+      expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe('Acme Project · Ended');
     });
 
     it('is absent while the page is loading, so it never shows a previous meeting', async () => {

@@ -7,7 +7,7 @@
   <!-- The token layer's scope class sits on a wrapper inside this template; see the tokens file. -->
   <div class="meeting-details-v2 min-h-screen bg-[var(--md-surface-page)] text-[var(--md-text-body)]">
     <!-- Replaces the app header on this page (E1-02). -->
-    <lfx-meeting-identity-bar [condensed]="headerOutOfView()" />
+    <lfx-meeting-identity-bar #identityBar [condensed]="headerOutOfView()" />
 
     <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 1120px
          max width, 40px gutters (16px at 640px and below), 56px above the header, 96px below. -->
