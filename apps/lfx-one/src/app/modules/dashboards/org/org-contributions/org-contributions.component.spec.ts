@@ -3,7 +3,7 @@
 
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { CONTRIBUTIONS_MAX_FILTER_VALUES, EMPTY_ORG_CONTRIBUTIONS_RESPONSE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -36,7 +36,7 @@ function personDrawerStub() {
   };
 }
 
-async function render(state: OrgLensEmptyStateName | null, { settled = true } = {}) {
+async function render(state: OrgLensEmptyStateName | null, { settled = true, queryParams = {} as Record<string, string> } = {}) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
 
@@ -45,7 +45,7 @@ async function render(state: OrgLensEmptyStateName | null, { settled = true } = 
     providers: [
       provideRouter([]),
       MessageService,
-      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
@@ -64,16 +64,17 @@ async function render(state: OrgLensEmptyStateName | null, { settled = true } = 
     ],
   }).compileComponents();
 
+  const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(OrgContributionsComponent);
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return fixture;
+  return { fixture, navigate };
 }
 
 describe('OrgContributionsComponent', () => {
   it('replaces the page with the contractor-no-grant state and renders none of its data sections', async () => {
-    const el = (await render('contractor-no-grant')).nativeElement as HTMLElement;
+    const el = (await render('contractor-no-grant')).fixture.nativeElement as HTMLElement;
 
     expect(el.querySelector('[data-testid="org-contributions-no-access-state"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
@@ -82,7 +83,7 @@ describe('OrgContributionsComponent', () => {
   });
 
   it('shows a skeleton instead of a blank area while the org context is still settling', async () => {
-    const el = (await render(null, { settled: false })).nativeElement as HTMLElement;
+    const el = (await render(null, { settled: false })).fixture.nativeElement as HTMLElement;
 
     expect(el.querySelector('[data-testid="org-contributions-skeleton"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
@@ -91,7 +92,7 @@ describe('OrgContributionsComponent', () => {
   });
 
   it('trims an over-cap filter selection (e.g. keyboard select-all past selectionLimit) to the cap in the form itself', async () => {
-    const fixture = await render(null);
+    const { fixture } = await render(null);
     const { projects, employees } = fixture.componentInstance['filterForm'].controls;
     const overCap = Array.from({ length: CONTRIBUTIONS_MAX_FILTER_VALUES + 10 }, (_, i) => `value-${i}`);
 
@@ -100,5 +101,23 @@ describe('OrgContributionsComponent', () => {
 
     expect(projects.value).toEqual(overCap.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
     expect(employees.value).toEqual(overCap.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
+  });
+
+  it('rewrites an oversized deep link to the trimmed filters so the URL matches the form and request', async () => {
+    const overCap = Array.from({ length: CONTRIBUTIONS_MAX_FILTER_VALUES + 10 }, (_, i) => `value-${i}`);
+    const { fixture, navigate } = await render(null, { queryParams: { projects: overCap.join(',') } });
+    const capped = overCap.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES);
+
+    expect(fixture.componentInstance['filterForm'].controls.projects.value).toEqual(capped);
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: expect.objectContaining({ projects: capped.join(',') }), replaceUrl: true })
+    );
+  });
+
+  it('leaves an already-canonical deep link untouched on load', async () => {
+    const { navigate } = await render(null, { queryParams: { projects: 'alpha,beta' } });
+
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

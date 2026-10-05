@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, type Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -164,6 +164,12 @@ export class OrgContributionsComponent {
     // server's per-filter cap — the visible selection, URL and request then always agree.
     this.capFilterSelection(this.filterForm.controls.projects);
     this.capFilterSelection(this.filterForm.controls.employees);
+
+    // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link once the initial
+    // navigation has settled (browser-only; normal loads are untouched).
+    if (this.isCsvParamNormalized('projects') || this.isCsvParamNormalized('employees')) {
+      afterNextRender(() => this.syncUrl(this.query()));
+    }
 
     // Any filter change (everything except the page index) resets pagination to page 1.
     this.filterForm.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe(() => this.page.set(1));
@@ -417,6 +423,11 @@ export class OrgContributionsComponent {
         control.setValue(values.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
       }
     });
+  }
+
+  private isCsvParamNormalized(param: 'projects' | 'employees'): boolean {
+    const raw = this.initialParams.get(param);
+    return raw !== null && raw !== this.filterForm.controls[param].value.join(',');
   }
 
   private parseInitialPage(): number {
