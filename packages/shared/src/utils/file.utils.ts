@@ -204,6 +204,19 @@ export function isFileTypeAllowed(mimeType: string, fileName: string, allowedTyp
 }
 
 /**
+ * Check whether a caller-supplied upload file name is safe to forward upstream.
+ * Rejects path separators and `..` (path traversal), and control characters (0x00-0x1F, 0x7F)
+ * and `"` — the name is written into a multipart `Content-Disposition: ...; filename="..."`
+ * part header, so CR/LF or a quote would terminate the parameter or inject header lines.
+ * @param fileName - The file name to validate (already trimmed)
+ * @returns true if the file name contains none of the disallowed characters or sequences
+ */
+export function isSafeUploadFileName(fileName: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return !/[/\\"\x00-\x1f\x7f]/.test(fileName) && !fileName.includes('..');
+}
+
+/**
  * Get user-friendly file extension from MIME type with optional filename fallback
  * @param mimeType - The MIME type to convert (e.g., 'application/pdf', 'image/jpeg')
  * @param fileName - Optional filename to extract extension from when MIME type is empty/unknown
