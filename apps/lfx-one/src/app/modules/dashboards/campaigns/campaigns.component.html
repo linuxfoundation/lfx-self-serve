@@ -324,6 +324,7 @@
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending()"
+          [existingAudience]="emailAudience()"
           (retryAudienceRead)="onRetryAudienceRead()"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"

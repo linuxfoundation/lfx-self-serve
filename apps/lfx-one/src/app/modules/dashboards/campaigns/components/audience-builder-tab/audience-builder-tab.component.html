@@ -449,6 +449,33 @@
               <p class="mt-1 text-xs text-amber-800">Untick one side before composing — otherwise the exclusion would be silently dropped.</p>
             </div>
           }
+          <!-- The brief already HAS a send audience (restored, or recorded earlier). Compose creates a
+               new HubSpot master, so it stays blocked until replacing is an explicit choice. -->
+          @if (blockingAudience(); as existing) {
+            <div
+              class="mb-3 flex flex-col gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3"
+              role="status"
+              data-testid="campaigns-audience-existing">
+              <p class="text-xs font-medium text-gray-900">
+                This email already has a send audience{{ existing.platformMasterListId ? ': list ' + existing.platformMasterListId : '' }} ({{
+                  existing.status
+                }}).
+              </p>
+              @if (existing.inclusionSummary) {
+                <p class="text-xs text-gray-600">{{ existing.inclusionSummary }}</p>
+              }
+              <p class="text-xs text-gray-600">
+                Composing creates another master list in HubSpot and makes it this email's audience. Only do this to replace the current one.
+              </p>
+              <button
+                type="button"
+                (click)="replaceRequestedFor.set(existing.id)"
+                class="inline-flex w-fit items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                data-testid="campaigns-audience-existing-replace">
+                Compose a replacement
+              </button>
+            </div>
+          }
           <button
             type="button"
             (click)="onComposeMaster()"

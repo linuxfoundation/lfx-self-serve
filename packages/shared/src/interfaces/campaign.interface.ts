@@ -2843,6 +2843,20 @@ export interface AudienceComposedList {
 }
 
 /**
+ * A confirmed master list that a compose created but did not record as the brief's send audience.
+ *
+ * Carries the brief and project the compose was DISPATCHED with. The list alone could not be scoped:
+ * a reply landing after the operator switched briefs was filed under the brief they had moved to,
+ * telling them to use the previous brief's list for the current email.
+ */
+export interface AudienceComposeUnattachedEvent {
+  master: AudienceComposedList;
+  /** The brief the compose was sent for; empty for an exploratory compose with no saved plan. */
+  briefId: string;
+  projectSlug: string;
+}
+
+/**
  * Result of composing a master list.
  *
  * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one

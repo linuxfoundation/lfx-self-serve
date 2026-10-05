@@ -17,6 +17,7 @@ import type {
   AudienceComposeMasterPartial,
   AudienceComposeMasterResult,
   AudienceComposedList,
+  AudienceComposeUnattachedEvent,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
   AudienceDiscoveryProgress,
@@ -105,6 +106,16 @@ export class AudienceBuilderTabComponent {
    * top of the one about to be revealed.
    */
   public readonly audienceReadPending = input(false);
+  /**
+   * The send audience the parent already holds for this brief -- restored on reload, or recorded
+   * by an earlier compose or attach.
+   *
+   * Without it a restored brief mounted a fresh builder: both read flags were false once the read
+   * answered, `composeAttempted` was false, and compose was offered for a brief that already had a
+   * built audience -- minting a second HubSpot master with nothing on screen saying one existed.
+   * Compose now blocks on it until the operator explicitly asks to replace it.
+   */
+  public readonly existingAudience = input<CampaignAudience | null>(null);
 
   // === Outputs ===
   /**
@@ -124,7 +135,7 @@ export class AudienceBuilderTabComponent {
    * about. Carries the composed list itself rather than a flattened copy of three of its fields --
    * the parent renders the same name and HubSpot link this tab does, off the same shape.
    */
-  public readonly audienceComposeUnattached = output<AudienceComposedList>();
+  public readonly audienceComposeUnattached = output<AudienceComposeUnattachedEvent>();
   /**
    * The operator is done here and wants the Implement tab. Emitted from beside the compose / attach
    * result, which sits at the bottom of a long panel — the parent's step bar is a screen away.
@@ -463,6 +474,29 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly audienceUnknown = computed(() => this.audienceReadFailed() || this.audienceReadPending());
 
+  /**
+   * The id of the existing audience the operator has explicitly chosen to REPLACE, if any.
+   *
+   * Keyed by audience id rather than a boolean, so the choice cannot outlive the audience it was
+   * made about: a different brief, or a newer row for this one, needs its own decision.
+   */
+  protected readonly replaceRequestedFor = signal<string | null>(null);
+
+  /**
+   * The brief's existing audience, when it should be shown and should block compose.
+   *
+   * Only for THIS brief (a row for another brief is the parent's stale state, not a reason to
+   * block), and not once the operator asked to replace it. Hidden while this panel's own compose or
+   * attach is on screen: that result already states what the email sends to.
+   */
+  protected readonly blockingAudience = computed<CampaignAudience | null>(() => {
+    const existing = this.existingAudience();
+    if (existing === null || existing.briefId === '' || existing.briefId !== this.briefId()) {
+      return null;
+    }
+    return this.replaceRequestedFor() === existing.id ? null : existing;
+  });
+
   /** The list currently recorded as this email's send list by THIS panel, if any. */
   protected readonly attachedListId = computed(() => {
     const attached = this.attachResult();
@@ -668,6 +702,9 @@ export class AudienceBuilderTabComponent {
       // An audience that could not be READ -- or has not been read YET -- is not an audience that
       // is absent. Composing on top of one creates a duplicate master list.
       !this.audienceUnknown() &&
+      // A KNOWN existing audience blocks too, until replacing it is an explicit choice. Compose is
+      // the one write here that creates something, so it is the one that must not run by default.
+      this.blockingAudience() === null &&
       // The other half of the serialization above: an attach in flight is a write to this same
       // brief's audience, and the later reply would decide the record.
       this.attachingId() === null &&
@@ -1026,7 +1063,13 @@ export class AudienceBuilderTabComponent {
     this.composeError.set(null);
     this.composePartial.set(null);
     const dispatchBriefId = this.briefId();
+    const dispatchProject = this.projectSlug();
     this.composeBriefId.set(dispatchBriefId);
+    // Scoped to the dispatch, like `briefId` below: the parent files the orphan warning by these.
+    const unattached = (master: AudienceComposedList): void => {
+      this.rememberComposedMaster(master);
+      this.audienceComposeUnattached.emit({ master, briefId: dispatchBriefId, projectSlug: dispatchProject });
+    };
 
     this.campaignService
       .composeAudienceMaster(this.projectSlug(), {
@@ -1062,7 +1105,7 @@ export class AudienceBuilderTabComponent {
             // Covers both the no-brief compose and an upstream too old to record one. Either way a
             // real list exists that no send points at, which is the thing the parent warns about --
             // so the absence of `recorded` is reported rather than passed over.
-            this.audienceComposeUnattached.emit(result.master);
+            unattached(result.master);
           }
         },
         error: (httpErr: HttpErrorResponse) => {
@@ -1082,7 +1125,7 @@ export class AudienceBuilderTabComponent {
             // warning it shows for an unattached compose -- pointing at a list that is real --
             // rather than a generic failure the operator cannot act on.
             if (partial.master) {
-              this.audienceComposeUnattached.emit(partial.master);
+              unattached(partial.master);
             }
           } else {
             this.composeError.set(serverAuthoredMessage(httpErr, 'Failed to compose the master list'));
@@ -1326,6 +1369,22 @@ export class AudienceBuilderTabComponent {
       });
   }
 
+  /**
+   * Puts a confirmed master this panel just created into the reuse grid.
+   *
+   * The recovery for an unattached compose is "Use for this email" on that master, but the grid is
+   * loaded once at discovery and discovery of the same URL is blocked after a compose -- so the new
+   * list never appeared there and the recovery the UI described could not be performed without a
+   * reload. Prepended, since it is the one the operator is looking for.
+   */
+  private rememberComposedMaster(master: AudienceComposedList): void {
+    if (this.existingMasterLists().some((list) => list.listId === master.listId)) {
+      return;
+    }
+    const row: AudienceMasterListBrief = { listId: master.listId, name: master.name, hubspotUrl: master.hubspotUrl, size: master.size };
+    this.existingMasterLists.update((lists) => [row, ...lists]);
+  }
+
   private add(listId: string, name: string): void {
     if (this.inclusion().has(listId)) {
       return;
@@ -1444,6 +1503,7 @@ export class AudienceBuilderTabComponent {
     // on screen after a project switch and reads as foundation B's.
     this.discoveryError.set(null);
     this.composeAttempted.set(false);
+    this.replaceRequestedFor.set(null);
     this.attachingId.set(null);
     this.attachResult.set(null);
     this.attachError.set(null);

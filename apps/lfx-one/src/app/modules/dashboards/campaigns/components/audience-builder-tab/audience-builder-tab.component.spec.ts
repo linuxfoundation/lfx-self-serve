@@ -11,6 +11,7 @@ import { AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS, AUDIENCE_UNION_EXACT_CAP } from '@
 import type {
   AudienceComposedList,
   AudienceComposeMasterPartial,
+  AudienceComposeMasterResult,
   CampaignAudience,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
@@ -1318,12 +1319,16 @@ describe('AudienceBuilderTabComponent', () => {
       version: 1,
     };
 
-    function listen(): { attached: CampaignAudience[]; unattached: AudienceComposedList[] } {
+    function listen(): { attached: CampaignAudience[]; unattached: AudienceComposedList[]; scopes: string[] } {
       const attached: CampaignAudience[] = [];
       const unattached: AudienceComposedList[] = [];
+      const scopes: string[] = [];
       fixture.componentInstance.audienceAttached.subscribe((a) => attached.push(a));
-      fixture.componentInstance.audienceComposeUnattached.subscribe((l) => unattached.push(l));
-      return { attached, unattached };
+      fixture.componentInstance.audienceComposeUnattached.subscribe((e) => {
+        unattached.push(e.master);
+        scopes.push(`${e.projectSlug}/${e.briefId}`);
+      });
+      return { attached, unattached, scopes };
     }
 
     it('sends the brief id with the compose so upstream can attach what it creates', async () => {
@@ -1410,6 +1415,62 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(seen.attached).toEqual([]);
       expect(seen.unattached).toEqual([master]);
+    });
+
+    it('scopes a loose list to the brief and project it was DISPATCHED for', async () => {
+      // A brief switch does not cancel a compose in flight. Scoped by the brief on screen when the
+      // reply landed, the warning told the operator to use the previous brief's list for this one.
+      await renderWithDiscovery('brief-1');
+      const seen = listen();
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      const reply = new Subject<AudienceComposeMasterResult>();
+      composeAudienceMaster.mockReturnValue(reply);
+
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+      reply.next({ master, sourceListIds: ['101'], recorded: false });
+      reply.complete();
+
+      expect(seen.scopes, 'the loose list was filed under the brief on screen, not the one composed for').toEqual(['tlf/brief-1']);
+    });
+
+    it('puts a loose master into the reuse grid so its recovery action exists', async () => {
+      // The warning's recovery is "Use for this email" on that master, but the grid is loaded once
+      // at discovery and re-discovery is blocked after a compose -- so the list was never there.
+      await renderWithDiscovery('brief-1');
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'], recorded: false }));
+
+      click('campaigns-audience-compose');
+
+      const use = host().querySelector<HTMLButtonElement>('[data-testid="audience-last-sent-master-use-900"]');
+      expect(use, 'the loose master never reached the reuse grid').not.toBeNull();
+      expect(use?.disabled, 'the recovery action was offered but unusable').toBe(false);
+    });
+
+    it("blocks compose over the brief's existing audience until replacing it is chosen", async () => {
+      // A restored brief mounted a fresh builder: both read flags were false once the read answered
+      // and nothing here knew an audience existed, so compose minted a second HubSpot master.
+      await renderWithDiscovery('brief-1');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      const compose = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      expect(host().querySelector('[data-testid="campaigns-audience-existing"]')?.textContent).toContain('900');
+      expect(compose()?.disabled, 'compose ran over an existing audience by default').toBe(true);
+
+      click('campaigns-audience-existing-replace');
+      expect(compose()?.disabled, 'an explicit replacement must unlock compose').toBe(false);
+    });
+
+    it("does not block compose on another brief's audience", async () => {
+      await renderWithDiscovery('brief-2');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-existing"]')).toBeNull();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
     });
 
     it('reports a compose the operator ran with no saved plan as a loose list', async () => {

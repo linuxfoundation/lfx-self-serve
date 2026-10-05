@@ -29,6 +29,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   AudienceComposedList,
+  AudienceComposeUnattachedEvent,
   BriefMetrics,
   BriefMetricsRow,
   CampaignAudience,
@@ -1122,7 +1123,14 @@ export class CampaignsComponent {
    * describes platform state the app cannot fix on the operator's behalf. Held as the list itself
    * so the warning can name it and link to it; cleared only when an audience actually attaches.
    */
-  protected readonly emailAudienceUnattached = signal<AudienceComposedList | null>(null);
+  protected readonly emailAudienceUnattached = computed<AudienceComposedList | null>(
+    () => this.unattachedByScope().get(this.unattachedScopeKey(this.activeFoundationSlug(), this.emailBriefId())) ?? null
+  );
+  /**
+   * Every unattached master, by the project and brief its compose was dispatched for. See
+   * `onAudienceComposeUnattached`. `emailAudienceUnattached` is the entry for what is on screen.
+   */
+  private readonly unattachedByScope = signal<ReadonlyMap<string, AudienceComposedList>>(new Map());
 
   /**
    * The operator chose to write the email WITHOUT an audience.
@@ -2590,10 +2598,15 @@ export class CampaignsComponent {
     this.emailAudienceOrigin.set('composed');
     // The list IS attached now, so a warning about an unattached one is stale -- and a previous
     // failed compose is exactly how the operator arrives here.
-    this.emailAudienceUnattached.set(null);
+    this.forgetUnattached();
     // Skipping is a decision about an audience that does not exist. One does now, so the note
     // saying the step was skipped would sit directly above the card proving otherwise.
     this.emailAudienceSkipped.set(false);
+  }
+
+  /** The Audience tab asked to re-read the saved audience it could not verify. */
+  protected onRetryAudienceRead(): void {
+    void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
   }
 
   /**
@@ -2605,14 +2618,15 @@ export class CampaignsComponent {
    *
    * `emailAudience` is deliberately NOT touched. Nothing was attached, so claiming an audience
    * here would unblock staging for a send that still has no recipients.
+   *
+   * Filed under the brief and project the compose was DISPATCHED for, not the ones on screen when
+   * the reply lands. A brief switch does not cancel a compose in flight, so filing by the current
+   * brief told the operator to use the previous brief's list for this email. Kept rather than
+   * dropped when stale: the list is still real, and returning to its brief shows the warning again.
    */
-  /** The Audience tab asked to re-read the saved audience it could not verify. */
-  protected onRetryAudienceRead(): void {
-    void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
-  }
-
-  protected onAudienceComposeUnattached(master: AudienceComposedList): void {
-    this.emailAudienceUnattached.set(master);
+  protected onAudienceComposeUnattached(event: AudienceComposeUnattachedEvent): void {
+    const key = this.unattachedScopeKey(event.projectSlug, event.briefId);
+    this.unattachedByScope.update((map) => new Map(map).set(key, event.master));
   }
 
   /**
@@ -2741,11 +2755,11 @@ export class CampaignsComponent {
       // addressed stage's brief, or with nothing if that send has none yet.
       this.emailBriefOutput.set(null);
       this.emailAudience.set(null);
-      // The audience's provenance and warnings belong to the brief just left, exactly as
-      // `resetEmailBriefDerivedState` treats them: an "unattached list" warning carried onto the
-      // next brief would accuse a send that never composed anything.
+      // The audience's provenance belongs to the brief just left, exactly as
+      // `resetEmailBriefDerivedState` treats it. An "unattached list" warning is KEYED by its brief,
+      // so it simply stops matching; only the brief-less one is dropped -- see `forgetUnattached`.
       this.emailAudienceOrigin.set(null);
-      this.emailAudienceUnattached.set(null);
+      this.forgetUnattached();
       this.emailAudienceSkipped.set(false);
       // Scoped to ONE brief like the signals above it. A failed read for brief A left this true
       // with no restore pending -- a new brief clears `emailBriefId`, and `restoreEmailAudience`
@@ -3669,6 +3683,24 @@ export class CampaignsComponent {
         this.emailAudienceReadPending.set(false);
       }
     }
+  }
+
+  /** The `unattachedByScope` key for a project and brief. */
+  private unattachedScopeKey(projectSlug: string, briefId: string): string {
+    return `${projectSlug}|${briefId}`;
+  }
+
+  /**
+   * Drops the warning for what is on screen NOW, plus the brief-less one for this project.
+   *
+   * A real brief's entry survives a brief switch -- it is keyed by that brief and reappears on
+   * return. The brief-less entry cannot: every brief-less state shares its key, so carrying it onto
+   * the next brief would accuse a send that never composed anything.
+   */
+  private forgetUnattached(): void {
+    const project = this.activeFoundationSlug();
+    const drop = new Set([this.unattachedScopeKey(project, this.emailBriefId()), this.unattachedScopeKey(project, '')]);
+    this.unattachedByScope.update((map) => new Map([...map].filter(([key]) => !drop.has(key))));
   }
 
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
@@ -5019,10 +5051,10 @@ export class CampaignsComponent {
     this.emailBriefId.set('');
     this.emailAudience.set(null);
     this.emailAudienceOrigin.set(null);
-    // Cleared with the rest, even though the HubSpot list it names still exists. The warning is
-    // scoped to ONE brief's send -- it says "this campaign's audience is not attached" -- and
-    // carrying it onto the next brief would accuse a send that never composed anything.
-    this.emailAudienceUnattached.set(null);
+    // Scoped to ONE brief's send -- it says "this campaign's audience is not attached" -- and keyed
+    // by that brief, so it stops matching here and reappears on return. Only the brief-less entry
+    // is dropped, since every brief-less state shares its key. See `forgetUnattached`.
+    this.forgetUnattached();
     // Scoped to one brief like everything around it: the operator skipped THIS send's
     // audience, and carrying that onto the next brief would claim a decision never made.
     this.emailAudienceSkipped.set(false);

@@ -11,6 +11,7 @@ import type {
   BriefMetrics,
   BriefMetricsRow,
   AudienceComposedList,
+  AudienceComposeUnattachedEvent,
   CampaignAudience,
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
@@ -1873,14 +1874,15 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailAudience: WritableSignal<CampaignAudience | null>;
     emailBriefId: WritableSignal<string>;
     emailAudienceOrigin: WritableSignal<'composed' | 'restored' | null>;
-    emailAudienceUnattached: WritableSignal<AudienceComposedList | null>;
+    emailAudienceUnattached: Signal<AudienceComposedList | null>;
+    activeFoundationSlug: Signal<string>;
     emailAudienceSkipped: WritableSignal<boolean>;
     emailAudienceReadFailed: WritableSignal<boolean>;
     onSkipAudienceStep(): void;
     onContinueToEmailStep(): void;
     onGoToAudienceStep(): void;
     onAudienceComposed(audience: CampaignAudience): void;
-    onAudienceComposeUnattached(master: AudienceComposedList): void;
+    onAudienceComposeUnattached(event: AudienceComposeUnattachedEvent): void;
     restoreEmailAudience(projectSlug: string, briefId: string): Promise<void>;
     resetEmailBriefDerivedState(): void;
     emailCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
@@ -3367,6 +3369,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       name: '27Q2 - KubeCon EU 2026 - Master',
       hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/900',
     };
+    /** The loose-list event as the Audience tab emits it for what is on screen now. */
+    const looseHere = (): AudienceComposeUnattachedEvent => ({
+      master: looseMaster,
+      briefId: internals().emailBriefId(),
+      projectSlug: internals().activeFoundationSlug(),
+    });
 
     function onImplementTab(): void {
       selectEmail();
@@ -3455,7 +3463,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      */
     it('warns about a master list that attached to nothing, and links to it', () => {
       onImplementTab();
-      internals().onAudienceComposeUnattached(looseMaster);
+      internals().onAudienceComposeUnattached(looseHere());
       fixture.detectChanges();
 
       const host: HTMLElement = fixture.nativeElement;
@@ -3480,7 +3488,7 @@ describe('CampaignsComponent — email delivery channel', () => {
      */
     it.each([
       ['nothing yet', (): void => undefined],
-      ['a loose master list', (): void => internals().onAudienceComposeUnattached(looseMaster)],
+      ['a loose master list', (): void => internals().onAudienceComposeUnattached(looseHere())],
       ['a failed audience', (): void => internals().emailAudience.set({ ...composed, status: 'failed' })],
     ])('offers no way to produce an audience from the Implement tab with %s', (_label, arrange) => {
       onImplementTab();
@@ -3502,7 +3510,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it('drops the reconcile warning once an audience actually attaches', () => {
       onImplementTab();
-      internals().onAudienceComposeUnattached(looseMaster);
+      internals().onAudienceComposeUnattached(looseHere());
       fixture.detectChanges();
 
       internals().emailBriefId.set(composed.briefId);
@@ -3513,9 +3521,25 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-audience-unattached"]')).toBeNull();
     });
 
+    it("keeps a stale reply's warning under the brief it was composed for", () => {
+      // A brief switch does not cancel a compose in flight. Filed by the brief on screen when the
+      // reply landed, the previous brief's list was offered as this email's recovery.
+      onImplementTab();
+      internals().emailBriefId.set('brief-b');
+      internals().onAudienceComposeUnattached({ master: looseMaster, briefId: 'brief-a', projectSlug: internals().activeFoundationSlug() });
+      fixture.detectChanges();
+
+      expect(internals().emailAudienceUnattached(), "brief A's loose list was shown on brief B").toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-audience-unattached"]')).toBeNull();
+
+      // Kept, not dropped: the list is real, and its own brief still needs the warning.
+      internals().emailBriefId.set('brief-a');
+      expect(internals().emailAudienceUnattached()).toEqual(looseMaster);
+    });
+
     it('clears the warning when the brief-derived state resets', () => {
       onImplementTab();
-      internals().onAudienceComposeUnattached(looseMaster);
+      internals().onAudienceComposeUnattached(looseHere());
       fixture.detectChanges();
 
       // A handoff into Implement for another brief. The HubSpot list still exists, but the
@@ -4534,7 +4558,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-cfp');
       internals().emailAudienceOrigin.set('composed');
-      internals().emailAudienceUnattached.set({ listId: '900', name: 'Master', hubspotUrl: 'https://app.hubspot.com/l/1' } as AudienceComposedList);
+      internals().onAudienceComposeUnattached({
+        master: { listId: '900', name: 'Master', hubspotUrl: 'https://app.hubspot.com/l/1' },
+        briefId: '',
+        projectSlug: internals().activeFoundationSlug(),
+      });
       internals().emailAudienceSkipped.set(true);
 
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
