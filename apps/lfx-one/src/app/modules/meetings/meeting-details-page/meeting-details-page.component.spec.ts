@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, signal, WritableSignal } from '@angular/core';
+import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ButtonComponent } from '@components/button/button.component';
 import { Meeting, MeetingDetailsLoadStatus, PublicMeetingProject } from '@lfx-one/shared/interfaces';
@@ -13,9 +13,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingDetailsPageComponent } from './meeting-details-page.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
 
-// The app chrome is covered by its own specs; stubbing it keeps this spec on the page's branches.
-@Component({ selector: 'lfx-header', template: '' })
-class HeaderStubComponent {}
+// The identity bar and banner have their own specs; stubbing them keeps this spec on the page's branches.
+@Component({ selector: 'lfx-meeting-identity-bar', template: '' })
+class IdentityBarStubComponent {
+  public readonly condensed = input(false);
+}
 
 @Component({ selector: 'lfx-impersonation-banner', template: '' })
 class ImpersonationBannerStubComponent {}
@@ -41,7 +43,7 @@ describe('MeetingDetailsPageComponent', () => {
     })
       .overrideComponent(MeetingDetailsPageComponent, {
         set: {
-          imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderStubComponent, ImpersonationBannerStubComponent, SkeletonModule],
+          imports: [NgClass, NgTemplateOutlet, ButtonComponent, IdentityBarStubComponent, ImpersonationBannerStubComponent, SkeletonModule],
           providers: [{ provide: MeetingDetailsStateService, useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount } }],
         },
       })
@@ -119,5 +121,48 @@ describe('MeetingDetailsPageComponent', () => {
 
   it('scopes the V2 design tokens to a wrapper inside the page', () => {
     expect(fixture.nativeElement.querySelector('.meeting-details-v2')).not.toBeNull();
+  });
+
+  // jsdom has no IntersectionObserver; a fake one stands in so the test drives the callback itself.
+  it('condenses the identity bar once the page header scrolls behind it', async () => {
+    let callback: IntersectionObserverCallback | undefined;
+    let observed: Element | undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public constructor(cb: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+          callback = cb;
+          expect(options?.rootMargin).toBe('-83px 0px 0px 0px');
+        }
+        public observe(el: Element): void {
+          observed = el;
+        }
+        public disconnect(): void {
+          disconnect();
+        }
+      }
+    );
+
+    show('ready');
+    await fixture.whenStable();
+    const bar = (): IdentityBarStubComponent => fixture.debugElement.query((el) => el.componentInstance instanceof IdentityBarStubComponent).componentInstance;
+
+    expect(observed).toBe(query('meeting-header-section'));
+    expect(bar().condensed()).toBe(false);
+
+    callback?.([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver);
+    fixture.detectChanges();
+    expect(bar().condensed()).toBe(true);
+
+    callback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    fixture.detectChanges();
+    expect(bar().condensed()).toBe(false);
+
+    // Leaving the ready branch removes the header, so the observer is torn down with it.
+    show('loading');
+    await fixture.whenStable();
+    expect(disconnect).toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

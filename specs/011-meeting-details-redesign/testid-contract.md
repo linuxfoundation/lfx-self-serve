@@ -28,22 +28,32 @@ own namespace; the two never share a value.
 
 ## Page shell and header
 
-| `data-testid`                       | Element                                            |
-| ----------------------------------- | -------------------------------------------------- |
-| `meeting-page-shell`                | The V2 page container, present in every branch     |
-| `meeting-skeleton`                  | Loading state (`role="status"`)                    |
-| `meeting-content-column`            | The content column                                 |
-| `meeting-rail`                      | The right-hand column (stacks below at ≤ 920px)    |
-| `meeting-header-section`            | The header region as a whole                       |
-| `meeting-status-pill`               | Status pill (upcoming / live / ended)              |
-| `meeting-privacy-chip`              | The single privacy chip (see below)                |
-| `meeting-time-banner`               | The date/time banner                               |
-| `meeting-action-slot`               | The action slot inside the rail (see below)        |
-| `meeting-error-state`               | Terminal error state                               |
-| `meeting-error-retry-button`        | The error state's "Try again" control              |
-| `meeting-invitation-required-state` | The signed-in-outsider / invitation-required state |
-| `meeting-occurrence-edit-button`    | Organizer's "Edit this occurrence" control         |
-| `meeting-occurrence-cancel-button`  | Organizer's "Cancel this occurrence" control       |
+| `data-testid`                         | Element                                            |
+| ------------------------------------- | -------------------------------------------------- |
+| `meeting-page-shell`                  | The V2 page container, present in every branch     |
+| `meeting-skeleton`                    | Loading state (`role="status"`)                    |
+| `meeting-content-column`              | The content column                                 |
+| `meeting-rail`                        | The right-hand column (stacks below at ≤ 920px)    |
+| `meeting-identity-bar`                | The sticky identity bar (see below)                |
+| `meeting-identity-bar-home`           | Its LFX mark, linking home                         |
+| `meeting-identity-bar-meeting`        | Its meeting identity: date tile, title, subtitle   |
+| `meeting-identity-bar-title`          | The truncated meeting title                        |
+| `meeting-identity-bar-subtitle`       | `{group} · {status}`                               |
+| `meeting-identity-bar-my-meetings`    | Signed in: My Meetings                             |
+| `meeting-identity-bar-account`        | Signed in: the account menu button                 |
+| `meeting-identity-bar-visitor-prompt` | Visitor: the sign-in prompt                        |
+| `meeting-identity-bar-create-account` | Visitor: Create LFX account                        |
+| `meeting-identity-bar-sign-in`        | Visitor: Sign in                                   |
+| `meeting-header-section`              | The header region as a whole                       |
+| `meeting-status-pill`                 | Status pill (upcoming / live / ended)              |
+| `meeting-privacy-chip`                | The single privacy chip (see below)                |
+| `meeting-time-banner`                 | The date/time banner                               |
+| `meeting-action-slot`                 | The action slot inside the rail (see below)        |
+| `meeting-error-state`                 | Terminal error state                               |
+| `meeting-error-retry-button`          | The error state's "Try again" control              |
+| `meeting-invitation-required-state`   | The signed-in-outsider / invitation-required state |
+| `meeting-occurrence-edit-button`      | Organizer's "Edit this occurrence" control         |
+| `meeting-occurrence-cancel-button`    | Organizer's "Cancel this occurrence" control       |
 
 `meeting-section-placeholder-${section}` (`occurrences`, `agenda`, `materials`, `discover`, `rail`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
@@ -56,6 +66,15 @@ selected upcoming occurrence. V1 names them `meeting-reschedule-occurrence-butto
 `meeting-privacy-chip` is deliberately **one** testid, not four. E1-04 renders a single chip whose
 copy and icon come from the existing `getMeetingPrivacyLabel` / `getMeetingPrivacyIcon` helpers, so
 the four privacy permutations are four values of one element, not four elements.
+
+### `meeting-identity-bar[data-condensed]`
+
+```text
+true | false
+```
+
+`true` once the page header has scrolled behind the bar, which is when the meeting identity fades
+in and the visitor prompt fades out. A test asserts the swap on this attribute, not on opacity.
 
 ### `meeting-time-banner[data-state]`
 

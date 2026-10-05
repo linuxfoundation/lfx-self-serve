@@ -4,10 +4,11 @@
 <lfx-impersonation-banner />
 
 <div [ngClass]="{ 'pt-12': userService.impersonating() }">
-  <lfx-header />
-
   <!-- The token layer's scope class sits on a wrapper inside this template; see the tokens file. -->
   <div class="meeting-details-v2 min-h-screen bg-[var(--md-surface-page)] text-[var(--md-text-body)]">
+    <!-- Replaces the app header on this page (E1-02). -->
+    <lfx-meeting-identity-bar [condensed]="headerOutOfView()" />
+
     <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 1120px
          max width, 40px gutters (16px at 640px and below), 56px above the header, 96px below. -->
     <main class="mx-auto max-w-[1120px] px-[16px] pb-[96px] pt-[56px] min-[641px]:px-[40px]" data-testid="meeting-page-shell">
@@ -38,7 +39,7 @@
         @case ('ready') {
           @if (state.meeting(); as meeting) {
             <!-- E1-03 replaces this region's body with the full header and badge row. -->
-            <section class="flex flex-col gap-3" data-testid="meeting-header-section">
+            <section #header class="flex flex-col gap-3" data-testid="meeting-header-section">
               <h1 class="text-[34px] font-bold leading-[1.15] tracking-[-0.022em] text-[var(--md-text-heading)]">{{ meeting.title }}</h1>
             </section>
             <ng-container [ngTemplateOutlet]="columns" />
