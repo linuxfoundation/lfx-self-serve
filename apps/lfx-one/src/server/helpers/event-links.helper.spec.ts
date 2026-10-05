@@ -222,6 +222,47 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     expect([...links.values()], 'an unknown element was treated as a script').toEqual(['https://events.linuxfoundation.org/real']);
   });
 
+  // `\b` matches between `a` and the HYPHEN of a custom element, so `<a-button href=...>` was
+  // collected as an anchor and `verifyPageLink` then vouched for a URL no `<a>` on the page
+  // carries. A custom element must contain a hyphen by spec, so this is reachable on any
+  // component-built event page. `<article>` was never affected -- `\b` does not match between two
+  // letters -- so the fix is a tag-name DELIMITER, not a longer list of element names.
+  it.each([
+    ['a hyphenated custom element', '<a-button href="https://evil.example/fake">x</a-button>'],
+    ['a namespaced element', '<a-link href="https://evil.example/fake">x</a-link>'],
+  ])('ignores %s that merely starts with the anchor name', (_label, decoy) => {
+    const html = `${decoy}<a href="https://events.linuxfoundation.org/real">Real</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], 'a custom element was read as an anchor').toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it.each([
+    ['a space', '<a href="https://events.linuxfoundation.org/real">Real</a>'],
+    ['a newline', '<a\nhref="https://events.linuxfoundation.org/real">Real</a>'],
+    ['a self-closing slash', '<a/href="https://events.linuxfoundation.org/real">Real</a>'],
+    ['an immediate close', '<a href="https://events.linuxfoundation.org/real" >Real</a>'],
+  ])('still reads a real anchor delimited by %s', (_label, html) => {
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], 'a legitimate anchor was rejected').toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it('stays linear on a page of unclosed custom elements', () => {
+    // The delimiter is a zero-width lookahead, so the `[^<>]*` bound that made this linear in
+    // round 1 still applies. Pinned so a future delimiter change cannot quietly consume a
+    // character and reopen the backtracking.
+    const html = '<a-'.repeat(80_000);
+
+    const started = Date.now();
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+    const elapsed = Date.now() - started;
+
+    expect(links.size).toBe(0);
+    expect(elapsed).toBeLessThan(500);
+  });
+
   it('reads the real href when the decoy is hidden behind MISMATCHED quotes', () => {
     // A pattern like `["']([^"']*)["']` lets the opening and closing quote differ, so `title="x'`
     // closes on the apostrophe and the scan resumes inside the title -- where the decoy then

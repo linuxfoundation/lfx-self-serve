@@ -9,8 +9,16 @@
  * 40k, 8.5s at 80k, against a 5 MiB fetch cap. `matchAll` is synchronous and this runs inside the
  * scrape generator on an operator-supplied URL, so that is a freeze of the single-threaded SSR
  * process. Excluding `<` as well confines each attempt to one tag.
+ *
+ * The tag name ends at `>`, `/` or whitespace -- NOT at `\b`, which also matches between `a` and
+ * the hyphen of a CUSTOM ELEMENT. `<a-button href="https://evil.example/fake">` was collected as
+ * an anchor, so `verifyPageLink` vouched for a URL no `<a>` on the page carries, and a custom
+ * element must contain a hyphen by spec -- which makes this reachable on any component-built
+ * event page rather than exotic. `<article href=...>` was never affected: `\b` does not match
+ * between two letters. Same shape as the `<scriptfoo>` bound in `nextInertRegion`, in the
+ * opposite direction -- there a prefix matched too much, here a suffix did.
  */
-const ANCHOR_TAG_RE = /<a\b[^<>]*>/gi;
+const ANCHOR_TAG_RE = /<a(?=[\s/>])[^<>]*>/gi;
 
 /**
  * `html` with the regions a browser never renders as markup blanked out.
@@ -185,10 +193,18 @@ function openerIndex(lower: string, kind: (typeof INERT_REGIONS)[number], from: 
  * page never links to, carrying it into the brief as the event's agenda. Consuming the value as
  * a unit is what makes the quotes structural instead of incidental.
  *
+ * A `/` delimits a name as well as whitespace. `<a/href="...">` is a real anchor carrying that
+ * href -- confirmed against parse5, which is the spec tokenizer: after `<a` a `/` only begins a
+ * self-closing tag when `>` follows, and is otherwise reconsumed in "before attribute name".
+ * Requiring whitespace dropped the href and the page's own link went uncollected, which is the
+ * quiet half of this helper's failure mode: refusing a real destination is the same bug as
+ * accepting a forged one. It does NOT reopen the decoy above -- a `/` inside a quoted value is
+ * still consumed as part of that value.
+ *
  * `\s` before the name, not `\b`: `\b` also matches the tail of `data-href`, so a framework's
  * lazy-load attribute was read as the link the page renders.
  */
-const ATTR_RE = /\s([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+const ATTR_RE = /[\s/]([a-zA-Z][\w:-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
 
 /**
  * HTML entities for `&` as they appear in an href.
