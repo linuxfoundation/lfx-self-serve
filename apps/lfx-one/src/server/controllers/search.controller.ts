@@ -81,6 +81,19 @@ export class SearchController {
         return;
       }
 
+      // `name` must be a single string too — a repeated `name` param arrives as an array, which the
+      // service's committee-member name filter cannot match against.
+      if (name !== undefined && typeof name !== 'string') {
+        const validationError = ServiceValidationError.forField('name', 'Name parameter must be a single string', {
+          operation: 'search_users',
+          service: 'search_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
       // Build search parameters
       // A name typeahead asks for relevance ordering; the upstream default (`name_asc`) would hand
       // back the alphabetically first page instead (see `UserSearchParams.sort`).

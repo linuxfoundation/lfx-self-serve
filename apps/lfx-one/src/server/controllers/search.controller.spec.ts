@@ -80,6 +80,16 @@ describe('SearchController.searchUsers — tags', () => {
     expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
   });
 
+  it('rejects a repeated name param alongside a valid email tag', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.searchUsers(buildReq({ type: 'committee_member', name: ['kim', 'park'], tags: 'email:kim.park@partner-corp.example' }), res, next);
+
+    expect(searchUsers).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
   it('still forwards a name-only committee-member search', async () => {
     const res = buildRes();
     const next = vi.fn();
