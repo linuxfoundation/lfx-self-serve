@@ -112,11 +112,14 @@ const TEXT_URL_BASE = 'https://redaction.invalid';
 
 /**
  * Replaces the value of any meeting passcode query param appearing anywhere in free text (an error
- * message or stack that quotes a request URL) with a marker, leaving the rest of the text — stack
- * frame coordinates included — untouched. Each URL in the text goes through
- * {@link redactMeetingPassword}, so a percent-encoded param name and a passcode nested in a
- * `returnTo` at any depth are caught; a pattern match then covers anything that did not parse as a
- * URL. For a field that holds a single URL, call {@link redactMeetingPassword} directly.
+ * message or stack that quotes a request URL) with a marker. Text outside such a URL is left as is,
+ * stack frame coordinates included, and so is a URL that carries no passcode. A URL that does carry
+ * one comes back re-serialized by {@link redactMeetingPassword}, so its other params may be
+ * re-encoded, and punctuation run directly onto the passcode (a trailing `.` or `,`) is redacted with
+ * it. Each URL in the text goes through {@link redactMeetingPassword}, so a percent-encoded param
+ * name and a passcode nested in a `returnTo` at any depth are caught; a pattern match then covers
+ * anything that did not parse as a URL. For a field that holds a single URL, call
+ * {@link redactMeetingPassword} directly.
  */
 export function redactMeetingPasswordInText(text: string): string {
   const withUrlsRedacted = text.replace(TEXT_TOKEN_PATTERN, (token) => {
