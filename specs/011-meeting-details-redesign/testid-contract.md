@@ -101,10 +101,12 @@ before | live | ended
 ### `meeting-status-pill[data-state]` and `[data-my-rsvp]`
 
 `data-state` carries the same `MeetingTimeState` values as the time banner, so E5-04 can assert the
-pill's phase without reading its copy:
+pill's phase without reading its copy. `data-status` carries the full `MeetingStatusKind` from
+`resolveMeetingStatus`, so a test asserts the RSVP variant without matching on its copy:
 
 ```text
 data-state:   before | live | ended
+data-status:  upcoming | live | ended | awaiting-rsvp | going | maybe | cant-attend
 data-my-rsvp: accepted | maybe | declined | none
 ```
 

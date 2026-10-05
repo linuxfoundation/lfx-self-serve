@@ -7,7 +7,8 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { MEETING_TIME_STATE_LABELS } from '@lfx-one/shared/constants';
+import { MEETING_STATUS_LABELS } from '@lfx-one/shared/constants';
+import { isMeetingInviteResponsesEnabled, resolveMeetingStatus } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
@@ -76,7 +77,15 @@ export class MeetingIdentityBarComponent {
       if (!meeting || !timeState) {
         return '';
       }
-      const status = MEETING_TIME_STATE_LABELS[timeState];
+      const status =
+        MEETING_STATUS_LABELS[
+          resolveMeetingStatus({
+            timeState,
+            invited: meeting.invited === true,
+            inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
+            myRsvp: undefined,
+          })
+        ];
       return [meeting.project?.name, status].filter(Boolean).join(' · ');
     });
   }

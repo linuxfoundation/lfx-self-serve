@@ -10,6 +10,8 @@ import type {
   MeetingPrivacyState,
   MeetingSectionVisibility,
   MeetingSectionVisibilityInput,
+  MeetingStatusInput,
+  MeetingStatusKind,
   MeetingTimeState,
   MeetingViewerContext,
   MeetingViewerRole,
@@ -76,6 +78,36 @@ export function resolveViewerRole(context: MeetingViewerContext): MeetingViewerR
   }
 
   return 'outsider';
+}
+
+/**
+ * Resolves the meeting status shown in the V2 status pill and identity bar (E1-05, FR-011).
+ *
+ * Ended and live are time states for everyone. Before the meeting, a viewer on the invite list with
+ * RSVP tracking on sees their own answer; with tracking off (pre-2024 meetings) or the answer not
+ * loaded yet, the pill falls back to the time state rather than claiming the viewer has not answered.
+ */
+export function resolveMeetingStatus(input: MeetingStatusInput): MeetingStatusKind {
+  if (input.timeState === 'ended') {
+    return 'ended';
+  }
+  if (input.timeState === 'live') {
+    return 'live';
+  }
+  if (!input.invited || !input.inviteResponsesEnabled || input.myRsvp === undefined) {
+    return 'upcoming';
+  }
+
+  switch (input.myRsvp) {
+    case 'accepted':
+      return 'going';
+    case 'maybe':
+      return 'maybe';
+    case 'declined':
+      return 'cant-attend';
+    default:
+      return 'awaiting-rsvp';
+  }
 }
 
 /**

@@ -28,9 +28,27 @@
         {{ meeting.title }}
       </h1>
 
-      <!-- E1-05's status pill takes the front of this row, before the privacy chip. The prototype keeps
+      <!-- The status pill (E1-05) leads the row, then the privacy chip (E1-04). The prototype keeps
          the row on one line; it wraps here, so a narrow screen never scrolls sideways. -->
       <div class="flex flex-wrap items-center gap-[8px]" data-testid="meeting-header-badges">
+        @if (status(); as status) {
+          <!-- A filled pill rather than an lfx-tag: the prototype gives it a tinted fill and a status dot or
+             RSVP glyph, which the outlined chip wrapper has no variant for. -->
+          <span
+            class="inline-flex flex-none items-center gap-[7px] whitespace-nowrap rounded-full px-[12px] py-[5px] text-[12.5px] font-semibold leading-[15px]"
+            [class]="statusClasses[status].pill"
+            data-testid="meeting-status-pill"
+            [attr.data-state]="timeState()"
+            [attr.data-status]="status"
+            [attr.data-my-rsvp]="myRsvpAttr()">
+            @if (statusClasses[status].glyph; as glyph) {
+              <i class="text-[12px]" [class]="glyph" aria-hidden="true"></i>
+            } @else {
+              <span class="inline-block h-[7px] w-[7px] rounded-full" [class]="statusClasses[status].dot" aria-hidden="true"></span>
+            }
+            {{ statusLabel() }}
+          </span>
+        }
         @if (privacy(); as privacy) {
           <!-- One chip, four values (FR-010): state goes in data-* attributes, not separate elements. -->
           <lfx-tag

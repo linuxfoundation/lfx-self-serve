@@ -10,7 +10,14 @@ import { describe, expect, it } from 'vitest';
 
 import { MeetingVisibility } from '../enums';
 import type { ActionSlotInput, ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '../interfaces';
-import { resolveActionSlot, resolvePrivacy, resolveTimeState, resolveViewerRole, resolveVisibleSections } from './meeting-view-model.utils';
+import {
+  resolveActionSlot,
+  resolveMeetingStatus,
+  resolvePrivacy,
+  resolveTimeState,
+  resolveViewerRole,
+  resolveVisibleSections,
+} from './meeting-view-model.utils';
 
 const START = '2026-06-01T10:00:00.000Z';
 
@@ -619,5 +626,27 @@ describe('resolveVisibleSections', () => {
         }
       }
     }
+  });
+});
+
+describe('resolveMeetingStatus', () => {
+  const before = { timeState: 'before' as const, invited: true, inviteResponsesEnabled: true };
+
+  it.each([
+    [{ ...before, timeState: 'ended' as const, myRsvp: 'accepted' as const }, 'ended'],
+    [{ ...before, timeState: 'live' as const, myRsvp: 'declined' as const }, 'live'],
+    [{ ...before, myRsvp: 'accepted' as const }, 'going'],
+    [{ ...before, myRsvp: 'maybe' as const }, 'maybe'],
+    [{ ...before, myRsvp: 'declined' as const }, 'cant-attend'],
+    [{ ...before, myRsvp: null }, 'awaiting-rsvp'],
+    // Not loaded yet: never claims the viewer has not answered.
+    [{ ...before, myRsvp: undefined }, 'upcoming'],
+    // Pre-2024 meetings never collected RSVPs: the time state only, never "Awaiting your RSVP".
+    [{ ...before, inviteResponsesEnabled: false, myRsvp: null }, 'upcoming'],
+    [{ ...before, inviteResponsesEnabled: false, myRsvp: 'accepted' as const }, 'upcoming'],
+    // Not on the invite list: the time state.
+    [{ ...before, invited: false, myRsvp: null }, 'upcoming'],
+  ])('resolves %o to %s', (input, expected) => {
+    expect(resolveMeetingStatus(input)).toBe(expected);
   });
 });

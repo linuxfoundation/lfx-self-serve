@@ -19,6 +19,7 @@ describe('MeetingHeaderComponent', () => {
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let setFoundation: ReturnType<typeof vi.fn>;
   let copyLink: ReturnType<typeof vi.fn>;
+  let now: WritableSignal<Date>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -50,7 +51,7 @@ describe('MeetingHeaderComponent', () => {
       imports: [MeetingHeaderComponent],
       providers: [
         { provide: PLATFORM_ID, useValue: platform },
-        { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence: signal(null) } },
+        { provide: MeetingDetailsStateService, useValue: { meeting, now, selectedOccurrence: signal(null) } },
         { provide: ProjectContextService, useValue: { setFoundation } },
         { provide: ClipboardShareService, useValue: { copyLink } },
       ],
@@ -64,6 +65,7 @@ describe('MeetingHeaderComponent', () => {
     meeting = signal<LoadedMeeting | undefined>(build());
     setFoundation = vi.fn();
     copyLink = vi.fn();
+    now = signal(new Date());
     await create();
   });
 
@@ -127,6 +129,44 @@ describe('MeetingHeaderComponent', () => {
     // The colour is asserted in both branches: green for a meeting anyone can join, muted otherwise.
     expect(glyph?.classList.contains('text-[var(--md-status-good)]')).toBe(open);
     expect(glyph?.classList.contains('text-[var(--md-text-muted)]')).toBe(!open);
+  });
+
+  describe('status pill', () => {
+    const pill = (): HTMLElement | null => query('meeting-status-pill');
+    const day = 24 * 60 * 60 * 1000;
+
+    it('leads the badge row with the time state', () => {
+      show({ start_time: new Date(Date.now() + 3 * day).toISOString(), duration: 60 } as Partial<Meeting>);
+
+      expect(query('meeting-header-badges')?.firstElementChild).toBe(pill());
+      expect(pill()?.textContent?.trim()).toBe('Upcoming');
+      expect(pill()?.getAttribute('data-state')).toBe('before');
+      expect(pill()?.getAttribute('data-status')).toBe('upcoming');
+    });
+
+    it('moves to In progress and then Ended as the clock passes the meeting', () => {
+      const start = Date.now() + 3 * day;
+      show({ start_time: new Date(start).toISOString(), duration: 60 } as Partial<Meeting>);
+
+      now.set(new Date(start + 10 * 60 * 1000));
+      fixture.detectChanges();
+      expect(pill()?.textContent?.trim()).toBe('In progress');
+      expect(pill()?.getAttribute('data-state')).toBe('live');
+
+      now.set(new Date(start + 2 * day));
+      fixture.detectChanges();
+      expect(pill()?.textContent?.trim()).toBe('Ended');
+      expect(pill()?.getAttribute('data-state')).toBe('ended');
+    });
+
+    // The viewer's own RSVP is not loaded until E2-04, so an invited viewer sees the time state, and
+    // data-my-rsvp is absent rather than a wrong "none".
+    it('never shows Awaiting your RSVP before the RSVP is loaded', () => {
+      show({ start_time: new Date(Date.now() + 3 * day).toISOString(), duration: 60, invited: true, is_invite_responses_enabled: true } as Partial<Meeting>);
+
+      expect(pill()?.textContent?.trim()).toBe('Upcoming');
+      expect(pill()?.hasAttribute('data-my-rsvp')).toBe(false);
+    });
   });
 
   it('shows the meeting type with its configured label', () => {
