@@ -407,6 +407,33 @@ describe('resolveVisibleSections', () => {
     expect(sections.rsvpAvatarBadges).toBe(false);
   });
 
+  // Past rows are `PastMeetingParticipant` records with no RSVP answer, so the RSVP surfaces stay off
+  // even where the past roster itself shows.
+  it.each(['organizer', 'registrant'] as MeetingViewerRole[])('hides the RSVP surfaces on an ended meeting for an %s with artifact access', (viewerRole) => {
+    const sections = resolveVisibleSections({
+      fullAccess: true,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole,
+    });
+    expect(sections.people).toBe(true);
+    expect(sections.rsvpSummary).toBe(false);
+    expect(sections.rsvpRosterFilter).toBe(false);
+    expect(sections.rsvpAvatarBadges).toBe(false);
+  });
+
+  it('shows the RSVP surfaces to an organizer while the meeting is live', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'live',
+      viewerRole: 'organizer',
+    });
+    expect(sections.rsvpSummary).toBe(true);
+  });
+
   it('withholds the RSVP surfaces from an outsider even when tracking is on', () => {
     const sections = resolveVisibleSections({
       fullAccess: false,

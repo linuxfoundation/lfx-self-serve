@@ -22,7 +22,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   resolver's table test, not in the browser.
 - **FR-002**: The flag MUST gate UI only. No BFF route, response shape or authorization decision may
   depend on it (R02).
-- **FR-003**: An unready, erroring or timed-out flag provider MUST render V1 (R03).
+- **FR-003**: A flag provider that is not ready, errors or times out before it first becomes ready
+  MUST render V1 (R03). Once it has been ready, a later provider error keeps the last value it
+  delivered (`FeatureFlagService` only logs it), so a dropped LaunchDarkly connection does not tear
+  down an open V2 page; only a targeting change moves the viewer.
 - **FR-004**: V2 MUST load as its own lazy chunk that V1 viewers never download, and a failure to
   load that chunk MUST render V1 rather than an empty region.
 - **FR-005**: V2 MUST preserve the `MeetingJoinPageState` TransferState contract — key
@@ -43,8 +46,9 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 - **FR-010**: The header MUST render **one** privacy chip whose label and icon come from
   `getMeetingPrivacyLabel` / `getMeetingPrivacyIcon` — four values of one element — and an absent
   `visibility` MUST read as private everywhere on the page.
-- **FR-011**: A status pill MUST reflect the time state (upcoming / live / ended) and, for a
-  registrant with RSVP tracking on, their own RSVP.
+- **FR-011**: A status pill MUST reflect the time state (upcoming / live / ended) and, for a viewer
+  on the invite list (`Meeting.invited`) with RSVP tracking on, their own RSVP: a registrant, or an
+  organizer who is also invited (`testid-contract.md` § `data-my-rsvp`).
 - **FR-012**: The time banner MUST distinguish before-window (with the early-join minutes), in-window
   and ended, using the same window maths as `canJoinMeeting` / `hasMeetingEnded`.
 - **FR-013**: The sticky identity bar's sign-in MUST preserve the current URL as `returnTo`,

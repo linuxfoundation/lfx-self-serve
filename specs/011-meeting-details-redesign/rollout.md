@@ -19,11 +19,15 @@ There are two separate controls, and they do different jobs:
 - **The code default never changes.** `MEETING_V2_ENABLED_FLAG` defaults to `false` in code and stays
   `false`. LaunchDarkly targeting is the only switch (R04). Flipping the code default would ship V2
   to everyone at once, with no way back short of a deploy.
-- **Fail closed.** An unready, slow or erroring flag provider renders V1 (R03).
+- **Fail closed.** A flag provider that is not ready, slow or erroring before its first value renders
+  V1 (R03). After that, a provider error keeps the last delivered value rather than tearing down an
+  open page.
 - **Anonymous visitors get V1** until stage 5 below. Stage 5 is the deliberate, code-owner-reviewed
   end of R05; `spec.md` R05 and FR-001 are scoped to the stages before it.
 - **Rollback is a targeting change, not a deploy.** Removing a viewer from targeting puts them back
-  on V1 on their next page load. Every stage relies on this.
+  on V1 as soon as the change reaches their browser: the gate is reactive, so an open V2 page is
+  replaced by V1 in place, and anything unsaved on it (a half-filled form, an open dialog) is lost.
+  Announce a rollback to testers when you can. Every stage relies on this.
 - **Dev and prod targeting are configured identically**, so what testers see in dev is what they get
   in prod.
 - The flag is shared with the meeting composer (epic #1451). Changing targeting moves **both**
