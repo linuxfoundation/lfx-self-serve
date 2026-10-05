@@ -19,6 +19,8 @@ const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatu
     getMeetingById: vi.fn(),
     getMeetingHostKey: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    canViewMeetingRoster: vi.fn(),
+    getMeetingRegistrantCount: vi.fn(),
   },
   getEffectiveEmailMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
@@ -107,6 +109,7 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     vi.clearAllMocks();
     controller = new MeetingController();
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.canViewMeetingRoster.mockResolvedValue(true);
   });
 
   it('calls the partial-tolerant getMeetingRegistrants for the 3 pre-existing callers (no fail_on_partial)', async () => {

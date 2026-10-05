@@ -21,6 +21,8 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     assertCommitteeAttributionAllowed: vi.fn(),
+    canViewMeetingRoster: vi.fn(),
+    getMeetingRsvps: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
@@ -614,6 +616,7 @@ describe('MeetingController', () => {
 
     beforeEach(() => {
       meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
+      meetingSvc.canViewMeetingRoster.mockResolvedValue(true);
       meetingSvc.assertCommitteeAttributionAllowed.mockResolvedValue(undefined);
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID }] });
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
@@ -655,6 +658,29 @@ describe('MeetingController', () => {
       expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
       expect(next).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
+    });
+
+    // The tolerant listing reads on the caller's own token, and query-service FGA lets anyone who
+    // can view the meeting list its registrants, so the guest-visibility rule has to hold here.
+    it('returns no rows to a caller who may not see the guests', async () => {
+      meetingSvc.canViewMeetingRoster.mockResolvedValue(false);
+      const res = buildRes();
+
+      await controller.getMeetingRegistrants(buildReq(), res, next);
+
+      expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([]);
+    });
+
+    it('hides the rows rather than erroring when the visibility check cannot be resolved', async () => {
+      meetingSvc.canViewMeetingRoster.mockRejectedValue(new Error('access-check timeout'));
+      const res = buildRes();
+
+      await controller.getMeetingRegistrants(buildReq(), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([]);
     });
 
     it('leaves registrants unenriched by default, without fetching the meeting', async () => {
@@ -704,6 +730,33 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith([
         expect.objectContaining({ committee_name: 'TAC', committee_role: null, committee_voting_status: null, committee_appointed_by: null }),
       ]);
+    });
+  });
+
+  describe('getMeetingRsvps', () => {
+    const rsvp = { id: 'rsvp-1', registrant_id: 'reg-1', response: 'accepted' };
+
+    beforeEach(() => {
+      meetingSvc.getMeetingRsvps.mockResolvedValue([rsvp]);
+    });
+
+    it('returns the RSVPs to a caller who may see the guests', async () => {
+      meetingSvc.canViewMeetingRoster.mockResolvedValue(true);
+      const res = buildRes();
+
+      await controller.getMeetingRsvps(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([rsvp]);
+    });
+
+    it('returns no RSVPs to a caller who may not see the guests', async () => {
+      meetingSvc.canViewMeetingRoster.mockResolvedValue(false);
+      const res = buildRes();
+
+      await controller.getMeetingRsvps(buildReq(), res, next);
+
+      expect(meetingSvc.getMeetingRsvps).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith([]);
     });
   });
 

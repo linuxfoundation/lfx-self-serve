@@ -302,7 +302,9 @@ export interface Meeting {
    * forces the field off on write. In LFX it also decides whether an invitee who is not an
    * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
    * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
-   * The other BFF roster endpoints do not check it yet (#2827).
+   * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
+   * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
+   * them instead, so meetings already held keep their attendance (#2827).
    */
   show_meeting_attendees?: boolean | null;
   /**
@@ -350,7 +352,10 @@ export interface Meeting {
   // Fields NOT in API - likely response-only
   /** Invited to meeting (response only) */
   invited: boolean;
-  /** Total registrant count from API */
+  /**
+   * Total registrant count. `GET /public/api/meetings/:id` sets it for an invitee who is not an
+   * organizer, so they see how many are invited even when the guest list is hidden from them.
+   */
   registrant_count?: number;
   /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
   individual_registrants_count?: number;

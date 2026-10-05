@@ -536,16 +536,21 @@ export class MeetingController {
       // word. The query-service FGA filtering applies to all paths, but complete-roster workflows
       // enforce additional constraints: scoped to a committee it is the "import registrants" flow
       // with its own rules and size cap; unscoped it is the composer's Guests section, which
-      // requires the organizer relation. Only the tolerant listing — the one that may come back
-      // short — goes straight through on the caller's own bearer token, relying on query-service
-      // FGA filtering as its authorization boundary.
+      // requires the organizer relation. The tolerant listing — the one that may come back short —
+      // reads on the caller's own bearer token, but only after `canViewMeetingRoster`: query-service
+      // FGA lets anyone who can view the meeting list its registrants, which is wider than who may
+      // see the guests.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
         registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
-      } else {
+      } else if (await this.canViewRosterOrHide(req, uid, 'get_meeting_registrants')) {
         registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+      } else {
+        logger.success(req, 'get_meeting_registrants', startTime, { meeting_id: uid, roster_hidden: true, registrant_count: 0 });
+        res.json([]);
+        return;
       }
 
       // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
@@ -553,10 +558,9 @@ export class MeetingController {
       //
       // Authorized first, and only on the tolerant branch: group attribution says which committee a
       // registrant sits on, which the branches above have already established the caller may see
-      // — both authorize before they read. The tolerant listing has not, and never can: it goes
-      // through on the caller's own bearer token; query-service FGA filtering is the authorization
-      // boundary for that listing. Group attribution adds committee-membership data that goes beyond
-      // what the viewer relation protects, so without this an authenticated non-organizer replaying
+      // — both authorize before they read. The tolerant listing has not: `canViewMeetingRoster` also
+      // admits invitees of meetings that share their guests. Group attribution adds
+      // committee-membership data that goes beyond the guest list, so without this an invitee replaying
       // this URL with `include_committee=true` would receive committee attribution they aren't
       // entitled to. The
       // check sits inside the try on the same reasoning as the fetch below — this listing's
@@ -1295,6 +1299,12 @@ export class MeetingController {
         return;
       }
 
+      if (!(await this.canViewRosterOrHide(req, uid, 'get_meeting_rsvps'))) {
+        logger.success(req, 'get_meeting_rsvps', startTime, { meeting_id: uid, roster_hidden: true, count: 0 });
+        res.json([]);
+        return;
+      }
+
       // Get all RSVPs for the meeting
       const rsvps = await this.meetingService.getMeetingRsvps(req, uid);
 
@@ -1972,6 +1982,19 @@ export class MeetingController {
         failed: failures.length,
       },
     };
+  }
+
+  /**
+   * Roster listings may come back short but must not error, so a gate check that cannot be resolved
+   * hides the rows rather than failing the request.
+   */
+  private async canViewRosterOrHide(req: Request, uid: string, operation: string): Promise<boolean> {
+    try {
+      return await this.meetingService.canViewMeetingRoster(req, uid);
+    } catch (error) {
+      logger.warning(req, operation, 'Roster visibility check failed, hiding the roster', { meeting_id: uid, err: error });
+      return false;
+    }
   }
 
   /**
