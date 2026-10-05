@@ -63,8 +63,8 @@
 
 <!-- The two columns. Each placeholder stands in for a section a later Phase 1 issue builds; the
      section replaces its placeholder, keeping this order and these gaps. Stacked at 920px and below
-     (32px apart); side by side above that (44px apart), the rail 344px wide and sticky at 115px,
-     the height of E1-02's identity bar plus 32px. -->
+     (32px apart); side by side above that (44px apart), the rail 344px wide and sticky 32px below the
+     identity bar: 115px (an 83px bar), or 157px under the 42px impersonation banner. -->
 <ng-template #columns>
   <div class="mt-[56px] flex flex-col gap-[32px] min-[921px]:flex-row min-[921px]:items-start min-[921px]:gap-[44px]">
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
@@ -74,7 +74,8 @@
       <p-skeleton height="280px" aria-hidden="true" data-testid="meeting-section-placeholder-discover" />
     </div>
     <aside
-      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:top-[115px] min-[921px]:w-[344px] min-[921px]:flex-none"
+      class="flex w-full flex-col gap-[20px] min-[921px]:sticky min-[921px]:w-[344px] min-[921px]:flex-none"
+      [ngClass]="railTopClass()"
       aria-label="Meeting actions"
       data-testid="meeting-rail">
       <p-skeleton height="320px" aria-hidden="true" data-testid="meeting-section-placeholder-rail" />

@@ -65,7 +65,9 @@ modules/meetings/
   `MeetingDetailsSeedService`, which snapshots the key (without removing it) before V1 is created,
   and V2's `MeetingDetailsStateService` takes that snapshot once, for the same route id only (E1-01).
   That service owns V2's lookup, reachability (400 / 403 / 404 to not-found) and the
-  error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It holds
+  error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It also
+  owns the view-scoped selected occurrence (`?occurrence=` first, else current or next, on the
+  clock) and its time state, so no section picks an occurrence of its own. It holds
   load state only. Presentation state (time state, viewer role, action slot, visible sections) is
   derived by the Phase 1 sections through `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02),
   not by copying V1's inline `computed` signals. V1's orchestration lives inside its component and

@@ -121,6 +121,18 @@ describe('MeetingDetailsPageComponent', () => {
     }
   });
 
+  it('drops the sticky rail below the impersonation banner as the identity bar does', () => {
+    show('ready');
+    const rail = (): HTMLElement | null => query('meeting-rail');
+    expect(rail()?.classList).toContain('min-[921px]:top-[115px]');
+
+    (TestBed.inject(UserService).impersonating as WritableSignal<boolean>).set(true);
+    fixture.detectChanges();
+
+    expect(rail()?.classList).toContain('min-[921px]:top-[157px]');
+    expect(rail()?.classList).not.toContain('min-[921px]:top-[115px]');
+  });
+
   it('scopes the V2 design tokens to a wrapper inside the page', () => {
     expect(fixture.nativeElement.querySelector('.meeting-details-v2')).not.toBeNull();
   });

@@ -6,8 +6,16 @@ import { computed, inject, Injectable, makeStateKey, PLATFORM_ID, Signal, signal
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
-import { Meeting, MeetingDetailsLoadStatus, MeetingJoinPageState, PublicMeetingProject, PublicPastMeetingResponse } from '@lfx-one/shared/interfaces';
-import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
+import {
+  Meeting,
+  MeetingDetailsLoadStatus,
+  MeetingJoinPageState,
+  MeetingOccurrence,
+  MeetingTimeState,
+  PublicMeetingProject,
+  PublicPastMeetingResponse,
+} from '@lfx-one/shared/interfaces';
+import { getActiveOccurrences, getCurrentOrNextOccurrence, isPastMeetingCompositeId, resolveTimeState } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { BehaviorSubject, catchError, combineLatest, EMPTY, interval, map, Observable, switchMap, tap, timer } from 'rxjs';
 
@@ -72,6 +80,16 @@ export class MeetingDetailsStateService {
    */
   public readonly now: Signal<Date> = this.initNow();
   public readonly matchesRoute: Signal<boolean> = computed(() => this.routeId() === this.resolvedRouteId());
+  /**
+   * The occurrence the page is about, for every section to share (data-model.md § View-scoped state).
+   * @description `?occurrence=<start ms>` first, among active (non-cancelled) occurrences; otherwise the
+   * current or next one, re-selected on each clock tick so a series left open moves on. `null` for a
+   * one-off meeting and for a past occurrence opened by its composite id, where the meeting payload is
+   * the occurrence itself.
+   */
+  public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
+  /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
+  public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
   public readonly status: Signal<MeetingDetailsLoadStatus> = this.initStatus();
 
   public constructor() {
@@ -97,6 +115,36 @@ export class MeetingDetailsStateService {
   public refresh(): void {
     this.retrying.set(true);
     this.refresh$.next();
+  }
+
+  private initSelectedOccurrence(): Signal<MeetingOccurrence | null> {
+    const query = toSignal(this.activatedRoute.queryParamMap, { initialValue: this.activatedRoute.snapshot.queryParamMap });
+    return computed(() => {
+      // `getCurrentOrNextOccurrence` reads the wall clock; reading `now` re-selects on each tick.
+      this.now();
+      const meeting = this.meeting();
+      if (!meeting || this.loadedViaPastMeetingId()) {
+        return null;
+      }
+
+      const requested = Number(query().get('occurrence'));
+      if (requested && meeting.occurrences?.length) {
+        const match = getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).find(
+          (occurrence) => new Date(occurrence.start_time).getTime() === requested
+        );
+        if (match) {
+          return match;
+        }
+      }
+      return getCurrentOrNextOccurrence(meeting);
+    });
+  }
+
+  private initTimeState(): Signal<MeetingTimeState | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return meeting ? resolveTimeState(meeting, this.selectedOccurrence(), this.now()) : null;
+    });
   }
 
   private initNow(): Signal<Date> {

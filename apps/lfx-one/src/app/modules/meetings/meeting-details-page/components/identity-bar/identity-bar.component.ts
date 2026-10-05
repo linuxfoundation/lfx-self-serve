@@ -8,7 +8,6 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MEETING_TIME_STATE_LABELS } from '@lfx-one/shared/constants';
-import { getCurrentOrNextOccurrence, resolveTimeState } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
@@ -53,7 +52,7 @@ export class MeetingIdentityBarComponent {
   ];
 
   protected readonly meeting = computed(() => (this.state.status() === 'ready' ? this.state.meeting() : undefined));
-  /** Start of the occurrence the page is about: the current or next one, else the meeting itself. */
+  /** Start of the page's selected occurrence (the state service's), else of the meeting itself. */
   protected readonly startTime: Signal<string | undefined> = this.initStartTime();
   protected readonly subtitle: Signal<string> = this.initSubtitle();
   protected readonly signInHref: Signal<string> = this.initSignInHref();
@@ -66,17 +65,18 @@ export class MeetingIdentityBarComponent {
   private initStartTime(): Signal<string | undefined> {
     return computed(() => {
       const meeting = this.meeting();
-      return meeting ? (getCurrentOrNextOccurrence(meeting)?.start_time ?? meeting.start_time) : undefined;
+      return meeting ? (this.state.selectedOccurrence()?.start_time ?? meeting.start_time) : undefined;
     });
   }
 
   private initSubtitle(): Signal<string> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting) {
+      const timeState = this.state.timeState();
+      if (!meeting || !timeState) {
         return '';
       }
-      const status = MEETING_TIME_STATE_LABELS[resolveTimeState(meeting, getCurrentOrNextOccurrence(meeting), this.state.now())];
+      const status = MEETING_TIME_STATE_LABELS[timeState];
       return [meeting.project?.name, status].filter(Boolean).join(' · ');
     });
   }

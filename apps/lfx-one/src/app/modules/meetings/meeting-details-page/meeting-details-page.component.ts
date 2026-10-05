@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterRenderEffect, Component, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { afterRenderEffect, Component, computed, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { UserService } from '@services/user.service';
@@ -32,6 +32,9 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
 export class MeetingDetailsPageComponent {
   protected readonly state = inject(MeetingDetailsStateService);
   protected readonly userService = inject(UserService);
+
+  /** The rail's sticky offset: 32px below the identity bar, which itself drops below the impersonation banner. */
+  protected readonly railTopClass = computed(() => (this.userService.impersonating() ? 'min-[921px]:top-[157px]' : 'min-[921px]:top-[115px]'));
 
   /** True once the page header has scrolled behind the sticky identity bar. */
   protected readonly headerOutOfView = signal(false);
