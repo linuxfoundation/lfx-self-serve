@@ -70,7 +70,7 @@ export class EventsListComponent {
   protected readonly upcomingViewOptions = MY_EVENTS_UPCOMING_VIEWS;
   protected readonly upcomingView: WritableSignal<MyEventsUpcomingView> = this.initUpcomingView();
   public readonly upcomingRegisteredOnly = computed(() => (this.statsUpcomingRegisteredLoading() ? null : this.upcomingView() === 'registered'));
-  protected readonly showUpcomingViewPills = computed(() => !this.eventsStatsLoading() && this.statsUpcomingAll().total > 0);
+  protected readonly showUpcomingViewPills = this.initShowUpcomingViewPills();
 
   /**
    * True when the filter/search bar should be visible:
@@ -171,6 +171,10 @@ export class EventsListComponent {
     });
   }
 
+  private initShowUpcomingViewPills(): Signal<boolean> {
+    return computed(() => !this.eventsStatsLoading() && (this.statsUpcomingAll().total > 0 || this.registeredCount() > 0 || this.upcomingEvents().total > 0));
+  }
+
   private initializeStatsUpcomingAll(): Signal<MyEventsResponse> {
     return toSignal(
       this.eventsService.getMyEvents({ isPast: false, offset: 0, pageSize: 1 }).pipe(
@@ -188,7 +192,7 @@ export class EventsListComponent {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: 'Failed to load registration totals. Showing My Registrations.',
+            detail: 'Failed to load registration totals. Upcoming defaults to My Registrations.',
           });
           return of(null);
         }),
