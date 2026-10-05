@@ -95,9 +95,9 @@ export class CommitteeDocumentsComponent {
   public onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('committee_folder:') ? doc.id.slice('committee_folder:'.length) : null;
     if (folderUid) {
-      // Clear the search query so the folder view activates and the user lands inside
-      // the folder rather than remaining in the flattened search result set.
-      this.filterForm.controls.search.setValue('');
+      // Clear the search query so the folder view activates immediately — using
+      // { emitEvent: false } avoids the 300ms debounce delay in initSearchQuery.
+      this.filterForm.controls.search.setValue('', { emitEvent: false });
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -239,10 +239,12 @@ export class CommitteeDocumentsComponent {
       const query = this.searchQuery().toLowerCase().trim();
       const source = this.sourceFilter();
 
-      // When a search query is active, flatten all documents (ignoring folder scope) so
-      // users can find documents without knowing which folder they live in.
+      // When a search query is active at root (no folder drilled into), flatten all
+      // documents so users can find items without knowing which folder they live in.
+      // Inside a folder the folder-scoped view is used, so the empty-state message
+      // and breadcrumb context stay accurate.
       let docs: MyDocumentItem[];
-      if (query) {
+      if (query && !this.currentFolderUid()) {
         const committee = this.committee();
         const committeeUid = committee?.uid;
         const groupName = committee?.name ?? '';

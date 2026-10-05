@@ -188,9 +188,9 @@ export class DocumentsDashboardComponent {
   protected onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('project_folder:') ? doc.id.slice('project_folder:'.length) : null;
     if (folderUid) {
-      // Clear the search query so the folder view activates and the user lands inside
-      // the folder rather than remaining in the flattened search result set.
-      this.filterForm.controls.search.setValue('');
+      // Clear the search query so the folder view activates immediately — using
+      // { emitEvent: false } avoids the 300ms debounce delay in initSearchQuery.
+      this.filterForm.controls.search.setValue('', { emitEvent: false });
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -439,11 +439,11 @@ export class DocumentsDashboardComponent {
       const projectMode = this.useProjectSource();
       const projectDocSource = this.projectDocumentSourceFilter();
 
-      // When in project mode with an active search query, search across ALL nested
-      // documents rather than just the current folder view, so users can find a
-      // document without knowing which folder it lives in.
+      // When in project mode with an active search query at root (no folder drilled into),
+      // search across ALL nested documents so users can find a document without knowing
+      // which folder it lives in. Inside a folder, the folder-scoped view is used instead.
       let docs: MyDocumentItem[];
-      if (projectMode && query) {
+      if (projectMode && query && !this.currentFolderUid()) {
         const raw = this.rawProjectDocuments();
         const project = this.project();
         const folderUids = new Set(raw.filter((d) => d.type === 'folder').map((f) => f.uid));
