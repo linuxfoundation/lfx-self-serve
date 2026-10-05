@@ -1033,8 +1033,8 @@ export class PastMeetingController {
   }
 
   /**
-   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
-   * requests and access-check failures both default to false (fail closed).
+   * Whether the caller may see the past meeting's participant rows. An unresolvable check hides
+   * them (fail closed) instead of failing the request.
    */
   private async canViewParticipantsOrHide(req: Request, uid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
     try {
@@ -1048,6 +1048,10 @@ export class PastMeetingController {
     }
   }
 
+  /**
+   * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
+   * requests and access-check failures both default to false (fail closed).
+   */
   private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
     if (!req.oidc?.isAuthenticated()) {
       return false;

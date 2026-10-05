@@ -427,6 +427,22 @@ describe('PublicMeetingController.getMeetingById registrant count', () => {
     expect(meetingSvc.getMeetingRegistrantCount).not.toHaveBeenCalled();
   });
 
+  // The invited flag can miss someone; the email fallback then proves the invite, and the
+  // count must follow it or the join page shows "0 invited".
+  it('gives the count to an invitee found only by the email fallback', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-self' }]);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const { meeting } = res.json.mock.calls[0][0];
+    expect(meeting.invited).toBe(true);
+    expect(meeting.registrant_count).toBe(12);
+  });
+
   it('still serves the meeting when the count is unavailable', async () => {
     meetingSvc.getMeetingRegistrantCount.mockRejectedValue(new Error('query service down'));
     const { req, res, next } = buildReqRes(true);
@@ -722,7 +738,7 @@ describe('PublicMeetingController.getPublicPastMeetingById participant counts (#
     await controller.getPublicPastMeetingById(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.getPastMeetingParticipants).toHaveBeenCalledWith(req, 'occ-key');
+    expect(meetingSvc.getPastMeetingParticipants).toHaveBeenCalledWith(req, 'occ-key', true);
     const { meeting } = res.json.mock.calls[0][0];
     expect(meeting.participant_count).toBe(3);
     expect(meeting.attended_count).toBe(2);

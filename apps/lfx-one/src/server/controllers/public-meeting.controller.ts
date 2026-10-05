@@ -127,15 +127,7 @@ export class PublicMeetingController {
       // client. m2mToken is still active on req.bearerToken.
       const parent = await this.resolveParentProject(req, project);
 
-      // An invitee who cannot see the guest list still sees how many people are invited, so the
-      // count comes from the query-service count endpoint rather than a roster read (GH-1731).
-      if (meeting.invited && !meeting.organizer) {
-        try {
-          meeting.registrant_count = await this.meetingService.getMeetingRegistrantCount(req, id, m2mToken);
-        } catch (error) {
-          logger.warning(req, 'get_public_meeting_by_id', 'Registrant count unavailable', { meeting_id: id, err: error });
-        }
-      }
+      await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
 
       // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
@@ -187,6 +179,7 @@ export class PublicMeetingController {
                 email: userEmail,
               });
               meeting.invited = true;
+              await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
               res.json({
                 meeting,
                 project: this.toPublicMeetingProject(project, parent),
@@ -295,10 +288,11 @@ export class PublicMeetingController {
       }
 
       // /past-meetings/:uid/participants hides the rows from viewers who are not on them, so the
-      // join page's attendance stats read these counts instead. Organizers get the rows.
+      // join page's attendance stats read these counts instead. Organizers get the rows. The read
+      // fails on a partial page walk, so a short list leaves the counts out rather than understating them.
       if (fullAccess && !isOrganizer && isAuthenticated && originalToken !== undefined) {
         try {
-          const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting));
+          const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting), true);
           meeting.participant_count = participants.length;
           meeting.attended_count = participants.filter((p) => p.is_attended).length;
           meeting.individual_registrants_count = participants.filter((p) => p.is_invited).length;
@@ -646,6 +640,22 @@ export class PublicMeetingController {
     } catch (error) {
       // Error handler will log
       next(error);
+    }
+  }
+
+  /**
+   * Sets `registrant_count` for an invitee who is not an organizer, so they see how many people
+   * are invited even when the guest list is hidden from them. Reads the query-service count
+   * endpoint rather than the roster (GH-1731). Never throws: a failed count leaves it unset.
+   */
+  private async addInviteeRegistrantCount(req: Request, meeting: Meeting, meetingUid: string, m2mToken: string): Promise<void> {
+    if (!meeting.invited || meeting.organizer) {
+      return;
+    }
+    try {
+      meeting.registrant_count = await this.meetingService.getMeetingRegistrantCount(req, meetingUid, m2mToken);
+    } catch (error) {
+      logger.warning(req, 'get_public_meeting_by_id', 'Registrant count unavailable', { meeting_id: meetingUid, err: error });
     }
   }
 
