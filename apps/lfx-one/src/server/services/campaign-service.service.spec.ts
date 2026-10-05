@@ -35,7 +35,7 @@ vi.mock('./microservice-proxy.service', () => ({
 // logger would print two warnings per run for the paths that deliberately exercise them.
 vi.mock('./logger.service', () => ({ logger }));
 
-import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import { readFileSync } from 'node:fs';
 
 import type { Request } from 'express';
@@ -3145,6 +3145,208 @@ describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
     const result = await new CampaignServiceClient().toggleCampaignStatus(req, args);
 
     expect(result.etag).toBe('7');
+  });
+});
+
+/**
+ * The budget write is the toggle's sibling, so these pin the same wire facts (path, argument
+ * positions, If-Match, header ETag) plus the one thing the toggle does not have: which failures
+ * keep upstream's message and which are rewritten as unconfirmed.
+ */
+describe('CampaignServiceClient.updateCampaignBudget', () => {
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', budget: 2500.5, budgetType: 'daily' as const, etag: '"3"' };
+
+  /** A campaign-service answer: its own Goa envelope, whose `code` is the status as a string. */
+  function upstreamError(status: number, message: string): MicroserviceError {
+    return new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+  }
+
+  async function failureFor(error: unknown): Promise<MicroserviceError> {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+    const caught = await new CampaignServiceClient().updateCampaignBudget(req, args).catch((e: unknown) => e);
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    return caught as MicroserviceError;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PATCHes the nested budget path with the amount and pacing as the BODY', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'active', version: 4 }, { etag: '"4"' }));
+
+    await new CampaignServiceClient().updateCampaignBudget(req, args);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[1]).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/budget');
+    expect(call[3]).toBe('PATCH');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ budget: 2500.5, budget_type: 'daily' });
+    expect(call[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  // The amount is in the ad account's own currency, so any rounding or conversion here would
+  // write a different figure than the operator typed.
+  it('sends the amount exactly as given, without rounding', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1' }));
+
+    await new CampaignServiceClient().updateCampaignBudget(req, { ...args, budget: 0.000001, budgetType: 'lifetime' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ budget: 0.000001, budget_type: 'lifetime' });
+  });
+
+  it('encodes every path segment so an id cannot escape its position', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'x' }));
+
+    await new CampaignServiceClient().updateCampaignBudget(req, { ...args, projectSlug: 'a/b', briefId: 'c d', campaignId: 'e?f' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][2]).toBe('/projects/a%2Fb/briefs/c%20d/campaigns/e%3Ff/budget');
+  });
+
+  it('returns the row with the ETag header as its fresh validator', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ id: 'c-1', platform: 'google_ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
+    );
+
+    const result = await new CampaignServiceClient().updateCampaignBudget(req, args);
+
+    expect(result).toEqual({ id: 'c-1', platform: 'google_ads', status: 'active', version: 4, etag: '"4"' });
+  });
+
+  it('passes a 400 through with the platform reason upstream gave', async () => {
+    const message = 'LinkedIn requires a daily budget of at least 10.00';
+    const error = await failureFor(upstreamError(400, message));
+
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  it('passes a 409 refusal through unchanged', async () => {
+    const message = "the campaign's budget is shared with other campaigns; change it in the ad platform";
+    const error = await failureFor(upstreamError(409, message));
+
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  it.each([
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+  ])('passes a %s precondition failure through unchanged', async (status, message) => {
+    const error = await failureFor(upstreamError(status, message));
+
+    expect(error.statusCode).toBe(status);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  // campaign-service answers 503 for both outcomes and says which in the message, so an answered
+  // 503 must reach the caller in upstream's own words in either case.
+  it.each([
+    ['unconfirmed', 'the budget change is unconfirmed: it may have been applied. Verify the campaign in Google Ads before retrying'],
+    ['definite', 'the budget change could not be applied: Google Ads is unavailable. Nothing was changed'],
+  ])("passes campaign-service's own %s 503 message through untouched", async (_kind, message) => {
+    const error = await failureFor(upstreamError(503, message));
+
+    expect(error.statusCode).toBe(503);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  // Nobody answered, so the write may already be on the platform. "Please try again" alone would
+  // hide that.
+  it('reports a BFF transport failure as unconfirmed, keeping its status and transport marker', async () => {
+    const transport = new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
+      originalError: new Error('socket hang up'),
+      transportFailure: true,
+    });
+
+    const error = await failureFor(transport);
+
+    expect(error.statusCode).toBe(503);
+    expect(error.toResponse()).toEqual(expect.objectContaining({ error: CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED, code: 'NETWORK_ERROR', transport: true }));
+  });
+
+  it('reports a gateway 504 with no campaign-service envelope as unconfirmed', async () => {
+    const error = await failureFor(new MicroserviceError('Gateway Timeout', 504, 'GATEWAY_TIMEOUT', { errorBody: { message: 'Gateway Timeout' } }));
+
+    expect(error.statusCode).toBe(504);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  // Each row is built in the exact shape `api-client.service.ts` `executeRequest` throws, so the
+  // classification is pinned against what really arrives rather than a hand-simplified error.
+  it.each([
+    [
+      'a BFF timeout',
+      new MicroserviceError('Request timeout after 30000ms', 408, 'TIMEOUT', {
+        originalError: Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+        transportFailure: true,
+        operation: 'api_client_timeout',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+      }),
+      408,
+    ],
+    [
+      'a gateway 503 whose JSON body has a message and no campaign-service code',
+      new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { message: 'Service Unavailable' },
+      }),
+      503,
+    ],
+    [
+      'a 502 carrying an envelope for a different status',
+      new MicroserviceError('the budget change could not be applied', 502, 'BAD_GATEWAY', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { code: '503', message: 'the budget change could not be applied' },
+      }),
+      502,
+    ],
+  ])('reports %s as unconfirmed, keeping its status', async (_label, thrown, status) => {
+    const error = await failureFor(thrown);
+
+    expect(error.statusCode).toBe(status);
+    expect(error.code).toBe(thrown.code);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [
+      'an answered 500 in the campaign-service envelope',
+      new MicroserviceError('internal error', 500, 'INTERNAL_ERROR', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { code: '500', message: 'internal error' },
+      }),
+    ],
+    [
+      'a 4xx whose error body could not be read',
+      new MicroserviceError('Conflict', 409, 'CONFLICT', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        originalError: new Error('terminated'),
+      }),
+    ],
+  ])('passes %s through unchanged, as a definite failure', async (_label, thrown) => {
+    const error = await failureFor(thrown);
+
+    expect(error).toBe(thrown);
+    expect(error.toResponse()['error']).not.toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+    expect(error.toResponse()['transport']).toBeUndefined();
+  });
+
+  it('leaves a gateway 4xx refusal alone, since it never dispatched', async () => {
+    const error = await failureFor(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe('Forbidden');
   });
 });
 
