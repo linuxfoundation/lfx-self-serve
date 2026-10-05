@@ -30,7 +30,7 @@
 
 import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
-import { expect, Locator, Page, Request, Route, test } from '@playwright/test';
+import { expect, Locator, Page, Route, test } from '@playwright/test';
 
 import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
@@ -206,13 +206,15 @@ test.describe('Meetings v2 dark-launch gate', () => {
  * on the Express server, server-side fetches bypass `page.route`, and the pre-v2 page redirects to
  * `/meetings/not-found` when the lookup fails — so a full navigation would serve the not-found page
  * for *both* branches and assert nothing. The lookup is stubbed and held open instead of answered,
- * which parks the pre-v2 page on its loading state so the branch marker can be read without racing
- * the redirect that a resolved 404 triggers.
+ * which parks whichever tree renders on its loading state so the branch marker can be read without
+ * racing the redirect that a resolved 404 triggers. Both trees run the lookup and both send a 404 to
+ * not-found, so a released 404 no longer tells the branches apart; the v2 test answers with a meeting.
  */
 test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
   const MEETING_UID = 'm0000000-0000-0000-0000-00000000f001';
+  const MEETING_TITLE = 'Acme Weekly Sync';
 
   test.beforeEach(() => {
     if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
@@ -221,55 +223,43 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   });
 
   /** Boots the app with the flag pinned, holds the meeting lookup open, and SPA-navigates to the page. */
-  // `release` lets the held meeting lookup answer 404, and `settled` resolves once the route handler
-  // has finished with a lookup (delivered, or dropped because the page aborted it). `lookups` records
-  // every meeting lookup the browser issued and which of them failed. The pre-v2 page holds its
-  // lookup behind `debounceTime(0)`, so on the flag-on path it may be destroyed before the request is
-  // ever sent: "never issued" and "issued, then aborted" are both a torn-down lookup.
-  async function gotoMeetingDetails(
-    page: Page,
-    flagEnabled: boolean
-  ): Promise<{ release: () => void; settled: Promise<void>; lookups: { issued: Request[]; failed: Set<Request> } }> {
+  // `release` lets every held meeting lookup answer: 404 by default, or the stub meeting when
+  // `answer` is `'meeting'`. On the flag-on path both trees issue a lookup — the pre-v2 page for the
+  // one render before the gate's hydration latch destroys it (its request is then aborted), and the
+  // v2 page's own `MeetingDetailsStateService` — so the answer is what the v2 page acts on.
+  async function gotoMeetingDetails(page: Page, flagEnabled: boolean, answer: 'not-found' | 'meeting' = 'not-found'): Promise<{ release: () => void }> {
     let release = (): void => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
-    });
-    let markSettled = (): void => {};
-    const settled = new Promise<void>((resolve) => {
-      markSettled = resolve;
     });
 
     await stubMeetingsV2Flag(page, flagEnabled);
     await page.route('**/public/api/meetings/**', async (route) => {
       await held;
-      // A request the page already aborted rejects here; either way the lookup is over.
-      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) }).catch(() => undefined);
-      markSettled();
+      const response =
+        answer === 'meeting'
+          ? {
+              status: 200,
+              body: JSON.stringify({
+                meeting: { id: MEETING_UID, uid: MEETING_UID, title: MEETING_TITLE },
+                project: { uid: 'p1', name: 'Acme Project', slug: 'acme-project' },
+              }),
+            }
+          : { status: 404, body: JSON.stringify({ message: 'not found' }) };
+      // A request the page already aborted (the destroyed pre-v2 lookup) rejects here; that is fine.
+      await route.fulfill({ ...response, contentType: 'application/json' }).catch(() => undefined);
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
     await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
-    const lookups = { issued: [] as Request[], failed: new Set<Request>() };
-    const isLookup = (request: Request): boolean => request.url().includes(`/public/api/meetings/${MEETING_UID}`);
-    page.on('request', (request) => {
-      if (isLookup(request)) {
-        lookups.issued.push(request);
-      }
-    });
-    page.on('requestfailed', (request) => {
-      if (isLookup(request)) {
-        lookups.failed.add(request);
-      }
-    });
-
     await page.evaluate((url) => {
       window.history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, `/meetings/${MEETING_UID}`);
 
-    return { release, settled, lookups };
+    return { release };
   }
 
   test('renders the pre-v2 meeting page while the flag is off', async ({ page }) => {
@@ -279,37 +269,37 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
     // Absent, not hidden — a v2 tree mounted alongside v1 would still run its own data flows.
     await expect(page.getByTestId('meeting-details-gate-v2')).toHaveCount(0);
 
-    // Letting the stubbed lookup answer 404 sends the pre-v2 page to its own not-found route, which
-    // no other branch does — second proof that this branch is the one that ran.
+    // Letting the stubbed lookup answer 404 sends the pre-v2 page to its own not-found route.
     release();
     await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
   });
 
   test('renders the v2 meeting page once the flag is on', async ({ page }) => {
-    const { release, settled, lookups } = await gotoMeetingDetails(page, true);
-    const visited: string[] = [];
-    page.on('framenavigated', (frame) => {
-      if (frame === page.mainFrame()) {
-        visited.push(frame.url());
-      }
-    });
+    const { release } = await gotoMeetingDetails(page, true, 'meeting');
 
     await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
-    // The v2 tree is behind `@defer`, so seeing the scaffold proves its lazy chunk loaded and mounted.
-    await expect(page.getByTestId('meeting-details-scaffold')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    // The v2 tree is behind `@defer`, so seeing its shell proves the lazy chunk loaded and mounted.
+    // With the lookup held, the shell is on its loading state.
+    await expect(page.getByTestId('meeting-skeleton')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
 
-    // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it
-    // is destroyed at the latch and its in-flight lookup torn down with it — so releasing the held
-    // route cannot redirect this branch to not-found the way it does with the flag off. Either the
-    // lookup was never issued (the debounce had not fired when the latch destroyed the page) or every
-    // issued lookup was aborted; both mean nothing is left that could redirect.
-    await expect.poll(() => lookups.issued.every((request) => lookups.failed.has(request)), { timeout: PAGE_LOAD_TIMEOUT }).toBe(true);
     release();
-    if (lookups.issued.length > 0) {
-      await settled;
-    }
-    expect(visited.filter((url) => url.includes('/meetings/not-found'))).toEqual([]);
+    await expect(page.getByTestId('meeting-header-section').getByRole('heading', { level: 1 })).toHaveText(MEETING_TITLE, {
+      timeout: PAGE_LOAD_TIMEOUT,
+    });
+    await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/meetings/${MEETING_UID}$`));
+  });
+
+  // On an in-app navigation the pre-v2 page is destroyed before its lookup settles, so it cannot
+  // reject a bad id for the v2 branch. The v2 page checks reachability itself.
+  test('sends a missing meeting to not-found from the v2 page itself', async ({ page }) => {
+    const { release } = await gotoMeetingDetails(page, true);
+
+    await expect(page.getByTestId('meeting-page-shell')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
+
+    release();
+    await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
   });
 });

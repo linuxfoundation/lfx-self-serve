@@ -990,6 +990,14 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
  */
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
+/**
+ * TransferState key for the public meeting page's SSR-resolved `MeetingJoinPageState`
+ * @description V1 (`meeting-join-v1/meeting-join.component.ts`) declares the same literal inline
+ * and stays byte-identical, so it does not import this; the meeting details gate and V2 do. The
+ * two must stay equal, or V2 silently loses its seed.
+ */
+export const MEETING_JOIN_STATE_KEY = 'meetingJoinState';
+
 // ============================================================================
 // Pre-v2 Meeting Wizard Constants
 // ============================================================================

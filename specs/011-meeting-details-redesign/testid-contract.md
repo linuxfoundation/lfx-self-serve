@@ -30,15 +30,24 @@ own namespace; the two never share a value.
 
 | `data-testid`                       | Element                                            |
 | ----------------------------------- | -------------------------------------------------- |
+| `meeting-page-shell`                | The V2 page container, present in every branch     |
+| `meeting-skeleton`                  | Loading state (`role="status"`)                    |
+| `meeting-content-column`            | The content column                                 |
+| `meeting-rail`                      | The right-hand column (stacks below at ≤ 920px)    |
 | `meeting-header-section`            | The header region as a whole                       |
 | `meeting-status-pill`               | Status pill (upcoming / live / ended)              |
 | `meeting-privacy-chip`              | The single privacy chip (see below)                |
 | `meeting-time-banner`               | The date/time banner                               |
-| `meeting-action-slot`               | The action rail container (see below)              |
+| `meeting-action-slot`               | The action slot inside the rail (see below)        |
 | `meeting-error-state`               | Terminal error state                               |
+| `meeting-error-retry-button`        | The error state's "Try again" control              |
 | `meeting-invitation-required-state` | The signed-in-outsider / invitation-required state |
 | `meeting-occurrence-edit-button`    | Organizer's "Edit this occurrence" control         |
 | `meeting-occurrence-cancel-button`  | Organizer's "Cancel this occurrence" control       |
+
+`meeting-section-placeholder-${section}` (`occurrences`, `agenda`, `materials`, `discover`, `rail`) marks
+the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
+section deletes its placeholder and its row here. A test must never assert on one.
 
 The two occurrence controls port V1's (#3040, #3206): organizer only, on a recurring meeting, for the
 selected upcoming occurrence. V1 names them `meeting-reschedule-occurrence-button` and

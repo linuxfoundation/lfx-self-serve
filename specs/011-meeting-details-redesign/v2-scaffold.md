@@ -36,7 +36,7 @@ free before naming any V2 component. The URL, `/meetings/:id`, does not change.
 ```text
 modules/meetings/
 ├── meeting-details-gate/        # the flag gate (V2-01, #2873) — the only file that knows both trees
-├── meeting-details-page/        # V2 page — the E1-01 shell replaces the scaffold body
+├── meeting-details-page/        # V2 page — the E1-01 shell and its MeetingDetailsStateService
 │   └── components/              # V2-only components (created by the first Phase 1 PR that needs one)
 ├── meeting-join-v1/             # V1 page — untouched, deleted when V2 ships
 └── components/                  # meetings-module components; V1 already uses several
@@ -47,7 +47,8 @@ modules/meetings/
 - **Shared app wrappers** (`app/shared/components/`: `button`, `card`, `tag`, `avatar`, `select`,
   `table`, `empty-state` and the rest listed in `spec.md` § Reuse before you create) are used by both
   trees. V1 already imports `button`, `card`, `tag`, `expandable-text`, `header` and
-  `impersonation-banner`. The scaffold uses `empty-state`.
+  `impersonation-banner`. The E1-01 shell uses `button`, `header` and `impersonation-banner`, plus
+  PrimeNG's `p-skeleton` (as V1 does; there is no wrapper) pointed at the V2 tokens.
 - **Meetings-module components** (`modules/meetings/components/`) that V1 imports, such as
   `meeting-organizer`, `meeting-registrants-display`, `rsvp-button-group`, `guest-form`,
   `meeting-summary-modal` and `transcript-modal`, are available to V2 as they are. A V2 need they
@@ -58,14 +59,18 @@ modules/meetings/
   `ProjectContextService`, `PlausibleService`) and seeds from the same `MeetingJoinPageState`
   TransferState payload. It cannot read that payload itself: the browser always mounts V1 first
   (the gate's hydration latch), and V1 consumes the `meetingJoinState` key and removes it in its
-  constructor, so the key is gone by the time V2 mounts. **E1-01 prerequisite:** the gate reads the
-  key before either tree mounts, keeps the snapshot, and hands it to V2, without editing V1. Until
-  then, V2 starts empty and fetches. It derives page state through `@lfx-one/shared/utils/meeting-view-model.utils`
-  (E0-02), not by copying V1's inline `computed` signals. V1's orchestration lives inside its
-  component and cannot be extracted without editing V1, so V2 composes the services and resolvers
-  itself. It does not duplicate a fetch path.
-- **Testids** follow `testid-contract.md` (E0-04). The scaffold's `meeting-details-scaffold` testid
-  is temporary and retires with the scaffold body.
+  constructor, so the key is gone by the time V2 mounts. So the gate provides
+  `MeetingDetailsSeedService`, which snapshots the key (without removing it) before V1 is created,
+  and V2's `MeetingDetailsStateService` takes that snapshot once, for the same route id only (E1-01).
+  That service owns V2's lookup, reachability (400 / 403 / 404 to not-found) and the
+  error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It holds
+  load state only. Presentation state (time state, viewer role, action slot, visible sections) is
+  derived by the Phase 1 sections through `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02),
+  not by copying V1's inline `computed` signals. V1's orchestration lives inside its component and
+  cannot be extracted without editing V1, so V2 composes the services and resolvers itself. It
+  does not duplicate a fetch path.
+- **Testids** follow `testid-contract.md` (E0-04). The shell's `meeting-section-placeholder-*`
+  testids are temporary: each retires when its section replaces the placeholder.
 
 ## Loading
 
