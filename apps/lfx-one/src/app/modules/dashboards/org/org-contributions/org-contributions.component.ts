@@ -21,6 +21,7 @@ import {
   CONTRIBUTIONS_DATE_RANGE_OPTIONS,
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
+  CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
 } from '@lfx-one/shared/constants';
@@ -78,6 +79,7 @@ export class OrgContributionsComponent {
 
   protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
+  protected readonly maxFilterValues = CONTRIBUTIONS_MAX_FILTER_VALUES;
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
@@ -388,13 +390,18 @@ export class OrgContributionsComponent {
     return this.initialParams.get('view') === 'commits' ? 'commits' : 'repositories';
   }
 
+  // Deduped and trimmed to the server's per-filter cap so an oversized deep link still loads instead of 400ing.
   private parseInitialCsv(param: string): string[] {
     const raw = this.initialParams.get(param);
     return raw
-      ? raw
-          .split(',')
-          .map((v) => v.trim())
-          .filter((v) => v.length > 0)
+      ? [
+          ...new Set(
+            raw
+              .split(',')
+              .map((v) => v.trim())
+              .filter((v) => v.length > 0)
+          ),
+        ].slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES)
       : [];
   }
 
