@@ -504,6 +504,36 @@ export function validateRequestBody<T>(body: T | undefined, req: Request, next: 
   return true;
 }
 
+const MAX_DUPLICATE_IDENTIFIERS = 20;
+const MAX_DUPLICATE_IDENTIFIER_LENGTH = 320;
+
+/**
+ * Validates the optional `duplicateIdentifiers` body field on the project-permissions PUT/DELETE
+ * routes (GH-3276). Client-controlled and forwarded straight into array `.map()`/`.filter()` calls
+ * in `ProjectService.updateProjectPermissions`, so a malformed shape (a string instead of an array,
+ * a non-string element, an oversized array) must be rejected here with a 400 rather than reaching
+ * those calls and throwing a TypeError that surfaces as a 500.
+ */
+export function getValidatedDuplicateIdentifiers(duplicateIdentifiers: unknown, operation: string): string[] | undefined {
+  if (duplicateIdentifiers === undefined) {
+    return undefined;
+  }
+
+  if (
+    !Array.isArray(duplicateIdentifiers) ||
+    duplicateIdentifiers.length > MAX_DUPLICATE_IDENTIFIERS ||
+    duplicateIdentifiers.some((id) => typeof id !== 'string' || id.trim() === '' || id.length > MAX_DUPLICATE_IDENTIFIER_LENGTH)
+  ) {
+    throw ServiceValidationError.forField(
+      'duplicateIdentifiers',
+      `duplicateIdentifiers must be an array of at most ${MAX_DUPLICATE_IDENTIFIERS} non-blank strings, each at most ${MAX_DUPLICATE_IDENTIFIER_LENGTH} characters`,
+      { operation }
+    );
+  }
+
+  return duplicateIdentifiers;
+}
+
 /**
  * The scheme of a URL for a log line, or a constant when there is no parseable one.
  *

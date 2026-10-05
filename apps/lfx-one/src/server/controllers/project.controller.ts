@@ -10,6 +10,7 @@ import {
   PastMeeting,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
+  RemoveUserFromProjectRequest,
   UpdateProjectStaffRequest,
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
@@ -23,7 +24,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
-import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, getValidatedDuplicateIdentifiers, validateUidParameter } from '../helpers/validation.helper';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
@@ -401,7 +402,9 @@ export class ProjectController {
         return;
       }
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role);
+      const duplicateIdentifiers = getValidatedDuplicateIdentifiers(roleData.duplicateIdentifiers, 'update_user_role_project_permissions');
+
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role, undefined, duplicateIdentifiers);
 
       logger.success(req, 'update_user_role_project_permissions', startTime, {
         uid,
@@ -526,7 +529,9 @@ export class ProjectController {
         return;
       }
 
-      await this.projectService.updateProjectPermissions(req, uid, 'remove', username);
+      const removeData: RemoveUserFromProjectRequest = req.body ?? {};
+      const duplicateIdentifiers = getValidatedDuplicateIdentifiers(removeData.duplicateIdentifiers, 'remove_user_project_permissions');
+      await this.projectService.updateProjectPermissions(req, uid, 'remove', username, undefined, undefined, duplicateIdentifiers);
 
       logger.success(req, 'remove_user_project_permissions', startTime, {
         uid,

@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateProjectStaffRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
-import { catchError, map, Observable, of, shareReplay, switchMap, throwError } from 'rxjs';
+import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -24,23 +24,21 @@ export class PermissionsService {
   }
 
   // Update user role in project — identifier may be a username or email address.
-  // `duplicateIdentifier` is set when this row was collapsed from two backend entries whose
-  // own identifiers differ (#3218/#3245/#3244) — the other entry no longer matches the new
-  // role, so it's deleted (tolerating a 404 if it's already gone) to avoid leaving a stray
-  // duplicate at the old role.
-  public updateUserRole(project: string, identifier: string, request: UpdateUserRoleRequest, duplicateIdentifier?: string): Observable<void> {
-    return this.http
-      .put<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`, request)
-      .pipe(switchMap(() => (duplicateIdentifier ? this.deleteTolerant404(project, duplicateIdentifier) : of(undefined))));
+  // `duplicateIdentifiers` is set when this row was collapsed from two or more backend
+  // entries whose own identifiers differ (#3218/#3245/#3244) — those entries no longer
+  // match the new role, so the backend clears them in the same ETag-guarded write instead
+  // of a second client-issued call, which was non-atomic and could misresolve a stale
+  // identifier (Copilot + Cursor Bugbot #3244 review, GH-3276).
+  public updateUserRole(project: string, identifier: string, request: UpdateUserRoleRequest, duplicateIdentifiers?: string[]): Observable<void> {
+    return this.http.put<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`, { ...request, duplicateIdentifiers });
   }
 
   // Remove user from project — identifier may be a username or email address.
-  // `duplicateIdentifier` clears the other backend entry too, so a collapsed dual-role user
-  // (#3218) doesn't reappear with the other role after a refresh (#3245/#3244).
-  public removeUserFromProject(project: string, identifier: string, duplicateIdentifier?: string): Observable<void> {
-    return this.http
-      .delete<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`)
-      .pipe(switchMap(() => (duplicateIdentifier ? this.deleteTolerant404(project, duplicateIdentifier) : of(undefined))));
+  // `duplicateIdentifiers` clears the other backend entries too, in the same request, so a
+  // collapsed dual-role user (#3218) doesn't reappear with a stale role after a refresh
+  // (#3245/#3244/GH-3276).
+  public removeUserFromProject(project: string, identifier: string, duplicateIdentifiers?: string[]): Observable<void> {
+    return this.http.delete<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`, { body: { duplicateIdentifiers } });
   }
 
   // Set or clear an editable project staff role (Executive Director / Program Manager).
@@ -122,14 +120,6 @@ export class PermissionsService {
     );
   }
 
-  // Best-effort cleanup of the other half of a collapsed dual-role entry — a 404 means it was
-  // already removed (e.g. a concurrent edit), which is the desired end state, not an error.
-  private deleteTolerant404(project: string, identifier: string): Observable<void> {
-    return this.http
-      .delete<void>(`/api/projects/${project}/permissions/${encodeURIComponent(identifier)}`)
-      .pipe(catchError((error: HttpErrorResponse) => (error.status === 404 ? of(undefined) : throwError(() => error))));
-  }
-
   // A v1 permission sync can legitimately leave a user with both auditor (view) and writer
   // (manage) entries for the same project — the backend does not collapse this. Show a single
   // row per user, with 'manage' taking precedence over 'view' (see #3218).
@@ -205,19 +195,21 @@ export class PermissionsService {
   // `username` is the identifier later sent to updateUserRole / removeUserFromProject, so
   // prefer whichever entry carries a real username over one that only has the email-fallback
   // value (PR #3244 review). When the group's own entries don't all share that identifier —
-  // e.g. one has a real username and the other only an email — the leftover identifier is
-  // carried as `duplicateIdentifier` so the UI can also clear that entry on remove/role-change
-  // (#3245/#3244), instead of it silently surviving and reappearing after a refresh.
+  // e.g. one has a real username and the other only an email — every leftover identifier is
+  // carried as `duplicateIdentifiers` so the backend can also clear them on remove/role-change,
+  // in the same request, instead of them silently surviving and reappearing after a refresh
+  // (#3245/#3244/GH-3276). A group of 3+ entries (dealako #3244 review) is fully covered: every
+  // non-matching entry's identifier is collected, not just the first one found.
   private mergeGroup(group: ProjectPermissionUser[]): ProjectPermissionUser {
     if (group.length === 1) return group[0];
 
     const hasRealUsername = (user: ProjectPermissionUser): boolean => !!user.username && user.username !== user.email;
-    // The raw identifier is what's actually sent to the backend as a `duplicateIdentifier`, so it
-    // must keep its original case — the backend's username match is case-sensitive, and lowercasing
-    // it here caused a correctly-cased username to silently fail to match on cleanup (@dealako
-    // #3244 review). `normalizedIdentifier` is only for deciding whether two entries are the same
-    // backend record: email compares case-insensitively (the backend lowercases it too), username
-    // does not.
+    // The raw identifier is what's actually sent to the backend as a `duplicateIdentifiers`
+    // entry, so it must keep its original case — the backend's username match is
+    // case-sensitive, and lowercasing it here caused a correctly-cased username to silently
+    // fail to match on cleanup (@dealako #3244 review). `normalizedIdentifier` is only for
+    // deciding whether two entries are the same backend record: email compares
+    // case-insensitively (the backend lowercases it too), username does not.
     const ownIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email);
     const normalizedIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email.toLowerCase());
 
@@ -226,8 +218,8 @@ export class PermissionsService {
     const merged: ProjectPermissionUser = !hasRealUsername(winner) && withRealUsername ? { ...winner, username: withRealUsername.username } : { ...winner };
 
     const mergedId = normalizedIdentifier(merged);
-    const duplicate = group.find((user) => normalizedIdentifier(user) !== mergedId);
+    const duplicates = group.filter((user) => normalizedIdentifier(user) !== mergedId).map(ownIdentifier);
 
-    return duplicate ? { ...merged, duplicateIdentifier: ownIdentifier(duplicate) } : merged;
+    return duplicates.length > 0 ? { ...merged, duplicateIdentifiers: duplicates } : merged;
   }
 }

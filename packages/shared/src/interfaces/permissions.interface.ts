@@ -158,13 +158,14 @@ export interface ProjectPermissionUser {
   /** Permission role - 'view' for auditors, 'manage' for writers */
   role: 'view' | 'manage';
   /**
-   * Set only when this row was collapsed from two backend entries (dual auditor+writer
-   * assignment for the same project, #3218) whose own identifiers (`username || email`)
-   * differ. Carries the other entry's identifier so a remove or role-change on this row
-   * can also clear that entry — otherwise it survives and the user reappears with the
-   * other role after a refresh (#3245).
+   * Set only when this row was collapsed from two or more backend entries (dual
+   * auditor+writer assignment for the same project, #3218) whose own identifiers
+   * (`username || email`) differ from the merged row's. Carries every other entry's
+   * identifier so a remove or role-change on this row can also clear them in the same
+   * request — otherwise they survive and the user reappears with a stale role after a
+   * refresh (#3245/#3244/GH-3276).
    */
-  duplicateIdentifier?: string;
+  duplicateIdentifiers?: string[];
 }
 
 /**
@@ -237,6 +238,19 @@ export interface StaffEditDialogData {
 export interface UpdateUserRoleRequest {
   /** New role to assign - 'view' for auditors, 'manage' for writers */
   role: 'view' | 'manage';
+  /** Other backend entries for the same collapsed row to clear in the same request (see
+   *  `ProjectPermissionUser.duplicateIdentifiers`) */
+  duplicateIdentifiers?: string[];
+}
+
+/**
+ * Request body for removing a user from project permissions
+ * @description Optional — only needed when the row being removed was collapsed from
+ * multiple backend entries (see `ProjectPermissionUser.duplicateIdentifiers`)
+ */
+export interface RemoveUserFromProjectRequest {
+  /** Other backend entries for the same collapsed row to clear in the same request */
+  duplicateIdentifiers?: string[];
 }
 
 /**
