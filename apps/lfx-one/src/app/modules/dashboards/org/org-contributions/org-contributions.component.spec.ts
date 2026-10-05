@@ -4,7 +4,7 @@
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { EMPTY_ORG_CONTRIBUTIONS_RESPONSE } from '@lfx-one/shared/constants';
+import { CONTRIBUTIONS_MAX_FILTER_VALUES, EMPTY_ORG_CONTRIBUTIONS_RESPONSE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -68,12 +68,12 @@ async function render(state: OrgLensEmptyStateName | null, { settled = true } = 
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return fixture.nativeElement as HTMLElement;
+  return fixture;
 }
 
 describe('OrgContributionsComponent', () => {
   it('replaces the page with the contractor-no-grant state and renders none of its data sections', async () => {
-    const el = await render('contractor-no-grant');
+    const el = (await render('contractor-no-grant')).nativeElement as HTMLElement;
 
     expect(el.querySelector('[data-testid="org-contributions-no-access-state"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
@@ -82,11 +82,23 @@ describe('OrgContributionsComponent', () => {
   });
 
   it('shows a skeleton instead of a blank area while the org context is still settling', async () => {
-    const el = await render(null, { settled: false });
+    const el = (await render(null, { settled: false })).nativeElement as HTMLElement;
 
     expect(el.querySelector('[data-testid="org-contributions-skeleton"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-kpis"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-content-card"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-contributions-no-company-empty-state"]')).toBeNull();
+  });
+
+  it('trims an over-cap filter selection (e.g. keyboard select-all past selectionLimit) to the cap in the form itself', async () => {
+    const fixture = await render(null);
+    const { projects, employees } = fixture.componentInstance['filterForm'].controls;
+    const overCap = Array.from({ length: CONTRIBUTIONS_MAX_FILTER_VALUES + 10 }, (_, i) => `value-${i}`);
+
+    projects.setValue(overCap);
+    employees.setValue(overCap);
+
+    expect(projects.value).toEqual(overCap.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
+    expect(employees.value).toEqual(overCap.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
   });
 });

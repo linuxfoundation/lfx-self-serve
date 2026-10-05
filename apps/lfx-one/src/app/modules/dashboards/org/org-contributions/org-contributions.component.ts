@@ -160,6 +160,11 @@ export class OrgContributionsComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe((query) => this.syncUrl(query));
 
+    // PrimeNG's keyboard select-all / range-select bypass selectionLimit, so trim the controls themselves to the
+    // server's per-filter cap — the visible selection, URL and request then always agree.
+    this.capFilterSelection(this.filterForm.controls.projects);
+    this.capFilterSelection(this.filterForm.controls.employees);
+
     // Any filter change (everything except the page index) resets pagination to page 1.
     this.filterForm.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe(() => this.page.set(1));
     combineLatest([toObservable(this.sort), toObservable(this.dir), toObservable(this.size)])
@@ -234,7 +239,7 @@ export class OrgContributionsComponent {
       view: this.mainTab(),
       dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
       search: (values.search ?? '').trim(),
-      // Clamped to the server's per-filter cap: PrimeNG's keyboard select-all / range-select bypass selectionLimit.
+      // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       sort: this.sort(),
@@ -404,6 +409,14 @@ export class OrgContributionsComponent {
           ),
         ].slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES)
       : [];
+  }
+
+  private capFilterSelection(control: FormControl<string[]>): void {
+    control.valueChanges.pipe(takeUntilDestroyed()).subscribe((values) => {
+      if (values.length > CONTRIBUTIONS_MAX_FILTER_VALUES) {
+        control.setValue(values.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
+      }
+    });
   }
 
   private parseInitialPage(): number {
