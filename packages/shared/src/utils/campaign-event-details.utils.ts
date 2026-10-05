@@ -41,19 +41,7 @@ export function coerceCampaignEventDetails(value: unknown): CampaignEventDetails
   // Applied to all SIX url fields, not the four that were reported: `registrationUrl` rides on
   // the same path and `heroImageUrl` becomes an `src`, so exempting them would leave the same
   // hole one field over.
-  const url = (key: string): string => {
-    const value = text(key);
-    if (value === '') return '';
-    try {
-      const parsed = new URL(value);
-      return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? value : '';
-    } catch {
-      // Not absolute, so there is no scheme to vouch for. A relative value cannot be resolved
-      // here -- the coercer has no base -- and emitting it as an href would produce a link
-      // relative to whatever renders it.
-      return '';
-    }
-  };
+  const url = (key: string): string => httpUrlOrEmpty(text(key));
 
   return {
     name: text('name'),
@@ -93,7 +81,29 @@ function coerceCampaignEventSponsors(value: unknown): CampaignEventSponsor[] {
     .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
     .map((entry) => ({
       name: typeof entry['name'] === 'string' ? entry['name'] : '',
-      logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
+      // Scheme-checked like the six top-level fields: a logo becomes an image `src` in the sent
+      // email, so a saved `javascript:` or `data:` value reached unsandboxed markup the same way.
+      logoUrl: httpUrlOrEmpty(entry['logoUrl']),
     }))
     .filter((sponsor) => sponsor.logoUrl.length > 0);
+}
+
+/**
+ * `value` when it is an absolute http(s) URL, `''` otherwise.
+ *
+ * The one scheme check every URL this coercer emits goes through -- top-level links and nested
+ * sponsor logos alike -- so a new URL field cannot be added that skips it. A relative value has no
+ * scheme to vouch for and the coercer has no base to resolve it against, so emitting it would
+ * produce a link relative to whatever renders it.
+ */
+function httpUrlOrEmpty(value: unknown): string {
+  if (typeof value !== 'string' || value === '') {
+    return '';
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? value : '';
+  } catch {
+    return '';
+  }
 }

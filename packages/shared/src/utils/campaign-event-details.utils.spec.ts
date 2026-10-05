@@ -90,6 +90,22 @@ describe('coerceCampaignEventDetails', () => {
     }
   );
 
+  // Nested too: a sponsor logo becomes an image `src` in the dispatched email, and the top-level
+  // check alone left `logoUrl` as the way a saved non-http scheme reached unsandboxed markup.
+  it.each(['javascript:alert(1)', 'data:image/svg+xml,<svg onload=alert(1)>', 'vbscript:x', '/relative/logo.png'])(
+    'drops a sponsor whose logo is %s',
+    (logoUrl) => {
+      const coerced = coerceCampaignEventDetails({
+        sponsors: [
+          { name: 'Evil', logoUrl },
+          { name: 'Real', logoUrl: 'https://cdn.example.com/real.png' },
+        ],
+      });
+
+      expect(coerced.sponsors).toEqual([{ name: 'Real', logoUrl: 'https://cdn.example.com/real.png' }]);
+    }
+  );
+
   it('keeps an ordinary https url on every url field', () => {
     const coerced = coerceCampaignEventDetails({
       registrationUrl: 'https://events.linuxfoundation.org/register',
