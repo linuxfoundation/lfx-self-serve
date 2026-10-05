@@ -10,9 +10,8 @@ import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Router-level coverage for the visa letter impersonation gate. A direct middleware test would keep
- * passing if `blockDuringImpersonation` were dropped from the route, letting an impersonator download
- * a letter built from their own token, so this asserts the assembled router.
+ * Router-level coverage that the visa letter stays open while impersonating: the service resolves the
+ * letter with the target's token, so an impersonating admin downloads the target's letter.
  */
 
 const eventsHandler = vi.fn((_req: express.Request, res: express.Response) => {
@@ -63,15 +62,15 @@ beforeEach(() => {
   impersonatingStub = true;
 });
 
-describe('events router — visa letter impersonation gate', () => {
-  it('refuses the visa letter with 403 while impersonating and never reaches the controller', async () => {
+describe('events router — visa letter while impersonating', () => {
+  it('serves the visa letter while impersonating', async () => {
     const res = await fetch(`${baseUrl}/api/events/visa-letter?eventId=evt-1`);
 
-    expect(res.status).toBe(403);
-    expect(eventsHandler).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(eventsHandler).toHaveBeenCalledTimes(1);
   });
 
-  it('admits the visa letter when not impersonating', async () => {
+  it('serves the visa letter when not impersonating', async () => {
     impersonatingStub = false;
 
     const res = await fetch(`${baseUrl}/api/events/visa-letter?eventId=evt-1`);

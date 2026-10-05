@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
   getApiGatewayProfile: vi.fn(),
+  isImpersonating: vi.fn(() => false),
   images: [] as { path: string; y: number; options: Record<string, unknown> | undefined }[],
   texts: [] as string[],
   textYs: [] as number[],
@@ -21,6 +22,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch: mocks.gatewayFetch }));
 vi.mock('../helpers/api-gateway.helper', () => ({ getUserServiceBaseUrl: vi.fn(() => 'https://gw.test/user-service/v1') }));
+vi.mock('../utils/auth-helper', () => ({ isImpersonating: mocks.isImpersonating }));
 vi.mock('./user.service', () => ({
   UserService: class {
     public getApiGatewayProfile = mocks.getApiGatewayProfile;
@@ -109,6 +111,7 @@ import type { Request } from 'express';
 import { VISA_LETTER_MANUAL_ERROR_CODE, VISA_LETTER_NOT_ISSUED_ERROR_CODE } from '@lfx-one/shared/constants';
 
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
+import { logger } from './logger.service';
 import { VisaLetterService } from './visa-letter.service';
 
 const EVENT_ID = 'a0A2M00000test1UAA';
@@ -169,6 +172,7 @@ describe('VisaLetterService', () => {
     mocks.texts.length = 0;
     mocks.textYs.length = 0;
     mocks.getApiGatewayProfile.mockResolvedValue({ ID: '0032M00000sfid' });
+    mocks.isImpersonating.mockReturnValue(false);
     service = new VisaLetterService();
   });
 
@@ -188,6 +192,61 @@ describe('VisaLetterService', () => {
     );
     expect(result.fileName).toBe('visa-letter-kubecon-test-2026-jane-doe.pdf');
     expect(result.pdf.length).toBeGreaterThan(0);
+  });
+
+  it('resolves the profile and letters with the session token when not impersonating', async () => {
+    mockLetters(letter());
+
+    await service.generateVisaLetter(req, EVENT_ID);
+
+    expect(mocks.getApiGatewayProfile).toHaveBeenCalledWith(req, undefined);
+    expect(mocks.gatewayFetch).toHaveBeenCalledWith(req, expect.any(String), expect.objectContaining({ bearerToken: undefined }));
+  });
+
+  it('resolves the profile and letters as the target while impersonating', async () => {
+    mocks.isImpersonating.mockReturnValue(true);
+    const impersonatedReq = { ...req, bearerToken: 'target-v2-token' } as unknown as Request;
+    mockLetters(letter());
+
+    await service.generateVisaLetter(impersonatedReq, EVENT_ID);
+
+    expect(mocks.getApiGatewayProfile).toHaveBeenCalledWith(impersonatedReq, 'target-v2-token');
+    expect(mocks.gatewayFetch).toHaveBeenCalledWith(impersonatedReq, expect.any(String), expect.objectContaining({ bearerToken: 'target-v2-token' }));
+  });
+
+  it('fails closed while impersonating without a target token', async () => {
+    mocks.isImpersonating.mockReturnValue(true);
+    mockLetters(letter());
+
+    await expect(service.generateVisaLetter(req, EVENT_ID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.getApiGatewayProfile).not.toHaveBeenCalled();
+    expect(mocks.gatewayFetch).not.toHaveBeenCalled();
+  });
+
+  it('records an info audit line with opaque ids when generating while impersonating', async () => {
+    mocks.isImpersonating.mockReturnValue(true);
+    const impersonatedReq = {
+      ...req,
+      bearerToken: 'target-v2-token',
+      appSession: { impersonator: { sub: 'auth0|admin' }, impersonationUser: { sub: 'auth0|target' } },
+    } as unknown as Request;
+    mockLetters(letter());
+
+    await service.generateVisaLetter(impersonatedReq, EVENT_ID);
+
+    expect(logger.info).toHaveBeenCalledWith(impersonatedReq, 'generate_visa_letter', expect.any(String), {
+      event_id: EVENT_ID,
+      impersonator_sub: 'auth0|admin',
+      target_sub: 'auth0|target',
+    });
+  });
+
+  it('skips the impersonation audit line for a regular download', async () => {
+    mockLetters(letter());
+
+    await service.generateVisaLetter(req, EVENT_ID);
+
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
   it('rejects when the profile has no Salesforce ID', async () => {
