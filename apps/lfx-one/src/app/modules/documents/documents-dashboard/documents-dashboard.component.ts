@@ -443,7 +443,7 @@ export class DocumentsDashboardComponent {
       if (projectMode && query) {
         const raw = this.rawProjectDocuments();
         const project = this.project();
-        docs = raw.filter((d) => d.type !== 'folder').map((d) => this.toMyDocumentItem(d, project, false));
+        docs = raw.map((d) => ({ ...this.toMyDocumentItem(d, project, false), isFolder: d.type === 'folder' }));
       } else {
         docs = this.documents();
       }
