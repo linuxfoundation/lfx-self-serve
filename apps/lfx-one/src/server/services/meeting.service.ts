@@ -823,7 +823,9 @@ export class MeetingService {
    *
    * The query-service applies FGA filtering so that any meeting viewer can read registrant records
    * on the tolerant listing — which is by design for community-facing meetings. The committee import
-   * flow imposes stricter business-logic constraints beyond viewer access: the caller must have
+   * flow imposes stricter business-logic constraints beyond viewer access: the caller must be an
+   * organizer of the meeting (#2827 — otherwise any eligible committee member could export the
+   * guest list of a meeting they merely can view), and must have
    * writer access on `committeeUid`, or be a member of it when it's invite_only
    * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
    * authorized to send invites for that committee upstream, via their own bearer token, so
@@ -833,18 +835,21 @@ export class MeetingService {
    * partial-failure states (this exact failure mode broke in PCC).
    *
    * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws MicroserviceError if the organizer check itself could not be resolved.
    * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
    */
   public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
-    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+    // Strict organizer probe on `v1_meeting`, for the reasons in `getAuthorizedCompleteRegistrants`.
+    const [committee, meeting, isCommitteeWriter, isMeetingOrganizer] = await Promise.all([
       this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
       this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
       this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+      this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' }),
     ]);
 
     const isCommitteeMember = !!committee.my_role;
     const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
-    if (!canImport || committee.project_uid !== meeting.project_uid) {
+    if (!isMeetingOrganizer || !canImport || committee.project_uid !== meeting.project_uid) {
       throw new AuthorizationError('Not authorized to import registrants for this meeting', {
         operation: 'get_authorized_registrants_for_import',
         service: 'meeting_service',
@@ -1301,6 +1306,32 @@ export class MeetingService {
 
     const groups = Array.from(components.values()).flatMap((component) => this.splitConflictingComponent(component));
     return groups.map((group) => this.mergePastMeetingParticipantGroup(group));
+  }
+
+  /**
+   * Whether the caller may read a past meeting's participant rows (names, emails, attendance).
+   * @description Organizers always may. Anyone else must appear in `participants`, invited or
+   * attended, matched by email or username like `isUserPastMeetingParticipant`. Deliberately
+   * independent of `show_meeting_attendees`: it defaults off, so keying on it would blank the
+   * attendance of every meeting already held. The organizer probe is strict, so an unresolvable
+   * access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewPastMeetingParticipants(req: Request, pastMeetingUid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_past_meeting', id: pastMeetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const email = getEffectiveEmail(req)?.toLowerCase();
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername).toLowerCase() : null;
+    if (!email && !username) {
+      return false;
+    }
+
+    return participants.some(
+      (participant) => (!!email && participant.email?.toLowerCase() === email) || (!!username && participant.username?.toLowerCase() === username)
+    );
   }
 
   /**

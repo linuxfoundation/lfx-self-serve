@@ -125,6 +125,8 @@ Members drawer available if organizer || invited
 
 Past meeting IDs are either a plain numeric ID (fallback after upcoming returns 404) or a `{meetingId}-{timestamp}` format from the occurrence. Access is governed by `checkPastMeetingAccess` — see [backend doc](../backend/public-meetings.md) for the full `full_access` tier logic.
 
+The attendance stats (attended, absent, rate) come from the participant rows when the viewer gets them. `/api/past-meetings/:uid/participants` returns rows only to organizers and the people on them, so other full-access viewers see the `participant_count`, `attended_count`, and `individual_registrants_count` the public past-meeting response carries instead.
+
 ---
 
 ## 🧱 Component Structure

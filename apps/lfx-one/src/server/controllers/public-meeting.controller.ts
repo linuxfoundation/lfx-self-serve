@@ -19,7 +19,7 @@ import {
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import { joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -292,6 +292,19 @@ export class PublicMeetingController {
       // Include organizer flag for authenticated users with full access
       if (fullAccess) {
         meeting.organizer = isOrganizer;
+      }
+
+      // /past-meetings/:uid/participants hides the rows from viewers who are not on them, so the
+      // join page's attendance stats read these counts instead. Organizers get the rows.
+      if (fullAccess && !isOrganizer && isAuthenticated && originalToken !== undefined) {
+        try {
+          const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting));
+          meeting.participant_count = participants.length;
+          meeting.attended_count = participants.filter((p) => p.is_attended).length;
+          meeting.individual_registrants_count = participants.filter((p) => p.is_invited).length;
+        } catch (error) {
+          logger.warning(req, 'get_public_past_meeting_by_id', 'Participant counts unavailable', { past_meeting_id: id, err: error });
+        }
       }
 
       // Past meetings never surface the Zoom host key — strip it unconditionally.

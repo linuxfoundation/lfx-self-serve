@@ -9,6 +9,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   PastMeeting,
   PastMeetingAttachment,
+  PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
   PastMeetingTranscript,
@@ -160,8 +161,19 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting participants
       const participants = await this.meetingService.getPastMeetingParticipants(req, uid);
+
+      // Query-service lets anyone who can view the past meeting list its participants, so the
+      // rows go only to organizers and the people on them. Counts stay on GET /past-meetings/:uid.
+      if (!(await this.canViewParticipantsOrHide(req, uid, participants))) {
+        logger.success(req, 'get_past_meeting_participants', startTime, {
+          past_meeting_id: uid,
+          participant_count: 0,
+          roster_hidden: true,
+        });
+        res.json([]);
+        return;
+      }
 
       // Log the success
       logger.success(req, 'get_past_meeting_participants', startTime, {
@@ -1024,6 +1036,18 @@ export class PastMeetingController {
    * Resolves whether the requesting user is the organizer of a past meeting. Unauthenticated
    * requests and access-check failures both default to false (fail closed).
    */
+  private async canViewParticipantsOrHide(req: Request, uid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
+    try {
+      return await this.meetingService.canViewPastMeetingParticipants(req, uid, participants);
+    } catch (error) {
+      logger.warning(req, 'get_past_meeting_participants', 'Participant visibility check failed, hiding the participants', {
+        past_meeting_id: uid,
+        err: error,
+      });
+      return false;
+    }
+  }
+
   private async isPastMeetingOrganizer(req: Request, pastMeeting: PastMeeting, uid: string): Promise<boolean> {
     if (!req.oidc?.isAuthenticated()) {
       return false;

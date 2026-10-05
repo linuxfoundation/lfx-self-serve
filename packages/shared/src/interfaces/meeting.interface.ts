@@ -303,7 +303,8 @@ export interface Meeting {
    * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
    * to them when it is off, and the meeting card and meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
-   * apply the same rule. Past-meeting participants do not use it (#2827).
+   * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
+   * them instead, so meetings already held keep their attendance (#2827).
    */
   show_meeting_attendees?: boolean | null;
   /**

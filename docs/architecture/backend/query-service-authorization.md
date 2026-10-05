@@ -111,8 +111,9 @@ meeting composer's Guests editor (which reconciles edits against the saved list)
 "import registrants" flow (which fan-outs invites from the roster) — where returning a partial
 result without warning would silently misrepresent the data. The checks enforce stricter
 business-logic constraints beyond the viewer-level FGA filter that the tolerant listing relies on:
-organizer for the composer; committee writer, or committee member when the committee's
-`join_mode === 'invite_only'`, for the import flow.
+organizer for the composer; for the import flow, organizer of the meeting **and** committee
+writer, or committee member when the committee's `join_mode === 'invite_only'`. The import
+picker lists only meetings the caller organizes, to match.
 
 **Meeting guest lists.** The tolerant registrant listing (`GET /api/meetings/:uid/registrants`) and
 `GET /api/meetings/:uid/rsvp` also go through query-service, but its viewer filter lets anyone who
@@ -120,6 +121,14 @@ can view the meeting list the guests. Both endpoints first call
 `MeetingService.canViewMeetingRoster`: organizers always pass, and invitees pass only when
 `show_meeting_attendees` is on and the meeting isn't Board or restricted (`isMeetingAttendeeListShared`). Everyone else gets `[]`. `my-meeting-registrants` applies the same
 rule. Invitees still see the invited count, from `registrant_count` on the public meeting response.
+
+`GET /api/past-meetings/:uid/participants` has the same viewer filter, so it calls
+`MeetingService.canViewPastMeetingParticipants`: organizers pass, and so does anyone on the participant
+rows, invited or attended, matched by email or username. Everyone else gets `[]`. This ignores
+`show_meeting_attendees`, which defaults off and would otherwise blank the attendance of meetings
+already held. Counts stay intact: `GET /api/past-meetings/:uid` computes them before the gate, and
+the public past-meeting response adds `participant_count`, `attended_count`, and
+`individual_registrants_count` for full-access viewers who are not organizers.
 
 ---
 
