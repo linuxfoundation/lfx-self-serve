@@ -16,6 +16,21 @@ export const DETECTION_SOURCE_MAP: Readonly<Partial<Record<string, PersonaType>>
   executive_director: 'executive-director',
 } as const;
 
+/** Human-readable labels for persona-detection `source` tokens, used to explain a role assignment in the dashboard tooltip. */
+export const DETECTION_SOURCE_LABELS: Readonly<Record<string, string>> = {
+  board_member: 'Board member',
+  executive_director: 'Executive director',
+  cdp_roles: 'GitHub contributor',
+  writer: 'Documentation contributor',
+  committee_member: 'Committee member',
+  mailing_list: 'Mailing list subscriber',
+  meeting_attendance: 'Meeting attendee',
+  auditor: 'Project auditor',
+} as const;
+
+/** Fallback label for a detection source not present in {@link DETECTION_SOURCE_LABELS}. */
+export const DETECTION_SOURCE_LABEL_FALLBACK = 'Project activity';
+
 /** Sort order, highest first. */
 export const PERSONA_PRIORITY: readonly PersonaType[] = ['executive-director', 'board-member', 'maintainer', 'contributor'] as const;
 

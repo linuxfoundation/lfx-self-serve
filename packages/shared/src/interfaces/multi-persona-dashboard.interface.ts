@@ -15,6 +15,8 @@ export interface PersonaProjectRow {
   subtitle: string;
   /** Highest-priority role from detections: "Board Member", "Maintainer", "Chair", etc. */
   role: string;
+  /** Human-readable explanation of the detection(s) that produced `role`, as an HTML list string */
+  roleTooltip: string;
   /** Health status for foundations (null for projects) */
   healthStatus: 'on-track' | 'watch' | 'needs-attention' | null;
   /** Health detail text for foundations (null for projects) */

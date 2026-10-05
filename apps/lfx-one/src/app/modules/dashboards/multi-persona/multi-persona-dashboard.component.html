@@ -214,7 +214,7 @@
               }
               <!-- Role -->
               <td>
-                <span class="role-badge" [attr.data-role]="row.role">{{ row.role }}</span>
+                <span class="role-badge" [attr.data-role]="row.role" [pTooltip]="row.roleTooltip" [escape]="false" tooltipPosition="top">{{ row.role }}</span>
               </td>
               <!-- Voting -->
               <td>
