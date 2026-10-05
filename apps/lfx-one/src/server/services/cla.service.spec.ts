@@ -1238,6 +1238,34 @@ describe('ClaService.prepareSign', () => {
     }
   );
 
+  it.each([[['https://easycla.example.org/sign']], [{ href: 'https://easycla.example.org/sign' }], [0]])(
+    'treats a non-string signing address of %p as missing',
+    async (signUrl) => {
+      gatewayFetch.mockResolvedValueOnce(prepared({ signUrl }));
+
+      await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502, code: 'CLA_BINDING_INCOMPLETE' });
+    }
+  );
+
+  it.each([['javascript:alert(1)'], [' javascript:alert(1)'], ['JaVaScRiPt:alert(1)'], ['data:text/html,<p>x</p>'], ['http://evil.example'], ['/cla/sign']])(
+    'refuses a signing address of %p with a 502',
+    async (signUrl) => {
+      gatewayFetch.mockResolvedValueOnce(prepared({ signUrl }));
+
+      await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502, code: 'CLA_SIGN_URL_INVALID' });
+    }
+  );
+
+  it('keeps a refused signing address out of the logs, recording only its scheme', async () => {
+    gatewayFetch.mockResolvedValueOnce(prepared({ signUrl: 'javascript:alert(document.cookie)' }));
+
+    await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toThrow();
+
+    const logged = JSON.stringify(vi.mocked(logger.warning).mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('"sign_url_scheme":"javascript"');
+  });
+
   it('refuses a success that skipped the chosen account', async () => {
     gatewayFetch.mockResolvedValueOnce(prepared({ identity: ['github-id:67890'], skippedIdentities: ['github-id:12345'] }));
 

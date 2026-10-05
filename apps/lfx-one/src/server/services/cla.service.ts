@@ -11,6 +11,7 @@
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
 import { MY_CLAS_PATH } from '@lfx-one/shared/constants';
+import { isHttpsUrl } from '@lfx-one/shared/utils';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -49,7 +50,7 @@ import {
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
+import { urlSchemeForLog } from '../helpers/validation.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
 import { EmailVerificationService } from './email-verification.service';
@@ -774,7 +775,8 @@ export class ClaService {
     }
 
     const userId = result?.userId?.trim();
-    const signUrl = result?.signUrl?.trim();
+    const rawSignUrl: unknown = result?.signUrl;
+    const signUrl = typeof rawSignUrl === 'string' ? rawSignUrl.trim() : undefined;
     // The verified account is parsed out of `identity` rather than assumed to be the one sent.
     // Without it there is nothing to check the pick against, which is not a success.
     const recorded = recordedGithubIdentity(result?.identity);
@@ -782,6 +784,17 @@ export class ClaService {
 
     if (!userId || !signUrl || !recorded) {
       throw new MicroserviceError('Upstream prepared no usable signing session', 502, 'CLA_BINDING_INCOMPLETE', { service: SERVICE });
+    }
+
+    if (!isHttpsUrl(signUrl)) {
+      logger.warning(req, 'cla_prepare_sign', 'upstream returned a signing address that is not an https URL', {
+        cla_group_id: claGroupId,
+        sign_url_scheme: urlSchemeForLog(signUrl),
+      });
+      throw new MicroserviceError('Upstream returned an unusable signing address', 502, 'CLA_SIGN_URL_INVALID', {
+        operation: 'cla_prepare_sign',
+        service: SERVICE,
+      });
     }
 
     // A prepare that skipped the chosen account still opened a session — for whatever identity

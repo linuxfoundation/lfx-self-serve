@@ -29,7 +29,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -48,7 +48,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -536,16 +536,21 @@ export class MeetingController {
       // word. The query-service FGA filtering applies to all paths, but complete-roster workflows
       // enforce additional constraints: scoped to a committee it is the "import registrants" flow
       // with its own rules and size cap; unscoped it is the composer's Guests section, which
-      // requires the organizer relation. Only the tolerant listing — the one that may come back
-      // short — goes straight through on the caller's own bearer token, relying on query-service
-      // FGA filtering as its authorization boundary.
+      // requires the organizer relation. The tolerant listing — the one that may come back short —
+      // reads on the caller's own bearer token, but only after `canViewMeetingRoster`: query-service
+      // FGA lets anyone who can view the meeting list its registrants, which is wider than who may
+      // see the guests.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
         registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
-      } else {
+      } else if (await this.canViewRosterOrHide(req, uid, 'get_meeting_registrants')) {
         registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+      } else {
+        logger.success(req, 'get_meeting_registrants', startTime, { meeting_id: uid, roster_hidden: true, registrant_count: 0 });
+        res.json([]);
+        return;
       }
 
       // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
@@ -553,10 +558,9 @@ export class MeetingController {
       //
       // Authorized first, and only on the tolerant branch: group attribution says which committee a
       // registrant sits on, which the branches above have already established the caller may see
-      // — both authorize before they read. The tolerant listing has not, and never can: it goes
-      // through on the caller's own bearer token; query-service FGA filtering is the authorization
-      // boundary for that listing. Group attribution adds committee-membership data that goes beyond
-      // what the viewer relation protects, so without this an authenticated non-organizer replaying
+      // — both authorize before they read. The tolerant listing has not: `canViewMeetingRoster` also
+      // admits invitees of meetings that share their guests. Group attribution adds
+      // committee-membership data that goes beyond the guest list, so without this an invitee replaying
       // this URL with `include_committee=true` would receive committee attribution they aren't
       // entitled to. The
       // check sits inside the try on the same reasoning as the fetch below — this listing's
@@ -596,19 +600,23 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/my-meeting-registrants
-   * Retrieves registrants for a meeting with access control based on show_meeting_attendees setting
-   * Only returns registrants if the authenticated user is a registrant of the meeting
+   * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
+   * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on
+   * and the meeting is neither Board nor restricted.
+   * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id } = req.query;
+    const { include_rsvp, occurrence_id, preview } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const isPreview = preview === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_my_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
       occurrence_id: occurrenceId,
+      preview: isPreview,
     });
 
     try {
@@ -622,20 +630,22 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Resolve the caller's identity up front. The registrant gate check below is
-      // email-only (getMeetingRegistrantsByEmail), matching the pre-existing authorization surface
-      // — this PR does not widen the gate to also match by username.
-      const userEmail = getEffectiveEmail(req) ?? undefined;
+      // Step 1: Resolve the caller's identity up front. The registrant gate check below matches by
+      // email or username, the rule `isUserInvitedToMeeting` and `canViewMeetingRoster` use, so a
+      // caller shown as invited is never refused as a non-registrant here.
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,
         has_email: !!userEmail,
+        has_username: !!username,
       });
 
-      if (!userEmail) {
+      if (!userEmail && !username) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
-          no_email: true,
+          no_identity: true,
           registrant_count: 0,
         });
         res.json([]);
@@ -652,7 +662,7 @@ export class MeetingController {
         this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true }),
         generateM2MToken(req).then((token) => {
           m2mToken = token;
-          return this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail, token);
+          return this.meetingService.getMeetingRegistrantsForUser(req, uid, userEmail, username, token);
         }),
       ]);
 
@@ -685,6 +695,21 @@ export class MeetingController {
         return;
       }
 
+      // The roster below is read with an M2M token, so this is the only place the meeting's
+      // attendee-visibility setting can be enforced: a registrant sees the other guests only when
+      // the organizer chose to share them.
+      if (!meeting.organizer && !isMeetingAttendeeListShared(meeting)) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          is_registrant: true,
+          is_organizer: false,
+          attendees_hidden: true,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
       // Step 4: User is a registrant or organizer, fetch all registrants using the M2M token —
       // passed via ApiRequestOptions.bearerToken (not a req.bearerToken mutation) so it can't race
       // against the caller's own token on a shared req.
@@ -697,9 +722,21 @@ export class MeetingController {
 
       // The join page treats this roster's length as an authoritative denominator (GH-1731) —
       // a partial query-service page failure must surface as an error, not a silently truncated list.
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, true, undefined, {
+      // A preview only draws a few faces and a "+N", so a short roster beats an empty one there.
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, !isPreview, undefined, {
         bearerToken: m2mToken,
       });
+
+      if (isPreview) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          preview: true,
+          registrant_count: registrants.length,
+          include_rsvp: includeRsvp,
+        });
+        res.json(registrants);
+        return;
+      }
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,
@@ -1261,6 +1298,12 @@ export class MeetingController {
           operation: 'get_meeting_rsvps',
         })
       ) {
+        return;
+      }
+
+      if (!(await this.canViewRosterOrHide(req, uid, 'get_meeting_rsvps'))) {
+        logger.success(req, 'get_meeting_rsvps', startTime, { meeting_id: uid, roster_hidden: true, count: 0 });
+        res.json([]);
         return;
       }
 
@@ -1941,6 +1984,19 @@ export class MeetingController {
         failed: failures.length,
       },
     };
+  }
+
+  /**
+   * Roster listings may come back short but must not error, so a gate check that cannot be resolved
+   * hides the rows rather than failing the request.
+   */
+  private async canViewRosterOrHide(req: Request, uid: string, operation: string): Promise<boolean> {
+    try {
+      return await this.meetingService.canViewMeetingRoster(req, uid);
+    } catch (error) {
+      logger.warning(req, operation, 'Roster visibility check failed, hiding the roster', { meeting_id: uid, err: error });
+      return false;
+    }
   }
 
   /**

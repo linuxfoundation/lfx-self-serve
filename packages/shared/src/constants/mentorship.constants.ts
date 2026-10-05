@@ -23,13 +23,15 @@ import type {
  * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
  * yields the same order the admin filter dropdown renders.
  */
-export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed'] as const;
+export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
 
 /** Human-readable labels for each program status (used by badge + filter). */
 export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, string> = {
   open: 'Open',
   'pending-review': 'Pending Review',
   completed: 'Completed',
+  rejected: 'Rejected',
+  hidden: 'Hidden',
 };
 
 /**
@@ -41,6 +43,8 @@ export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramSt
   open: 'bg-emerald-100 text-emerald-700',
   'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
+  rejected: 'bg-red-100 text-red-700',
+  hidden: 'bg-slate-100 text-slate-600',
 };
 
 /** Deterministic avatar-tile palette cycled by (title.charCodeAt(0) % length). */
@@ -58,11 +62,11 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
   total: 0,
 };
 
-/**
- * Admin program-list page size. Passed as `limit` on `GET /api/mentorship/admin/programs`.
- * Sized below `MOCK_MENTORSHIP_PROGRAMS.length` so Load more is exercisable against the mock BFF.
- */
-export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
+/** Admin program-list page size. Passed as `limit` on `GET /api/mentorship/admin/programs`. */
+export const MENTORSHIP_PROGRAM_PAGE_SIZE = 12;
+
+/** Most programs one `GET /api/mentorship/admin/programs` page may return; the BFF rejects a larger `limit`. */
+export const MENTORSHIP_PROGRAMS_MAX_LIMIT = 50;
 
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by

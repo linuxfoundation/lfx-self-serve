@@ -74,3 +74,13 @@ export function getSavedAttendeeVisibility(
   }
   return meeting.show_meeting_attendees ?? false;
 }
+
+/**
+ * Whether the meeting's guest list may be shown to invitees who are not organizers.
+ * @description Reads the stored flag through the lock, so a legacy Board or restricted meeting
+ * still carrying `show_meeting_attendees: true` stays private. The BFF roster gate and the card
+ * and join-page gates share this predicate so they cannot disagree about who sees the list.
+ */
+export function isMeetingAttendeeListShared(meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined): boolean {
+  return getSavedAttendeeVisibility(meeting) === true;
+}

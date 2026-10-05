@@ -7,47 +7,84 @@ import {
   MOCK_MENTORSHIP_PROGRAM_LISTS,
   MOCK_MENTORSHIP_PROGRAMS,
 } from '@lfx-one/shared/constants';
-import { MentorshipProgram, MentorshipProgramDetail, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipProgram,
+  MentorshipProgramDetail,
+  MentorshipProgramsResponse,
+  MentorshipProgramStatus,
+  MentorshipUpstreamAdministeredProgram,
+  MentorshipUpstreamListResponse,
+} from '@lfx-one/shared/interfaces';
 import { buildMentorshipProgramDetail } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { MENTORSHIP_ME_PROGRAMS_PATH } from '../constants';
 import { ResourceNotFoundError } from '../errors';
-import { findByIdOrSlug, paginateOffsetLimit } from '../helpers/mentorship-params.helper';
+import { mapMentorshipAdminProgram } from '../helpers/mentorship-admin-program.helper';
+import { isMentorshipNotProvisionedError, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { escapeMentorshipSearch, findByIdOrSlug } from '../helpers/mentorship-params.helper';
 
 import { logger } from './logger.service';
-
-const DEFAULT_PROGRAM_LIMIT = 50;
+import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
- * Read-only mock seed data — the admin list has data to show while the upstream
- * mentorship-service is not yet wired. No writes; enrollment shows a coming-soon
- * toast instead.
+ * Read-only mock seed data for the program detail, which is not wired to the upstream
+ * mentorship-service yet. The programs list reads upstream.
  */
 const mockPrograms: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
 
 /** The program admin screens behind `/api/mentorship/admin`. */
 export class MentorshipAdminService {
+  private readonly microserviceProxy = new MicroserviceProxyService();
+
+  /**
+   * The programs the caller administers, from one upstream `GET /me/programs` read: upstream searches, filters by
+   * the status shown, sorts by name and pages. On a first visit `proxyMentorshipRequest` provisions the caller
+   * (`PUT /me`) and retries, as on the mentor and mentee pages. A caller still not provisioned after that, or one
+   * not provisioned while impersonating (which never provisions), has no programs.
+   */
   public async getPrograms(
     req: Request,
-    options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
+    options: { search?: string; status?: MentorshipProgramStatus; offset: number; limit: number }
   ): Promise<MentorshipProgramsResponse> {
-    logger.debug(req, 'mentorship_admin_get_programs', 'Filtering mentorship programs', options);
+    logger.debug(req, 'mentorship_admin_get_programs', 'Loading administered mentorship programs', { status: options.status });
 
-    let filtered: readonly MentorshipProgram[] = mockPrograms;
-    if (options.status) {
-      filtered = filtered.filter((p) => p.status === options.status);
-    }
-    if (options.search) {
-      const needle = options.search.trim().toLowerCase();
-      if (needle) {
-        filtered = filtered.filter((p) => p.name.toLowerCase().includes(needle) || p.projectName.toLowerCase().includes(needle));
+    let upstream: MentorshipUpstreamListResponse<MentorshipUpstreamAdministeredProgram>;
+    try {
+      upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamAdministeredProgram>>(
+        this.microserviceProxy,
+        req,
+        MENTORSHIP_ME_PROGRAMS_PATH,
+        'GET',
+        {
+          search: escapeMentorshipSearch(options.search),
+          status: options.status?.replace('-', '_'),
+          limit: options.limit,
+          offset: options.offset,
+        }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_programs', 'Caller has no mentorship record; returning an empty program list', {});
+        return { data: [], total: 0 };
       }
+      throw error;
     }
 
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? DEFAULT_PROGRAM_LIMIT);
-    logger.debug(req, 'mentorship_admin_get_programs', 'Mentorship programs page built', { count: page.data.length, total: page.total });
+    const data = (upstream.data ?? []).map((item) => {
+      const { program, unknownStatus } = mapMentorshipAdminProgram(item);
+      if (unknownStatus) {
+        logger.warning(req, 'mentorship_admin_get_programs', 'Unknown upstream admin status; showing it as pending review', {
+          programId: item.id,
+          adminStatus: item.admin_status,
+        });
+      }
+      return program;
+    });
+    const total = upstream.meta?.total ?? data.length;
+    logger.debug(req, 'mentorship_admin_get_programs', 'Mentorship programs page built', { count: data.length, total });
 
-    return page;
+    return { data, total };
   }
 
   public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {

@@ -82,9 +82,14 @@ export class UserFormComponent {
     // For editing, update role only
     if (this.isEditing()) {
       this.permissionsService
-        .updateUserRole(project.uid, this.user()!.username || this.user()!.email, {
-          role: formValue.role,
-        } as UpdateUserRoleRequest)
+        .updateUserRole(
+          project.uid,
+          this.user()!.username || this.user()!.email,
+          {
+            role: formValue.role,
+          } as UpdateUserRoleRequest,
+          this.user()!.duplicateIdentifier
+        )
         .pipe(take(1))
         .subscribe({
           next: () => {

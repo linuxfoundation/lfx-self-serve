@@ -157,6 +157,14 @@ export interface ProjectPermissionUser {
   avatar?: string;
   /** Permission role - 'view' for auditors, 'manage' for writers */
   role: 'view' | 'manage';
+  /**
+   * Set only when this row was collapsed from two backend entries (dual auditor+writer
+   * assignment for the same project, #3218) whose own identifiers (`username || email`)
+   * differ. Carries the other entry's identifier so a remove or role-change on this row
+   * can also clear that entry — otherwise it survives and the user reappears with the
+   * other role after a refresh (#3245).
+   */
+  duplicateIdentifier?: string;
 }
 
 /**
