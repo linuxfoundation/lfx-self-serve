@@ -3,10 +3,10 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
-import type { BadgeSeverity } from '../interfaces/components.interface';
+import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import {
   CATEGORY_BEHAVIORAL_CLASS,
@@ -255,6 +255,71 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
       return 'success';
     case CommitteeMemberRole.LF_STAFF:
       return 'contrast';
+    default:
+      return 'secondary';
+  }
+}
+
+/**
+ * Maps a committee member role to a Tailwind `bgColor`/`color` pair for the inline role chip —
+ * styled the same way as the behavioral-class chip (rounded-full pill with coloured background).
+ *
+ * Returns `null` when the role is absent, `'None'`, or an empty string so the template can use
+ * `@if (committee.roleChip)` to hide the chip cleanly.
+ */
+export function resolveRoleChip(role: CommitteeMemberRole | 'Member' | null | undefined): { bgColor: string; color: string } | null {
+  if (!role || role === CommitteeMemberRole.NONE) return null;
+  switch (role) {
+    case CommitteeMemberRole.CHAIR:
+      return { bgColor: 'bg-purple-100', color: 'text-purple-700' };
+    case CommitteeMemberRole.VICE_CHAIR:
+      return { bgColor: 'bg-indigo-100', color: 'text-indigo-700' };
+    case CommitteeMemberRole.LF_STAFF:
+      return { bgColor: 'bg-sky-100', color: 'text-sky-700' };
+    case CommitteeMemberRole.DIRECTOR:
+    case CommitteeMemberRole.TAC_TOC_REPRESENTATIVE:
+      return { bgColor: 'bg-blue-100', color: 'text-blue-700' };
+    case CommitteeMemberRole.LEAD:
+      return { bgColor: 'bg-teal-100', color: 'text-teal-700' };
+    case CommitteeMemberRole.SECRETARY:
+    case CommitteeMemberRole.TREASURER:
+      return { bgColor: 'bg-amber-100', color: 'text-amber-700' };
+    case CommitteeMemberRole.DEVELOPER_SEAT:
+      return { bgColor: 'bg-cyan-100', color: 'text-cyan-700' };
+    default:
+      // 'Member' and any unrecognised value
+      return { bgColor: 'bg-gray-100', color: 'text-gray-600' };
+  }
+}
+
+/**
+ * Computes the merged "Type" display label for a committee row/card chip — collapses the former
+ * separate "Type" (raw category) and "Class" (behavioral class) columns into one:
+ *   - SIGs: `"SIG | {raw category}"` to expose the sub-type (e.g. "SIG | Marketing Mailing List")
+ *   - All others: behavioral-class label only (e.g. "Working Groups", "Boards", "Oversight")
+ *
+ * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent`.
+ */
+export function resolveTypeDisplay(committee: { behavioralClass?: string; category?: string; classDisplay?: { label?: string } }): string {
+  if (committee.behavioralClass === 'special-interest-group' && committee.category) {
+    return `SIG | ${committee.category}`;
+  }
+  return committee.classDisplay?.label ?? 'Other';
+}
+
+/**
+ * Maps a group's `join_mode` to a tag severity so joinability is scannable at a glance.
+ * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent` — extracted here
+ * so the two views can't drift and so the 4-branch mapping is unit-tested in this package.
+ */
+export function resolveJoinModeSeverity(mode?: JoinMode): TagSeverity {
+  switch (mode) {
+    case 'open':
+      return 'success';
+    case 'application':
+      return 'info';
+    case 'invite_only':
+      return 'warn';
     default:
       return 'secondary';
   }

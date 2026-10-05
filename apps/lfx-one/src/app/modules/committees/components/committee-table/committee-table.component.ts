@@ -12,7 +12,9 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
-import { getGroupCommands } from '@lfx-one/shared/utils';
+import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
+import { getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { PersonaService } from '@services/persona.service';
@@ -33,6 +35,7 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     TagComponent,
     CommitteeFilterBarComponent,
     TooltipModule,
+    JoinModeLabelPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
     EmptyStateComponent,
@@ -54,6 +57,8 @@ export class CommitteeTableComponent {
   public readonly committeeLabel = COMMITTEE_LABEL;
   public searchForm = input.required<FormGroup>();
   public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
+  public joinModeOptions = input<{ label: string; value: string | null }[]>([]);
+  public showJoinModeFilter = input<boolean>(false);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
@@ -62,6 +67,8 @@ export class CommitteeTableComponent {
   public showFilterBar = input<boolean>(true);
   /** `data-testid` for the internal `<lfx-table>`. Defaults to the pre-existing fixed id — every caller that renders a single instance is unaffected. The foundation-grouped view renders one `<lfx-committee-table>` per group, so it must pass a per-group value to keep each table's testid unique (a fixed id would repeat once per group and turn `getByTestId` into a Playwright strict-mode violation). */
   public tableTestId = input<string>('committee-dashboard-table');
+  /** True when this table is rendered inside the Me Lens (My Groups). Used to attach router navigation state so `CommitteeViewComponent` can detect the transition. */
+  public isMeLens = input<boolean>(false);
 
   // Outputs
   public readonly refresh = output<void>();
@@ -80,6 +87,8 @@ export class CommitteeTableComponent {
    * Rows without tier data keep the flat `/groups/:uid` fallback (the `??` inside the mapping),
    * which `lensRedirectGuard` handles as before. Pre-computed once per input change rather than
    * per change-detection cycle (angular-reactive-data §3.5).
+   * `joinModeSeverity` and `joinModeTooltip` are also pre-computed here so the template stays
+   * binding-only with no per-render method calls (frontend-checklist §63-65).
    */
   protected readonly tableRows = computed<CommitteeTableRowVm[]>(() =>
     this.committees().map((committee) => ({
@@ -87,15 +96,24 @@ export class CommitteeTableComponent {
       viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
       editCommands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'],
       linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
+      join_mode: committee.join_mode ?? 'invite_only',
+      joinModeSeverity: resolveJoinModeSeverity(committee.join_mode ?? 'invite_only'),
+      joinModeTooltip: JOIN_MODE_TOOLTIPS[committee.join_mode ?? 'invite_only'],
+      typeDisplay: resolveTypeDisplay(committee),
+      roleChip: resolveRoleChip(committee.my_role),
+      isMember: this.myCommitteeUids().has(committee.uid),
     }))
   );
+
+  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
+  protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
 
   protected onRowSelect(event: { data: CommitteeTableRowVm }): void {
     this.rowClick.emit(event.data);
   }
 
   protected resetFilters(): void {
-    this.searchForm().patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    this.searchForm().patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
     this.resetRequested.emit();
