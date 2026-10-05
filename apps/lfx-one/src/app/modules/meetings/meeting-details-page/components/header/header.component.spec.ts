@@ -105,6 +105,28 @@ describe('MeetingHeaderComponent', () => {
     expect(setFoundation).toHaveBeenCalledWith({ uid: 'project-1', name: 'Acme Project', slug: 'acme-project' });
   });
 
+  // FR-010: one chip, four values; an absent visibility reads as private, so label and icon agree.
+  it.each([
+    { visibility: 'public', restricted: false, label: 'Public', icon: 'fa-globe', state: ['public', 'false'], open: true },
+    { visibility: 'public', restricted: true, label: 'Public (Restricted)', icon: 'fa-lock', state: ['public', 'true'], open: false },
+    { visibility: 'private', restricted: false, label: 'Private', icon: 'fa-shield', state: ['private', 'false'], open: false },
+    { visibility: 'private', restricted: true, label: 'Private (Restricted)', icon: 'fa-lock', state: ['private', 'true'], open: false },
+    { visibility: null, restricted: true, label: 'Private (Restricted)', icon: 'fa-lock', state: ['private', 'true'], open: false },
+    { visibility: null, restricted: false, label: 'Private', icon: 'fa-shield', state: ['private', 'false'], open: false },
+  ])('renders one privacy chip for visibility $visibility, restricted $restricted', ({ visibility, restricted, label, icon, state, open }) => {
+    show({ visibility, restricted } as Partial<Meeting>);
+
+    const chips = fixture.nativeElement.querySelectorAll('[data-testid="meeting-privacy-chip"]');
+    expect(chips.length).toBe(1);
+    const chip = chips[0] as HTMLElement;
+    expect(chip.textContent?.trim()).toBe(label);
+    expect(chip.getAttribute('data-visibility')).toBe(state[0]);
+    expect(chip.getAttribute('data-restricted')).toBe(state[1]);
+    const glyph = chip.querySelector('i');
+    expect(glyph?.classList).toContain(icon);
+    expect(glyph?.classList.contains('text-[var(--md-status-good)]')).toBe(open);
+  });
+
   it('shows the meeting type with its configured label', () => {
     expect(query('meeting-header-badge-type')?.textContent).toContain('Technical');
   });
