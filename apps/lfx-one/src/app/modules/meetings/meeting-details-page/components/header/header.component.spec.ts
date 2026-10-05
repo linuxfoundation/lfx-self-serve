@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal, WritableSignal } from '@angular/core';
+import { Clipboard } from '@angular/cdk/clipboard';
+import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Meeting, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { environment } from '@environments/environment';
 import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
@@ -16,6 +19,8 @@ describe('MeetingHeaderComponent', () => {
   let fixture: ComponentFixture<MeetingHeaderComponent>;
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let setFoundation: ReturnType<typeof vi.fn>;
+  let copy: ReturnType<typeof vi.fn>;
+  let addMessage: ReturnType<typeof vi.fn>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -42,20 +47,28 @@ describe('MeetingHeaderComponent', () => {
       project,
     }) as unknown as LoadedMeeting;
 
-  beforeEach(async () => {
-    meeting = signal<LoadedMeeting | undefined>(build());
-    setFoundation = vi.fn();
-
+  async function create(platform: 'browser' | 'server' = 'browser'): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [MeetingHeaderComponent],
       providers: [
+        { provide: PLATFORM_ID, useValue: platform },
         { provide: MeetingDetailsStateService, useValue: { meeting } },
         { provide: ProjectContextService, useValue: { setFoundation } },
+        { provide: Clipboard, useValue: { copy } },
+        { provide: MessageService, useValue: { add: addMessage } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MeetingHeaderComponent);
     fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    meeting = signal<LoadedMeeting | undefined>(build());
+    setFoundation = vi.fn();
+    copy = vi.fn().mockReturnValue(true);
+    addMessage = vi.fn();
+    await create();
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -82,8 +95,39 @@ describe('MeetingHeaderComponent', () => {
     expect(open).toHaveBeenCalledWith('/foundation/overview', '_blank', 'noopener,noreferrer');
   });
 
+  it('says the project link opens in a new tab', () => {
+    expect(query('meeting-header-project')?.textContent).toContain('(opens in a new tab)');
+  });
+
+  it('falls back to the project itself for a top-level project', () => {
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    meeting.set({ ...build(), project: { ...project, parent_uid: '', parent: null } });
+    fixture.detectChanges();
+
+    query('meeting-header-project')?.click();
+
+    expect(setFoundation).toHaveBeenCalledWith({ uid: 'project-1', name: 'Acme Project', slug: 'acme-project' });
+  });
+
   it('shows the meeting type with its configured label', () => {
     expect(query('meeting-header-badge-type')?.textContent).toContain('Technical');
+  });
+
+  it('shows no type chip for a meeting whose type is None', () => {
+    show({ meeting_type: 'None' } as Partial<Meeting>);
+
+    expect(query('meeting-header-badge-type')).toBeNull();
+  });
+
+  it('copies the meeting link, with the password when the payload has one, and confirms it', () => {
+    show({ password: 'a&b' } as Partial<Meeting>);
+
+    query('meeting-header-copy-link')?.querySelector('button')?.click();
+
+    const copied = new URL(copy.mock.calls[0][0]);
+    expect(`${copied.origin}${copied.pathname}`).toBe(`${environment.urls.home}/meetings/meeting-1`);
+    expect(copied.searchParams.get('password')).toBe('a&b');
+    expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
   });
 
   it('shows Recurring only for a recurring meeting', () => {
@@ -133,5 +177,21 @@ describe('MeetingHeaderComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('h1')).toBeNull();
+  });
+
+  describe('on the server', () => {
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      await create('server');
+    });
+
+    it('neither sets the foundation nor opens a tab', () => {
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      query('meeting-header-project')?.click();
+
+      expect(setFoundation).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+    });
   });
 });

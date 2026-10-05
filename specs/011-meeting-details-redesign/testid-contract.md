@@ -55,6 +55,7 @@ own namespace; the two never share a value.
 | `meeting-header-badge-transcripts`      | Transcripts enabled                                          |
 | `meeting-header-badge-youtube`          | YouTube upload enabled                                       |
 | `meeting-header-badge-ai-summary`       | AI summary enabled                                           |
+| `meeting-header-copy-link`              | Copy meeting link                                            |
 | `meeting-status-pill`                   | Status pill (upcoming / live / ended)                        |
 | `meeting-privacy-chip`                  | The single privacy chip (see below)                          |
 | `meeting-time-banner`                   | The date/time banner                                         |

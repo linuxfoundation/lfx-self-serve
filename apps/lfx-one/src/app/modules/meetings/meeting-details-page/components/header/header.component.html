@@ -4,100 +4,121 @@
 <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): 18px between the
      context link, the title and the badge row. -->
 @if (meeting(); as meeting) {
-  <div class="flex min-w-0 flex-col gap-[18px]">
-    @if (project(); as project) {
-      <button
-        type="button"
-        (click)="openFoundation()"
-        class="inline-flex w-fit items-center gap-[10px] rounded-[var(--md-radius-md)] text-left focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-        data-testid="meeting-header-project">
-        @if (project.logo_url) {
-          <img
-            [src]="project.logo_url"
-            alt=""
-            class="block h-[34px] w-[34px] rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] object-contain p-[4px]" />
-        } @else {
-          <span
-            class="flex h-[34px] w-[34px] items-center justify-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]"
-            aria-hidden="true">
-            <i class="fa-light fa-cube"></i>
-          </span>
-        }
-        <span class="flex flex-col leading-[1.25]">
-          <span class="text-[14.5px] font-semibold text-[var(--md-text-heading)]">{{ project.name }}</span>
-          @if (project.parent?.name; as foundation) {
-            <span class="text-[12.5px] text-[var(--md-text-muted)]" data-testid="meeting-header-foundation">{{ foundation }}</span>
+  <div class="flex items-start justify-between gap-[20px]">
+    <div class="flex min-w-0 flex-col gap-[18px]">
+      @if (project(); as project) {
+        <button
+          type="button"
+          (click)="openFoundation()"
+          class="inline-flex w-fit items-center gap-[10px] rounded-[var(--md-radius-md)] text-left focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          data-testid="meeting-header-project">
+          @if (project.logo_url) {
+            <img
+              [src]="project.logo_url"
+              alt=""
+              class="block h-[34px] w-[34px] rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] object-contain p-[4px]" />
+          } @else {
+            <span
+              class="flex h-[34px] w-[34px] items-center justify-center rounded-[var(--md-radius-md)] bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]"
+              aria-hidden="true">
+              <i class="fa-light fa-cube"></i>
+            </span>
           }
-        </span>
-      </button>
-    }
-
-    <h1 class="m-0 max-w-[760px] text-[34px] font-bold leading-[1.15] tracking-[-0.022em] text-[var(--md-text-heading)] [text-wrap:pretty]">
-      {{ meeting.title }}
-    </h1>
-
-    <!-- E1-05's status pill and E1-04's privacy chip take the front of this row. The prototype keeps
-         the row on one line; it wraps here, so a narrow screen never scrolls sideways. -->
-    <div class="flex flex-wrap items-center gap-[8px]" data-testid="meeting-header-badges">
-      @if (meeting.recurrence) {
-        <lfx-tag
-          value="Recurring"
-          icon="fa-light fa-arrows-repeat"
-          [outlined]="true"
-          [rounded]="true"
-          [styleClass]="chipClass"
-          data-testid="meeting-header-badge-recurring" />
-      }
-      @if (meetingType(); as type) {
-        <lfx-tag [value]="type.label" [icon]="type.icon" [outlined]="true" [rounded]="true" [styleClass]="chipClass" data-testid="meeting-header-badge-type" />
-      }
-      @for (committee of committees(); track committee.uid) {
-        <a
-          [href]="'/groups/' + committee.uid"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="rounded-full no-underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-          [attr.data-testid]="'meeting-header-badge-committee-' + committee.uid">
-          <lfx-tag [value]="committee.name ?? ''" icon="fa-light fa-users" [outlined]="true" [rounded]="true" [styleClass]="chipClass" />
+          <span class="flex flex-col leading-[1.25]">
+            <span class="text-[14.5px] font-semibold text-[var(--md-text-heading)]">{{ project.name }}</span>
+            @if (project.parent?.name; as foundation) {
+              <span class="text-[12.5px] text-[var(--md-text-muted)]" data-testid="meeting-header-foundation">{{ foundation }}</span>
+            }
+          </span>
           <span class="sr-only">(opens in a new tab)</span>
-        </a>
+        </button>
       }
-      @if (meeting.recording_enabled) {
-        <lfx-tag
-          value="Recording"
-          icon="fa-light fa-video text-[var(--md-status-live)]"
-          [outlined]="true"
-          [rounded]="true"
-          [styleClass]="chipClass"
-          data-testid="meeting-header-badge-recording" />
-      }
-      @if (meeting.transcript_enabled) {
-        <lfx-tag
-          value="Transcripts"
-          icon="fa-light fa-file-lines text-[var(--md-accent)]"
-          [outlined]="true"
-          [rounded]="true"
-          [styleClass]="chipClass"
-          data-testid="meeting-header-badge-transcripts" />
-      }
-      @if (meeting.youtube_upload_enabled) {
-        <lfx-tag
-          value="YouTube Upload"
-          icon="fa-light fa-upload text-[var(--md-status-warn)]"
-          [outlined]="true"
-          [rounded]="true"
-          [styleClass]="chipClass"
-          data-testid="meeting-header-badge-youtube" />
-      }
-      @if (meeting.ai_summary_enabled) {
-        <lfx-tag
-          value="AI Summary"
-          icon="fa-light fa-sparkles text-[var(--md-feature-ai)]"
-          [outlined]="true"
-          [rounded]="true"
-          [styleClass]="chipClass"
-          data-testid="meeting-header-badge-ai-summary" />
-      }
+
+      <h1 class="m-0 max-w-[760px] text-[34px] font-bold leading-[1.15] tracking-[-0.022em] text-[var(--md-text-heading)] [text-wrap:pretty]">
+        {{ meeting.title }}
+      </h1>
+
+      <!-- E1-05's status pill and E1-04's privacy chip take the front of this row. The prototype keeps
+         the row on one line; it wraps here, so a narrow screen never scrolls sideways. -->
+      <div class="flex flex-wrap items-center gap-[8px]" data-testid="meeting-header-badges">
+        @if (meeting.recurrence) {
+          <lfx-tag
+            value="Recurring"
+            icon="fa-light fa-arrows-repeat"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-recurring" />
+        }
+        @if (meetingType(); as type) {
+          <lfx-tag
+            [value]="type.label"
+            [icon]="type.icon"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-type" />
+        }
+        @for (committee of committees(); track committee.uid) {
+          <a
+            [href]="'/groups/' + committee.uid"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-full no-underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+            [attr.data-testid]="'meeting-header-badge-committee-' + committee.uid">
+            <lfx-tag [value]="committee.name ?? ''" icon="fa-light fa-users" [outlined]="true" [rounded]="true" [styleClass]="chipClass" />
+            <span class="sr-only">(opens in a new tab)</span>
+          </a>
+        }
+        @if (meeting.recording_enabled) {
+          <lfx-tag
+            value="Recording"
+            icon="fa-light fa-video text-[var(--md-status-live)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-recording" />
+        }
+        @if (meeting.transcript_enabled) {
+          <lfx-tag
+            value="Transcripts"
+            icon="fa-light fa-file-lines text-[var(--md-accent)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-transcripts" />
+        }
+        @if (meeting.youtube_upload_enabled) {
+          <lfx-tag
+            value="YouTube Upload"
+            icon="fa-light fa-upload text-[var(--md-status-warn)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-youtube" />
+        }
+        @if (meeting.ai_summary_enabled) {
+          <lfx-tag
+            value="AI Summary"
+            icon="fa-light fa-sparkles text-[var(--md-feature-ai)]"
+            [outlined]="true"
+            [rounded]="true"
+            [styleClass]="chipClass"
+            data-testid="meeting-header-badge-ai-summary" />
+        }
+      </div>
     </div>
+
+    <!-- The prototype's Add to calendar is not built: V2 excludes add-to-calendar and .ics (FR-050). -->
+    <lfx-button
+      icon="fa-light fa-copy"
+      [rounded]="true"
+      [outlined]="true"
+      severity="secondary"
+      size="small"
+      ariaLabel="Copy meeting link"
+      styleClass="flex-none"
+      (onClick)="copyLink()"
+      data-testid="meeting-header-copy-link" />
   </div>
 }

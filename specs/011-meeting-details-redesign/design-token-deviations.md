@@ -87,15 +87,14 @@ accent on its own 9% tint is only 4.27:1.
 Status hues are used as chip text on their own tinted background, so contrast is measured
 there — the stricter of the two surfaces — with the value on `--md-surface-card` alongside.
 
-| Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                          | Adopt upstream?                                    |
-| --------------------- | ---------------------- | ------- | ------- | ----------------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
-| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                                | Yes — converge on `emerald.700`                    |
-| `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                             | n/a — derived                                      |
-| `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange, and 4.26:1 on its tint              | **No** — hue and contrast; keep V2, raise upstream |
-| `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                             | n/a — derived                                      |
-| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange           | Yes — converge on `red.700`                        |
-| `--md-feature-ai`     | `#7c3aed`              | n/a     | n/a     | `violet.600` `#7F22FE`  | AI-summary icon only (non-text); prototype violet is less saturated | Yes — converge on `violet.600`                     |
-| `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                             | n/a — derived                                      |
+| Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                | Adopt upstream?                                    |
+| --------------------- | ---------------------- | ------- | ------- | ----------------------- | --------------------------------------------------------- | -------------------------------------------------- |
+| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                      | Yes — converge on `emerald.700`                    |
+| `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
+| `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange, and 4.26:1 on its tint    | **No** — hue and contrast; keep V2, raise upstream |
+| `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
+| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange | Yes — converge on `red.700`                        |
+| `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
 
 All three hues are darkened from the prototype, which measured roughly 3.6:1 on-chip across
 good, warn and live — every status chip would have failed AA. The divergence from `lfxColors`
@@ -128,6 +127,14 @@ because acceptance requires every radius and shadow to resolve through a token.
 | `--md-shadow-color`  | `rgb(15 20 25 / 9%)`                | derived from `--md-text-heading`       |
 | `--md-shadow-pop`    | `0 6px 18px var(--md-shadow-color)` | hover/raised cards and tiles           |
 | `--md-shadow-focus`  | `0 0 0 3px var(--md-accent)`        | focus ring — 4.82:1 light, 6.25:1 dark |
+
+### Feature (non-text)
+
+Icon-only colours that sit beside their own label, so no text-contrast tier applies.
+
+| Token             | V2 value  | Nearest `lfxColors` | Difference | Adopt upstream?        |
+| ----------------- | --------- | ------------------- | ---------- | ---------------------- | ------------------------------------------------------------------- | ------------------------------ |
+| `--md-feature-ai` | `#7c3aed` | n/a                 | n/a        | `violet.600` `#7F22FE` | AI-summary icon only (non-text); prototype violet is less saturated | Yes — converge on `violet.600` |
 
 ## Dark values
 
