@@ -136,10 +136,229 @@ describe('MentorshipAdminService.getPrograms', () => {
   });
 });
 
-describe('MentorshipAdminService.getProgram', () => {
-  it('resolves a mock program and throws 404 for an unknown one', async () => {
-    const service = new MentorshipAdminService();
+const PROGRAM_ID = '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b';
+const APPLICATION_ID = '9a1c2d3e-4b5f-4a6b-8c7d-1e2f3a4b5c6d';
+const PROGRAM_PATH = `/mentorship/v1/programs/${PROGRAM_ID}`;
 
-    await expect(service.getProgram(buildReq(), 'no-such-program')).rejects.toMatchObject({ statusCode: 404 });
+const header = {
+  program: { id: PROGRAM_ID, slug: 'grid', name: 'Grid', status: 'published', created_on: '2026-01-01', updated_on: '2026-01-02' },
+  active_term: { id: 't1', name: 'Fall', status: 'open' },
+  stats: { mentors: 1, mentees: 2, graduated: 0 },
+};
+const summary = { has_open_term: true, has_closed_term: false, mentees: 2, past_mentees: 4, applicants: 5, mentors: 1, terms: 3 };
+const applicationRow = (id: string, overrides: Record<string, unknown> = {}) => ({
+  user_id: `u-${id}`,
+  application_id: id,
+  status: 'hold',
+  name: 'Ada Mentee',
+  email: 'ada@mentee.example',
+  tasks_submitted: 1,
+  tasks_total: 2,
+  term: { id: 't1', name: 'Fall', status: 'open' },
+  created_on: '2026-08-01T00:00:00Z',
+  updated_on: '2026-08-02T00:00:00Z',
+  ...overrides,
+});
+
+/** Answers each read from `routes`; a route set to an Error rejects, and one left out is a test bug. */
+const stubProgramReads = (routes: Record<string, unknown>) =>
+  vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockImplementation(async (_req, _service, path: string) => {
+    const route = routes[path];
+    if (route === undefined) throw new Error(`unexpected path ${path}`);
+    if (route instanceof Error) throw route;
+    return route as never;
+  });
+
+const pageRoutes = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  [`${PROGRAM_PATH}/header`]: header,
+  [`${PROGRAM_PATH}/management-summary`]: summary,
+  [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 7, limit: 1, offset: 0 } },
+  [`${PROGRAM_PATH}/member-management`]: { data: [], meta: { total: 2, limit: 1, offset: 0 } },
+  [`${PROGRAM_PATH}/terms`]: {
+    data: [
+      { id: 't1', name: 'Fall', status: 'open' },
+      { id: 't0', name: 'Spring', status: 'closed' },
+      { id: 'tx', name: 'Gone', status: 'deleted' },
+    ],
+    meta: { total: 3, limit: 100, offset: 0 },
+  },
+  ...overrides,
+});
+
+describe('MentorshipAdminService.getProgramPage', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('builds the header, the four counts and the open and closed terms', async () => {
+    stubProgramReads(pageRoutes());
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid', term: 'Fall', status: 'open' });
+    expect(page.tabCounts).toEqual({ currentMentees: 7, pastMentees: 4, mentors: 2, terms: 3 });
+    expect(page.terms).toEqual([
+      { id: 't1', name: 'Fall', status: 'open' },
+      { id: 't0', name: 'Spring', status: 'closed' },
+    ]);
+  });
+
+  it('sends the one-row count reads and the largest terms page', async () => {
+    const spy = stubProgramReads(pageRoutes());
+
+    await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    const queries = Object.fromEntries(spy.mock.calls.map(([, , path, , query]) => [path, query]));
+    expect(queries[`${PROGRAM_PATH}/applications`]).toEqual({ type: 'current', limit: 1 });
+    expect(queries[`${PROGRAM_PATH}/member-management`]).toEqual({ limit: 1 });
+    expect(queries[`${PROGRAM_PATH}/terms`]).toEqual({ limit: 100 });
+  });
+
+  it('reads a published program with only closed terms as completed', async () => {
+    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/management-summary`]: { ...summary, has_open_term: false, has_closed_term: true } }));
+
+    expect((await service.getProgramPage(buildReq(), PROGRAM_ID)).program.status).toBe('completed');
+  });
+
+  it('shows a count as null when its read fails, and the terms as empty', async () => {
+    stubProgramReads(
+      pageRoutes({
+        [`${PROGRAM_PATH}/management-summary`]: new Error('down'),
+        [`${PROGRAM_PATH}/applications`]: new Error('down'),
+        [`${PROGRAM_PATH}/member-management`]: new Error('down'),
+        [`${PROGRAM_PATH}/terms`]: new Error('down'),
+      })
+    );
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.tabCounts).toEqual({ currentMentees: null, pastMentees: null, mentors: null, terms: null });
+    expect(page.terms).toEqual([]);
+    expect(page.program.status).toBe('open');
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_program', expect.any(String), { programId: PROGRAM_ID, failed: 4 });
+  });
+
+  it.each([404, 403])('passes a header %i on', async (statusCode) => {
+    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/header`]: new MicroserviceError('nope', statusCode, 'UPSTREAM') }));
+
+    await expect(service.getProgramPage(buildReq(), PROGRAM_ID)).rejects.toMatchObject({ statusCode });
+  });
+
+  it('shows an unrecognised program status as pending review and logs the id and status only', async () => {
+    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/header`]: { ...header, program: { ...header.program, status: 'mystery' } } }));
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.program.status).toBe('pending-review');
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_program', expect.any(String), {
+      programId: PROGRAM_ID,
+      status: 'mystery',
+    });
+  });
+});
+
+describe('MentorshipAdminService.getProgramMentees', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('makes exactly one applications read with the query as described, and maps the rows', async () => {
+    const spy = stubProgramReads({
+      [`${PROGRAM_PATH}/applications`]: { data: [applicationRow('a1')], meta: { total: 37, limit: 10, offset: 10 } },
+    });
+
+    const result = await service.getProgramMentees(buildReq(), PROGRAM_ID, {
+      type: 'current',
+      status: 'pending',
+      termId: 't1',
+      search: '  50%_off ',
+      offset: 10,
+      limit: 10,
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0].slice(1)).toEqual([
+      'LFX_V2_SERVICE',
+      `${PROGRAM_PATH}/applications`,
+      'GET',
+      { type: 'current', status: 'pending', term: 't1', search: String.raw`50\%\_off`, offset: 10, limit: 10 },
+      undefined,
+    ]);
+    expect(result.total).toBe(37);
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: 'a1', status: 'pending', termId: 't1', termName: 'Fall' });
+    expect(result.data[0].tasks).toBeUndefined();
+  });
+
+  it('defaults to offset 0 and 10 rows, and never sends more than 50', async () => {
+    const spy = stubProgramReads({ [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 0, limit: 10, offset: 0 } } });
+
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'past' });
+    await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'past', limit: 500 });
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ type: 'past', offset: 0, limit: 10, search: undefined, status: undefined, term: undefined });
+    expect(spy.mock.calls[1][4]).toMatchObject({ limit: 50 });
+  });
+
+  it('returns an empty page when the caller has no mentorship record', async () => {
+    stubProgramReads({
+      '/mentorship/v1/me': {},
+      [`${PROGRAM_PATH}/applications`]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
+    });
+
+    expect(await service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current' })).toEqual({ data: [], total: 0 });
+  });
+
+  it('passes any other upstream error on', async () => {
+    stubProgramReads({ [`${PROGRAM_PATH}/applications`]: new MicroserviceError('boom', 500, 'UPSTREAM') });
+
+    await expect(service.getProgramMentees(buildReq(), PROGRAM_ID, { type: 'current' })).rejects.toMatchObject({ statusCode: 500 });
+  });
+});
+
+describe('MentorshipAdminService.getApplicationTasks', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads every page of the tasks at 100 a page and maps them', async () => {
+    const path = `/mentorship/v1/applications/${APPLICATION_ID}/tasks`;
+    const task = (id: string, status: string) => ({
+      id,
+      application_id: APPLICATION_ID,
+      assignee_id: 'mentee',
+      status,
+      name: id,
+      custom: false,
+      created_on: '2026-08-01T00:00:00Z',
+      updated_on: '2026-08-01T00:00:00Z',
+    });
+    const spy = vi
+      .spyOn(MicroserviceProxyService.prototype, 'proxyRequest')
+      .mockResolvedValueOnce({ data: [task('t1', 'incomplete')], meta: { total: 2, limit: 100, offset: 0 } } as never)
+      .mockResolvedValueOnce({ data: [task('t2', 'complete')], meta: { total: 2, limit: 100, offset: 1 } } as never);
+
+    const tasks = await new MentorshipAdminService().getApplicationTasks(buildReq(), APPLICATION_ID);
+
+    expect(tasks.map((t) => [t.id, t.status])).toEqual([
+      ['t1', 'pending'],
+      ['t2', 'completed'],
+    ]);
+    expect(spy.mock.calls.map(([, , calledPath, , query]) => [calledPath, query])).toEqual([
+      [path, { limit: 100, offset: 0 }],
+      [path, { limit: 100, offset: 1 }],
+    ]);
   });
 });

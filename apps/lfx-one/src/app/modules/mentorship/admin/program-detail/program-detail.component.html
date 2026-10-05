@@ -15,9 +15,9 @@
 
     @if (isLoading()) {
       <lfx-route-loading data-testid="mentorship-program-detail-loading" />
-    } @else if (detail(); as programDetail) {
+    } @else if (page(); as programPage) {
       <lfx-mentorship-program-detail-header
-        [program]="programDetail.program"
+        [program]="programPage.program"
         [tabCounts]="tabCounts()"
         [activeTab]="activeTab()"
         (tabChange)="onTabChange($event)"
@@ -30,21 +30,34 @@
         @switch (activeTab()) {
           @case ('current-mentees') {
             <lfx-mentorship-current-mentees-tab
-              [mentees]="currentMentees()"
+              [programId]="programPage.program.id"
               [terms]="terms()"
               [noteDrafts]="noteDrafts()"
               (noteRequested)="onNoteRequested($event)" />
           }
           @case ('past-mentees') {
-            <lfx-mentorship-past-mentees-tab [mentees]="pastMentees()" [terms]="terms()" />
+            <lfx-mentorship-past-mentees-tab [mentees]="mockDetail()?.pastMentees ?? []" [terms]="mockDetail()?.terms ?? []" />
           }
           @case ('mentors') {
-            <lfx-mentorship-mentors-tab [mentors]="mentors()" />
+            <lfx-mentorship-mentors-tab [mentors]="mockDetail()?.mentors ?? []" />
           }
           @case ('terms') {
-            <lfx-mentorship-terms-tab [terms]="terms()" />
+            <lfx-mentorship-terms-tab [terms]="mockDetail()?.terms ?? []" />
           }
         }
+      </div>
+    } @else if (pageError() === 'no-access') {
+      <lfx-empty-state
+        icon="fa-light fa-lock"
+        [title]="noAccessTitle"
+        [subtitle]="noAccessMessage"
+        ctaLabel="Back to programs"
+        [ctaRoute]="['/mentorship/admin']"
+        data-testid="mentorship-admin-program-no-access" />
+    } @else if (pageError() === 'failed') {
+      <div class="flex flex-wrap items-center gap-3" role="alert" data-testid="mentorship-admin-program-load-error">
+        <p class="text-sm text-red-600">{{ loadErrorMessage }}</p>
+        <lfx-button label="Retry" size="small" [text]="true" (onClick)="onRetry()" data-testid="mentorship-admin-program-retry" />
       </div>
     } @else {
       <lfx-empty-state
@@ -53,7 +66,7 @@
         subtitle="This program is unavailable or the link is incorrect."
         ctaLabel="Back to programs"
         [ctaRoute]="['/mentorship/admin']"
-        data-testid="mentorship-program-detail-not-found" />
+        data-testid="mentorship-admin-program-not-found" />
     }
   </div>
 </div>
