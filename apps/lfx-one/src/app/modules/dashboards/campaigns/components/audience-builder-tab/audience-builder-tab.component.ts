@@ -164,6 +164,17 @@ export class AudienceBuilderTabComponent {
   protected readonly reuseLoading = signal(false);
   protected readonly lastSentEmails = signal<readonly AudienceLastSentEmail[]>([]);
   protected readonly existingMasterLists = signal<readonly AudienceMasterListBrief[]>([]);
+  /** Masters this panel composed but could not record. See `rememberComposedMaster`. */
+  private readonly composedMasterLists = signal<readonly AudienceMasterListBrief[]>([]);
+  /**
+   * What the reuse grid shows: this panel's own composed masters first, then the fetched ones, with
+   * a fetched row winning on a shared id because it carries the portal's current size.
+   */
+  protected readonly reuseMasterLists = computed<readonly AudienceMasterListBrief[]>(() => {
+    const fetched = this.existingMasterLists();
+    const known = new Set(fetched.map((list) => list.listId));
+    return [...this.composedMasterLists().filter((list) => !known.has(list.listId)), ...fetched];
+  });
 
   // === State: suppression ===
   protected readonly suppressionLoading = signal(false);
@@ -485,16 +496,14 @@ export class AudienceBuilderTabComponent {
   /**
    * The brief's existing audience, when it should be shown and should block compose.
    *
-   * Only for THIS brief (a row for another brief is the parent's stale state, not a reason to
-   * block), and not once the operator asked to replace it. Hidden while this panel's own compose or
-   * attach is on screen: that result already states what the email sends to.
+   * Not compared against `briefId`. The parent scopes `existingAudience` to the brief it is
+   * addressing -- a brief switch clears it and every read is generation-guarded -- while `briefId`
+   * is deliberately EMPTY for an unapproved restore. Matching the two let exactly that restore
+   * through: a known audience, no prompt, and compose minting a second HubSpot master.
    */
   protected readonly blockingAudience = computed<CampaignAudience | null>(() => {
     const existing = this.existingAudience();
-    if (existing === null || existing.briefId === '' || existing.briefId !== this.briefId()) {
-      return null;
-    }
-    return this.replaceRequestedFor() === existing.id ? null : existing;
+    return existing === null || this.replaceRequestedFor() === existing.id ? null : existing;
   });
 
   /** The list currently recorded as this email's send list by THIS panel, if any. */
@@ -567,7 +576,7 @@ export class AudienceBuilderTabComponent {
       }
     };
     this.discoveredLists().forEach((list) => note(list.listId, list.size));
-    this.existingMasterLists().forEach((list) => note(list.listId, list.size));
+    this.reuseMasterLists().forEach((list) => note(list.listId, list.size));
     this.suppressionLists().forEach((list) => note(list.listId, list.size));
     this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.size)));
     this.searchResults().forEach((list) => note(list.listId, list.size));
@@ -583,7 +592,7 @@ export class AudienceBuilderTabComponent {
       }
     };
     this.discoveredLists().forEach((list) => note(list.listId, list.hubspotUrl));
-    this.existingMasterLists().forEach((list) => note(list.listId, list.hubspotUrl));
+    this.reuseMasterLists().forEach((list) => note(list.listId, list.hubspotUrl));
     this.suppressionLists().forEach((list) => note(list.listId, list.hubspotUrl));
     this.lastSentEmails().forEach((email) => [...email.includedLists, ...email.suppressionLists].forEach((list) => note(list.listId, list.hubspotUrl)));
     this.searchResults().forEach((list) => note(list.listId, list.hubspotUrl));
@@ -1370,19 +1379,20 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
-   * Puts a confirmed master this panel just created into the reuse grid.
+   * Records a confirmed master this panel just created, so the reuse grid can offer it.
    *
    * The recovery for an unattached compose is "Use for this email" on that master, but the grid is
    * loaded once at discovery and discovery of the same URL is blocked after a compose -- so the new
-   * list never appeared there and the recovery the UI described could not be performed without a
-   * reload. Prepended, since it is the one the operator is looking for.
+   * list never appeared there. Held APART from the fetched lists rather than written into them: the
+   * masters fetch can land after the compose and `set` its own answer, which wiped a row inserted
+   * into the same signal. `reuseMasterLists` is the union.
    */
   private rememberComposedMaster(master: AudienceComposedList): void {
-    if (this.existingMasterLists().some((list) => list.listId === master.listId)) {
+    if (this.composedMasterLists().some((list) => list.listId === master.listId)) {
       return;
     }
     const row: AudienceMasterListBrief = { listId: master.listId, name: master.name, hubspotUrl: master.hubspotUrl, size: master.size };
-    this.existingMasterLists.update((lists) => [row, ...lists]);
+    this.composedMasterLists.update((lists) => [row, ...lists]);
   }
 
   private add(listId: string, name: string): void {
@@ -1489,6 +1499,7 @@ export class AudienceBuilderTabComponent {
     this.missingSignals.set([]);
     this.lastSentEmails.set([]);
     this.existingMasterLists.set([]);
+    this.composedMasterLists.set([]);
     this.suppressionLists.set([]);
     this.suppressionFailed.set(false);
     this.mastersFailed.set(false);

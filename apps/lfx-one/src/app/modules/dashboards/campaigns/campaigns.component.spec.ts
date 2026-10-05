@@ -3537,6 +3537,18 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailAudienceUnattached()).toEqual(looseMaster);
     });
 
+    it('keeps a brief-less warning once the plan save fills the brief id', () => {
+      // A compose run before the plan was saved is filed under no brief. The save that follows fills
+      // `emailBriefId`, and looking up the live id alone hid the warning for a list still unattached.
+      onImplementTab();
+      internals().emailBriefId.set('');
+      internals().onAudienceComposeUnattached({ master: looseMaster, briefId: '', projectSlug: internals().activeFoundationSlug() });
+      internals().emailBriefId.set('brief-saved');
+      fixture.detectChanges();
+
+      expect(internals().emailAudienceUnattached(), 'the warning vanished when the plan was saved').toEqual(looseMaster);
+    });
+
     it('clears the warning when the brief-derived state resets', () => {
       onImplementTab();
       internals().onAudienceComposeUnattached(looseHere());

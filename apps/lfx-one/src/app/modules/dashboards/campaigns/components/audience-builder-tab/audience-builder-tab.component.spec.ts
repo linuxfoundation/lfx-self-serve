@@ -1464,13 +1464,35 @@ describe('AudienceBuilderTabComponent', () => {
       expect(compose()?.disabled, 'an explicit replacement must unlock compose').toBe(false);
     });
 
-    it("does not block compose on another brief's audience", async () => {
-      await renderWithDiscovery('brief-2');
+    it('blocks compose over a restored audience even when the brief id is empty', async () => {
+      // An unapproved restore leaves `briefId` empty ON PURPOSE while the parent holds the brief's
+      // audience. Matching the two let exactly that restore through with no prompt.
+      await renderWithDiscovery('');
       fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
       fixture.detectChanges();
 
-      expect(host().querySelector('[data-testid="campaigns-audience-existing"]')).toBeNull();
-      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(false);
+      expect(host().querySelector('[data-testid="campaigns-audience-existing"]')).not.toBeNull();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
+    });
+
+    it.each([
+      ['lands after the compose', (masters: Subject<never[]>) => masters.next([])],
+      ['fails after the compose', (masters: Subject<never[]>) => masters.error(new Error('boom'))],
+    ])('keeps a loose master in the reuse grid when the masters fetch %s', async (_label, settle) => {
+      // The masters fetch is not awaited by compose. Writing the loose row into the fetched list let
+      // a later `set` wipe it, and a failed fetch hid the grid entirely -- removing the recovery
+      // action the unattached warning points to.
+      const masters = new Subject<never[]>();
+      getAudienceExistingMasterLists.mockReturnValue(masters);
+      await renderWithDiscovery('brief-1');
+      const master = { listId: '900', name: 'Master', hubspotUrl: 'u' };
+      composeAudienceMaster.mockReturnValue(of({ master, sourceListIds: ['101'], recorded: false }));
+
+      click('campaigns-audience-compose');
+      settle(masters);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="audience-last-sent-master-use-900"]'), 'the masters fetch wiped the loose row').not.toBeNull();
     });
 
     it('reports a compose the operator ran with no saved plan as a loose list', async () => {

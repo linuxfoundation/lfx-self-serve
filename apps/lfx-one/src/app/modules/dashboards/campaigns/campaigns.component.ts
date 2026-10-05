@@ -1123,9 +1123,15 @@ export class CampaignsComponent {
    * describes platform state the app cannot fix on the operator's behalf. Held as the list itself
    * so the warning can name it and link to it; cleared only when an audience actually attaches.
    */
-  protected readonly emailAudienceUnattached = computed<AudienceComposedList | null>(
-    () => this.unattachedByScope().get(this.unattachedScopeKey(this.activeFoundationSlug(), this.emailBriefId())) ?? null
-  );
+  protected readonly emailAudienceUnattached = computed<AudienceComposedList | null>(() => {
+    const scopes = this.unattachedByScope();
+    const project = this.activeFoundationSlug();
+    // Falls back to the brief-less entry. A compose run before the plan was saved is filed under no
+    // brief, and the save that follows fills `emailBriefId` -- so looking up the live id alone hid
+    // the warning while the list was still unattached. The brief-less entry belongs to this
+    // session of the send: every reset drops it (see `forgetUnattached`).
+    return scopes.get(this.unattachedScopeKey(project, this.emailBriefId())) ?? scopes.get(this.unattachedScopeKey(project, '')) ?? null;
+  });
   /**
    * Every unattached master, by the project and brief its compose was dispatched for. See
    * `onAudienceComposeUnattached`. `emailAudienceUnattached` is the entry for what is on screen.
