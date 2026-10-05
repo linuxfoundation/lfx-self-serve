@@ -14,6 +14,7 @@ import {
 import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
+  isHttpsUrl,
   isOrgClaDesigneeLfLoginRequired,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
@@ -79,7 +80,7 @@ import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
+import { urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
 import { getEffectiveLfUsername, isImpersonating } from '../utils/auth-helper';

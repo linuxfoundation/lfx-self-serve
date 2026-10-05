@@ -11,6 +11,7 @@
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
 import { MY_CLAS_PATH } from '@lfx-one/shared/constants';
+import { isHttpsUrl } from '@lfx-one/shared/utils';
 import {
   Auth0Identity,
   ClaGroupOption,
@@ -49,7 +50,7 @@ import {
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
-import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
+import { urlSchemeForLog } from '../helpers/validation.helper';
 import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { Auth0Service } from './auth0.service';
 import { EmailVerificationService } from './email-verification.service';

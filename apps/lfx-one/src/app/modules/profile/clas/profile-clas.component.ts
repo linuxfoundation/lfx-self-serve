@@ -39,6 +39,7 @@ import {
   formatClaSignedOn,
   gerritSignUrl,
   heldClaKindsForIdentity,
+  isHttpsUrl,
   isMyClasEmpty,
   resolveGerritContractType,
   signedAsLine,
@@ -569,7 +570,7 @@ export class ProfileClasComponent {
             return;
           }
 
-          if (!this.isHttpsUrl(prepared.signUrl)) {
+          if (!isHttpsUrl(prepared.signUrl)) {
             this.reportPrepareFailure(undefined);
             return;
           }
@@ -583,15 +584,6 @@ export class ProfileClasComponent {
           this.reportPrepareFailure(error);
         },
       });
-  }
-
-  private isHttpsUrl(value: unknown): boolean {
-    if (typeof value !== 'string') return false;
-    try {
-      return new URL(value).protocol === 'https:';
-    } catch {
-      return false;
-    }
   }
 
   /**

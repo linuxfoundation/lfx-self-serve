@@ -54,7 +54,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const orgLensUrl = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-lens-url.utils')>(
     '../../../../../packages/shared/src/utils/org-lens-url.utils'
   );
+  const url = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/url.utils')>('../../../../../packages/shared/src/utils/url.utils');
   return {
+    isHttpsUrl: url.isHttpsUrl,
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
