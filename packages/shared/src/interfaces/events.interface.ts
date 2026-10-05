@@ -19,6 +19,9 @@ export type EventStatusFilter = 'Active' | 'Planned' | 'Pending' | 'Completed' |
  */
 export type MyEventStatus = (typeof MY_EVENT_STATUS)[keyof typeof MY_EVENT_STATUS];
 
+/** Registration view on the My Events Upcoming tab: only the user's registrations, or every upcoming event. */
+export type MyEventsUpcomingView = 'registered' | 'all';
+
 /**
  * Event item for the My Events dashboard
  */
@@ -266,6 +269,8 @@ export interface GetEventOrganizationsParams {
   projectName?: string;
   /** When true, returns only foundations from the user's registered past events */
   isPast?: boolean;
+  /** Limits upcoming foundations to accepted user registrations rather than affiliated discovery. */
+  registeredOnly?: boolean;
 }
 
 /**
@@ -554,6 +559,8 @@ export interface GetEventOrganizationsOptions {
   projectName?: string;
   /** When true, returns only foundations from the authenticated user's registered past events */
   isPast?: boolean;
+  /** Limits upcoming foundations to accepted user registrations rather than affiliated discovery. */
+  registeredOnly?: boolean;
   /** Project slugs from persona detection — scopes upcoming foundations to affiliated projects */
   affiliatedProjectSlugs?: string[];
 }
