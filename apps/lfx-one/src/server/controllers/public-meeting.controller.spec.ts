@@ -215,7 +215,7 @@ function buildReqRes(authenticated: boolean, hasUserToken = true) {
     path: '/public/api/meetings/' + MEETING_ID,
     log: {},
   } as any;
-  const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+  const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), setHeader: vi.fn() } as any;
   const next = vi.fn();
   return { req, res, next };
 }
@@ -438,6 +438,21 @@ describe('PublicMeetingController.getMeetingById passcode source', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('password') }));
+  });
+
+  it('forbids caching, since the passcode that gates the body is not part of the URL', async () => {
+    const accepted = buildReqRes(false);
+    accepted.req.headers['x-meeting-password'] = 'pw';
+    await controller.getMeetingById(accepted.req, accepted.res, accepted.next);
+    expect(accepted.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+
+    const rejected = buildReqRes(false);
+    await controller.getMeetingById(rejected.req, rejected.res, rejected.next);
+    expect(rejected.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+
+    const occurrences = buildReqRes(false);
+    await controller.getMeetingOccurrences(occurrences.req, occurrences.res, occurrences.next);
+    expect(occurrences.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
   });
 });
 
