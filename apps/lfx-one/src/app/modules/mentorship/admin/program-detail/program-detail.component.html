@@ -34,7 +34,7 @@
               [terms]="terms()"
               [noteDrafts]="noteDrafts()"
               (noteRequested)="onNoteRequested($event)"
-              (countsChanged)="refreshCounts()" />
+              [countsRefresh]="countsRefresh" />
           }
           @case ('past-mentees') {
             <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" />

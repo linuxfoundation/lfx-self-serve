@@ -129,8 +129,12 @@ export class CurrentMenteesTabComponent {
   /** Notes edited this session, keyed by person id; overrides the note a row arrived with. */
   public readonly noteDrafts = input<Record<string, string>>({});
   public readonly noteRequested = output<MentorshipNoteRequest>();
-  /** A decision changed the program's application counts, so the parent should read the tab counts again. */
-  public readonly countsChanged = output<void>();
+  /**
+   * Called when a decision changed the program's application counts, so the parent reads the tab counts again. A
+   * callback rather than an output: Angular drops an output emitted after destroy, and a tab switch destroys this tab
+   * while the parent, whose counts are now stale, stays on screen.
+   */
+  public readonly countsRefresh = input<() => void>(() => undefined);
 
   protected readonly pageSize = MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE;
   protected readonly statusNote = MENTORSHIP_APPLICANT_STATUS_NOTE;
@@ -169,7 +173,7 @@ export class CurrentMenteesTabComponent {
   private readonly reloadCount = signal(0);
   /** True while a decision write is in flight; Decline by Term is disabled and a second decision is refused meanwhile. */
   protected readonly decisionInFlight = signal(false);
-  /** Set when the tab is destroyed, so a decision that lands afterwards only shows its toast. */
+  /** Set when the tab is destroyed, so a decision that lands afterwards does not reload the gone table. */
   private destroyed = false;
 
   protected readonly termOptions = this.initTermOptions();
@@ -361,7 +365,8 @@ export class CurrentMenteesTabComponent {
   /**
    * Sends one write and is never cancelled by the tab going away (no `takeUntilDestroyed`): a tab switch or an Other
    * Active Application link destroys the tab mid-request, and aborting it would leave the change unknown and untoasted.
-   * A write that lands after the tab is gone shows its toast only; the next tab render reads the page afresh.
+   * A write that lands after the tab is gone still toasts and refreshes the parent's counts, but skips the table
+   * reload; the next tab render reads the page afresh.
    */
   private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, termClosedMessage?: string): void {
     if (this.decisionInFlight()) {
@@ -373,9 +378,8 @@ export class CurrentMenteesTabComponent {
       next: (result) => {
         this.decisionInFlight.set(false);
         onDone(result);
-        if (this.destroyed) return;
-        this.reloadCount.update((count) => count + 1);
-        this.countsChanged.emit();
+        this.countsRefresh()();
+        if (!this.destroyed) this.reloadCount.update((count) => count + 1);
       },
       error: (err: unknown) => {
         this.decisionInFlight.set(false);

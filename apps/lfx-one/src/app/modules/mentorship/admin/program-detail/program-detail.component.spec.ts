@@ -196,6 +196,19 @@ describe('ProgramDetailComponent', () => {
       expect(fixture.componentInstance['pageError']()).toBeNull();
     });
 
+    it('hands Current Mentees a refresh that still updates the counts after that tab is destroyed', () => {
+      const refreshed = programPage();
+      refreshed.tabCounts = { ...refreshed.tabCounts, currentMentees: 1 };
+      getProgram.mockReturnValue(of(refreshed));
+      const countsRefresh: () => void = fixture.componentInstance['countsRefresh'];
+
+      showTab('mentors');
+      countsRefresh();
+      settle();
+
+      expect(tabText('current-mentees')).toBe('Current Mentees 1');
+    });
+
     it('drops a refresh that answers after a newer one started', () => {
       const older = new Subject<MentorshipAdminProgramPage>();
       const newer = new Subject<MentorshipAdminProgramPage>();

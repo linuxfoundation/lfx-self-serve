@@ -516,7 +516,7 @@ describe('CurrentMenteesTabComponent', () => {
       dialogResult = 'part_time';
       const toast = toasts();
       const emitted = vi.fn();
-      fixture.componentInstance.countsChanged.subscribe(emitted);
+      fixture.componentRef.setInput('countsRefresh', emitted);
       const reads = getProgramMentees.mock.calls.length;
 
       fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
@@ -615,7 +615,7 @@ describe('CurrentMenteesTabComponent', () => {
       updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
       const toast = toasts();
       const emitted = vi.fn();
-      fixture.componentInstance.countsChanged.subscribe(emitted);
+      fixture.componentRef.setInput('countsRefresh', emitted);
       const reads = getProgramMentees.mock.calls.length;
 
       fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
@@ -643,7 +643,7 @@ describe('CurrentMenteesTabComponent', () => {
       const toast = toasts();
       const confirm = confirmSpy();
       const emitted = vi.fn();
-      fixture.componentInstance.countsChanged.subscribe(emitted);
+      fixture.componentRef.setInput('countsRefresh', emitted);
 
       fixture.componentInstance['onDeclineByTerm']();
       expect(declinePendingForTerm).not.toHaveBeenCalled();
@@ -705,7 +705,7 @@ describe('CurrentMenteesTabComponent', () => {
       expect(detailOf(toast)).toBe("The change couldn't be saved. Please try again.");
     });
 
-    it('keeps a confirmed write alive when the tab is destroyed, toasting it without reloading', () => {
+    it('keeps a confirmed write alive when the tab is destroyed, toasting it and refreshing the counts without reloading', () => {
       const pending = new Subject<void>();
       // Torn down before the answer arrives means the request was cancelled.
       let answered = false;
@@ -722,7 +722,7 @@ describe('CurrentMenteesTabComponent', () => {
       const toast = toasts();
       const confirm = confirmSpy();
       const emitted = vi.fn();
-      fixture.componentInstance.countsChanged.subscribe(emitted);
+      fixture.componentRef.setInput('countsRefresh', emitted);
 
       confirmAction('app_1', 'decline', confirm);
       const reads = getProgramMentees.mock.calls.length;
@@ -733,7 +733,7 @@ describe('CurrentMenteesTabComponent', () => {
 
       expect(cancelled).toBe(false);
       expect(detailOf(toast)).toBe('Application declined');
-      expect(emitted).not.toHaveBeenCalled();
+      expect(emitted).toHaveBeenCalledTimes(1);
       expect(getProgramMentees.mock.calls.length).toBe(reads);
     });
 

@@ -83,6 +83,8 @@ export class ProgramDetailComponent {
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly terms = computed(() => this.page()?.terms ?? []);
   protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
+  /** Handed to Current Mentees, which may call it after it has been destroyed; once this page is gone it reads nothing. */
+  protected readonly countsRefresh: () => void = this.refreshCounts.bind(this);
 
   public constructor() {
     this.initPageReads();
