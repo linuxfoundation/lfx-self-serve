@@ -17,6 +17,9 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignBriefRequest,
+  CampaignBudgetType,
+  CampaignBudgetUpdateRequest,
+  CampaignBudgetUpdateResult,
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignMetricsWindow,
@@ -32,6 +35,7 @@ import type {
 import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   GOOGLE_ADS_GEO_TARGET_MAP,
@@ -50,6 +54,7 @@ import {
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
+  VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
   isCanonicalGoogleAdsResourceId,
   isMicrosoftMatchType,
@@ -2029,6 +2034,140 @@ export class CampaignController {
         accountId: typeof body.accountId === 'string' ? body.accountId : undefined,
       });
       logger.success(req, 'campaign_status_update', startTime, { campaignId, newStatus: result.newStatus });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Change a campaign's budget through campaign-service's `update-campaign-budget`, for the
+   * Optimize tab.
+   *
+   * Only campaign-service can do this, so there is no legacy arm and no cutover flag. A campaign
+   * is addressed by its campaign-service UUID alone. The checks below refuse what is malformed on
+   * its face. Everything that depends on the campaign (platform support, the platform's own
+   * minimum, shared budget, pacing mismatch, currency) is decided upstream, and its status and
+   * message reach the caller unchanged through `apiErrorHandler`.
+   */
+  public async updateCampaignBudget(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const campaignId = req.params['campaignId'];
+
+    if (!campaignId || !isCampaignServiceJobId(campaignId)) {
+      next(
+        ServiceValidationError.forField('campaignId', 'campaignId must be a campaign UUID', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      next(
+        ServiceValidationError.forField('body', 'request body must be a JSON object', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignBudgetUpdateRequest>;
+
+    // A real JSON number only. A numeric string is refused rather than coerced, and the value is
+    // never rounded: it is in the ad account's own currency and goes upstream exactly as sent.
+    // Upstream enforces the range and each platform's own minimum, and names the reason.
+    if (typeof body.budget !== 'number' || !Number.isFinite(body.budget) || body.budget <= 0) {
+      next(
+        ServiceValidationError.forField('budget', 'budget must be a finite number greater than zero', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (typeof body.budgetType !== 'string' || !VALID_CAMPAIGN_BUDGET_TYPES.has(body.budgetType as CampaignBudgetType)) {
+      next(
+        ServiceValidationError.forField('budgetType', `budgetType must be one of: ${[...VALID_CAMPAIGN_BUDGET_TYPES].join(', ')}`, {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    // Refused rather than defaulted, for the same reasons as the status toggle: a guessed brief
+    // addresses a route that 404s, and a missing If-Match is a 428 upstream.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof body.briefId === 'string' ? body.briefId.trim() : '';
+    const etag = typeof body.etag === 'string' ? body.etag.trim() : '';
+    if (!projectSlug) {
+      next(
+        ServiceValidationError.forField('project', 'project is required', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!briefId) {
+      next(
+        ServiceValidationError.forField('briefId', 'briefId is required to change a campaign budget', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    if (!etag) {
+      next(
+        ServiceValidationError.forField('etag', 'etag is required so a concurrent edit cannot be overwritten', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+    // The etag becomes the If-Match header. One fetch cannot send (an internal CR/LF, a character
+    // above U+00FF) is rejected before any network I/O, and would surface as an UNCONFIRMED budget
+    // write although nothing left the BFF. Refused here as the malformed input it is.
+    if (!CAMPAIGN_ETAG_HEADER_PATTERN.test(etag)) {
+      next(
+        ServiceValidationError.forField('etag', 'etag must be a valid HTTP header value', {
+          operation: 'campaign_budget_update',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const budgetType = body.budgetType as CampaignBudgetType;
+    const startTime = logger.startOperation(req, 'campaign_budget_update', { campaignId, briefId, budgetType });
+
+    try {
+      const campaign = await this.campaignServiceClient.updateCampaignBudget(req, {
+        projectSlug,
+        briefId,
+        campaignId,
+        budget: body.budget,
+        budgetType,
+        etag,
+      });
+      // `platform`, `etag` and `serviceStatus` come from the ROW. The fresh etag is what lets the
+      // caller make a second change without a 412. `budget` and `budgetType` echo the request: the
+      // amount requested, which the platform accepted; the platform may hold it rounded to its
+      // smallest settable unit.
+      const result: CampaignBudgetUpdateResult = {
+        platform: campaign.platform,
+        campaignId,
+        budget: body.budget,
+        budgetType,
+        etag: campaign.etag,
+        serviceStatus: campaign.status,
+      };
+      logger.success(req, 'campaign_budget_update', startTime, { campaignId, budgetType, platform: result.platform });
       res.json(result);
     } catch (error) {
       next(error);

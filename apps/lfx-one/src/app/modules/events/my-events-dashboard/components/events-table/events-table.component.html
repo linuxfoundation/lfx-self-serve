@@ -117,7 +117,11 @@
 
       <!-- Status -->
       <td>
-        <lfx-tag [value]="event.status" [severity]="statusSeverityMap[event.status] ?? 'info'" [attr.data-testid]="'event-status-' + event.id" />
+        <lfx-tag
+          [value]="event.status"
+          [severity]="statusSeverityMap[event.status] ?? 'info'"
+          [icon]="statusIconMap[event.status]"
+          [attr.data-testid]="'event-status-' + event.id" />
       </td>
 
       <!-- Certificate -->

@@ -135,7 +135,7 @@ describe('MentorMenteesTabComponent', () => {
     expect(requests).toEqual([{ personId: 'mnt_2', personName: 'Priya Shah' }]);
   });
 
-  it('expands assigned tasks when View Tasks is clicked and hides prerequisite tasks by default', () => {
+  it('expands assigned tasks when View Tasks is clicked and shows prerequisite tasks by default', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-tasks-expanded-mnt_1"]')).toBeNull();
 
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-view-tasks-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
@@ -143,7 +143,7 @@ describe('MentorMenteesTabComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-tasks-expanded-mnt_1"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
-    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_3"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_3"]')).not.toBeNull();
   });
 
   it("opens the task-form dialog with just the row's mentee when the plus control is clicked", () => {

@@ -3,13 +3,19 @@
 
 import {
   MentorshipProgram,
+  MentorshipProgramMentor,
   MentorshipProgramStatus,
+  MentorshipProgramTermRow,
   MentorshipUpstreamAdministeredProgram,
+  MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramHeader,
   MentorshipUpstreamProgramManagementSummary,
+  MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
 
-import { MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM, MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS } from '../constants';
+import { MENTORSHIP_ADMIN_MENTOR_STATUS_MAP, MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM, MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS } from '../constants';
+
+import { toIsoDate } from './date-format.helper';
 
 /**
  * Builds one admin list row from an upstream administered program. Upstream decides the status shown (`admin_status`);
@@ -70,5 +76,52 @@ export const mapMentorshipAdminHeaderProgram = (
       updatedOn: item.updated_on,
     },
     unknownStatus: status === undefined,
+  };
+};
+
+/**
+ * Builds one Mentors tab row from an upstream member-management row. A status this does not know reads as `pending`
+ * with `unknownStatus` set, so the caller can log it. The name falls back to the username, then the email, then empty.
+ */
+export const mapMentorshipAdminMentorRow = (row: MentorshipUpstreamMemberManagementRow): { mentor: MentorshipProgramMentor; unknownStatus: boolean } => {
+  const status =
+    row.status !== undefined && Object.hasOwn(MENTORSHIP_ADMIN_MENTOR_STATUS_MAP, row.status) ? MENTORSHIP_ADMIN_MENTOR_STATUS_MAP[row.status] : undefined;
+  const invitedOn = toIsoDate(row.created_on);
+
+  return {
+    mentor: {
+      id: row.id,
+      name: row.name || row.username || row.email || '',
+      email: row.email ?? '',
+      ...(row.avatar_url ? { avatarUrl: row.avatar_url } : {}),
+      status: status ?? 'pending',
+      ...(invitedOn ? { invitedOn } : {}),
+      profileCreated: row.profile_created,
+    },
+    unknownStatus: status === undefined,
+  };
+};
+
+/**
+ * Builds one Terms tab row from an upstream term-management row, or `null` for a term that is neither open nor closed
+ * (upstream leaves deleted terms out, so this only guards a status it does not know). Dates read as `YYYY-MM-DD`, empty when absent.
+ */
+export const mapMentorshipAdminTermRow = (row: MentorshipUpstreamTermManagementRow): MentorshipProgramTermRow | null => {
+  if (row.status !== 'open' && row.status !== 'closed') {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    pending: row.pending,
+    declined: row.declined,
+    accepted: row.accepted,
+    graduated: row.graduated,
+    startDate: toIsoDate(row.start_date_time) ?? '',
+    endDate: toIsoDate(row.end_date_time) ?? '',
+    applicationStartDate: toIsoDate(row.application_start_date) ?? '',
+    applicationEndDate: toIsoDate(row.application_end_date) ?? '',
   };
 };

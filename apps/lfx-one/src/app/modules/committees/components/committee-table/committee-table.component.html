@@ -8,6 +8,8 @@
       <lfx-committee-filter-bar
         [searchForm]="searchForm()"
         [votingStatusOptions]="votingStatusOptions()"
+        [joinModeOptions]="joinModeOptions()"
+        [showJoinModeFilter]="showJoinModeFilter()"
         [showFoundationFilter]="showFoundationFilter()"
         [showProjectFilter]="showProjectFilter()"
         [foundationOptions]="foundationOptions()"
@@ -48,11 +50,16 @@
             <tr>
               <th>Name</th>
               <th>Type</th>
-              <th>Class</th>
               <th class="min-w-[200px]">Description</th>
               <th>Members</th>
               <th>Channels</th>
               <th>Voting</th>
+              @if (!isMeLens()) {
+                <th>Join Mode</th>
+              }
+              @if (hasRoleColumn()) {
+                <th>My Role</th>
+              }
               <th>Last Updated</th>
               @if (canManageCommittee()) {
                 <th></th>
@@ -66,9 +73,23 @@
                   @if (isBoardMember()) {
                     <span class="text-sm font-medium">{{ committee.name || '-' }}</span>
                   } @else {
-                    <a [routerLink]="committee.viewCommands" [queryParams]="committee.linkQueryParams" class="lfx-table-name-link text-sm">
+                    <a
+                      [routerLink]="committee.viewCommands"
+                      [queryParams]="committee.linkQueryParams"
+                      [state]="{ backLabel: isMeLens() ? 'My Groups' : 'Groups', fromMeLens: isMeLens() }"
+                      class="lfx-table-name-link text-sm">
                       {{ committee.name || '-' }}
                     </a>
+                  }
+                  @if (!isMeLens() && committee.isMember) {
+                    <span
+                      class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                      pTooltip="You are a member of this group"
+                      tooltipPosition="top"
+                      [attr.data-testid]="'member-badge-' + committee.uid">
+                      <i class="fa-solid fa-circle-check text-[9px]" aria-hidden="true"></i>
+                      Member
+                    </span>
                   }
                   @if (committee.public) {
                     <button
@@ -87,15 +108,15 @@
                 </div>
               </td>
               <td>
-                @let category = committee.category || 'Other';
-                <lfx-tag [value]="category" styleClass="tag-neutral"></lfx-tag>
-              </td>
-              <td>
                 <span
-                  class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
-                  [class]="committee.classDisplay.bgColor + ' ' + committee.classDisplay.color">
-                  <i [class]="committee.classDisplay.icon + ' text-[10px]'" aria-hidden="true"></i>
-                  {{ committee.classDisplay.label }}
+                  class="inline-flex max-w-[180px] items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                  [class]="committee.classDisplay.bgColor + ' ' + committee.classDisplay.color"
+                  [pTooltip]="committee.typeDisplay"
+                  tooltipPosition="top"
+                  tabindex="0"
+                  [attr.aria-label]="committee.typeDisplay">
+                  <i [class]="committee.classDisplay.icon + ' text-[10px] shrink-0'" aria-hidden="true"></i>
+                  <span class="truncate">{{ committee.typeDisplay }}</span>
                 </span>
               </td>
               <td class="min-w-[200px]">
@@ -168,6 +189,26 @@
                   <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
                 }
               </td>
+              @if (!isMeLens()) {
+                <td>
+                  <lfx-tag
+                    [value]="committee.join_mode | joinModeLabel"
+                    [severity]="committee.joinModeSeverity"
+                    [tooltip]="committee.joinModeTooltip"
+                    [attr.data-testid]="'join-mode-tag-' + committee.uid" />
+                </td>
+              }
+              @if (hasRoleColumn()) {
+                <td>
+                  @if (committee.roleChip) {
+                    <span class="text-sm text-gray-700" [attr.data-testid]="'role-chip-' + committee.uid">
+                      {{ committee.my_role }}
+                    </span>
+                  } @else {
+                    <span class="text-gray-400 text-xs">—</span>
+                  }
+                </td>
+              }
               <td>
                 <span class="text-sm text-gray-700">{{ committee.updated_at | date: 'MMM d, y' }}</span>
               </td>

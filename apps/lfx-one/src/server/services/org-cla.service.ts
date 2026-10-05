@@ -21,6 +21,7 @@ import {
   orgClaPairProjectSfid,
   orgEasyclaReturnPath,
   sortOrgClaApprovalEntries,
+  validateOrgClaApprovalValue,
 } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
@@ -2229,13 +2230,19 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     const trimmed = value?.trim() ?? '';
     return trimmed.length > 0 ? trimmed : undefined;
   };
+  // Only an address the producer's own approval-list email validator accepts is relayed: anything
+  // else (a query string or extra recipient after the domain, percent escapes, separators) is
+  // dropped. Valid addresses whose local part holds `&`, `#` or `?` are kept so approval-list
+  // matching still finds their entries; the client builds a `mailto:` link only for the stricter
+  // `isMailtoSafeEmail` subset.
+  const email = nonEmpty(row?.email);
 
   return {
     signatureId,
     lfLogin: nonEmpty(row?.linux_foundation_id),
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
-    email: nonEmpty(row?.email),
+    email: email && validateOrgClaApprovalValue('email', email) === null ? email : undefined,
     name: nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),

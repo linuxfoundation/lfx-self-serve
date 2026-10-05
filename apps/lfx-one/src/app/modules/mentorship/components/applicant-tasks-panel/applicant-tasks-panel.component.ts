@@ -46,7 +46,7 @@ export class ApplicantTasksPanelComponent {
   public readonly tasks = input.required<MentorshipApplicantTaskRow[]>();
 
   protected readonly filterForm = new FormGroup({
-    hidePrerequisite: new FormControl(true, { nonNullable: true }),
+    hidePrerequisite: new FormControl(false, { nonNullable: true }),
   });
 
   protected readonly hidePrerequisiteLabel = MENTORSHIP_APPLICANT_TASKS_HIDE_PREREQUISITE_LABEL;

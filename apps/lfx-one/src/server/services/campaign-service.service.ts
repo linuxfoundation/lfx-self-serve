@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_GOALS,
+  CAMPAIGN_PLATFORMS,
+  COUNTRIES,
+  JOB_LOST_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
@@ -12,6 +19,7 @@ import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  CampaignBudgetUpdateParams,
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
@@ -51,6 +59,7 @@ import type { Request } from 'express';
 import { MicroserviceError } from '../errors/microservice.error';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { upstreamAnswered } from './campaign-keyword-actions';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -1427,6 +1436,56 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Change how much a campaign may spend on its ad platform, then persist the new amount.
+   *
+   * Same shape as `toggleCampaignStatus`: a DISPATCHING write that campaign-service sends to the
+   * platform first and persists only once the platform confirms. `If-Match` is required (428 when
+   * missing, 412 when stale). The fresh ETag is taken off the response header for the same reason
+   * as the toggle: the caller's own validator is stale the moment this commits.
+   *
+   * The amount is in the AD ACCOUNT's own currency and is sent exactly as given. Nothing here
+   * converts or rounds it. Upstream owns every refusal (unsupported platform, the platform's own
+   * minimum, shared budget, pacing mismatch, CBO, currency), and its message is passed through
+   * untouched so the operator reads the actual reason.
+   *
+   * campaign-service answers 503 for both a DEFINITE failure and an UNCONFIRMED one, and its
+   * message tells them apart, so an answered 503 is left alone. The one rewrite here is for a
+   * failure nobody answered: a BFF timeout, a lost connection, or a gateway error page.
+   * There the mutate may already have reached the platform, so the generic "please try again"
+   * transport text is replaced with `CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`. Status, code and the
+   * `transport` marker are kept.
+   */
+  public async updateCampaignBudget(req: Request, params: CampaignBudgetUpdateParams): Promise<CampaignServiceCampaign> {
+    const path =
+      `/projects/${encodePathSegment(params.projectSlug)}` +
+      `/briefs/${encodePathSegment(params.briefId)}` +
+      `/campaigns/${encodePathSegment(params.campaignId)}/budget`;
+
+    logger.debug(req, 'update_campaign_budget', 'Sending budget change to campaign-service', {
+      campaign_id: params.campaignId,
+      brief_id: params.briefId,
+      budget_type: params.budgetType,
+    });
+
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'PATCH',
+        // `query` is the FIFTH argument and `data` the SIXTH. See `toggleCampaignStatus`: a body
+        // one position early goes out as a query string with no body and no type error.
+        undefined,
+        { budget: params.budget, budget_type: params.budgetType },
+        { 'If-Match': params.etag }
+      );
+      return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+    } catch (error) {
+      throw asUnconfirmedBudgetFailure(error);
+    }
+  }
+
+  /**
    * Search the project's HubSpot marketing emails, so a user can pick the template to clone.
    *
    * This read is what makes the email channel usable at all: `hubspotConfig.sourceEmailId` is
@@ -2325,6 +2384,37 @@ function deepEqual(a: unknown, b: unknown): boolean {
 function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
+}
+
+/**
+ * The error a failed budget change should surface.
+ *
+ * campaign-service's own answers, at any status, pass through unchanged. That covers a 400 naming
+ * a platform minimum, a 409 refusal, a 412 or 428, and a 503 whose message already separates
+ * "nothing changed" from "verify upstream". A 4xx other than 408 that it did not answer is a
+ * boundary refusal that never dispatched, so it also passes through.
+ *
+ * What is left (a BFF transport failure, a timeout, or a gateway 5xx) is a write that may have
+ * reached the ad platform. Its client message becomes `CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED`
+ * rather than a bare "please try again". `message` stays as it was, so the log keeps the cause.
+ */
+function asUnconfirmedBudgetFailure(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || upstreamAnswered(error)) {
+    return error;
+  }
+  if (error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408) {
+    return error;
+  }
+  return new MicroserviceError(error.message, error.statusCode, error.code, {
+    operation: 'update_campaign_budget',
+    service: error.service,
+    path: error.path,
+    errorBody: error.errorBody,
+    originalMessage: error.originalMessage,
+    originalError: error,
+    transportFailure: error.transportFailure,
+    clientMessage: CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  });
 }
 
 /**

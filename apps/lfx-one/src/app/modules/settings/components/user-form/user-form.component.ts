@@ -88,7 +88,7 @@ export class UserFormComponent {
           {
             role: formValue.role,
           } as UpdateUserRoleRequest,
-          this.user()!.duplicateIdentifier
+          this.user()!.duplicateIdentifiers
         )
         .pipe(take(1))
         .subscribe({

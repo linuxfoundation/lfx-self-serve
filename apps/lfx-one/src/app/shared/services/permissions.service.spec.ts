@@ -52,7 +52,7 @@ describe('PermissionsService', () => {
       ]);
     });
 
-    it("collapses a user whose username is present on only one of the two entries, carrying the other entry's email as duplicateIdentifier (#3218/#3245)", () => {
+    it("collapses a user whose username is present on only one of the two entries, carrying the other entry's email as duplicateIdentifiers (#3218/#3245)", () => {
       const settings: ProjectSettings = {
         uid: 'project-1',
         announcement_date: '',
@@ -76,12 +76,12 @@ describe('PermissionsService', () => {
           username: 'blairchen',
           avatar: undefined,
           role: 'manage',
-          duplicateIdentifier: 'bchen@vendor-corp.example',
+          duplicateIdentifiers: ['bchen@vendor-corp.example'],
         },
       ]);
     });
 
-    it("preserves the real username when it is present only on the losing (view) entry, carrying the other entry's email as duplicateIdentifier (#3244 review)", () => {
+    it("preserves the real username when it is present only on the losing (view) entry, carrying the other entry's email as duplicateIdentifiers (#3244 review)", () => {
       const settings: ProjectSettings = {
         uid: 'project-1',
         announcement_date: '',
@@ -105,7 +105,7 @@ describe('PermissionsService', () => {
           username: 'blairchen',
           avatar: undefined,
           role: 'manage',
-          duplicateIdentifier: 'bchen@vendor-corp.example',
+          duplicateIdentifiers: ['bchen@vendor-corp.example'],
         },
       ]);
     });
@@ -128,7 +128,7 @@ describe('PermissionsService', () => {
       http.expectOne('/api/projects/project-1/permissions').flush(settings);
 
       // Both entries share the username, so a single identifier ('jordanpike') matches both
-      // backend entries — no duplicateIdentifier needed.
+      // backend entries — no duplicateIdentifiers needed.
       expect(result).toEqual([
         {
           name: 'Jordan Pike',
@@ -140,7 +140,7 @@ describe('PermissionsService', () => {
       ]);
     });
 
-    it("preserves the real username's original case in duplicateIdentifier so the backend's case-sensitive match succeeds (@dealako #3244 review)", () => {
+    it("preserves the real username's original case in duplicateIdentifiers so the backend's case-sensitive match succeeds (@dealako #3244 review)", () => {
       const settings: ProjectSettings = {
         uid: 'project-1',
         announcement_date: '',
@@ -164,7 +164,7 @@ describe('PermissionsService', () => {
           username: 'BlairChen',
           avatar: undefined,
           role: 'manage',
-          duplicateIdentifier: 'bchen@vendor-corp.example',
+          duplicateIdentifiers: ['bchen@vendor-corp.example'],
         },
       ]);
     });
@@ -200,6 +200,38 @@ describe('PermissionsService', () => {
           username: 'SamRiver',
           avatar: undefined,
           role: 'manage',
+        },
+      ]);
+    });
+
+    it('collects every differing identifier in a 3+-entry duplicate group, not just the first (dealako #3244 review, GH-3276)', () => {
+      const settings: ProjectSettings = {
+        uid: 'project-1',
+        announcement_date: '',
+        auditors: [
+          { name: 'Primary Person', email: 'primary@acme-motors.example', username: 'dup1' },
+          { name: 'Primary Person', email: 'primary@acme-motors.example', username: 'dup2' },
+        ],
+        writers: [{ name: 'Primary Person', email: 'primary@acme-motors.example', username: 'primaryuser' }],
+        created_at: '',
+        updated_at: '',
+      };
+
+      let result: ProjectPermissionUser[] = [];
+      service.getProjectPermissions('project-1').subscribe((users) => {
+        result = users;
+      });
+
+      http.expectOne('/api/projects/project-1/permissions').flush(settings);
+
+      expect(result).toEqual([
+        {
+          name: 'Primary Person',
+          email: 'primary@acme-motors.example',
+          username: 'primaryuser',
+          avatar: undefined,
+          role: 'manage',
+          duplicateIdentifiers: ['dup1', 'dup2'],
         },
       ]);
     });
@@ -276,48 +308,41 @@ describe('PermissionsService', () => {
   });
 
   describe('removeUserFromProject', () => {
-    it('removes only the primary identifier when there is no duplicateIdentifier', () => {
+    it('sends no duplicateIdentifiers when there are none', () => {
       let completed = false;
       service.removeUserFromProject('project-1', 'blairchen').subscribe(() => {
         completed = true;
       });
 
-      http.expectOne('/api/projects/project-1/permissions/blairchen').flush(null);
+      const req = http.expectOne('/api/projects/project-1/permissions/blairchen');
+      expect(req.request.body).toEqual({ duplicateIdentifiers: undefined });
+      req.flush(null);
       expect(completed).toBe(true);
     });
 
-    it('also deletes the duplicateIdentifier entry so a collapsed dual-role user does not reappear (#3245/#3244)', () => {
+    it('sends duplicateIdentifiers in the same request so the backend clears a collapsed dual-role user in one atomic write (#3245/#3244/GH-3276)', () => {
       let completed = false;
-      service.removeUserFromProject('project-1', 'blairchen', 'bchen@vendor-corp.example').subscribe(() => {
+      service.removeUserFromProject('project-1', 'blairchen', ['bchen@vendor-corp.example']).subscribe(() => {
         completed = true;
       });
 
-      http.expectOne('/api/projects/project-1/permissions/blairchen').flush(null);
-      http.expectOne('/api/projects/project-1/permissions/bchen%40vendor-corp.example').flush(null);
-      expect(completed).toBe(true);
-    });
-
-    it('tolerates a 404 on the duplicateIdentifier cleanup (already removed by a concurrent edit)', () => {
-      let completed = false;
-      service.removeUserFromProject('project-1', 'blairchen', 'bchen@vendor-corp.example').subscribe(() => {
-        completed = true;
-      });
-
-      http.expectOne('/api/projects/project-1/permissions/blairchen').flush(null);
-      http.expectOne('/api/projects/project-1/permissions/bchen%40vendor-corp.example').flush(null, { status: 404, statusText: 'Not Found' });
+      const req = http.expectOne('/api/projects/project-1/permissions/blairchen');
+      expect(req.request.body).toEqual({ duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+      req.flush(null);
       expect(completed).toBe(true);
     });
   });
 
   describe('updateUserRole', () => {
-    it('also deletes the duplicateIdentifier entry after a role change so no stray duplicate remains (#3245/#3244)', () => {
+    it('sends duplicateIdentifiers in the same request so the backend clears them alongside the role change (#3245/#3244/GH-3276)', () => {
       let completed = false;
-      service.updateUserRole('project-1', 'blairchen', { role: 'manage' }, 'bchen@vendor-corp.example').subscribe(() => {
+      service.updateUserRole('project-1', 'blairchen', { role: 'manage' }, ['bchen@vendor-corp.example']).subscribe(() => {
         completed = true;
       });
 
-      http.expectOne('/api/projects/project-1/permissions/blairchen').flush(null);
-      http.expectOne('/api/projects/project-1/permissions/bchen%40vendor-corp.example').flush(null);
+      const req = http.expectOne('/api/projects/project-1/permissions/blairchen');
+      expect(req.request.body).toEqual({ role: 'manage', duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+      req.flush(null);
       expect(completed).toBe(true);
     });
   });

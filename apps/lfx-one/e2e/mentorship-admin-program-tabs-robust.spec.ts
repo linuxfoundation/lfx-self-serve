@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Admin program detail — structural / data-testid contract (linuxfoundation/lfx-mentorship#233).
+ * Admin program detail — structural / data-testid contract (linuxfoundation/lfx-mentorship#233, #234).
  *
  * Companion to `mentorship-admin-program-tabs.spec.ts` (content). This spec asserts presence, nesting, the
  * dynamic row-id suffixes and the error / Retry structural states without user-facing copy.
@@ -18,14 +18,19 @@ import { expect, Page, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
+  ADMIN_MENTORS,
+  ADMIN_PAST_APPLICATIONS,
   ADMIN_PROGRAM_PAGE,
   ADMIN_PROGRAM_URL,
+  ADMIN_TERMS,
   AdminProgramRequests,
   adminApplicationId,
   stubAdminMentees,
+  stubAdminMentors,
   stubAdminProgramPage,
   stubAdminProgramPageError,
   stubAdminTasks,
+  stubAdminTerms,
 } from './helpers/mentorship-admin-program.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -81,6 +86,47 @@ test.describe('Admin program detail — structure', () => {
     await expect(page.getByTestId('mentorship-admin-program-load-error')).toHaveCount(0);
     await expect(page.getByTestId('mentorship-admin-current-mentees-load-error')).toHaveCount(0);
     await expect(page.getByTestId('mentorship-current-mentees-empty')).toHaveCount(0);
+  });
+});
+
+test.describe('Admin program detail — live tab structure', () => {
+  test.beforeEach(async ({ page }) => {
+    await stubAdminMentors(page, []);
+    await stubAdminTerms(page, []);
+    await open(page, { mentees: [], tasks: [] });
+  });
+
+  test('nests the Past Mentees filters and rows inside its tab, with no download control', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
+    const tab = page.getByTestId('mentorship-past-mentees-tab');
+
+    await expect(tab.getByTestId('mentorship-past-mentees-status')).toBeVisible();
+    await expect(tab.getByTestId('mentorship-past-mentees-term')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-past-mentees-search"]')).toBeVisible();
+    await expect(tab.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(ADMIN_PAST_APPLICATIONS.length);
+    await expect(tab.getByTestId('mentorship-past-mentees-download')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-admin-past-mentees-load-error')).toHaveCount(0);
+  });
+
+  test('nests the Mentors toolbar and rows inside its tab, keyed by membership id', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-mentors').click();
+    const tab = page.getByTestId('mentorship-mentors-tab');
+
+    await expect(tab.locator('[data-test="mentorship-mentors-search"]')).toBeVisible();
+    await expect(tab.getByTestId('mentorship-mentors-status')).toBeVisible();
+    await expect(tab.getByTestId('mentorship-mentors-invitee')).toBeVisible();
+    await expect(tab.getByTestId('mentorship-mentors-invite')).toBeVisible();
+    await expect(tab.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toBeVisible();
+    await expect(page.getByTestId('mentorship-admin-mentors-load-error')).toHaveCount(0);
+  });
+
+  test('nests the Terms rows inside its tab, keyed by term id', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-terms').click();
+
+    await expect(page.locator('[data-testid^="mentorship-term-row-"]')).toHaveCount(ADMIN_TERMS.length);
+    await expect(page.getByTestId(`mentorship-term-row-${ADMIN_TERMS[0].id}`)).toBeVisible();
+    await expect(page.getByTestId('mentorship-terms-empty')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-admin-terms-load-error')).toHaveCount(0);
   });
 });
 

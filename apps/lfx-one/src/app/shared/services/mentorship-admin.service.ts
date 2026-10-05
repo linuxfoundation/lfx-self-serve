@@ -4,14 +4,20 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsQuery,
+  MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
+  MentorshipAdminTermsQuery,
+  MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, throwError } from 'rxjs';
+import { catchError, Observable, take, throwError } from 'rxjs';
 
 import { strictHttpParams } from '../utils/http-params.utils';
 
@@ -55,11 +61,59 @@ export class MentorshipAdminService {
       .pipe(this.logFailure('getProgramMentees'));
   }
 
+  /** One page of a program's mentors, filtered and searched upstream. */
+  public getProgramMentors(programId: string, query: MentorshipAdminMentorsQuery): Observable<MentorshipAdminMentorsResponse> {
+    let httpParams = strictHttpParams();
+    if (query.status) httpParams = httpParams.set('status', query.status);
+    if (query.search) httpParams = httpParams.set('search', query.search);
+    if (query.offset !== undefined) httpParams = httpParams.set('offset', String(query.offset));
+    if (query.limit !== undefined) httpParams = httpParams.set('limit', String(query.limit));
+
+    return this.http
+      .get<MentorshipAdminMentorsResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentors`, { params: httpParams })
+      .pipe(this.logFailure('getProgramMentors'));
+  }
+
+  /** One page of a program's terms with their application counts. */
+  public getProgramTerms(programId: string, query: MentorshipAdminTermsQuery): Observable<MentorshipAdminTermsResponse> {
+    let httpParams = strictHttpParams();
+    if (query.offset !== undefined) httpParams = httpParams.set('offset', String(query.offset));
+    if (query.limit !== undefined) httpParams = httpParams.set('limit', String(query.limit));
+
+    return this.http
+      .get<MentorshipAdminTermsResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms`, { params: httpParams })
+      .pipe(this.logFailure('getProgramTerms'));
+  }
+
   /** Every task of one application. Read only when a row's View Tasks is first opened. */
   public getApplicationTasks(applicationId: string): Observable<MentorshipApplicantTask[]> {
     return this.http
       .get<MentorshipApplicantTask[]>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/tasks`)
       .pipe(this.logFailure('getApplicationTasks'));
+  }
+
+  /** Accepts (with an attendance type), declines or graduates one application. Resolves on 204. */
+  public updateApplicationStatus(applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Observable<void> {
+    return this.http
+      .patch<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/status`, body)
+      .pipe(take(1), this.logFailure('updateApplicationStatus'));
+  }
+
+  /** Withdraws one application on the mentee's behalf. Resolves on 204. */
+  public withdrawApplication(applicationId: string): Observable<void> {
+    return this.http
+      .post<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/withdraw`, {})
+      .pipe(take(1), this.logFailure('withdrawApplication'));
+  }
+
+  /** Declines every pending application of one term. */
+  public declinePendingForTerm(programId: string, termId: string): Observable<MentorshipAdminDeclinePendingResponse> {
+    return this.http
+      .post<MentorshipAdminDeclinePendingResponse>(
+        `/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}/decline-pending`,
+        {}
+      )
+      .pipe(take(1), this.logFailure('declinePendingForTerm'));
   }
 
   /** Logs the status only, since the error's URL carries the search text, then passes the error on. */

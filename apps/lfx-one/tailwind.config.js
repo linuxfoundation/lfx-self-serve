@@ -47,6 +47,7 @@ import {
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MENTION_SENTIMENT_CONFIG,
+  MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
@@ -87,9 +88,10 @@ export default {
     ...Object.values(AUDIENCE_SIGNAL_INFO).map((info) => info.accentClass),
     ...Object.values(MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentorship program-detail tabs: mentor/mentee status badges (Mentors / Applicants / Current
-    // Mentees) and term-row status badges come from shared constants, also outside `content`.
+    // and Past Mentees) and term-row status badges come from shared constants, also outside `content`.
     // The class strings are assembled in @lfx-one/shared, which Tailwind never scans, so these
     // spreads are what guarantees they survive purging regardless of usage elsewhere.
+    ...Object.values(MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),

@@ -18,6 +18,7 @@ import { EMPTY } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
 import { GwModuleOutletComponent } from './gw-module-outlet.component';
 
@@ -34,6 +35,8 @@ describe('GwModuleOutletComponent', () => {
   let fixture: ComponentFixture<GwModuleOutletComponent>;
   let component: GwModuleOutletComponent;
   let navigateByUrl: ReturnType<typeof vi.fn>;
+  let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let selectedProject: ReturnType<typeof signal<{ slug: string } | null>>;
   let add: ReturnType<typeof vi.fn>;
 
   /** Private by design — these are internal decisions, not API, but they're where the risk lives. */
@@ -52,6 +55,8 @@ describe('GwModuleOutletComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn();
+    selectedFoundation = signal<{ slug: string } | null>(null);
+    selectedProject = signal<{ slug: string } | null>(null);
     add = vi.fn();
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -64,6 +69,8 @@ describe('GwModuleOutletComponent', () => {
         // Stubbed rather than real: UserService pulls in HttpClient and a chain of app providers,
         // and all this component asks it for is the signed-in user's email.
         { provide: UserService, useValue: { user: signal(null), impersonating: signal(false) } },
+        // Stubbed for the same reason as UserService; ensureProjectParam reads one signal per lens.
+        { provide: ProjectContextService, useValue: { selectedFoundation: () => selectedFoundation(), selectedProject: () => selectedProject() } },
         // Server platform keeps afterNextRender (and therefore the embed import) out of the test.
         { provide: PLATFORM_ID, useValue: 'server' },
       ],
@@ -427,6 +434,64 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('buildLandingUrl project guarantee (GH-3286)', () => {
+    it('injects the project slug so the recovery reload cannot land param-less', () => {
+      // The stored-session recovery branch navigates to buildLandingUrl() directly,
+      // so the guarantee must live here too, not only in the sign-in composition.
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
+      const out = new URL(callPrivate<string>('buildLandingUrl'));
+      expect(out.searchParams.get('project')).toBe('agentic-ai-foundation');
+    });
+  });
+
+  describe('buildSignInReturnUrl (GH-3286)', () => {
+    // The composition startSignIn navigates with: state nonce + project-param guarantee.
+    // jsdom will not let window.location.assign be stubbed, so this pure method is the
+    // call-site coverage — deleting the ensureProjectParam wiring fails this spec.
+
+    it('carries both the sign-in state and the injected project slug', () => {
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
+      const out = new URL(callPrivate<string>('buildSignInReturnUrl', 'https://app.example/foundation/gw/newsletters', 'nonce-123'));
+      expect(out.searchParams.get(GW_EMBED_SIGNIN_STATE_PARAM)).toBe('nonce-123');
+      expect(out.searchParams.get('project')).toBe('agentic-ai-foundation');
+    });
+  });
+
+  describe('ensureProjectParam (GH-3286)', () => {
+    // The sign-in return is a full page load: without ?project= the tenant guard and the
+    // newsletter guard's legacy chain fall back to a context service that has not rehydrated
+    // at guard time, and the return bounces before this outlet can adopt the session.
+
+    it('injects the foundation slug when the return URL lacks ?project', () => {
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
+      const url = new URL('https://app.example/foundation/gw/newsletters');
+      callPrivate('ensureProjectParam', url);
+      expect(url.searchParams.get('project')).toBe('agentic-ai-foundation');
+    });
+
+    it('sources the slug from the project context on the project mount', () => {
+      (component as unknown as { routePrefix: string }).routePrefix = '/project/gw';
+      selectedFoundation.set({ slug: 'wrong-side' });
+      selectedProject.set({ slug: 'some-project' });
+      const url = new URL('https://app.example/project/gw/newsletters');
+      callPrivate('ensureProjectParam', url);
+      expect(url.searchParams.get('project')).toBe('some-project');
+    });
+
+    it('never overwrites an existing ?project param', () => {
+      selectedFoundation.set({ slug: 'context-slug' });
+      const url = new URL('https://app.example/foundation/gw/newsletters?project=url-slug');
+      callPrivate('ensureProjectParam', url);
+      expect(url.searchParams.get('project')).toBe('url-slug');
+    });
+
+    it('leaves the URL unchanged when there is no param and no context', () => {
+      const url = new URL('https://app.example/foundation/gw/newsletters');
+      callPrivate('ensureProjectParam', url);
+      expect(url.searchParams.has('project')).toBe(false);
+    });
+  });
+
   describe('mount bail-outs while impersonating', () => {
     // Needs a BROWSER platform: the rest of this file runs under a server PLATFORM_ID so the embed
     // import never fires, but that guard is the first thing mountEmbed checks, so these paths are
@@ -446,6 +511,7 @@ describe('GwModuleOutletComponent', () => {
           { provide: Router, useValue: { navigateByUrl: vi.fn(), events: EMPTY } },
           { provide: MessageService, useValue: { add: vi.fn() } },
           { provide: UserService, useValue: { user: signal(null), impersonating } },
+          { provide: ProjectContextService, useValue: { selectedFoundation: () => null, selectedProject: () => null } },
           { provide: PLATFORM_ID, useValue: 'browser' },
         ],
       });

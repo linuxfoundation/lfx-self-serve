@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
@@ -20,11 +21,14 @@ import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRouteIdMatches,
   countVotingReps,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
+  resolveJoinModeSeverity,
+  resolveTypeDisplay,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -177,6 +181,28 @@ describe('canManageCommitteeMembers', () => {
   });
 });
 
+describe('canViewCommitteeRoster', () => {
+  it('is true for any caller when visibility is basic_profile', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.BASIC_PROFILE }))).toBe(true);
+  });
+
+  it('is false for a non-manager when visibility is hidden or unset (fail-closed)', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN }))).toBe(false);
+    expect(canViewCommitteeRoster(committee())).toBe(false);
+    expect(canViewCommitteeRoster(committee({ member_visibility: 'everyone' as CommitteeMemberVisibility }))).toBe(false);
+  });
+
+  it('is true for a writer or auditor when visibility is hidden', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN, writer: true }))).toBe(true);
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN, auditor: true }))).toBe(true);
+  });
+
+  it('is false for a null committee', () => {
+    expect(canViewCommitteeRoster(null)).toBe(false);
+    expect(canViewCommitteeRoster(undefined)).toBe(false);
+  });
+});
+
 describe('resolveGroupsCardRoleSeverity', () => {
   it('maps Chair to info', () => {
     expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.CHAIR)).toBe('info');
@@ -194,6 +220,25 @@ describe('resolveGroupsCardRoleSeverity', () => {
     expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.SECRETARY)).toBe('secondary');
     expect(resolveGroupsCardRoleSeverity('Member')).toBe('secondary');
     expect(resolveGroupsCardRoleSeverity(undefined)).toBe('secondary');
+  });
+});
+
+describe('resolveJoinModeSeverity', () => {
+  it('maps open to success', () => {
+    expect(resolveJoinModeSeverity('open')).toBe('success');
+  });
+
+  it('maps application to info', () => {
+    expect(resolveJoinModeSeverity('application')).toBe('info');
+  });
+
+  it('maps invite_only to warn', () => {
+    expect(resolveJoinModeSeverity('invite_only')).toBe('warn');
+  });
+
+  it('maps closed and undefined to secondary', () => {
+    expect(resolveJoinModeSeverity('closed')).toBe('secondary');
+    expect(resolveJoinModeSeverity(undefined)).toBe('secondary');
   });
 });
 
@@ -549,5 +594,31 @@ describe('buildEngagementStatCards', () => {
     expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
     expect(cards[0].subLine).toMatch(/^Updated /);
     expect(cards[0].subLine).not.toContain('across');
+  });
+});
+
+describe('resolveTypeDisplay', () => {
+  it('returns "SIG | {category}" for a SIG with a category', () => {
+    const result = resolveTypeDisplay({
+      behavioralClass: 'special-interest-group',
+      category: 'Marketing Mailing List',
+      classDisplay: { label: 'Special Interest Group' },
+    });
+    expect(result).toBe('SIG | Marketing Mailing List');
+  });
+
+  it('falls back to the class label for a SIG without a category', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'special-interest-group', classDisplay: { label: 'Special Interest Group' } });
+    expect(result).toBe('Special Interest Group');
+  });
+
+  it('returns the class label for a non-SIG behavioral class', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything', classDisplay: { label: 'Working Groups' } });
+    expect(result).toBe('Working Groups');
+  });
+
+  it('returns "Other" when classDisplay is absent', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything' });
+    expect(result).toBe('Other');
   });
 });

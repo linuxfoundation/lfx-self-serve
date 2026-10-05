@@ -4,7 +4,15 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MentorshipAdminMenteesResponse, MentorshipAdminProgramPage, MentorshipApplicantTask, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipAdminDeclinePendingResponse,
+  MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsResponse,
+  MentorshipAdminProgramPage,
+  MentorshipAdminTermsResponse,
+  MentorshipApplicantTask,
+  MentorshipProgramsResponse,
+} from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipAdminService } from './mentorship-admin.service';
@@ -115,11 +123,96 @@ describe('MentorshipAdminService', () => {
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
   });
 
+  it('reads one page of mentors with the set filters as query params, encoding the id', () => {
+    let total = -1;
+    service.getProgramMentors('grid flow', { status: 'active', search: 'ada+lfx', offset: 10, limit: 10 }).subscribe((response) => (total = response.total));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentors');
+    expect(req.request.params.get('status')).toBe('active');
+    expect(req.request.params.get('search')).toBe('ada+lfx');
+    expect(req.request.urlWithParams).toContain('search=ada%2Blfx');
+    expect(req.request.params.get('offset')).toBe('10');
+    expect(req.request.params.get('limit')).toBe('10');
+    req.flush({ data: [], total: 7 } satisfies MentorshipAdminMentorsResponse);
+    expect(total).toBe(7);
+  });
+
+  it('leaves unset mentor filters off the query', () => {
+    service.getProgramMentors('p1', {}).subscribe();
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentors');
+    expect(req.request.params.keys()).toEqual([]);
+    req.flush({ data: [], total: 0 } satisfies MentorshipAdminMentorsResponse);
+  });
+
+  it('logs a mentors failure by status only, never the search', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getProgramMentors('p1', { search: 'secret-name' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentors').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProgramMentors failed', { status: 503, statusText: 'Service Unavailable' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it("reads one page of a program's terms with the paging as query params", () => {
+    let total = -1;
+    service.getProgramTerms('grid flow', { offset: 0, limit: 50 }).subscribe((response) => (total = response.total));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/terms');
+    expect(req.request.params.get('offset')).toBe('0');
+    expect(req.request.params.get('limit')).toBe('50');
+    req.flush({ data: [], total: 2 } satisfies MentorshipAdminTermsResponse);
+    expect(total).toBe(2);
+  });
+
   it("reads one application's tasks from the admin endpoint", () => {
     let tasks: MentorshipApplicantTask[] = [];
     service.getApplicationTasks('app 1').subscribe((value) => (tasks = value));
 
     http.expectOne('/api/mentorship/admin/applications/app%201/tasks').flush([{ id: 'tsk_1' }]);
     expect(tasks).toEqual([{ id: 'tsk_1' }]);
+  });
+
+  it('patches an application status with the attendance type for an accept', () => {
+    let done = false;
+    service.updateApplicationStatus('app 1', { status: 'accepted', attendanceType: 'full_time' }).subscribe(() => (done = true));
+
+    const req = http.expectOne('/api/mentorship/admin/applications/app%201/status');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'accepted', attendanceType: 'full_time' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    expect(done).toBe(true);
+  });
+
+  it('withdraws an application on the mentee behalf with an empty body', () => {
+    service.withdrawApplication('app_1').subscribe();
+
+    const req = http.expectOne('/api/mentorship/admin/applications/app_1/withdraw');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('declines the pending applications of a term and returns the count', () => {
+    let declined = -1;
+    service.declinePendingForTerm('prog_1', 'trm_1').subscribe((response) => (declined = response.declinedCount));
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog_1/terms/trm_1/decline-pending');
+    expect(req.request.method).toBe('POST');
+    req.flush({ declinedCount: 6 } satisfies MentorshipAdminDeclinePendingResponse);
+    expect(declined).toBe(6);
+  });
+
+  it('logs a failed decision by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.withdrawApplication('app_1').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/applications/app_1/withdraw').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(JSON.stringify(logged.mock.calls)).toContain('409');
   });
 });

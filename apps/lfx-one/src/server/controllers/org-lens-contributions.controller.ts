@@ -4,6 +4,7 @@
 import {
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
+  CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_MAX_PAGE_SIZE,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -71,7 +72,7 @@ export class OrgLensContributionsController {
   }
 }
 
-/** Parse + validate the composed filter/pagination query: invalid range/sort → 400; missing values fall back to defaults. */
+/** Parse + validate the composed filter/pagination query: invalid range/sort or oversized filter lists → 400; missing values fall back to defaults. */
 function parseContributionsQuery(req: Request, operation: string): OrgContributionsQuery {
   const rawRange = getStringQueryParam(req, 'range');
   const dateRange = parseDateRange(rawRange, operation);
@@ -89,8 +90,8 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     view: parseView(getStringQueryParam(req, 'view'), operation),
     dateRange,
     search: getStringQueryParam(req, 'q')?.trim() ?? '',
-    projects: parseCsvParam(getStringQueryParam(req, 'projects')),
-    employees: parseCsvParam(getStringQueryParam(req, 'employees')),
+    projects: parseCsvParam(getStringQueryParam(req, 'projects'), 'projects', operation),
+    employees: parseCsvParam(getStringQueryParam(req, 'employees'), 'employees', operation),
     sort,
     dir,
     commitSort,
@@ -140,14 +141,23 @@ function parseSortColumn(raw: string | undefined, operation: string): Contributi
   return raw as ContributionsSortColumn;
 }
 
-function parseCsvParam(raw: string | undefined): string[] {
+/** Split a CSV filter into distinct values; more than CONTRIBUTIONS_MAX_FILTER_VALUES → 400 before any SQL is built. */
+function parseCsvParam(raw: string | undefined, field: string, operation: string): string[] {
   if (!raw) {
     return [];
   }
-  return raw
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
+  const values = [
+    ...new Set(
+      raw
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    ),
+  ];
+  if (values.length > CONTRIBUTIONS_MAX_FILTER_VALUES) {
+    throw ServiceValidationError.forField(field, `Too many ${field} values. Maximum: ${CONTRIBUTIONS_MAX_FILTER_VALUES}`, { operation });
+  }
+  return values;
 }
 
 function parsePageSize(raw: string | undefined): number {

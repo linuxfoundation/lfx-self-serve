@@ -1,24 +1,39 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
 import {
+  MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE,
+  MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_PROGRAM_STATUSES,
+} from '@lfx-one/shared/constants';
+import {
+  MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsQuery,
+  MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
   MentorshipAdminTermOption,
+  MentorshipAdminTermsQuery,
+  MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
+  MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramHeader,
   MentorshipUpstreamProgramManagementSummary,
   MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -26,12 +41,18 @@ import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
+  MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES,
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
-import { MicroserviceError } from '../errors';
-import { mapMentorshipAdminHeaderProgram, mapMentorshipAdminProgram } from '../helpers/mentorship-admin-program.helper';
+import { ConflictError, MicroserviceError } from '../errors';
+import {
+  mapMentorshipAdminHeaderProgram,
+  mapMentorshipAdminMentorRow,
+  mapMentorshipAdminProgram,
+  mapMentorshipAdminTermRow,
+} from '../helpers/mentorship-admin-program.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
@@ -199,6 +220,87 @@ export class MentorshipAdminService {
     return { data, total };
   }
 
+  /**
+   * One page of a program's mentors, from one upstream member-management read. The BFF sends no `member_type`: the
+   * handler ignores it. A status this does not know reads as pending and is logged without the mentor's name.
+   * A caller with no mentorship record has no mentors.
+   */
+  public async getProgramMentors(req: Request, programId: string, query: MentorshipAdminMentorsQuery): Promise<MentorshipAdminMentorsResponse> {
+    logger.debug(req, 'mentorship_admin_get_program_mentors', 'Loading program mentors', {
+      programId,
+      status: query.status,
+      offset: query.offset,
+      limit: query.limit,
+    });
+
+    let upstream: MentorshipUpstreamListResponse<MentorshipUpstreamMemberManagementRow>;
+    try {
+      upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamMemberManagementRow>>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/member-management`,
+        'GET',
+        {
+          status: query.status,
+          search: escapeMentorshipSearch(query.search),
+          offset: query.offset ?? 0,
+          limit: Math.min(query.limit ?? MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE, MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT),
+        }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_program_mentors', 'Caller has no mentorship record; returning an empty page', { programId });
+        return { data: [], total: 0 };
+      }
+      throw error;
+    }
+
+    const data = (upstream.data ?? []).map((row) => {
+      const { mentor, unknownStatus } = mapMentorshipAdminMentorRow(row);
+      if (unknownStatus) {
+        logger.warning(req, 'mentorship_admin_get_program_mentors', 'Unknown upstream member status; showing it as pending', {
+          programId,
+          memberId: row.id,
+          status: row.status,
+        });
+      }
+      return mentor;
+    });
+    const total = upstream.meta?.total ?? data.length;
+    logger.debug(req, 'mentorship_admin_get_program_mentors', 'Program mentors page built', { programId, count: data.length, total });
+    return { data, total };
+  }
+
+  /** One page of a program's terms with their application counts, from one upstream term-management read. A caller with no mentorship record has no terms. */
+  public async getProgramTerms(req: Request, programId: string, query: MentorshipAdminTermsQuery): Promise<MentorshipAdminTermsResponse> {
+    logger.debug(req, 'mentorship_admin_get_program_terms', 'Loading program terms', { programId, offset: query.offset, limit: query.limit });
+
+    let upstream: MentorshipUpstreamListResponse<MentorshipUpstreamTermManagementRow>;
+    try {
+      upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamTermManagementRow>>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/term-management`,
+        'GET',
+        {
+          offset: query.offset ?? 0,
+          limit: Math.min(query.limit ?? MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE, MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT),
+        }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_program_terms', 'Caller has no mentorship record; returning an empty page', { programId });
+        return { data: [], total: 0 };
+      }
+      throw error;
+    }
+
+    const data = (upstream.data ?? []).map(mapMentorshipAdminTermRow).filter((row): row is NonNullable<typeof row> => row !== null);
+    const total = upstream.meta?.total ?? data.length;
+    logger.debug(req, 'mentorship_admin_get_program_terms', 'Program terms page built', { programId, count: data.length, total });
+    return { data, total };
+  }
+
   /** Every task of one application, read to the end at the largest page size. Called only from the View Tasks click. */
   public async getApplicationTasks(req: Request, applicationId: string): Promise<MentorshipApplicantTask[]> {
     logger.debug(req, 'mentorship_admin_get_application_tasks', 'Loading application tasks', { applicationId });
@@ -213,6 +315,58 @@ export class MentorshipAdminService {
 
     logger.debug(req, 'mentorship_admin_get_application_tasks', 'Application tasks read', { applicationId, count: tasks.length });
     return tasks.map(mapMentorshipProgramTask);
+  }
+
+  /** Accepts, declines or graduates one application. `attendanceType` rides along only with an accept. Upstream's 409 and 422 pass through. */
+  public async updateApplicationStatus(req: Request, applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Promise<void> {
+    logger.debug(req, 'mentorship_admin_update_application_status', 'Updating application status', { applicationId, status: body.status });
+
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/status`,
+      'PATCH',
+      undefined,
+      { status: body.status, ...(body.status === 'accepted' ? { attendance_type: body.attendanceType } : {}) }
+    );
+  }
+
+  /**
+   * Withdraws a mentee's application on their behalf. Upstream's withdraw-for-mentee has no status guard, so the
+   * application is read first and anything other than `pending`, `hold` or `accepted` is a 409 with no write.
+   */
+  public async withdrawApplication(req: Request, applicationId: string): Promise<void> {
+    const path = `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}`;
+    logger.debug(req, 'mentorship_admin_withdraw_application', 'Checking application status before withdrawing', { applicationId });
+
+    const application = await proxyMentorshipRequest<MentorshipUpstreamApplication>(this.microserviceProxy, req, path);
+    if (!MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES.includes(application.status)) {
+      logger.warning(req, 'mentorship_admin_withdraw_application', 'Application is not withdrawable, skipping the write', {
+        applicationId,
+        status: application.status,
+      });
+      throw new ConflictError(MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE, 'MENTORSHIP_ADMIN_APPLICATION_CHANGED', {
+        operation: 'mentorship_admin_withdraw_application',
+      });
+    }
+
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${path}/withdraw-for-mentee`, 'POST');
+  }
+
+  /** Declines every pending application of one term. */
+  public async declinePendingForTerm(req: Request, programId: string, termId: string): Promise<MentorshipAdminDeclinePendingResponse> {
+    logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Declining pending applications for the term', { programId, termId });
+
+    const result = await proxyMentorshipRequest<{ declined_count?: number }>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}/applications/bulk-decline`,
+      'POST'
+    );
+
+    const declinedCount = typeof result?.declined_count === 'number' ? result.declined_count : 0;
+    logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Pending applications declined', { programId, termId, declinedCount });
+    return { declinedCount };
   }
 }
 

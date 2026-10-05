@@ -3,7 +3,7 @@
 
 import type { CommitteeMemberVisibility } from '../enums/committee.enum';
 import type { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BadgeSeverity } from './components.interface';
+import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
@@ -607,6 +607,16 @@ export interface MyGroupsCardVm {
    * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
    */
   ariaLabel: string;
+  /**
+   * Merged type label for the single "Type" chip (replaces the former separate "Type" and "Class"
+   * columns). SIGs show `"SIG | {raw category}"` to expose the sub-type; every other class shows
+   * only the behavioral-class label (e.g. "Working Groups", "Boards").
+   */
+  typeDisplay: string;
+  /** Pre-computed tag severity for the join-mode chip (normalized: absent join_mode → invite_only). */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip (normalized: absent join_mode → invite_only). */
+  joinModeTooltip: string;
 }
 
 /**
@@ -622,6 +632,26 @@ export interface CommitteeTableRowVm extends Committee {
   editCommands: string[];
   /** `?project=` for the view/edit links — present only when the committee carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
+  /** Pre-computed tag severity for the join-mode chip. Avoids per-render method calls. */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip; `undefined` when `join_mode` is absent. */
+  joinModeTooltip: string | undefined;
+  /**
+   * Merged type label for the single "Type" chip. SIGs show `"SIG | {raw category}"`;
+   * every other class shows the behavioral-class label (e.g. "Working Groups", "Boards").
+   */
+  typeDisplay: string;
+  /**
+   * Pre-computed Tailwind color pair for the My Role pill chip. `null` when the row has no role
+   * or the role is `'None'` so the template can `@if (committee.roleChip)` without a method call.
+   */
+  roleChip: { bgColor: string; color: string } | null;
+  /**
+   * True when the viewing user is a member of this committee. Derived from `myCommitteeUids` in
+   * the table component so the template can render the membership badge without a method call.
+   * Used in the Project/Foundation lens where `my_role` is not available on the row.
+   */
+  isMember: boolean;
 }
 
 /**

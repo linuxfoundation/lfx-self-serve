@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, type Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -21,6 +21,7 @@ import {
   CONTRIBUTIONS_DATE_RANGE_OPTIONS,
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
+  CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
 } from '@lfx-one/shared/constants';
@@ -78,6 +79,7 @@ export class OrgContributionsComponent {
 
   protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
+  protected readonly maxFilterValues = CONTRIBUTIONS_MAX_FILTER_VALUES;
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
@@ -158,6 +160,17 @@ export class OrgContributionsComponent {
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe((query) => this.syncUrl(query));
 
+    // PrimeNG's keyboard select-all / range-select bypass selectionLimit, so trim the controls themselves to the
+    // server's per-filter cap — the visible selection, URL and request then always agree.
+    this.capFilterSelection(this.filterForm.controls.projects);
+    this.capFilterSelection(this.filterForm.controls.employees);
+
+    // The URL sync skips the initial query, so canonicalize a deduped/trimmed deep link once the initial
+    // navigation has settled (browser-only; normal loads are untouched).
+    if (this.isCsvParamNormalized('projects') || this.isCsvParamNormalized('employees')) {
+      afterNextRender(() => this.syncUrl(this.query()));
+    }
+
     // Any filter change (everything except the page index) resets pagination to page 1.
     this.filterForm.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe(() => this.page.set(1));
     combineLatest([toObservable(this.sort), toObservable(this.dir), toObservable(this.size)])
@@ -232,8 +245,9 @@ export class OrgContributionsComponent {
       view: this.mainTab(),
       dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
       search: (values.search ?? '').trim(),
-      projects: values.projects ?? [],
-      employees: values.employees ?? [],
+      // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
+      projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       sort: this.sort(),
       dir: this.dir(),
       commitSort: this.commitSort(),
@@ -388,14 +402,32 @@ export class OrgContributionsComponent {
     return this.initialParams.get('view') === 'commits' ? 'commits' : 'repositories';
   }
 
+  // Deduped and trimmed to the server's per-filter cap so an oversized deep link still loads instead of 400ing.
   private parseInitialCsv(param: string): string[] {
     const raw = this.initialParams.get(param);
     return raw
-      ? raw
-          .split(',')
-          .map((v) => v.trim())
-          .filter((v) => v.length > 0)
+      ? [
+          ...new Set(
+            raw
+              .split(',')
+              .map((v) => v.trim())
+              .filter((v) => v.length > 0)
+          ),
+        ].slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES)
       : [];
+  }
+
+  private capFilterSelection(control: FormControl<string[]>): void {
+    control.valueChanges.pipe(takeUntilDestroyed()).subscribe((values) => {
+      if (values.length > CONTRIBUTIONS_MAX_FILTER_VALUES) {
+        control.setValue(values.slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES));
+      }
+    });
+  }
+
+  private isCsvParamNormalized(param: 'projects' | 'employees'): boolean {
+    const raw = this.initialParams.get(param);
+    return raw !== null && raw !== this.filterForm.controls[param].value.join(',');
   }
 
   private parseInitialPage(): number {
