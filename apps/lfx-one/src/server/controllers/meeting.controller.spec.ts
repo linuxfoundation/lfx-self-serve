@@ -23,7 +23,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     assertCommitteeAttributionAllowed: vi.fn(),
     canViewMeetingRoster: vi.fn(),
     getMeetingRsvps: vi.fn(),
-    getMeetingRegistrantsByEmail: vi.fn(),
+    getMeetingRegistrantsForUser: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
@@ -90,7 +90,7 @@ vi.mock('../helpers/committee-v1-mapping.helper', () => ({
   resolveCommitteeV2UidsToV1Ids: resolveCommitteeV2UidsToV1IdsMock,
   resolveCommitteeV2UidMappings: resolveCommitteeV2UidMappingsMock,
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'user@example.com') }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'user@example.com'), getUsernameFromAuth: vi.fn(async () => null) }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
@@ -765,7 +765,7 @@ describe('MeetingController', () => {
 
     beforeEach(() => {
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: true, committees: [{ uid: V2_COMMITTEE_UID }] });
-      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-self', email: 'user@example.com' }]);
+      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ uid: 'reg-self', email: 'user@example.com' }]);
       meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
       committeeSvc.getCommitteeBase.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
@@ -874,7 +874,7 @@ describe('MeetingController', () => {
 
       it('leaves it in place on the non-registrant, non-organizer early return', async () => {
         meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, committees: [] });
-        meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+        meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
         const req = buildReq({ bearerToken: USER_TOKEN } as Partial<Request>);
         const res = buildRes();
 

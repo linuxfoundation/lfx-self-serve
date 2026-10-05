@@ -825,13 +825,14 @@ describe('MeetingService.canViewMeetingRoster', () => {
   beforeEach(() => {
     accessCheckSvc.checkSingleAccessStrict.mockReset();
     vi.mocked(getEffectiveEmail).mockReturnValue('ada@example.com');
+    vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
     service = new MeetingService();
   });
 
   const stubInvitee = (showMeetingAttendees: boolean, ownRows: Partial<MeetingRegistrant>[]) => {
     accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
     vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, show_meeting_attendees: showMeetingAttendees } as unknown as Meeting);
-    return vi.spyOn(service, 'getMeetingRegistrantsByEmail').mockResolvedValue(ownRows as MeetingRegistrant[]);
+    return vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue(ownRows as MeetingRegistrant[]);
   };
 
   it('lets an organizer see the guests without looking the meeting up', async () => {
@@ -846,7 +847,7 @@ describe('MeetingService.canViewMeetingRoster', () => {
     const byEmail = stubInvitee(true, [{ uid: 'reg-self' }]);
 
     await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
-    expect(byEmail).toHaveBeenCalledWith(req, MEETING_UID, 'ada@example.com', 'm2m-token');
+    expect(byEmail).toHaveBeenCalledWith(req, MEETING_UID, 'ada@example.com', undefined, 'm2m-token');
   });
 
   it('hides the guests from an invitee when the organizer does not share them', async () => {
@@ -859,10 +860,19 @@ describe('MeetingService.canViewMeetingRoster', () => {
   it('hides the guests of a legacy Board meeting still stored as shared', async () => {
     accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
     vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, meeting_type: 'Board', show_meeting_attendees: true } as unknown as Meeting);
-    const byEmail = vi.spyOn(service, 'getMeetingRegistrantsByEmail').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+    const byEmail = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
 
     await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
     expect(byEmail).not.toHaveBeenCalled();
+  });
+
+  it('matches an invitee by username when they have no email, the rule the invited flag uses', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('ada');
+    const forUser = stubInvitee(true, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(forUser).toHaveBeenCalledWith(req, MEETING_UID, undefined, 'ada', 'm2m-token');
   });
 
   // Sharing is with the guests, not with everyone who can view the meeting.

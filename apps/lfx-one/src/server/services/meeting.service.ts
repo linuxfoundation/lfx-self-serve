@@ -916,8 +916,9 @@ export class MeetingService {
 
   /**
    * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
-   * @description Organizers always may. Anyone else must be a registrant of the meeting, and the
-   * meeting must share its guest list (`isMeetingAttendeeListShared`), the same rule
+   * @description Organizers always may. Anyone else must be a registrant of the meeting, matched by
+   * email or username like `isUserInvitedToMeeting`, and the meeting must share its guest list
+   * (`isMeetingAttendeeListShared`), the same rule
    * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
    * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
    * unresolvable access check throws rather than reading as a denial; callers decide how to fail.
@@ -929,13 +930,14 @@ export class MeetingService {
     }
 
     const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
-    const email = getEffectiveEmail(req);
-    if (!isMeetingAttendeeListShared(meeting) || !email) {
+    const email = getEffectiveEmail(req) || undefined;
+    const username = (await getUsernameFromAuth(req)) ?? undefined;
+    if (!isMeetingAttendeeListShared(meeting) || (!email && !username)) {
       return false;
     }
 
     const m2mToken = await generateM2MToken(req);
-    const ownRows = await this.getMeetingRegistrantsByEmail(req, meetingUid, email, m2mToken);
+    const ownRows = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
     return ownRows.length > 0;
   }
 

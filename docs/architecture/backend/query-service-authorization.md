@@ -118,7 +118,8 @@ picker lists only meetings the caller organizes, to match.
 **Meeting guest lists.** The tolerant registrant listing (`GET /api/meetings/:uid/registrants`) and
 `GET /api/meetings/:uid/rsvp` also go through query-service, but its viewer filter lets anyone who
 can view the meeting list the guests. Both endpoints first call
-`MeetingService.canViewMeetingRoster`: organizers always pass, and invitees pass only when
+`MeetingService.canViewMeetingRoster`: organizers always pass, and invitees (matched by email or
+username, like the `invited` flag) pass only when
 `show_meeting_attendees` is on and the meeting isn't Board or restricted (`isMeetingAttendeeListShared`). Everyone else gets `[]`. `my-meeting-registrants` applies the same
 rule. Invitees still see the invited count, from `registrant_count` on the public meeting response.
 

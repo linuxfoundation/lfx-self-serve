@@ -48,7 +48,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -630,20 +630,22 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Resolve the caller's identity up front. The registrant gate check below is
-      // email-only (getMeetingRegistrantsByEmail), matching the pre-existing authorization surface
-      // — this PR does not widen the gate to also match by username.
-      const userEmail = getEffectiveEmail(req) ?? undefined;
+      // Step 1: Resolve the caller's identity up front. The registrant gate check below matches by
+      // email or username, the rule `isUserInvitedToMeeting` and `canViewMeetingRoster` use, so a
+      // caller shown as invited is never refused as a non-registrant here.
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,
         has_email: !!userEmail,
+        has_username: !!username,
       });
 
-      if (!userEmail) {
+      if (!userEmail && !username) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
-          no_email: true,
+          no_identity: true,
           registrant_count: 0,
         });
         res.json([]);
@@ -660,7 +662,7 @@ export class MeetingController {
         this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true }),
         generateM2MToken(req).then((token) => {
           m2mToken = token;
-          return this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail, token);
+          return this.meetingService.getMeetingRegistrantsForUser(req, uid, userEmail, username, token);
         }),
       ]);
 
