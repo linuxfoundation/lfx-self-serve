@@ -284,7 +284,7 @@ export class CommitteeOverviewComponent {
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
   // Uses canEdit() instead of !myRoleLoading() so it does not flip during role refresh —
   // prevents member-only content from briefly showing to visitors while roles reload.
-  private readonly isVisitorForPrivacy: Signal<boolean> = computed(() => this.myRole() === null && !this.canEdit());
+  protected readonly isVisitorForPrivacy: Signal<boolean> = computed(() => this.myRole() === null && !this.canEdit());
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>
