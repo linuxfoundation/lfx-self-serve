@@ -58,14 +58,16 @@ modules/meetings/
   `ProjectContextService`, `PlausibleService`) and seeds from the same `MeetingJoinPageState`
   TransferState payload. It cannot read that payload itself: the browser always mounts V1 first
   (the gate's hydration latch), and V1 consumes the `meetingJoinState` key and removes it in its
-  constructor, so the key is gone by the time V2 mounts. **E1-01 prerequisite:** the gate reads the
-  key before either tree mounts, keeps the snapshot, and hands it to V2, without editing V1. Until
-  then, V2 starts empty and fetches. It derives page state through `@lfx-one/shared/utils/meeting-view-model.utils`
+  constructor, so the key is gone by the time V2 mounts. So the gate provides
+  `MeetingDetailsSeedService`, which snapshots the key (without removing it) before V1 is created,
+  and V2's `MeetingDetailsStateService` takes that snapshot once, for the same route id only (E1-01).
+  That service owns V2's lookup, reachability (400 / 403 / 404 to not-found) and the
+  error / page / skeleton branch; every Phase 1 section injects it rather than fetching. It derives page state through `@lfx-one/shared/utils/meeting-view-model.utils`
   (E0-02), not by copying V1's inline `computed` signals. V1's orchestration lives inside its
   component and cannot be extracted without editing V1, so V2 composes the services and resolvers
   itself. It does not duplicate a fetch path.
-- **Testids** follow `testid-contract.md` (E0-04). The scaffold's `meeting-details-scaffold` testid
-  is temporary and retires with the scaffold body.
+- **Testids** follow `testid-contract.md` (E0-04). The shell's `meeting-section-placeholder-*`
+  testids are temporary: each retires when its section replaces the placeholder.
 
 ## Loading
 

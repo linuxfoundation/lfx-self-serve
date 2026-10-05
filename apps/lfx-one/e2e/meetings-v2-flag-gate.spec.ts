@@ -295,8 +295,9 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
     });
 
     await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
-    // The v2 tree is behind `@defer`, so seeing the scaffold proves its lazy chunk loaded and mounted.
-    await expect(page.getByTestId('meeting-details-scaffold')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    // The v2 tree is behind `@defer`, so seeing its shell proves the lazy chunk loaded and mounted.
+    // The shell renders in every branch (skeleton, page or error), so this holds without a meeting.
+    await expect(page.getByTestId('meeting-page-shell')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
 
     // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it

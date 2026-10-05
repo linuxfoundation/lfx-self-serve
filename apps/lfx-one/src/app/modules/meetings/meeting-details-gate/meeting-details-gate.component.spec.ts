@@ -1,13 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, inject, makeStateKey, Signal, signal, TransferState, WritableSignal } from '@angular/core';
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
+import { MeetingJoinPageState } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { describe, expect, it } from 'vitest';
 
 import { MeetingDetailsGateComponent } from './meeting-details-gate.component';
+import { MeetingDetailsSeedService } from './meeting-details-seed.service';
 
 // Stand-ins for the two real trees, matched by selector — this spec is about which branch renders,
 // and pulling in the real pages would drag their whole dependency graphs in with them. They record
@@ -15,11 +19,16 @@ import { MeetingDetailsGateComponent } from './meeting-details-gate.component';
 // same call, so the pre-latch DOM is never observable from the outside — the order in which the two
 // branches mounted is what shows that v1 rendered first and v2 replaced it.
 const mountOrder: string[] = [];
+const stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
+// What the v2 stub got from the gate's seed holder when it mounted.
+let v2Seed: MeetingJoinPageState | null | undefined;
 
+// Consumes the SSR seed exactly as the real v1 constructor does.
 @Component({ selector: 'lfx-meeting-join', template: '<div data-testid="v1-stub"></div>' })
 class MeetingJoinStubComponent {
   public constructor() {
     mountOrder.push('v1');
+    inject(TransferState).remove(stateKey);
   }
 }
 
@@ -27,6 +36,7 @@ class MeetingJoinStubComponent {
 class MeetingDetailsPageStubComponent {
   public constructor() {
     mountOrder.push('v2');
+    v2Seed = inject(MeetingDetailsSeedService).take('meeting-1');
   }
 }
 
@@ -38,9 +48,11 @@ describe('MeetingDetailsGateComponent', () => {
   async function create(
     authenticated: WritableSignal<boolean>,
     getBooleanFlag: (key: string, defaultValue: boolean) => Signal<boolean>,
-    deferBlockBehavior: DeferBlockBehavior = DeferBlockBehavior.Playthrough
+    deferBlockBehavior: DeferBlockBehavior = DeferBlockBehavior.Playthrough,
+    seed: MeetingJoinPageState | null = null
   ): Promise<void> {
     mountOrder.length = 0;
+    v2Seed = undefined;
 
     await TestBed.configureTestingModule({
       deferBlockBehavior,
@@ -48,6 +60,7 @@ describe('MeetingDetailsGateComponent', () => {
       providers: [
         { provide: FeatureFlagService, useValue: { getBooleanFlag } },
         { provide: UserService, useValue: { authenticated } },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'meeting-1' }) } } },
       ],
     })
       .overrideComponent(MeetingDetailsGateComponent, {
@@ -55,6 +68,9 @@ describe('MeetingDetailsGateComponent', () => {
       })
       .compileComponents();
 
+    if (seed) {
+      TestBed.inject(TransferState).set(stateKey, seed);
+    }
     fixture = TestBed.createComponent(MeetingDetailsGateComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -147,5 +163,16 @@ describe('MeetingDetailsGateComponent', () => {
     const v2Wrapper: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="meeting-details-gate-v2"]');
     expect(v2Wrapper?.querySelector('[data-testid="v1-stub"]')).not.toBeNull();
     expect(v2Wrapper?.querySelector('[data-testid="v2-stub"]')).toBeNull();
+  });
+
+  // v1 removes the seed key in its constructor and always mounts first, so v2 can only seed from it
+  // through the snapshot the gate took before v1 existed (E1-01).
+  it('hands v2 the SSR seed that v1 has already consumed', async () => {
+    const seed: MeetingJoinPageState = { meeting: null, loadedViaPastMeetingId: false, pastMeetingFullAccess: false, meetingLoadFailed: true };
+    await create(signal(true), flagReadsAs(signal(true)), DeferBlockBehavior.Playthrough, seed);
+
+    expect(mountOrder).toEqual(['v1', 'v2']);
+    expect(TestBed.inject(TransferState).hasKey(stateKey)).toBe(false);
+    expect(v2Seed).toEqual(seed);
   });
 });

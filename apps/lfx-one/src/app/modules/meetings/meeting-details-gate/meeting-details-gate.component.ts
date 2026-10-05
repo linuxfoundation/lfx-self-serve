@@ -8,6 +8,7 @@ import { UserService } from '@services/user.service';
 
 import { MeetingDetailsPageComponent } from '../meeting-details-page/meeting-details-page.component';
 import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component';
+import { MeetingDetailsSeedService } from './meeting-details-seed.service';
 
 /**
  * Route target for the public meeting page `/meetings/:id` (#2873). Renders the pre-v2 page by
@@ -42,8 +43,8 @@ import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component'
  * during SSR (`meeting-join.component.ts`) and the URL is decided for *both* branches. That holds
  * for a full SSR navigation only. On an in-app (client-side) navigation to `/meetings/:id`, a
  * targeted viewer's v1 mounts for one render, the hydration latch destroys it, and its in-flight
- * lookup is aborted, so nothing validates the id. **v2 must check reachability itself** (redirect a
- * 400 / 403 / 404 to not-found) as soon as it grows a data flow; it cannot rely on v1 for that. Second, v2 is loaded through `@defer`, so the route's chunk carries only v1
+ * lookup is aborted, so nothing validates the id. **v2 checks reachability itself** (a 400 / 403 /
+ * 404 goes to not-found, in `MeetingDetailsStateService`); it cannot rely on v1 for that. Second, v2 is loaded through `@defer`, so the route's chunk carries only v1
  * and the ~100% of visitors on it never download the v2 tree. This route is public, SSR-first and
  * anonymous-reachable, unlike the authenticated in-shell route that sets the static-import
  * precedent. The cost lands on targeted viewers only: v1 is torn down when the flag flips, so the
@@ -61,17 +62,26 @@ import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component'
  * reads synchronously, ahead of `isInitialized()`, so a pre-seeded override — exactly what
  * `stubMeetingsV2Flag` does in e2e — would swap trees on the very first client render and mismatch
  * the SSR-rendered v1 DOM.
+ *
+ * **The seed handoff (E1-01).** v1 reads the `meetingJoinState` TransferState key and removes it in
+ * its constructor, and v1 always mounts first, so the key is gone by the time v2 mounts. The gate
+ * provides {@link MeetingDetailsSeedService} and injects it in a field initialiser, which runs
+ * before this template creates v1: the service snapshots the key without removing it, and v2 takes
+ * the snapshot. v1 is not edited.
  */
 @Component({
   selector: 'lfx-meeting-details-gate',
   // No layout box of its own — see the template comment. The route used to render v1 directly.
   host: { class: 'contents' },
   imports: [MeetingJoinComponent, MeetingDetailsPageComponent],
+  providers: [MeetingDetailsSeedService],
   templateUrl: './meeting-details-gate.component.html',
 })
 export class MeetingDetailsGateComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly userService = inject(UserService);
+  // Injected for its construction side effect: it must snapshot the seed before v1 consumes it.
+  private readonly seedService = inject(MeetingDetailsSeedService);
 
   private readonly hydrated = signal(false);
   private readonly rawV2Enabled = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);

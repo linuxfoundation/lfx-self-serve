@@ -1,0 +1,25 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+@use './meeting-details-page.tokens';
+
+// Skeleton block for the shell's loading state and its section placeholders. Custom SCSS rather
+// than Tailwind because it is one rule reused across the template, and the reduced-motion case
+// needs its own media query.
+.md-skeleton {
+  border-radius: var(--md-radius-lg);
+  background: var(--md-surface-hover);
+  animation: md-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes md-skeleton-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-skeleton {
+    animation: none;
+  }
+}

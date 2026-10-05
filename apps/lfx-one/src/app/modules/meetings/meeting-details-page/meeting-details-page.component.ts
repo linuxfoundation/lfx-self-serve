@@ -1,25 +1,34 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
-import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { NgClass, NgTemplateOutlet } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
+import { HeaderComponent } from '@components/header/header.component';
+import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
+import { UserService } from '@services/user.service';
+
+import { MeetingDetailsStateService } from './meeting-details-state.service';
 
 /**
  * The meeting details v2 page (epic #1765), rendered by {@link MeetingDetailsGateComponent} only
  * for a signed-in viewer targeted by `MEETING_V2_ENABLED_FLAG`. The pre-v2 page lives in
  * `meeting-join-v1/` and is what everyone else sees.
  *
- * This is the V2-02 scaffold (#2874): a recognisable stub that every Phase 1 component hangs off.
- * It deliberately reads no meeting data yet. When the shell lands (E1-01) it consumes the same
- * services v1 uses and the same `MeetingJoinPageState` seed, but not by reading TransferState
- * itself: v1 mounts first and removes the `meetingJoinState` key on read, so E1-01 must have the
- * gate snapshot the seed before either tree mounts and pass it in. State is derived
- * through the `meeting-view-model.utils` resolvers (E0-02, PR #2909) — not by lifting logic out of the v1
- * component, which stays byte-identical. Layout and conventions: `specs/011-meeting-details-redesign/v2-scaffold.md`.
+ * This is the E1-01 shell (#1770): the three top-level branches (error, page, skeleton) and the
+ * prototype's two-column layout, a content column and a sticky action rail, collapsing to one
+ * column at 920px and below. Each Phase 1 section replaces one of the shell's placeholders and
+ * reads the meeting from {@link MeetingDetailsStateService}, which this component provides so the
+ * whole tree shares one lookup. Layout and conventions: `specs/011-meeting-details-redesign/v2-scaffold.md`.
  */
 @Component({
   selector: 'lfx-meeting-details-page',
-  imports: [EmptyStateComponent],
+  imports: [NgClass, NgTemplateOutlet, ButtonComponent, HeaderComponent, ImpersonationBannerComponent],
+  providers: [MeetingDetailsStateService],
   templateUrl: './meeting-details-page.component.html',
+  styleUrl: './meeting-details-page.component.scss',
 })
-export class MeetingDetailsPageComponent {}
+export class MeetingDetailsPageComponent {
+  protected readonly state = inject(MeetingDetailsStateService);
+  protected readonly userService = inject(UserService);
+}
