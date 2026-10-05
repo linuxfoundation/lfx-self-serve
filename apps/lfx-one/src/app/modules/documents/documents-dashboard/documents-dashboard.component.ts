@@ -485,8 +485,7 @@ export class DocumentsDashboardComponent {
         }
 
         if (projectMode) {
-          // Folders are structural navigation — never filtered by source.
-          if (projectDocSource && !doc.isFolder) {
+          if (projectDocSource) {
             const docSource = doc.projectDocumentSource ?? 'project';
             // "Meeting" filter bucket covers attachments, recordings, transcripts, and summaries.
             const isMeetingBucket = projectDocSource === 'meeting' && ['meeting', 'recording', 'transcript', 'summary'].includes(docSource);
