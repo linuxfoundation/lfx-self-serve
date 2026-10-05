@@ -239,8 +239,7 @@ export class DocumentService {
 
     return artifacts.map((a): MyDocumentItem => {
       const url = a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url);
-      const groupId = a.group_id ? String(a.group_id) : undefined;
-      const mailingListName = groupId ? mailingListNameMap.get(groupId) : undefined;
+      const mailingListName = a.group_id ? mailingListNameMap.get(a.group_id) : undefined;
       return {
         id: `groupsio_artifact:${a.artifact_id}`,
         name: a.filename || a.link_url || mailingListName || a.artifact_id,
@@ -251,7 +250,7 @@ export class DocumentService {
         groupOrMeetingUid: a.committee_uid || '',
         date: a.last_posted_at || a.created_at || '',
         url,
-        mailingListId: groupId,
+        mailingListId: a.group_id ? String(a.group_id) : undefined,
         fileType: a.media_type,
       };
     });
@@ -259,38 +258,41 @@ export class DocumentService {
 
   /**
    * Resolves mailing list display names for a set of groupsio artifacts by batching
-   * groupsio_mailing_list lookups using groupsio_mailing_list_uid:{group_id} tags.
-   * Returns a map of group_id (string) → mailing list title.
+   * groupsio_mailing_list lookups using project_uid tags, then matching on the
+   * numeric group_id field. Returns a map of group_id (number) → mailing list title.
    */
-  private async fetchMailingListNames(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<string, string>> {
-    const groupIds = [...new Set(artifacts.map((a) => (a.group_id ? String(a.group_id) : null)).filter(Boolean) as string[])];
-    if (groupIds.length === 0) return new Map();
+  private async fetchMailingListNames(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<number, string>> {
+    const projectUids = [...new Set(artifacts.map((a) => a.project_uid).filter(Boolean) as string[])];
+    if (projectUids.length === 0) return new Map();
 
-    logger.debug(req, 'get_my_documents', 'Resolving mailing list names', { group_id_count: groupIds.length });
+    logger.debug(req, 'get_my_documents', 'Resolving mailing list names', { project_uid_count: projectUids.length });
 
     const batches: string[][] = [];
-    for (let i = 0; i < groupIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
-      batches.push(groupIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    for (let i = 0; i < projectUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(projectUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
     }
 
     const batchResults = await Promise.allSettled(
       batches.map((batch) =>
-        fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'groupsio_mailing_list',
-            tags: batch.map((id) => `groupsio_mailing_list_uid:${id}`),
-            ...(pageToken && { page_token: pageToken }),
-          })
+        fetchAllQueryResources<GroupsIOMailingList>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'groupsio_mailing_list',
+              tags: batch.map((uid) => `project_uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
         )
       )
     );
 
-    const nameMap = new Map<string, string>();
+    const nameMap = new Map<number, string>();
     for (const [i, result] of batchResults.entries()) {
       if (result.status === 'fulfilled') {
         for (const ml of result.value) {
           if (ml.group_id != null && ml.title) {
-            nameMap.set(String(ml.group_id), ml.title);
+            nameMap.set(ml.group_id, ml.title);
           }
         }
       } else {
