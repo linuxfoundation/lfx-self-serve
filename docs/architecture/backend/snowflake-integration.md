@@ -903,6 +903,11 @@ exist or not authorized", which can mean a revoked GRANT — unless the caller p
 A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
 which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
 
+Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeService` throws carries the generic
+`SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
+SDK text stays in `message` (which callers such as `isMissingObjectError` match on) and in the logs, never in the
+response body.
+
 #### 6. Too Many Bind Variables
 
 ```text
@@ -915,11 +920,6 @@ Solution:
 `SnowflakeService.execute` rejects such a statement before `checkCircuit`, so it never reaches Snowflake, never takes
 the HALF_OPEN probe slot, and never counts toward the circuit breaker — an oversized request cannot open the pod-wide
 breaker for every other Snowflake-backed route.
-
-Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeService` throws carries the generic
-`SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
-SDK text stays in `message` (which callers such as `isMissingObjectError` match on) and in the logs, never in the
-response body.
 
 ## 🎯 Best Practices
 

@@ -234,8 +234,9 @@ export class OrgContributionsComponent {
       view: this.mainTab(),
       dateRange: values.dateRange ?? CONTRIBUTIONS_DEFAULT_DATE_RANGE,
       search: (values.search ?? '').trim(),
-      projects: values.projects ?? [],
-      employees: values.employees ?? [],
+      // Clamped to the server's per-filter cap: PrimeNG's keyboard select-all / range-select bypass selectionLimit.
+      projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       sort: this.sort(),
       dir: this.dir(),
       commitSort: this.commitSort(),
