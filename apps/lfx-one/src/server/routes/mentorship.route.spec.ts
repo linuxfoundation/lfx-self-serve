@@ -64,7 +64,12 @@ describe('mentorship router — write endpoints removed (GH-2717)', () => {
 });
 
 describe('mentorship router — admin endpoints', () => {
-  it.each(['/admin/programs', '/admin/programs/mp_test'])('rejects unauthenticated GET /api/mentorship%s with 401', async (path) => {
+  it.each([
+    '/admin/programs',
+    '/admin/programs/mp_test',
+    '/admin/programs/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/mentees?type=current',
+    '/admin/applications/3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b/tasks',
+  ])('rejects unauthenticated GET /api/mentorship%s with 401', async (path) => {
     const res = await fetch(`${baseUrl}/api/mentorship${path}`);
 
     // The route exists — it returns 401 (auth required), not 404.

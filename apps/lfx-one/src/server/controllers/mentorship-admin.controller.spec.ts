@@ -242,4 +242,20 @@ describe('MentorshipAdminController', () => {
       expect(read).not.toHaveBeenCalled();
     });
   });
+
+  describe('with no signed-in user', () => {
+    it.each([
+      ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
+      ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
+      ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
+    ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+      const read = vi.spyOn(MentorshipAdminService.prototype, serviceMethod);
+
+      await controller[method](buildReq(query, params), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
+      expect(read).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -212,7 +212,7 @@ export interface MentorshipUpstreamProgramManagementSummary {
   terms: number;
 }
 
-/** Full admin program-detail payload from `GET /api/mentorship/admin/programs/:programId`. */
+/** Mock-backed lists for the tabs not yet on the mentorship service, built client-side by `buildMentorshipProgramDetail`. */
 export interface MentorshipProgramDetail {
   program: MentorshipProgram;
   tabCounts: MentorshipProgramTabCounts;

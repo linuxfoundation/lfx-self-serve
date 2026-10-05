@@ -16,7 +16,7 @@ The program list and the program page's header, tab counts and Current Mentees t
 | GET    | `/api/mentorship/admin/programs/:programId/mentees`       | `getProgramMentees`   | Current Mentees tab (one server-paged page of rows)  |
 | GET    | `/api/mentorship/admin/applications/:applicationId/tasks` | `getApplicationTasks` | View Tasks on a Current Mentees row                  |
 
-`programId` is the program's id or its slug. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type`, and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400.
+`programId` and `applicationId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type`, and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400.
 
 ## Program page sourcing
 
