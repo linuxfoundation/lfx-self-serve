@@ -19,16 +19,23 @@ function run(baseURL: string, cookie?: string): { clearCookie: ReturnType<typeof
 
 describe('clearIntercomCookies', () => {
   it('clears each intercom- cookie host-only and on every parent domain', () => {
-    const { clearCookie, next } = run('https://app.lfx.dev', 'intercom-session-abc=s; appSession=x; intercom-id-abc=i');
+    const { clearCookie, next } = run('https://app.example.test', 'intercom-session-abc=s; appSession=x; intercom-id-abc=i');
 
     expect(clearCookie.mock.calls).toEqual([
       ['intercom-session-abc'],
-      ['intercom-session-abc', { domain: 'app.lfx.dev' }],
-      ['intercom-session-abc', { domain: 'lfx.dev' }],
+      ['intercom-session-abc', { domain: 'app.example.test' }],
+      ['intercom-session-abc', { domain: 'example.test' }],
       ['intercom-id-abc'],
-      ['intercom-id-abc', { domain: 'app.lfx.dev' }],
-      ['intercom-id-abc', { domain: 'lfx.dev' }],
+      ['intercom-id-abc', { domain: 'app.example.test' }],
+      ['intercom-id-abc', { domain: 'example.test' }],
     ]);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('skips intercom- cookie names that are not valid cookie tokens', () => {
+    const { clearCookie, next } = run('http://localhost:4000', 'intercom-a"b=1; intercom-session-abc=s');
+
+    expect(clearCookie.mock.calls).toEqual([['intercom-session-abc']]);
     expect(next).toHaveBeenCalledOnce();
   });
 
@@ -39,7 +46,7 @@ describe('clearIntercomCookies', () => {
   });
 
   it('continues without clearing when there are no intercom- cookies', () => {
-    const { clearCookie, next } = run('https://app.lfx.dev');
+    const { clearCookie, next } = run('https://app.example.test');
 
     expect(clearCookie).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();

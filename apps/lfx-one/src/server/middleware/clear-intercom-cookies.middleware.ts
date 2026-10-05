@@ -23,7 +23,8 @@ export function clearIntercomCookies(baseURL: string): RequestHandler {
       const eqIndex = pair.indexOf('=');
       if (eqIndex === -1) continue;
       const name = pair.slice(0, eqIndex).trim();
-      if (name.startsWith('intercom-')) {
+      // clearCookie throws on names that aren't valid cookie tokens, which would fail the logout
+      if (name.startsWith('intercom-') && /^[\w!#$%&'*+.^`|~-]+$/.test(name)) {
         res.clearCookie(name);
         for (const domain of domains) {
           res.clearCookie(name, { domain });
