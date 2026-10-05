@@ -106,6 +106,11 @@ describe('redactMeetingPassword', () => {
     expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?PASSCODE=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
   });
 
+  it('redacts a percent-encoded param name, at the top level and inside a nested returnTo', () => {
+    expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?%70assword=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+    expect(redactMeetingPassword(`/login?returnTo=${encodeURIComponent('/meetings/m-1?%70asscode=SUPER_SECRET')}`, ORIGIN)).not.toContain('SUPER_SECRET');
+  });
+
   it('redacts every occurrence of a repeated param', () => {
     expect(redactMeetingPassword(`${ORIGIN}/meetings/m-1?password=AAA&password=BBB`, ORIGIN)).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
   });
@@ -155,6 +160,33 @@ describe('redactMeetingPasswordInText', () => {
     expect(redacted).not.toContain('AAA');
     expect(redacted).not.toContain('BBB');
     expect(redacted).toBe('Http failure response for https://lfx.example.com/meetings/m-1?tab=a&Password=redacted 403. Retried /x?passcode=redacted#y');
+  });
+
+  it('redacts a percent-encoded param name, which only URL parsing decodes', () => {
+    expect(redactMeetingPasswordInText('GET /meetings/m-1?%70assword=SUPER_SECRET failed')).toBe('GET /meetings/m-1?password=redacted failed');
+  });
+
+  it('redacts a passcode nested in a single- or double-encoded returnTo', () => {
+    const login = `/login?returnTo=${encodeURIComponent('/meetings/m-1?password=SUPER_SECRET')}`;
+    const authError = `https://lfx.example.com/auth-error?reason=session&returnTo=${encodeURIComponent(login)}`;
+
+    expect(redactMeetingPasswordInText(`Navigation to ${login} failed`)).not.toContain('SUPER_SECRET');
+    expect(redactMeetingPasswordInText(`Navigation to ${login} failed`)).toMatch(/^Navigation to \/login\?returnTo=\S+ failed$/);
+    expect(redactMeetingPasswordInText(`Navigation to "${authError}" failed`)).not.toContain('SUPER_SECRET');
+  });
+
+  it('redacts an encoded passcode in text that does not parse as a URL, keeping the params after it', () => {
+    expect(redactMeetingPasswordInText('bad value: meetings%3Fpassword%3DSUPER_SECRET%26tab%3Dpast')).toBe(
+      'bad value: meetings%3Fpassword%3Dredacted%26tab%3Dpast'
+    );
+    expect(redactMeetingPasswordInText('bad value: meetings%253Fpasscode%253DSUPER_SECRET%2526tab')).toBe(
+      'bad value: meetings%253Fpasscode%253Dredacted%2526tab'
+    );
+  });
+
+  it('leaves stack frames without a passcode untouched, coordinates included', () => {
+    const stack = 'Error: boom\n    at f (https://lfx.example.com/main-ABC.js?v=2:10:5)\n    at g (/chunk-XYZ.js:1:99)';
+    expect(redactMeetingPasswordInText(stack)).toBe(stack);
   });
 
   it('leaves text without a passcode param untouched', () => {

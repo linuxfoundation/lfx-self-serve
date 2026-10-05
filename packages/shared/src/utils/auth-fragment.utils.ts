@@ -90,15 +90,43 @@ function isMeetingPasswordParam(key: string): boolean {
   return (MEETING_PASSWORD_QUERY_PARAMS as readonly string[]).includes(key.toLowerCase());
 }
 
-const MEETING_PASSWORD_IN_TEXT_PATTERN = new RegExp(`([?&](?:${MEETING_PASSWORD_QUERY_PARAMS.join('|')})=)[^&#\\s"'<>]*`, 'gi');
+// A `?`/`&` and `=` may each be percent-encoded, once per level of nesting (`%3F`, `%253F`, …), when
+// the URL quoted is itself the value of another URL's param. The value ends at the next delimiter,
+// encoded or not. Repetition is bounded so a crafted run of `%2525…` cannot make matching quadratic.
+const ENCODED_PREFIX = '%(?:25){0,3}';
+const MEETING_PASSWORD_IN_TEXT_PATTERN = new RegExp(
+  `((?:[?&]|${ENCODED_PREFIX}(?:3F|26))(?:${MEETING_PASSWORD_QUERY_PARAMS.join('|')})(?:=|${ENCODED_PREFIX}3D))` +
+    `(?:(?!${ENCODED_PREFIX}(?:26|23))[^&#\\s"'<>])*`,
+  'gi'
+);
+
+/** Runs of text between whitespace, quotes, angle brackets and parentheses: a stack frame's URL is parenthesised. */
+const TEXT_TOKEN_PATTERN = /[^\s"'<>()]+/g;
+
+/** Resolves a quoted relative path for parsing only; {@link redactMeetingPassword} returns it relative. */
+const TEXT_URL_BASE = 'https://redaction.invalid';
 
 /**
  * Replaces the value of any meeting passcode query param appearing anywhere in free text (an error
- * message or stack that quotes a request URL) with a marker. For a field that holds a single URL,
- * prefer {@link redactMeetingPassword}, which also handles nested URLs.
+ * message or stack that quotes a request URL) with a marker, leaving the rest of the text — stack
+ * frame coordinates included — untouched. Each URL in the text goes through
+ * {@link redactMeetingPassword}, so a percent-encoded param name and a passcode nested in a
+ * `returnTo` at any depth are caught; a pattern match then covers anything that did not parse as a
+ * URL. For a field that holds a single URL, call {@link redactMeetingPassword} directly.
  */
 export function redactMeetingPasswordInText(text: string): string {
-  return text.replace(MEETING_PASSWORD_IN_TEXT_PATTERN, '$1redacted');
+  const withUrlsRedacted = text.replace(TEXT_TOKEN_PATTERN, (token) => {
+    const queryIndex = token.indexOf('?');
+    if (queryIndex < 0) {
+      return token;
+    }
+    const urlStart = token.search(/https?:\/\/|\//i);
+    if (urlStart < 0 || urlStart > queryIndex) {
+      return token;
+    }
+    return token.slice(0, urlStart) + redactMeetingPassword(token.slice(urlStart), TEXT_URL_BASE);
+  });
+  return withUrlsRedacted.replace(MEETING_PASSWORD_IN_TEXT_PATTERN, '$1redacted');
 }
 
 /** A param value worth recursing into: a path or http(s) URL that has a query string of its own. */
