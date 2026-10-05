@@ -8,6 +8,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import {
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE,
+  MENTORSHIP_ADMIN_TERMS_MAX_PAGES,
   MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
@@ -30,14 +31,14 @@ import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, EMPTY, expand, map, Observable, of, reduce, switchMap, take, tap } from 'rxjs';
 
 import { EnrollTermDialogComponent } from '../../../enroll-program/components/enroll-term-dialog/enroll-term-dialog.component';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 
 /**
- * Terms tab — the program's terms with their application counts, read live. A program has only a handful of terms,
- * so one read at the upstream maximum shows them all and the open-term limit counts exactly. The documented term
+ * Terms tab — the program's terms with their application counts, read live. Every page is read before the table
+ * shows, so the open-term limit counts every term. The documented term
  * actions (edit / close / re-open / delete) confirm as designed and then stub to a "coming soon" toast until the
  * write endpoints land. Create and edit reuse the enroll dialog.
  */
@@ -230,18 +231,35 @@ export class TermsTabComponent {
           this.loadFailed.set(false);
         }),
         switchMap(({ programId }) =>
-          this.mentorshipAdminService.getProgramTerms(programId, { offset: 0, limit: MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT }).pipe(
-            map((page) => ({ page })),
-            catchError(() => of({ page: null }))
+          this.readAllTerms(programId).pipe(
+            map((terms) => ({ terms })),
+            catchError(() => of({ terms: null }))
           )
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ page }) => {
+      .subscribe(({ terms }) => {
         this.loading.set(false);
-        this.termRows.set(page?.data ?? []);
-        this.loadFailed.set(!page);
+        this.termRows.set(terms ?? []);
+        this.loadFailed.set(!terms);
       });
+  }
+
+  /**
+   * Every term of the program, read a page at the upstream maximum until `total` is covered. The next page is decided
+   * from `total`, not the page's row count, because the BFF drops terms that are neither open nor closed.
+   */
+  private readAllTerms(programId: string): Observable<MentorshipProgramTermRow[]> {
+    const limit = MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT;
+    const readPage = (offset: number) => this.mentorshipAdminService.getProgramTerms(programId, { offset, limit });
+
+    return readPage(0).pipe(
+      expand((page, index) => {
+        const nextOffset = (index + 1) * limit;
+        return nextOffset < page.total && index + 1 < MENTORSHIP_ADMIN_TERMS_MAX_PAGES ? readPage(nextOffset) : EMPTY;
+      }),
+      reduce((rows, page) => [...rows, ...page.data], [] as MentorshipProgramTermRow[])
+    );
   }
 
   private toFormTerm(term: MentorshipProgramTermRow): MentorshipProgramTerm {

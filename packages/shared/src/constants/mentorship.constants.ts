@@ -115,6 +115,9 @@ export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the s
  */
 export const MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT = 50;
 
+/** Most `GET .../terms` pages the Terms tab follows to read every term, so a list that never ends cannot loop forever. */
+export const MENTORSHIP_ADMIN_TERMS_MAX_PAGES = 20;
+
 /** Admin Mentors and Terms tab page size. Passed as `limit` on `GET .../mentors` and `GET .../terms`. */
 export const MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE = 10;
 

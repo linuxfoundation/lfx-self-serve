@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { MENTORSHIP_ADMIN_TERMS_MAX_PAGES } from '@lfx-one/shared/constants';
 import { MentorshipAdminTermsQuery, MentorshipAdminTermsResponse, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
@@ -65,9 +66,42 @@ describe('TermsTabComponent', () => {
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const rowText = (id: string): string => (element().querySelector(`[data-testid="mentorship-term-row-${id}"]`)?.textContent ?? '').replace(/\s+/g, ' ');
 
-  it('reads every term of the program in one read at the upstream maximum', () => {
+  it('reads a program whose terms fit one page in one read at the upstream maximum', () => {
     expect(getProgramTerms).toHaveBeenCalledTimes(1);
     expect(getProgramTerms).toHaveBeenCalledWith('prog_1', { offset: 0, limit: 50 });
+  });
+
+  it('follows the pages until total is read, and shows every term', () => {
+    getProgramTerms.mockImplementation((_programId, query) =>
+      of({ data: [term({ id: `trm_at_${query.offset}`, name: `Term ${query.offset}` })], total: 120 } satisfies MentorshipAdminTermsResponse)
+    );
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(getProgramTerms.mock.calls.slice(1).map(([, query]) => query)).toEqual([
+      { offset: 0, limit: 50 },
+      { offset: 50, limit: 50 },
+      { offset: 100, limit: 50 },
+    ]);
+    expect(element().querySelector('[data-testid="mentorship-term-row-trm_at_100"]')).not.toBeNull();
+  });
+
+  it('stops after the page cap when total never runs out', () => {
+    getProgramTerms.mockImplementation(() => of({ data: [term()], total: Number.MAX_SAFE_INTEGER } satisfies MentorshipAdminTermsResponse));
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(getProgramTerms).toHaveBeenCalledTimes(1 + MENTORSHIP_ADMIN_TERMS_MAX_PAGES);
+  });
+
+  it('shows the inline error when a later page fails', () => {
+    getProgramTerms.mockImplementation((_programId, query) =>
+      query.offset ? throwError(() => new HttpErrorResponse({ status: 503 })) : of({ data: [term()], total: 60 } satisfies MentorshipAdminTermsResponse)
+    );
+    fixture.componentInstance['onRetry']();
+    settle();
+
+    expect(element().querySelector('[data-testid="mentorship-admin-terms-load-error"]')).not.toBeNull();
   });
 
   it('shows each term with its status and application counts', () => {
