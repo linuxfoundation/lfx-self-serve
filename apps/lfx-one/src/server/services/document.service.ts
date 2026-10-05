@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_FILTERS_OR_BATCH_SIZE } from '@lfx-one/shared/constants';
 import {
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
@@ -267,23 +268,36 @@ export class DocumentService {
 
     logger.debug(req, 'get_my_documents', 'Resolving mailing list names', { group_id_count: groupIds.length });
 
-    const mailingLists = await fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'groupsio_mailing_list',
-        tags: groupIds.map((id) => `groupsio_mailing_list_uid:${id}`),
-        ...(pageToken && { page_token: pageToken }),
-      })
-    ).catch((err) => {
-      logger.warning(req, 'get_my_documents', 'Failed to resolve mailing list names, names will be omitted', {
-        error: err instanceof Error ? err.message : 'Unknown error',
-      });
-      return [];
-    });
+    const batches: string[][] = [];
+    for (let i = 0; i < groupIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(groupIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) =>
+        fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_mailing_list',
+            tags: batch.map((id) => `groupsio_mailing_list_uid:${id}`),
+            ...(pageToken && { page_token: pageToken }),
+          })
+        )
+      )
+    );
 
     const nameMap = new Map<string, string>();
-    for (const ml of mailingLists) {
-      if (ml.uid && ml.title) {
-        nameMap.set(ml.uid, ml.title);
+    for (const [i, result] of batchResults.entries()) {
+      if (result.status === 'fulfilled') {
+        for (const ml of result.value) {
+          if (ml.group_id != null && ml.title) {
+            nameMap.set(String(ml.group_id), ml.title);
+          }
+        }
+      } else {
+        logger.warning(req, 'get_my_documents', 'Failed to resolve mailing list names for batch, names will be omitted', {
+          batch_index: i,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
       }
     }
     return nameMap;
