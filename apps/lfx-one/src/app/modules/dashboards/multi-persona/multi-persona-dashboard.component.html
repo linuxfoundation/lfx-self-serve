@@ -224,8 +224,8 @@
                   [escape]="false"
                   tooltipPosition="top"
                   tooltipEvent="both"
-                  (keydown.enter)="$event.stopPropagation()"
-                  (keydown.space)="$event.stopPropagation()"
+                  (keydown.enter)="openRow(row); $event.stopPropagation()"
+                  (keydown.space)="openRow(row); $event.stopPropagation(); $event.preventDefault()"
                   >{{ row.role }}</span
                 >
               </td>
