@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { AUTH_FRAGMENT_KEYS, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
-import { hasAuthFragment, redactAuthFragment, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from './auth-fragment.utils';
+import {
+  hasAuthFragment,
+  redactAuthFragment,
+  redactInviteToken,
+  redactLoggedUrl,
+  redactMeetingPassword,
+  redactMeetingPasswordInText,
+} from './auth-fragment.utils';
 
 /**
  * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh
@@ -200,6 +207,14 @@ describe('redactMeetingPasswordInText', () => {
   it('leaves text without a passcode param untouched', () => {
     const text = 'Failed to reset password: password_reset=sent?ok';
     expect(redactMeetingPasswordInText(text)).toBe(text);
+  });
+});
+
+describe('redactLoggedUrl', () => {
+  it('redacts both the invite token and a meeting passcode, keeping a relative URL relative', () => {
+    expect(redactLoggedUrl('/invite?token=SUPER_SECRET', 'http://localhost')).toBe('/invite?token=redacted');
+    expect(redactLoggedUrl('/meetings/m-1?password=SUPER_SECRET&tab=a', 'http://localhost')).toBe('/meetings/m-1?password=redacted&tab=a');
+    expect(redactLoggedUrl('/meetings/m-1?tab=a', 'http://localhost')).toBe('/meetings/m-1?tab=a');
   });
 });
 

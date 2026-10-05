@@ -111,3 +111,15 @@ describe('serverLogger credential scrubbing', { timeout: 20_000 }, () => {
     expect(JSON.parse(lines[1])).toMatchObject({ '[Unserializable]': '[Unserializable]', msg: 'child' });
   });
 });
+
+describe('reqSerializer', { timeout: 20_000 }, () => {
+  it('redacts a meeting passcode and an invite token from the logged request URL', async () => {
+    const { reqSerializer } = await import('./server-logger');
+    const req = (originalUrl: string) => ({ method: 'GET', originalUrl, headers: {}, socket: {} }) as unknown as Parameters<typeof reqSerializer>[0];
+
+    expect(reqSerializer(req('/meetings/m-1?password=SUPER_SECRET&tab=a')).url).toBe('/meetings/m-1?password=redacted&tab=a');
+    expect(reqSerializer(req('/public/api/meetings/m-1?passcode=SUPER_SECRET')).url).toBe('/public/api/meetings/m-1?passcode=redacted');
+    expect(reqSerializer(req('/invite?token=SUPER_SECRET')).url).toBe('/invite?token=redacted');
+    expect(reqSerializer(req('/meetings/m-1?tab=a')).url).toBe('/meetings/m-1?tab=a');
+  });
+});

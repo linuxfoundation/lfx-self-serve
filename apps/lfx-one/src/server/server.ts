@@ -6,7 +6,7 @@ import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
-import { redactInviteToken } from '@lfx-one/shared/utils/auth-fragment.utils';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';
@@ -603,7 +603,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {
         error_message: error.message,
         code: error.code,
-        url: redactInviteToken(req.url, 'http://localhost'),
+        url: redactLoggedUrl(req.url, 'http://localhost'),
         method: req.method,
         user_agent: req.get('User-Agent'),
       });

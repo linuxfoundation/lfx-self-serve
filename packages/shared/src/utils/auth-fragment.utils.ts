@@ -179,3 +179,13 @@ export function redactMeetingPassword(url: string, base?: string): string {
     return MEETING_PASSWORD_PARAM_PATTERN.test(url) ? url.split('?')[0] : url;
   }
 }
+
+/**
+ * Returns a request URL fit for a server log: the invite `token` and any meeting passcode replaced
+ * by a marker. Meeting join links (and the legacy `?password=` API calls) carry the passcode in the
+ * query string, so every logged `url` / `originalUrl` goes through this rather than
+ * {@link redactInviteToken} alone.
+ */
+export function redactLoggedUrl(url: string, base: string): string {
+  return redactMeetingPassword(redactInviteToken(url, base), base);
+}
