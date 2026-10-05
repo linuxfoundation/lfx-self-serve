@@ -90,6 +90,58 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
   });
 });
 
+describe('MeetingRegistrantsDisplayComponent — open add form on show', () => {
+  async function mount(openAddFormOnShow: boolean) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1' });
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.componentRef.setInput('showAddRegistrant', true);
+    fixture.componentRef.setInput('openAddFormOnShow', openAddFormOnShow);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  const showAddForm = (fixture: Awaited<ReturnType<typeof mount>>): boolean => fixture.componentInstance.showAddForm();
+
+  it('opens the add form once the drawer becomes visible', async () => {
+    const fixture = await mount(true);
+    expect(showAddForm(fixture)).toBe(false);
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(showAddForm(fixture)).toBe(true);
+  });
+
+  it('leaves the add form closed when not asked to open it', async () => {
+    const fixture = await mount(false);
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(showAddForm(fixture)).toBe(false);
+  });
+});
+
 const RECURRING_MEETING = { id: 'meeting-1', timezone: 'UTC', recurrence: { type: 2, repeat_interval: 1 } } as unknown as Meeting;
 const OCCURRENCE = { occurrence_id: '1893492000', start_time: '2030-01-01T10:00:00.000Z', duration: 30 } as MeetingOccurrence;
 const GUEST = { meeting_id: 'meeting-1', email: 'ada@acme-motors.example', first_name: 'Ada', last_name: 'Byron', host: false };

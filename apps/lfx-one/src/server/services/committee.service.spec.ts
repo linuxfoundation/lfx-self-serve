@@ -384,6 +384,14 @@ describe('CommitteeService — chat_webhook_url (LFXV2-3080)', () => {
       expect(result.has_slack_webhook).toBe(false);
     });
 
+    it('defaults total_members to 0 when upstream omits it and passes a populated count through', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1' }).mockResolvedValueOnce({});
+      expect((await service.getCommitteeById(req, COMMITTEE_UID)).total_members).toBe(0);
+
+      proxyRequest.mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', total_members: 12 }).mockResolvedValueOnce({});
+      expect((await service.getCommitteeById(req, COMMITTEE_UID)).total_members).toBe(12);
+    });
+
     it('strips a chat_webhook_url that unexpectedly shows up on the base committee resource too — defense-in-depth beyond the settings-resource source', async () => {
       proxyRequest
         .mockResolvedValueOnce({ uid: COMMITTEE_UID, name: 'Test', project_uid: 'project-1', chat_webhook_url: VALID_WEBHOOK_URL })

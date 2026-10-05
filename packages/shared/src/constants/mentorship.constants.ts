@@ -23,13 +23,15 @@ import type {
  * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
  * yields the same order the admin filter dropdown renders.
  */
-export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed'] as const;
+export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
 
 /** Human-readable labels for each program status (used by badge + filter). */
 export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, string> = {
   open: 'Open',
   'pending-review': 'Pending Review',
   completed: 'Completed',
+  rejected: 'Rejected',
+  hidden: 'Hidden',
 };
 
 /**
@@ -41,6 +43,8 @@ export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramSt
   open: 'bg-emerald-100 text-emerald-700',
   'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
+  rejected: 'bg-red-100 text-red-700',
+  hidden: 'bg-slate-100 text-slate-600',
 };
 
 /** Deterministic avatar-tile palette cycled by (title.charCodeAt(0) % length). */
@@ -58,11 +62,32 @@ export const EMPTY_MENTORSHIP_PROGRAMS_RESPONSE: MentorshipProgramsResponse = {
   total: 0,
 };
 
-/**
- * Admin program-list page size. Passed as `limit` on `GET /api/mentorship/admin/programs`.
- * Sized below `MOCK_MENTORSHIP_PROGRAMS.length` so Load more is exercisable against the mock BFF.
- */
-export const MENTORSHIP_PROGRAM_PAGE_SIZE = 2;
+/** Admin program-list page size. Passed as `limit` on `GET /api/mentorship/admin/programs`. */
+export const MENTORSHIP_PROGRAM_PAGE_SIZE = 12;
+
+/** Most programs one `GET /api/mentorship/admin/programs` page may return; the BFF rejects a larger `limit`. */
+export const MENTORSHIP_PROGRAMS_MAX_LIMIT = 50;
+
+/** The two mentee tabs of an admin program page; `type` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
+export const MENTORSHIP_ADMIN_MENTEE_TABS = ['current', 'past'] as const;
+
+/** Admin mentee tab page size. Passed as `limit` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
+export const MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE = 10;
+
+/** Most mentees one `GET /api/mentorship/admin/programs/:programId/mentees` page may return; the BFF rejects a larger `limit`. */
+export const MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT = 50;
+
+/** Pause after the last keystroke before the Current Mentees search is sent upstream. */
+export const MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS = 300;
+
+/** Shown in a tab count badge whose read failed. */
+export const MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL = '–';
+
+export const MENTORSHIP_ADMIN_MENTEES_LOAD_ERROR_MESSAGE = 'We could not load the mentees. Try again.';
+export const MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE = 'We could not load the tasks. Try again.';
+export const MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE = 'We could not load this program. Try again.';
+export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE = 'No access to this program';
+export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE = 'You do not have permission to manage this program.';
 
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by

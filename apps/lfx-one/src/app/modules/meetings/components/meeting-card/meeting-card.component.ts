@@ -73,7 +73,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
+import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -228,6 +228,7 @@ export class MeetingCardComponent implements OnInit {
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
   public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
+  public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );

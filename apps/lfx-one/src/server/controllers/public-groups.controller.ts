@@ -86,9 +86,12 @@ export class PublicGroupsController {
 
       const hasPublicMailingList = mailingListsResponse.resources.some((r) => r.data.public);
 
-      const visibility = committee.member_visibility || CommitteeMemberVisibility.HIDDEN;
+      // Fail closed: only an explicit `basic_profile` exposes chairs. Unset or unrecognised values
+      // are treated as hidden, matching the shared `canViewCommitteeRoster` rule.
+      const visibility =
+        committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE ? CommitteeMemberVisibility.BASIC_PROFILE : CommitteeMemberVisibility.HIDDEN;
       const chairs =
-        visibility === CommitteeMemberVisibility.HIDDEN
+        visibility !== CommitteeMemberVisibility.BASIC_PROFILE
           ? []
           : members
               .filter((m: CommitteeMember) => m.role?.name && CHAIR_ROLES.has(m.role.name))

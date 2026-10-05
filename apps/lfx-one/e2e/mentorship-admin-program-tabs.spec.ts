@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Admin program detail — the Current Mentees and Past Mentees tabs (linuxfoundation/lfx-mentorship#231).
+ * Admin program detail — the live page and the server-paged Current Mentees tab (linuxfoundation/lfx-mentorship#233).
  *
- * The page reads `/api/mentorship/admin/programs/:programId`, which the BFF builds by splitting the
- * program's applications by their term's status: an open term's rows are current, a closed term's are
- * past, whatever the row's own status. Each test stubs that read via `page.route` with a synthetic
- * payload, so the suite never depends on the BFF's mock programs: one populated payload proves the tab
- * counts, each tab's rows, the Applied / Tasks Completed split of a pending row, the row actions by
- * status and each tab's filter options, and an empty one drives the two tabs' empty messages.
+ * The page makes three kinds of read, each stubbed here via `page.route` with synthetic data:
+ *   - `GET /api/mentorship/admin/programs/:id` — the header, the four tab counts and the term options
+ *   - `GET /api/mentorship/admin/programs/:id/mentees` — one page of 37 synthetic applications
+ *   - `GET /api/mentorship/admin/applications/:id/tasks` — one application's tasks, read on View Tasks only
+ * The stubs record what the page asked for, so the paging, filter and View Tasks specs assert the query the
+ * browser sent as well as what it rendered. The Past Mentees, Mentors and Terms tabs still show mock lists
+ * until their own slice, so only their tab labels are checked here.
  *
- * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
- * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
+ * The page is reached by client-side navigation (`openMentorPage`), so the reads are made by the browser and
+ * the stubs answer them; a direct `page.goto()` would read the page during SSR, where no stub runs.
  * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
@@ -20,10 +21,22 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { MentorshipProgramApplicant, MentorshipProgramDetail, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
+import {
+  ADMIN_MENTEES_TOTAL,
+  ADMIN_OPEN_TERM_ID,
+  ADMIN_OPEN_TERM_NAME,
+  ADMIN_PROGRAM_PAGE,
+  ADMIN_PROGRAM_URL,
+  AdminProgramRequests,
+  adminApplicationId,
+  stubAdminMentees,
+  stubAdminProgramPage,
+  stubAdminProgramPageError,
+  stubAdminTasks,
+} from './helpers/mentorship-admin-program.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -33,88 +46,21 @@ test.setTimeout(60_000);
 // The sidebar `openMentorPage` waits on is `hidden lg:flex`, so pin a desktop viewport.
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const PROGRAM_ID = '61111111-1111-4111-8111-111111111111';
-const DETAIL_URL = `/mentorship/admin/${PROGRAM_ID}`;
-const DETAIL_ROUTE = `**/api/mentorship/admin/programs/${PROGRAM_ID}`;
-const PENDING_ID = '62222222-2222-4222-8222-222222222222';
-const TASKS_COMPLETED_ID = '63333333-3333-4333-8333-333333333333';
-const ACCEPTED_ID = '64444444-4444-4444-8444-444444444444';
-const GRADUATED_ID = '65555555-5555-4555-8555-555555555555';
+const FIRST_ID = adminApplicationId(1);
+const SECOND_ID = adminApplicationId(2);
+const PAGE_ONE_LABEL = `Showing 1 to 10 of ${ADMIN_MENTEES_TOTAL}`;
+const PAGE_TWO_LABEL = `Showing 11 to 20 of ${ADMIN_MENTEES_TOTAL}`;
 
-const OPEN_TERM = 'Test Term Open';
-const CLOSED_TERM = 'Test Term Closed';
+/** The offsets the mentees stub answered, in order. */
+const offsets = (requests: AdminProgramRequests): string[] => requests.mentees.map((params) => params.get('offset') ?? '');
 
-const term = (id: string, name: string, status: MentorshipProgramTermRow['status']): MentorshipProgramTermRow => ({
-  id,
-  name,
-  status,
-  pending: 0,
-  declined: 0,
-  accepted: 0,
-  graduated: 0,
-  startDate: '2026-09-01',
-  endDate: '2026-11-30',
-  applicationStartDate: '2026-07-01',
-  applicationEndDate: '2026-08-15',
-});
-
-const application = (
-  id: string,
-  name: string,
-  status: MentorshipProgramApplicant['status'],
-  { id: termId, name: termName }: MentorshipProgramTermRow,
-  overrides: Partial<MentorshipProgramApplicant> = {}
-): MentorshipProgramApplicant => ({
-  id,
-  name,
-  email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
-  status,
-  termId,
-  termName,
-  createdOn: '2026-07-10',
-  updatedOn: '2026-07-20',
-  ...overrides,
-});
-
-const PROGRAM: MentorshipProgramDetail['program'] = {
-  id: PROGRAM_ID,
-  slug: 'test-program-admin',
-  name: 'Test Program Admin',
-  projectName: 'Test Project',
-  term: OPEN_TERM,
-  status: 'open',
-  stats: { mentors: 0, mentees: 1, graduated: 1 },
-  createdOn: '2026-06-01',
-  updatedOn: '2026-07-20',
-};
-
-const OPEN_TERM_ROW = term('66666666-6666-4666-8666-666666666666', OPEN_TERM, 'open');
-const CLOSED_TERM_ROW = term('67777777-7777-4777-8777-777777777777', CLOSED_TERM, 'closed');
-const TERMS = [OPEN_TERM_ROW, CLOSED_TERM_ROW];
-
-const POPULATED: MentorshipProgramDetail = {
-  program: PROGRAM,
-  tabCounts: { currentMentees: 3, pastMentees: 1, mentors: 0, terms: 2 },
-  currentMentees: [
-    application(PENDING_ID, 'Test Applicant One', 'pending', OPEN_TERM_ROW, { tasksSubmitted: 1, tasksTotal: 2 }),
-    // Still `pending` on the wire, but every prerequisite is in.
-    application(TASKS_COMPLETED_ID, 'Test Applicant Two', 'pending', OPEN_TERM_ROW, { tasksSubmitted: 2, tasksTotal: 2 }),
-    application(ACCEPTED_ID, 'Test Mentee Three', 'accepted', OPEN_TERM_ROW),
-  ],
-  pastMentees: [application(GRADUATED_ID, 'Test Mentee Four', 'graduated', CLOSED_TERM_ROW)],
-  mentors: [],
-  terms: TERMS,
-};
-
-const EMPTY: MentorshipProgramDetail = {
-  ...POPULATED,
-  tabCounts: { currentMentees: 0, pastMentees: 0, mentors: 0, terms: 2 },
-  currentMentees: [],
-  pastMentees: [],
-};
-
-async function stubDetail(page: Page, body: MentorshipProgramDetail): Promise<void> {
-  await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
+async function open(page: Page, requests: AdminProgramRequests): Promise<void> {
+  await enableMentorshipFlag(page);
+  await stubAdminProgramPage(page);
+  await stubAdminMentees(page, requests);
+  await stubAdminTasks(page, requests);
+  await openMentorPage(page, ADMIN_PROGRAM_URL);
+  await expect(page.getByTestId('mentorship-current-mentees-tab')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 }
 
 /** Opens one of a tab's filter selects and returns the option labels it lists. */
@@ -129,81 +75,246 @@ async function selectOptions(page: Page, dataTest: string): Promise<string[]> {
   return labels;
 }
 
-test.describe('Admin program detail — mentee tabs', () => {
+async function chooseOption(page: Page, dataTest: string, label: string): Promise<void> {
+  await page.locator(`[data-test="${dataTest}"]`).click();
+  await page.getByRole('option', { name: label, exact: true }).click();
+}
+
+async function clickViewTasks(page: Page, id: string): Promise<void> {
+  await page.getByTestId(`mentorship-current-mentee-view-tasks-${id}`).getByRole('button').click();
+}
+
+test.describe('Admin program detail — header and tabs', () => {
+  let requests: AdminProgramRequests;
+
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-    await stubDetail(page, POPULATED);
-    await openMentorPage(page, DETAIL_URL);
+    requests = { mentees: [], tasks: [] };
+    await open(page, requests);
   });
 
-  test('shows the four tabs, each with its count', async ({ page }) => {
+  test('shows the program title and the four tabs, each with its count', async ({ page }) => {
     await expect(page.getByTestId('mentorship-program-detail-title')).toHaveText('Test Program Admin', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
-    await expect(page.getByTestId('mentorship-program-detail-tab-current-mentees')).toHaveText(/Current Mentees\s*3/);
-    await expect(page.getByTestId('mentorship-program-detail-tab-past-mentees')).toHaveText(/Past Mentees\s*1/);
+    await expect(page.getByTestId('mentorship-program-detail-tab-current-mentees')).toHaveText(new RegExp(`Current Mentees\\s*${ADMIN_MENTEES_TOTAL}`));
+    await expect(page.getByTestId('mentorship-program-detail-tab-past-mentees')).toHaveText(/Past Mentees\s*4/);
     await expect(page.getByTestId('mentorship-program-detail-tab-mentors')).toHaveText(/Mentors\s*0/);
     await expect(page.getByTestId('mentorship-program-detail-tab-terms')).toHaveText(/Terms\s*2/);
   });
 
-  test('opens on Current Mentees with the open-term rows, splitting pending into Applied and Tasks Completed', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-current-mentees-tab')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-
-    await expect(page.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(3);
-    await expect(page.getByTestId(`mentorship-current-mentee-row-${PENDING_ID}`)).toContainText('Test Applicant One');
-    await expect(page.getByTestId(`mentorship-current-mentee-row-${PENDING_ID}`)).toContainText('Applied');
-    await expect(page.getByTestId(`mentorship-current-mentee-row-${TASKS_COMPLETED_ID}`)).toContainText('Tasks Completed');
-    await expect(page.getByTestId(`mentorship-current-mentee-row-${ACCEPTED_ID}`)).toContainText('Test Mentee Three');
-    await expect(page.getByTestId(`mentorship-current-mentee-row-${GRADUATED_ID}`)).toHaveCount(0);
+  test('opens on Current Mentees with the first page of rows, splitting pending into Applied and Tasks Completed', async ({ page }) => {
+    await expect(page.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(10);
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toContainText('Test Applicant 01');
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toContainText('Applied');
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${adminApplicationId(3)}`)).toContainText('Accepted');
   });
 
   test('offers the row actions that fit each status', async ({ page }) => {
-    const pendingActions = page.getByTestId(`mentorship-current-mentee-actions-${PENDING_ID}`);
+    const pendingActions = page.getByTestId(`mentorship-current-mentee-actions-${FIRST_ID}`);
     await pendingActions.click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(page.getByRole('menuitem')).toHaveText(['Accept', 'Decline', 'Withdraw']);
     // The trigger toggles its popup, so a second click closes it before the next row's opens.
     await pendingActions.click();
     await expect(page.getByRole('menuitem')).toHaveCount(0);
 
-    await page.getByTestId(`mentorship-current-mentee-actions-${ACCEPTED_ID}`).click();
+    await page.getByTestId(`mentorship-current-mentee-actions-${adminApplicationId(3)}`).click();
     await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Graduate', 'Decline', 'Withdraw']);
   });
 
-  test('names the Current Mentees statuses as the table shows them, and lists only the open terms', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-current-mentees-tab')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-
+  test('names every wire status in the status filter, and lists only the open terms', async ({ page }) => {
     expect(await selectOptions(page, 'mentorship-current-mentees-status')).toEqual([
       'All statuses',
-      'Applied',
-      'Tasks Completed',
+      'Pending',
       'Accepted',
       'Declined',
       'Withdrawn',
       'Graduated',
     ]);
-    expect(await selectOptions(page, 'mentorship-current-mentees-term')).toEqual(['All open terms', OPEN_TERM]);
+    expect(await selectOptions(page, 'mentorship-current-mentees-term')).toEqual(['All open terms', ADMIN_OPEN_TERM_NAME]);
   });
 
-  test('shows the closed-term rows on Past Mentees, with only the closed terms to filter by', async ({ page }) => {
-    await page.getByTestId('mentorship-program-detail-tab-past-mentees').click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+  test('opens Past Mentees from its tab', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
 
-    await expect(page.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(1);
-    await expect(page.getByTestId(`mentorship-past-mentee-row-${GRADUATED_ID}`)).toContainText('Test Mentee Four');
-
-    expect(await selectOptions(page, 'mentorship-past-mentees-term')).toEqual(['All closed terms', CLOSED_TERM]);
+    await expect(page.getByTestId('mentorship-past-mentees-tab')).toBeVisible();
+    await expect(page.getByTestId('mentorship-current-mentees-tab')).toHaveCount(0);
   });
 });
 
-test.describe('Admin program detail — empty mentee tabs', () => {
-  test('shows each mentee tab empty with a zero count', async ({ page }) => {
+test.describe('Admin program detail — paging, filters and search', () => {
+  let requests: AdminProgramRequests;
+
+  test.beforeEach(async ({ page }) => {
+    requests = { mentees: [], tasks: [] };
+    await open(page, requests);
+  });
+
+  test('reports the page range and the total', async ({ page }) => {
+    await expect(page.getByText(PAGE_ONE_LABEL)).toBeVisible();
+    expect(offsets(requests)).toEqual(['0']);
+    expect(requests.mentees[0].get('type')).toBe('current');
+    expect(requests.mentees[0].get('limit')).toBe('10');
+  });
+
+  test('asks for the next page by offset', async ({ page }) => {
+    await page.getByRole('button', { name: 'Next Page' }).click();
+
+    await expect(page.getByText(PAGE_TWO_LABEL)).toBeVisible();
+    expect(offsets(requests)).toEqual(['0', '10']);
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${adminApplicationId(11)}`)).toBeVisible();
+  });
+
+  test('sends Pending as status=pending and returns to the first page', async ({ page }) => {
+    await page.getByRole('button', { name: 'Next Page' }).click();
+    await expect(page.getByText(PAGE_TWO_LABEL)).toBeVisible();
+
+    await chooseOption(page, 'mentorship-current-mentees-status', 'Pending');
+
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toBeVisible();
+    const last = requests.mentees[requests.mentees.length - 1];
+    expect(last.get('status')).toBe('pending');
+    expect(last.get('offset')).toBe('0');
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${adminApplicationId(3)}`)).toHaveCount(0);
+  });
+
+  test('sends the chosen term as termId', async ({ page }) => {
+    await chooseOption(page, 'mentorship-current-mentees-term', ADMIN_OPEN_TERM_NAME);
+
+    await expect.poll(() => requests.mentees[requests.mentees.length - 1].get('termId')).toBe(ADMIN_OPEN_TERM_ID);
+  });
+
+  test('sends the search once typing pauses', async ({ page }) => {
+    await page.locator('[data-test="mentorship-current-mentees-search"]').fill('Applicant 02');
+
+    await expect.poll(() => requests.mentees[requests.mentees.length - 1].get('search')).toBe('Applicant 02');
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${SECOND_ID}`)).toBeVisible();
+    await expect(page.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(1);
+  });
+});
+
+test.describe('Admin program detail — View Tasks', () => {
+  let requests: AdminProgramRequests;
+
+  test.beforeEach(async ({ page }) => {
+    requests = { mentees: [], tasks: [] };
+    await open(page, requests);
+  });
+
+  test('reads no tasks until View Tasks is clicked, then exactly once', async ({ page }) => {
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toBeVisible();
+    expect(requests.tasks).toEqual([]);
+
+    await clickViewTasks(page, FIRST_ID);
+
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toContainText('Test Resume Task');
+    expect(requests.tasks).toEqual([FIRST_ID]);
+  });
+
+  test('collapses and re-expands without a new request', async ({ page }) => {
+    await clickViewTasks(page, FIRST_ID);
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toBeVisible();
+
+    await clickViewTasks(page, FIRST_ID);
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toHaveCount(0);
+    await clickViewTasks(page, FIRST_ID);
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toContainText('Test Resume Task');
+
+    expect(requests.tasks).toEqual([FIRST_ID]);
+  });
+
+  test('collapses the row after a page change, and reads again on the next expand', async ({ page }) => {
+    await clickViewTasks(page, FIRST_ID);
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Next Page' }).click();
+    await expect(page.getByText(PAGE_TWO_LABEL)).toBeVisible();
+    await page.getByRole('button', { name: 'Previous Page' }).click();
+    await expect(page.getByText(PAGE_ONE_LABEL)).toBeVisible();
+
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toHaveCount(0);
+    await clickViewTasks(page, FIRST_ID);
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toContainText('Test Resume Task');
+
+    expect(requests.tasks).toEqual([FIRST_ID, FIRST_ID]);
+  });
+
+  test('shows an inline error with Retry when the tasks read fails', async ({ page }) => {
+    let failing = true;
+    await page.unroute('**/api/mentorship/admin/applications/*/tasks');
+    await stubAdminTasks(page, requests, () => (failing ? 500 : undefined));
+
+    await clickViewTasks(page, FIRST_ID);
+    await expect(page.getByTestId('mentorship-admin-current-mentees-tasks-load-error')).toBeVisible();
+
+    failing = false;
+    await page.getByTestId(`mentorship-admin-current-mentees-tasks-retry-${FIRST_ID}`).getByRole('button').click();
+
+    await expect(page.getByTestId(`mentorship-current-mentee-tasks-expanded-${FIRST_ID}`)).toContainText('Test Resume Task');
+    expect(requests.tasks).toEqual([FIRST_ID, FIRST_ID]);
+  });
+});
+
+test.describe('Admin program detail — failures', () => {
+  test('shows the mentees error with Retry, and the rows after Retry succeeds', async ({ page }) => {
+    const requests: AdminProgramRequests = { mentees: [], tasks: [] };
     await enableMentorshipFlag(page);
-    await stubDetail(page, EMPTY);
-    await openMentorPage(page, DETAIL_URL);
+    await stubAdminProgramPage(page);
+    await stubAdminMentees(page, requests, 500);
+    await openMentorPage(page, ADMIN_PROGRAM_URL);
+
+    await expect(page.getByTestId('mentorship-admin-current-mentees-load-error')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+
+    await page.unroute(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_PAGE.program.id}/mentees*`);
+    await stubAdminMentees(page, requests);
+    await page.getByTestId('mentorship-admin-current-mentees-retry').getByRole('button').click();
+
+    await expect(page.getByTestId(`mentorship-current-mentee-row-${FIRST_ID}`)).toBeVisible();
+    await expect(page.getByTestId('mentorship-admin-current-mentees-load-error')).toHaveCount(0);
+  });
+
+  test('shows a dash for a count that could not be read', async ({ page }) => {
+    const requests: AdminProgramRequests = { mentees: [], tasks: [] };
+    await enableMentorshipFlag(page);
+    await stubAdminProgramPage(page, { ...ADMIN_PROGRAM_PAGE, tabCounts: { currentMentees: null, pastMentees: 4, mentors: null, terms: 2 } });
+    await stubAdminMentees(page, requests);
+    await openMentorPage(page, ADMIN_PROGRAM_URL);
+
+    await expect(page.getByTestId('mentorship-program-detail-tab-current-mentees')).toHaveText(/Current Mentees\s*–/, { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-program-detail-tab-mentors')).toHaveText(/Mentors\s*–/);
+    await expect(page.getByTestId('mentorship-program-detail-tab-past-mentees')).toHaveText(/Past Mentees\s*4/);
+  });
+
+  test('shows the no-access message for a 403', async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubAdminProgramPageError(page, 403);
+    await openMentorPage(page, ADMIN_PROGRAM_URL);
+
+    await expect(page.getByTestId('mentorship-admin-program-no-access')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-admin-program-not-found')).toHaveCount(0);
+  });
+
+  test('shows the not-found message for a 404', async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubAdminProgramPageError(page, 404);
+    await openMentorPage(page, ADMIN_PROGRAM_URL);
+
+    await expect(page.getByTestId('mentorship-admin-program-not-found')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-admin-program-no-access')).toHaveCount(0);
+  });
+});
+
+test.describe('Admin program detail — empty mentees', () => {
+  test('shows Current Mentees empty with a zero count, and Past Mentees empty', async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await stubAdminProgramPage(page, { ...ADMIN_PROGRAM_PAGE, tabCounts: { currentMentees: 0, pastMentees: 0, mentors: 0, terms: 2 } });
+    await page.route(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_PAGE.program.id}/mentees*`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], total: 0 }) })
+    );
+    await openMentorPage(page, ADMIN_PROGRAM_URL);
 
     await expect(page.getByTestId('mentorship-program-detail-tab-current-mentees')).toHaveText(/Current Mentees\s*0/, { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-current-mentees-empty')).toHaveText('No current mentees.');
 
     await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
-    await expect(page.getByTestId('mentorship-program-detail-tab-past-mentees')).toHaveText(/Past Mentees\s*0/);
     await expect(page.getByTestId('mentorship-past-mentees-empty')).toHaveText('No past mentees.');
   });
 });

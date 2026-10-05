@@ -446,6 +446,9 @@ export class CommitteeService {
     const merged = {
       ...withAccess,
       ...settingsForResponse,
+      // Upstream omits `total_members` when it is 0; default it as the list endpoints do, so a
+      // caller who cannot read the roster sees 0 rather than an unknown count.
+      total_members: committee.total_members ?? 0,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),

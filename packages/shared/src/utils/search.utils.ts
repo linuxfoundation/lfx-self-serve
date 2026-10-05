@@ -55,9 +55,10 @@ export function scoreUserSearchResult(user: RankableUser, query: string): UserSe
  * `search_as_you_type` leading-prefix match (every typed term must prefix a
  * token; there is no infix matching). For `committee_member` that field holds
  * the committee name, first/last name, username and "first last" — not the
- * email — so a hit can come from the committee name ("Governing" returns every
- * member of a Governing Board) or from a username the client cannot tell apart
- * from a name. This client-side pass mitigates that by sorting
+ * email — so upstream can return a hit on the committee name ("Governing" returns
+ * every member of a Governing Board; the BFF drops those rows, see
+ * {@link matchesUserSearchQuery}) or on a username the client cannot tell apart
+ * from a name. This client-side pass orders what remains by sorting
  * exact > name-prefix > name-substring > username > email > incidental.
  *
  * It **demotes** rather than drops or caps: low-relevance rows sort to the
@@ -105,6 +106,35 @@ export function filterUserSearchCandidates<T extends RankableUser>(candidates: r
   });
 
   return rankUserSearchResults(matches, q);
+}
+
+/**
+ * Whether a name query matches the person themself rather than an alias indexed alongside them.
+ *
+ * Mirrors the upstream leading-prefix rule (every whitespace-separated term must prefix a token)
+ * but only over the person's own name fields: first name, last name and username. Tokens are
+ * taken whole and split on non-alphanumerics, so `kim.p` and `park` both match `kim.park`. The
+ * BFF uses this to drop `committee_member` rows that matched only on the committee name in
+ * `name_and_aliases` — keeping them would list a committee's members regardless of its
+ * `member_visibility`. Email is deliberately excluded: `name_and_aliases` does not index it, and
+ * its tokens (the domain especially) can coincide with a committee name, so a committee-name hit
+ * would pass the filter on every member sharing that domain. Exact email lookup stays on the
+ * `email:` tag path. An empty query matches nothing.
+ */
+export function matchesUserSearchQuery(user: RankableUser, query: string): boolean {
+  // Diacritics are folded on both sides so `jose` still finds José, as an accent-folding index would.
+  const fold = (value: string | null | undefined): string => normalize(value).normalize('NFD').replace(/\p{M}/gu, '');
+  const terms = fold(query).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) {
+    return false;
+  }
+
+  const tokens = [user.first_name, user.last_name, user.username].flatMap((value) => {
+    const field = fold(value);
+    return field ? [field, ...field.split(/\s+/), ...field.split(/[^\p{L}\p{N}]+/u)].filter(Boolean) : [];
+  });
+
+  return terms.every((term) => tokens.some((token) => token.startsWith(term)));
 }
 
 /**

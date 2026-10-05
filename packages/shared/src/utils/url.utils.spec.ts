@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canonicalHttpUrl,
   extractUrls,
+  isHttpsUrl,
   isInviteLandingPath,
   isMentorshipMentorInvitePath,
   isPrivateHost,
@@ -129,6 +130,28 @@ describe('isInviteLandingPath', () => {
   it('does not match an empty string or an absolute URL (callers pass pathname)', () => {
     expect(isInviteLandingPath('')).toBe(false);
     expect(isInviteLandingPath('https://lfx.example.com/invite')).toBe(false);
+  });
+});
+
+describe('isHttpsUrl', () => {
+  it('accepts an absolute https URL', () => {
+    expect(isHttpsUrl('https://example.org/sign?session=abc')).toBe(true);
+  });
+
+  it('refuses every other scheme, including the forms a browser normalizes into javascript:', () => {
+    expect(isHttpsUrl('http://example.org/sign')).toBe(false);
+    expect(isHttpsUrl('javascript:alert(1)')).toBe(false);
+    expect(isHttpsUrl(' javascript:alert(1)')).toBe(false);
+    expect(isHttpsUrl('JaVaScRiPt:alert(1)')).toBe(false);
+    expect(isHttpsUrl('data:text/html,hi')).toBe(false);
+  });
+
+  it('refuses a relative path, an unparseable string and a non-string', () => {
+    expect(isHttpsUrl('/sign')).toBe(false);
+    expect(isHttpsUrl('not a url')).toBe(false);
+    expect(isHttpsUrl('')).toBe(false);
+    expect(isHttpsUrl(undefined)).toBe(false);
+    expect(isHttpsUrl(42)).toBe(false);
   });
 });
 

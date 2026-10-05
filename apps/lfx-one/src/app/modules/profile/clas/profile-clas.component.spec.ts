@@ -1136,6 +1136,21 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     expect(location.href).toBe(SIGN_URL);
   });
 
+  it.each(['javascript:alert(1)', ' javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'http://evil.example', ''])(
+    'never navigates to a prepared address of %p, and reports a failed prepare',
+    async (signUrl) => {
+      const fixture = await setup({ prepare: () => of({ ...PREPARED, signUrl }) });
+
+      await sign(fixture);
+
+      expect(location.href).toBe(HOME);
+      expect(messageAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', summary: 'Could not start signing', detail: 'We could not open the CLA signing page. Please try again.' })
+      );
+      expect(isStarting(fixture)).toBe(false);
+    }
+  );
+
   it('stops the hand-off when the verified account is not the chosen one', async () => {
     // The picker closes with 12345; the prepare answers with a different account. Upstream is
     // content — both accounts pass an ownership check when both belong to the contributor — so

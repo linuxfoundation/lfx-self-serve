@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
@@ -216,6 +217,17 @@ export function resolveCommitteeMemberPermission(committee: Committee | null | u
  */
 export function canManageCommitteeMembers(committee: Committee | null | undefined): boolean {
   return !!committee?.writer;
+}
+
+/**
+ * Whether the current caller may read this committee's member roster under its `member_visibility`
+ * setting. Fail-closed: anything other than an explicit `basic_profile` is treated as hidden, so the
+ * roster is then visible only to callers who manage (`writer`) or review (`auditor`) the committee.
+ * Enforced server-side on the roster read routes and mirrored client-side to skip the fetch.
+ */
+export function canViewCommitteeRoster(committee: Committee | null | undefined): boolean {
+  if (!committee) return false;
+  return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || !!committee.writer || committee.auditor === true;
 }
 
 /** Whether a member has an active "Voting Rep" status (excludes Alternate Voting Rep). */

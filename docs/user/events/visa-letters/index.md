@@ -4,7 +4,7 @@ description: Request a visa support letter to help international attendees obtai
 audience: [all]
 product_area: Events
 tags: [events, visa-letters, visa, travel, attendance]
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 intercom_collection: Events
 ---
 
@@ -18,7 +18,7 @@ A visa support letter helps international attendees obtain the travel documentat
 2. Select **Events** from the left navigation sidebar.
 3. Open the **Visa Letters** tab.
 4. Select **New Letter Application**.
-5. **Choose an Event** — select the event you are attending, then continue.
+5. **Choose an Event** — select the event you are attending, then continue. The list shows upcoming events where your registration has been accepted and the event offers visa letters.
 6. Review the **Terms and Conditions** and continue to accept them.
 7. On the **Apply** step, complete the applicant information and submit your request.
 
