@@ -214,6 +214,15 @@ describe('VisaLetterService', () => {
     expect(mocks.gatewayFetch).toHaveBeenCalledWith(impersonatedReq, expect.any(String), expect.objectContaining({ bearerToken: 'target-v2-token' }));
   });
 
+  it('fails closed while impersonating without a target token', async () => {
+    mocks.isImpersonating.mockReturnValue(true);
+    mockLetters(letter());
+
+    await expect(service.generateVisaLetter(req, EVENT_ID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.getApiGatewayProfile).not.toHaveBeenCalled();
+    expect(mocks.gatewayFetch).not.toHaveBeenCalled();
+  });
+
   it('records an info audit line with opaque ids when generating while impersonating', async () => {
     mocks.isImpersonating.mockReturnValue(true);
     const impersonatedReq = {

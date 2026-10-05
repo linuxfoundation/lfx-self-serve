@@ -84,7 +84,14 @@ export class VisaLetterService {
   /** The effective user's letter request for the event; the Salesforce ID is derived from their token. */
   private async getLetterRequest(req: Request, eventId: string): Promise<VisaLetterRequest> {
     // req.apiGatewayToken stays the impersonator's, so resolve as the target with their v2 token.
-    const targetToken = isImpersonating(req) ? req.bearerToken : undefined;
+    const impersonating = isImpersonating(req);
+    const targetToken = impersonating ? req.bearerToken : undefined;
+
+    // Fail closed: an unset target token would fall back to the impersonator's own letter.
+    if (impersonating && !targetToken) {
+      throw new AuthorizationError('Impersonation token unavailable for visa letter', { operation: OPERATION, service: SERVICE });
+    }
+
     const profile = await this.userService.getApiGatewayProfile(req, targetToken);
 
     if (!profile.ID) {
