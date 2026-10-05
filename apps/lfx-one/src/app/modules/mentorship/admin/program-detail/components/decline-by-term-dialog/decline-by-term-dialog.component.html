@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-admin-decline-by-term-dialog">
+  <p class="text-sm text-gray-600">{{ message }}</p>
+
+  @if (hasTerms()) {
+    <lfx-select
+      [form]="form"
+      control="term"
+      [options]="termOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Select a term"
+      ariaLabel="Term to decline pending applications in"
+      styleClass="w-full"
+      dataTest="mentorship-admin-decline-by-term-select" />
+  } @else {
+    <p class="text-sm text-gray-500" data-testid="mentorship-admin-decline-by-term-empty">{{ noTermsMessage }}</p>
+  }
+
+  <div class="flex items-center justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" size="small" [text]="true" (onClick)="onCancel()" data-testid="mentorship-admin-decline-by-term-cancel" />
+    @if (hasTerms()) {
+      <lfx-button label="Continue" severity="warn" size="small" (onClick)="onContinue()" data-testid="mentorship-admin-decline-by-term-continue" />
+    }
+  </div>
+</div>

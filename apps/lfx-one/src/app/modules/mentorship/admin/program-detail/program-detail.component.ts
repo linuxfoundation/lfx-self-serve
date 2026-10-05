@@ -99,6 +99,22 @@ export class ProgramDetailComponent {
     this.reloadCount.update((count) => count + 1);
   }
 
+  /**
+   * Reads the header, counts and terms again without the loading state, so the open tab keeps its page, filters and
+   * toasts. A failed read keeps the numbers on screen; the next decision or Retry reads them again.
+   */
+  protected refreshCounts(): void {
+    const programId = this.programId();
+    if (!programId) return;
+    this.mentorshipAdminService
+      .getProgram(programId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (page) => this.page.set(page),
+        error: () => undefined,
+      });
+  }
+
   protected onNoteRequested(request: MentorshipNoteRequest): void {
     // `open()` returns null when a dialog of the same component is still registered,
     // which a quick second click on another row's note can do.

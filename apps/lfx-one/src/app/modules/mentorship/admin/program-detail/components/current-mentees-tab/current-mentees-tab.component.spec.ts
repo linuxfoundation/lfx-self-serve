@@ -7,7 +7,9 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTEE_STATUSES } from '@lfx-one/shared/constants';
 import {
+  MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteesQuery,
+  MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
   MentorshipAdminTermOption,
   MentorshipApplicantTask,
@@ -17,7 +19,8 @@ import {
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
+import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -81,6 +84,12 @@ describe('CurrentMenteesTabComponent', () => {
   let openCreate: ReturnType<typeof vi.fn>;
   let getProgramMentees: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminMenteesQuery) => Observable<MentorshipAdminMenteesResponse>>>;
   let getApplicationTasks: ReturnType<typeof vi.fn<(applicationId: string) => Observable<MentorshipApplicantTask[]>>>;
+  let updateApplicationStatus: ReturnType<typeof vi.fn<(applicationId: string, body: MentorshipAdminApplicationStatusUpdate) => Observable<void>>>;
+  let withdrawApplication: ReturnType<typeof vi.fn<(applicationId: string) => Observable<void>>>;
+  let declinePendingForTerm: ReturnType<typeof vi.fn<(programId: string, termId: string) => Observable<MentorshipAdminDeclinePendingResponse>>>;
+  /** What the stubbed dialog service closes with: an attendance type for Accept, a term for Decline by Term. */
+  let dialogResult: unknown;
+  let dialogOpen: ReturnType<typeof vi.fn>;
 
   /** Runs the effects that start a read, then renders what it wrote. */
   const settle = (): void => {
@@ -92,6 +101,11 @@ describe('CurrentMenteesTabComponent', () => {
     openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
     getProgramMentees = vi.fn().mockReturnValue(of(firstPage()));
     getApplicationTasks = vi.fn().mockReturnValue(of(tasks()));
+    updateApplicationStatus = vi.fn().mockReturnValue(of(undefined));
+    withdrawApplication = vi.fn().mockReturnValue(of(undefined));
+    declinePendingForTerm = vi.fn().mockReturnValue(of({ declinedCount: 4 }));
+    dialogResult = undefined;
+    dialogOpen = vi.fn().mockImplementation(() => ({ onClose: of(dialogResult) }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -100,7 +114,11 @@ describe('CurrentMenteesTabComponent', () => {
         provideNoopAnimations(),
         provideRouter([]),
         MessageService,
-        { provide: MentorshipAdminService, useValue: { getProgramMentees, getApplicationTasks } },
+        {
+          provide: MentorshipAdminService,
+          useValue: { getProgramMentees, getApplicationTasks, updateApplicationStatus, withdrawApplication, declinePendingForTerm },
+        },
+        { provide: DialogService, useValue: { open: dialogOpen } },
         // Stub the dialog service so the spec never touches PrimeNG's DialogService,
         // and so we can assert on the exact assignee payload the tab hands off.
         { provide: MentorshipTaskDialogService, useValue: { openCreate, openEdit: vi.fn().mockReturnValue(of(undefined)) } },
@@ -437,16 +455,6 @@ describe('CurrentMenteesTabComponent', () => {
     });
   });
 
-  it('routes a decision action to the coming-soon toast', () => {
-    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
-    const row = rowFor('app_1')!;
-
-    fixture.componentInstance['onRowAction'](row, row.actions[0]);
-
-    expect(openCreate).not.toHaveBeenCalled();
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Accept Ifeoma Adeyemi');
-  });
-
   it("opens the task-form dialog with just the row's mentee when Create task is picked", () => {
     const row = rowFor('app_4')!;
 
@@ -484,5 +492,177 @@ describe('CurrentMenteesTabComponent', () => {
 
     expect(addSpy).toHaveBeenCalledTimes(1);
     expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create task "Submit ingestion benchmark report" for Alex Rivera');
+  });
+
+  describe('application decisions', () => {
+    const actionFor = (id: string, value: string) => rowFor(id)!.actions.find((action) => action.value === value)!;
+    const confirmSpy = () => vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    const toasts = () => vi.spyOn(TestBed.inject(MessageService), 'add');
+    const detailOf = (spy: ReturnType<typeof toasts>, call = 0) => (spy.mock.calls[call][0] as ToastMessageOptions).detail;
+    /** Picks an action, then accepts the confirmation it raised. */
+    const confirmAction = (id: string, value: string, spy: ReturnType<typeof confirmSpy>): void => {
+      fixture.componentInstance['onRowAction'](rowFor(id)!, actionFor(id, value));
+      spy.mock.calls[spy.mock.calls.length - 1][0].accept?.();
+    };
+
+    it('opens the accept dialog and writes nothing when it is dismissed', () => {
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+    });
+
+    it('accepts with the attendance type the dialog returns, then reloads and tells the parent', () => {
+      dialogResult = 'part_time';
+      const toast = toasts();
+      const emitted = vi.fn();
+      fixture.componentInstance.countsChanged.subscribe(emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
+      settle();
+
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_1', { status: 'accepted', attendanceType: 'part_time' });
+      expect(detailOf(toast)).toBe('Application accepted');
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('declines and withdraws only after the confirmation is accepted', () => {
+      const confirm = confirmSpy();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'decline'));
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'withdraw'));
+      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+      expect(withdrawApplication).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      confirm.mock.calls[1][0].accept?.();
+
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_1', { status: 'declined' });
+      expect(withdrawApplication).toHaveBeenCalledWith('app_1');
+    });
+
+    it('warns with the outstanding task count on Graduate and never reads the tasks', () => {
+      const confirm = confirmSpy();
+      // The tasks were read for this row already; Graduate must ignore that cache and the row's own read.
+      clickViewTasks('app_4');
+      getApplicationTasks.mockClear();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_4')!, actionFor('app_4', 'graduate'));
+
+      expect(confirm.mock.calls[0][0].message).toContain("3 tasks aren't Submitted or Completed.");
+      expect(getApplicationTasks).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_4', { status: 'graduated' });
+    });
+
+    it('confirms Graduate without a warning when every task is in, and still lets it go through', () => {
+      const confirm = confirmSpy();
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_9', status: 'accepted', tasksSubmitted: 5, tasksTotal: 5 })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_9')!, actionFor('app_9', 'graduate'));
+
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm.mock.calls[0][0].message).not.toContain('tasks');
+      confirm.mock.calls[0][0].accept?.();
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_9', { status: 'graduated' });
+    });
+
+    it('uses the singular warning for one outstanding task', () => {
+      const confirm = confirmSpy();
+      getProgramMentees.mockReturnValue(of({ data: [mentee({ id: 'app_9', status: 'accepted', tasksSubmitted: 4, tasksTotal: 5 })], total: 1 }));
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_9')!, actionFor('app_9', 'graduate'));
+
+      expect(confirm.mock.calls[0][0].message).toContain("1 task isn't Submitted or Completed.");
+    });
+
+    it('collapses an expanded row and clears its loaded tasks when a decision reloads the page', () => {
+      const confirm = confirmSpy();
+      clickViewTasks('app_4');
+      expect(fixture.componentInstance['expandedTaskMenteeIds']()['app_4']).toBe(true);
+      expect(fixture.componentInstance['tasksByApplication']().has('app_4')).toBe(true);
+
+      confirmAction('app_4', 'decline', confirm);
+      settle();
+
+      expect(fixture.componentInstance['expandedTaskMenteeIds']()).toEqual({});
+      expect(fixture.componentInstance['tasksByApplication']().size).toBe(0);
+    });
+
+    it('reloads with the changed message on a 409', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const reads = getProgramMentees.mock.calls.length;
+
+      confirmAction('app_1', 'decline', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe('This application changed. The list has been refreshed.');
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('shows the term-closed message on a 422 without reloading', () => {
+      dialogResult = 'full_time';
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const emitted = vi.fn();
+      fixture.componentInstance.countsChanged.subscribe(emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      fixture.componentInstance['onRowAction'](rowFor('app_1')!, actionFor('app_1', 'accept'));
+      settle();
+
+      expect(detailOf(toast)).toBe("This term is closed, so the application can't be accepted.");
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+      expect(emitted).not.toHaveBeenCalled();
+    });
+
+    it('shows the server read-only message on an impersonation 403', () => {
+      withdrawApplication.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY', message: 'Read-only while impersonating.' } }))
+      );
+      const toast = toasts();
+      const confirm = confirmSpy();
+
+      confirmAction('app_1', 'withdraw', confirm);
+
+      expect(detailOf(toast)).toBe('Read-only while impersonating.');
+    });
+
+    it('declines a term after its dialog and a confirmation, toasting the count', () => {
+      dialogResult = term('Fall 2026', 'open');
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const emitted = vi.fn();
+      fixture.componentInstance.countsChanged.subscribe(emitted);
+
+      fixture.componentInstance['onDeclineByTerm']();
+      expect(declinePendingForTerm).not.toHaveBeenCalled();
+      expect(confirm.mock.calls[0][0].message).toContain('Fall 2026');
+      confirm.mock.calls[0][0].accept?.();
+
+      expect(declinePendingForTerm).toHaveBeenCalledWith('prog_1', 'trm_Fall 2026');
+      expect(detailOf(toast)).toBe('4 applications declined');
+      expect(emitted).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers only the open terms and does nothing when the term dialog is dismissed', () => {
+      const confirm = confirmSpy();
+
+      fixture.componentInstance['onDeclineByTerm']();
+
+      const data = dialogOpen.mock.calls[0][1].data as { terms: MentorshipAdminTermOption[] };
+      expect(data.terms.map((item) => item.name)).toEqual(['Fall 2026', 'Winter 2027']);
+      expect(confirm).not.toHaveBeenCalled();
+    });
   });
 });
