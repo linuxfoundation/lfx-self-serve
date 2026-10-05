@@ -9,15 +9,12 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import {
-  EMPTY_MENTORSHIP_PROGRAM_LISTS,
   MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE,
   MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE,
   MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE,
   MENTORSHIP_NOTE_DIALOG_HEADER,
-  MOCK_MENTORSHIP_PROGRAM_LISTS,
 } from '@lfx-one/shared/constants';
 import { MentorshipAdminProgramPage, MentorshipNoteRequest, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
-import { buildMentorshipProgramDetail } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, map, of, switchMap, take, tap } from 'rxjs';
@@ -37,7 +34,7 @@ type ProgramPageError = 'no-access' | 'not-found' | 'failed';
  * Admin program-detail page. Loads a program by id and hosts the four underline tabs (current mentees, past
  * mentees, mentors, terms). The header, the four counts and the term options come from one BFF read; Current
  * Mentees then reads its own pages. A failed read shows an inline error with Retry, or a no-access or not-found
- * state for a 403 or a 404. Past Mentees, Mentors and Terms still show mock lists until their own slice lands.
+ * state for a 403 or a 404. Past Mentees, Mentors and Terms each read their own pages.
  *
  * Reviewer notes are owned here rather than in the tabs: the tab panel is an
  * `@switch`, so a tab component is destroyed the moment the admin looks at another
@@ -84,13 +81,6 @@ export class ProgramDetailComponent {
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly terms = computed(() => this.page()?.terms ?? []);
   protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
-
-  /** The tabs that have no read of their own yet: mock lists, empty for a program the mocks do not know. */
-  protected readonly mockDetail = computed(() => {
-    const page = this.page();
-    if (!page) return null;
-    return buildMentorshipProgramDetail(page.program, MOCK_MENTORSHIP_PROGRAM_LISTS[page.program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS);
-  });
 
   public constructor() {
     this.initPageReads();

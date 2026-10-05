@@ -30,7 +30,6 @@ describe('ProgramDetailComponent', () => {
     ...overrides,
   });
 
-  // A slug the mock lists do not know, so the tabs that have no read of their own yet are empty.
   const programPage = (): MentorshipAdminProgramPage => ({
     program: {
       id: 'mp_example_fall26',
@@ -75,7 +74,16 @@ describe('ProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
-        { provide: MentorshipAdminService, useValue: { getProgram, getProgramMentees, getApplicationTasks: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MentorshipAdminService,
+          useValue: {
+            getProgram,
+            getProgramMentees,
+            getProgramMentors: vi.fn().mockReturnValue(of({ data: [], total: 0 })),
+            getProgramTerms: vi.fn().mockReturnValue(of({ data: [], total: 0 })),
+            getApplicationTasks: vi.fn().mockReturnValue(of([])),
+          },
+        },
         {
           provide: MentorshipService,
           // The Mentors tab loads its invite picker on construction, and the persistence

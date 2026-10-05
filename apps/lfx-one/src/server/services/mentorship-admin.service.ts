@@ -1,24 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_PROGRAM_STATUSES,
+} from '@lfx-one/shared/constants';
 import {
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsQuery,
+  MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
   MentorshipAdminProgramTabCounts,
   MentorshipAdminTermOption,
+  MentorshipAdminTermsQuery,
+  MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamListResponse,
+  MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramApplicationRow,
   MentorshipUpstreamProgramHeader,
   MentorshipUpstreamProgramManagementSummary,
   MentorshipUpstreamProgramTerm,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTermManagementRow,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -31,7 +42,12 @@ import {
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
 import { MicroserviceError } from '../errors';
-import { mapMentorshipAdminHeaderProgram, mapMentorshipAdminProgram } from '../helpers/mentorship-admin-program.helper';
+import {
+  mapMentorshipAdminHeaderProgram,
+  mapMentorshipAdminMentorRow,
+  mapMentorshipAdminProgram,
+  mapMentorshipAdminTermRow,
+} from '../helpers/mentorship-admin-program.helper';
 import { isMentorshipNotProvisionedError, listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import { escapeMentorshipSearch } from '../helpers/mentorship-params.helper';
 import { mapMentorshipAdminApplicantRow, mapMentorshipProgramTask } from '../helpers/mentorship-program-application.helper';
@@ -196,6 +212,87 @@ export class MentorshipAdminService {
     const data = (upstream.data ?? []).map(mapMentorshipAdminApplicantRow);
     const total = upstream.meta?.total ?? data.length;
     logger.debug(req, 'mentorship_admin_get_program_mentees', 'Program mentees page built', { programId, count: data.length, total });
+    return { data, total };
+  }
+
+  /**
+   * One page of a program's mentors, from one upstream member-management read. The BFF sends no `member_type`: the
+   * handler ignores it. A status this does not know reads as pending and is logged without the mentor's name.
+   * A caller with no mentorship record has no mentors.
+   */
+  public async getProgramMentors(req: Request, programId: string, query: MentorshipAdminMentorsQuery): Promise<MentorshipAdminMentorsResponse> {
+    logger.debug(req, 'mentorship_admin_get_program_mentors', 'Loading program mentors', {
+      programId,
+      status: query.status,
+      offset: query.offset,
+      limit: query.limit,
+    });
+
+    let upstream: MentorshipUpstreamListResponse<MentorshipUpstreamMemberManagementRow>;
+    try {
+      upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamMemberManagementRow>>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/member-management`,
+        'GET',
+        {
+          status: query.status,
+          search: escapeMentorshipSearch(query.search),
+          offset: query.offset ?? 0,
+          limit: Math.min(query.limit ?? MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE, MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT),
+        }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_program_mentors', 'Caller has no mentorship record; returning an empty page', { programId });
+        return { data: [], total: 0 };
+      }
+      throw error;
+    }
+
+    const data = (upstream.data ?? []).map((row) => {
+      const { mentor, unknownStatus } = mapMentorshipAdminMentorRow(row);
+      if (unknownStatus) {
+        logger.warning(req, 'mentorship_admin_get_program_mentors', 'Unknown upstream member status; showing it as pending', {
+          programId,
+          memberId: row.id,
+          status: row.status,
+        });
+      }
+      return mentor;
+    });
+    const total = upstream.meta?.total ?? data.length;
+    logger.debug(req, 'mentorship_admin_get_program_mentors', 'Program mentors page built', { programId, count: data.length, total });
+    return { data, total };
+  }
+
+  /** One page of a program's terms with their application counts, from one upstream term-management read. A caller with no mentorship record has no terms. */
+  public async getProgramTerms(req: Request, programId: string, query: MentorshipAdminTermsQuery): Promise<MentorshipAdminTermsResponse> {
+    logger.debug(req, 'mentorship_admin_get_program_terms', 'Loading program terms', { programId, offset: query.offset, limit: query.limit });
+
+    let upstream: MentorshipUpstreamListResponse<MentorshipUpstreamTermManagementRow>;
+    try {
+      upstream = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamTermManagementRow>>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/term-management`,
+        'GET',
+        {
+          offset: query.offset ?? 0,
+          limit: Math.min(query.limit ?? MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE, MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT),
+        }
+      );
+    } catch (error) {
+      if (isMentorshipNotProvisionedError(error)) {
+        logger.warning(req, 'mentorship_admin_get_program_terms', 'Caller has no mentorship record; returning an empty page', { programId });
+        return { data: [], total: 0 };
+      }
+      throw error;
+    }
+
+    const data = (upstream.data ?? []).map(mapMentorshipAdminTermRow).filter((row): row is NonNullable<typeof row> => row !== null);
+    const total = upstream.meta?.total ?? data.length;
+    logger.debug(req, 'mentorship_admin_get_program_terms', 'Program terms page built', { programId, count: data.length, total });
     return { data, total };
   }
 

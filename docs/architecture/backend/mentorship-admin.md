@@ -5,18 +5,20 @@
 
 The admin pages under `/mentorship/admin/*` read their data from the LFX One BFF's `/api/mentorship/admin/*` routes. The admin code has its own router, controller and services, separate from the mentor and mentee code, so each admin screen can move to the mentorship service without touching the other two (linuxfoundation/lfx-mentorship#229).
 
-The program list and the program page's header, tab counts and Current Mentees tab read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The Past Mentees, Mentors and Terms tabs still read mock data (`MOCK_MENTORSHIP_PROGRAM_LISTS`) until their own PR. Later PRs in the story replace the mocks one screen at a time.
+The program list and the program page (header, tab counts and all four tabs) read the mentorship service (see [Program list sourcing](#program-list-sourcing) and [Program page sourcing](#program-page-sourcing)). The program page reads no mock data; the Enroll form's lookups and the Mentors tab's invite picker still do (see [Program list sourcing](#program-list-sourcing)). Write actions on the tabs (invite, accept, decline, remove, term create, edit, close, re-open, delete) stay "coming soon" stubs until the write PRs.
 
 ## Routes
 
-| Method | Path                                                      | Controller method     | Page                                                 |
-| ------ | --------------------------------------------------------- | --------------------- | ---------------------------------------------------- |
-| GET    | `/api/mentorship/admin/programs`                          | `getPrograms`         | Admin program list, and the import picker on Enroll  |
-| GET    | `/api/mentorship/admin/programs/:programId`               | `getProgram`          | Admin program detail (header, tab counts, term list) |
-| GET    | `/api/mentorship/admin/programs/:programId/mentees`       | `getProgramMentees`   | Current Mentees tab (one server-paged page of rows)  |
-| GET    | `/api/mentorship/admin/applications/:applicationId/tasks` | `getApplicationTasks` | View Tasks on a Current Mentees row                  |
+| Method | Path                                                      | Controller method     | Page                                                  |
+| ------ | --------------------------------------------------------- | --------------------- | ----------------------------------------------------- |
+| GET    | `/api/mentorship/admin/programs`                          | `getPrograms`         | Admin program list, and the import picker on Enroll   |
+| GET    | `/api/mentorship/admin/programs/:programId`               | `getProgram`          | Admin program detail (header, tab counts, term list)  |
+| GET    | `/api/mentorship/admin/programs/:programId/mentees`       | `getProgramMentees`   | Current and Past Mentees tabs (one server-paged page) |
+| GET    | `/api/mentorship/admin/programs/:programId/mentors`       | `getProgramMentors`   | Mentors tab (one server-paged page of rows)           |
+| GET    | `/api/mentorship/admin/programs/:programId/terms`         | `getProgramTerms`     | Terms tab (term rows with application counts)         |
+| GET    | `/api/mentorship/admin/applications/:applicationId/tasks` | `getApplicationTasks` | View Tasks on a Current Mentees row                   |
 
-`programId` and `applicationId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type`, and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400.
+`programId` and `applicationId` must be UUIDs; anything else is a 400. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`. The mentees route requires `type` (`current` for open terms, `past` for closed ones), and accepts `status`, `termId`, `search`, `offset` and `limit` (1–50); a bad value is a 400. The mentors route accepts `status` (`requested`, `pending`, `invited`, `active`, `declined`, `withdrawn`), `search`, `offset` and `limit` (1–50, default 10). The terms route accepts `offset` and `limit` (1–50, default 10).
 
 ## Program page sourcing
 
@@ -37,7 +39,12 @@ The program list and the program page's header, tab counts and Current Mentees t
 - `getApplicationTasks` reads `GET /applications/{id}/tasks` through `listAllMentorshipPages` (page size 100). Only the View Tasks click calls it. The page caches the result per application and clears the cache, collapsing every row, whenever the table reloads.
 - The Current Mentees status filter lists the upstream statuses (Pending, Accepted, Declined, Withdrawn, Graduated), since it is sent upstream as `status`. The row badge still splits `pending` into Applied and Tasks Completed.
 
-The program detail's tabs: Current Mentees, Past Mentees, Mentors and Terms. Until their own PR, `buildMentorshipProgramDetail` (shared utils) builds the Past Mentees, Mentors and Terms lists from the mock data.
+The program detail's tabs: Current Mentees, Past Mentees, Mentors and Terms.
+
+- **Past Mentees** reuses `getProgramMentees` with `type=past`: every application in a closed term, whatever its status. The tab is read-only (no tasks, notes or row actions).
+- **Mentors** reads `GET /programs/{id}/member-management` with `status`, escaped `search`, `offset` and `limit` (at most 50). `member_type` is not sent: the upstream handler ignores it and lists mentors. Each row maps to `MentorshipProgramMentor`; `invitedOn` comes from the row's `created_on`, since upstream has no separate invitation date. Upstream status `active` stays `active`, and the older name `approved` maps to it too. A status the BFF does not know reads as `pending` and logs a warning with ids and the status only.
+- **Terms** reads `GET /programs/{id}/term-management` and maps each row to `MentorshipProgramTermRow` (counts plus the term and application dates, `YYYY-MM-DD`). A term that is neither open nor closed is dropped. The tab reads every page at the upstream maximum (50), following `total` up to `MENTORSHIP_ADMIN_TERMS_MAX_PAGES`, so the open-term limit counts every term.
+- An unprovisioned caller gets an empty `{ data: [], total: 0 }` on both new routes, as on the mentees route.
 
 ## Program list sourcing
 
@@ -93,7 +100,7 @@ The Enroll form's lookups (program name availability, LF projects, invitable use
 ## Behavior
 
 - Every route needs a signed-in user. The controller throws `AuthenticationError` (401) when `getUsernameFromAuth` finds none.
-- The program list, the program page, the mentees page and the tasks read forward the caller's bearer token, so upstream enforces admin access (a 403 stays a 403). A screen still on mock data (the Past Mentees, Mentors and Terms tabs) must forward the token, or add a BFF-side admin guard, with a 403 test, when it moves.
+- The program list, the program page, the mentees page and the tasks read forward the caller's bearer token, so upstream enforces admin access (a 403 stays a 403). The mentors and terms reads do the same.
 - The read routes stay available while impersonating. Admin write routes added later take `blockDuringImpersonation` (see [Impersonation](./impersonation.md)).
 - The app service lets every failure reach the page (it logs status and statusText only). The page shows no-access for a 403, not-found for a 404, and an inline error with Retry otherwise; the mentees and tasks reads have their own inline error with Retry.
 - The admin code's own log metadata carries ids, counts, flags and the status filter, never the `search` text, names or emails. The request URL, query string included, is still logged by the shared request serializer and kept on upstream errors, as on every route.

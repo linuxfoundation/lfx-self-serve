@@ -4,7 +4,14 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MentorshipAdminMenteesResponse, MentorshipAdminProgramPage, MentorshipApplicantTask, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsResponse,
+  MentorshipAdminProgramPage,
+  MentorshipAdminTermsResponse,
+  MentorshipApplicantTask,
+  MentorshipProgramsResponse,
+} from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipAdminService } from './mentorship-admin.service';
@@ -113,6 +120,50 @@ describe('MentorshipAdminService', () => {
     http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentees').flush('down', { status: 503, statusText: 'Service Unavailable' });
     expect(status).toBe(503);
     expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it('reads one page of mentors with the set filters as query params, encoding the id', () => {
+    let total = -1;
+    service.getProgramMentors('grid flow', { status: 'active', search: 'ada+lfx', offset: 10, limit: 10 }).subscribe((response) => (total = response.total));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/mentors');
+    expect(req.request.params.get('status')).toBe('active');
+    expect(req.request.params.get('search')).toBe('ada+lfx');
+    expect(req.request.urlWithParams).toContain('search=ada%2Blfx');
+    expect(req.request.params.get('offset')).toBe('10');
+    expect(req.request.params.get('limit')).toBe('10');
+    req.flush({ data: [], total: 7 } satisfies MentorshipAdminMentorsResponse);
+    expect(total).toBe(7);
+  });
+
+  it('leaves unset mentor filters off the query', () => {
+    service.getProgramMentors('p1', {}).subscribe();
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentors');
+    expect(req.request.params.keys()).toEqual([]);
+    req.flush({ data: [], total: 0 } satisfies MentorshipAdminMentorsResponse);
+  });
+
+  it('logs a mentors failure by status only, never the search', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.getProgramMentors('p1', { search: 'secret-name' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne((r) => r.url === '/api/mentorship/admin/programs/p1/mentors').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(status).toBe(503);
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getProgramMentors failed', { status: 503, statusText: 'Service Unavailable' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
+  });
+
+  it("reads one page of a program's terms with the paging as query params", () => {
+    let total = -1;
+    service.getProgramTerms('grid flow', { offset: 0, limit: 50 }).subscribe((response) => (total = response.total));
+
+    const req = http.expectOne((r) => r.url === '/api/mentorship/admin/programs/grid%20flow/terms');
+    expect(req.request.params.get('offset')).toBe('0');
+    expect(req.request.params.get('limit')).toBe('50');
+    req.flush({ data: [], total: 2 } satisfies MentorshipAdminTermsResponse);
+    expect(total).toBe(2);
   });
 
   it("reads one application's tasks from the admin endpoint", () => {

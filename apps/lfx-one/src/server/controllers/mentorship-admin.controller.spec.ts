@@ -223,6 +223,95 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('getProgramMentors', () => {
+    const emptyPage = { data: [], total: 0 };
+
+    it('passes the query to the service, defaulting to offset 0 and limit 10', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentors').mockResolvedValue(emptyPage);
+
+      await controller.getProgramMentors(buildReq({}, { programId: PROGRAM_ID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { status: undefined, search: undefined, offset: 0, limit: 10 });
+      expect(res.json).toHaveBeenCalledWith(emptyPage);
+    });
+
+    it('passes the trimmed search, status and paging', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentors').mockResolvedValue(emptyPage);
+
+      await controller.getProgramMentors(buildReq({ status: 'active', search: '  ada ', offset: '10', limit: '50' }, { programId: PROGRAM_ID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { status: 'active', search: 'ada', offset: 10, limit: 50 });
+    });
+
+    it.each([
+      ['a bad program id', {}, { programId: 'nope' }],
+      ['an unknown status', { status: 'approved' }, { programId: PROGRAM_ID }],
+      ['a repeated status', { status: ['active', 'invited'] }, { programId: PROGRAM_ID }],
+      ['a bad offset', { offset: '-1' }, { programId: PROGRAM_ID }],
+      ['a limit above 50', { limit: '51' }, { programId: PROGRAM_ID }],
+      ['a limit of 0', { limit: '0' }, { programId: PROGRAM_ID }],
+    ])('rejects %s with a 400', async (_label, query, params) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentors');
+
+      await controller.getProgramMentors(buildReq(query, params), res, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('never logs the search text', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentors').mockResolvedValue(emptyPage);
+
+      await controller.getProgramMentors(buildReq({ search: 'secret-name' }, { programId: PROGRAM_ID }), res, next);
+
+      expect(JSON.stringify(vi.mocked(logger.success).mock.calls.map((call) => call[3]))).not.toContain('secret-name');
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipAdminService.prototype, 'getProgramMentors').mockRejectedValue(error);
+
+      await controller.getProgramMentors(buildReq({}, { programId: PROGRAM_ID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe('getProgramTerms', () => {
+    const emptyPage = { data: [], total: 0 };
+
+    it('passes the paging to the service, defaulting to offset 0 and limit 10', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramTerms').mockResolvedValue(emptyPage);
+
+      await controller.getProgramTerms(buildReq({}, { programId: PROGRAM_ID }), res, next);
+
+      expect(read).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { offset: 0, limit: 10 });
+      expect(res.json).toHaveBeenCalledWith(emptyPage);
+    });
+
+    it.each([
+      ['a bad program id', {}, { programId: 'nope' }],
+      ['a bad offset', { offset: 'x' }, { programId: PROGRAM_ID }],
+      ['a limit above 50', { limit: '51' }, { programId: PROGRAM_ID }],
+    ])('rejects %s with a 400', async (_label, query, params) => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getProgramTerms');
+
+      await controller.getProgramTerms(buildReq(query, params), res, next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it('passes a service failure to next', async () => {
+      const error = new Error('boom');
+      vi.spyOn(MentorshipAdminService.prototype, 'getProgramTerms').mockRejectedValue(error);
+
+      await controller.getProgramTerms(buildReq({}, { programId: PROGRAM_ID }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
+
   describe('getApplicationTasks', () => {
     it('answers with the tasks', async () => {
       const read = vi.spyOn(MentorshipAdminService.prototype, 'getApplicationTasks').mockResolvedValue([]);
@@ -247,6 +336,8 @@ describe('MentorshipAdminController', () => {
     it.each([
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],
       ['getProgramMentees', 'getProgramMentees', { programId: PROGRAM_ID }, { type: 'current' }],
+      ['getProgramMentors', 'getProgramMentors', { programId: PROGRAM_ID }, {}],
+      ['getProgramTerms', 'getProgramTerms', { programId: PROGRAM_ID }, {}],
       ['getApplicationTasks', 'getApplicationTasks', { applicationId: PROGRAM_ID }, {}],
     ] as const)('%s passes an AuthenticationError to next without reading upstream', async (method, serviceMethod, params, query) => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);

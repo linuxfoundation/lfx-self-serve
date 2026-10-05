@@ -401,3 +401,158 @@ describe('MentorshipAdminService.getApplicationTasks', () => {
     ]);
   });
 });
+
+const memberRow = (id: string, overrides: Record<string, unknown> = {}) => ({
+  id,
+  user_id: `u-${id}`,
+  name: 'Ada Mentor',
+  email: 'ada@mentor.example',
+  status: 'active',
+  created_on: '2026-02-03T10:00:00Z',
+  updated_on: '2026-02-04T10:00:00Z',
+  profile_created: true,
+  ...overrides,
+});
+
+const termManagementRow = (id: string, overrides: Record<string, unknown> = {}) => ({
+  id,
+  program_id: PROGRAM_ID,
+  name: 'Fall',
+  status: 'open',
+  active_users: 1,
+  created_on: '2026-01-01T00:00:00Z',
+  updated_on: '2026-01-02T00:00:00Z',
+  pending: 1,
+  declined: 0,
+  accepted: 2,
+  graduated: 0,
+  ...overrides,
+});
+
+describe('MentorshipAdminService.getProgramMentors', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+  const MEMBERS_PATH = `${PROGRAM_PATH}/member-management`;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('maps the mentor rows and returns upstream’s total', async () => {
+    stubProgramReads({
+      [MEMBERS_PATH]: { data: [memberRow('m1'), memberRow('m2', { status: 'invited' })], meta: { total: 12, limit: 10, offset: 0 } },
+    });
+
+    const result = await service.getProgramMentors(buildReq(), PROGRAM_ID, { offset: 0, limit: 10 });
+
+    expect(result.total).toBe(12);
+    expect(result.data.map((m) => [m.id, m.status])).toEqual([
+      ['m1', 'active'],
+      ['m2', 'invited'],
+    ]);
+  });
+
+  it('makes one upstream call with the status, escaped search, offset and a capped limit, and no member_type', async () => {
+    const spy = stubProgramReads({ [MEMBERS_PATH]: { data: [], meta: { total: 0 } } });
+
+    await service.getProgramMentors(buildReq(), PROGRAM_ID, { status: 'active', search: '  50%_off ', offset: 20, limit: 500 });
+
+    expect(spy.mock.calls).toHaveLength(1);
+    expect(spy.mock.calls[0][4]).toEqual({ status: 'active', search: String.raw`50\%\_off`, offset: 20, limit: 50 });
+  });
+
+  it('defaults to offset 0 and limit 10', async () => {
+    const spy = stubProgramReads({ [MEMBERS_PATH]: { data: [] } });
+
+    await service.getProgramMentors(buildReq(), PROGRAM_ID, {});
+
+    expect(spy.mock.calls[0][4]).toMatchObject({ offset: 0, limit: 10 });
+  });
+
+  it('shows an unknown status as pending and logs the ids and status, never the name', async () => {
+    stubProgramReads({ [MEMBERS_PATH]: { data: [memberRow('m1', { status: 'mystery' })] } });
+
+    const { data } = await service.getProgramMentors(buildReq(), PROGRAM_ID, {});
+
+    expect(data[0].status).toBe('pending');
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_program_mentors', expect.any(String), {
+      programId: PROGRAM_ID,
+      memberId: 'm1',
+      status: 'mystery',
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('Ada Mentor');
+  });
+
+  it('returns an empty page, with a warning, for a caller with no mentorship record', async () => {
+    stubProgramReads({
+      [MEMBERS_PATH]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
+      '/mentorship/v1/me': {},
+    });
+
+    expect(await service.getProgramMentors(buildReq(), PROGRAM_ID, {})).toEqual({ data: [], total: 0 });
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_admin_get_program_mentors', expect.any(String), { programId: PROGRAM_ID });
+  });
+
+  it('passes any other upstream error on', async () => {
+    stubProgramReads({ [MEMBERS_PATH]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN') });
+
+    await expect(service.getProgramMentors(buildReq(), PROGRAM_ID, {})).rejects.toMatchObject({ statusCode: 403 });
+  });
+});
+
+describe('MentorshipAdminService.getProgramTerms', () => {
+  let service: InstanceType<typeof MentorshipAdminService>;
+  const TERMS_PATH = `${PROGRAM_PATH}/term-management`;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('maps the term rows with their counts, drops a term that is not open or closed, and returns upstream’s total', async () => {
+    stubProgramReads({
+      [TERMS_PATH]: {
+        data: [termManagementRow('t1'), termManagementRow('t2', { status: 'closed' }), termManagementRow('t3', { status: 'deleted' })],
+        meta: { total: 3, limit: 10, offset: 0 },
+      },
+    });
+
+    const result = await service.getProgramTerms(buildReq(), PROGRAM_ID, { offset: 0, limit: 10 });
+
+    expect(result.total).toBe(3);
+    expect(result.data.map((t) => [t.id, t.status, t.pending, t.accepted])).toEqual([
+      ['t1', 'open', 1, 2],
+      ['t2', 'closed', 1, 2],
+    ]);
+  });
+
+  it('makes one upstream call with the offset and a capped limit', async () => {
+    const spy = stubProgramReads({ [TERMS_PATH]: { data: [] } });
+
+    await service.getProgramTerms(buildReq(), PROGRAM_ID, { offset: 10, limit: 500 });
+
+    expect(spy.mock.calls).toHaveLength(1);
+    expect(spy.mock.calls[0][4]).toEqual({ offset: 10, limit: 50 });
+  });
+
+  it('returns an empty page for a caller with no mentorship record', async () => {
+    stubProgramReads({
+      [TERMS_PATH]: new MicroserviceError('Unauthorized', 401, 'UNAUTHORIZED', { errorBody: { error: 'local user is not provisioned' } }),
+      '/mentorship/v1/me': {},
+    });
+
+    expect(await service.getProgramTerms(buildReq(), PROGRAM_ID, {})).toEqual({ data: [], total: 0 });
+  });
+
+  it('passes any other upstream error on', async () => {
+    stubProgramReads({ [TERMS_PATH]: new Error('upstream down') });
+
+    await expect(service.getProgramTerms(buildReq(), PROGRAM_ID, {})).rejects.toThrow('upstream down');
+  });
+});

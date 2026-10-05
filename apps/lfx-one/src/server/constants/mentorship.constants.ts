@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
   MentorshipMentorProgramTermStatus,
@@ -116,6 +117,20 @@ export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string
   completed: 'completed',
   rejected: 'rejected',
   hidden: 'hidden',
+};
+
+/**
+ * How an upstream program member status reads on the admin Mentors tab. Upstream keeps `active` for an accepted
+ * mentor; `approved` is the older name for it and reads the same.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_MAP: Readonly<Record<string, MentorshipAdminMentorStatus>> = {
+  requested: 'requested',
+  pending: 'pending',
+  invited: 'invited',
+  active: 'active',
+  approved: 'active',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
 };
 
 /** The order of the groups on mentor My Programs. */
