@@ -15,7 +15,9 @@ export function isProjectScopedPersona(persona: PersonaType): boolean {
 
 /** Deduped, human-readable labels for a project's detections. `Object.hasOwn` guards against inherited `Object.prototype` keys (e.g. `constructor`) resolving as a false hit. */
 export function getDetectionLabels(detections: PersonaDetection[]): string[] {
-  const labels = detections.map((d) => (Object.hasOwn(DETECTION_SOURCE_LABELS, d.source) ? DETECTION_SOURCE_LABELS[d.source] : DETECTION_SOURCE_LABEL_FALLBACK));
+  const labels = detections.map((d) =>
+    Object.hasOwn(DETECTION_SOURCE_LABELS, d.source) ? DETECTION_SOURCE_LABELS[d.source] : DETECTION_SOURCE_LABEL_FALLBACK
+  );
   return Array.from(new Set(labels));
 }
 
