@@ -140,17 +140,25 @@ export interface MeetingSectionVisibility {
   /** The occurrence strip for a recurring meeting. */
   occurrences: boolean;
   /**
-   * The participant roster. The roster comes back empty for anyone who is neither a registrant nor
-   * an organizer, and the detail payloads no longer populate `individual_registrants_count` or
-   * `committee_members_count`, so an outsider or visitor has no count source at all — this is
-   * false for them rather than rendering an empty list or an invented number.
+   * The participant roster.
+   *
+   * - **Upcoming or live:** registrants and organizers only. The registrant list comes back empty for
+   *   anyone else, and the detail payloads no longer populate `individual_registrants_count` or
+   *   `committee_members_count`, so an outsider or visitor has no count source: false for them
+   *   rather than an empty list or an invented number.
+   * - **Ended:** any signed-in viewer with artifact access, whatever the role, because the past
+   *   payload never sets `invited` and a past registrant arrives as `outsider`. The roster is then
+   *   the `PastMeetingParticipant` list. Never for an anonymous viewer.
    */
   people: boolean;
-  /** Per-avatar RSVP badges on the roster. */
+  /** Per-avatar RSVP badges on the roster. Upcoming or live only: past rows carry no RSVP. */
   rsvpAvatarBadges: boolean;
-  /** The "responded / attending" filter on the roster. */
+  /** The "responded / attending" filter on the roster. Upcoming or live only. */
   rsvpRosterFilter: boolean;
-  /** The aggregate RSVP strip. */
+  /**
+   * The aggregate RSVP strip, from meeting-level counts. Upcoming or live: registrants and organizers.
+   * Ended: the same audience as `people` — any signed-in viewer with artifact access.
+   */
   rsvpSummary: boolean;
   /** Recording, transcript and AI summary — post-meeting, gated on artifact access. */
   tools: boolean;

@@ -11,7 +11,7 @@ This directory is the in-repo spec home for the meeting details V2 redesign. Sta
 V2 ships **side by side** with V1. `MEETING_V2_ENABLED_FLAG` decides which tree a viewer
 renders; the existing `meeting-join` component is not deleted, rewritten or refactored in
 place. The flag is UI-only and gates no endpoint, the code default is `false`, LaunchDarkly
-targeting is the switch, an unready flag provider renders V1, and anonymous visitors always
+targeting is the switch, a flag provider that is not ready yet renders V1, and anonymous visitors always
 get V1 during rollout.
 
 ## Contents

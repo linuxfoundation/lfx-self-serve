@@ -393,7 +393,7 @@ describe('resolveVisibleSections', () => {
     expect(sections.rsvpAvatarBadges).toBe(true);
   });
 
-  it('hides the RSVP surfaces with the roster on an ended meeting without artifact access', () => {
+  it('hides every RSVP surface on an ended meeting without artifact access', () => {
     const sections = resolveVisibleSections({
       fullAccess: false,
       inviteResponsesEnabled: true,
@@ -405,6 +405,47 @@ describe('resolveVisibleSections', () => {
     expect(sections.rsvpSummary).toBe(false);
     expect(sections.rsvpRosterFilter).toBe(false);
     expect(sections.rsvpAvatarBadges).toBe(false);
+  });
+
+  // Past rows are `PastMeetingParticipant` records with no RSVP answer, so the roster's RSVP filter
+  // and badges stay off even where the past roster shows. The summary reads meeting-level counts.
+  it.each(['organizer', 'registrant'] as MeetingViewerRole[])(
+    'keeps only the RSVP summary on an ended meeting for an %s with artifact access',
+    (viewerRole) => {
+      const sections = resolveVisibleSections({
+        fullAccess: true,
+        inviteResponsesEnabled: true,
+        recurring: false,
+        timeState: 'ended',
+        viewerRole,
+      });
+      expect(sections.people).toBe(true);
+      expect(sections.rsvpSummary).toBe(true);
+      expect(sections.rsvpRosterFilter).toBe(false);
+      expect(sections.rsvpAvatarBadges).toBe(false);
+    }
+  );
+
+  // A past registrant resolves as `outsider` (the past payload has no `invited`), and still gets the
+  // summary with the roster; an anonymous viewer gets neither.
+  it('gives the RSVP summary to a signed-in outsider with access on an ended meeting, but never to a visitor', () => {
+    const base = { fullAccess: true, inviteResponsesEnabled: true, recurring: false, timeState: 'ended' as const };
+    const outsider = resolveVisibleSections({ ...base, viewerRole: 'outsider' });
+    expect(outsider.people).toBe(true);
+    expect(outsider.rsvpSummary).toBe(true);
+    expect(outsider.rsvpRosterFilter).toBe(false);
+    expect(resolveVisibleSections({ ...base, viewerRole: 'visitor' }).rsvpSummary).toBe(false);
+  });
+
+  it('shows the RSVP surfaces to an organizer while the meeting is live', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'live',
+      viewerRole: 'organizer',
+    });
+    expect(sections.rsvpSummary).toBe(true);
   });
 
   it('withholds the RSVP surfaces from an outsider even when tracking is on', () => {
