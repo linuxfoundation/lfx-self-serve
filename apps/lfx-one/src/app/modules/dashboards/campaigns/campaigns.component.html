@@ -323,6 +323,8 @@
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [audienceReadFailed]="emailAudienceReadFailed()"
+          [audienceReadPending]="emailAudienceReadPending()"
+          (retryAudienceRead)="onRetryAudienceRead()"
           (audienceAttached)="onAudienceComposed($event)"
           (audienceComposeUnattached)="onAudienceComposeUnattached($event)"
           (continueToEmail)="onContinueToEmailStep()" />
@@ -713,9 +715,17 @@
                       <span class="text-sm font-medium text-amber-900">Master list created but not attached</span>
                     </div>
                     <p class="text-sm text-amber-800">
-                      <span class="font-medium">{{ loose.name }}</span> exists in HubSpot and this campaign does not point at it. Attach it to the send in
-                      HubSpot, then save the plan again so the Audience tab can re-attach it.
+                      <span class="font-medium">{{ loose.name }}</span> exists in HubSpot and this campaign does not point at it. Attach it from the Audience
+                      tab: under "Recent sends &amp; master lists", choose "Use for this email" on this list. That records it as the send list and creates
+                      nothing new.
                     </p>
+                    <lfx-button
+                      label="Open the Audience tab"
+                      icon="fa-light fa-users"
+                      severity="secondary"
+                      size="small"
+                      (onClick)="selectTab('audience', 'email')"
+                      data-testid="campaigns-email-audience-unattached-open-audience" />
                     <a
                       class="text-sm text-amber-900 underline"
                       [href]="loose.hubspotUrl"

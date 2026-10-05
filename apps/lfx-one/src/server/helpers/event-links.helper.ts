@@ -119,9 +119,9 @@ const INERT_REGIONS: readonly {
  * The first inert region at or after `from`, or `null` when none remains.
  *
  * The opener search is case-insensitive because `<SCRIPT>` is the same element, and so is the
- * closer search: `</Script >` ends it. `indexOf` is case-SENSITIVE, so both sides work on a
- * lower-cased copy and index back into the original -- lower-casing cannot change the length of
- * an ASCII tag name, so the offsets stay aligned with `html`.
+ * closer search: `</Script >` ends it. `indexOf` is case-SENSITIVE, so both sides work on an
+ * ASCII-folded copy and index back into the original -- `asciiLower` is length-preserving by
+ * construction, so the offsets stay aligned with `html`.
  *
  * The closer is matched WITHOUT its `>`, so `</script foo>` and `</script\n>` both close. A
  * browser ends the element at the tag name; requiring the exact `>` meant `</script >` did not
@@ -132,6 +132,11 @@ const INERT_REGIONS: readonly {
  * the rest of the document: every real link on a page containing that string disappeared. `<!--`
  * carries `isTagName: false` and is exempt, because it is not a tag name and `<!--<a href=...` is
  * a comment; applying the check to it left unterminated comments entirely unblanked.
+ *
+ * The CLOSER is held to the same boundary, for the same reason in the other direction. A browser
+ * ends script data only at `</script` followed by whitespace, `/` or `>`, so `</scriptfoo>` is
+ * still script text. Accepting the prefix ended the region early and exposed an anchor-looking
+ * string inside the script to `extractPageLinks` -- a URL the page never renders as a link.
  */
 function nextInertRegion(html: string, lower: string, from: number, next: number[]): { start: number; end: number } | null {
   // The EARLIEST opener is chosen first, and only then is its own closer looked up. Taking the
@@ -153,7 +158,7 @@ function nextInertRegion(html: string, lower: string, from: number, next: number
     return null;
   }
   const { start, kind } = winner;
-  const closeAt = lower.indexOf(kind.closer, start + kind.opener.length);
+  const closeAt = closerIndex(lower, kind, start + kind.opener.length);
   if (closeAt === -1) {
     // No closer: the region runs to the end of the document, exactly as a browser treats it.
     return { start, end: html.length };
@@ -168,6 +173,23 @@ function nextInertRegion(html: string, lower: string, from: number, next: number
   // opening tag consumed by the comment, so the script body was never recognised as inert.
   const gt = html.indexOf('>', afterCloser);
   return { start, end: gt === -1 ? html.length : gt + 1 };
+}
+
+/**
+ * The first real closer of this kind at or after `from`, skipping tag-name prefix matches.
+ *
+ * Every search starts after the previous miss, so the scan for one region is linear in that
+ * region's length, and regions never overlap.
+ */
+function closerIndex(lower: string, kind: (typeof INERT_REGIONS)[number], from: number): number {
+  let at = from;
+  for (;;) {
+    at = lower.indexOf(kind.closer, at);
+    if (at === -1 || !kind.isTagName || opensAnElement(lower, at + kind.closer.length)) {
+      return at;
+    }
+    at += kind.closer.length;
+  }
 }
 
 /** The first real opener of this kind at or after `from`, skipping tag-name prefix matches. */
@@ -346,7 +368,7 @@ export function extractPageLinks(html: string, baseUrl: string): Map<string, str
  * `registrationUrl` is deliberately NOT routed through this. It predates the check, it is the
  * primary call-to-action's href, and event pages commonly drive registration from a scripted
  * button rather than an `<a href>` — so verifying it would strip working CTAs from existing
- * campaigns. That is a known gap, not an oversight.
+ * campaigns. That is a known gap, not an oversight. It IS resolved, by `resolvePageUrl` below.
  */
 export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string>, baseUrl: string): string {
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
@@ -383,4 +405,29 @@ export function verifyPageLink(candidate: unknown, pageLinks: Map<string, string
     onlyMatch = href;
   }
   return onlyMatch;
+}
+
+/**
+ * An unverified page URL made absolute against the page that served it, or `''` when it is not
+ * an http(s) URL.
+ *
+ * For `registrationUrl`, which skips `verifyPageLink` (see there) but still has to reach the
+ * brief as an ABSOLUTE link. The extraction prompt asks for the href as the page wrote it, so a
+ * page publishing `href="/register"` produced `/register` -- and `coerceCampaignEventDetails`
+ * accepts only absolute URLs, so it blanked the registration destination entirely.
+ *
+ * Built through `pageHref`, so the emitted value carries the same guarantees a verified link
+ * does: http(s) only, and no `userinfo`. An empty `baseUrl` leaves a relative candidate
+ * unresolvable, which yields `''` rather than a guess.
+ */
+export function resolvePageUrl(candidate: unknown, baseUrl: string): string {
+  if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+    return '';
+  }
+  try {
+    const resolved = baseUrl === '' ? new URL(candidate.trim()) : new URL(candidate.trim(), baseUrl);
+    return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? pageHref(resolved) : '';
+  } catch {
+    return '';
+  }
 }

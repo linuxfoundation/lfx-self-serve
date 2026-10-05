@@ -97,6 +97,14 @@ export class AudienceBuilderTabComponent {
    * Gated the same way `suppressionFailed` is: an unverifiable absence is not an absence.
    */
   public readonly audienceReadFailed = input(false);
+  /**
+   * The brief's existing audience is still being READ.
+   *
+   * The same unknown as a failed read, for as long as the request takes: the parent opens this tab
+   * on restore before the read returns, so a slow read let the operator write a second audience on
+   * top of the one about to be revealed.
+   */
+  public readonly audienceReadPending = input(false);
 
   // === Outputs ===
   /**
@@ -122,6 +130,8 @@ export class AudienceBuilderTabComponent {
    * result, which sits at the bottom of a long panel — the parent's step bar is a screen away.
    */
   public readonly continueToEmail = output<void>();
+  /** Re-read the brief's saved audience after a read that failed or could not run. */
+  public readonly retryAudienceRead = output<void>();
 
   // === Forms ===
   protected readonly eventUrlControl = new FormControl('', { nonNullable: true });
@@ -252,7 +262,7 @@ export class AudienceBuilderTabComponent {
   private readonly lastWriteWasAttach = signal<boolean>(false);
   protected readonly attachError = signal<string | null>(null);
   /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
-  private readonly composeBriefId = signal('');
+  protected readonly composeBriefId = signal('');
   /**
    * Names for suppression lists added by "Copy selection" that are not rows of the standard
    * suppression grid. The suppression map stores key -> list id only, and the grid supplies names
@@ -439,7 +449,19 @@ export class AudienceBuilderTabComponent {
    * Serialized rather than reconciled: there is no correct merge of two audiences for one brief,
    * and the second write is a real HubSpot record either way.
    */
-  protected readonly canAttach = computed(() => this.briefId() !== '' && !this.degraded() && !this.composing() && this.attachingId() === null);
+  protected readonly canAttach = computed(
+    () => this.briefId() !== '' && !this.degraded() && !this.audienceUnknown() && !this.composing() && this.attachingId() === null
+  );
+
+  /**
+   * Whether the brief's existing audience is UNKNOWN -- its read is in flight, failed, or never ran.
+   *
+   * Every write to the brief's audience gates on this, not only compose. Gating compose alone left
+   * attach and both reuse paths open, and each of those also records a send audience against the
+   * brief -- on top of one the operator cannot see. `canAttach` carries it, so every path built on
+   * that inherits it rather than having to remember it.
+   */
+  protected readonly audienceUnknown = computed(() => this.audienceReadFailed() || this.audienceReadPending());
 
   /** The list currently recorded as this email's send list by THIS panel, if any. */
   protected readonly attachedListId = computed(() => {
@@ -479,6 +501,27 @@ export class AudienceBuilderTabComponent {
       return [];
     }
     return [...new Set(attached.suppressionListIds)].filter((id) => id !== attached.master.listId);
+  });
+
+  /**
+   * The master recorded as this email's send list, but only while the RECORD still matches what the
+   * operator is now asking for.
+   *
+   * Matching on the master id alone kept "Use for this email" disabled after the step-3 ticks
+   * changed: the button read "Used for this email" while the brief still held the OLD exclusions,
+   * and there was no way to record the new ones. An attach records its exclusions, so it is matched
+   * on both halves. A compose records a combined suppression LIST rather than the ticked ids, so
+   * its exclusions cannot be compared to the ticks and it is matched on the master alone.
+   */
+  protected readonly attachedMasterId = computed<string | null>(() => {
+    const listId = this.attachedListId();
+    const attached = this.attachResult();
+    if (listId === null || attached === null || attached.master.listId !== listId) {
+      return listId;
+    }
+    const recorded = new Set(this.attachedExclusions());
+    const requested = new Set(this.excludeIds().filter((id) => id !== listId));
+    return recorded.size === requested.size && [...requested].every((id) => recorded.has(id)) ? listId : null;
   });
 
   /** Every list size this panel has seen, so the summary can total the selection's known reach. */
@@ -541,7 +584,14 @@ export class AudienceBuilderTabComponent {
       }));
   });
 
-  /** Headline numbers for the summary strip. Sizes are upper bounds: overlap is only known after a preview. */
+  /**
+   * Headline numbers for the summary strip.
+   *
+   * The sum is an upper bound only when EVERY included list reported a size: overlap can only make
+   * the union smaller. With any size withheld, the missing list can make the union arbitrarily
+   * larger, so a partial sum is no bound at all and is shown without the `≤`, flagged as partial.
+   * The same reasoning as `reportedMembershipsLabel` in the last-sent card.
+   */
   protected readonly summary = computed(() => {
     const sizes = this.sizeIndex();
     const included = [...this.inclusion().keys()];
@@ -549,13 +599,15 @@ export class AudienceBuilderTabComponent {
     const reach = known.reduce((sum, id) => sum + (sizes.get(id) ?? 0), 0);
     let reachText = '—';
     if (known.length > 0) {
-      reachText = `≤ ${reach.toLocaleString('en-US')}`;
+      const figure = reach.toLocaleString('en-US');
+      reachText = known.length === included.length ? `≤ ${figure}` : figure;
     }
     return {
       included: included.length,
       excluded: this.excludeIds().length,
       reachText,
       reachPartial: known.length > 0 && known.length < included.length,
+      reachKnownCount: known.length,
     };
   });
 
@@ -565,7 +617,16 @@ export class AudienceBuilderTabComponent {
    * Separate from `canUseSelectionDirectly` only because that one additionally requires exactly
    * one inclusion; the readiness half is identical and is the half that matters here.
    */
-  protected readonly canUseExistingMaster = computed(() => this.canAttach() && !this.suppressionLoading() && !this.suppressionFailed());
+  protected readonly canUseExistingMaster = computed(
+    () =>
+      this.canAttach() &&
+      !this.suppressionLoading() &&
+      !this.suppressionFailed() &&
+      // The same conflict gate compose and single-list reuse carry. This path submits
+      // `excludeIds()`, which DROPS a list ticked on both sides -- so the attachment silently lost a
+      // suppression the panel still showed as applied.
+      this.conflictingIds().length === 0
+  );
 
   /**
    * A single included list can be sent to as-is; only several lists need combining into a master.
@@ -604,9 +665,9 @@ export class AudienceBuilderTabComponent {
     () =>
       !this.degraded() &&
       !this.composing() &&
-      // An audience that could not be READ is not an audience that is absent. Composing on top
-      // of one creates a duplicate master list.
-      !this.audienceReadFailed() &&
+      // An audience that could not be READ -- or has not been read YET -- is not an audience that
+      // is absent. Composing on top of one creates a duplicate master list.
+      !this.audienceUnknown() &&
       // The other half of the serialization above: an attach in flight is a write to this same
       // brief's audience, and the later reply would decide the record.
       this.attachingId() === null &&

@@ -86,6 +86,14 @@ export class AudienceLastSentComponent {
   /** The master list id currently recorded as this email's send list, if any. */
   public readonly attachedListId = input<string | null>(null);
   /**
+   * The master id to mark as attached in the master-list grid: `attachedListId`, but only while the
+   * recorded exclusions still match the ones now ticked.
+   *
+   * Separate because a master row's reuse button submits the CURRENT ticks. Matched on the id
+   * alone, it stayed disabled after the ticks changed, so the new exclusions could not be recorded.
+   */
+  public readonly attachedMasterId = input<string | null>(null);
+  /**
    * The exclusions behind the current attachment.
    *
    * Matching a prior send on its include list ALONE treated two sends that share a master but
@@ -115,7 +123,7 @@ export class AudienceLastSentComponent {
    */
   protected readonly masterRows = computed(() => {
     const selected = this.selectedIds();
-    const attached = this.attachedListId();
+    const attached = this.attachedMasterId();
     return this.masterLists().map((list) => ({
       ...list,
       selected: selected.has(list.listId),

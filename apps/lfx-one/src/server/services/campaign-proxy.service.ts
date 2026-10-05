@@ -34,7 +34,7 @@ import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
-import { extractPageLinks, verifyPageLink } from '../helpers/event-links.helper';
+import { extractPageLinks, resolvePageUrl, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -1511,7 +1511,8 @@ export class CampaignProxyService {
         // `verifyPageLink`. That asymmetry is deliberate and documented at the helper: it is the
         // primary CTA's href, event pages commonly drive registration from a scripted button
         // rather than an `<a href>`, and verifying it would strip working CTAs from briefs that
-        // work today.
+        // work today. It is still RESOLVED against the page: a relative `/register` would
+        // otherwise be blanked by `coerceCampaignEventDetails`, which only accepts absolute URLs.
         yield {
           type: 'event',
           data: {
@@ -1521,7 +1522,7 @@ export class CampaignProxyService {
             countryCode: eventDetails['country_code'] ?? '',
             audience: eventDetails['audience'] ?? '',
             themes: Array.isArray(eventDetails['themes']) ? eventDetails['themes'] : [],
-            registrationUrl: eventDetails['registration_url'] ?? '',
+            registrationUrl: resolvePageUrl(eventDetails['registration_url'], pageBaseUrl),
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',

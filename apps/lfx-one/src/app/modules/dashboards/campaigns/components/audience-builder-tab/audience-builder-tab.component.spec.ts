@@ -124,7 +124,9 @@ describe('AudienceBuilderTabComponent', () => {
    * constructor, which flushes on the FIRST change-detection pass, so the response only reaches
    * the view on the second.
    */
-  async function render(inputs: { active?: boolean; initialEventUrl?: string; briefId?: string; audienceReadFailed?: boolean } = {}): Promise<void> {
+  async function render(
+    inputs: { active?: boolean; initialEventUrl?: string; briefId?: string; audienceReadFailed?: boolean; audienceReadPending?: boolean } = {}
+  ): Promise<void> {
     fixture = TestBed.createComponent(AudienceBuilderTabComponent);
     fixture.componentRef.setInput('projectSlug', 'tlf');
     fixture.componentRef.setInput('active', inputs.active ?? true);
@@ -134,6 +136,7 @@ describe('AudienceBuilderTabComponent', () => {
     // where a compose creates lists that no send points at.
     fixture.componentRef.setInput('briefId', inputs.briefId ?? '');
     fixture.componentRef.setInput('audienceReadFailed', inputs.audienceReadFailed ?? false);
+    fixture.componentRef.setInput('audienceReadPending', inputs.audienceReadPending ?? false);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -352,7 +355,7 @@ describe('AudienceBuilderTabComponent', () => {
   });
 
   describe('selection, preview and compose', () => {
-    async function renderWithDiscovery(inputs: { audienceReadFailed?: boolean } = {}): Promise<void> {
+    async function renderWithDiscovery(inputs: { audienceReadFailed?: boolean; audienceReadPending?: boolean; briefId?: string } = {}): Promise<void> {
       await render(inputs);
       typeEventUrl('https://events.example.org/synthetic-summit');
       click('campaigns-audience-discover');
@@ -698,6 +701,31 @@ describe('AudienceBuilderTabComponent', () => {
       expect(btn?.disabled, 'compose stayed enabled with an unresolved include/exclude conflict').toBe(true);
     });
 
+    it('blocks existing-master reuse while a list is ticked on both sides', async () => {
+      // `onUseMasterList` submits `excludeIds()`, which DROPS a list ticked on both sides -- so
+      // reusing a master here silently lost a suppression the panel still showed as applied.
+      getAudienceSuppressionLists.mockReturnValue(
+        of([
+          {
+            key: 'lf_events_gdpr',
+            label: 'LF Events GDPR',
+            listId: '101',
+            name: 'Synthetic Summit 2026 - Registrants',
+            size: 1200,
+            category: 'standard',
+            hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/101',
+          },
+        ])
+      );
+      await renderWithDiscovery({ briefId: 'brief-1' });
+      const gate = fixture.componentInstance as unknown as { canUseExistingMaster: () => boolean };
+      click('audience-card-grid-toggle-101');
+      expect(gate.canUseExistingMaster(), 'the precondition: reuse is open with no conflict').toBe(true);
+
+      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      expect(gate.canUseExistingMaster(), 'master reuse stayed open with an unresolved conflict').toBe(false);
+    });
+
     it("refuses to compose when the brief's existing audience could not be read", async () => {
       // A failed audience read leaves the parent's `emailAudience` null, which is byte-identical
       // to a brief that never had one. Offering compose there let an outage that HID an existing
@@ -720,6 +748,41 @@ describe('AudienceBuilderTabComponent', () => {
 
       const btn = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
       expect(btn?.disabled, 'a verified-absent audience must not block compose').toBe(false);
+    });
+
+    it('blocks compose and direct attach while the audience read is still in flight', async () => {
+      // The restore opens this tab BEFORE its audience read returns. On a slow read the failure
+      // flag is still false, so gating on it alone let the operator compose a second master on
+      // top of an audience that was about to be revealed. Pending is the same unknown.
+      await renderWithDiscovery({ audienceReadPending: true, briefId: 'brief-1' });
+      click('audience-card-grid-toggle-101');
+
+      const compose = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]');
+      const direct = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]');
+      expect(compose()?.disabled, 'compose was offered during a pending audience read').toBe(true);
+      expect(direct()?.disabled, 'direct attach was offered during a pending audience read').toBe(true);
+      expect(host().querySelector('[data-testid="campaigns-audience-read-pending"]')).not.toBeNull();
+
+      // The read lands and verifies absence: both unlock, so the gate is not permanently closed.
+      fixture.componentRef.setInput('audienceReadPending', false);
+      fixture.detectChanges();
+      expect(compose()?.disabled).toBe(false);
+      expect(direct()?.disabled).toBe(false);
+    });
+
+    it('blocks direct attach, not only compose, when the audience read failed, and offers a retry', async () => {
+      // Attach records a send audience against the brief exactly as compose does, so a failed read
+      // has to block it too -- gating compose alone left this path writing on top of a hidden one.
+      await renderWithDiscovery({ audienceReadFailed: true, briefId: 'brief-1' });
+      click('audience-card-grid-toggle-101');
+
+      const direct = host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]');
+      expect(direct?.disabled, 'direct attach stayed enabled while the audience was unreadable').toBe(true);
+
+      const retried = vi.fn();
+      fixture.componentInstance.retryAudienceRead.subscribe(retried);
+      click('campaigns-audience-read-retry');
+      expect(retried).toHaveBeenCalledTimes(1);
     });
 
     it('does not re-enable compose after an ordinary failure', async () => {

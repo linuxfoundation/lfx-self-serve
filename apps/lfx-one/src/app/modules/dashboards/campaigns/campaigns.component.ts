@@ -1098,6 +1098,21 @@ export class CampaignsComponent {
    * Cleared only by a read that actually answered, never by a retry that failed the same way.
    */
   protected readonly emailAudienceReadFailed = signal<boolean>(false);
+  /**
+   * A read of the brief's existing audience is IN FLIGHT.
+   *
+   * The same unknown as a failed read, for as long as the request takes: `emailAudience` is null
+   * until the reply lands, and the restore opens the Audience tab before it does. On a slow read the
+   * operator could compose or attach on top of an audience that was about to be revealed.
+   */
+  protected readonly emailAudienceReadPending = signal<boolean>(false);
+  /**
+   * The brief id the last audience read was for, so the Audience tab's retry re-reads THAT brief.
+   *
+   * Not `emailBriefId`: a restore deliberately leaves that empty for an unapproved brief (see
+   * `onRestoreSavedEmailBrief`), and those are the briefs this read exists for.
+   */
+  private emailAudienceReadBriefId = '';
 
   /**
    * A master list that exists in HubSpot and is attached to NOTHING.
@@ -2567,6 +2582,10 @@ export class CampaignsComponent {
     // row from landing ON TOP of the list the operator just assembled. Doing it after the set
     // would leave a window in which the read-back still wins.
     this.emailAudienceGeneration++;
+    // The bump just made any in-flight read stale, so it will not settle this itself -- and the
+    // brief's audience is now KNOWN, which is what both flags were standing in for.
+    this.emailAudienceReadPending.set(false);
+    this.emailAudienceReadFailed.set(false);
     this.emailAudience.set(audience);
     this.emailAudienceOrigin.set('composed');
     // The list IS attached now, so a warning about an unattached one is stale -- and a previous
@@ -2587,6 +2606,11 @@ export class CampaignsComponent {
    * `emailAudience` is deliberately NOT touched. Nothing was attached, so claiming an audience
    * here would unblock staging for a send that still has no recipients.
    */
+  /** The Audience tab asked to re-read the saved audience it could not verify. */
+  protected onRetryAudienceRead(): void {
+    void this.restoreEmailAudience(this.activeFoundationSlug(), this.emailAudienceReadBriefId);
+  }
+
   protected onAudienceComposeUnattached(master: AudienceComposedList): void {
     this.emailAudienceUnattached.set(master);
   }
@@ -2729,6 +2753,8 @@ export class CampaignsComponent {
       // audience had never been read and never failed. It fails closed, so no duplicate list is
       // created, but the operator loses the primary action with nothing explaining why.
       this.emailAudienceReadFailed.set(false);
+      this.emailAudienceReadPending.set(false);
+      this.emailAudienceReadBriefId = '';
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
@@ -3573,16 +3599,25 @@ export class CampaignsComponent {
     if (projectSlug === '' || briefId === '') {
       return;
     }
+    this.emailAudienceReadBriefId = briefId;
 
     // Bumped BEFORE the await, like every other write to this signal: a restore of one brief must
     // not be overwritten by this read landing late for the previous one, and `canStageEmail` gates
     // on exactly the status it sets.
     const generation = ++this.emailAudienceGeneration;
     const isCurrent = (): boolean => generation === this.emailAudienceGeneration;
+    this.emailAudienceReadPending.set(true);
 
     try {
       const result = await firstValueFrom(this.campaignService.listAudiences(projectSlug, briefId));
-      if (!isCurrent() || !result.enabled) {
+      if (!isCurrent()) {
+        return;
+      }
+      if (!result.enabled) {
+        // `enabled: false` means the BFF SKIPPED the read, not that it found no audience. A restore
+        // offer can still hand over a brief id while the briefs flag is dark, and the Audience tab
+        // is independently available -- so this is an unverified absence, gated like a failure.
+        this.emailAudienceReadFailed.set(true);
         return;
       }
       if (result.error) {
@@ -3626,6 +3661,12 @@ export class CampaignsComponent {
       // it is the same guard either way.
       if (isCurrent()) {
         this.emailAudienceReadFailed.set(true);
+      }
+    } finally {
+      // Only the CURRENT read settles the flag. A newer write bumped the generation and owns it:
+      // another restore set it again, and a compose or a brief switch cleared it themselves.
+      if (isCurrent()) {
+        this.emailAudienceReadPending.set(false);
       }
     }
   }
@@ -4988,6 +5029,8 @@ export class CampaignsComponent {
     // Scoped to ONE brief, for the reason the stage switch clears it: a failed read for the brief
     // just left would otherwise lock compose for every later brief. See `restoreEmailAudience`.
     this.emailAudienceReadFailed.set(false);
+    this.emailAudienceReadPending.set(false);
+    this.emailAudienceReadBriefId = '';
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');

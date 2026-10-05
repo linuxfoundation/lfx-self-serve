@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractPageLinks, verifyPageLink } from './event-links.helper';
+import { extractPageLinks, resolvePageUrl, verifyPageLink } from './event-links.helper';
 
 const BASE_URL = 'https://example.com/events/kubecon';
 
@@ -222,6 +222,45 @@ describe('extractPageLinks — malformed and hostile markup', () => {
     expect([...links.values()], 'an unknown element was treated as a script').toEqual(['https://events.linuxfoundation.org/real']);
   });
 
+  // The closer needs the same tag-name boundary as the opener. A browser ends script data only at
+  // `</script` followed by whitespace, `/` or `>`, so `</scriptfoo>` is still script TEXT -- and
+  // ending the region there exposed the decoy after it as a page link. Both directions are pinned:
+  // the decoy stays inert, AND the real closer after it still ends the region.
+  it.each([
+    ['script', '<script>', '</scriptfoo>', '</script>'],
+    ['style', '<style>', '</stylefoo>', '</style>'],
+    ['upper-case script', '<SCRIPT>', '</SCRIPTFOO>', '</SCRIPT>'],
+  ])('keeps a %s open past a closer that merely starts with its name', (_label, open, fakeClose, realClose) => {
+    const html = `${open}${fakeClose}<a href="https://evil.example/fake">x</a>${realClose}<a href="https://events.linuxfoundation.org/real">Real</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()], 'a prefix closer ended the region early').toEqual(['https://events.linuxfoundation.org/real']);
+  });
+
+  it.each([
+    ['a slash', '</script/>'],
+    ['a newline', '</script\n>'],
+    ['end of input', '</script'],
+  ])('still closes a script on a real closer followed by %s', (_label, close) => {
+    const html = `<script>var a = 1;${close}<a href="https://events.linuxfoundation.org/real">Real</a>`;
+
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+
+    expect([...links.values()]).toEqual(close === '</script' ? [] : ['https://events.linuxfoundation.org/real']);
+  });
+
+  it('stays linear on many prefix closers inside one script', () => {
+    const html = `<script>${'</scriptx'.repeat(40_000)}</script><a href="https://events.linuxfoundation.org/real">Real</a>`;
+
+    const started = performance.now();
+    const links = extractPageLinks(html, 'https://events.linuxfoundation.org/');
+    const elapsed = performance.now() - started;
+
+    expect([...links.values()]).toEqual(['https://events.linuxfoundation.org/real']);
+    expect(elapsed, `${elapsed.toFixed(0)}ms`).toBeLessThan(500);
+  });
+
   // `\b` matches between `a` and the HYPHEN of a custom element, so `<a-button href=...>` was
   // collected as an anchor and `verifyPageLink` then vouched for a URL no `<a>` on the page
   // carries. A custom element must contain a hyphen by spec, so this is reachable on any
@@ -370,5 +409,37 @@ describe('verifyPageLink', () => {
 
   it('drops everything when the page yielded no links', () => {
     expect(verifyPageLink('https://example.com/agenda', new Map<string, string>(), BASE_URL)).toBe('');
+  });
+});
+
+describe('resolvePageUrl', () => {
+  it('resolves a root-relative href against the page that served it', () => {
+    // A page publishing `href="/register"` produced `/register`, which the brief coercer blanked
+    // because it accepts only absolute URLs -- losing the registration destination entirely.
+    expect(resolvePageUrl('/register', BASE_URL)).toBe('https://example.com/register');
+  });
+
+  it('resolves a path-relative href against the page directory', () => {
+    expect(resolvePageUrl('register?ref=hero#form', BASE_URL)).toBe('https://example.com/events/register?ref=hero#form');
+  });
+
+  it('keeps an absolute http(s) URL, including off-site registration hosts', () => {
+    expect(resolvePageUrl('https://cvent.example/kubecon?code=A', BASE_URL)).toBe('https://cvent.example/kubecon?code=A');
+  });
+
+  it('drops a non-http(s) scheme', () => {
+    expect(resolvePageUrl('javascript:alert(1)', BASE_URL)).toBe('');
+    expect(resolvePageUrl('mailto:events@example.com', BASE_URL)).toBe('');
+  });
+
+  it('drops userinfo, as a verified link does', () => {
+    expect(resolvePageUrl('https://evil.example@example.com/register', BASE_URL)).toBe('https://example.com/register');
+  });
+
+  it('returns an empty string for blank, non-string, or unresolvable input', () => {
+    expect(resolvePageUrl('', BASE_URL)).toBe('');
+    expect(resolvePageUrl(null, BASE_URL)).toBe('');
+    expect(resolvePageUrl(42, BASE_URL)).toBe('');
+    expect(resolvePageUrl('/register', '')).toBe('');
   });
 });
