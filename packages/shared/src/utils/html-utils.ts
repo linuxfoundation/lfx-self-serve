@@ -342,17 +342,20 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * survives here survives into the recipient's inbox.
  */
 function normalizeHrefForJudgement(href: string): string {
-  return (
-    href
-      .replace(/[\t\n\r]/g, '')
-      // BOTH C0/space AND Unicode whitespace at the ends. `trim()` alone misses C0 controls;
-      // a C0-only strip misses NBSP, U+3000 and U+2028 -- and a later `trim()` (canonicalHttpUrl
-      // runs one) removes those, turning a value judged as relative into a live destination.
-      // `\s` covers the Unicode set, `\x00-\x20` the controls; both ends, both classes.
-      .replace(/^[\s\x00-\x20\uFEFF]+/u, '')
-      .replace(/[\s\x00-\x20\uFEFF]+$/u, '')
-      .replace(/\\/g, '/')
-  );
+  // BOTH C0/space AND Unicode whitespace at the ends. `trim()` alone misses C0 controls;
+  // a C0-only strip misses NBSP, U+3000 and U+2028 -- and a later `trim()` (canonicalHttpUrl
+  // runs one) removes those, turning a value judged as relative into a live destination.
+  // `\s` covers the Unicode set, `\x00-\x20` the controls; both ends, both classes.
+  const stripped = href.replace(/[\t\n\r]/g, '');
+  // The leading run is anchored at the start, so the regex is linear. The TRAILING run is trimmed
+  // by INDEX rather than `/[...]+$/`, which CodeQL flags as a polynomial regex on caller-controlled
+  // input. Every character in the class is a single UTF-16 code unit, so testing one code unit at a
+  // time is the same set the regex matched.
+  const leadingTrimmed = stripped.replace(/^[\s\x00-\x20\uFEFF]+/u, '');
+  const edgeWhitespace = /^[\s\x00-\x20\uFEFF]$/u;
+  let end = leadingTrimmed.length;
+  while (end > 0 && edgeWhitespace.test(leadingTrimmed[end - 1])) end--;
+  return leadingTrimmed.slice(0, end).replace(/\\/g, '/');
 }
 
 /** `attribs` without its `href`, so an anchor keeps its words and loses only the promise. */
