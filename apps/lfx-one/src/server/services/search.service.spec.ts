@@ -121,6 +121,14 @@ describe('SearchService (server)', () => {
     expect(byPerson.results.map((r) => r.uid)).toEqual(['member:2']);
   });
 
+  it('does not let a committee-name query pass members whose email domain shares the name', async () => {
+    proxyRequest.mockResolvedValue(upstream([member({})]));
+
+    const response = await service.searchUsers(req, { name: 'partner', type: 'committee_member', sort: 'best_match' });
+
+    expect(response).toEqual({ results: [], total: 0 });
+  });
+
   it('does not filter exact email tag lookups', async () => {
     proxyRequest.mockResolvedValue(upstream([member({})]));
 

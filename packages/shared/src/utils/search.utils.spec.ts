@@ -172,14 +172,14 @@ describe('matchesUserSearchQuery', () => {
     ['a full name in any case', 'kim park'],
     ['a prefix of each term', 'k pa'],
     ['a username prefix', 'kpa'],
-    ['an email prefix', 'kim.park@'],
-    ['an email segment', 'partner'],
   ])('matches %s', (_label, query) => {
     expect(matchesUserSearchQuery(kim, query)).toBe(true);
   });
 
   it.each([
     ['a committee-name-only term', 'governing'],
+    ['an email-domain term that could coincide with a committee name', 'partner'],
+    ['an email address', 'kim.park@partner-corp.example'],
     ['one term the person does not carry', 'kim governing'],
     ['an infix that prefixes no token', 'ark'],
     ['an empty query', '   '],

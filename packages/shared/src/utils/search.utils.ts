@@ -112,11 +112,14 @@ export function filterUserSearchCandidates<T extends RankableUser>(candidates: r
  * Whether a name query matches the person themself rather than an alias indexed alongside them.
  *
  * Mirrors the upstream leading-prefix rule (every whitespace-separated term must prefix a token)
- * but only over the person's own fields: first name, last name, username and email. Tokens are
+ * but only over the person's own name fields: first name, last name and username. Tokens are
  * taken whole and split on non-alphanumerics, so `kim.p` and `park` both match `kim.park`. The
  * BFF uses this to drop `committee_member` rows that matched only on the committee name in
  * `name_and_aliases` — keeping them would list a committee's members regardless of its
- * `member_visibility`. An empty query matches nothing.
+ * `member_visibility`. Email is deliberately excluded: `name_and_aliases` does not index it, and
+ * its tokens (the domain especially) can coincide with a committee name, so a committee-name hit
+ * would pass the filter on every member sharing that domain. Exact email lookup stays on the
+ * `email:` tag path. An empty query matches nothing.
  */
 export function matchesUserSearchQuery(user: RankableUser, query: string): boolean {
   // Diacritics are folded on both sides so `jose` still finds José, as an accent-folding index would.
@@ -126,7 +129,7 @@ export function matchesUserSearchQuery(user: RankableUser, query: string): boole
     return false;
   }
 
-  const tokens = [user.first_name, user.last_name, user.username, user.email].flatMap((value) => {
+  const tokens = [user.first_name, user.last_name, user.username].flatMap((value) => {
     const field = fold(value);
     return field ? [field, ...field.split(/\s+/), ...field.split(/[^\p{L}\p{N}]+/u)].filter(Boolean) : [];
   });

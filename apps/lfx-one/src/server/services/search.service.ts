@@ -96,7 +96,8 @@ export class SearchService {
     // reappear at page boundaries.
     // Upstream indexes the committee name in every `committee_member` row's `name_and_aliases`, so a
     // name query can select a committee and return its whole roster. Keep only rows whose own
-    // name, username or email matches the query, so a hidden roster cannot be listed by name.
+    // name or username matches the query, so a hidden roster cannot be listed by name. Email is not
+    // matched: a committee named after a domain would otherwise pass every member at that domain.
     const matching =
       params.type === 'committee_member' && params.name ? mapped.filter((result) => matchesUserSearchQuery(result, params.name as string)) : mapped;
     const results = dedupeUserSearchResults(matching);
