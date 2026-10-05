@@ -47,7 +47,7 @@ modules/meetings/
 - **Shared app wrappers** (`app/shared/components/`: `button`, `card`, `tag`, `avatar`, `select`,
   `table`, `empty-state` and the rest listed in `spec.md` § Reuse before you create) are used by both
   trees. V1 already imports `button`, `card`, `tag`, `expandable-text`, `header` and
-  `impersonation-banner`. The V2 page uses `button`, `avatar`, `menu` and `impersonation-banner`, plus
+  `impersonation-banner`. The V2 page uses `button`, `avatar`, `menu`, `tag` and `impersonation-banner`, plus
   PrimeNG's `p-skeleton` (as V1 does; there is no wrapper) pointed at the V2 tokens. It does not use
   `header`: the sticky identity bar (E1-02, `components/identity-bar/`) replaces the app header on
   this page, as the prototype does.

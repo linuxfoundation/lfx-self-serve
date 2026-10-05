@@ -87,14 +87,15 @@ accent on its own 9% tint is only 4.27:1.
 Status hues are used as chip text on their own tinted background, so contrast is measured
 there — the stricter of the two surfaces — with the value on `--md-surface-card` alongside.
 
-| Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                | Adopt upstream?                                    |
-| --------------------- | ---------------------- | ------- | ------- | ----------------------- | --------------------------------------------------------- | -------------------------------------------------- |
-| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                      | Yes — converge on `emerald.700`                    |
-| `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
-| `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange, and 4.26:1 on its tint    | **No** — hue and contrast; keep V2, raise upstream |
-| `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
-| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange | Yes — converge on `red.700`                        |
-| `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                                      |
+| Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                          | Adopt upstream?                                    |
+| --------------------- | ---------------------- | ------- | ------- | ----------------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
+| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                                | Yes — converge on `emerald.700`                    |
+| `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                             | n/a — derived                                      |
+| `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange, and 4.26:1 on its tint              | **No** — hue and contrast; keep V2, raise upstream |
+| `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                             | n/a — derived                                      |
+| `--md-status-live`    | `#c4342b`              | 4.67:1  | 5.42:1  | `red.600` `#E7000B`     | `red.600` is a pure red; V2 is softer and slightly orange           | Yes — converge on `red.700`                        |
+| `--md-feature-ai`     | `#7c3aed`              | n/a     | n/a     | `violet.600` `#7F22FE`  | AI-summary icon only (non-text); prototype violet is less saturated | Yes — converge on `violet.600`                     |
+| `--md-status-live-bg` | `rgb(196 52 43 / 10%)` | —       | —       | —                       | derived                                                             | n/a — derived                                      |
 
 All three hues are darkened from the prototype, which measured roughly 3.6:1 on-chip across
 good, warn and live — every status chip would have failed AA. The divergence from `lfxColors`
@@ -168,6 +169,7 @@ without adjustment; `--md-glyph-faint` stays non-text, as it is in light.
 | `--md-status-good`   | `#3bb87c`  | 6.97:1  | 5.58:1      | `emerald.500` `#00BC7D` |
 | `--md-status-warn`   | `#e0a94a`  | 8.32:1  | 6.44:1      | `amber.300` `#FFD230`   |
 | `--md-status-live`   | `#ff6b60`  | 6.29:1  | 5.21:1      | `red.400` `#FF6467`     |
+| `--md-feature-ai`    | `#a78bfa`  | n/a     | n/a         | `violet.400` `#A684FF`  |
 
 The `-bg` tints are derived from their hue exactly as in light and are omitted.
 

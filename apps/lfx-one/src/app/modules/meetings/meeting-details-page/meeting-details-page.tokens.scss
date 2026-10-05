@@ -99,6 +99,10 @@
   --md-status-live: #c4342b; // DIVERGENCE: nearest lfxColors.red.600 (#E7000B), softer than upstream; converges on red.700 (#C10007, 5.35:1 on its tint) — NOT red.600, which is 4.01:1. 4.67:1 on chip, 5.42:1 on card
   --md-status-live-bg: rgb(196 52 43 / 10%); // derived from --md-status-live
 
+  // ── Feature: AI ───────────────────────────────────────────────────────────
+  // Non-text: the AI-summary icon only, beside its own label, so no text-contrast tier applies.
+  --md-feature-ai: #7c3aed; // DIVERGENCE: nearest lfxColors.violet.600 (#7F22FE), which is more saturated; prototype violet
+
   // ── Radii ─────────────────────────────────────────────────────────────────
   --md-radius-xs: 3px; // progress bars, rails, hairline chips
   --md-radius-md: 8px; // buttons, inputs, small tiles
@@ -163,6 +167,8 @@
 
   --md-status-live: #ff6b60; // nearest lfxColors.red.400 (#FF6467); 6.29:1 on card, 5.21:1 on chip
   --md-status-live-bg: rgb(255 107 96 / 14%); // derived from --md-status-live
+
+  --md-feature-ai: #a78bfa; // nearest lfxColors.violet.400 (#A684FF); icon only
 
   // --md-shadow-color is intentionally not overridden: the prototype's dark block leaves
   // the elevation colour alone.
