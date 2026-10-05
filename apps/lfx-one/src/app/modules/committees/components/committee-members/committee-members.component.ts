@@ -368,10 +368,10 @@ export class CommitteeMembersComponent implements OnInit {
       },
     });
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
-      if (result === true) {
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: number | undefined) => {
+      if (typeof result === 'number' && result > 0) {
         this.refreshMembers();
-        this.pollUntilMemberAdded(countBeforeAdd);
+        this.pollUntilMemberAdded(countBeforeAdd, result);
       }
     });
   }
@@ -393,10 +393,10 @@ export class CommitteeMembersComponent implements OnInit {
       },
     });
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
-      if (result === true) {
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: number | undefined) => {
+      if (typeof result === 'number' && result > 0) {
         this.refreshMembers();
-        this.pollUntilInviteAdded(countBeforeInvite);
+        this.pollUntilInviteAdded(countBeforeInvite, result);
       }
     });
   }
@@ -656,12 +656,15 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   /**
-   * Polls getCommitteeMembers until the count exceeds `countBefore`, absorbing the
-   * query-service indexing lag after a direct-add write (same pattern as
+   * Polls getCommitteeMembers until the count reaches at least `countBefore + expected`,
+   * absorbing the query-service indexing lag after a direct-add write (same pattern as
    * refreshCommitteeAfterMembershipChange in committee-view.component.ts).
-   * Fires a final refreshMembers() when the new row is detected, or gives up after 6 attempts.
+   * `expected` is the number of successfully added members from the dialog — using it instead
+   * of a fixed +1 avoids stopping the poll early in batch-add scenarios where multiple members
+   * are added at once but only the first one is indexed on the initial poll tick.
+   * Fires a final refreshMembers() when all new rows are detected, or gives up after 6 attempts.
    */
-  private pollUntilMemberAdded(countBefore: number): void {
+  private pollUntilMemberAdded(countBefore: number, expected = 1): void {
     const committeeUid = this.committee()?.uid;
     if (!committeeUid) return;
 
@@ -671,7 +674,7 @@ export class CommitteeMembersComponent implements OnInit {
       .pipe(
         take(6),
         exhaustMap(() => this.committeeService.getCommitteeMembers(committeeUid).pipe(catchError(() => of(null as CommitteeMember[] | null)))),
-        filter((members): members is CommitteeMember[] => Array.isArray(members) && members.length > countBefore),
+        filter((members): members is CommitteeMember[] => Array.isArray(members) && members.length >= countBefore + expected),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -691,8 +694,9 @@ export class CommitteeMembersComponent implements OnInit {
   /**
    * Same as pollUntilMemberAdded but watches the invite list, absorbing query-service
    * indexing lag after a new invite is created.
+   * `expected` is the number of successfully sent invites — poll until all are indexed.
    */
-  private pollUntilInviteAdded(countBefore: number): void {
+  private pollUntilInviteAdded(countBefore: number, expected = 1): void {
     const committeeUid = this.committee()?.uid;
     if (!committeeUid) return;
 
@@ -706,7 +710,7 @@ export class CommitteeMembersComponent implements OnInit {
         // Without this filter, accepted/revoked invites in the API response inflate the count
         // and the condition would fire immediately on the first poll regardless of the new invite.
         map((invites) => (Array.isArray(invites) ? invites.filter((i) => i.status === 'pending') : null)),
-        filter((invites): invites is CommitteeInvite[] => Array.isArray(invites) && invites.length > countBefore),
+        filter((invites): invites is CommitteeInvite[] => Array.isArray(invites) && invites.length >= countBefore + expected),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )

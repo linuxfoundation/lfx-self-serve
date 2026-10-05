@@ -258,6 +258,14 @@ export class CommitteeViewComponent {
   // committee response carrying the new my_role.
   public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  /**
+   * Role-only visitor check for privacy-gated inputs (Email column, votes/surveys fetch).
+   * Deliberately excludes `myRoleLoading()` so the boundary is based solely on known role
+   * state and cannot fail open during a silent refresh when `committeeRefreshing()` is true.
+   * Before the initial data arrives (myRole() === null), this correctly fails closed —
+   * privacy-gated UI stays in visitor mode until a non-null role is confirmed.
+   */
+  public isVisitorForPrivacy: Signal<boolean> = computed(() => this.myRole() === null && !this.canEdit());
   /** True when the visitor submitted an application for the current committee this session. */
   public hasPendingApplication: Signal<boolean> = computed(() => {
     const uid = this.committee()?.uid;

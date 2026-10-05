@@ -454,8 +454,11 @@ export class AddMemberDialogComponent {
       .subscribe((results) => {
         this.submitting.set(false);
         this.summarizeDirectAdd(results);
-        if (results.some((r) => r.success)) {
-          this.dialogRef.close(true);
+        const succeeded = results.filter((r) => r.success).length;
+        if (succeeded > 0) {
+          // Close with the count of successfully added members so the caller's poller can
+          // wait until all of them are indexed, not just the first one.
+          this.dialogRef.close(succeeded);
         }
       });
   }
@@ -477,8 +480,11 @@ export class AddMemberDialogComponent {
       .subscribe((results) => {
         this.submitting.set(false);
         this.summarizeInvites(results);
-        if (results.some((r) => r.success)) {
-          this.dialogRef.close(true);
+        const succeeded = results.filter((r) => r.success).length;
+        if (succeeded > 0) {
+          // Close with the count of successfully sent invites so the caller's poller can
+          // wait until all of them are indexed, not just the first one.
+          this.dialogRef.close(succeeded);
         }
       });
   }

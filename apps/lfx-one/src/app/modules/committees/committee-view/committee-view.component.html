@@ -471,7 +471,7 @@
               [applications]="applications()"
               [applicationsLoading]="applicationsLoading()"
               [canSendMemberInvites]="canSendMemberInvites()"
-              [isVisitor]="isVisitor() && !canEdit()"
+              [isVisitor]="isVisitorForPrivacy()"
               [engagementEnabled]="engagementMetricsEnabled()"
               [engagementAccessible]="canAccessEngagement()"
               [engagement]="engagement()"
@@ -490,7 +490,7 @@
           <lfx-committee-meetings
             [committee]="committee()!"
             [canEdit]="canEdit()"
-            [isVisitor]="isVisitor() && !canEdit()"
+            [isVisitor]="isVisitorForPrivacy()"
             [initialTimeFilter]="meetingsTimeFilter()"
             [meetings]="upcomingMeetings()"
             [meetingsLoading]="meetingsLoading()" />

@@ -1643,11 +1643,12 @@ export class CommitteeService {
             is_foundation: committee?.is_foundation ?? undefined,
             project_slug: committee?.project_slug ?? undefined,
           });
-        } catch {
+        } catch (error) {
           // Committee not accessible or not found — fall back to the UID as display name,
           // mirroring the getMyPendingInvitations fallback pattern.
           logger.warning(req, 'get_my_applications', 'Committee enrichment failed, using UID as fallback display name', {
             committee_uid: uid,
+            err: error,
           });
           committeeMap.set(uid, { name: uid });
         }
