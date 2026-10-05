@@ -332,6 +332,30 @@ describe('MeetingDetailsStateService', () => {
       expect(state.failureCount()).toBe(0);
     });
 
+    // The previous meeting's request must be cancelled the moment the route changes, not one tick
+    // later: settling in that tick would otherwise be taken as the new route's answer.
+    it("ignores the previous meeting's request when it settles just after the route changes", async () => {
+      const old$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(old$);
+      const state = create();
+      await settle();
+
+      const next$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(next$);
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      old$.next({ meeting: buildMeeting(), project });
+      old$.error({ status: 404 });
+
+      expect(state.status()).toBe('loading');
+      expect(navigate).not.toHaveBeenCalled();
+
+      await settle();
+      next$.next({ meeting: buildMeeting('meeting-2', 'Other Sync'), project });
+
+      expect(state.status()).toBe('ready');
+      expect(state.meeting()?.title).toBe('Other Sync');
+    });
+
     it('shows the error branch, not the previous meeting, when the new lookup fails', async () => {
       const state = create();
       await settle();

@@ -9,7 +9,7 @@ import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDetailsLoadStatus, MeetingJoinPageState, PublicMeetingProject, PublicPastMeetingResponse } from '@lfx-one/shared/interfaces';
 import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, map, Observable, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, EMPTY, map, Observable, switchMap, tap, timer } from 'rxjs';
 
 import { MeetingDetailsSeedService } from '../meeting-details-gate/meeting-details-seed.service';
 
@@ -107,7 +107,7 @@ export class MeetingDetailsStateService {
 
   private initMeeting(seed: MeetingJoinPageState | null): Signal<(Meeting & { project: PublicMeetingProject }) | undefined> {
     const meeting$ = combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refresh$]).pipe(
-      // Ahead of `debounceTime`, so `matchesRoute` turns false the instant the route changes.
+      // Before the lookup is scheduled, so `matchesRoute` turns false the instant the route changes.
       tap(([params]) => {
         const meetingId = params.get('id');
         if (meetingId !== this.routeId()) {
@@ -116,20 +116,27 @@ export class MeetingDetailsStateService {
         }
         this.routeId.set(meetingId);
       }),
-      // Coalesces the paramMap / queryParamMap emissions of one navigation into a single lookup.
-      debounceTime(0),
-      switchMap(([params, queryParams]) => {
-        const meetingId = params.get('id');
-        this.applyPassword(queryParams);
+      // The one-tick timer coalesces the paramMap / queryParamMap emissions of one navigation into a
+      // single lookup. It sits inside `switchMap`, not before it as a `debounceTime`, so a new
+      // emission cancels the previous lookup at once: otherwise the previous meeting's request stays
+      // live for that tick, and settling then would mark it as the new route's meeting or send the
+      // new route to not-found.
+      switchMap(([params, queryParams]) =>
+        timer(0).pipe(
+          switchMap(() => {
+            const meetingId = params.get('id');
+            this.applyPassword(queryParams);
 
-        if (!meetingId) {
-          this.retrying.set(false);
-          void this.router.navigate(['/meetings/not-found']);
-          return EMPTY;
-        }
+            if (!meetingId) {
+              this.retrying.set(false);
+              void this.router.navigate(['/meetings/not-found']);
+              return EMPTY;
+            }
 
-        return isPastMeetingCompositeId(meetingId) ? this.fetchPast(meetingId) : this.fetchUpcomingThenPast(meetingId);
-      }),
+            return isPastMeetingCompositeId(meetingId) ? this.fetchPast(meetingId) : this.fetchUpcomingThenPast(meetingId);
+          })
+        )
+      ),
       map((res) => ({ ...res.meeting, project: res.project })),
       tap((meeting) => {
         // For the same route only a settled success clears a terminal error (a route change resets
