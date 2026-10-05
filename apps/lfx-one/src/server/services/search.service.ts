@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMember, MeetingRegistrant, QueryServiceResponse, UserSearchParams, UserSearchResponse, UserSearchResult } from '@lfx-one/shared/interfaces';
-import { dedupeUserSearchResults } from '@lfx-one/shared/utils';
+import { dedupeUserSearchResults, matchesUserSearchQuery } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -94,7 +94,12 @@ export class SearchService {
     // covers the full result set. If this endpoint ever walks multiple pages
     // (page_token), the dedupe must span all pages — otherwise duplicates can
     // reappear at page boundaries.
-    const results = dedupeUserSearchResults(mapped);
+    // Upstream indexes the committee name in every `committee_member` row's `name_and_aliases`, so a
+    // name query can select a committee and return its whole roster. Keep only rows whose own
+    // name, username or email matches the query, so a hidden roster cannot be listed by name.
+    const matching =
+      params.type === 'committee_member' && params.name ? mapped.filter((result) => matchesUserSearchQuery(result, params.name as string)) : mapped;
+    const results = dedupeUserSearchResults(matching);
 
     return {
       results,

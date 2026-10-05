@@ -5,7 +5,14 @@ import { describe, expect, it } from 'vitest';
 
 import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
-import { dedupeUserSearchResults, filterUserSearchCandidates, hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
+import {
+  dedupeUserSearchResults,
+  filterUserSearchCandidates,
+  hasLfAccount,
+  matchesUserSearchQuery,
+  rankUserSearchResults,
+  scoreUserSearchResult,
+} from './search.utils';
 
 /** Builds a UserSearchResult fixture, defaulting every field so tests set only what they assert on. */
 function user(partial: Partial<UserSearchResult>): UserSearchResult {
@@ -153,6 +160,42 @@ describe('filterUserSearchCandidates', () => {
     const input = [ilona, bob];
     filterUserSearchCandidates(input, 'b');
     expect(input.map((c) => c.uid)).toEqual(['1', '2']);
+  });
+});
+
+describe('matchesUserSearchQuery', () => {
+  const kim = user({ first_name: 'Kim', last_name: 'Park', email: 'kim.park@partner-corp.example', username: 'kpark' });
+
+  it.each([
+    ['a first-name prefix', 'ki'],
+    ['a last name', 'Park'],
+    ['a full name in any case', 'kim park'],
+    ['a prefix of each term', 'k pa'],
+    ['a username prefix', 'kpa'],
+    ['an email prefix', 'kim.park@'],
+    ['an email segment', 'partner'],
+  ])('matches %s', (_label, query) => {
+    expect(matchesUserSearchQuery(kim, query)).toBe(true);
+  });
+
+  it.each([
+    ['a committee-name-only term', 'governing'],
+    ['one term the person does not carry', 'kim governing'],
+    ['an infix that prefixes no token', 'ark'],
+    ['an empty query', '   '],
+  ])('rejects %s', (_label, query) => {
+    expect(matchesUserSearchQuery(kim, query)).toBe(false);
+  });
+
+  it('folds diacritics on both sides', () => {
+    const jose = user({ first_name: 'José', last_name: 'Núñez' });
+    expect(matchesUserSearchQuery(jose, 'jose nunez')).toBe(true);
+    expect(matchesUserSearchQuery(user({ first_name: 'Jose' }), 'josé')).toBe(true);
+  });
+
+  it('ignores blank fields', () => {
+    expect(matchesUserSearchQuery(user({ first_name: 'Pat' }), 'pat')).toBe(true);
+    expect(matchesUserSearchQuery(user({ first_name: 'Pat' }), 'lee')).toBe(false);
   });
 });
 

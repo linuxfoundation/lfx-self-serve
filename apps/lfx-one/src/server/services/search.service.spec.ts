@@ -109,6 +109,26 @@ describe('SearchService (server)', () => {
     expect(response.results[1]).toEqual(expect.objectContaining({ uid: 'member:3', username: null, organization: null }));
   });
 
+  it('drops committee-member rows that matched only on an indexed alias such as the committee name', async () => {
+    proxyRequest.mockResolvedValue(
+      upstream([member({}), member({ uid: 'member:2', username: 'gov.chair', email: 'gc@partner-corp.example', first_name: 'Governor', last_name: 'Chair' })])
+    );
+
+    const byCommittee = await service.searchUsers(req, { name: 'Governing Board', type: 'committee_member', sort: 'best_match' });
+    expect(byCommittee).toEqual({ results: [], total: 0 });
+
+    const byPerson = await service.searchUsers(req, { name: 'gover', type: 'committee_member', sort: 'best_match' });
+    expect(byPerson.results.map((r) => r.uid)).toEqual(['member:2']);
+  });
+
+  it('does not filter exact email tag lookups', async () => {
+    proxyRequest.mockResolvedValue(upstream([member({})]));
+
+    const response = await service.searchUsers(req, { tags: 'email:kim.park@partner-corp.example', type: 'committee_member' });
+
+    expect(response.total).toBe(1);
+  });
+
   it('maps meeting registrants and forwards the v1_meeting_registrant type verbatim', async () => {
     proxyRequest.mockResolvedValue(
       upstream([
