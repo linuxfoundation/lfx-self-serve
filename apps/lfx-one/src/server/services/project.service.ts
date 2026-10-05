@@ -163,6 +163,7 @@ import {
   CommitteeDocumentQueryResult,
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
   MeetingAttachment,
   PastMeetingAttachment,
   PastMeetingRecordingQueryResult,
@@ -7804,17 +7805,56 @@ export class ProjectService {
       document_source: 'project' as const,
     }));
 
-    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => ({
-      uid: `groupsio_artifact:${a.artifact_id}`,
-      type: 'link' as const,
-      name: a.filename || a.link_url || a.artifact_id,
-      url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
-      mime_type: a.media_type,
-      created_at: a.last_posted_at || a.created_at,
-      project_uid: a.project_uid,
-      document_source: 'mailing_list' as const,
-      document_source_name: a.committee_uid ? (committeeNameByUid.get(a.committee_uid) ?? '') : '',
-    }));
+    // Resolve mailing list titles for groupsio artifacts by group_id.
+    const mailingListGroupIds = [...new Set((groupsioArtifacts || []).map((a) => (a.group_id ? String(a.group_id) : null)).filter(Boolean) as string[])];
+    const mailingListTitleByGroupId = new Map<string, string>();
+    if (mailingListGroupIds.length > 0) {
+      const mlBatches: string[][] = [];
+      for (let i = 0; i < mailingListGroupIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+        mlBatches.push(mailingListGroupIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+      }
+      const mlBatchResults = await Promise.allSettled(
+        mlBatches.map((batch) =>
+          fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'groupsio_mailing_list',
+              tags: batch.map((id) => `groupsio_mailing_list_uid:${id}`),
+              ...(pageToken && { page_token: pageToken }),
+            })
+          )
+        )
+      );
+      for (const [i, result] of mlBatchResults.entries()) {
+        if (result.status === 'fulfilled') {
+          for (const ml of result.value) {
+            if (ml.group_id != null && ml.title) {
+              mailingListTitleByGroupId.set(String(ml.group_id), ml.title);
+            }
+          }
+        } else {
+          logger.warning(req, 'get_project_documents', 'Failed to resolve mailing list names for batch, names will be omitted', {
+            project_uid: projectId,
+            batch_index: i,
+          });
+        }
+      }
+    }
+
+    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
+      const groupId = a.group_id ? String(a.group_id) : undefined;
+      const mailingListTitle = groupId ? mailingListTitleByGroupId.get(groupId) : undefined;
+      return {
+        uid: `groupsio_artifact:${a.artifact_id}`,
+        type: 'link' as const,
+        name: a.filename || a.link_url || mailingListTitle || a.artifact_id,
+        url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
+        mime_type: a.media_type,
+        created_at: a.last_posted_at || a.created_at,
+        project_uid: a.project_uid,
+        document_source: 'mailing_list' as const,
+        document_source_name: mailingListTitle ?? '',
+      };
+    });
 
     const committeeLinkDocs: ProjectDocument[] = (committeeLinks || [])
       .filter((l) => !!l.url)
