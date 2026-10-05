@@ -55,7 +55,7 @@ export class EventsService {
     if (params.country) httpParams = httpParams.set('country', params.country);
     if (params.isVisaRequestAccepted) httpParams = httpParams.set('isVisaRequestAccepted', 'true');
     if (params.isTravelFundRequestAccepted) httpParams = httpParams.set('isTravelFundRequestAccepted', 'true');
-    if (params.excludePastTravelFundDeadline) httpParams = httpParams.set('excludePastTravelFundDeadline', 'true');
+    if (params.anyRegistrationStatus) httpParams = httpParams.set('anyRegistrationStatus', 'true');
 
     return this.http.get<MyEventsResponse>('/api/events', { params: httpParams });
   }
@@ -174,5 +174,11 @@ export class EventsService {
     if (params.eventId) httpParams = httpParams.set('eventId', params.eventId);
 
     return this.http.get('/api/events/certificate', { params: httpParams, responseType: 'blob', observe: 'response' });
+  }
+
+  public getVisaLetter(eventId: string): Observable<HttpResponse<Blob>> {
+    const params = new HttpParams().set('eventId', eventId);
+
+    return this.http.get('/api/events/visa-letter', { params, responseType: 'blob', observe: 'response' });
   }
 }

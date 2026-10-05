@@ -35,6 +35,8 @@ import { CommitteeViewComponent } from './committee-view.component';
 describe('CommitteeViewComponent', () => {
   let composer: MeetingComposerService;
   let getMeetingsByCommittee: ReturnType<typeof vi.fn>;
+  let getCommitteeMembers: ReturnType<typeof vi.fn>;
+  let currentCommittee: Committee;
 
   const committee = { uid: 'committee-1', name: 'Technical Steering', my_role: 'member' } as unknown as Committee;
   const meeting = { uid: 'meeting-1', title: 'Weekly sync' } as unknown as Meeting;
@@ -46,6 +48,8 @@ describe('CommitteeViewComponent', () => {
 
   beforeEach(() => {
     getMeetingsByCommittee = vi.fn(() => of([meeting]));
+    getCommitteeMembers = vi.fn(() => of([]));
+    currentCommittee = committee;
 
     TestBed.configureTestingModule({
       providers: [
@@ -70,9 +74,9 @@ describe('CommitteeViewComponent', () => {
         {
           provide: CommitteeService,
           useValue: {
-            getCommittee: vi.fn(() => of(committee)),
-            fetchCommittee: vi.fn(() => of(committee)),
-            getCommitteeMembers: vi.fn(() => of([])),
+            getCommittee: vi.fn(() => of(currentCommittee)),
+            fetchCommittee: vi.fn(() => of(currentCommittee)),
+            getCommitteeMembers,
             getCommitteeInvites: vi.fn(() => of([])),
             getCommitteeApplications: vi.fn(() => of([])),
             getMyApplication: vi.fn(() => of(null)),
@@ -136,5 +140,39 @@ describe('CommitteeViewComponent', () => {
     flush();
 
     expect(getMeetingsByCommittee).toHaveBeenCalledTimes(1);
+  });
+
+  describe('member_visibility gating', () => {
+    const tabKeys = (component: CommitteeViewComponent): string[] => component.visibleTabs().map((tab) => tab.key);
+
+    it('shows the Members tab and fetches the roster for an auditor who is not on the roster', () => {
+      currentCommittee = { ...committee, my_role: undefined, member_visibility: 'hidden', writer: false, auditor: true } as unknown as Committee;
+
+      const component = createComponent();
+      flush();
+
+      expect(tabKeys(component)).toContain('members');
+      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+    });
+
+    it('hides the Members tab and skips the roster fetch for a member when the roster is hidden', () => {
+      currentCommittee = { ...committee, member_visibility: 'hidden', writer: false, auditor: false } as unknown as Committee;
+
+      const component = createComponent();
+      flush();
+
+      expect(tabKeys(component)).not.toContain('members');
+      expect(getCommitteeMembers).not.toHaveBeenCalled();
+    });
+
+    it('shows the Members tab to a member when visibility is basic_profile', () => {
+      currentCommittee = { ...committee, member_visibility: 'basic_profile', writer: false, auditor: false } as unknown as Committee;
+
+      const component = createComponent();
+      flush();
+
+      expect(tabKeys(component)).toContain('members');
+      expect(getCommitteeMembers).toHaveBeenCalledWith('committee-1');
+    });
   });
 });

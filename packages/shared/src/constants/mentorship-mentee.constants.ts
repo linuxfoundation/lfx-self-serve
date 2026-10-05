@@ -39,10 +39,6 @@ export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL = 'Anything else you want 
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other context that would help a mentor get to know you.';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
-export const MENTORSHIP_MENTEE_RESUME_INTRO = 'Optional, but mentors often look you up before accepting a mentee.';
-/** Passed to the resume section's `comingSoonSummary`: upload stays inert and toasts this feature name. */
-export const MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
-
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO =
   'Optional and purely voluntary. Answers are confidential, are not shared with mentors, and are used only for aggregate diversity reporting.';
@@ -439,17 +435,10 @@ export const MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL = 'About Me';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_LABEL = 'Skills';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL = 'Areas to Improve';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_LABEL = 'Additional Notes';
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY = 'No areas to improve added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY = 'No additional notes added yet.';
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
-/**
- * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
- * the two fields are independently optional in `MentorshipMenteeProfileDetails`.
- */
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
 // ---------------------------------------------------------------------------
 // Mentee apply page — `/mentorship/mentee/apply?programId=&programTermId=`
@@ -538,17 +527,11 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<n
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
  * "Edit Mentee Profile" button. Drawer-only labels: the Become a Mentee register form keeps its
- * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
+ * own intro / skill copy. About Me uses the register rich editor and its introduction rule.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
   'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
-/**
- * Same 3000 code-point cap as register About Me (`introduction`). Issue #2764's
- * mockup showed a 2000 counter; clipping the drawer to 2000 would truncate a
- * register-length intro on seed, so edit and register share this constant.
- */
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = MENTORSHIP_MENTEE_INTRODUCTION_MAX;
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =
   'Enter your current skills as well as skills you would like to improve, so mentors can match you with the right program.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL = 'What skills are you currently proficient in?';
@@ -575,8 +558,6 @@ export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet'
 export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
 
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE =
-  'Your introduction has too many line breaks or special characters to save. Shorten it or remove extra blank lines.';
 
 /** Copy per status; 403 is intentionally absent (the BFF impersonation guard authors its own message). */
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
@@ -588,7 +569,6 @@ export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save 
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_SAVE_SUCCESS_SUMMARY = 'Demographics updated';
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_TOAST_LIFE = 5000;
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';

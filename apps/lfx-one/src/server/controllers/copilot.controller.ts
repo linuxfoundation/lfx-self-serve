@@ -4,7 +4,7 @@
 import { CopilotChatRequest, CopilotSSEEventType, FlushableResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { AuthenticationError, ServiceValidationError } from '../errors';
 import { CopilotService } from '../services/copilot.service';
 import { logger } from '../services/logger.service';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
@@ -40,7 +40,19 @@ export class CopilotController {
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     const validContext = context && typeof context === 'object' && !Array.isArray(context) ? context : undefined;
 
-    const userId = getEffectiveUsername(req) || 'anonymous';
+    // Upstream keys chat sessions on this value, so a missing LFID must be rejected rather than
+    // collapsed onto a shared fallback identity.
+    const userId = getEffectiveUsername(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('User authentication required', {
+          operation: 'copilot_chat',
+          service: 'copilot_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
 
     const startTime = logger.startOperation(req, 'copilot_chat', {
       has_session: !!validSessionId,

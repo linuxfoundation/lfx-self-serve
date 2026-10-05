@@ -5,6 +5,7 @@ import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { createEmptyMentorshipEnrollForm, MENTORSHIP_ENROLL_DESCRIPTION_MAX, MENTORSHIP_RICH_TEXT_RAW_MAX } from '@lfx-one/shared/constants';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -31,10 +32,10 @@ describe('EnrollDetailsStepComponent — description counter', () => {
     await TestBed.configureTestingModule({
       imports: [EnrollDetailsStepComponent],
       providers: [
+        { provide: MentorshipAdminService, useValue: { getPrograms: () => of({ data: [] }) } },
         {
           provide: MentorshipService,
           useValue: {
-            getPrograms: () => of({ data: [] }),
             getLfProjects: () => of({ data: [], total: 0 }),
             getCiiBadge: () => of(null),
             isProgramNameAvailable: () => of({ available: true }),

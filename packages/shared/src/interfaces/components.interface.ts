@@ -533,6 +533,12 @@ export interface ProgressItemWithChart extends ProgressItem {
 export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction' | 'FormationItem';
 
 /**
+ * Pending-actions drawer section discriminator. String union for consistency with `PendingActionType`;
+ * derived client-side by the drawer's grouping computed — it never crosses a serialization boundary.
+ */
+export type PendingActionSection = 'meetings' | 'votes' | 'surveys' | 'invitations' | 'formation' | 'other';
+
+/**
  * Pending action item for task list
  * @description Structure for pending action items
  */
@@ -675,6 +681,16 @@ export interface DrawerActionRow extends PendingActionItem, FormationPendingActi
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
+}
+
+/** One section in the pending-actions drawer — header label plus its rows, rendered in `PENDING_ACTION_SECTION_ORDER` order; sections with no visible rows are omitted. */
+export interface DrawerActionSection {
+  /** Section key — doubles as the data-testid suffix (`pending-actions-drawer-section-{section}`). */
+  section: PendingActionSection;
+  /** Display label for the section header (from `PENDING_ACTION_SECTION_LABEL`). */
+  label: string;
+  /** Rows in this section, preserving the feed's relative order within the section. */
+  rows: DrawerActionRow[];
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */

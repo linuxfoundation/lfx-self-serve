@@ -19,6 +19,7 @@ import {
   LFX_PROFILE_CARD_LINK_ERROR_FALLBACK,
   LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL,
   LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL,
+  LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL,
   LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
   LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
   LFX_PROFILE_CARD_PRIMARY_BADGE,
@@ -110,9 +111,11 @@ export class ProfileCardComponent implements OnInit {
 
   /**
    * Whether an Edit LFX Profile save also copies the name, email and picture onto the user's mentor
-   * and mentee profiles. On for the pages that show an existing mentorship profile. Off on the
-   * register pages: there is no profile to update yet, and the registration sends `lfxProfileFields`
-   * as it stands at submit.
+   * and mentee profiles, and a connected account copies the GitHub link; the BFF resolves the email
+   * and the link itself. On for every mentorship page that shows the card, the register pages too:
+   * someone registering in one role may already hold the other role's profile, and the BFF answers
+   * 204 without writing when they hold none. The registration itself still sends `lfxProfileFields`
+   * as it stands at submit, with the BFF adding the email and the GitHub link.
    */
   public readonly syncMentorshipProfiles = input(false);
 
@@ -244,6 +247,8 @@ export class ProfileCardComponent implements OnInit {
       // Re-reads the summary off `identitiesRefresh$`, so the account appears without a reload.
       this.userService.refreshUserIdentities();
       this.announce('success', 'Success', LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL);
+      // No name or picture changed, so none is sent: the BFF adds the email and the new GitHub link.
+      this.syncMentorshipProfileFields({}, LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL);
       return;
     }
 
@@ -282,7 +287,10 @@ export class ProfileCardComponent implements OnInit {
     if (metadata.picture) {
       this.userService.uploadedAvatarUrl.set(metadata.picture);
     }
-    this.syncMentorshipProfileFields();
+    const fields = this.lfxProfileFields();
+    if (Object.keys(fields).length > 0) {
+      this.syncMentorshipProfileFields(fields, LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL);
+    }
   }
 
   /**
@@ -378,20 +386,19 @@ export class ProfileCardComponent implements OnInit {
   }
 
   /**
-   * Copies the just-saved name and picture onto the user's mentor and mentee profiles; the BFF adds
-   * the verified primary email. Skipped while impersonating: the save itself is blocked then, and
-   * the BFF refuses this write too. Every save sends all the fields, so saving again repairs a
-   * failed copy; the failure is logged and toasted, since the LFX profile itself did save.
+   * Copies `fields` onto the user's mentor and mentee profiles: the just-saved name and picture
+   * after a save, nothing after a connect. Either way the BFF adds the verified primary email and
+   * the connected GitHub account's link. Skipped while impersonating: the save and the connect are
+   * blocked then, and the BFF refuses this write too. Every save sends all the fields, so saving
+   * again repairs a failed copy; the failure is logged and toasted with `failedDetail`, since the
+   * LFX profile or the account itself did save.
    *
    * Not tied to the card's lifetime: the request completes on its own, and the toast service lives
    * at the app root, so a user who saves and then leaves the page still gets the copy, or the
    * warning that it failed.
    */
-  private syncMentorshipProfileFields(): void {
+  private syncMentorshipProfileFields(fields: MentorshipLfxProfileFields, failedDetail: string): void {
     if (!this.syncMentorshipProfiles() || this.impersonating()) return;
-
-    const fields = this.lfxProfileFields();
-    if (Object.keys(fields).length === 0) return;
 
     this.mentorshipService.syncLfxProfileFields(fields).subscribe({
       error: (error: unknown) => {
@@ -399,7 +406,7 @@ export class ProfileCardComponent implements OnInit {
         this.messageService.add({
           severity: 'warn',
           summary: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_SUMMARY,
-          detail: LFX_PROFILE_CARD_MENTORSHIP_SYNC_FAILED_DETAIL,
+          detail: failedDetail,
         });
       },
     });

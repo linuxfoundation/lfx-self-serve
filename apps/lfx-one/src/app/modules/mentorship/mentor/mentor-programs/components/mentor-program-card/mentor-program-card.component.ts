@@ -26,9 +26,10 @@ export class MentorProgramCardComponent {
   public readonly program = input.required<MentorshipMentorProgram>();
   public readonly cardClick = output<string>();
 
+  /** Project and term, leaving out whichever the program has none of. */
   protected readonly seasonLine = computed(() => {
     const program = this.program();
-    return `${program.projectName} · ${program.term}`;
+    return [program.projectName, program.term].filter((part) => part.trim().length > 0).join(' · ');
   });
 
   protected readonly termStatusLabel = computed(() => MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS[this.program().termStatus]);

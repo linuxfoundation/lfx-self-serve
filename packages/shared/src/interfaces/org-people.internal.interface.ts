@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Internal All Employees roster shapes for the Org Lens People backend services.
-// They live in the shared package because CLAUDE.md prohibits module-level interfaces
+// They live in the shared package because AGENTS.md prohibits module-level interfaces
 // inside apps/lfx-one/; they are NOT part of the wire contract consumed by the frontend.
 // Merge-only data never leaves the server: `toWireRow` strips it before the
 // response is cached or sent, and the cache validator rejects any entry carrying it.

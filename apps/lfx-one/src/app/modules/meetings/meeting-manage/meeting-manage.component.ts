@@ -405,7 +405,7 @@ export class MeetingManageComponent {
     }
 
     if (this.isEditMode()) {
-      this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single').subscribe({
+      this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest).subscribe({
         next: () => this.handleMeetingSuccess(),
         error: (error) => this.handleMeetingError(error),
       });
@@ -449,7 +449,7 @@ export class MeetingManageComponent {
     // Prepare meeting data
     const meetingData = this.prepareMeetingData();
     const meetingId = this.meetingId()!;
-    const updateMeeting$ = this.meetingService.updateMeeting(meetingId, meetingData as UpdateMeetingRequest, 'single');
+    const updateMeeting$ = this.meetingService.updateMeeting(meetingId, meetingData as UpdateMeetingRequest);
 
     // Prepare registrant operations
     const registrantOperations = this.buildRegistrantOperations();

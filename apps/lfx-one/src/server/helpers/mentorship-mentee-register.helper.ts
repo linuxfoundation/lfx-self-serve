@@ -6,7 +6,7 @@ import { MentorshipMenteeDemographics, MentorshipMenteeRegisterRequest, Mentorsh
 import { getMentorshipMenteeRegisterRequestErrors } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
-import { buildMentorshipUpstreamLfxProfileFields, readMentorshipLfxProfileFields } from './mentorship-lfx-profile.helper';
+import { buildMentorshipUpstreamLfxProfileFields, buildMentorshipUpstreamProfileLinks, readMentorshipLfxProfileFields } from './mentorship-lfx-profile.helper';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -112,15 +112,22 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
  * `mapMentorshipMenteeProfile` reads back: `skill_set` carries both skill lists and the notes,
  * `demographics` the age band, gender and race, `socioeconomics` the income and education.
  * The name and logo are the LFX profile's, each sent only when the card had it; `email` is the
- * resolved primary email, sent only when there is one. Phone and slug are not sent: an unset slug
- * cannot collide with another profile's.
+ * resolved primary email and `profile_links` the resolved GitHub link, each sent only when there is
+ * one. The profile is new, so there are no stored links to keep. Phone and slug are not sent: an
+ * unset slug cannot collide with another profile's.
  */
-export const buildMentorshipUpstreamMenteeProfile = (request: MentorshipMenteeRegisterRequest, email?: string): MentorshipUpstreamMenteeProfileInput => {
+export const buildMentorshipUpstreamMenteeProfile = (
+  request: MentorshipMenteeRegisterRequest,
+  email?: string,
+  githubProfileLink?: string
+): MentorshipUpstreamMenteeProfileInput => {
+  const profileLinks = buildMentorshipUpstreamProfileLinks(undefined, githubProfileLink);
   const demographics = withoutBlanks({ age: request.demographics?.age, gender: request.demographics?.gender, race: request.demographics?.raceEthnicity });
   const socioeconomics = withoutBlanks({ income: request.demographics?.income, educationLevel: request.demographics?.education });
 
   return {
     ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
+    ...(profileLinks ? { profile_links: profileLinks } : {}),
     introduction: request.introduction,
     terms_and_conditions: request.termsAccepted,
     age_eligible: request.ageEligible,

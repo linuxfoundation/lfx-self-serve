@@ -1,12 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isUuid } from '@lfx-one/shared/utils';
+import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
+import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
+import { isMentorshipMentorInviteToken, isMentorshipMentorTaskReviewDecision, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { parseMentorshipMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import { parseMentorshipMentorRegisterRequest } from '../helpers/mentorship-mentor-register.helper';
 import { parseMentorshipMentorOpenProgramsQuery } from '../helpers/mentorship-mentor-request.helper';
+import { parseMentorshipMentorTaskCreateRequest } from '../helpers/mentorship-mentor-task.helper';
 import { parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { logger } from '../services/logger.service';
 import { MentorshipMentorService } from '../services/mentorship-mentor.service';
@@ -142,6 +146,16 @@ export class MentorshipMentorController {
     }
   }
 
+  // POST /api/mentorship/mentor/invites/accept  { token } -> 204
+  public async acceptMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.respondToMentorInvite(req, res, next, 'accept');
+  }
+
+  // POST /api/mentorship/mentor/invites/decline  { token } -> 204
+  public async declineMentorInvite(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.respondToMentorInvite(req, res, next, 'decline');
+  }
+
   // GET /api/mentorship/mentor/programs
   public async getMentorPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentor_programs');
@@ -159,7 +173,7 @@ export class MentorshipMentorController {
     }
   }
 
-  // GET /api/mentorship/mentor/programs/:programId — id (default) or slug
+  // GET /api/mentorship/mentor/programs/:programId — a program UUID
   public async getMentorProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentor_program');
 
@@ -169,13 +183,108 @@ export class MentorshipMentorController {
       }
 
       const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_mentor_program' });
+      if (!programId || !isUuid(programId)) {
+        throw ServiceValidationError.forField('programId', 'programId must be a program UUID', { operation: 'get_mentorship_mentor_program' });
       }
 
       const program = await this.mentorService.getMentorProgram(req, programId);
-      logger.success(req, 'get_mentorship_mentor_program', startTime, { programId });
+      logger.success(req, 'get_mentorship_mentor_program', startTime, { programId, ...program.tabCounts });
       res.json(program);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PUT /api/mentorship/mentor/applications/:applicationId/note  { note } -> 204
+  // Auth: logged-in user required (401 otherwise). A note that is blank once trimmed clears it; one over
+  // MENTORSHIP_MENTEE_NOTE_MAX characters is a 400. Upstream's 403 (not a mentor of the program) and 404
+  // (no such application) pass through. The note is never logged.
+  public async updateApplicationNote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_application_note');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_application_note' });
+      }
+
+      // A program row is an application, which upstream addresses only by UUID.
+      const applicationId = parseTrimmedString(req.params['applicationId']);
+      if (!applicationId || !isUuid(applicationId)) {
+        throw ServiceValidationError.forField('applicationId', 'applicationId must be an application UUID', {
+          operation: 'update_mentorship_application_note',
+        });
+      }
+
+      const raw: unknown = req.body?.note;
+      if (typeof raw !== 'string') {
+        throw ServiceValidationError.forField('note', 'note must be a string', { operation: 'update_mentorship_application_note' });
+      }
+      const note = raw.trim();
+      if (note.length > MENTORSHIP_MENTEE_NOTE_MAX) {
+        throw ServiceValidationError.forField('note', `note must be at most ${MENTORSHIP_MENTEE_NOTE_MAX} characters`, {
+          operation: 'update_mentorship_application_note',
+        });
+      }
+
+      await this.mentorService.updateApplicationNote(req, applicationId, { note });
+      logger.success(req, 'update_mentorship_application_note', startTime, { applicationId, cleared: note === '' });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/mentor/tasks  { applicationIds, name, description, dueDate?, requiresFileSubmission? } -> { created, failed }
+  // Auth: logged-in user required (401 otherwise). The body is validated with the task dialog's rules (400). With
+  // one application, upstream's status passes through; with several, the ones not created are listed in `failed`.
+  // Only ids and counts are logged, never the task's text.
+  public async createMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'create_mentorship_mentor_tasks');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'create_mentorship_mentor_tasks' });
+      }
+
+      const request = parseMentorshipMentorTaskCreateRequest(req.body);
+      const result = await this.mentorService.createMenteeTasks(req, request);
+      logger.success(req, 'create_mentorship_mentor_tasks', startTime, {
+        application_count: request.applicationIds.length,
+        created_count: result.created.length,
+        failed_count: result.failed.length,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentor/tasks/:taskId/review  { status: 'complete' | 'incomplete' } -> 204
+  // Auth: logged-in user required (401 otherwise). `complete` approves a submitted task and `incomplete` requests
+  // changes; there is no comment, since upstream has no field for one. A task that is no longer submitted is
+  // refused with a 409 `TASK_NOT_SUBMITTED`. Upstream's 403 (not a mentor of the program) and 404 pass through.
+  public async reviewMenteeTask(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'review_mentorship_mentee_task');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'review_mentorship_mentee_task' });
+      }
+
+      // Upstream checks access on `mentorship_task:<id>`, so only a UUID can match.
+      const taskId = parseTrimmedString(req.params['taskId']);
+      if (!taskId || !isUuid(taskId)) {
+        throw ServiceValidationError.forField('taskId', 'taskId must be a valid UUID', { operation: 'review_mentorship_mentee_task' });
+      }
+
+      const status = req.body?.status;
+      if (!isMentorshipMentorTaskReviewDecision(status)) {
+        throw ServiceValidationError.forField('status', 'status must be one of: complete, incomplete', { operation: 'review_mentorship_mentee_task' });
+      }
+
+      await this.mentorService.reviewMenteeTask(req, taskId, status);
+      logger.success(req, 'review_mentorship_mentee_task', startTime, { taskId, status });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -193,6 +302,50 @@ export class MentorshipMentorController {
       const profile = await this.mentorService.getMentorProfile(req);
       logger.success(req, 'get_mentorship_mentor_profile', startTime, { history_count: profile.history.length });
       res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/mentor/profile
+  public async updateMentorProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_mentorship_mentor_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_mentorship_mentor_profile' });
+      }
+
+      const request = parseMentorshipMentorProfileUpdate(req.body, 'update_mentorship_mentor_profile');
+      const response = await this.mentorService.updateMentorProfile(req, request);
+      // Field names only: the values are personal data.
+      logger.success(req, 'update_mentorship_mentor_profile', startTime, { changed_fields: Object.keys(request) });
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Auth: logged-in user required (401 otherwise). The token travels in the body so it stays out of
+  // this server's access logs; a malformed one is a 400. Upstream's 400 (expired, or already
+  // answered) and 403 (another user's invitation) pass through.
+  private async respondToMentorInvite(req: Request, res: Response, next: NextFunction, decision: MentorshipMentorInviteDecision): Promise<void> {
+    const operation = `${decision}_mentorship_mentor_invite`;
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const token = parseTrimmedString(req.body?.token);
+      if (!token || !isMentorshipMentorInviteToken(token)) {
+        throw ServiceValidationError.forField('token', 'token must be a mentor invite token', { operation });
+      }
+
+      await this.mentorService.respondToMentorInvite(req, token, decision);
+      logger.success(req, operation, startTime);
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

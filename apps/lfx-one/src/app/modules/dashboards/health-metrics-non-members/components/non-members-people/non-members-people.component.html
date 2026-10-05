@@ -1,0 +1,124 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="non-members-people">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="People unavailable"
+      subtitle="We could not load this foundation's engaged non-member individuals. Refresh the page to try again."
+      data-testid="non-members-people-error" />
+  } @else if (!loading() && !scopeTotal()) {
+    <lfx-empty-state
+      icon="fa-light fa-user"
+      title="No engaged non-member individuals"
+      subtitle="No individual from a non-member organization attended a meeting in this period."
+      data-testid="non-members-people-empty" />
+  } @else {
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-people-controls">
+      <div class="w-full sm:w-64">
+        <label class="sr-only" for="non-members-people-search">Search person or organization</label>
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          inputId="non-members-people-search"
+          [maxlength]="maxSearchLength"
+          placeholder="Search person or organization…"
+          icon="fa-light fa-search"
+          size="small"
+          styleClass="w-full"
+          dataTest="non-members-people-search" />
+      </div>
+    </div>
+
+    <p class="text-[13px] text-gray-500" data-testid="non-members-people-count">
+      @if (loading()) {
+        &mdash;
+      } @else if (search()) {
+        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ summary() }} match &middot;
+        <button type="button" class="text-blue-600 hover:underline" (click)="clearSearch()" data-testid="non-members-people-clear">clear</button>
+      } @else {
+        {{ summary() }}
+      }
+    </p>
+
+    <lfx-table
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > pageSizeOptions[0]"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [rowsPerPageOptions]="pageSizeOptions"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      [scrollable]="true"
+      [tableStyle]="{ 'min-width': '640px' }"
+      (onPage)="onTablePage($event)"
+      data-testid="non-members-people-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Person</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
+          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last attended (all time)</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'non-members-people-row-' + view.rowKey">
+          <td>
+            <div class="flex flex-col">
+              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-name'">{{
+                view.displayName
+              }}</span>
+              @if (view.jobTitle) {
+                <span class="text-[11.5px] text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-title'">{{ view.jobTitle }}</span>
+              }
+            </div>
+          </td>
+          <td>
+            <span class="text-sm text-gray-500" [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-organization'">{{
+              view.organizationLabel
+            }}</span>
+          </td>
+          <td class="text-right">
+            <span
+              class="text-sm tabular-nums"
+              [class.text-gray-800]="view.meetingsLabel !== '—'"
+              [class.text-gray-400]="view.meetingsLabel === '—'"
+              [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-meetings'"
+              >{{ view.meetingsLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="whitespace-nowrap text-sm tabular-nums text-gray-500"
+              [attr.data-testid]="'non-members-people-row-' + view.rowKey + '-last-attended'"
+              >{{ view.lastAttendedLabel }}</span
+            >
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="4" class="py-6 text-center text-sm text-gray-500" data-testid="non-members-people-no-match">
+            @if (!loading()) {
+              No person or organization matches “{{ search() }}”.
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+
+    <p class="flex items-center gap-2 border-t border-slate-100 pt-3 text-[12px] text-gray-400" data-testid="non-members-people-provisional">
+      <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+      {{ provisionalNote }}
+    </p>
+  }
+</div>

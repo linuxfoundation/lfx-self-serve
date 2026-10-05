@@ -27,6 +27,7 @@ import {
   getRegistrantAttendanceStatus,
   isSameOccurrenceId,
   occurrenceIdToMs,
+  occurrenceIdToSeconds,
   selectApplicableRsvp,
 } from './rsvp-calculator.util';
 
@@ -98,6 +99,18 @@ const OCC_AUG_04_SECONDS = '1785852000';
 const OCC_AUG_11_SECONDS = '1786456800';
 const OCC_AUG_18_SECONDS = '1787061600';
 const OCC_JUL_14_SECONDS = '1784037600';
+
+describe('occurrenceIdToSeconds', () => {
+  it('converts a millisecond id to seconds and keeps a seconds id', () => {
+    expect(occurrenceIdToSeconds('1786456800000')).toBe('1786456800');
+    expect(occurrenceIdToSeconds('1786456800')).toBe('1786456800');
+  });
+
+  it('returns null for an unparseable id', () => {
+    expect(occurrenceIdToSeconds(undefined)).toBeNull();
+    expect(occurrenceIdToSeconds('abc')).toBeNull();
+  });
+});
 
 describe('occurrenceIdToMs', () => {
   it('leaves ms-encoded ids alone', () => {
@@ -556,12 +569,25 @@ describe('buildAttendeePreviewFromRegistrants', () => {
 describe('buildAttendeePreviewFromRsvps', () => {
   it('orders RSVP rows by response and uses the name or email', () => {
     const people = buildAttendeePreviewFromRsvps([
-      { id: '1', email: 'no@example.com', name: 'No One', response_type: 'declined' },
-      { id: '2', email: 'yes@example.com', name: '', response_type: 'accepted' },
+      rsvp({ id: '1', registrant_id: 'reg-no', email: 'no@example.com', name: 'No One', response_type: 'declined' }),
+      rsvp({ id: '2', registrant_id: 'reg-yes', email: 'yes@example.com', name: '', response_type: 'accepted' }),
     ]);
     expect(people).toEqual([
-      { key: '2', name: 'yes@example.com', avatarUrl: null },
-      { key: '1', name: 'No One', avatarUrl: null },
+      { key: 'reg-yes', name: 'yes@example.com', avatarUrl: null },
+      { key: 'reg-no', name: 'No One', avatarUrl: null },
+    ]);
+  });
+
+  it('shows each registrant once, with the response for the displayed occurrence', () => {
+    const series = MIXED_UNIT_RSVPS.map((row) => ({ ...row, name: 'Ada Lovelace' }));
+    const other = rsvp({ id: 'rsvp-9', registrant_id: 'reg-2', email: 'grace@example.com', name: 'Grace Hopper', response_type: 'maybe' });
+
+    const people = buildAttendeePreviewFromRsvps([...series, other], OCC_AUG_11_SECONDS);
+
+    // Ada's Aug-11 `single` decline applies, so she sorts after Grace's maybe, and appears once.
+    expect(people).toEqual([
+      { key: 'reg-2', name: 'Grace Hopper', avatarUrl: null },
+      { key: 'reg-1', name: 'Ada Lovelace', avatarUrl: null },
     ]);
   });
 });

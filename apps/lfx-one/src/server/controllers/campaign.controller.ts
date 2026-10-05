@@ -34,7 +34,14 @@ import {
   CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MICROS_PER_UNIT,
+  ISO_CALENDAR_DATE_PATTERN,
+  LINKEDIN_MIN_DAILY_BUDGET_USD,
+  LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   MAX_BULK_KEYWORD_ACTIONS,
+  MAX_HUBSPOT_BODY_HTML_LENGTH,
   META_GEO_CODE_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
@@ -355,6 +362,24 @@ export class CampaignController {
       const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
+
+      // BEFORE `createConfigEnvelope`, which sanitises both HubSpot bodies unconditionally. This
+      // route has no body validator, so the only other bound on that input is express.json's
+      // 15 MB limit — refusing an oversized body here keeps the sanitiser's cost bounded
+      // independently of it.
+      for (const field of ['bodyHtml', 'bodyHtmlB'] as const) {
+        const value = body?.hubspotConfig?.[field];
+        if (typeof value === 'string' && value.length > MAX_HUBSPOT_BODY_HTML_LENGTH) {
+          next(
+            ServiceValidationError.forField(`hubspotConfig.${field}`, `the email body exceeds the maximum length of ${MAX_HUBSPOT_BODY_HTML_LENGTH}`, {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            })
+          );
+          return;
+        }
+      }
+
       const configEnvelope = this.createConfigEnvelope(body);
 
       // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than
@@ -386,6 +411,273 @@ export class CampaignController {
           })
         );
         return;
+      }
+
+      // Every pre-dispatch refusal below goes out as a bare `next(ServiceValidationError.forField(
+      // ...))`, with no `logger.warning` beside it. `apiErrorHandler` already logs each one at WARN
+      // — `getSeverity()` maps a validation error there, and `ServiceValidationError.getLogContext`
+      // puts the field and the operator-facing reason in `validation_errors` — so a local warning
+      // would be a second WARN line for one event. Bare `next` is also how the rest of this server
+      // raises a named refusal (e.g. `meeting.controller.ts`'s `generate_agenda`).
+      if (cutoverOn && platforms.includes('google-ads')) {
+        // A gate google-ads fails before its first mutate, and one this request is responsible
+        // for: `preflightCampaign` refuses a budget that rounds to zero micros ("campaign budget
+        // must be > 0"). `buildGoogleAdsConfig` derives it from `budgetUsd` times the Search
+        // share, so a zero (or absent) budget — or a share that multiplies out to zero — produces
+        // exactly that refusal, reported as the opaque "platform campaign creation failed".
+        // Named here so the operator sees the field instead.
+        // Compared in MICROS, not as the raw float, because micros is the denomination upstream
+        // actually judges: it scales by GOOGLE_ADS_MICROS_PER_UNIT, ROUNDS, and refuses a zero.
+        // A positive budget below half a micro therefore survives a naive `> 0` test and is still
+        // refused upstream — reachable here because `buildGoogleAdsConfig` derives this value from
+        // `budgetUsd` TIMES the Search share, so a small budget on a small share multiplies down
+        // into exactly that gap. Rounding the same way upstream does makes the refused set
+        // identical to upstream's rather than a subset of it.
+        //
+        // `Math.round(NaN)` is `NaN` and every comparison against it is false, so a NaN budget
+        // passes through rather than being refused here — deliberate, and the same choice the
+        // LinkedIn guard below makes with its explicit `Number.isFinite` test. Meta's guard does
+        // refuse a NaN, because its `!(budget > 0)` form mirrors the `> 0` test Meta itself
+        // applies; that is the upstream contract differing, not these two guards disagreeing.
+        // Either way no guard may be the only reason a create fails.
+        const googleBudget = (configEnvelope['googleAdsConfig'] as { budget?: unknown } | undefined)?.budget;
+        if (typeof googleBudget === 'number' && Math.round(googleBudget * GOOGLE_ADS_MICROS_PER_UNIT) < 1) {
+          next(
+            ServiceValidationError.forField(
+              'budgetUsd',
+              'the Google Ads budget must be greater than 0 — this one resolves to no spend at all once the Search share is applied. Set a larger budget and create again.',
+              { operation: 'campaign_create', service: 'campaign_controller' }
+            )
+          );
+          return;
+        }
+      }
+
+      // LinkedIn enforces platform MINIMUMS, not just a positive budget: $10 for a daily budget
+      // and $100 for a lifetime (total) one — `minDailyBudgetUSD` / `minLifetimeBudgetUSD` in
+      // `internal/platform/linkedin/config.go`, enforced inside `CreateCampaign`
+      // (`internal/platform/linkedin/client.go`) under the comment "Enforce LinkedIn's
+      // per-campaign budget minimums BEFORE any POST". A $25 total budget is therefore a certain,
+      // silent, pre-spend refusal today — and an entirely plausible thing for an operator to
+      // enter, since nothing in the Implementation tab says the floor exists or that it moves
+      // tenfold with the budget-type toggle.
+      //
+      // Both inputs are first-class on the request (`LinkedInCampaignCreateRequest.budgetUsd` /
+      // `.lifetimeBudget`) and `buildLinkedInConfig` passes them through untouched, so the value
+      // judged here is exactly the one the Go validator will see.
+      if (cutoverOn && platforms.includes('linkedin-ads')) {
+        const linkedInEnvelope = configEnvelope['linkedInConfig'] as { budgetUsd?: unknown; lifetimeBudget?: unknown } | undefined;
+        const linkedInBudget = linkedInEnvelope?.budgetUsd;
+        if (typeof linkedInBudget === 'number' && Number.isFinite(linkedInBudget)) {
+          const isLifetime = linkedInEnvelope?.lifetimeBudget === true;
+          const minimum = isLifetime ? LINKEDIN_MIN_LIFETIME_BUDGET_USD : LINKEDIN_MIN_DAILY_BUDGET_USD;
+          // Compared against the ROUNDED value, matching the Go side, which validates the amount
+          // it is about to put on the wire (`strconv.FormatFloat(.., 'f', 2, 64)`) rather than the
+          // raw float. Comparing the raw value instead would refuse 99.999 on a lifetime budget —
+          // a value Go rounds to 100.00 and accepts.
+          const rounded = Math.round(linkedInBudget * 100) / 100;
+          if (rounded < minimum) {
+            next(
+              ServiceValidationError.forField(
+                'budgetUsd',
+                `LinkedIn requires at least $${minimum} for a ${isLifetime ? 'total (lifetime)' : 'daily'} budget, and this campaign is set to $${rounded}. Raise the budget${isLifetime ? ` or switch it to a daily budget, which has a $${LINKEDIN_MIN_DAILY_BUDGET_USD} minimum` : ''} and create again.`,
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+        }
+      }
+
+      // Google Ads resolves every country code against a CURATED map before its first mutate and
+      // hard-errors on a miss — `validateGeoTargets` (`internal/platform/googleads/geo.go`):
+      // "geo target %q is not a supported country code". The map holds 30 entries, and
+      // `GOOGLE_ADS_GEO_TARGET_MAP` is the same 30 (verified code-for-code), which is why gating on
+      // it cannot over-refuse: a code this guard rejects is one the dispatcher would reject too.
+      //
+      // The shape test in `buildGoogleAdsConfig` is not enough on its own. It admits any two-letter
+      // code, so `PT` or `ZA` — well-formed, assigned, and offered nowhere in this map — passes the
+      // builder, reaches Go, and comes back as the orchestrator's opaque "platform campaign
+      // creation failed" with the real reason only in the pod log. Naming the code here is the
+      // whole point of the guard; the builder stays shape-only so the two judgements do not drift.
+      //
+      // The count cap is upstream's too, and is checked BEFORE de-duplication there, so this one is
+      // too: a list that is only over the cap because it repeats a code is still refused, which is
+      // what the dispatcher does.
+      if (cutoverOn && platforms.includes('google-ads')) {
+        const googleGeoTargets = (configEnvelope['googleAdsConfig'] as { geoTargets?: unknown } | undefined)?.geoTargets;
+        if (Array.isArray(googleGeoTargets)) {
+          const unsupported = googleGeoTargets.filter((g): g is string => typeof g === 'string' && !(g in GOOGLE_ADS_GEO_TARGET_MAP));
+          if (unsupported.length > 0) {
+            next(
+              ServiceValidationError.forField(
+                'countryCode',
+                `Google Ads cannot target ${unsupported.join(', ')} on this path. Pick a different country and create again.`,
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+
+          if (googleGeoTargets.length > GOOGLE_ADS_MAX_GEO_TARGETS) {
+            next(
+              ServiceValidationError.forField(
+                'countryCode',
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries on one campaign, and this one has ${googleGeoTargets.length}. Remove some and create again.`,
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+        }
+      }
+
+      // Meta refuses a non-positive budget before its first mutate ("invalid budget: must be a
+      // positive number", `internal/platform/meta/client.go`), exactly as google-ads does above.
+      // Microsoft's equivalent is already covered — `buildMicrosoftConfig` returns null for a
+      // non-positive budget and `hasPlatformConfig` then names it — but Meta's builder only
+      // RENAMES the key (`budgetUsd` becomes `budget`) and forwards whatever it was given, so
+      // nothing between the form and the ad platform judges this value today.
+      if (cutoverOn && platforms.includes('meta-ads')) {
+        const metaBudget = (configEnvelope['metaConfig'] as { budget?: unknown } | undefined)?.budget;
+        if (typeof metaBudget === 'number' && !(metaBudget > 0)) {
+          next(
+            // States the CONSTRAINT rather than reporting the submitted value. This route has no
+            // body validator, so a direct caller can reach this branch with a negative budget,
+            // and a message asserting it "is 0" would then describe a value the caller did not
+            // send and hand them a remedy that does not match what they did.
+            //
+            // Judged as a raw float, where google-ads above is judged in micros. Meta's own floor
+            // is one MINOR currency unit, whose scale depends on the ad account's currency — 100
+            // for USD, 1 for JPY — and this application cannot see that currency (same gap the
+            // builder's FX note describes). Mirroring the arithmetic would mean guessing the
+            // offset, and guessing high refuses creates Meta accepts. Non-positive is the part
+            // that is refused under every currency, so it is the only part asserted here.
+            ServiceValidationError.forField(
+              'budgetUsd',
+              'the Meta Ads budget must be greater than 0 to fund a campaign. Set a budget above 0 and create again.',
+              {
+                operation: 'campaign_create',
+                service: 'campaign_controller',
+              }
+            )
+          );
+          return;
+        }
+      }
+
+      // Meta and Reddit both require the flight to END AFTER it starts, and both refuse before
+      // their first mutate — `!endDate.After(startDate)` in each `CreateCampaign`
+      // (`internal/platform/meta/client.go`, `internal/platform/reddit/client.go`). The
+      // comparison is STRICT on both sides, so a one-day campaign entered as the same date twice
+      // is refused, which is the likeliest way an operator trips this.
+      //
+      // Only these two are checked. Google and LinkedIn take no flight window on this path, and
+      // `buildMicrosoftConfig` deliberately DROPS `startDate`/`endDate` because `microsoftConfig`
+      // declares no scheduling fields — so a window that never reaches the wire must not be
+      // judged here.
+      //
+      // Meta additionally refuses a start date already in the past, which is NOT replicated: it
+      // compares against the pod's current UTC calendar day, so a create submitted near the date
+      // boundary could be judged differently here than upstream. Refusing a create the platform
+      // would have accepted is the one failure mode these guards must not have, so that case is
+      // left to Go.
+      for (const platform of ['meta-ads', 'reddit-ads'] as const) {
+        if (!cutoverOn || !platforms.includes(platform)) continue;
+
+        const envelopeKey = platform === 'meta-ads' ? 'metaConfig' : 'redditConfig';
+        const schedule = configEnvelope[envelopeKey] as { startDate?: unknown; endDate?: unknown } | undefined;
+        if (!this.isReversedFlightWindow(schedule?.startDate, schedule?.endDate)) continue;
+
+        next(
+          ServiceValidationError.forField(
+            'endDate',
+            `the campaign end date must be after its start date, and ${platform === 'meta-ads' ? 'Meta' : 'Reddit'} will refuse this flight. Set an end date at least one day after the start date and create again.`,
+            { operation: 'campaign_create', service: 'campaign_controller' }
+          )
+        );
+        return;
+      }
+
+      // EVERY enabled platform refuses a create whose STORED BRIEF has no usable registration
+      // URL, and each refuses BEFORE its first mutate — so nothing is created on the ad account
+      // and the operator sees only the orchestrator's opaque "platform campaign creation failed".
+      // This is not a google-ads quirk; it was verified across all five:
+      // google-ads `buildAdFinalURL` (`internal/platform/googleads/ad_copy.go`); microsoft's
+      // `validateAdURL`, called from `campaign.go` with the comment "BEFORE the campaign is
+      // created"; and the three `validateRegistrationURL` siblings in linkedin, meta and reddit,
+      // each called from `CreateCampaign` ahead of any POST. The guard is therefore keyed on the
+      // cutover arm, not on a platform selection.
+      //
+      // The Implementation tab makes Registration URL a `Validators.required` field, which reads
+      // as "this value is being sent". It is not: the cutover create request below carries only
+      // (briefId, projectSlug, platforms, configEnvelope, campaignTypes), and campaign-service
+      // reads the destination exclusively from the brief it already stores — `decodeBriefFields`
+      // takes `brief.url` and falls back to the nested `event_details.registrationUrl`
+      // (`internal/dispatch/reddit.go`). Only the PLANNING tab ever persists that field.
+      //
+      // Refuse here instead, naming the field. This is a READ and a refusal, deliberately: the
+      // brief is NOT patched from `body.registrationUrl`, because replacing a brief moves its
+      // version and campaign-service gates the create on the brief still being approved AT the
+      // version approval was read at (`internal/service/brief.go`, "brief is no longer approved
+      // at the expected version"). A write here would trade one confusing failure for another.
+      //
+      // Refusing the WHOLE create rather than dropping the affected platform matches the contract
+      // this file already keeps: `hasPlatformConfig` refuses every platform when ONE is
+      // unconfigurable ("No configuration was built for: …") rather than quietly creating the
+      // rest. A platform that cannot be satisfied is an operator input error, not a partial
+      // outcome to absorb.
+      //
+      // Gated on an AD platform being selected, not on `cutoverOn` alone. Every platform surveyed
+      // above is an ad platform; `hubspot` is also legal on this request, and its dispatcher never
+      // reads the brief's destination at all — `internal/dispatch/hubspot.go` takes only an
+      // OPTIONAL `ButtonURL` from `hubspotConfig`. The `platforms.includes('hubspot')` refusal
+      // further down sits on the LEGACY arm, after this one, so an email-only create does reach
+      // here. Without the predicate it would be refused for a field campaign-service would never
+      // have looked at — refusing a create the platform would have accepted, which is the one
+      // failure mode these guards must not have.
+      if (cutoverOn && platforms.some((p) => p !== 'hubspot')) {
+        const briefDestination = await this.readBriefDestinationUrl(req, typeof body?.eventSlug === 'string' ? body.eventSlug : '', projectSlug, briefId);
+        // `read: false` means the brief lookup could not be ESTABLISHED, which is explicitly not a
+        // refusal — this guard exists to name a knowable input error, never to add a new way for a
+        // create to fail. Only a brief that was read and judged is acted on.
+        if (briefDestination.read) {
+          // Shape, not just emptiness. Each platform's validator requires an absolute http/https
+          // URL with a hostname and no userinfo, so a registration URL typed without a scheme
+          // ("agenticsday.org") is PRESENT and still refused upstream — invisible to a
+          // present/absent check, and the likeliest way an operator-typed URL reaches here looking
+          // fine. `describeDestinationUrl` mirrors those validators' judgement, so this can only
+          // refuse what upstream was already going to refuse.
+          const shape = this.describeDestinationUrl(briefDestination.url);
+          if (shape !== 'ok' && shape !== 'ok-http') {
+            next(
+              ServiceValidationError.forField(
+                'registrationUrl',
+                shape === 'empty'
+                  ? 'the saved brief has no registration URL, so the ad platforms have no destination for the paid traffic. Set Registration URL on the Planning tab and save the brief, then create again.'
+                  : "the saved brief's registration URL is not a complete web address, so the ad platforms will refuse it. Set Registration URL on the Planning tab to a full https:// address and save the brief, then create again.",
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+
+          // Meta alone requires HTTPS (`internal/platform/meta/client.go`, "registration URL must
+          // use HTTPS"); the other four accept either scheme. So a plain-http brief URL is a
+          // certain refusal for a create that selects Meta and a perfectly good one otherwise —
+          // which is why the scheme is judged here, against the selection, rather than folded
+          // into the shape check above and applied to everyone.
+          if (shape === 'ok-http' && platforms.includes('meta-ads')) {
+            next(
+              ServiceValidationError.forField(
+                'registrationUrl',
+                "Meta Ads only accepts an https:// destination, and the saved brief's registration URL uses http://. Update Registration URL on the Planning tab to https:// and save the brief, then create again.",
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+        }
       }
 
       // The unconfigured-platform refusal lives INSIDE `createCampaigns`, deliberately, so that it
@@ -510,7 +802,16 @@ export class CampaignController {
       const status = viaCampaignService
         ? await this.campaignServiceClient.getJobStatus(req, jobId, projectSlug)
         : await this.proxyService.getJobStatus(req, jobId);
-      logger.success(req, 'campaign_job_status', startTime, { jobId, status: status.status, source: viaCampaignService ? 'campaign_service' : 'in_process' });
+      // On a FAILED job, carry the reason into the log and not just the verdict. `status` is
+      // returned to the browser whole, so `error` and `platformResults` were always on the wire;
+      // logging `status.status` alone left the server log saying `"error"` and nothing else, which
+      // is what sends an operator to the pod logs for a reason the BFF already had in hand.
+      logger.success(req, 'campaign_job_status', startTime, {
+        jobId,
+        status: status.status,
+        source: viaCampaignService ? 'campaign_service' : 'in_process',
+        ...(status.status === 'error' ? { job_error: status.error, platform_results: status.platformResults } : {}),
+      });
       res.json(status);
     } catch (error) {
       next(error);
@@ -1818,6 +2119,144 @@ export class CampaignController {
   }
 
   /**
+   * Read the destination URL the STORED brief carries, for the pre-dispatch guard in
+   * `createCampaign`.
+   *
+   * BY BRIEF ID whenever the request carries one, because that is the brief this create dispatches
+   * against — `POST /projects/{project}/briefs/{brief_id}/campaigns`. The slug read is the
+   * fallback, and only the fallback: `loadBrief` resolves `(project, event_slug, 'paid-marketing',
+   * '')` to whichever row that key names now, which is normally the same brief and is not
+   * guaranteed to be. Judging the slug's brief while dispatching the id's would let this guard
+   * refuse a create over a URL belonging to a brief the request never mentioned — an over-refusal,
+   * the one failure mode these guards must not have.
+   *
+   * Either read merges campaign-service's first-class `url` column over the copy nested in the
+   * opaque `event_details` blob (`fromBriefResponse`), which is the same precedence the dispatcher
+   * applies upstream — so what this returns is what google-ads' preflight will see.
+   *
+   * `read: false` means "could not be established", NOT "empty": nothing to look the brief up by,
+   * no brief stored, a brief this build cannot open, or an upstream failure. The caller acts only
+   * on `read: true`, so this guard can never invent a new failure for a create that would
+   * otherwise have been dispatched.
+   */
+  private async readBriefDestinationUrl(req: Request, eventSlug: string, projectSlug: string, briefId = ''): Promise<{ read: boolean; url: string }> {
+    const slug = eventSlug.trim();
+    const id = briefId.trim();
+    if ((slug === '' && id === '') || projectSlug === '') {
+      // Worth a line rather than a silent `read: false`: an absent event slug means the create
+      // request itself cannot identify the brief to check, which is a different problem from a
+      // brief that exists and has no URL.
+      logger.warning(req, 'campaign_create', 'cannot check the brief registration URL: no brief id or event slug, or no project, on the request', {
+        hasBriefId: id !== '',
+        hasEventSlug: slug !== '',
+        hasProjectSlug: projectSlug !== '',
+      });
+      return { read: false, url: '' };
+    }
+
+    try {
+      const stored =
+        id !== ''
+          ? await this.campaignServiceClient.loadBriefById(req, projectSlug, id)
+          : await this.campaignServiceClient.loadBrief(req, slug, projectSlug, 'paid-marketing', '');
+      if (stored.status !== 'loaded' || stored.brief === null) {
+        logger.warning(req, 'campaign_create', 'cannot check the brief registration URL: no readable stored brief', {
+          briefId: id,
+          eventSlug: slug,
+          projectSlug,
+          // 'off' (briefs flag off), 'none' (nothing stored), or 'unreadable' (this build cannot
+          // open what is stored) — each points somewhere different.
+          loadStatus: stored.status,
+        });
+        return { read: false, url: '' };
+      }
+
+      return { read: true, url: (stored.brief.eventDetails?.registrationUrl ?? '').trim() };
+    } catch (error) {
+      logger.warning(req, 'campaign_create', 'could not read the saved brief to check its registration URL; dispatching anyway', {
+        briefId: id,
+        eventSlug: slug,
+        projectSlug,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return { read: false, url: '' };
+    }
+  }
+
+  /**
+   * Whether a flight window is one Meta and Reddit will refuse for ending on or before its start.
+   *
+   * Answers only the question those two platforms' `CreateCampaign` asks — `!endDate.After(
+   * startDate)` — and answers `false` for anything it cannot judge with certainty. That asymmetry
+   * is the point: a `true` here refuses an operator's create, so it is returned ONLY for a window
+   * whose two ends are both unambiguous and genuinely reversed.
+   *
+   * Hence the deliberately narrow accept: both values must be strings matching `YYYY-MM-DD` with
+   * real calendar components (the round-trip check rejects `2026-02-31`, which `new Date` would
+   * silently roll forward to March 3 and compare as a valid date). A value this cannot parse —
+   * `2026-1-2`, a number, a timestamp with a time part — returns `false` and travels on to Go
+   * rather than being refused here, because a malformed date is refused upstream anyway with a
+   * message that names it, and judging it here could only ever turn a named refusal into this
+   * guard's different one or, worse, refuse a shape Go would have accepted.
+   *
+   * Once both ends are known-valid zero-padded ISO dates, a lexicographic comparison orders them
+   * identically to the `time.Time` comparison upstream, so no date arithmetic is needed.
+   */
+  private isReversedFlightWindow(rawStart: unknown, rawEnd: unknown): boolean {
+    const asCalendarDate = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null;
+      const trimmed = value.trim();
+      if (!ISO_CALENDAR_DATE_PATTERN.test(trimmed)) return null;
+      // Round-trip through UTC to reject a well-formed string naming a day that does not exist.
+      const parsed = new Date(`${trimmed}T00:00:00Z`);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return parsed.toISOString().slice(0, 10) === trimmed ? trimmed : null;
+    };
+
+    const start = asCalendarDate(rawStart);
+    const end = asCalendarDate(rawEnd);
+    if (start === null || end === null) return false;
+
+    return end <= start;
+  }
+
+  /**
+   * Describe a destination URL the way google-ads' `buildAdFinalURL` judges it, for the guard in
+   * `createCampaign`.
+   *
+   * Returns a short shape token rather than the URL itself, because the interesting question is
+   * never "what is it" but "which of the platforms' refusals does it hit": each requires an
+   * absolute http/https URL with a hostname and no userinfo
+   * (`internal/platform/googleads/ad_copy.go`, and the `validateAdURL` /
+   * `validateRegistrationURL` siblings in microsoft, linkedin, meta and reddit). A registration
+   * URL saved without a scheme is PRESENT and non-empty yet still refused, and a present/absent
+   * check cannot see that.
+   *
+   * `ok` and `ok-http` are BOTH accepted by four of the five platforms; they are reported apart
+   * only because Meta additionally requires https (`internal/platform/meta/client.go`). Callers
+   * that are not deciding for Meta must treat them the same, or a plain-http brief URL would be
+   * refused for platforms that would have taken it.
+   */
+  private describeDestinationUrl(raw: string): string {
+    const value = raw.trim();
+    if (value === '') return 'empty';
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      // No scheme, or otherwise not absolute — the single most likely way an operator-typed URL
+      // reaches this point looking fine and fails upstream.
+      return 'not-absolute';
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return `bad-scheme:${parsed.protocol}`;
+    if (parsed.hostname === '') return 'no-hostname';
+    if (parsed.username !== '' || parsed.password !== '') return 'has-userinfo';
+    return parsed.protocol === 'https:' ? 'ok' : 'ok-http';
+  }
+
+  /**
    * Google's config, translated from the flat legacy request.
    *
    * Google is the one platform whose inputs live on the request root rather than in a
@@ -1864,6 +2303,57 @@ export class CampaignController {
     // a zero-value config.
     if (!includesSearch && !includesDemandGen) return null;
 
+    // The operator's geo selection, which this builder used to DROP on the floor.
+    //
+    // campaign-service has carried `googleAdsConfig.geoTargets` since LFXV2-3283
+    // (`internal/dispatch/googleads.go`), and the dispatcher passes it straight into the campaign's
+    // location criteria. Omitting it is not neutral: the service ACCEPTS the empty case (so
+    // pre-LFXV2-3283 callers keep working), logs "google ads campaign created with NO geo
+    // targeting (it will serve wherever the ad account allows once enabled)", and creates a
+    // campaign that serves worldwide. That warning is in the pod log, not in front of the operator
+    // who picked a country on the Implementation tab and was never told it went nowhere.
+    //
+    // Normalized the way `buildMicrosoftConfig` normalizes its own list — same `META_GEO_CODE_PATTERN`,
+    // same trim-and-uppercase, same `Array.isArray` guard, same shape-only judgement (whether a
+    // well-formed code is one Google targets stays the upstream client's call). TWO deliberate
+    // divergences, both of them the same cause: Microsoft's list is REQUIRED by its dispatcher and
+    // arrives already normalized by the frontend, while Google's is OPTIONAL upstream and arrives
+    // raw. So Google drops blanks (below) and accepts the empty result (further below); Microsoft
+    // refuses both.
+    //
+    // `Array.isArray`, not `?? []`: this route has no body validator, so `geoTargets: {}` or a bare
+    // `"US"` would otherwise reach `.map` and answer a malformed request with a 500. The Microsoft
+    // sibling guards the same hazard the same way. A non-array takes the empty path rather than
+    // `return null` — the divergence below applies here too, and an unreadable list is not grounds
+    // to refuse a create Google accepts untargeted.
+    const rawGeoTargets = Array.isArray(body.geoTargets) ? body.geoTargets : [];
+    // Blanks are dropped BEFORE the shape test, which is the whole reason this is a filter and not
+    // just a map. `countryCode` carries no validator on the Implementation tab and `canSubmit` does
+    // not gate it, so a cleared or half-typed field arrives as `['']` — and `['']` failing the
+    // pattern would refuse the entire create ("No configuration was built for: google-ads") for a
+    // campaign that is simply untargeted, which upstream accepts (`dispatch/googleads.go:341`).
+    //
+    // Only BLANK STRINGS are dropped. A non-string survives the filter, maps to `''`, and fails the
+    // shape test — a malformed body is still refused rather than quietly becoming an untargeted
+    // campaign.
+    const cleanGeoTargets = rawGeoTargets
+      .filter((g) => typeof g !== 'string' || g.trim() !== '')
+      .map((g) => (typeof g === 'string' ? g.trim().toUpperCase() : ''));
+
+    // DIVERGENCE FROM THE MICROSOFT SIBLING, and it is the empty case only.
+    //
+    // Microsoft returns null on an empty list because its dispatcher REQUIRES geo targets, so an
+    // empty list there is an unconfigurable platform. Google's does not: empty is a documented,
+    // accepted input upstream. Refusing it here would convert every create that works today —
+    // untargeted, but created — into "No configuration was built for: google-ads", which is a
+    // regression dressed as a fix. Empty therefore omits the key and leaves today's behaviour
+    // exactly as it is.
+    //
+    // A MALFORMED code is refused like the sibling refuses it. Dropping it silently would leave
+    // the campaign untargeted while the operator believes they picked a market — the same
+    // wrong-market defect, reached by a different road.
+    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;
+
     // DEMAND-GEN-ONLY is the one mixed-type case the cutover can serve today, and it
     // gets the WHOLE budget: there is no Search campaign to fund, so the split does not
     // apply. campaign-service creates a Demand Gen campaign with no ad and no keywords
@@ -1881,7 +2371,7 @@ export class CampaignController {
     // Serving the pair means emitting two configs, which is a change here rather than a schema
     // decision. Until then a loud refusal beats a silent partial create.
     if (!includesSearch && includesDemandGen) {
-      return { budget: body.budgetUsd ?? 0, channel: 'demand-gen' };
+      return { budget: body.budgetUsd ?? 0, channel: 'demand-gen', ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}) };
     }
 
     const pct = includesDemandGen ? (body.searchBudgetPct ?? 100) : 100;
@@ -1915,6 +2405,10 @@ export class CampaignController {
       // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
       // dispatcher has no field for.
       keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+      // Omitted rather than sent empty, so the upstream default is reached by the same absent-key
+      // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
+      // to the dispatcher today; only one of them stays true if that default is ever tightened.
+      ...(cleanGeoTargets.length > 0 ? { geoTargets: cleanGeoTargets } : {}),
     };
   }
 
@@ -1924,12 +2418,33 @@ export class CampaignController {
    * Passing the legacy object through unchanged fails the dispatch twice over, which is why this
    * adapter exists at all:
    *
-   * 1. `adAccountId` is REJECTED on mismatch, not ignored. campaign-service resolves the account
-   *    from its own connection row, and honours a caller override only when it matches exactly —
-   *    `linkedin.go:143` returns "cross-account campaigns are not allowed" otherwise. The legacy
-   *    request carries this application's `LINKEDIN_AD_ACCOUNT_ID`, which has no reason to equal
-   *    the project's connection. Stripped: letting the connection decide is the whole point of
-   *    the cutover, and an override that matches adds nothing.
+   * 1. `adAccountId` is DELETED, because forwarding it can only ever cost a create and can never
+   *    win one.
+   *
+   *    The field is an assertion, never a selector. `internal/dispatch/linkedin.go:304-309` builds
+   *    the runtime allowlist from the connection's own account alone and says so: "Do NOT append a
+   *    caller-supplied adAccountId — that would defeat the client's cross-tenant fail-closed
+   *    check... A caller override is therefore only honored when it MATCHES the connection's
+   *    account." So of the three possible values, two are the same outcome and the third is a
+   *    refusal: omitted uses the connection's account, a matching override uses the connection's
+   *    account, and anything else fails the `adAccountID != "" && adAccountID != accountID` guard
+   *    at `:322` with "cross-account campaigns are not allowed".
+   *
+   *    That matters because this app cannot tell which case it is in. The id the operator picked
+   *    comes from `getLinkedInAccounts` (this controller, `:1496`) — note the `_req`: it ignores
+   *    the project entirely and serves this application's own mounted
+   *    `/etc/lfx-self-serve/linkedin/linkedin.json`. campaign-service compares against the
+   *    PROJECT's connection row. Two unrelated sources, and nothing makes them agree per project.
+   *    The form compounds it by auto-selecting `accounts[0]` when a restored id is not in the
+   *    catalogue, so an untouched form forwards a global default that was never a human choice.
+   *
+   *    Deleting it is therefore not a lost opportunity to catch a mismatch — the mismatch this app
+   *    can observe is not the one upstream checks. Naming a genuine mismatch needs the connection's
+   *    chosen account, which campaign-service does not expose: `list-linkedin-ads-accounts` returns
+   *    the credential-reachable superset ("ready to store as the connection's account_id"), and
+   *    `monitor-linkedin-ads-account` takes the id as an input. Scoping the picker to the project's
+   *    own connection is tracked separately; until then, letting the connection decide is both the
+   *    pre-existing behaviour and the only one that cannot refuse a working create.
    *
    * 2. The dispatcher builds its LinkedIn runtime config from `targetingProfiles` (PLURAL, the
    *    full catalogue) and `employerExclusions` in this envelope — `linkedin.go:135`. The legacy
@@ -1944,12 +2459,10 @@ export class CampaignController {
   private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
 
-    // Built by copy-and-delete rather than destructuring-with-rest: the lint config does not
-    // exempt an underscore-prefixed destructured binding, so `{ adAccountId: _x, ...rest }` is a
-    // no-unused-vars error.
     const rest: Record<string, unknown> = { ...body.linkedInConfig };
-    delete rest['adAccountId'];
     const runtime = getLinkedInConfig();
+
+    delete rest['adAccountId'];
 
     return {
       ...rest,

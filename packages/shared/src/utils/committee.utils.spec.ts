@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
@@ -20,6 +21,7 @@ import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRouteIdMatches,
   countVotingReps,
   groupCommitteesByFoundation,
@@ -175,6 +177,28 @@ describe('canManageCommitteeMembers', () => {
 
   it('is false for a null committee', () => {
     expect(canManageCommitteeMembers(null)).toBe(false);
+  });
+});
+
+describe('canViewCommitteeRoster', () => {
+  it('is true for any caller when visibility is basic_profile', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.BASIC_PROFILE }))).toBe(true);
+  });
+
+  it('is false for a non-manager when visibility is hidden or unset (fail-closed)', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN }))).toBe(false);
+    expect(canViewCommitteeRoster(committee())).toBe(false);
+    expect(canViewCommitteeRoster(committee({ member_visibility: 'everyone' as CommitteeMemberVisibility }))).toBe(false);
+  });
+
+  it('is true for a writer or auditor when visibility is hidden', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN, writer: true }))).toBe(true);
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN, auditor: true }))).toBe(true);
+  });
+
+  it('is false for a null committee', () => {
+    expect(canViewCommitteeRoster(null)).toBe(false);
+    expect(canViewCommitteeRoster(undefined)).toBe(false);
   });
 });
 

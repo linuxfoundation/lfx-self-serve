@@ -27,7 +27,7 @@ import type {
   OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, isMailtoSafeEmail, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -233,6 +233,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
+  // Both writes also need the viewer on this CCLA's CLA Manager list. The approval-list write is
+  // refused by EasyCLA otherwise; Invalidate is refused by this application's server, because
+  // EasyCLA checks only ACS on it. The list's own `canEdit` is read after the row, so it can
+  // withdraw what the row's flag offered.
   private readonly rosterAllows = computed(() => this.claGroup().viewerIsClaManager === true && this.loadedList()?.canEdit === true);
   protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.rosterAllows());
   // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
@@ -675,7 +679,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         ariaLabel: `GitLab username @${ack.gitlabUsername}, opens on gitlab.com`,
       };
     }
-    if (ack.email) return { lfLogin: null, display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
+    // Upstream data: only a plain single-recipient address becomes a mailto link; anything else
+    // (query fields, separators, percent escapes) renders as plain text.
+    if (ack.email) {
+      return { lfLogin: null, display: ack.email, href: isMailtoSafeEmail(ack.email) ? `mailto:${ack.email}` : null, ariaLabel: `Email ${ack.email}` };
+    }
     return { lfLogin: null, display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
   }
 

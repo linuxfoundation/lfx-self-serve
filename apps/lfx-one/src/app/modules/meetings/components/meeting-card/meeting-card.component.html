@@ -118,18 +118,14 @@
             [routerLink]="meetingDetailUrl()"
             [queryParams]="meetingDetailQueryParams()">
             <lfx-tag
-              [value]="
-                (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
-              "
+              [value]="(meetingStartTime() | meetingTime: meetingDuration() : 'date') + ' • ' + (meetingStartTime() | meetingTime: meetingDuration() : 'time')"
               severity="secondary"
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
         } @else {
           <a class="hover:opacity-80 transition-opacity" data-testid="meeting-datetime" [href]="meetingDetailUrl()" target="_blank" rel="noopener noreferrer">
             <lfx-tag
-              [value]="
-                (meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')
-              "
+              [value]="(meetingStartTime() | meetingTime: meetingDuration() : 'date') + ' • ' + (meetingStartTime() | meetingTime: meetingDuration() : 'time')"
               severity="secondary"
               icon="fa-light fa-calendar-days"></lfx-tag>
           </a>
@@ -152,7 +148,7 @@
       @if (showAiSummaryBadge()) {
         <lfx-tag value="AI Summary" severity="secondary" icon="fa-light fa-sparkles" styleClass="tag-feature-ai"></lfx-tag>
       }
-      @if (meeting().show_meeting_attendees) {
+      @if (attendeeListShared()) {
         <lfx-tag value="Show Attendees" severity="secondary" icon="fa-light fa-users"></lfx-tag>
       }
     </div>
@@ -359,11 +355,13 @@
             </div>
           }
         } @else if (!pastMeeting()) {
-          <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
-          @if (effectivelyInvited() && inviteResponsesEnabled()) {
+          <!-- RSVP selection and attendee preview for authenticated invited non-organizers (upcoming meetings only) -->
+          @if (effectivelyInvited() && (inviteResponsesEnabled() || attendeeListShared())) {
             @defer (on viewport) {
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
-              @if (meeting().show_meeting_attendees) {
+              @if (inviteResponsesEnabled()) {
+                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              }
+              @if (attendeeListShared()) {
                 <lfx-meeting-invitee-attendees [meeting]="meeting()" [occurrence]="occurrence()" />
               }
             } @placeholder {
@@ -508,6 +506,7 @@
           [visible]="showRegistrants()"
           [showAddRegistrant]="!pastMeeting()"
           [openAddFormOnShow]="openRegistrantsOnAddForm()"
+          [occurrence]="occurrence()"
           (registrantsCountChange)="additionalRegistrantsCount.set($event)"
           (totalCountChange)="drawerGuestCount.set($event)"
           (resolvedHostsChange)="drawerHosts.set($event)">

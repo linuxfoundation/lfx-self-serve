@@ -122,6 +122,17 @@ describe('listAllMentorshipPages', () => {
     expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', path, 'GET', { role: 'mentee', limit: 100, offset: 100 }, undefined);
   });
 
+  it('reads at a smaller page size when the route takes one', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({ id: `row-${index}` }));
+    proxyRequest
+      .mockResolvedValueOnce({ data: firstPage, meta: { total: 51, limit: 50, offset: 0 } })
+      .mockResolvedValueOnce({ data: [{ id: 'row-last' }], meta: { total: 51, limit: 50, offset: 50 } });
+
+    await expect(listAllMentorshipPages(proxy, req, path, {}, 50)).resolves.toHaveLength(51);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'GET', { limit: 50, offset: 0 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', path, 'GET', { limit: 50, offset: 50 }, undefined);
+  });
+
   it('stops on an empty page even when the total says there are more', async () => {
     proxyRequest
       .mockResolvedValueOnce({ data: [{ id: 'row-1' }], meta: { total: 5, limit: 100, offset: 0 } })

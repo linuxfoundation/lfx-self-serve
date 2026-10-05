@@ -15,6 +15,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -191,6 +192,60 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toEqual([]);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+  });
+
+  // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
+  // offer a guest list it cannot fill.
+  describe('guest list visibility for invitees', () => {
+    const renderInvitee = async (showMeetingAttendees: boolean, overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: showMeetingAttendees, ...overrides }),
+          project: buildProject(),
+        })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('neither fetches nor offers the guest list when the meeting hides its attendees', async () => {
+      const page = await renderInvitee(false);
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+
+    it('still shows how many are invited, from the server count, when the meeting hides its attendees', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }),
+          project: buildProject(),
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const page = fixture.nativeElement as HTMLElement;
+      expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
+    });
+
+    it('fetches and offers the guest list when the meeting shares its attendees', async () => {
+      const page = await renderInvitee(true);
+
+      expect(getMyMeetingRegistrants).toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).not.toBeNull();
+    });
+
+    it('neither fetches nor offers the guest list on a Board meeting that still carries a legacy opt-in', async () => {
+      const page = await renderInvitee(true, { meeting_type: 'Board' });
+
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
+      expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
   });
 
   it('establishes a fresh baseline instead of treating growth as absorption when a guest is added before the roster has ever loaded', async () => {
@@ -374,6 +429,128 @@ describe('MeetingJoinComponent', () => {
     });
   });
 
+  /**
+   * Covers the organizer's per-occurrence Reschedule / Cancel actions on the join page.
+   * @description The page is addressed by `?occurrence=<start ms>`, and a reschedule gives the
+   * occurrence a new start (and so a new id upstream), so the page has to move its query param to
+   * the new instant and re-read both the meeting and the series timeline — otherwise it keeps
+   * showing the slot that no longer exists.
+   */
+  describe('per-occurrence reschedule and cancel', () => {
+    const OCCURRENCE_A = { occurrence_id: 'occurrence-a', start_time: FUTURE_START_TIME, duration: 60 } as unknown as MeetingOccurrence;
+    const OCCURRENCE_B = { occurrence_id: 'occurrence-b', start_time: '2099-01-02T00:00:00.000Z', duration: 60 } as unknown as MeetingOccurrence;
+
+    interface OccurrenceActions {
+      canManageOccurrence: () => boolean;
+      rescheduleCurrentOccurrence: () => void;
+      cancelCurrentOccurrence: () => void;
+    }
+
+    const mountWithDialog = async () => {
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      const onClose = new Subject<unknown>();
+      const open = vi.spyOn(fixture.debugElement.injector.get(DialogService), 'open').mockReturnValue({ onClose } as unknown as DynamicDialogRef);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return { component: fixture.componentInstance as unknown as OccurrenceActions, open, onClose };
+    };
+
+    const useRecurring = (overrides: Partial<Meeting> = {}) =>
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE_A, OCCURRENCE_B], ...overrides }),
+          project: buildProject(),
+        })
+      );
+
+    it('offers the actions to a signed-in organizer of a recurring meeting', async () => {
+      useRecurring();
+      const { component } = await mountWithDialog();
+
+      expect(component.canManageOccurrence()).toBe(true);
+    });
+
+    it.each([
+      ['a non-organizer', () => useRecurring({ organizer: false })],
+      ['a one-time meeting', () => undefined],
+      [
+        'an anonymous viewer',
+        () => {
+          useRecurring();
+          authenticated.set(false);
+        },
+      ],
+    ])('hides the actions for %s', async (_label, arrange) => {
+      arrange();
+      const { component } = await mountWithDialog();
+
+      expect(component.canManageOccurrence()).toBe(false);
+    });
+
+    it('moves the page to the new start and re-reads the series after a reschedule', async () => {
+      useRecurring();
+      const { component, open, onClose } = await mountWithDialog();
+      const meetingFetches = getPublicMeeting.mock.calls.length;
+      const timelineFetches = getPublicMeetingOccurrences.mock.calls.length;
+
+      component.rescheduleCurrentOccurrence();
+      expect(open.mock.calls[0][1]?.data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: 'occurrence-a' }) }));
+
+      onClose.next({ confirmed: true, start_time: '2099-01-01T05:00:00.000Z' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { occurrence: String(new Date('2099-01-01T05:00:00.000Z').getTime()) }, queryParamsHandling: 'merge' })
+      );
+      expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(meetingFetches);
+      expect(getPublicMeetingOccurrences.mock.calls.length).toBeGreaterThan(timelineFetches);
+    });
+
+    it("moves to the cancelled occurrence's successor, not back to the series' first occurrence", async () => {
+      useRecurring();
+      const OCCURRENCE_C = { occurrence_id: 'occurrence-c', start_time: '2099-01-03T00:00:00.000Z', duration: 60 } as unknown as MeetingOccurrence;
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE_A, OCCURRENCE_B, OCCURRENCE_C] }),
+          project: buildProject(),
+        })
+      );
+      queryParamMap$.next(convertToParamMap({ occurrence: String(new Date(OCCURRENCE_B.start_time).getTime()) }));
+      const { component, onClose } = await mountWithDialog();
+
+      component.cancelCurrentOccurrence();
+      onClose.next({ confirmed: true });
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { occurrence: String(new Date(OCCURRENCE_C.start_time).getTime()) } })
+      );
+    });
+
+    it('drops the occurrence param when the cancelled occurrence was the last one', async () => {
+      useRecurring();
+      queryParamMap$.next(convertToParamMap({ occurrence: String(new Date(OCCURRENCE_B.start_time).getTime()) }));
+      const { component, onClose } = await mountWithDialog();
+
+      component.cancelCurrentOccurrence();
+      onClose.next({ confirmed: true });
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { occurrence: null } }));
+    });
+
+    it('leaves the page alone when either dialog is dismissed', async () => {
+      useRecurring();
+      const { component, onClose } = await mountWithDialog();
+
+      component.rescheduleCurrentOccurrence();
+      onClose.next(undefined);
+
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    });
+  });
+
   // GH-2041: `meeting()` must resolve from `TransferState` at construction time (via `toSignal`'s
   // `initialValue`), not on a later emission — `debounceTime(0)` in the pipeline defers every
   // pipeline-driven emission, including a `startWith` seed, past Angular's first render pass.
@@ -535,6 +712,23 @@ describe('MeetingJoinComponent', () => {
       expect(getPastMeetingRecording).toHaveBeenCalledTimes(1);
       expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
       expect(getPastMeetingTranscript).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the server attendance counts when the participants are hidden from the viewer', async () => {
+      paramMap$.next(convertToParamMap({ id: '1-1700000000000' }));
+      getPublicPastMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ participant_count: 8, attended_count: 6, individual_registrants_count: 7 }), project: buildProject(), full_access: true })
+      );
+
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(getPastMeetingParticipants).toHaveBeenCalledTimes(1);
+      const summary = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="attendance-summary"]');
+      expect(summary?.textContent).toContain('6');
+      expect(summary?.textContent).toContain('2');
+      expect(summary?.textContent).toContain('75%');
     });
 
     it('persists the resolved meeting to TransferState on the server once the fetch settles', async () => {

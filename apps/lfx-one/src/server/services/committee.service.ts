@@ -17,6 +17,7 @@ import {
   CommitteeUpdateData,
   CommitteeUser,
   AuditUserProfile,
+  CommitteeDocumentQueryResult,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
@@ -90,38 +91,6 @@ interface CommitteeDocumentUpstreamResponse {
   updated_at?: string;
   created_by?: AuditUserProfile;
   /** Legacy flat username field; retained for transitional records. */
-  uploaded_by_username?: string;
-}
-
-/**
- * Query-service shape for an indexed `committee_document` resource. Files are not exposed
- * via a list endpoint upstream; they're discovered via the indexer (subject
- * `lfx.index.committee_document`).
- *
- * Per `CommitteeDocument.Tags()` in lfx-v2-committee-service, every committee_document
- * resource is indexed with the following tags:
- *   - the bare uid                          → `{uid}`
- *   - `committee_document_uid:{uid}`        — single-document lookup (returns at most 1)
- *   - `committee_uid:{committeeUID}`        — list all documents for a committee
- *   - `content_type:{contentType}`          — filter by MIME type
- *   - `uploaded_by:{uploadedByUsername}`    — filter by uploader
- *
- * Use `committee_uid:` for listing and `committee_document_uid:` for single-document lookups
- * to avoid scanning every file in the committee.
- */
-interface CommitteeDocumentQueryResult {
-  uid: string;
-  name: string;
-  file_name?: string;
-  file_size?: number;
-  content_type?: string;
-  description?: string;
-  committee_uid?: string;
-  folder_uid?: string;
-  created_at?: string;
-  updated_at?: string;
-  created_by?: AuditUserProfile;
-  /** Legacy flat username field; retained for transitional indexer records. */
   uploaded_by_username?: string;
 }
 
@@ -479,6 +448,9 @@ export class CommitteeService {
     const merged = {
       ...withAccess,
       ...settingsForResponse,
+      // Upstream omits `total_members` when it is 0; default it as the list endpoints do, so a
+      // caller who cannot read the roster sees 0 rather than an unknown count.
+      total_members: committee.total_members ?? 0,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),

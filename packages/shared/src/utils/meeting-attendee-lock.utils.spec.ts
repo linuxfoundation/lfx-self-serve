@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MeetingType } from '../enums';
 import type { Meeting } from '../interfaces';
-import { getSavedAttendeeVisibility, isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
+import { getSavedAttendeeVisibility, isMeetingAttendeeListShared, isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
 
 describe('isShowMeetingAttendeesLocked', () => {
   it('locks board meetings even when unrestricted', () => {
@@ -81,5 +81,21 @@ describe('getSavedAttendeeVisibility', () => {
     expect(getSavedAttendeeVisibility(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBeNull();
     expect(getSavedAttendeeVisibility(meeting({ restricted: true, show_meeting_attendees: true }))).toBeNull();
     expect(getSavedAttendeeVisibility(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: false }))).toBeNull();
+  });
+});
+
+describe('isMeetingAttendeeListShared', () => {
+  const meeting = (overrides: Partial<Meeting>) => ({ meeting_type: MeetingType.TECHNICAL, restricted: false, ...overrides }) as Meeting;
+
+  it('shares the list only when an unlocked meeting opted in', () => {
+    expect(isMeetingAttendeeListShared(meeting({ show_meeting_attendees: true }))).toBe(true);
+    expect(isMeetingAttendeeListShared(meeting({ show_meeting_attendees: false }))).toBe(false);
+    expect(isMeetingAttendeeListShared(meeting({ show_meeting_attendees: undefined }))).toBe(false);
+    expect(isMeetingAttendeeListShared(null)).toBe(false);
+  });
+
+  it('keeps a locked meeting private even when a legacy row still carries the opt-in', () => {
+    expect(isMeetingAttendeeListShared(meeting({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBe(false);
+    expect(isMeetingAttendeeListShared(meeting({ restricted: true, show_meeting_attendees: true }))).toBe(false);
   });
 });

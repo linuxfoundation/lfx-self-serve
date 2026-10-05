@@ -270,5 +270,10 @@
   [disableViewerOption]="editDisableViewer()"
   (save)="onEditSave($event)" />
 
-<!-- Remove confirmation (US3) -->
-<p-confirmdialog />
+<!-- Remove confirmation (US3). The message embeds the server-returned display name, which is untrusted,
+     so it is rendered through a text-interpolating template — PrimeNG's default renders `message` via [innerHTML]. -->
+<p-confirmdialog [key]="removeConfirmKey" data-testid="org-lens-access-remove-confirm-dialog">
+  <ng-template #message let-confirmation>
+    <span class="p-confirmdialog-message" data-testid="org-lens-access-remove-confirm-message">{{ confirmation.message }}</span>
+  </ng-template>
+</p-confirmdialog>

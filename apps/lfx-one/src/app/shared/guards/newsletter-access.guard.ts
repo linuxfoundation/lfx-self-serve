@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject } from '@angular/core';
+import { inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
+import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { catchError, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
@@ -34,8 +36,34 @@ import { ProjectService } from '../services/project.service';
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
+ *
+ * SSR behaviour is split by mount (GH-3274). On the Gatewaze embed mounts
+ * (`GW_EMBED_ROUTE_PREFIXES`) the server returns `true` and the gate runs
+ * only in the browser: the embed's sign-in return is a full page load, and
+ * a transient writer-lookup failure during SSR became a real HTTP 302 that
+ * stranded the sign-in return on the overview page. Those mounts render no
+ * data during SSR (the embed mounts browser-only, behind
+ * `requireGwEmbedAccess` server-side), so nothing ships early. Every other
+ * newsletter route keeps full SSR enforcement, because analytics and
+ * recipient engagement DO fetch during SSR and the page policy (writer)
+ * is stricter than some upstream read permissions.
  */
 export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+  // SSR defers to the browser on the Gatewaze embed mounts ONLY (see the JSDoc's SSR
+  // paragraph for the GH-3274 rationale; gatewazeEmbedEnabledGuard on the same mounts
+  // defers identically). Scoped to the gw mounts because they render no SSR data — the
+  // embed mounts browser-only — while the ordinary newsletter routes do fetch during SSR
+  // (analytics and recipient engagement subscribe in their constructors), so deferring
+  // there would let a token that passes upstream reads ship writer-page data in the SSR
+  // response before the browser guard denies the page.
+  if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+    const mountPath = route.routeConfig?.path ?? '';
+    if (GW_EMBED_ROUTE_PREFIXES.some((prefix) => `/${mountPath}` === prefix)) {
+      return true;
+    }
+    // Every other newsletter route falls through to full SSR enforcement below.
+  }
+
   const personaService = inject(PersonaService);
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);

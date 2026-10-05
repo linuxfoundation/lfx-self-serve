@@ -80,7 +80,7 @@ async function stubMentorRequests(
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ profile: { aboutMe: '', skills: [], resumeFileName: null, resumeUrl: null }, history: [] }),
+      body: JSON.stringify({ profile: { aboutMe: '', skills: [] }, history: [] }),
     });
   });
 

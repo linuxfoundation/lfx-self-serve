@@ -4,17 +4,20 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance, getNps } = vi.hoisted(() => ({
-  getTiers: vi.fn(),
-  getAtRisk: vi.fn(),
-  getRenewals: vi.fn(),
-  getBoardAttendance: vi.fn(),
-  getNps: vi.fn(),
-  getBridge: vi.fn(),
-  getMovements: vi.fn(),
-  getDirectory: vi.fn(),
-  getDirectoryTiers: vi.fn(),
-}));
+const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance, getNps, getChurn, getChurnDepartures } =
+  vi.hoisted(() => ({
+    getTiers: vi.fn(),
+    getAtRisk: vi.fn(),
+    getRenewals: vi.fn(),
+    getBoardAttendance: vi.fn(),
+    getNps: vi.fn(),
+    getChurn: vi.fn(),
+    getChurnDepartures: vi.fn(),
+    getBridge: vi.fn(),
+    getMovements: vi.fn(),
+    getDirectory: vi.fn(),
+    getDirectoryTiers: vi.fn(),
+  }));
 
 vi.mock('../services/health-metrics-members.service', () => ({
   HealthMetricsMembersService: class {
@@ -27,13 +30,17 @@ vi.mock('../services/health-metrics-members.service', () => ({
     public getRenewals = getRenewals;
     public getBoardAttendance = getBoardAttendance;
     public getNps = getNps;
+    public getChurn = getChurn;
+    public getChurnDepartures = getChurnDepartures;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
 }));
-// The controller constructs six unrelated domain services; none of them are exercised here.
+// The controller constructs eight unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {}, isSupportedEventsRange: () => true }));
+vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
+vi.mock('../services/health-metrics-training.service', () => ({ HealthMetricsTrainingService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
@@ -52,6 +59,10 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
@@ -80,7 +91,9 @@ type Handler =
   | 'getMembersAtRisk'
   | 'getMembersRenewals'
   | 'getMembersBoardAttendance'
-  | 'getMembersNps';
+  | 'getMembersNps'
+  | 'getMembersChurn'
+  | 'getMembersChurnDepartures';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -556,6 +569,97 @@ describe('AnalyticsController.getMembersNps', () => {
     getNps.mockRejectedValue(failure);
 
     const { next, promise } = call(valid, 'getMembersNps');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersChurn', () => {
+  beforeEach(() => {
+    getChurn.mockReset();
+    getChurn.mockResolvedValue(HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED);
+  });
+
+  it('passes the foundation and returns the response', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getMembersChurn');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getChurn).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED);
+  });
+
+  it.each([[{ foundationSlug: '' }], [{ foundationSlug: 'Acme Corp' }]])('rejects %o on foundationSlug', async (query) => {
+    const { next, promise } = call(query, 'getMembersChurn');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getChurn).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getChurn.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersChurn');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersChurnDepartures', () => {
+  const valid = { foundationSlug: 'acme', year: '2025' };
+
+  beforeEach(() => {
+    getChurnDepartures.mockReset();
+    getChurnDepartures.mockResolvedValue(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED);
+  });
+
+  it('passes the parsed query, defaulting the page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersChurnDepartures');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getChurnDepartures).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      year: 2025,
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED);
+  });
+
+  it('accepts a page within the cap and falls back past it', async () => {
+    await call({ ...valid, offset: '50', pageSize: '50' }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ offset: 50, pageSize: 50 }));
+
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE + 1) }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE })
+    );
+  });
+
+  it.each([
+    [{ ...valid, foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, year: '' }, 'year'],
+    [{ ...valid, year: '25' }, 'year'],
+    [{ ...valid, year: '2025.5' }, 'year'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersChurnDepartures');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getChurnDepartures).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getChurnDepartures.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersChurnDepartures');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

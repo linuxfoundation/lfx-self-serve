@@ -13,6 +13,7 @@ import {
   OrgAccessSummary,
   OrgAccessUser,
 } from '@lfx-one/shared/interfaces';
+import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -235,7 +236,9 @@ export class OrgLensAccessService {
         if (status === 'revoked' || status === 'expired') continue;
         // writer-wins: admins are consumed first, so never overwrite an existing admin row.
         if (byEmail.has(email)) continue;
-        const name = (principal.name ?? '').trim() || email.split('@')[0];
+        // Upstream names are untrusted display text (an inviter supplies them), so markup and invisible
+        // characters are stripped before they reach any client sink.
+        const name = sanitizeDisplayText(principal.name ?? '') || sanitizeDisplayText(email.split('@')[0]) || sanitizeDisplayText(email);
         byEmail.set(email, {
           email,
           // Only an accepted principal has a username, and member-service emits its FGA tuple on

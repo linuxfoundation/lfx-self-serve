@@ -554,7 +554,14 @@ export const serverLogger = pino({
     res: resSerializer,  // statusCode only
     err: customErrorSerializer,
   },
-  redact: ['access_token', 'refresh_token', 'authorization', 'cookie'],
+  mixinMergeStrategy: mergeMixin,   // Object.assign with guarded reads and key listing (a throwing getter or Proxy trap → [Unserializable])
+  redact: {
+    paths: ['access_token', 'refresh_token', 'id_token', 'authorization', 'cookie', 'err.command.args', 'error.command.args'],
+    remove: true,          // Drop the key entirely; the array form would write "[Redacted]" instead
+  },
+  formatters: {
+    log: /* deep-scrubs every non-serializer field via scrubLogRecord (one budget per call) */,
+  },
   prettyStream,          // Pretty-printed in dev, raw JSON in production
 });
 ```
@@ -588,28 +595,38 @@ Includes stack traces in development and when DEBUG logging is enabled. Producti
 export const customErrorSerializer = (err: any) => {
   if (!err) return err;
 
+  // Every read is guarded (readLogField / try-catch): pino does not catch a throwing serializer,
+  // so one throwing getter would otherwise make the whole logger.error(...) call throw.
+  const read = (key: string): any => readLogField(err, key);
+  const ctor = read('constructor');
+
   const serialized: any = {
-    type: err.constructor?.name || err.name || 'Error',
-    message: err.message || String(err),
+    type: (ctor ? readLogField(ctor, 'name') : undefined) || read('name') || 'Error',
+    message: read('message') || describe(err), // String(err), or [Unserializable] if toString throws
   };
 
-  if (err.code) serialized.code = err.code;
-  if (err.statusCode) serialized.statusCode = err.statusCode;
-  if (err.status) serialized.status = err.status;
+  for (const key of ['code', 'statusCode', 'status']) {
+    const value = read(key);
+    if (value) serialized[key] = value;
+  }
 
   // Stack traces in dev or when debug logging is enabled
   if (process.env['NODE_ENV'] !== 'production' || process.env['LOG_LEVEL'] === 'debug') {
-    serialized.stack = err.stack;
+    serialized.stack = read('stack');
   }
 
-  // Preserve custom error properties
-  Object.keys(err).forEach((key) => {
-    if (!['message', 'stack', 'name', 'constructor'].includes(key)) {
-      serialized[key] = err[key];
-    }
-  });
+  // A thrown string has no custom properties
+  if (typeof err !== 'object') return serialized;
 
-  return serialized;
+  // Preserve custom error properties, deep-scrubbed (credential keys redacted, Redis commands reduced
+  // to their name) under a LOG_SCRUB_LIMITS node budget of their own
+  let keys: string[];
+  try {
+    keys = Object.keys(err).filter((key) => !['message', 'stack', 'name', 'constructor'].includes(key));
+  } catch {
+    return serialized;
+  }
+  return scrubProperties(err, keys, 1, { ancestors: new WeakSet([err]), visited: 0 }, serialized);
 };
 ```
 
@@ -652,12 +669,19 @@ logger.startOperation(req, 'fetch-user-profile'); // kebab-case
 
 ### Automatic Redaction
 
-The following fields are automatically redacted via Pino's `redact` config:
+The following top-level paths are removed via Pino's `redact` config:
 
-- `access_token`
-- `refresh_token`
+- `access_token`, `refresh_token`, `id_token`
 - `authorization`
 - `cookie`
+- `err.command.args`, `error.command.args`
+
+`redact` only matches exact paths, so credentials are also scrubbed at **any nesting depth** by `scrubLogRecord` / `customErrorSerializer` (`helpers/error-serializer.ts`). It is wired in three places: `formatters.log` for every non-serializer field of a log call, an override of `serverLogger.child` for child-logger bindings (pino serializes those once, outside `formatters.log`; every child inherits the override), and the `err`/`error` serializer for errors:
+
+- Any key whose normalised name (lowercased, non-alphanumerics stripped) is in `LOG_CREDENTIAL_KEYS` (`authorization`, `cookie`, `set-cookie`, `jwt`, `sid`, meeting `passcode`, `host_key`, `chat_webhook_url`, the session's email-verification `otp` and OAuth CSRF nonces `profileAuthState` / `socialAuthState`, …) or ends in one of `LOG_CREDENTIAL_KEY_SUFFIXES` (`access_token`, `refreshToken`, `tokens`, `client_secret`, `password`, `current_password`, `confirmPassword`, `apiKey`, `x-api-key`, `SNOWFLAKE_API_KEY`, `privateKey`, `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`, …) is replaced with `[REDACTED]`. Pagination cursors such as `next_page_token` are redacted too.
+- A Redis client command — any object with a string `name` and an array `args`, which ioredis attaches as `command` to every `ReplyError` with the raw cache key and the full stored value in `args` (for the session store, the user's OIDC tokens) — is reduced to `{ name }`.
+- The walk mirrors `JSON.stringify` (own enumerable keys, `toJSON` called once with the key `JSON.stringify` would pass — `''` for a top-level field or binding, which pino stringifies on its own, else the property name or array index — and functions dropped so no `toJSON` survives on the scrubbed copy), turns a value that throws while being read or listed — a getter or Proxy trap, top-level or nested — into `[Unserializable]`, and is bounded by `LOG_SCRUB_LIMITS`. `MAX_NODES` is one budget per log call (per error for the `err` serializer, per set of child bindings), charged per top-level field, array element and object property: once spent, the rest of the container — or of the log call's fields — collapses into a single `[Truncated]` array entry or object key. Anything nested deeper than `MAX_DEPTH` is logged as `[Truncated]`. Log counts or samples rather than whole result sets.
+- Keys are matched, string contents are not. A credential interpolated into a log message or held in a string value (e.g. a pre-serialized request body) is **not** detected — never build log text from credentials.
 
 Additionally, whitelist-based serializers prevent sensitive data leakage:
 
