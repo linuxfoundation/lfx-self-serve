@@ -51,6 +51,8 @@ import {
   MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS,
 } from '../constants/mentorship-mentor.constants';
 import {
+  MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE,
+  MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
@@ -938,8 +940,8 @@ export function mentorshipApplicantDisplayStatus(application: MentorshipApplicat
 
 /**
  * Progress the mentor Mentees tab shows as a bar plus percent. Counts
- * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
- * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites,
+ * which the View Tasks panel can hide with its `hidePrerequisite` toggle.
  * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
  * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
  */
@@ -1320,4 +1322,17 @@ function latestIsoInstant(values: readonly string[]): string {
 /** Whether a value has the shape of an upstream mentor invite token: two base64url parts joined by a dot. */
 export function isMentorshipMentorInviteToken(value: string): boolean {
   return value.length <= MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
+}
+
+/**
+ * Graduate confirmation warning from a row's task counts, so no task read is needed. Counts the tasks that are
+ * neither Submitted nor Completed; `undefined` when none are outstanding.
+ */
+export function buildMentorshipGraduateTaskWarning(tasksTotal: number, tasksSubmitted: number): string | undefined {
+  const count = Math.max(tasksTotal - tasksSubmitted, 0);
+  if (count === 0) {
+    return undefined;
+  }
+  const template = count === 1 ? MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE : MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE;
+  return template.replace('{count}', String(count));
 }

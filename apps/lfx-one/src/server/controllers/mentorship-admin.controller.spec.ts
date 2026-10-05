@@ -332,6 +332,79 @@ describe('MentorshipAdminController', () => {
     });
   });
 
+  describe('application decisions', () => {
+    const APPLICATION_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+    const TERM_ID = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+    const writeRes = () => ({ json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() }) as unknown as Response;
+
+    it('updateApplicationStatus passes the validated body and answers 204', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationStatus').mockResolvedValue();
+      const out = writeRes();
+      const req = { ...buildReq({}, { applicationId: APPLICATION_ID }), body: { status: 'accepted', attendanceType: 'full_time', extra: 1 } } as Request;
+
+      await controller.updateApplicationStatus(req, out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { status: 'accepted', attendanceType: 'full_time' });
+      expect(out.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an accept without an attendance type', { status: 'accepted' }],
+      ['an accept with an unknown attendance type', { status: 'accepted', attendanceType: 'weekends' }],
+      ['a status the admin cannot set', { status: 'withdrawn' }],
+      ['no body', undefined],
+    ])('updateApplicationStatus rejects %s with a 400 and no upstream call', async (_label, body) => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationStatus');
+      const req = { ...buildReq({}, { applicationId: APPLICATION_ID }), body } as Request;
+
+      await controller.updateApplicationStatus(req, writeRes(), next);
+
+      expect(statusCodes()).toEqual([400]);
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    it('withdrawApplication answers 204', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockResolvedValue();
+      const out = writeRes();
+
+      await controller.withdrawApplication(buildReq({}, { applicationId: APPLICATION_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID);
+      expect(out.status).toHaveBeenCalledWith(204);
+    });
+
+    it('declinePendingForTerm answers with the declined count', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'declinePendingForTerm').mockResolvedValue({ declinedCount: 3 });
+      const out = writeRes();
+
+      await controller.declinePendingForTerm(buildReq({}, { programId: PROGRAM_ID, termId: TERM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, TERM_ID);
+      expect(out.json).toHaveBeenCalledWith({ declinedCount: 3 });
+    });
+
+    it('rejects ids that are not UUIDs with a 400', async () => {
+      const withdraw = vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication');
+      const decline = vi.spyOn(MentorshipAdminService.prototype, 'declinePendingForTerm');
+
+      await controller.withdrawApplication(buildReq({}, { applicationId: '12' }), writeRes(), next);
+      await controller.declinePendingForTerm(buildReq({}, { programId: PROGRAM_ID, termId: 'x' }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([400, 400]);
+      expect(withdraw).not.toHaveBeenCalled();
+      expect(decline).not.toHaveBeenCalled();
+    });
+
+    it('passes an upstream failure to next', async () => {
+      vi.spyOn(MentorshipAdminService.prototype, 'withdrawApplication').mockRejectedValue(Object.assign(new Error('changed'), { statusCode: 409 }));
+
+      await controller.withdrawApplication(buildReq({}, { applicationId: APPLICATION_ID }), writeRes(), next);
+
+      expect(statusCodes()).toEqual([409]);
+    });
+  });
+
   describe('with no signed-in user', () => {
     it.each([
       ['getProgram', 'getProgramPage', { programId: PROGRAM_ID }, {}],

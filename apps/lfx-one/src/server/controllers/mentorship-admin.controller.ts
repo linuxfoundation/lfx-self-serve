@@ -2,18 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
+  MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminMenteeTab, MentorshipAdminMentorStatus, MentorshipMenteeStatus } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminMenteeTab,
+  MentorshipAdminMentorStatus,
+  MentorshipAttendanceType,
+  MentorshipMenteeStatus,
+} from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -207,7 +215,94 @@ export class MentorshipAdminController {
     }
   }
 
-  private requireUuidParam(req: Request, name: 'programId' | 'applicationId', operation: string): string {
+  // PATCH /api/mentorship/admin/applications/:applicationId/status — body { status, attendanceType? }
+  public async updateApplicationStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'update_mentorship_admin_application_status';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const applicationId = this.requireUuidParam(req, 'applicationId', operation);
+      const body = this.parseStatusUpdate(req.body, operation);
+      await this.mentorshipAdminService.updateApplicationStatus(req, applicationId, body);
+
+      logger.success(req, operation, startTime, { applicationId, status: body.status });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/applications/:applicationId/withdraw
+  public async withdrawApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'withdraw_mentorship_admin_application';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const applicationId = this.requireUuidParam(req, 'applicationId', operation);
+      await this.mentorshipAdminService.withdrawApplication(req, applicationId);
+
+      logger.success(req, operation, startTime, { applicationId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending
+  public async declinePendingForTerm(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'decline_mentorship_admin_pending_for_term';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const termId = this.requireUuidParam(req, 'termId', operation);
+      const result = await this.mentorshipAdminService.declinePendingForTerm(req, programId, termId);
+
+      logger.success(req, operation, startTime, { programId, termId, declinedCount: result.declinedCount });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `status` must be one the admin can set; an accept also needs an `attendanceType`. */
+  private parseStatusUpdate(body: unknown, operation: string): MentorshipAdminApplicationStatusUpdate {
+    const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+    const statuses: readonly string[] = MENTORSHIP_ADMIN_DECISION_STATUSES;
+    if (typeof raw['status'] !== 'string' || !statuses.includes(raw['status'])) {
+      throw ServiceValidationError.forField('status', `status must be one of: ${statuses.join(', ')}`, { operation });
+    }
+    const status = raw['status'] as MentorshipAdminApplicationStatusUpdate['status'];
+    if (status !== 'accepted') {
+      return { status };
+    }
+
+    const attendanceType = raw['attendanceType'];
+    if (typeof attendanceType !== 'string' || !(MENTORSHIP_ATTENDANCE_TYPES as readonly string[]).includes(attendanceType)) {
+      throw ServiceValidationError.forField(
+        'attendanceType',
+        `attendanceType is required to accept and must be one of: ${MENTORSHIP_ATTENDANCE_TYPES.join(', ')}`,
+        {
+          operation,
+        }
+      );
+    }
+    return { status, attendanceType: attendanceType as MentorshipAttendanceType };
+  }
+
+  private requireUuidParam(req: Request, name: 'programId' | 'applicationId' | 'termId', operation: string): string {
     const value = typeof req.params[name] === 'string' ? req.params[name].trim() : '';
     if (!isUuid(value)) {
       throw ServiceValidationError.forField(name, `${name} must be a UUID.`, { operation });

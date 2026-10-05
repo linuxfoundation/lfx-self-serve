@@ -90,6 +90,50 @@ export const MENTORSHIP_ADMIN_PROGRAM_LOAD_ERROR_MESSAGE = 'We could not load th
 export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE = 'No access to this program';
 export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE = 'You do not have permission to manage this program.';
 
+/** Attendance types an admin picks when accepting an application; `attendance_type` upstream. */
+export const MENTORSHIP_ATTENDANCE_TYPES = ['full_time', 'part_time'] as const;
+
+/** Statuses an admin may set through `PATCH …/applications/:applicationId/status`; Withdraw has its own route. */
+export const MENTORSHIP_ADMIN_DECISION_STATUSES = ['accepted', 'declined', 'graduated'] as const;
+
+export const MENTORSHIP_ATTENDANCE_TYPE_LABELS: Record<(typeof MENTORSHIP_ATTENDANCE_TYPES)[number], string> = {
+  full_time: 'Full time',
+  part_time: 'Part time',
+};
+
+/** Shown when a decision hits a 409: the application moved on, so the list reloads. */
+export const MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE = 'This application changed. The list has been refreshed.';
+/** Shown when an accept hits a 422: the application's term is no longer open. */
+export const MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE = "This term is closed, so the application can't be accepted.";
+/** Graduate confirmation warning; `{count}` is the number of tasks not yet Submitted or Completed. */
+export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE = "{count} tasks aren't Submitted or Completed.";
+export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE = "{count} task isn't Submitted or Completed.";
+
+/** Copy of the Current Mentees decision dialogs and toasts. */
+export const MENTORSHIP_ADMIN_ACCEPT_DIALOG_HEADER = 'Accept Application';
+export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_LABEL = 'Attendance type';
+export const MENTORSHIP_ADMIN_ACCEPT_ATTENDANCE_REQUIRED_MESSAGE = 'Choose an attendance type to accept the application.';
+export const MENTORSHIP_ADMIN_DECLINE_CONFIRM_MESSAGE = 'Decline this application? The mentee is told it was declined.';
+export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this application on the mentee's behalf? This can't be undone.";
+export const MENTORSHIP_ADMIN_GRADUATE_CONFIRM_MESSAGE = 'Graduate this mentee?';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE = "Decline every pending application in the term you pick. Accepted mentees aren't affected.";
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE = 'There is no open term to decline applications in.';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_TERM_LABEL = 'Term';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_REQUIRED_MESSAGE = 'Choose a term to continue.';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE = 'Decline all pending applications in {term}? This cannot be undone.';
+/** `{count}` is the number of applications the bulk decline reported. */
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_TEMPLATE = '{count} applications declined';
+export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_SINGULAR_TEMPLATE = '1 application declined';
+export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
+  accepted: 'Application accepted',
+  declined: 'Application declined',
+  withdrawn: 'Application withdrawn',
+  graduated: 'Mentee graduated',
+} as const;
+export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
+export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
+
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
  * client-side validation. Shared so a copy change lands on both mentor and mentee forms
