@@ -5,6 +5,7 @@
 
 import { EMAIL_REGEX } from '@lfx-one/shared/constants';
 import { OrgAccessInviteRequest, OrgAccessRole, OrgAccessRoleChangeRequest, OrgLensEditCheckResponse } from '@lfx-one/shared/interfaces';
+import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ServiceValidationError } from '../errors';
@@ -155,11 +156,19 @@ export class OrgLensAccessController {
     if (role !== 'admin' && role !== 'viewer') {
       throw ServiceValidationError.forField('role', 'Role must be "admin" or "viewer"', { operation });
     }
-    const name = raw.name != null ? String(raw.name).trim() : '';
+    if (raw.name != null && typeof raw.name !== 'string') {
+      throw ServiceValidationError.forField('name', 'Name must be a string', { operation });
+    }
+    const name = (raw.name ?? '').trim();
     if (name.length > 255) {
       throw ServiceValidationError.forField('name', 'Name must be 255 characters or fewer', { operation });
     }
-    return { email, role, name: name || null };
+    // The name is echoed to every reader of the org's access list, so markup and control characters are
+    // refused outright; invisible formatting (BIDI overrides etc.) is stripped by sanitizeDisplayText.
+    if (/[<>]|\p{Cc}/u.test(name)) {
+      throw ServiceValidationError.forField('name', 'Name must not contain "<", ">" or control characters', { operation });
+    }
+    return { email, role, name: sanitizeDisplayText(name) || null };
   }
 
   private assertEmail(email: string | undefined, operation: string): asserts email is string {
