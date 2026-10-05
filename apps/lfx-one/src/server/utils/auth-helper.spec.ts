@@ -37,7 +37,7 @@ function buildReq(opts: { impersonating?: boolean; target?: TargetUser; oidc?: R
 
 // The impersonator's own OIDC identity — present in every impersonation case to prove the
 // helpers never fall back to it when the target's stored field is empty.
-const OPERATOR_OIDC = { email: 'Operator@Example.com', nickname: 'operatornick', username: 'operatorname', sub: 'auth0|operator' };
+const OPERATOR_OIDC = { email: 'Operator@Example.com', email_verified: true, nickname: 'operatornick', username: 'operatorname', sub: 'auth0|operator' };
 
 const LF_USERNAME_CLAIM = 'https://sso.linuxfoundation.org/claims/username';
 
@@ -68,8 +68,14 @@ describe('getEffectiveEmail', () => {
   });
 
   it('returns the OIDC email lowercased when not impersonating', () => {
-    const req = buildReq({ oidc: { email: 'User@Example.com' } });
+    const req = buildReq({ oidc: { email: 'User@Example.com', email_verified: true } });
     expect(getEffectiveEmail(req)).toBe('user@example.com');
+  });
+
+  it('returns null when the ID token does not assert email_verified: true', () => {
+    expect(getEffectiveEmail(buildReq({ oidc: { email: 'User@Example.com', email_verified: false } }))).toBeNull();
+    expect(getEffectiveEmail(buildReq({ oidc: { email: 'User@Example.com' } }))).toBeNull();
+    expect(getEffectiveEmail(buildReq({ oidc: { email: 'User@Example.com', email_verified: 'true' } }))).toBeNull();
   });
 });
 
@@ -85,13 +91,18 @@ describe('getRawEffectiveEmail', () => {
   });
 
   it('returns the OIDC email as stored (no lowercasing) when not impersonating', () => {
-    const req = buildReq({ oidc: { email: 'User@Example.com' } });
+    const req = buildReq({ oidc: { email: 'User@Example.com', email_verified: true } });
     expect(getRawEffectiveEmail(req)).toBe('User@Example.com');
   });
 
   it('returns null when there is no OIDC email at all', () => {
     const req = buildReq({ oidc: { nickname: 'usernick' } });
     expect(getRawEffectiveEmail(req)).toBeNull();
+  });
+
+  it('returns null when the ID token does not assert email_verified: true', () => {
+    expect(getRawEffectiveEmail(buildReq({ oidc: { email: 'User@Example.com', email_verified: false } }))).toBeNull();
+    expect(getRawEffectiveEmail(buildReq({ oidc: { email: 'User@Example.com' } }))).toBeNull();
   });
 });
 
@@ -180,12 +191,18 @@ describe('getRealEmail', () => {
   });
 
   it('returns the OIDC email lowercased when not impersonating', () => {
-    const req = buildReq({ oidc: { email: 'User@Example.com' } });
+    const req = buildReq({ oidc: { email: 'User@Example.com', email_verified: true } });
     expect(getRealEmail(req)).toBe('user@example.com');
   });
 
   it('returns null when there is no OIDC email', () => {
     const req = buildReq({});
+    expect(getRealEmail(req)).toBeNull();
+  });
+
+  it('returns null when the OPERATOR ID token does not assert email_verified: true', () => {
+    expect(getRealEmail(buildReq({ oidc: { email: 'User@Example.com', email_verified: false } }))).toBeNull();
+    const req = buildReq({ impersonating: true, target: { email: 'target@example.com' }, oidc: { ...OPERATOR_OIDC, email_verified: false } });
     expect(getRealEmail(req)).toBeNull();
   });
 });
@@ -410,17 +427,25 @@ describe('buildImpersonationIdentityOverride', () => {
 
 describe('resolveUserIdentity', () => {
   it('resolves the lowercased effective email and the prefix-stripped username together', async () => {
-    const req = buildReq({ oidc: { email: 'User@Example.com', [LF_USERNAME_CLAIM]: 'auth0|someuser' } });
+    const req = buildReq({ oidc: { email: 'User@Example.com', email_verified: true, [LF_USERNAME_CLAIM]: 'auth0|someuser' } });
     await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'user@example.com', username: 'someuser' });
   });
 
   it('returns null for whichever side the auth context lacks', async () => {
     await expect(resolveUserIdentity(buildReq({ oidc: { [LF_USERNAME_CLAIM]: 'auth0|someuser' } }))).resolves.toEqual({ email: null, username: 'someuser' });
-    await expect(resolveUserIdentity(buildReq({ oidc: { email: 'user@example.com' } }))).resolves.toEqual({ email: 'user@example.com', username: null });
+    await expect(resolveUserIdentity(buildReq({ oidc: { email: 'user@example.com', email_verified: true } }))).resolves.toEqual({
+      email: 'user@example.com',
+      username: null,
+    });
   });
 
   it('resolves the impersonation target, never the operator, when impersonating', async () => {
     const req = buildReq({ impersonating: true, target: { email: 'Target@Example.com', username: 'targetuser' }, oidc: OPERATOR_OIDC });
     await expect(resolveUserIdentity(req)).resolves.toEqual({ email: 'target@example.com', username: 'targetuser' });
+  });
+
+  it('drops an unverified session email but keeps the username', async () => {
+    const req = buildReq({ oidc: { email: 'invitee@example.com', email_verified: false, [LF_USERNAME_CLAIM]: 'auth0|someuser' } });
+    await expect(resolveUserIdentity(req)).resolves.toEqual({ email: null, username: 'someuser' });
   });
 });
