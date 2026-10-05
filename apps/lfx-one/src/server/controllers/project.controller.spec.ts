@@ -66,10 +66,24 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
 // wholesale so only the controller's getLensRedirect path loads.
-vi.mock('../helpers/validation.helper', () => ({
-  getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
-  validateUidParameter: vi.fn(() => true),
-}));
+vi.mock('../helpers/validation.helper', async () => {
+  const { ServiceValidationError } = await import('../errors');
+  return {
+    getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
+    validateUidParameter: vi.fn(() => true),
+    getValidatedDuplicateIdentifiers: vi.fn((duplicateIdentifiers: unknown, operation: string) => {
+      if (duplicateIdentifiers === undefined) return undefined;
+      if (
+        !Array.isArray(duplicateIdentifiers) ||
+        duplicateIdentifiers.length > 20 ||
+        duplicateIdentifiers.some((id) => typeof id !== 'string' || id.trim() === '' || id.length > 320)
+      ) {
+        throw ServiceValidationError.forField('duplicateIdentifiers', 'duplicateIdentifiers must be an array of at most 20 non-blank strings', { operation });
+      }
+      return duplicateIdentifiers;
+    }),
+  };
+});
 
 vi.mock('../services/project.service', () => ({
   ProjectService: vi.fn(function () {
@@ -830,6 +844,42 @@ describe('ProjectController permissions duplicateIdentifiers pass-through', () =
 
     expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, undefined);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // dealako + Copilot (PR #3244 review): a malformed duplicateIdentifiers must be rejected
+  // with a 400 before it reaches the service's array .map()/.filter() calls, not thrown as
+  // an uncaught TypeError that surfaces as a 500.
+  it('updateUserPermissionRole rejects a non-array duplicateIdentifiers without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: 'abc' });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('updateUserPermissionRole rejects a duplicateIdentifiers array with non-string elements without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: [1, {}] });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('removeUserFromProjectPermissions rejects an oversized duplicateIdentifiers array without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { duplicateIdentifiers: Array.from({ length: 21 }, (_, i) => `id${i}`) });
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.status).not.toHaveBeenCalledWith(204);
   });
 });
 
