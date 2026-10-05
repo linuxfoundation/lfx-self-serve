@@ -214,7 +214,17 @@
               }
               <!-- Role -->
               <td>
-                <span class="role-badge" [attr.data-role]="row.role" [pTooltip]="row.roleTooltip" [escape]="false" tooltipPosition="top">{{ row.role }}</span>
+                <span
+                  class="role-badge"
+                  tabindex="0"
+                  [attr.data-role]="row.role"
+                  [attr.aria-label]="'Role: ' + row.role"
+                  [pTooltip]="row.roleTooltip"
+                  [escape]="false"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  >{{ row.role }}</span
+                >
               </td>
               <!-- Voting -->
               <td>

@@ -371,7 +371,7 @@ export class MultiPersonaDashboardComponent {
 
     if (labels.length === 0) return 'No specific activity detected';
     if (labels.length === 1) return labels[0];
-    return `<ul class="flex list-disc flex-col gap-1 pl-4 text-left">${labels.map((label) => `<li>${label}</li>`).join('')}</ul>`;
+    return `Detected activity:<ul class="flex list-disc flex-col gap-1 pl-4 text-left">${labels.map((label) => `<li>${label}</li>`).join('')}</ul>`;
   }
 
   private normalizeRole(role: string): string {
