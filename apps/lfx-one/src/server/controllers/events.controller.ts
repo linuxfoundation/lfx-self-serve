@@ -212,15 +212,17 @@ export class EventsController {
         isPast = false;
       }
 
-      // For upcoming events, fetch affiliated project slugs server-side from the persona service.
+      const registeredOnly = req.query['registeredOnly'] === 'true';
+      // Affiliated discovery is unnecessary for My Registrations and Past.
       let affiliatedProjectSlugs: string[] | undefined;
-      if (isPast === false) {
+      if (isPast === false && !registeredOnly) {
         affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
       }
 
       const options: GetEventOrganizationsOptions = {
         projectName: req.query['projectName'] ? String(req.query['projectName']) : undefined,
         isPast,
+        registeredOnly,
         affiliatedProjectSlugs,
       };
 

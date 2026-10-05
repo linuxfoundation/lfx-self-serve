@@ -269,6 +269,8 @@ export interface GetEventOrganizationsParams {
   projectName?: string;
   /** When true, returns only foundations from the user's registered past events */
   isPast?: boolean;
+  /** Limits upcoming foundations to accepted user registrations rather than affiliated discovery. */
+  registeredOnly?: boolean;
 }
 
 /**
@@ -472,6 +474,8 @@ export interface GetEventOrganizationsOptions {
   projectName?: string;
   /** When true, returns only foundations from the authenticated user's registered past events */
   isPast?: boolean;
+  /** Limits upcoming foundations to accepted user registrations rather than affiliated discovery. */
+  registeredOnly?: boolean;
   /** Project slugs from persona detection — scopes upcoming foundations to affiliated projects */
   affiliatedProjectSlugs?: string[];
 }

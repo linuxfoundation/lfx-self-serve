@@ -47,7 +47,7 @@ export class EventsTableComponent {
     Cancelled: 'danger',
   };
 
-  protected readonly statusIconMap = MY_EVENT_STATUS_ICON_MAP;
+  protected readonly statusIconMap: Partial<Record<string, string>> = MY_EVENT_STATUS_ICON_MAP;
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
 

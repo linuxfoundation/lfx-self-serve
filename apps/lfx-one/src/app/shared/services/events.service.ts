@@ -86,6 +86,8 @@ export class EventsService {
     if (params.projectName) httpParams = httpParams.set('projectName', params.projectName);
     if (params.isPast !== undefined) httpParams = httpParams.set('isPast', String(params.isPast));
 
+    if (params.registeredOnly) httpParams = httpParams.set('registeredOnly', 'true');
+
     return this.http.get<MyEventOrganizationsResponse>('/api/events/organizations', { params: httpParams });
   }
 

@@ -270,6 +270,64 @@ describe('EventsService.getMyEvents co-located exclusion', () => {
   });
 });
 
+describe('EventsService.getEventOrganizations registration scope', () => {
+  let service: InstanceType<typeof EventsService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    snowflakeMocks.execute.mockResolvedValue({ rows: [] });
+    service = new EventsService();
+  });
+
+  async function queryFor(options: Record<string, unknown>) {
+    await service.getEventOrganizations({} as never, USER_EMAIL, options);
+    const [sql, binds] = snowflakeMocks.execute.mock.calls[0] as [string, string[]];
+    expect(binds).toHaveLength((sql.match(/\?/g) ?? []).length);
+    return { sql, binds };
+  }
+
+  it('omits affiliated discovery and its binds for My Registrations, including registered co-located events', async () => {
+    const { sql, binds } = await queryFor({
+      isPast: false,
+      registeredOnly: true,
+      affiliatedProjectSlugs: ['alpha', 'beta'],
+      projectName: 'Example Foundation',
+    });
+
+    expect(sql).toContain("USER_EMAIL = ? AND REGISTRATION_STATUS = 'Accepted'");
+    expect(sql).not.toContain('LOWER(PROJECT_SLUG)');
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+    expect(binds).toEqual([USER_EMAIL, 'Example Foundation']);
+  });
+
+  it.each([undefined, false])('defaults registeredOnly=%s to accepted registrations OR non-co-located affiliated discovery', async (registeredOnly) => {
+    const { sql, binds } = await queryFor({ isPast: false, registeredOnly, affiliatedProjectSlugs: ['alpha', 'beta'], projectName: 'Example Foundation' });
+
+    expect(sql).toMatch(
+      /\(USER_EMAIL = \? AND REGISTRATION_STATUS = 'Accepted'\)\s+OR \(LOWER\(PROJECT_SLUG\) IN \(\?, \?\)\s+AND COALESCE\(IS_COLOCATED_EVENT, FALSE\) = FALSE\)/
+    );
+    expect(binds).toEqual([USER_EMAIL, 'alpha', 'beta', 'Example Foundation']);
+  });
+
+  it.each([true, false])('has no discovery restriction or extra binds without affiliations, registeredOnly=%s', async (registeredOnly) => {
+    const { sql, binds } = await queryFor({ isPast: false, registeredOnly });
+
+    expect(sql).not.toContain('LOWER(PROJECT_SLUG)');
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+    expect(binds).toEqual([USER_EMAIL]);
+  });
+
+  it.each([true, false])('leaves Past unchanged even with affiliated slugs and registeredOnly=%s', async (registeredOnly) => {
+    const { sql, binds } = await queryFor({ isPast: true, registeredOnly, affiliatedProjectSlugs: ['alpha'], projectName: 'Example Foundation' });
+
+    expect(sql).toContain('WHERE USER_EMAIL = ?');
+    expect(sql).not.toContain('REGISTRATION_STATUS');
+    expect(sql).not.toContain('IS_COLOCATED_EVENT');
+    expect(sql).not.toContain('PROJECT_SLUG');
+    expect(binds).toEqual([USER_EMAIL, 'Example Foundation']);
+  });
+});
+
 describe('EventsService filter options use the same past-event predicate', () => {
   let service: InstanceType<typeof EventsService>;
 

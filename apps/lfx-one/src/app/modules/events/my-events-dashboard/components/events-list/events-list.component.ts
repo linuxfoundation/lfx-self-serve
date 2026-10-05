@@ -69,6 +69,7 @@ export class EventsListComponent {
   // Upcoming-tab registration view — declared after registeredCount, which seeds its default
   protected readonly upcomingViewOptions = MY_EVENTS_UPCOMING_VIEWS;
   protected readonly upcomingView: WritableSignal<MyEventsUpcomingView> = this.initUpcomingView();
+  public readonly upcomingRegisteredOnly = computed(() => (this.statsUpcomingRegisteredLoading() ? null : this.upcomingView() === 'registered'));
   protected readonly showUpcomingViewPills = computed(() => !this.eventsStatsLoading() && this.statsUpcomingAll().total > 0);
 
   /**
@@ -221,9 +222,9 @@ export class EventsListComponent {
           status: this.status() ?? undefined,
           sortField: sortFieldSignal(),
           sortOrder: sortOrderSignal(),
-          registeredOnly: (!isPast && this.upcomingView() === 'registered') || undefined,
+          registeredOnly: (!isPast && this.upcomingRegisteredOnly()) || undefined,
           // Upcoming waits for the registered-count stats, so its first request already carries the default view
-          ready: isPast || !this.statsUpcomingRegisteredLoading(),
+          ready: isPast || this.upcomingRegisteredOnly() !== null,
         }))
       ).pipe(
         filter(({ ready }) => ready),
