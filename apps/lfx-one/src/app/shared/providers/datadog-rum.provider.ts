@@ -29,11 +29,13 @@ export function redactRumUrl(url: string, origin: string): string {
  * `beforeSend`, so it must not run at all while the URL carries a credential.
  *
  * A credential whose value already equals the redaction marker comes back from `redactRumUrl`
- * unchanged, so a URL containing the marker anywhere is refused too. That fails closed: at worst a
- * clean page that happens to mention the word is not recorded.
+ * unchanged, so the URL is checked a second time with every occurrence of the marker swapped for a
+ * stand-in value: a credential slot holding the marker then changes under redaction and is refused,
+ * while a clean URL that merely mentions the word elsewhere is still recorded.
  */
 export function shouldRecordReplay(url: string, origin: string): boolean {
-  return redactRumUrl(url, origin) === url && !url.toLowerCase().includes(CREDENTIAL_REDACTION_MARKER);
+  const probe = url.replace(new RegExp(CREDENTIAL_REDACTION_MARKER, 'gi'), 'x');
+  return redactRumUrl(url, origin) === url && redactRumUrl(probe, origin) === probe;
 }
 
 /**

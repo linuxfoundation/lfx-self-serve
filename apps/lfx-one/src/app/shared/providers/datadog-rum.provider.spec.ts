@@ -26,6 +26,13 @@ describe('shouldRecordReplay', () => {
     expect(shouldRecordReplay(`${ORIGIN}/invite?token=redacted`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`${ORIGIN}/login?returnTo=${encodeURIComponent('/meetings/m-1?password=redacted')}`, ORIGIN)).toBe(false);
     expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?password=%72edacted`, ORIGIN)).toBe(false);
+    expect(shouldRecordReplay(`${ORIGIN}/gw/newsletters#access_token=redacted`, ORIGIN)).toBe(false);
+  });
+
+  it('records a clean URL that merely mentions the redaction marker outside a credential', () => {
+    expect(shouldRecordReplay(`${ORIGIN}/search?q=redacted`, ORIGIN)).toBe(true);
+    expect(shouldRecordReplay('/documents/REDACTED-notes', ORIGIN)).toBe(true);
+    expect(shouldRecordReplay(`${ORIGIN}/meetings/m-1?token=redacted`, ORIGIN)).toBe(true);
   });
 });
 
