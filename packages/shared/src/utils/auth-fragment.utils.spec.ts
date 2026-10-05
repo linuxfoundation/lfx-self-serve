@@ -189,6 +189,14 @@ describe('redactMeetingPasswordInText', () => {
     expect(redactMeetingPasswordInText(stack)).toBe(stack);
   });
 
+  it('keeps the coordinates and closing parenthesis of a stack frame whose URL carries a passcode', () => {
+    expect(redactMeetingPasswordInText('Error: x\n    at f (https://lfx.example.com/meetings/m-1?password=SUPER_SECRET:10:5)\n    at g (/a.js:1:2)')).toBe(
+      'Error: x\n    at f (https://lfx.example.com/meetings/m-1?password=redacted:10:5)\n    at g (/a.js:1:2)'
+    );
+    expect(redactMeetingPasswordInText('f@https://lfx.example.com/x?passcode=SUPER_SECRET:3:7')).toBe('f@https://lfx.example.com/x?passcode=redacted:3:7');
+    expect(redactMeetingPasswordInText('at h (meetings%3Fpassword%3DSUPER_SECRET:4:2)')).toBe('at h (meetings%3Fpassword%3Dredacted:4:2)');
+  });
+
   it('leaves text without a passcode param untouched', () => {
     const text = 'Failed to reset password: password_reset=sent?ok';
     expect(redactMeetingPasswordInText(text)).toBe(text);

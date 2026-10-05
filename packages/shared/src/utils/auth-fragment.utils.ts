@@ -92,16 +92,20 @@ function isMeetingPasswordParam(key: string): boolean {
 
 // A `?`/`&` and `=` may each be percent-encoded, once per level of nesting (`%3F`, `%253F`, …), when
 // the URL quoted is itself the value of another URL's param. The value ends at the next delimiter,
-// encoded or not. Repetition is bounded so a crafted run of `%2525…` cannot make matching quadratic.
+// encoded or not, at a closing parenthesis, or before a stack frame's trailing `:line:column`.
+// Repetition is bounded so a crafted run of `%2525…` cannot make matching quadratic.
 const ENCODED_PREFIX = '%(?:25){0,3}';
 const MEETING_PASSWORD_IN_TEXT_PATTERN = new RegExp(
   `((?:[?&]|${ENCODED_PREFIX}(?:3F|26))(?:${MEETING_PASSWORD_QUERY_PARAMS.join('|')})(?:=|${ENCODED_PREFIX}3D))` +
-    `(?:(?!${ENCODED_PREFIX}(?:26|23))[^&#\\s"'<>])*`,
+    `(?:(?!${ENCODED_PREFIX}(?:26|23)|:\\d+:\\d+(?![^\\s"'<>()]))[^&#\\s"'<>()])*`,
   'gi'
 );
 
 /** Runs of text between whitespace, quotes, angle brackets and parentheses: a stack frame's URL is parenthesised. */
 const TEXT_TOKEN_PATTERN = /[^\s"'<>()]+/g;
+
+/** The `:line:column` a stack frame appends to its script URL, which is not part of the URL. */
+const STACK_FRAME_POSITION_PATTERN = /(?::\d+){2}$/;
 
 /** Resolves a quoted relative path for parsing only; {@link redactMeetingPassword} returns it relative. */
 const TEXT_URL_BASE = 'https://redaction.invalid';
@@ -124,7 +128,9 @@ export function redactMeetingPasswordInText(text: string): string {
     if (urlStart < 0 || urlStart > queryIndex) {
       return token;
     }
-    return token.slice(0, urlStart) + redactMeetingPassword(token.slice(urlStart), TEXT_URL_BASE);
+    const url = token.slice(urlStart);
+    const position = STACK_FRAME_POSITION_PATTERN.exec(url)?.[0] ?? '';
+    return token.slice(0, urlStart) + redactMeetingPassword(url.slice(0, url.length - position.length), TEXT_URL_BASE) + position;
   });
   return withUrlsRedacted.replace(MEETING_PASSWORD_IN_TEXT_PATTERN, '$1redacted');
 }
