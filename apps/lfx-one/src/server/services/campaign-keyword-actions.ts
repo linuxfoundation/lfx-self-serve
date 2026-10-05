@@ -293,8 +293,11 @@ const UPSTREAM_UNCONFIRMED_MARKER = 'are unconfirmed';
  * An answer -- any status it chose, including 500 and 503 -- describes THIS request only. A
  * BFF-raised transport failure is the one thing that says the next campaign is unreachable too,
  * and those are the errors that carry `originalError` or the TIMEOUT code.
+ *
+ * Exported for `CampaignServiceClient.updateCampaignBudget`, which has the same problem: a budget
+ * write that nobody answered may still have reached the ad platform.
  */
-function upstreamAnswered(error: unknown): boolean {
+export function upstreamAnswered(error: unknown): boolean {
   const e = error as { originalError?: unknown; code?: unknown; errorBody?: unknown; statusCode?: unknown } | null | undefined;
   // A BFF-raised failure is never an answer, however it is spelled.
   if (e?.originalError !== undefined || e?.code === 'TIMEOUT') {

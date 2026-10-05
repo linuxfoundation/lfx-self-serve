@@ -4,6 +4,7 @@
 import type {
   AudienceSignal,
   AudienceSpeakerScope,
+  CampaignBudgetType,
   CampaignDeliveryTypeOption,
   CampaignEmailTypeOption,
   CampaignGoalOption,
@@ -994,6 +995,21 @@ export function normalizeMicrosoftGeoTargets(codes: readonly string[] | null | u
 
 /** Valid statuses for the campaign status toggle endpoint. */
 export const VALID_CAMPAIGN_TOGGLE_STATUSES: ReadonlySet<CampaignToggleStatus> = new Set<CampaignToggleStatus>(['ACTIVE', 'PAUSED']);
+
+/** Valid `budgetType` values for the campaign budget change endpoint (campaign-service's `budget_type` enum). */
+export const VALID_CAMPAIGN_BUDGET_TYPES: ReadonlySet<CampaignBudgetType> = new Set<CampaignBudgetType>(['daily', 'lifetime']);
+
+/**
+ * What a budget change reports when no campaign-service answer came back, such as a timeout, a
+ * lost connection or a gateway error page.
+ *
+ * The write may already have reached the ad platform, so "nothing changed" cannot be claimed.
+ * Re-applying the same amount converges and is safe, but the operator is still told to verify
+ * first. campaign-service's OWN 503 answers are passed through untouched instead, because their
+ * message already says whether the outcome was definite or unconfirmed.
+ */
+export const CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED =
+  'The budget change could not be confirmed and may already have been applied. Verify the campaign budget in the ad platform before retrying.';
 
 // NOTE: LinkedIn ad accounts, default account/org IDs, employer exclusions, and
 // targeting profile URN lists are loaded at runtime from a mounted ConfigMap
