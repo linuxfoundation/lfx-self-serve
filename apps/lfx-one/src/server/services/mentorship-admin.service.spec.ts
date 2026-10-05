@@ -556,3 +556,66 @@ describe('MentorshipAdminService.getProgramTerms', () => {
     await expect(service.getProgramTerms(buildReq(), PROGRAM_ID, {})).rejects.toThrow('upstream down');
   });
 });
+
+describe('MentorshipAdminService application decisions', () => {
+  const APPLICATION_ID = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  const TERM_ID = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const APPLICATION_PATH = `/mentorship/v1/applications/${APPLICATION_ID}`;
+  let service: InstanceType<typeof MentorshipAdminService>;
+
+  beforeEach(() => {
+    service = new MentorshipAdminService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('patches the status, sending the attendance type only with an accept', async () => {
+    const spy = stubProgramReads({ [`${APPLICATION_PATH}/status`]: {} });
+
+    await service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'accepted', attendanceType: 'part_time' });
+    await service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'declined', attendanceType: 'full_time' });
+
+    expect(spy.mock.calls.map((call) => [call[3], call[5]])).toEqual([
+      ['PATCH', { status: 'accepted', attendance_type: 'part_time' }],
+      ['PATCH', { status: 'declined' }],
+    ]);
+  });
+
+  it('passes an upstream 422 on', async () => {
+    stubProgramReads({ [`${APPLICATION_PATH}/status`]: new MicroserviceError('closed', 422, 'UNPROCESSABLE') });
+
+    await expect(service.updateApplicationStatus(buildReq(), APPLICATION_ID, { status: 'graduated' })).rejects.toMatchObject({ statusCode: 422 });
+  });
+
+  it.each(['pending', 'hold', 'accepted'])('withdraws a %s application on the mentee behalf', async (status) => {
+    const spy = stubProgramReads({ [APPLICATION_PATH]: { id: APPLICATION_ID, status }, [`${APPLICATION_PATH}/withdraw-for-mentee`]: {} });
+
+    await service.withdrawApplication(buildReq(), APPLICATION_ID);
+
+    expect(spy.mock.calls.map((call) => [call[3], call[2]])).toEqual([
+      ['GET', APPLICATION_PATH],
+      ['POST', `${APPLICATION_PATH}/withdraw-for-mentee`],
+    ]);
+  });
+
+  it.each(['declined', 'withdrawn', 'graduated'])('answers 409 without writing when the application is %s', async (status) => {
+    const spy = stubProgramReads({ [APPLICATION_PATH]: { id: APPLICATION_ID, status } });
+
+    await expect(service.withdrawApplication(buildReq(), APPLICATION_ID)).rejects.toMatchObject({
+      statusCode: 409,
+      message: 'This application changed. The list has been refreshed.',
+    });
+    expect(spy.mock.calls.every((call) => call[3] === 'GET')).toBe(true);
+  });
+
+  it('declines the term pending applications and maps the count', async () => {
+    const spy = stubProgramReads({
+      [`/mentorship/v1/programs/${PROGRAM_ID}/terms/${TERM_ID}/applications/bulk-decline`]: { declined_count: 4 },
+    });
+
+    expect(await service.declinePendingForTerm(buildReq(), PROGRAM_ID, TERM_ID)).toEqual({ declinedCount: 4 });
+    expect(spy.mock.calls[0][3]).toBe('POST');
+  });
+});

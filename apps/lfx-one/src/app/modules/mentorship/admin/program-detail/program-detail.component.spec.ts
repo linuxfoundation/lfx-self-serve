@@ -11,7 +11,7 @@ import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/mentee-note-dialog.component';
@@ -169,6 +169,64 @@ describe('ProgramDetailComponent', () => {
       clickNote('app_2');
 
       expect(fixture.componentInstance['noteDrafts']()).toEqual({ app_1: 'a saved note', app_2: 'a saved note' });
+    });
+
+    it('reads the counts again without the loading state when a decision changes them', () => {
+      const refreshed = programPage();
+      refreshed.tabCounts = { ...refreshed.tabCounts, currentMentees: 1 };
+      getProgram.mockReturnValue(of(refreshed));
+      const isLoading = vi.spyOn(fixture.componentInstance['isLoading'], 'set');
+
+      fixture.componentInstance['refreshCounts']();
+      settle();
+
+      expect(getProgram).toHaveBeenCalledTimes(2);
+      expect(isLoading).not.toHaveBeenCalled();
+      expect(tabText('current-mentees')).toBe('Current Mentees 1');
+      expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).not.toBeNull();
+    });
+
+    it('keeps the counts on screen when reading them again fails', () => {
+      getProgram.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      fixture.componentInstance['refreshCounts']();
+      settle();
+
+      expect(tabText('current-mentees')).toBe('Current Mentees 2');
+      expect(fixture.componentInstance['pageError']()).toBeNull();
+    });
+
+    it('hands Current Mentees a refresh that still updates the counts after that tab is destroyed', () => {
+      const refreshed = programPage();
+      refreshed.tabCounts = { ...refreshed.tabCounts, currentMentees: 1 };
+      getProgram.mockReturnValue(of(refreshed));
+      const countsRefresh: () => void = fixture.componentInstance['countsRefresh'];
+
+      showTab('mentors');
+      countsRefresh();
+      settle();
+
+      expect(tabText('current-mentees')).toBe('Current Mentees 1');
+    });
+
+    it('drops a refresh that answers after a newer one started', () => {
+      const older = new Subject<MentorshipAdminProgramPage>();
+      const newer = new Subject<MentorshipAdminProgramPage>();
+      getProgram.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+      const stale = programPage();
+      stale.tabCounts = { ...stale.tabCounts, currentMentees: 5 };
+      const fresh = programPage();
+      fresh.tabCounts = { ...fresh.tabCounts, currentMentees: 1 };
+
+      fixture.componentInstance['refreshCounts']();
+      fixture.componentInstance['refreshCounts']();
+      newer.next(fresh);
+      newer.complete();
+      older.next(stale);
+      older.complete();
+      settle();
+
+      expect(tabText('current-mentees')).toBe('Current Mentees 1');
     });
   });
 

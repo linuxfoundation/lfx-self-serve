@@ -79,6 +79,7 @@ describe('CommitteeViewComponent', () => {
             getCommitteeMembers,
             getCommitteeInvites: vi.fn(() => of([])),
             getCommitteeApplications: vi.fn(() => of([])),
+            getMyApplication: vi.fn(() => of(null)),
             getCommitteeEngagement: vi.fn(() => of(null)),
             getChildCommittees: vi.fn(() => of([])),
             updateCommittee: vi.fn(() => of(committee)),

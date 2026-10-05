@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
+  MENTORSHIP_ATTENDANCE_TYPES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
@@ -105,6 +107,33 @@ export interface MentorshipUpstreamAdministeredProgram {
   stats: MentorshipProgramStats;
   created_on: string;
   updated_on: string;
+}
+
+/** How an accepted mentee attends; sent as `attendance_type` upstream. */
+export type MentorshipAttendanceType = (typeof MENTORSHIP_ATTENDANCE_TYPES)[number];
+
+/** A status an admin decision sets on an application. */
+export type MentorshipAdminDecisionStatus = (typeof MENTORSHIP_ADMIN_DECISION_STATUSES)[number];
+
+/** Body of `PATCH /api/mentorship/admin/applications/:applicationId/status`. `attendanceType` is required for `accepted`. */
+export interface MentorshipAdminApplicationStatusUpdate {
+  status: MentorshipAdminDecisionStatus;
+  attendanceType?: MentorshipAttendanceType;
+}
+
+/** Response of `POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending`. */
+export interface MentorshipAdminDeclinePendingResponse {
+  declinedCount: number;
+}
+
+/** Data of the Accept dialog: the mentee being accepted. The dialog closes with the chosen attendance type, or nothing when dismissed. */
+export interface MentorshipAcceptDialogData {
+  personName: string;
+}
+
+/** Data of the Decline by Term dialog: the open terms to pick from. The dialog closes with the chosen term, or nothing when dismissed. */
+export interface MentorshipDeclineByTermDialogData {
+  terms: MentorshipAdminTermOption[];
 }
 
 /** One of the two mentee tabs of an admin program page. */

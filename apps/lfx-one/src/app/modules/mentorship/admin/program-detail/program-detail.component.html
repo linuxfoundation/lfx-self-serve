@@ -33,7 +33,8 @@
               [programId]="programPage.program.id"
               [terms]="terms()"
               [noteDrafts]="noteDrafts()"
-              (noteRequested)="onNoteRequested($event)" />
+              (noteRequested)="onNoteRequested($event)"
+              [countsRefresh]="countsRefresh" />
           }
           @case ('past-mentees') {
             <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" />

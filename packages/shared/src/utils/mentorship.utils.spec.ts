@@ -121,6 +121,7 @@ import {
   parseMentorshipMonthYear,
   toMentorshipDateOnly,
   toMentorshipUtcInstant,
+  buildMentorshipGraduateTaskWarning,
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
@@ -1992,5 +1993,21 @@ describe('isMentorshipMentorInviteToken', () => {
 
   it.each(['', 'nodot', '.sig', 'payload.', 'a.b.c', 'a.b/c', 'a.b=', `${'a'.repeat(512)}.b`])('rejects %j', (value) => {
     expect(isMentorshipMentorInviteToken(value)).toBe(false);
+  });
+});
+
+describe('buildMentorshipGraduateTaskWarning', () => {
+  it('has no warning when every task is submitted', () => {
+    expect(buildMentorshipGraduateTaskWarning(3, 3)).toBeUndefined();
+    expect(buildMentorshipGraduateTaskWarning(0, 0)).toBeUndefined();
+  });
+
+  it('never goes negative when more are submitted than counted', () => {
+    expect(buildMentorshipGraduateTaskWarning(2, 5)).toBeUndefined();
+  });
+
+  it('counts the outstanding tasks, singular for one', () => {
+    expect(buildMentorshipGraduateTaskWarning(4, 1)).toBe("3 tasks aren't Submitted or Completed.");
+    expect(buildMentorshipGraduateTaskWarning(4, 3)).toBe("1 task isn't Submitted or Completed.");
   });
 });

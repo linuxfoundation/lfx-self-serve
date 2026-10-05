@@ -115,6 +115,10 @@ export class SnowflakeService {
     // Validate that query is read-only
     this.validateReadOnlyQuery(sqlText);
 
+    // Reject request-sized statements before the breaker is consulted: they neither take the HALF_OPEN
+    // probe slot nor count as a Snowflake failure.
+    this.validateBindCount(binds);
+
     // Fail fast if the circuit is OPEN (Snowflake is known to be unreachable)
     this.checkCircuit();
 
@@ -668,5 +672,29 @@ export class SnowflakeService {
       });
       throw new Error('Only SELECT queries are allowed');
     }
+  }
+
+  /**
+   * Reject a statement carrying more than SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES binds (400).
+   * Bind count scales with caller-supplied filter lists, and Snowflake rejects an oversized statement as a
+   * compilation error — a request fault that must not reach the pod-wide circuit breaker.
+   * @private
+   */
+  private validateBindCount(binds: (Bind | Date)[] | undefined): void {
+    const bindCount = binds?.length ?? 0;
+    if (bindCount <= SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES) {
+      return;
+    }
+    throw new MicroserviceError(
+      `Snowflake statement has ${bindCount} bind variables (max ${SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES})`,
+      400,
+      'SNOWFLAKE_TOO_MANY_BINDS',
+      {
+        clientMessage: 'Too many filter values in this request. Narrow the selection and try again.',
+        operation: 'snowflake_bind_validation',
+        service: 'snowflake',
+        errorBody: { bind_count: bindCount, max_bind_count: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES },
+      }
+    );
   }
 }

@@ -4,6 +4,8 @@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
@@ -15,7 +17,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, throwError } from 'rxjs';
+import { catchError, Observable, take, throwError } from 'rxjs';
 
 import { strictHttpParams } from '../utils/http-params.utils';
 
@@ -88,6 +90,30 @@ export class MentorshipAdminService {
     return this.http
       .get<MentorshipApplicantTask[]>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/tasks`)
       .pipe(this.logFailure('getApplicationTasks'));
+  }
+
+  /** Accepts (with an attendance type), declines or graduates one application. Resolves on 204. */
+  public updateApplicationStatus(applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Observable<void> {
+    return this.http
+      .patch<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/status`, body)
+      .pipe(take(1), this.logFailure('updateApplicationStatus'));
+  }
+
+  /** Withdraws one application on the mentee's behalf. Resolves on 204. */
+  public withdrawApplication(applicationId: string): Observable<void> {
+    return this.http
+      .post<void>(`/api/mentorship/admin/applications/${encodeURIComponent(applicationId)}/withdraw`, {})
+      .pipe(take(1), this.logFailure('withdrawApplication'));
+  }
+
+  /** Declines every pending application of one term. */
+  public declinePendingForTerm(programId: string, termId: string): Observable<MentorshipAdminDeclinePendingResponse> {
+    return this.http
+      .post<MentorshipAdminDeclinePendingResponse>(
+        `/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}/decline-pending`,
+        {}
+      )
+      .pipe(take(1), this.logFailure('declinePendingForTerm'));
   }
 
   /** Logs the status only, since the error's URL carries the search text, then passes the error on. */

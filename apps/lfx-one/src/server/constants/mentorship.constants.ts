@@ -97,6 +97,9 @@ export const MENTORSHIP_ADMIN_APPLICATION_STATUS_MAP: Readonly<Record<Mentorship
   graduated: 'graduated',
 };
 
+/** Upstream application statuses an admin may withdraw on the mentee's behalf; upstream's withdraw-for-mentee checks none. */
+export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'hold', 'accepted'];
+
 /**
  * How a program's own status reads on its page when the program is not published. A published program reads
  * `open` or `completed` from its terms. The header route has no `admin_status`, so this mirrors upstream's grouping.

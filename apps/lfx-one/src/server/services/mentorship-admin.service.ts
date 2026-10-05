@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
 } from '@lfx-one/shared/constants';
 import {
+  MentorshipAdminApplicationStatusUpdate,
+  MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsQuery,
@@ -22,6 +25,7 @@ import {
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
   MentorshipUpstreamAdministeredProgram,
+  MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
   MentorshipUpstreamMemberManagementRow,
   MentorshipUpstreamProgramApplicationRow,
@@ -37,11 +41,12 @@ import {
   MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TASKS_MAX_LIMIT,
   MENTORSHIP_ADMIN_TERMS_MAX_LIMIT,
+  MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES,
   MENTORSHIP_APPLICATIONS_PATH,
   MENTORSHIP_ME_PROGRAMS_PATH,
   MENTORSHIP_PROGRAMS_PATH,
 } from '../constants';
-import { MicroserviceError } from '../errors';
+import { ConflictError, MicroserviceError } from '../errors';
 import {
   mapMentorshipAdminHeaderProgram,
   mapMentorshipAdminMentorRow,
@@ -310,6 +315,58 @@ export class MentorshipAdminService {
 
     logger.debug(req, 'mentorship_admin_get_application_tasks', 'Application tasks read', { applicationId, count: tasks.length });
     return tasks.map(mapMentorshipProgramTask);
+  }
+
+  /** Accepts, declines or graduates one application. `attendanceType` rides along only with an accept. Upstream's 409 and 422 pass through. */
+  public async updateApplicationStatus(req: Request, applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Promise<void> {
+    logger.debug(req, 'mentorship_admin_update_application_status', 'Updating application status', { applicationId, status: body.status });
+
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/status`,
+      'PATCH',
+      undefined,
+      { status: body.status, ...(body.status === 'accepted' ? { attendance_type: body.attendanceType } : {}) }
+    );
+  }
+
+  /**
+   * Withdraws a mentee's application on their behalf. Upstream's withdraw-for-mentee has no status guard, so the
+   * application is read first and anything other than `pending`, `hold` or `accepted` is a 409 with no write.
+   */
+  public async withdrawApplication(req: Request, applicationId: string): Promise<void> {
+    const path = `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}`;
+    logger.debug(req, 'mentorship_admin_withdraw_application', 'Checking application status before withdrawing', { applicationId });
+
+    const application = await proxyMentorshipRequest<MentorshipUpstreamApplication>(this.microserviceProxy, req, path);
+    if (!MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES.includes(application.status)) {
+      logger.warning(req, 'mentorship_admin_withdraw_application', 'Application is not withdrawable, skipping the write', {
+        applicationId,
+        status: application.status,
+      });
+      throw new ConflictError(MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE, 'MENTORSHIP_ADMIN_APPLICATION_CHANGED', {
+        operation: 'mentorship_admin_withdraw_application',
+      });
+    }
+
+    await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, `${path}/withdraw-for-mentee`, 'POST');
+  }
+
+  /** Declines every pending application of one term. */
+  public async declinePendingForTerm(req: Request, programId: string, termId: string): Promise<MentorshipAdminDeclinePendingResponse> {
+    logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Declining pending applications for the term', { programId, termId });
+
+    const result = await proxyMentorshipRequest<{ declined_count?: number }>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(termId)}/applications/bulk-decline`,
+      'POST'
+    );
+
+    const declinedCount = typeof result?.declined_count === 'number' ? result.declined_count : 0;
+    logger.debug(req, 'mentorship_admin_decline_pending_for_term', 'Pending applications declined', { programId, termId, declinedCount });
+    return { declinedCount };
   }
 }
 

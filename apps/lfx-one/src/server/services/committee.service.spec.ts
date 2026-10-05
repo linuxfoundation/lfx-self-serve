@@ -18,6 +18,7 @@ const {
   resolveAuditUserDisplayName,
   isImpersonating,
   enrichWithProjectData,
+  getEffectiveEmail,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
@@ -33,6 +34,7 @@ const {
   isImpersonating: vi.fn(() => false),
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
   enrichWithProjectData: vi.fn((_req: unknown, items: unknown[]) => Promise.resolve(items)),
+  getEffectiveEmail: vi.fn<() => string | null>(() => 'user@example.com'),
 }));
 
 vi.mock('@lfx-one/shared/enums', () => ({
@@ -79,7 +81,7 @@ vi.mock('../helpers/query-service.helper', async () => {
     fetchAllQueryResources: vi.fn(actual.fetchAllQueryResources),
   };
 });
-vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn(), isImpersonating }));
+vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn(), isImpersonating, getEffectiveEmail }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -1205,5 +1207,70 @@ describe('CommitteeService.getCommitteeMembers — requestOptions threading (#19
     await service.getCommitteeMembers(req, COMMITTEE_UID);
 
     expect(proxyRequest.mock.calls[0][7]).toBeUndefined();
+  });
+});
+
+describe('CommitteeService.getMyApplication', () => {
+  let service: CommitteeService;
+  const COMMITTEE_UID = 'committee-1';
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    vi.mocked(getEffectiveEmail).mockReturnValue('user@example.com');
+    service = new CommitteeService();
+  });
+
+  it('returns null when no pending application exists for the committee', async () => {
+    // fetchAllQueryResources yields an empty page — no application on record.
+    proxyRequest.mockResolvedValueOnce({ resources: [], page_token: undefined });
+
+    const result = await service.getMyApplication(req, COMMITTEE_UID);
+
+    expect(result).toBeNull();
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({
+      type: 'committee_application',
+      tags_all: [`committee_uid:${COMMITTEE_UID}`, 'applicant_email:user@example.com'],
+    });
+  });
+
+  it('returns the most-recent pending application when one exists', async () => {
+    const older = { uid: 'app-old', status: 'pending', created_at: '2025-01-01T00:00:00Z' };
+    const newer = { uid: 'app-new', status: 'pending', created_at: '2025-06-01T00:00:00Z' };
+
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        { id: 'committee_application:app-old', data: older },
+        { id: 'committee_application:app-new', data: newer },
+      ],
+      page_token: undefined,
+    });
+
+    const result = await service.getMyApplication(req, COMMITTEE_UID);
+
+    expect(result?.uid).toBe('app-new');
+  });
+
+  it('returns null when the caller has no resolvable email (getEffectiveEmail returns null)', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue(null);
+
+    const result = await service.getMyApplication(req, COMMITTEE_UID);
+
+    // Should bail out immediately without touching the microservice.
+    expect(result).toBeNull();
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates a page-2 failure (failOnPartial: true) rather than returning a partial list', async () => {
+    // First page succeeds; second fails — failOnPartial must surface the error.
+    proxyRequest
+      .mockResolvedValueOnce({
+        resources: [{ id: 'committee_application:app-1', data: { uid: 'app-1', status: 'pending', created_at: '2025-01-01T00:00:00Z' } }],
+        page_token: 'next',
+      })
+      .mockRejectedValueOnce(new Error('upstream failure'));
+
+    await expect(service.getMyApplication(req, COMMITTEE_UID)).rejects.toThrow('upstream failure');
   });
 });

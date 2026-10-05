@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import {
+  MentorshipAdminDeclinePendingResponse,
   MentorshipAdminMenteesResponse,
   MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
@@ -172,5 +173,46 @@ describe('MentorshipAdminService', () => {
 
     http.expectOne('/api/mentorship/admin/applications/app%201/tasks').flush([{ id: 'tsk_1' }]);
     expect(tasks).toEqual([{ id: 'tsk_1' }]);
+  });
+
+  it('patches an application status with the attendance type for an accept', () => {
+    let done = false;
+    service.updateApplicationStatus('app 1', { status: 'accepted', attendanceType: 'full_time' }).subscribe(() => (done = true));
+
+    const req = http.expectOne('/api/mentorship/admin/applications/app%201/status');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ status: 'accepted', attendanceType: 'full_time' });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+    expect(done).toBe(true);
+  });
+
+  it('withdraws an application on the mentee behalf with an empty body', () => {
+    service.withdrawApplication('app_1').subscribe();
+
+    const req = http.expectOne('/api/mentorship/admin/applications/app_1/withdraw');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({});
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('declines the pending applications of a term and returns the count', () => {
+    let declined = -1;
+    service.declinePendingForTerm('prog_1', 'trm_1').subscribe((response) => (declined = response.declinedCount));
+
+    const req = http.expectOne('/api/mentorship/admin/programs/prog_1/terms/trm_1/decline-pending');
+    expect(req.request.method).toBe('POST');
+    req.flush({ declinedCount: 6 } satisfies MentorshipAdminDeclinePendingResponse);
+    expect(declined).toBe(6);
+  });
+
+  it('logs a failed decision by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.withdrawApplication('app_1').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/admin/applications/app_1/withdraw').flush({ message: 'changed' }, { status: 409, statusText: 'Conflict' });
+
+    expect(status).toBe(409);
+    expect(JSON.stringify(logged.mock.calls)).toContain('409');
   });
 });

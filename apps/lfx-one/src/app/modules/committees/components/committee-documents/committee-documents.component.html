@@ -32,7 +32,7 @@
 
   <lfx-card data-testid="committee-documents-card">
     <!-- Breadcrumb (only shown when drilled into a folder) -->
-    @if (currentFolder(); as folder) {
+    @if (!searchQuery().trim() && currentFolder(); as folder) {
       <nav class="flex items-center gap-2 pb-3 mb-3 border-b border-gray-100 text-sm" data-testid="committee-documents-breadcrumb" aria-label="Breadcrumb">
         <button
           type="button"
