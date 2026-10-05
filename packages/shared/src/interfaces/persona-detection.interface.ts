@@ -108,3 +108,9 @@ export interface PersonaApiResponseCacheEntry {
   promise: Promise<PersonaDetections>;
   expiresAt: number;
 }
+
+/** The caller's ROOT `marketing_ops` and `global_marketing_ops` grants, read in one batched check. */
+export interface RootMarketingOpsGrants {
+  marketingOps: boolean;
+  globalMarketingOps: boolean;
+}
