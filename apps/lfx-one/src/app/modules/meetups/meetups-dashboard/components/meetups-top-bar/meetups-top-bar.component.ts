@@ -9,7 +9,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { EMPTY_MEETUP_FILTER_OPTIONS } from '@lfx-one/shared/constants';
 import { FilterOption, MeetupFilterOptionsResponse } from '@lfx-one/shared/interfaces';
-import { catchError, debounceTime, distinctUntilChanged, filter, of, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, filter, finalize, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meetups-top-bar',
@@ -30,7 +30,7 @@ export class MeetupsTopBarComponent {
 
   public readonly searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
-    community: new FormControl<string | null>(null),
+    community: new FormControl<string | null>({ value: null, disabled: true }),
     role: new FormControl<string | null>(null),
   });
 
@@ -38,6 +38,7 @@ export class MeetupsTopBarComponent {
   public readonly roleChange = outputFromObservable<string | null>(this.searchForm.get('role')!.valueChanges);
 
   protected readonly searchValue = signal('');
+  protected readonly communityOptionsLoading = signal(true);
   private readonly filterOptions: Signal<MeetupFilterOptionsResponse> = this.initFilterOptions();
   protected readonly communityOptions = computed<FilterOption[]>(() => [
     { label: 'All Communities', value: null },
@@ -83,9 +84,19 @@ export class MeetupsTopBarComponent {
       toObservable(scope).pipe(
         distinctUntilChanged((a, b) => a.isPast === b.isPast && a.registeredOnly === b.registeredOnly),
         filter(({ registeredOnly }) => registeredOnly !== null),
-        switchMap(({ isPast, registeredOnly }) =>
-          this.meetupsService.getMeetupFilters({ isPast, registeredOnly: !isPast && !!registeredOnly }).pipe(catchError(() => of(EMPTY_MEETUP_FILTER_OPTIONS)))
-        )
+        switchMap(({ isPast, registeredOnly }) => {
+          // Previous-scope options remain visible until the replacement response arrives.
+          const communityControl = this.searchForm.get('community');
+          communityControl?.disable({ emitEvent: false });
+          this.communityOptionsLoading.set(true);
+          return this.meetupsService.getMeetupFilters({ isPast, registeredOnly: !isPast && !!registeredOnly }).pipe(
+            catchError(() => of(EMPTY_MEETUP_FILTER_OPTIONS)),
+            finalize(() => {
+              this.communityOptionsLoading.set(false);
+              communityControl?.enable({ emitEvent: false });
+            })
+          );
+        })
       ),
       { initialValue: EMPTY_MEETUP_FILTER_OPTIONS }
     );
