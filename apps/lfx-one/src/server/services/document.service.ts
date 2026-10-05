@@ -4,6 +4,7 @@
 import {
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
   MeetingAttachment,
   MyCommittee,
   MyDocumentItem,
@@ -93,7 +94,7 @@ export class DocumentService {
     // lookup needed — eliminates the previous two-step Stage 1.5 approach.
     const [committeeLinkItems, groupsioItems, rawMeetingAttachments, rawPastAttachments, rawPastRecordings, rawTranscripts, rawSummaries] = await Promise.all([
       this.getCommitteeDocuments(req, scopedCommittees),
-      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid, scopedCommittees),
+      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid),
       this.fetchRawMeetingAttachments(req, projectUid, committeeUid),
       this.fetchRawPastMeetingAttachments(req, occurrenceIds, projectUid, committeeUid),
       this.fetchRawPastMeetingRecordings(req, occurrenceIds, projectUid, committeeUid),
@@ -205,7 +206,7 @@ export class DocumentService {
 
   // ─── GroupsIO / Mailing List Artifacts ──────────────────────────────────────
 
-  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string, committees?: MyCommittee[]): Promise<MyDocumentItem[]> {
+  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string): Promise<MyDocumentItem[]> {
     let tags: string;
     if (committeeUid) {
       tags = `committee_uid:${committeeUid}`;
@@ -233,25 +234,59 @@ export class DocumentService {
 
     logger.info(req, 'get_my_documents', 'Fetched groupsio artifacts', { tags, artifact_count: artifacts.length });
 
-    const committeeMap = new Map(committees?.map((c) => [c.uid, c]) ?? []);
+    const mailingListNameMap = await this.fetchMailingListNames(req, artifacts);
 
     return artifacts.map((a): MyDocumentItem => {
       const url = a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url);
-      const committee = a.committee_uid ? committeeMap.get(a.committee_uid) : undefined;
+      const groupId = a.group_id ? String(a.group_id) : undefined;
+      const mailingListName = groupId ? mailingListNameMap.get(groupId) : undefined;
       return {
         id: `groupsio_artifact:${a.artifact_id}`,
-        name: a.filename || a.link_url || a.artifact_id,
+        name: a.filename || a.link_url || mailingListName || a.artifact_id,
         source: 'mailing_list' as MyDocumentSource,
         foundationName: '',
         foundationUid: a.project_uid || undefined,
-        groupOrMeetingName: committee?.name || '',
+        groupOrMeetingName: mailingListName || '',
         groupOrMeetingUid: a.committee_uid || '',
         date: a.last_posted_at || a.created_at || '',
         url,
-        mailingListId: a.group_id ? String(a.group_id) : undefined,
+        mailingListId: groupId,
         fileType: a.media_type,
       };
     });
+  }
+
+  /**
+   * Resolves mailing list display names for a set of groupsio artifacts by batching
+   * groupsio_mailing_list lookups using groupsio_mailing_list_uid:{group_id} tags.
+   * Returns a map of group_id (string) → mailing list title.
+   */
+  private async fetchMailingListNames(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<string, string>> {
+    const groupIds = [...new Set(artifacts.map((a) => (a.group_id ? String(a.group_id) : null)).filter(Boolean) as string[])];
+    if (groupIds.length === 0) return new Map();
+
+    logger.debug(req, 'get_my_documents', 'Resolving mailing list names', { group_id_count: groupIds.length });
+
+    const mailingLists = await fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'groupsio_mailing_list',
+        tags: groupIds.map((id) => `groupsio_mailing_list_uid:${id}`),
+        ...(pageToken && { page_token: pageToken }),
+      })
+    ).catch((err) => {
+      logger.warning(req, 'get_my_documents', 'Failed to resolve mailing list names, names will be omitted', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+      return [];
+    });
+
+    const nameMap = new Map<string, string>();
+    for (const ml of mailingLists) {
+      if (ml.uid && ml.title) {
+        nameMap.set(ml.uid, ml.title);
+      }
+    }
+    return nameMap;
   }
 
   // ─── Foundation Name Resolution ─────────────────────────────────────────────
