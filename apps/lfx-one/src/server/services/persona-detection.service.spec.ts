@@ -4,8 +4,9 @@
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkSingleAccess, getProjectIdBySlug, natsRequest, logger } = vi.hoisted(() => ({
+const { checkSingleAccess, checkAccess, getProjectIdBySlug, natsRequest, logger } = vi.hoisted(() => ({
   checkSingleAccess: vi.fn(),
+  checkAccess: vi.fn(),
   getProjectIdBySlug: vi.fn(),
   natsRequest: vi.fn(),
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
@@ -14,8 +15,19 @@ const { checkSingleAccess, getProjectIdBySlug, natsRequest, logger } = vi.hoiste
 vi.mock('./access-check.service', () => ({
   AccessCheckService: vi.fn().mockImplementation(() => ({
     checkSingleAccess,
+    checkAccess,
   })),
 }));
+
+// Answers a batched check from the per-relation stub each test sets on checkSingleAccess, without
+// recording checkSingleAccess calls, so a test can tell one batch apart from separate round trips.
+function answerBatchesFromSingleAccessStub(): void {
+  checkAccess.mockImplementation(async (r: Request, resources: { id: string; access: string }[]) => {
+    const answer = checkSingleAccess.getMockImplementation();
+    const entries = await Promise.all(resources.map(async (resource) => [`${resource.id}#${resource.access}`, Boolean(await answer?.(r, resource))] as const));
+    return new Map(entries);
+  });
+}
 
 vi.mock('./project.service', () => ({
   ProjectService: vi.fn().mockImplementation(() => ({
@@ -53,6 +65,8 @@ describe('PersonaDetectionService', () => {
 
   beforeEach(() => {
     checkSingleAccess.mockReset();
+    checkAccess.mockReset();
+    answerBatchesFromSingleAccessStub();
     getProjectIdBySlug.mockReset();
     natsRequest.mockReset();
     logger.warning.mockReset();
@@ -86,16 +100,19 @@ describe('PersonaDetectionService', () => {
   });
 
   describe('checkRootCampaignManager', () => {
-    it('checks ROOT `marketing_ops` and `global_marketing_ops`, not `campaign_manager`', async () => {
+    it('checks ROOT `marketing_ops` and `global_marketing_ops` in one batch, not `campaign_manager`', async () => {
       resolvesRootUid();
       checkSingleAccess.mockResolvedValue(false);
 
       const result = await service.checkRootCampaignManager(req);
 
       expect(result).toBe(false);
-      expect(checkSingleAccess).toHaveBeenCalledTimes(2);
-      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-root', access: 'marketing_ops' });
-      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-root', access: 'global_marketing_ops' });
+      expect(checkAccess).toHaveBeenCalledTimes(1);
+      expect(checkAccess).toHaveBeenCalledWith(req, [
+        { resource: 'project', id: 'uid-root', access: 'marketing_ops' },
+        { resource: 'project', id: 'uid-root', access: 'global_marketing_ops' },
+      ]);
+      expect(checkSingleAccess).not.toHaveBeenCalled();
     });
 
     it.each(['marketing_ops', 'global_marketing_ops'])('is granted by ROOT `%s` alone', async (relation) => {
@@ -111,7 +128,7 @@ describe('PersonaDetectionService', () => {
       const result = await service.checkRootCampaignManager(req);
 
       expect(result).toBe(false);
-      expect(checkSingleAccess).not.toHaveBeenCalled();
+      expect(checkAccess).not.toHaveBeenCalled();
     });
 
     it('fails closed when the access-check call rejects', async () => {
@@ -195,6 +212,30 @@ describe('PersonaDetectionService', () => {
 
       expect(response.isCampaignManager).toBe(true);
       expect(getProjectIdBySlug).not.toHaveBeenCalled();
+    });
+
+    it('derives both campaign signals from one ROOT access round trip when no projectSlug is given', async () => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) => Promise.resolve(args.access === 'marketing_ops'));
+
+      const response = await service.getPersonas(req, undefined, 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(true);
+      expect(response.isCampaignManagerRootGrant).toBe(true);
+      expect(checkAccess).toHaveBeenCalledTimes(1);
+      expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'marketing_ops' }));
+      expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'global_marketing_ops' }));
+    });
+
+    it('fails closed when the batched ROOT result omits both relations', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(true);
+      checkAccess.mockResolvedValue(new Map());
+
+      const response = await service.getPersonas(req, undefined, 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.isCampaignManagerRootGrant).toBe(false);
     });
 
     // `global_marketing_ops` does not cascade, so a ROOT-only grant must not answer for a named

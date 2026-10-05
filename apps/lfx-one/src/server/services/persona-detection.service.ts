@@ -21,6 +21,7 @@ import {
   PersonaDetections,
   PersonaProject,
   PersonaType,
+  RootMarketingOpsGrants,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -47,8 +48,7 @@ export class PersonaDetectionService {
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
-  private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
-  private readonly rootCampaignManagerCascadeRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootMarketingOpsRequestCache = new WeakMap<Request, Promise<RootMarketingOpsGrants>>();
   private readonly rootAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
@@ -237,7 +237,7 @@ export class PersonaDetectionService {
    * errors never widen access.
    */
   public async checkRootMarketingAuditor(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootMarketingAuditorRequestCache, ['marketing_auditor'], 'check_root_marketing_auditor');
+    return this.checkRootAccess(req, this.rootMarketingAuditorRequestCache, 'marketing_auditor', 'check_root_marketing_auditor');
   }
 
   /**
@@ -251,7 +251,8 @@ export class PersonaDetectionService {
    * `marketing_ops` is retired.
    */
   public async checkRootCampaignManager(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, ['marketing_ops', 'global_marketing_ops'], 'check_root_campaign_manager');
+    const grants = await this.checkRootMarketingOps(req);
+    return grants.marketingOps || grants.globalMarketingOps;
   }
 
   /**
@@ -261,7 +262,7 @@ export class PersonaDetectionService {
    * request-cached, resolves the ROOT uid via NATS, and fails closed to `false`.
    */
   public async checkRootAuditor(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootAuditorRequestCache, ['auditor_guard'], 'check_root_auditor');
+    return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor_guard', 'check_root_auditor');
   }
 
   /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
@@ -289,7 +290,37 @@ export class PersonaDetectionService {
    * must exclude `global_marketing_ops` — that relation does not cascade from ROOT.
    */
   private async checkRootCampaignManagerCascade(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootCampaignManagerCascadeRequestCache, ['marketing_ops'], 'check_root_campaign_manager_cascade');
+    return (await this.checkRootMarketingOps(req)).marketingOps;
+  }
+
+  /**
+   * ROOT `marketing_ops` and `global_marketing_ops` in one batched access check, cached per request,
+   * so {@link checkRootCampaignManager} and {@link checkRootCampaignManagerCascade} share a single
+   * round trip. Fails closed to no grants.
+   */
+  private checkRootMarketingOps(req: Request): Promise<RootMarketingOpsGrants> {
+    const cached = this.rootMarketingOpsRequestCache.get(req);
+    if (cached) return cached;
+
+    const none: RootMarketingOpsGrants = { marketingOps: false, globalMarketingOps: false };
+    const promise = resolveRootProjectUid(req, this.natsService)
+      .then(async (rootUid) => {
+        if (!rootUid) return none;
+        const results = await this.accessCheckService.checkAccess(req, [
+          { resource: 'project', id: rootUid, access: 'marketing_ops' },
+          { resource: 'project', id: rootUid, access: 'global_marketing_ops' },
+        ]);
+        return {
+          marketingOps: results.get(`${rootUid}#marketing_ops`) ?? false,
+          globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false,
+        };
+      })
+      .catch((error) => {
+        logger.warning(req, 'check_root_campaign_manager', 'Root marketing_ops/global_marketing_ops check failed, assuming no access', { err: error });
+        return none;
+      });
+    this.rootMarketingOpsRequestCache.set(req, promise);
+    return promise;
   }
 
   private async checkProjectAccess(
@@ -328,22 +359,19 @@ export class PersonaDetectionService {
   private async checkRootAccess(
     req: Request,
     cache: WeakMap<Request, Promise<boolean>>,
-    relations: ('marketing_auditor' | 'marketing_ops' | 'global_marketing_ops' | 'auditor_guard')[],
+    access: 'marketing_auditor' | 'auditor_guard',
     operation: string
   ): Promise<boolean> {
     const cached = cache.get(req);
     if (cached) return cached;
 
     const promise = resolveRootProjectUid(req, this.natsService)
-      .then(async (rootUid) => {
+      .then((rootUid) => {
         if (!rootUid) return false;
-        const results = await Promise.all(
-          relations.map((access) => this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access }))
-        );
-        return results.some(Boolean);
+        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access });
       })
       .catch((error) => {
-        logger.warning(req, operation, `Root ${relations.join('/')} check failed, assuming no access`, { err: error });
+        logger.warning(req, operation, `Root ${access} check failed, assuming no access`, { err: error });
         return false;
       });
     cache.set(req, promise);
