@@ -191,8 +191,8 @@ Spikes S-01 (colleague meetings feasibility and privacy) and S-02 (occurrence ti
 the hygiene bugs the plan lists in § 10. They are independent and can be filed at any time.
 
 Every Phase 1 item is filed. Plan IDs listed without an issue number (Phase 2 and Phase 3) are
-**not filed yet**. The issue
-bodies are drafted in the implementation plan; file each before starting it.
+**not filed yet**. The issue bodies are drafted in the implementation plan; file each before
+starting it.
 
 The `U-` series is upstream API blockers: changes owned by `lfx-v2-meeting-service` and
 `lfx-v2-committee-service`, tracked here as U-01 to U-08 (#2927 to #2934). The Phase 2 table shows
