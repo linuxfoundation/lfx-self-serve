@@ -60,6 +60,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
+    validateOrgClaApprovalValue: approval.validateOrgClaApprovalValue,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
     classifyOrgClaDesigneeRefusal: designee.classifyOrgClaDesigneeRefusal,
     isOrgClaDesigneeLfLoginRequired: designee.isOrgClaDesigneeLfLoginRequired,
@@ -3032,6 +3033,30 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(row?.githubUsername).toBeUndefined();
     expect(row?.gitlabUsername).toBeUndefined();
   });
+
+  // Every address the producer's approval-list validator accepts is relayed, so an approval entry
+  // added for it can still be matched for removal on invalidation.
+  it.each(['contributor@example.org', "o'brien@example.org", 'r&d@example.org', 'tag#1@example.org'])('keeps a valid email %s', async (email) => {
+    stageAckRead(contributorPage({ list: [contributor({ email: `  ${email}  ` })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.email).toBe(email);
+  });
+
+  // A value carrying mailto query fields, extra recipients or percent escapes after the domain is
+  // not a valid address, so it is dropped rather than relayed.
+  it.each(['a@example.com?bcc=b@example.org', 'victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com,attacker@example.org'])(
+    'drops an invalid email %s',
+    async (email) => {
+      stageAckRead(contributorPage({ list: [contributor({ email })] }));
+
+      const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+      expect(list?.list).toHaveLength(1);
+      expect(list?.list[0]?.email).toBeUndefined();
+    }
+  );
 });
 
 describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () => {
