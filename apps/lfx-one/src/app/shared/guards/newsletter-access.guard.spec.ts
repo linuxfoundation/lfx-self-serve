@@ -242,5 +242,4 @@ describe('newsletterAccessGuard', () => {
     expect(getProject).not.toHaveBeenCalled();
     expect(getProjectStrict).not.toHaveBeenCalled();
   });
-
 });
