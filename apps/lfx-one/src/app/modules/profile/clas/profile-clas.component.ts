@@ -569,6 +569,11 @@ export class ProfileClasComponent {
             return;
           }
 
+          if (!this.isHttpsUrl(prepared.signUrl)) {
+            this.reportPrepareFailure(undefined);
+            return;
+          }
+
           // Navigated to as returned. Composing this address from a console base, the group and
           // the user id would ignore the session the prepare just opened.
           this.document.location.href = prepared.signUrl;
@@ -578,6 +583,15 @@ export class ProfileClasComponent {
           this.reportPrepareFailure(error);
         },
       });
+  }
+
+  private isHttpsUrl(value: unknown): boolean {
+    if (typeof value !== 'string') return false;
+    try {
+      return new URL(value).protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   /**
