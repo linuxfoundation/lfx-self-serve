@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
   MentorshipMentorProgramTermStatus,
@@ -79,6 +80,9 @@ export const MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH = 100;
 /** Most applications one upstream applications read returns; upstream resets a larger `limit` to 10. */
 export const MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT = 50;
 
+/** Most rows one upstream member-management or term-management read returns; upstream resets a larger `limit` to 50. */
+export const MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT = 50;
+
 /** Most rows one upstream tasks or terms read returns; upstream resets a larger `limit` to 20. */
 export const MENTORSHIP_ADMIN_TASKS_MAX_LIMIT = 100;
 export const MENTORSHIP_ADMIN_TERMS_MAX_LIMIT = 100;
@@ -116,6 +120,20 @@ export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string
   completed: 'completed',
   rejected: 'rejected',
   hidden: 'hidden',
+};
+
+/**
+ * How an upstream program member status reads on the admin Mentors tab. Upstream keeps `active` for an accepted
+ * mentor; `approved` is the older name for it and reads the same.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_MAP: Readonly<Record<string, MentorshipAdminMentorStatus>> = {
+  requested: 'requested',
+  pending: 'pending',
+  invited: 'invited',
+  active: 'active',
+  approved: 'active',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
 };
 
 /** The order of the groups on mentor My Programs. */

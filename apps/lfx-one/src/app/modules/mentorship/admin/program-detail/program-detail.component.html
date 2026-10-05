@@ -36,13 +36,13 @@
               (noteRequested)="onNoteRequested($event)" />
           }
           @case ('past-mentees') {
-            <lfx-mentorship-past-mentees-tab [mentees]="mockDetail()?.pastMentees ?? []" [terms]="mockDetail()?.terms ?? []" />
+            <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" />
           }
           @case ('mentors') {
-            <lfx-mentorship-mentors-tab [mentors]="mockDetail()?.mentors ?? []" />
+            <lfx-mentorship-mentors-tab [programId]="programPage.program.id" />
           }
           @case ('terms') {
-            <lfx-mentorship-terms-tab [terms]="mockDetail()?.terms ?? []" />
+            <lfx-mentorship-terms-tab [programId]="programPage.program.id" />
           }
         }
       </div>

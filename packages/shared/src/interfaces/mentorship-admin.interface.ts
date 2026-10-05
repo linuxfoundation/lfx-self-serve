@@ -3,17 +3,12 @@
 
 import type {
   MENTORSHIP_ADMIN_MENTEE_TABS,
+  MENTORSHIP_ADMIN_MENTOR_STATUSES,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_TERM_ROW_STATUSES,
 } from '../constants/mentorship.constants';
-import type {
-  MentorshipApplicantTask,
-  MentorshipMenteeStatus,
-  MentorshipMentorStatus,
-  MentorshipProgramApplicant,
-  MentorshipProgramPersonBase,
-} from './mentorship.interface';
+import type { MentorshipApplicantTask, MentorshipMenteeStatus, MentorshipProgramApplicant, MentorshipProgramPersonBase } from './mentorship.interface';
 import type { MentorshipUpstreamProgramTerm } from './mentorship-mentee.interface';
 
 /**
@@ -61,18 +56,13 @@ export type MentorshipProgramsResponse = {
 /** Admin program-detail underline tabs. */
 export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
 
-/** Count badges shown next to each program-detail tab label. */
-export interface MentorshipProgramTabCounts {
-  currentMentees: number;
-  pastMentees: number;
-  mentors: number;
-  terms: number;
-}
+/** Mentor lifecycle on the admin Mentors tab; upstream's `active` mentor shows as Accepted. */
+export type MentorshipAdminMentorStatus = (typeof MENTORSHIP_ADMIN_MENTOR_STATUSES)[number];
 
 /** Mentor row on the Mentors tab. */
 export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
-  status: MentorshipMentorStatus;
-  /** ISO `YYYY-MM-DD` invitation date. */
+  status: MentorshipAdminMentorStatus;
+  /** ISO `YYYY-MM-DD` date the mentor was added or asked to join. */
   invitedOn?: string;
   profileCreated?: boolean;
 }
@@ -117,14 +107,6 @@ export interface MentorshipUpstreamAdministeredProgram {
   updated_on: string;
 }
 
-/** A program's raw lists, before its applications are split across the two mentee tabs. */
-export interface MentorshipProgramLists {
-  /** Every application on the program, whatever its status or term. */
-  applications: MentorshipProgramApplicant[];
-  mentors: MentorshipProgramMentor[];
-  terms: MentorshipProgramTermRow[];
-}
-
 /** One of the two mentee tabs of an admin program page. */
 export type MentorshipAdminMenteeTab = (typeof MENTORSHIP_ADMIN_MENTEE_TABS)[number];
 
@@ -155,6 +137,61 @@ export interface MentorshipAdminProgramPage {
 export interface MentorshipAdminMenteesResponse {
   data: MentorshipProgramApplicant[];
   total: number;
+}
+
+/** Query of `GET /api/mentorship/admin/programs/:programId/mentors`. */
+export interface MentorshipAdminMentorsQuery {
+  status?: MentorshipAdminMentorStatus;
+  search?: string;
+  /** From 0. */
+  offset?: number;
+  /** From 1 to `MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT`. */
+  limit?: number;
+}
+
+/** One page of a program's mentors, from `GET /api/mentorship/admin/programs/:programId/mentors`. */
+export interface MentorshipAdminMentorsResponse {
+  data: MentorshipProgramMentor[];
+  total: number;
+}
+
+/** One page of a program's terms, from `GET /api/mentorship/admin/programs/:programId/terms`. */
+export interface MentorshipAdminTermsResponse {
+  data: MentorshipProgramTermRow[];
+  total: number;
+}
+
+/** Query of `GET /api/mentorship/admin/programs/:programId/terms`. */
+export interface MentorshipAdminTermsQuery {
+  /** From 0. */
+  offset?: number;
+  /** From 1 to `MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT`. */
+  limit?: number;
+}
+
+/**
+ * One row of upstream `GET /mentorship/v1/programs/{id}/member-management`. `status` stays a plain string: the BFF maps
+ * it to `MentorshipAdminMentorStatus` and logs a value it does not know.
+ */
+export interface MentorshipUpstreamMemberManagementRow {
+  id: string;
+  user_id: string;
+  name?: string;
+  email?: string;
+  username?: string;
+  avatar_url?: string;
+  status?: string;
+  created_on: string;
+  updated_on: string;
+  profile_created: boolean;
+}
+
+/** One row of upstream `GET /mentorship/v1/programs/{id}/term-management`: a term with its mentee application counts. */
+export interface MentorshipUpstreamTermManagementRow extends MentorshipUpstreamProgramTerm {
+  pending: number;
+  declined: number;
+  accepted: number;
+  graduated: number;
 }
 
 /** One row's View Tasks read in the Current Mentees tab: in flight, answered, or failed. */
@@ -210,16 +247,4 @@ export interface MentorshipUpstreamProgramManagementSummary {
   mentors: number;
   /** Terms that are not deleted. */
   terms: number;
-}
-
-/** Mock-backed lists for the tabs not yet on the mentorship service, built client-side by `buildMentorshipProgramDetail`. */
-export interface MentorshipProgramDetail {
-  program: MentorshipProgram;
-  tabCounts: MentorshipProgramTabCounts;
-  /** Applications in an open term (or a term the program does not list), any status. */
-  currentMentees: MentorshipProgramApplicant[];
-  /** Applications in a closed term, any status. */
-  pastMentees: MentorshipProgramApplicant[];
-  mentors: MentorshipProgramMentor[];
-  terms: MentorshipProgramTermRow[];
 }

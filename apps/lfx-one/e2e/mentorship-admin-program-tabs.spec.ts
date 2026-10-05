@@ -9,8 +9,9 @@
  *   - `GET /api/mentorship/admin/programs/:id/mentees` — one page of 37 synthetic applications
  *   - `GET /api/mentorship/admin/applications/:id/tasks` — one application's tasks, read on View Tasks only
  * The stubs record what the page asked for, so the paging, filter and View Tasks specs assert the query the
- * browser sent as well as what it rendered. The Past Mentees, Mentors and Terms tabs still show mock lists
- * until their own slice, so only their tab labels are checked here.
+ * browser sent as well as what it rendered. The Past Mentees tab reads the same mentees route with `type=past`;
+ * the Mentors and Terms tabs read `GET .../mentors` and `GET .../terms` (linuxfoundation/lfx-mentorship#234).
+ * Every admin tab is live and read-only for now, so no tab shows mock data.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the reads are made by the browser and
  * the stubs answer them; a direct `page.goto()` would read the page during SSR, where no stub runs.
@@ -26,16 +27,21 @@ import { expect, Page, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import {
   ADMIN_MENTEES_TOTAL,
+  ADMIN_MENTORS,
   ADMIN_OPEN_TERM_ID,
   ADMIN_OPEN_TERM_NAME,
+  ADMIN_PAST_APPLICATIONS,
   ADMIN_PROGRAM_PAGE,
   ADMIN_PROGRAM_URL,
+  ADMIN_TERMS,
   AdminProgramRequests,
   adminApplicationId,
   stubAdminMentees,
+  stubAdminMentors,
   stubAdminProgramPage,
   stubAdminProgramPageError,
   stubAdminTasks,
+  stubAdminTerms,
 } from './helpers/mentorship-admin-program.helper';
 import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
@@ -299,6 +305,87 @@ test.describe('Admin program detail — failures', () => {
 
     await expect(page.getByTestId('mentorship-admin-program-not-found')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-admin-program-no-access')).toHaveCount(0);
+  });
+});
+
+test.describe('Admin program detail — live Past Mentees, Mentors and Terms tabs', () => {
+  let requests: AdminProgramRequests;
+  let mentorRequests: URLSearchParams[];
+  let termRequests: URLSearchParams[];
+
+  test.beforeEach(async ({ page }) => {
+    requests = { mentees: [], tasks: [] };
+    mentorRequests = [];
+    termRequests = [];
+    await stubAdminMentors(page, mentorRequests);
+    await stubAdminTerms(page, termRequests);
+    await open(page, requests);
+  });
+
+  test('Past Mentees reads the closed-term applications and lists them read-only', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
+
+    await expect(page.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(ADMIN_PAST_APPLICATIONS.length);
+    await expect(page.getByTestId(`mentorship-past-mentee-row-${ADMIN_PAST_APPLICATIONS[0].id}`)).toContainText('Test Graduate One');
+    await expect(page.getByTestId(`mentorship-past-mentee-row-${ADMIN_PAST_APPLICATIONS[0].id}`)).toContainText('Test Term Closed');
+    expect(requests.mentees.some((params) => params.get('type') === 'past')).toBe(true);
+  });
+
+  test('Past Mentees narrows by status, sending it upstream', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
+    await expect(page.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(ADMIN_PAST_APPLICATIONS.length);
+
+    await chooseOption(page, 'mentorship-past-mentees-status', 'Declined');
+
+    await expect(page.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(1);
+    expect(requests.mentees[requests.mentees.length - 1].get('status')).toBe('declined');
+  });
+
+  test('Mentors lists the program mentors and sends the status filter upstream', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-mentors').click();
+
+    await expect(page.locator('[data-testid^="mentorship-mentor-row-"]')).toHaveCount(ADMIN_MENTORS.length);
+    await expect(page.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toContainText('Test Mentor Active');
+    await expect(page.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toContainText('Yes');
+
+    await chooseOption(page, 'mentorship-mentors-status', 'Declined');
+
+    await expect(page.locator('[data-testid^="mentorship-mentor-row-"]')).toHaveCount(1);
+    expect(mentorRequests[mentorRequests.length - 1].get('status')).toBe('declined');
+  });
+
+  test('Terms lists every term with its status in one read', async ({ page }) => {
+    await page.getByTestId('mentorship-program-detail-tab-terms').click();
+
+    await expect(page.locator('[data-testid^="mentorship-term-row-"]')).toHaveCount(ADMIN_TERMS.length);
+    await expect(page.getByTestId(`mentorship-term-row-${ADMIN_TERMS[0].id}`)).toContainText(ADMIN_OPEN_TERM_NAME);
+    await expect(page.getByTestId(`mentorship-term-row-${ADMIN_TERMS[1].id}`)).toContainText('Closed');
+    expect(termRequests).toHaveLength(1);
+    expect(termRequests[0].get('limit')).toBe('50');
+  });
+});
+
+test.describe('Admin program detail — failed tab reads', () => {
+  test('Mentors and Terms each show their own error with Retry, and recover on Retry', async ({ page }) => {
+    const mentorRequests: URLSearchParams[] = [];
+    const termRequests: URLSearchParams[] = [];
+    await stubAdminMentors(page, mentorRequests, 500);
+    await stubAdminTerms(page, termRequests, 500);
+    await open(page, { mentees: [], tasks: [] });
+
+    await page.getByTestId('mentorship-program-detail-tab-mentors').click();
+    await expect(page.getByTestId('mentorship-admin-mentors-load-error')).toBeVisible();
+    await page.unroute(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_PAGE.program.id}/mentors*`);
+    await stubAdminMentors(page, mentorRequests);
+    await page.getByTestId('mentorship-admin-mentors-retry').getByRole('button').click();
+    await expect(page.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toBeVisible();
+
+    await page.getByTestId('mentorship-program-detail-tab-terms').click();
+    await expect(page.getByTestId('mentorship-admin-terms-load-error')).toBeVisible();
+    await page.unroute(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_PAGE.program.id}/terms*`);
+    await stubAdminTerms(page, termRequests);
+    await page.getByTestId('mentorship-admin-terms-retry').getByRole('button').click();
+    await expect(page.getByTestId(`mentorship-term-row-${ADMIN_TERMS[0].id}`)).toBeVisible();
   });
 });
 

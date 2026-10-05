@@ -12,10 +12,11 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminMentorStatus,
+  MentorshipAdminProgramTabCounts,
   MentorshipProgram,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
-  MentorshipProgramTabCounts,
   MentorshipTermRowStatus,
 } from '../interfaces/mentorship-admin.interface';
 
@@ -108,16 +109,25 @@ export const MENTORSHIP_REGISTER_ERROR_FALLBACK = 'We could not save your regist
 /** Field error both register forms show when a picked skill is not in `MENTORSHIP_SKILL_OPTIONS`. */
 export const MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
+/** Most rows one `GET .../mentors` or `GET .../terms` page may return; the BFF rejects a larger `limit`. */
+export const MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT = 50;
+
+/** Admin Mentors and Terms tab page size. Passed as `limit` on `GET .../mentors` and `GET .../terms`. */
+export const MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE = 10;
+
+export const MENTORSHIP_ADMIN_MENTORS_LOAD_ERROR_MESSAGE = 'We could not load the mentors. Try again.';
+export const MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE = 'We could not load the terms. Try again.';
+
 /**
  * Underline tabs on `/mentorship/admin/:programId`. Order matches the admin screenshot;
- * `countKey` names the `MentorshipProgramTabCounts` field each tab's badge reads.
+ * `countKey` names the `MentorshipAdminProgramTabCounts` field each tab's badge reads.
  */
 export const MENTORSHIP_PROGRAM_DETAIL_TABS = [
   { value: 'current-mentees', label: 'Current Mentees', countKey: 'currentMentees' },
   { value: 'past-mentees', label: 'Past Mentees', countKey: 'pastMentees' },
   { value: 'mentors', label: 'Mentors', countKey: 'mentors' },
   { value: 'terms', label: 'Terms', countKey: 'terms' },
-] as const satisfies readonly { value: string; label: string; countKey: keyof MentorshipProgramTabCounts }[];
+] as const satisfies readonly { value: string; label: string; countKey: keyof MentorshipAdminProgramTabCounts }[];
 
 /**
  * Mentor lifecycle statuses on the admin Mentors tab. Source of the
@@ -137,6 +147,30 @@ export const MENTORSHIP_MENTOR_STATUS_LABELS: Record<MentorshipMentorStatus, str
   accepted: 'Accepted',
   declined: 'Declined',
   withdrawn: 'Withdrawn',
+};
+
+/**
+ * Mentor lifecycle on the admin Mentors tab, which reads every `program_members` status upstream keeps
+ * (`active` is the accepted mentor). Declaration order is the status filter's option order.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_STATUSES = ['requested', 'pending', 'invited', 'active', 'declined', 'withdrawn'] as const;
+
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS: Record<MentorshipAdminMentorStatus, string> = {
+  requested: 'Requested',
+  pending: 'Pending',
+  invited: 'Invited',
+  active: 'Accepted',
+  declined: 'Declined',
+  withdrawn: 'Withdrawn',
+};
+
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES: Record<MentorshipAdminMentorStatus, string> = {
+  requested: 'bg-amber-100 text-amber-700',
+  pending: 'bg-amber-100 text-amber-700',
+  invited: 'bg-blue-100 text-blue-700',
+  active: 'bg-emerald-100 text-emerald-700',
+  declined: 'bg-red-100 text-red-600',
+  withdrawn: 'bg-gray-100 text-gray-600',
 };
 
 export const MENTORSHIP_MENTEE_STATUS_LABELS: Record<MentorshipMenteeStatus, string> = {

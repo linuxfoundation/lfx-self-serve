@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+  MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTEES_MAX_LIMIT,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTOR_STATUSES,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_PROGRAM_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
   MENTORSHIP_PROGRAMS_MAX_LIMIT,
 } from '@lfx-one/shared/constants';
-import { MentorshipAdminMenteeTab, MentorshipMenteeStatus } from '@lfx-one/shared/interfaces';
+import { MentorshipAdminMenteeTab, MentorshipAdminMentorStatus, MentorshipMenteeStatus } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -118,6 +121,67 @@ export class MentorshipAdminController {
 
       logger.success(req, operation, startTime, { programId, type, status, offset, limit, result_count: mentees.data.length, total: mentees.total });
       res.json(mentees);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/admin/programs/:programId/mentors?status&search&offset&limit
+  public async getProgramMentors(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_program_mentors';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+
+      const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', operation));
+      if (rawStatus !== undefined && !(MENTORSHIP_ADMIN_MENTOR_STATUSES as readonly string[]).includes(rawStatus)) {
+        throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_ADMIN_MENTOR_STATUSES.join(', ')}`, { operation });
+      }
+
+      // The service escapes the search for upstream; the text stays out of every log line.
+      const search = parseTrimmedString(getStrictStringQueryParam(req, 'search', operation));
+      const { offset, limit } = parseMentorshipAdminPaging(req.query, {
+        defaultLimit: MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+        maxLimit: MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+        operation,
+      });
+
+      const status = rawStatus as MentorshipAdminMentorStatus | undefined;
+      const mentors = await this.mentorshipAdminService.getProgramMentors(req, programId, { status, search, offset, limit });
+
+      logger.success(req, operation, startTime, { programId, status, offset, limit, result_count: mentors.data.length, total: mentors.total });
+      res.json(mentors);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/admin/programs/:programId/terms?offset&limit
+  public async getProgramTerms(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_mentorship_admin_program_terms';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation });
+      }
+
+      const programId = this.requireUuidParam(req, 'programId', operation);
+      const { offset, limit } = parseMentorshipAdminPaging(req.query, {
+        defaultLimit: MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+        maxLimit: MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+        operation,
+      });
+
+      const terms = await this.mentorshipAdminService.getProgramTerms(req, programId, { offset, limit });
+
+      logger.success(req, operation, startTime, { programId, offset, limit, result_count: terms.data.length, total: terms.total });
+      res.json(terms);
     } catch (error) {
       next(error);
     }

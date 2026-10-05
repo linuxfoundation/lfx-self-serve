@@ -6,7 +6,11 @@ import { inject, Injectable } from '@angular/core';
 import {
   MentorshipAdminMenteesQuery,
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsQuery,
+  MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
+  MentorshipAdminTermsQuery,
+  MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
@@ -53,6 +57,30 @@ export class MentorshipAdminService {
     return this.http
       .get<MentorshipAdminMenteesResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentees`, { params: httpParams })
       .pipe(this.logFailure('getProgramMentees'));
+  }
+
+  /** One page of a program's mentors, filtered and searched upstream. */
+  public getProgramMentors(programId: string, query: MentorshipAdminMentorsQuery): Observable<MentorshipAdminMentorsResponse> {
+    let httpParams = strictHttpParams();
+    if (query.status) httpParams = httpParams.set('status', query.status);
+    if (query.search) httpParams = httpParams.set('search', query.search);
+    if (query.offset !== undefined) httpParams = httpParams.set('offset', String(query.offset));
+    if (query.limit !== undefined) httpParams = httpParams.set('limit', String(query.limit));
+
+    return this.http
+      .get<MentorshipAdminMentorsResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/mentors`, { params: httpParams })
+      .pipe(this.logFailure('getProgramMentors'));
+  }
+
+  /** One page of a program's terms with their application counts. */
+  public getProgramTerms(programId: string, query: MentorshipAdminTermsQuery): Observable<MentorshipAdminTermsResponse> {
+    let httpParams = strictHttpParams();
+    if (query.offset !== undefined) httpParams = httpParams.set('offset', String(query.offset));
+    if (query.limit !== undefined) httpParams = httpParams.set('limit', String(query.limit));
+
+    return this.http
+      .get<MentorshipAdminTermsResponse>(`/api/mentorship/admin/programs/${encodeURIComponent(programId)}/terms`, { params: httpParams })
+      .pipe(this.logFailure('getProgramTerms'));
   }
 
   /** Every task of one application. Read only when a row's View Tasks is first opened. */

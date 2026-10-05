@@ -60,7 +60,6 @@ import {
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
 } from '../constants/mentorship.constants';
-import type { FilterOption } from '../interfaces/filter.interface';
 import type {
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
@@ -77,14 +76,7 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import type {
-  MentorshipProgram,
-  MentorshipProgramDetail,
-  MentorshipProgramLists,
-  MentorshipProgramMentor,
-  MentorshipProgramTermRow,
-  MentorshipTermRowStatus,
-} from '../interfaces/mentorship-admin.interface';
+import type { MentorshipProgramMentor, MentorshipProgramTermRow } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileFieldErrors,
@@ -830,34 +822,6 @@ export function toMentorshipDateOnly(value: Date): string {
 }
 
 /**
- * Splits a program's applications across the two mentee tabs by their term, not their
- * status: an application in a closed term is history, so it moves to Past Mentees
- * whatever state it was left in, and everything else — including a row whose term the
- * program does not list — stays on Current Mentees. The counts are taken from the split
- * lists, so a badge can never promise a row its tab does not show.
- */
-export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
-  // Keyed by id, not name: a program can hold an open and a closed term that share a name.
-  const closedTermIds = new Set(lists.terms.filter((term) => term.status === 'closed').map((term) => term.id));
-  const currentMentees = lists.applications.filter((application) => !closedTermIds.has(application.termId));
-  const pastMentees = lists.applications.filter((application) => closedTermIds.has(application.termId));
-
-  return {
-    program,
-    tabCounts: {
-      currentMentees: currentMentees.length,
-      pastMentees: pastMentees.length,
-      mentors: lists.mentors.length,
-      terms: lists.terms.length,
-    },
-    currentMentees,
-    pastMentees,
-    mentors: lists.mentors,
-    terms: lists.terms,
-  };
-}
-
-/**
  * Submitted tasks waiting on the mentor: those of `accepted` mentees, so a graduated mentee's leftover
  * submission is not counted, the same rule as the My Programs card's tasks to review.
  */
@@ -970,20 +934,6 @@ function mentorshipPrerequisitesComplete(person: MentorshipApplicationProgress):
 export function mentorshipApplicantDisplayStatus(application: MentorshipApplicationProgress): MentorshipApplicantDisplayStatus {
   if (application.status !== 'pending') return application.status;
   return mentorshipPrerequisitesComplete(application) ? 'tasks-completed' : 'applied';
-}
-
-/**
- * Term filter options for a mentee tab: the program's terms in the given state, in the
- * order the program lists them. Current Mentees passes `open` and Past Mentees `closed`,
- * so each tab's filter offers only the terms its rows can be in.
- */
-export function mentorshipTermFilterOptions(
-  terms: ReadonlyArray<Pick<MentorshipProgramTermRow, 'name' | 'status'>>,
-  status: MentorshipTermRowStatus,
-  allLabel: string
-): FilterOption[] {
-  const names = [...new Set(terms.filter((term) => term.status === status).map((term) => term.name))];
-  return [{ label: allLabel, value: null }, ...names.map((name) => ({ label: name, value: name }))];
 }
 
 /**
