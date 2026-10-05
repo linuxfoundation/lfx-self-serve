@@ -1534,6 +1534,35 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(host().querySelector('[data-testid="campaigns-audience-existing"]')?.textContent).toContain('900');
       expect(host().querySelector('[data-testid="campaigns-audience-existing-replace"]'), 'a replace that cannot run was offered').toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]')).not.toBeNull();
+    });
+
+    it('does not point at a master that a FAILED compose never created', async () => {
+      // `composeAttempted` survives an ordinary failure, so copy keyed on it told the operator to
+      // attach a master that does not exist.
+      await renderWithDiscovery('brief-1');
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { message: 'boom' } })));
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]')).toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-after-compose"]')).not.toBeNull();
+    });
+
+    it("keeps a brief's recorded compose as this email's after the parent resets for the same brief", async () => {
+      // Re-proceeding from Plan bumps the parent's generation but resolves the SAME brief. Keyed on
+      // the generation alone, the email's actual send list was called another email's.
+      await renderWithDiscovery('brief-1');
+      composeAudienceMaster.mockReturnValue(
+        of({ master: { listId: '900', name: 'Master', hubspotUrl: 'u' }, sourceListIds: ['101'], recorded: true, audience: RECORDED_AUDIENCE })
+      );
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('audienceScope', 1);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-other-brief"]'), "the brief's own list was called another email's").toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-compose-attached"]')).not.toBeNull();
     });
 
     it("does not describe another brief's compose as this email's", async () => {

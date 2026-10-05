@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
 import type {
@@ -41,6 +42,7 @@ import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
+import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -2310,11 +2312,36 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().onEmailProceedFromPlanning(emailBrief);
 
       expect(internals().emailBriefResolving(), 'compose was open while the brief id was still resolving').toBe(true);
+      // The CHILD must see it: the signal alone passed with the binding to the Audience tab removed.
+      fixture.detectChanges();
+      const tab = fixture.debugElement.query(By.directive(AudienceBuilderTabComponent)).componentInstance as AudienceBuilderTabComponent;
+      expect(tab.audienceReadPending(), 'the Audience tab was not told the audience is unknown').toBe(true);
 
       slow.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
       slow.complete();
       await fixture.whenStable();
+      // The warm-up settles through several promise hops (persist, then the read it triggers).
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(internals().emailBriefResolving()).toBe(false);
+    });
+
+    it("does not let a superseded warm-up clear the newer one's resolving flag", async () => {
+      // Warm-up #1 in flight, a reset, warm-up #2 in flight: #1 settling must not reopen compose
+      // while #2's persist is still on the wire.
+      const first = new Subject<CampaignBriefPersistResult>();
+      const second = new Subject<CampaignBriefPersistResult>();
+      persist.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(second.asObservable());
+      vi.spyOn(TestBed.inject(CampaignService), 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }));
+      selectEmail();
+      internals().onEmailProceedFromPlanning(emailBrief);
+      internals().onEmailProceedFromPlanning(emailBrief);
+
+      first.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null } as unknown as CampaignBriefPersistResult);
+      first.complete();
+      await fixture.whenStable();
+
+      expect(internals().emailBriefResolving(), "the superseded warm-up cleared the live one's flag").toBe(true);
+      second.complete();
     });
 
     it('reads the saved audience back when the warm-up resolves a brief id', async () => {

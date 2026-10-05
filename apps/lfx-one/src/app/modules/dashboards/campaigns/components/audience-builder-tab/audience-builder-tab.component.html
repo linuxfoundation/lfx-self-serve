@@ -483,9 +483,15 @@
                   data-testid="campaigns-audience-existing-replace">
                   Compose a replacement
                 </button>
+              } @else if (looseComposeForThisSend()) {
+                <!-- Only for a loose master THIS send composed: that one is in the reuse grid. A failed
+                     compose created nothing, and another send's master is not this email's fix. -->
+                <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-loose">
+                  The master list composed here was not attached. To send to it instead, choose "Use for this email" on it under "Master lists already built".
+                </p>
               } @else if (composeAttempted()) {
-                <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-unavailable">
-                  A master list was already composed here. To send to it instead, choose "Use for this email" on it under "Master lists already built".
+                <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-after-compose">
+                  Composing again is unavailable on this panel after a compose. Reload the page to start a new one.
                 </p>
               } @else {
                 <p class="text-xs text-gray-600" data-testid="campaigns-audience-existing-replace-unavailable">

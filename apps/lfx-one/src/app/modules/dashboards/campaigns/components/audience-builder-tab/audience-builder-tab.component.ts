@@ -304,14 +304,18 @@ export class AudienceBuilderTabComponent {
   /**
    * Whether the last compose belonged to a different send than the one on screen.
    *
-   * By the parent's reset generation, not by brief id alone: a compose dispatched before the plan
-   * was saved carries no brief id, and the save that follows fills `briefId` for the SAME send --
-   * so comparing ids read that as another email and hid the recovery this send still needs. A
-   * differing non-empty id is still another brief.
+   * A compose WITH a brief is identified by that brief: re-proceeding from Plan resets the parent
+   * (bumping its generation) yet resolves the same brief, and its recorded list is still this
+   * email's. A compose with NO brief has only the generation: the plan save that follows fills
+   * `briefId` for the same send, so comparing ids read that as another email and hid the recovery
+   * this send still needs.
    */
-  protected readonly composeForOtherSend = computed(
-    () => this.composeScope() !== this.audienceScope() || (this.composeBriefId() !== '' && this.composeBriefId() !== this.briefId())
+  protected readonly composeForOtherSend = computed(() =>
+    this.composeBriefId() !== '' ? this.composeBriefId() !== this.briefId() : this.composeScope() !== this.audienceScope()
   );
+
+  /** This send's compose created a master and could not record it -- the loose list to reuse. */
+  protected readonly looseComposeForThisSend = computed(() => this.composeResult()?.recorded === false && !this.composeForOtherSend());
   /**
    * Names for suppression lists added by "Copy selection" that are not rows of the standard
    * suppression grid. The suppression map stores key -> list id only, and the grid supplies names
@@ -545,7 +549,8 @@ export class AudienceBuilderTabComponent {
    *
    * Not while `briefId` is empty (an unapproved restore, before its re-approval lands): the compose
    * would go out with no brief, come back unrecorded, and leave the restored audience as the send
-   * list -- the duplicate the replace prompt exists to prevent.
+   * list -- the duplicate the replace prompt exists to prevent. Nor once this panel has composed:
+   * `composeAttempted` blocks a second compose, so the button could not do what it says.
    */
   protected readonly canReplaceExisting = computed(() => this.briefId() !== '' && !this.composeAttempted());
 
