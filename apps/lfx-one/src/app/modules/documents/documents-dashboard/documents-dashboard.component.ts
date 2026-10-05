@@ -227,10 +227,7 @@ export class DocumentsDashboardComponent {
           map((v) => v ?? '')
         ),
         this.clearSearch$
-      ).pipe(
-        distinctUntilChanged(),
-        startWith('')
-      ),
+      ).pipe(distinctUntilChanged(), startWith('')),
       { initialValue: '' }
     );
   }
