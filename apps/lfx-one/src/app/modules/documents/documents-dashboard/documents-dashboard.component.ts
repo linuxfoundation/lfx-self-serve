@@ -381,7 +381,7 @@ export class DocumentsDashboardComponent {
     } else if (docSource === 'summary') {
       mySource = 'summary';
     } else {
-      mySource = isFile ? 'file' : 'link';
+      mySource = 'project';
     }
 
     // Show entity name (committee name, meeting title) when available, otherwise project name.
@@ -485,8 +485,7 @@ export class DocumentsDashboardComponent {
         }
 
         if (projectMode) {
-          // Folders are structural navigation — never filtered by source.
-          if (projectDocSource && !doc.isFolder) {
+          if (projectDocSource) {
             const docSource = doc.projectDocumentSource ?? 'project';
             // "Meeting" filter bucket covers attachments, recordings, transcripts, and summaries.
             const isMeetingBucket = projectDocSource === 'meeting' && ['meeting', 'recording', 'transcript', 'summary'].includes(docSource);

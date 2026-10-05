@@ -163,6 +163,7 @@ import {
   CommitteeDocumentQueryResult,
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
   MeetingAttachment,
   PastMeetingAttachment,
   PastMeetingRecordingQueryResult,
@@ -7804,17 +7805,48 @@ export class ProjectService {
       document_source: 'project' as const,
     }));
 
-    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => ({
-      uid: `groupsio_artifact:${a.artifact_id}`,
-      type: 'link' as const,
-      name: a.filename || a.link_url || a.artifact_id,
-      url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
-      mime_type: a.media_type,
-      created_at: a.last_posted_at || a.created_at,
-      project_uid: a.project_uid,
-      document_source: 'mailing_list' as const,
-      document_source_name: a.committee_uid ? (committeeNameByUid.get(a.committee_uid) ?? '') : '',
-    }));
+    // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
+    // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
+    // mailing list's UUID uid, not the numeric group_id).
+    const mailingListTitleByGroupId = new Map<number, string>();
+    if (groupsioArtifacts && groupsioArtifacts.length > 0) {
+      const mlResults = await fetchAllQueryResources<GroupsIOMailingList>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_mailing_list',
+            tags: [`project_uid:${projectId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to resolve mailing list names, names will be omitted', {
+          project_uid: projectId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+        return [] as GroupsIOMailingList[];
+      });
+      for (const ml of mlResults) {
+        if (ml.group_id != null && ml.title) {
+          mailingListTitleByGroupId.set(ml.group_id, ml.title);
+        }
+      }
+    }
+
+    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
+      const mailingListTitle = a.group_id ? mailingListTitleByGroupId.get(a.group_id) : undefined;
+      return {
+        uid: `groupsio_artifact:${a.artifact_id}`,
+        type: 'link' as const,
+        name: a.filename || a.link_url || mailingListTitle || a.artifact_id,
+        url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
+        mime_type: a.media_type,
+        created_at: a.last_posted_at || a.created_at,
+        project_uid: a.project_uid,
+        document_source: 'mailing_list' as const,
+        document_source_name: mailingListTitle ?? '',
+      };
+    });
 
     const committeeLinkDocs: ProjectDocument[] = (committeeLinks || [])
       .filter((l) => !!l.url)
