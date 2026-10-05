@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
+@if (timeState(); as timeState) {
+  <section class="flex flex-col gap-[14px]" data-testid="meeting-time-banner" [attr.data-state]="timeState" aria-label="When">
+    @if (zonedDay(); as day) {
+      <div class="flex items-start gap-[14px]">
+        <span
+          class="flex h-[44px] w-[44px] flex-none flex-col overflow-hidden rounded-[var(--md-radius-lg)] border border-[var(--md-border)] bg-[var(--md-surface-card)] text-center"
+          aria-hidden="true">
+          <span class="block bg-[var(--md-accent)] py-[2px] text-[9px] font-bold uppercase tracking-[0.05em] text-[var(--md-surface-card)]">{{
+            day | date: 'MMM'
+          }}</span>
+          <span class="flex flex-1 items-center justify-center text-[17px] font-bold text-[var(--md-text-heading)]">{{ day | date: 'd' }}</span>
+        </span>
+        <div class="flex min-w-0 flex-col gap-[2px]">
+          <span class="text-[15px] font-bold text-[var(--md-text-heading)]" data-testid="meeting-time-banner-date">{{ day | date: 'EEEE, MMM d' }}</span>
+          <span class="text-[13.5px] text-[var(--md-text-body)]" data-testid="meeting-time-banner-time">{{ timeRange() }}</span>
+          <span class="text-[12.5px] text-[var(--md-text-muted)]" data-testid="meeting-time-banner-timezone">{{ timezoneName() }}</span>
+        </div>
+      </div>
+    } @else {
+      <!-- The viewer's timezone resolves after the first render; until then, as V1's date badge does. -->
+      <div class="flex items-start gap-[14px]" aria-hidden="true" data-testid="meeting-time-banner-skeleton">
+        <p-skeleton width="44px" height="44px" />
+        <div class="flex flex-1 flex-col gap-[6px]">
+          <p-skeleton width="70%" height="16px" />
+          <p-skeleton width="50%" height="14px" />
+        </div>
+      </div>
+    }
+
+    <!-- One line for the phase; exactly one renders. -->
+    <p class="m-0 flex items-start gap-[8px] text-[12.5px] leading-[1.4]" data-testid="meeting-time-banner-message">
+      @switch (timeState) {
+        @case ('ended') {
+          <i class="fa-light fa-clock-rotate-left mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
+          <span class="text-[var(--md-text-body)]">This meeting has ended.</span>
+        }
+        @case ('live') {
+          <i class="fa-solid fa-circle mt-[4px] text-[8px] text-[var(--md-status-live)]" aria-hidden="true"></i>
+          <span class="font-semibold text-[var(--md-status-live)]">The meeting is in progress.</span>
+        }
+        @default {
+          <i class="fa-light fa-clock mt-[2px] text-[var(--md-text-muted)]" aria-hidden="true"></i>
+          <span class="text-[var(--md-text-body)]">{{ beforeMessage() }}</span>
+        }
+      }
+    </p>
+  </section>
+}
