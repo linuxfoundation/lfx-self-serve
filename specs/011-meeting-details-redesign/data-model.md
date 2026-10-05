@@ -4,7 +4,7 @@ Plan ID **E0-01** · issue [#1766](https://github.com/linuxfoundation/lfx-self-s
 
 Which payload fields feed which state axis, and what the derived view model holds. The runtime half
 of this document is `packages/shared/src/interfaces/meeting-view-model.interface.ts` and
-`packages/shared/src/utils/meeting-view-model.utils.ts` (E0-02, PR #2909, pending on `main`); this
+`packages/shared/src/utils/meeting-view-model.utils.ts` (E0-02, #2876); this
 file describes what they encode rather than restating their code. Field references are to `main`
 @ `1ee353054`.
 

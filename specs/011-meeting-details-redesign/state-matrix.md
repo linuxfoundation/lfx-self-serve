@@ -12,8 +12,9 @@ what V2 renders. This is the matrix #1766 defers; the `FR-###` requirements are 
 > that commit; `V1:` is `modules/meetings/meeting-join/meeting-join.component.*`, `BFF:` is
 > `server/controllers/public-meeting.controller.ts`.
 >
-> **Pending siblings.** `spec.md` (E0-01, PR #2914) and the `resolveActionSlot` resolver
-> (E0-02, PR #2909) are not on `main` at the time of writing.
+> The resolver this matrix specifies is `resolveActionSlot` in
+> `packages/shared/src/utils/meeting-view-model.utils.ts` (E0-02); its `MATRIX` spec table is the
+> executable copy of the action-slot tables below.
 
 ## Axes
 
@@ -99,7 +100,7 @@ The central table. One row per legal (time, viewer, privacy) group, collapsing c
 identically. Axis E never changes the slot kind; it only adds the RSVP scope modal on `series`.
 
 **V1** is what `main` renders (chain at V1 HTML:387 → 440 → 487 → 507, no terminal else).
-**V2** is `resolveActionSlot` in PR #2909, after decisions D-1 to D-4 below. **Status**: `=`
+**V2** is `resolveActionSlot` (E0-02, merged in #2909), after decisions D-1 to D-4 below. **Status**: `=`
 parity · `fix` V2 deliberately repairs a V1 dead end · `D-n` the row a decision settled.
 
 ### Before

@@ -54,7 +54,7 @@ app's look belongs in tokens and layout, not in a parallel component library.
 | R02 | `MEETING_V2_ENABLED_FLAG` is UI-only. It gates no endpoint.                                                               |
 | R03 | Fail closed — an unready flag provider renders V1.                                                                        |
 | R04 | LaunchDarkly targeting is the switch. The code default is never the switch.                                               |
-| R05 | Anonymous visitors always get V1 during rollout.                                                                          |
+| R05 | Anonymous visitors get V1 until the anonymous stage of `rollout.md` (stage 5).                                            |
 | R06 | Security changes never ride along with feature work.                                                                      |
 | R07 | Every test must be proven binding: mutate the source, confirm the test fails, confirm the mutation landed via `git diff`. |
 
@@ -155,13 +155,13 @@ it. Phase 1 work does not wait for it.
 
 ### Phase 1 — shell, header, action slot, content
 
-| Group                       | Plan IDs (issues)                                                                                                                                                                                                                                                                  |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                                                                                                      |
-| Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01 pre-2024 RSVP state                                                                                                                                                           |
-| Content                     | E3-01 agenda · E3-02 materials · E3-03 public attachments endpoint (BFF) · E3-04 people · E3-05 attachment categories · E4-01 recording + transcript · E4-02 recording duration (BFF) · E4-03 inline AI summary · E4-04 public artifact routes (BFF) · E4-05 align with admin page |
-| Identity & admin            | N-02 participant identity tiers · N-03 auth guard on the past-meeting admin route                                                                                                                                                                                                  |
-| Quality                     | E5-02 a11y · E5-03 V2 specs · E5-04 E2E (content + robust). E5-01 shipped before the epic (#2046) and is not filed                                                                                                                                                                 |
+| Group                       | Plan IDs (issues)                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                                                                                                                                                                                      |
+| Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01 (#3263) pre-2024 RSVP state                                                                                                                                                                                                                                   |
+| Content                     | E3-01 (#3250) agenda · E3-02 (#3251) materials · E3-03 (#3252) public attachments endpoint (BFF) · E3-04 (#3253) people · E3-05 (#3254) attachment categories · E4-01 (#3255) recording + transcript · E4-02 (#3256) recording duration (BFF) · E4-03 (#3257) inline AI summary · E4-04 (#3258) public artifact routes (BFF) · E4-05 (#3259) align with admin page |
+| Identity & admin            | N-02 (#3264) participant identity tiers · N-03 (#3265) auth guard on the past-meeting admin route                                                                                                                                                                                                                                                                  |
+| Quality                     | E5-02 (#3260) a11y · E5-03 (#3261) V2 specs · E5-04 (#3262) E2E (content + robust). E5-01 shipped before the epic (#2046) and is not filed                                                                                                                                                                                                                         |
 
 E1-04 renders a **single** 4-way privacy chip built on the existing `getMeetingPrivacyLabel` /
 `getMeetingPrivacyIcon` helpers — four values of one element, not four elements.
@@ -190,8 +190,9 @@ verified · unknown/needs-review · auto-matched · AI-reconciled — plus the `
 Spikes S-01 (colleague meetings feasibility and privacy) and S-02 (occurrence timeline scale), and
 the hygiene bugs the plan lists in § 10. They are independent and can be filed at any time.
 
-Plan IDs listed without an issue number, here and in Phase 1, are **not filed yet**. The issue
-bodies are drafted in the implementation plan; file each before starting it.
+Every Phase 1 item is filed. Plan IDs listed without an issue number (Phase 2 and Phase 3) are
+**not filed yet**. The issue bodies are drafted in the implementation plan; file each before
+starting it.
 
 The `U-` series is upstream API blockers: changes owned by `lfx-v2-meeting-service` and
 `lfx-v2-committee-service`, tracked here as U-01 to U-08 (#2927 to #2934). The Phase 2 table shows
@@ -199,7 +200,7 @@ which item each one blocks.
 
 ## Outstanding from #1766
 
-Deferred from this handoff spec and delivered in PR #2935 (pending at the time of writing):
+Deferred from this handoff spec and delivered alongside it in this directory:
 
 - **`requirements.md`**: `FR-###` functional requirements and `SC-###` success criteria, with a
   traceability table so every Phase 1 and Phase 2 plan ID cites at least one FR.
@@ -208,7 +209,7 @@ Deferred from this handoff spec and delivered in PR #2935 (pending at the time o
   composition, and every illegal combination with its outcome (e.g. redirect to
   `/meetings/not-found`).
 - **`data-model.md`**: field → axis mapping and what the E0-02 view model
-  (`meeting-view-model.interface.ts`, PR #2909) encodes. That includes the view-scoped state the
+  (`meeting-view-model.interface.ts`, E0-02) encodes. That includes the view-scoped state the
   axes do not cover: the selected occurrence and the viewer's own RSVP.
 
 **`contracts/`** (JSON Schema for new or widened BFF responses) moves to the PRs that build each
@@ -228,8 +229,13 @@ endpoint (E3-03, E4-04, E6-01), so each schema is reviewed with its code.
 
 ## Related documents
 
-- `testid-contract.md` — every `data-testid` and `data-*` state attribute the V2 tree renders.
-  _Pending: E0-04 (#1768), PR #2913 — not on `main` yet._
-- `design-token-deviations.md` — where V2 tokens diverge from the app's, and why.
-  _Pending: E0-05 (#1769), PR #2911 — not on `main` yet._
+- [`state-matrix.md`](state-matrix.md), [`requirements.md`](requirements.md),
+  [`data-model.md`](data-model.md) — the full state model, FR / SC, and field mapping (E0-01).
+- [`testid-contract.md`](testid-contract.md) — every `data-testid` and `data-*` state attribute
+  the V2 tree renders (E0-04).
+- [`design-token-deviations.md`](design-token-deviations.md) — where V2 tokens diverge from the
+  app's, and why (E0-05).
+- [`v2-scaffold.md`](v2-scaffold.md) — V1/V2 naming, where V2 code lives, V1-deletion definition
+  of done (V2-02).
+- [`rollout.md`](rollout.md) — branch, release, flag stages and retirement (V2-03).
 - `docs/architecture/frontend/docs-portal.md` — the repo's precedent for a spec-shaped doc.

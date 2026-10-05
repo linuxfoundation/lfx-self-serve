@@ -50,9 +50,7 @@ the four privacy permutations are four values of one element, not four elements.
 
 ### `meeting-time-banner[data-state]`
 
-Values will mirror `MeetingTimeState` exactly. That type does not exist on `main` yet —
-E0-02 (#1766's sibling, PR #2909) adds it to `@lfx-one/shared/interfaces`. Until that merges the
-list below is the contract:
+Values mirror `MeetingTimeState` (`@lfx-one/shared/interfaces`, E0-02) exactly:
 
 ```text
 before | live | ended
@@ -87,8 +85,7 @@ data-restricted: true | false
 
 ### `meeting-action-slot[data-kind]`
 
-Values will mirror `ActionSlotKind` exactly — **all nine members**. Like `MeetingTimeState`,
-this type arrives with E0-02 (PR #2909) and is not on `main` at the time of writing:
+Values mirror `ActionSlotKind` (E0-02) exactly — **all nine members**:
 
 ```text
 join | rsvp | register | invitation-required | guest-join | tools | no-access | rsvp-unavailable | none
@@ -111,7 +108,6 @@ join | rsvp | register | invitation-required | guest-join | tools | no-access | 
 > `invitation-required`, which was already in the original six. V1 fails that state
 > silently too, but the fix there is rendering the existing kind, not a new one. Assert each state
 > against the kind above, not against the silent-failure list in `spec.md` § Smaller traps.
-> That file is E0-01 and lands with PR #2914; it is not on `main` at the time of writing.
 
 The attribute is always present and always carries one of the nine values; `none` is a rendered
 kind, not an absent attribute. A test asserting "no action is offered" asserts

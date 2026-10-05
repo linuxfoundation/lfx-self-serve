@@ -5,10 +5,8 @@ Plan ID **V2-02** · issue [#2874](https://github.com/linuxfoundation/lfx-self-s
 Where V1 and V2 code live, what each is called, what they share, and what "done" means for deleting
 V1. Every Phase 1 issue builds inside the layout below.
 
-> **Pending siblings.** Three things this file cites are not on `main` at the time of writing:
-> `spec.md` (E0-01, PR #2914), `testid-contract.md` (E0-04, PR #2913) and
-> `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02, PR #2909). The rules this file relies on
-> are restated here, so it reads correctly before they land.
+> Read with [`spec.md`](spec.md) (the governing rules), [`testid-contract.md`](testid-contract.md)
+> and `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02).
 
 ## Naming convention
 
