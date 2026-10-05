@@ -17,6 +17,7 @@
         severity="warn"
         size="small"
         [outlined]="true"
+        [disabled]="decisionInFlight()"
         styleClass="whitespace-nowrap !py-2.5"
         (onClick)="onDeclineByTerm()"
         data-testid="mentorship-admin-current-mentees-decline-by-term" />

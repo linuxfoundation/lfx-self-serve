@@ -93,6 +93,9 @@ export const MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_MESSAGE = 'You do not have permi
 /** Attendance types an admin picks when accepting an application; `attendance_type` upstream. */
 export const MENTORSHIP_ATTENDANCE_TYPES = ['full_time', 'part_time'] as const;
 
+/** Statuses an admin may set through `PATCH …/applications/:applicationId/status`; Withdraw has its own route. */
+export const MENTORSHIP_ADMIN_DECISION_STATUSES = ['accepted', 'declined', 'graduated'] as const;
+
 export const MENTORSHIP_ATTENDANCE_TYPE_LABELS: Record<(typeof MENTORSHIP_ATTENDANCE_TYPES)[number], string> = {
   full_time: 'Full time',
   part_time: 'Part time',
@@ -126,6 +129,7 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
   graduated: 'Mentee graduated',
 } as const;
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
+export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
 
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by

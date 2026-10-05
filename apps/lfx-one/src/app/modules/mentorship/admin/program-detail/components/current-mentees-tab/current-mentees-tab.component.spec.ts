@@ -356,14 +356,14 @@ describe('CurrentMenteesTabComponent', () => {
       expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).toBeNull();
     });
 
-    it('reads the tasks of the expanded row only, and hides prerequisite tasks by default', () => {
+    it('reads the tasks of the expanded row only, and shows prerequisite tasks by default', () => {
       clickViewTasks('app_1');
 
       expect(getApplicationTasks).toHaveBeenCalledTimes(1);
       expect(getApplicationTasks).toHaveBeenCalledWith('app_1');
       expect(element().querySelector('[data-testid="mentorship-current-mentee-tasks-expanded-app_1"]')).not.toBeNull();
       expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
-      expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')).toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_2"]')?.textContent).toContain('Cover Letter');
     });
 
     it('collapses and re-expands from the cache without a second request', () => {
@@ -653,6 +653,46 @@ describe('CurrentMenteesTabComponent', () => {
       expect(declinePendingForTerm).toHaveBeenCalledWith('prog_1', 'trm_Fall 2026');
       expect(detailOf(toast)).toBe('4 applications declined');
       expect(emitted).toHaveBeenCalledTimes(1);
+    });
+
+    it('escapes the term name in the confirmation, which PrimeNG renders as HTML', () => {
+      dialogResult = { id: 'trm_x', name: '<b>Fall</b> & Co', status: 'open' } satisfies MentorshipAdminTermOption;
+      const confirm = confirmSpy();
+
+      fixture.componentInstance['onDeclineByTerm']();
+
+      expect(confirm.mock.calls[0][0].message).toContain('&lt;b&gt;Fall&lt;/b&gt; &amp; Co');
+    });
+
+    it('refuses a second decision while one is in flight, and disables Decline by Term', () => {
+      // The service observable is cold, so a request is sent per subscription, not per call.
+      const pending = new Subject<void>();
+      let sent = 0;
+      updateApplicationStatus.mockImplementation(
+        () =>
+          new Observable<void>((subscriber) => {
+            sent++;
+            return pending.subscribe(subscriber);
+          })
+      );
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const declineByTerm = (): HTMLButtonElement | null =>
+        element().querySelector<HTMLElement>('[data-testid="mentorship-admin-current-mentees-decline-by-term"]')?.querySelector('button') ?? null;
+
+      confirmAction('app_1', 'decline', confirm);
+      confirmAction('app_2', 'decline', confirm);
+      settle();
+
+      expect(sent).toBe(1);
+      expect(detailOf(toast)).toBe('Another change is still being saved. Try again in a moment.');
+      expect(declineByTerm()?.disabled).toBe(true);
+
+      pending.next();
+      pending.complete();
+      settle();
+
+      expect(declineByTerm()?.disabled).toBe(false);
     });
 
     it('offers only the open terms and does nothing when the term dialog is dismissed', () => {

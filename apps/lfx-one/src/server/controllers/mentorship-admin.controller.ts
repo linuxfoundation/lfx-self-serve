@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEE_TABS,
@@ -279,7 +280,7 @@ export class MentorshipAdminController {
   /** `status` must be one the admin can set; an accept also needs an `attendanceType`. */
   private parseStatusUpdate(body: unknown, operation: string): MentorshipAdminApplicationStatusUpdate {
     const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
-    const statuses: readonly string[] = ['accepted', 'declined', 'graduated'];
+    const statuses: readonly string[] = MENTORSHIP_ADMIN_DECISION_STATUSES;
     if (typeof raw['status'] !== 'string' || !statuses.includes(raw['status'])) {
       throw ServiceValidationError.forField('status', `status must be one of: ${statuses.join(', ')}`, { operation });
     }

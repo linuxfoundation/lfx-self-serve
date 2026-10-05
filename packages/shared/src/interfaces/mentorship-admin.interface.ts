@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  MENTORSHIP_ADMIN_DECISION_STATUSES,
   MENTORSHIP_ADMIN_MENTEE_TABS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
   MENTORSHIP_ATTENDANCE_TYPES,
@@ -111,13 +112,16 @@ export interface MentorshipUpstreamAdministeredProgram {
 /** How an accepted mentee attends; sent as `attendance_type` upstream. */
 export type MentorshipAttendanceType = (typeof MENTORSHIP_ATTENDANCE_TYPES)[number];
 
+/** A status an admin decision sets on an application. */
+export type MentorshipAdminDecisionStatus = (typeof MENTORSHIP_ADMIN_DECISION_STATUSES)[number];
+
 /** Body of `PATCH /api/mentorship/admin/applications/:applicationId/status`. `attendanceType` is required for `accepted`. */
 export interface MentorshipAdminApplicationStatusUpdate {
-  status: 'accepted' | 'declined' | 'graduated';
+  status: MentorshipAdminDecisionStatus;
   attendanceType?: MentorshipAttendanceType;
 }
 
-/** Body of `POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending`. */
+/** Response of `POST /api/mentorship/admin/programs/:programId/terms/:termId/decline-pending`. */
 export interface MentorshipAdminDeclinePendingResponse {
   declinedCount: number;
 }

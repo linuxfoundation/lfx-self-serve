@@ -17,6 +17,7 @@ import {
   MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE,
   MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES,
   MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE,
+  MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE,
   MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE,
   MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_SINGULAR_TEMPLATE,
   MENTORSHIP_ADMIN_DECLINE_BY_TERM_DONE_TEMPLATE,
@@ -57,6 +58,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildMentorshipGraduateTaskWarning,
+  escapeHtml,
   formatIsoDateLabel,
   mentorshipApplicantDisplayStatus,
   mentorshipApplicantHasTasks,
@@ -165,8 +167,8 @@ export class CurrentMenteesTabComponent {
   private readonly status = signal<MentorshipMenteeStatus | null>(null);
   private readonly termId = signal<string | null>(null);
   private readonly reloadCount = signal(0);
-  /** True while a decision write is in flight, so a second click cannot send it twice. */
-  private decisionInFlight = false;
+  /** True while a decision write is in flight; Decline by Term is disabled and a second decision is refused meanwhile. */
+  protected readonly decisionInFlight = signal(false);
 
   protected readonly termOptions = this.initTermOptions();
   protected readonly rows = this.initRows();
@@ -209,7 +211,8 @@ export class CurrentMenteesTabComponent {
       if (!term) return;
       this.confirmDecision({
         header: MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER,
-        message: MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE.replace('{term}', term.name),
+        // PrimeNG renders a confirmation message as HTML, so the term name is escaped.
+        message: MENTORSHIP_ADMIN_DECLINE_BY_TERM_CONFIRM_TEMPLATE.replace('{term}', escapeHtml(term.name)),
         acceptLabel: 'Decline all pending',
         danger: true,
         accept: () => this.declinePendingForTerm(term.id),
@@ -352,17 +355,20 @@ export class CurrentMenteesTabComponent {
   }
 
   private runWrite<T>(write: Observable<T>, onDone: (result: T) => void): void {
-    if (this.decisionInFlight) return;
-    this.decisionInFlight = true;
+    if (this.decisionInFlight()) {
+      this.messageService.add({ severity: 'info', summary: 'Please wait', detail: MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, life: 3000 });
+      return;
+    }
+    this.decisionInFlight.set(true);
     write.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (result) => {
-        this.decisionInFlight = false;
+        this.decisionInFlight.set(false);
         onDone(result);
         this.reloadCount.update((count) => count + 1);
         this.countsChanged.emit();
       },
       error: (err: unknown) => {
-        this.decisionInFlight = false;
+        this.decisionInFlight.set(false);
         this.onDecisionError(err);
       },
     });

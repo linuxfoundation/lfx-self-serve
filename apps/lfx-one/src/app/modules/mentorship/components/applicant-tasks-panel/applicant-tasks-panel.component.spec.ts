@@ -26,8 +26,7 @@ describe('ApplicantTasksPanelComponent', () => {
       dueOn: '2026-10-15',
       requiresFileSubmission: true,
     },
-    // Prerequisite → no Edit button. Also `hidePrerequisite` is on by default so we
-    // toggle it off in the specs that need this row.
+    // Prerequisite → no Edit button. `hidePrerequisite` is off by default, so this row renders.
     {
       id: 'tsk_prereq',
       name: 'Cover Letter',
@@ -73,11 +72,7 @@ describe('ApplicantTasksPanelComponent', () => {
   };
 
   it('renders the Edit button only on non-prerequisite rows', () => {
-    // The prerequisite row is filtered out by default (hide-prerequisite is on),
-    // so uncover it first to prove no Edit button is emitted for it.
-    fixture.componentInstance['filterForm'].controls.hidePrerequisite.setValue(false);
-    fixture.detectChanges();
-
+    // The prerequisite row renders by default (hide-prerequisite is off), but emits no Edit button.
     expect(element().querySelector('[data-testid="mentorship-applicant-task-edit-tsk_editable"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-applicant-task-edit-tsk_prereq"]')).toBeNull();
   });

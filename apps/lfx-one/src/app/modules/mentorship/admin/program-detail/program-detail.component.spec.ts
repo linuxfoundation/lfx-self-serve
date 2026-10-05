@@ -170,6 +170,31 @@ describe('ProgramDetailComponent', () => {
 
       expect(fixture.componentInstance['noteDrafts']()).toEqual({ app_1: 'a saved note', app_2: 'a saved note' });
     });
+
+    it('reads the counts again without the loading state when a decision changes them', () => {
+      const refreshed = programPage();
+      refreshed.tabCounts = { ...refreshed.tabCounts, currentMentees: 1 };
+      getProgram.mockReturnValue(of(refreshed));
+      const isLoading = vi.spyOn(fixture.componentInstance['isLoading'], 'set');
+
+      fixture.componentInstance['refreshCounts']();
+      settle();
+
+      expect(getProgram).toHaveBeenCalledTimes(2);
+      expect(isLoading).not.toHaveBeenCalled();
+      expect(tabText('current-mentees')).toBe('Current Mentees 1');
+      expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).not.toBeNull();
+    });
+
+    it('keeps the counts on screen when reading them again fails', () => {
+      getProgram.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      fixture.componentInstance['refreshCounts']();
+      settle();
+
+      expect(tabText('current-mentees')).toBe('Current Mentees 2');
+      expect(fixture.componentInstance['pageError']()).toBeNull();
+    });
   });
 
   it('leaves the note untouched when the dialog is dismissed', () => {

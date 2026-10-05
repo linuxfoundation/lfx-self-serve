@@ -940,8 +940,8 @@ export function mentorshipApplicantDisplayStatus(application: MentorshipApplicat
 
 /**
  * Progress the mentor Mentees tab shows as a bar plus percent. Counts
- * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
- * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites,
+ * which the View Tasks panel can hide with its `hidePrerequisite` toggle.
  * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
  * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
  */
