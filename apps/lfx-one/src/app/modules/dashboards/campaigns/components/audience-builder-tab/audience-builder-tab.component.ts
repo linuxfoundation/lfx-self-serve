@@ -314,8 +314,17 @@ export class AudienceBuilderTabComponent {
     this.composeBriefId() !== '' ? this.composeBriefId() !== this.briefId() : this.composeScope() !== this.audienceScope()
   );
 
-  /** This send's compose created a master and could not record it -- the loose list to reuse. */
-  protected readonly looseComposeForThisSend = computed(() => this.composeResult()?.recorded === false && !this.composeForOtherSend());
+  /**
+   * The confirmed master the last compose created and could NOT record, from either outcome that
+   * leaves one: an unrecorded success, or a 502 partial whose attach failed after both lists
+   * existed. Set in the one place both report it (`unattached` in `onComposeMaster`), so a new
+   * outcome cannot be added that the recovery copy forgets -- reading `composeResult` alone missed
+   * the partial, whose master IS in the reuse grid.
+   */
+  private readonly looseComposedMaster = signal<AudienceComposedList | null>(null);
+
+  /** This send's compose left a master it could not record -- the loose list to reuse. */
+  protected readonly looseComposeForThisSend = computed(() => this.looseComposedMaster() !== null && !this.composeForOtherSend());
   /**
    * Names for suppression lists added by "Copy selection" that are not rows of the standard
    * suppression grid. The suppression map stores key -> list id only, and the grid supplies names
@@ -1124,8 +1133,10 @@ export class AudienceBuilderTabComponent {
     const dispatchScope = this.audienceScope();
     this.composeBriefId.set(dispatchBriefId);
     this.composeScope.set(dispatchScope);
+    this.looseComposedMaster.set(null);
     // Scoped to the dispatch, like `briefId` below: the parent files the orphan warning by these.
     const unattached = (master: AudienceComposedList): void => {
+      this.looseComposedMaster.set(master);
       this.rememberComposedMaster(master);
       this.audienceComposeUnattached.emit({ master, briefId: dispatchBriefId, projectSlug: dispatchProject, scope: dispatchScope });
     };
@@ -1550,6 +1561,7 @@ export class AudienceBuilderTabComponent {
     this.lastSentEmails.set([]);
     this.existingMasterLists.set([]);
     this.composedMasterLists.set([]);
+    this.looseComposedMaster.set(null);
     this.suppressionLists.set([]);
     this.suppressionFailed.set(false);
     this.mastersFailed.set(false);

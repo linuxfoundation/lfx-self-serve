@@ -1537,6 +1537,24 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]')).not.toBeNull();
     });
 
+    it('points at the master a 502 partial confirmed, not at a reload', async () => {
+      // The partial whose attach failed after both lists existed leaves `composeResult` null but
+      // puts its master in the reuse grid. Keyed on `composeResult.recorded`, the copy fell through
+      // to "reload" instead of naming the list that already exists.
+      await renderWithDiscovery('brief-1');
+      const partial = {
+        master: { listId: '777', name: 'Loose', hubspotUrl: 'u' },
+        error: 'Lists created but not attached.',
+      } as unknown as AudienceComposeMasterPartial;
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+      click('campaigns-audience-compose');
+      fixture.componentRef.setInput('existingAudience', RECORDED_AUDIENCE);
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-loose"]'), 'the confirmed partial master was not named').not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-existing-replace-after-compose"]')).toBeNull();
+    });
+
     it('does not point at a master that a FAILED compose never created', async () => {
       // `composeAttempted` survives an ordinary failure, so copy keyed on it told the operator to
       // attach a master that does not exist.
