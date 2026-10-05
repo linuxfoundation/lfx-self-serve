@@ -7,9 +7,9 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MeetupsService } from '@app/shared/services/meetups.service';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { EMPTY_MEETUP_FILTER_OPTIONS, MEETUP_STATUS_OPTIONS } from '@lfx-one/shared/constants';
-import { FilterOption, MeetupFilterOptionsResponse, MeetupStatusFilter } from '@lfx-one/shared/interfaces';
-import { catchError, debounceTime, of } from 'rxjs';
+import { EMPTY_MEETUP_FILTER_OPTIONS } from '@lfx-one/shared/constants';
+import { FilterOption, MeetupFilterOptionsResponse } from '@lfx-one/shared/interfaces';
+import { catchError, debounceTime, distinctUntilChanged, filter, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meetups-top-bar',
@@ -20,24 +20,22 @@ import { catchError, debounceTime, of } from 'rxjs';
 export class MeetupsTopBarComponent {
   private readonly meetupsService = inject(MeetupsService);
 
-  public readonly showStatusFilter = input<boolean>(true);
+  public readonly isPast = input<boolean>(false);
+  public readonly registeredOnly = input<boolean | null>(false);
   public readonly searchQuery = input<string>('');
   public readonly community = input<string | null>(null);
   public readonly role = input<string | null>(null);
-  public readonly status = input<MeetupStatusFilter | null>(null);
-  public readonly statusOptions = input<FilterOption<MeetupStatusFilter | null>[]>(MEETUP_STATUS_OPTIONS);
+
   public readonly searchQueryChange = output<string>();
 
   public readonly searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
     community: new FormControl<string | null>(null),
     role: new FormControl<string | null>(null),
-    status: new FormControl<MeetupStatusFilter | null>(null),
   });
 
   public readonly communityChange = outputFromObservable<string | null>(this.searchForm.get('community')!.valueChanges);
   public readonly roleChange = outputFromObservable<string | null>(this.searchForm.get('role')!.valueChanges);
-  public readonly statusChange = outputFromObservable<MeetupStatusFilter | null>(this.searchForm.get('status')!.valueChanges);
 
   protected readonly searchValue = signal('');
   private readonly filterOptions: Signal<MeetupFilterOptionsResponse> = this.initFilterOptions();
@@ -73,15 +71,6 @@ export class MeetupsTopBarComponent {
 
     this.syncInputToControl(this.community, 'community');
     this.syncInputToControl(this.role, 'role');
-    this.syncInputToControl(this.status, 'status');
-
-    toObservable(this.showStatusFilter)
-      .pipe(takeUntilDestroyed())
-      .subscribe((show) => {
-        if (!show) {
-          this.searchForm.get('status')?.setValue(null);
-        }
-      });
   }
 
   public clearSearch(): void {
@@ -89,12 +78,20 @@ export class MeetupsTopBarComponent {
   }
 
   private initFilterOptions(): Signal<MeetupFilterOptionsResponse> {
-    return toSignal(this.meetupsService.getMeetupFilters().pipe(catchError(() => of(EMPTY_MEETUP_FILTER_OPTIONS))), {
-      initialValue: EMPTY_MEETUP_FILTER_OPTIONS,
-    });
+    const scope = computed(() => ({ isPast: this.isPast(), registeredOnly: this.registeredOnly() }));
+    return toSignal(
+      toObservable(scope).pipe(
+        distinctUntilChanged((a, b) => a.isPast === b.isPast && a.registeredOnly === b.registeredOnly),
+        filter(({ registeredOnly }) => registeredOnly !== null),
+        switchMap(({ isPast, registeredOnly }) =>
+          this.meetupsService.getMeetupFilters({ isPast, registeredOnly: !isPast && !!registeredOnly }).pipe(catchError(() => of(EMPTY_MEETUP_FILTER_OPTIONS)))
+        )
+      ),
+      { initialValue: EMPTY_MEETUP_FILTER_OPTIONS }
+    );
   }
 
-  private syncInputToControl<T extends string>(source: Signal<T | null>, controlName: 'community' | 'role' | 'status'): void {
+  private syncInputToControl<T extends string>(source: Signal<T | null>, controlName: 'community' | 'role'): void {
     const control = this.searchForm.get(controlName);
     toObservable(source)
       .pipe(takeUntilDestroyed())

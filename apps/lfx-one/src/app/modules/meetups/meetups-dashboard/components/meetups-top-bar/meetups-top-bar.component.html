@@ -49,19 +49,4 @@
       styleClass="w-full"
       data-testid="meetups-role-filter"></lfx-select>
   </div>
-
-  <!-- Status Filter Dropdown -->
-  @if (showStatusFilter()) {
-    <div class="w-full sm:w-40">
-      <lfx-select
-        [form]="searchForm"
-        control="status"
-        size="small"
-        [options]="statusOptions()"
-        placeholder="Status"
-        [showClear]="true"
-        styleClass="w-full"
-        data-testid="meetups-status-filter"></lfx-select>
-    </div>
-  }
 </div>
