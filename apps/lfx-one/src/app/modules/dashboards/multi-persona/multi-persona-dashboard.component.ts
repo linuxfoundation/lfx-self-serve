@@ -20,16 +20,16 @@ import {
   ProjectContext,
   Meeting,
 } from '@lfx-one/shared/interfaces';
-import {
-  DETECTION_SOURCE_LABEL_FALLBACK,
-  DETECTION_SOURCE_LABELS,
-  FORMATION_ENABLED_FLAG,
-  PERSONA_PRIORITY,
-  ROLE_PRIORITY,
-  VOTING_STATUS_PRIORITY,
-} from '@lfx-one/shared/constants';
+import { FORMATION_ENABLED_FLAG, PERSONA_PRIORITY, ROLE_PRIORITY, VOTING_STATUS_PRIORITY } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { formatFormationAnnouncementLabel, getActiveOccurrences, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import {
+  buildRoleAriaLabel,
+  buildRoleTooltip,
+  formatFormationAnnouncementLabel,
+  getActiveOccurrences,
+  getDetectionLabels,
+  getSurveyDisplayStatus,
+} from '@lfx-one/shared/utils';
 
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -228,6 +228,8 @@ export class MultiPersonaDashboardComponent {
       const rows = projects.map((project) => {
         const isFoundation = project.isFoundation;
         const perFoundation = isFoundation ? analytics?.perFoundation[project.projectSlug] : null;
+        const role = this.getRowRole(project);
+        const detectionLabels = getDetectionLabels(project.detections);
 
         return {
           projectUid: project.projectUid,
@@ -236,8 +238,9 @@ export class MultiPersonaDashboardComponent {
           logoUrl: project.logoUrl,
           type: isFoundation ? ('foundation' as const) : ('project' as const),
           subtitle: this.getRowSubtitle(project, perFoundation),
-          role: this.getRowRole(project),
-          roleTooltip: this.getRoleTooltip(project),
+          role,
+          roleTooltip: buildRoleTooltip(detectionLabels),
+          roleAriaLabel: buildRoleAriaLabel(role, detectionLabels),
           healthStatus: isFoundation ? this.getHealthStatus(perFoundation?.healthScores) : null,
           healthDetail: isFoundation ? this.getHealthDetail(perFoundation?.healthScores) : null,
           votingStatus: this.getHighestVotingStatus(project),
@@ -364,14 +367,6 @@ export class MultiPersonaDashboardComponent {
     }
     if (roles.length === 0) return 'Group Member';
     return this.pickByPriority(roles, ROLE_PRIORITY) ?? roles[0];
-  }
-
-  private getRoleTooltip(project: EnrichedPersonaProject): string {
-    const labels = Array.from(new Set(project.detections.map((d) => DETECTION_SOURCE_LABELS[d.source] ?? DETECTION_SOURCE_LABEL_FALLBACK)));
-
-    if (labels.length === 0) return 'No specific activity detected';
-    if (labels.length === 1) return labels[0];
-    return `Detected activity:<ul class="flex list-disc flex-col gap-1 pl-4 text-left">${labels.map((label) => `<li>${label}</li>`).join('')}</ul>`;
   }
 
   private normalizeRole(role: string): string {

@@ -17,6 +17,8 @@ export interface PersonaProjectRow {
   role: string;
   /** Human-readable explanation of the detected activity behind `role`: plain text for 0-1 detections, an HTML `<ul>` list (rendered with `[escape]="false"`) for 2+ */
   roleTooltip: string;
+  /** Plain-text equivalent of `roleTooltip` for `aria-label` — screen readers can't read the tooltip's HTML content */
+  roleAriaLabel: string;
   /** Health status for foundations (null for projects) */
   healthStatus: 'on-track' | 'watch' | 'needs-attention' | null;
   /** Health detail text for foundations (null for projects) */

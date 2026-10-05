@@ -20,11 +20,11 @@ export const DETECTION_SOURCE_MAP: Readonly<Partial<Record<string, PersonaType>>
 export const DETECTION_SOURCE_LABELS: Readonly<Record<string, string>> = {
   board_member: 'Board member',
   executive_director: 'Executive director',
-  cdp_roles: 'GitHub contributor',
+  cdp_roles: 'Project affiliation',
   writer: 'Project write access',
   committee_member: 'Committee member',
   mailing_list: 'Mailing list subscriber',
-  meeting_attendance: 'Meeting attendee',
+  meeting_attendance: 'Meeting invitee or attendee',
   auditor: 'Project auditor',
 } as const;
 
