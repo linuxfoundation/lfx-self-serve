@@ -23,9 +23,9 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * One program a mentor has asked to join, as listed on the Become a Mentor form. Carries
- * the same `MentorshipMentorStatus` the admin Mentors tab shows for that person, since it
- * is the same fact viewed from the mentor's side.
+ * One program a mentor has asked to join, as listed on the Become a Mentor form, with the
+ * request's `MentorshipMentorStatus` as the mentor sees it. The admin Mentors tab shows the
+ * same membership with the wider `MentorshipAdminMentorStatus`.
  */
 export interface MentorshipMentorProgramRequest {
   id: string;

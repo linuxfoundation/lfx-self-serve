@@ -141,6 +141,8 @@ export class EventsService {
           WHERE NOT (${this.isPastEventSql()})
             ${eventIdFilter}
             ${affiliatedFilter}
+            -- Hide co-located events from discovery rows only; registered_events keeps them.
+            AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
         ),
         registered_events AS (
@@ -336,6 +338,10 @@ export class EventsService {
     try {
       result = await this.snowflakeService.execute<MyEventRow>(sql, binds);
     } catch (error) {
+      // Registered-only counts must distinguish an unavailable query from a confirmed zero.
+      if (isPast === false && registeredOnly) {
+        throw error;
+      }
       logger.warning(req, 'get_my_events', 'Snowflake query failed, returning empty events', {
         error: error instanceof Error ? error.message : String(error),
         page_size: normalizedPageSize,
@@ -451,7 +457,7 @@ export class EventsService {
   }
 
   public async getEventOrganizations(req: Request, userEmail: string, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
-    const { projectName, isPast, affiliatedProjectSlugs } = options;
+    const { projectName, isPast, affiliatedProjectSlugs, registeredOnly } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {
       has_project_name: !!projectName,
@@ -476,12 +482,13 @@ export class EventsService {
       binds.push(userEmail);
       if (projectName) binds.push(projectName);
     } else {
-      // Upcoming tab: return foundations from events the user has registered for OR that belong
-      // to affiliated projects. When affiliatedProjectSlugs is empty, show only registered foundations.
+      // Registered co-located events remain eligible; only affiliated discovery excludes them.
       const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
-      const slugs = affiliatedProjectSlugs ?? [];
+      const slugs = registeredOnly ? [] : (affiliatedProjectSlugs ?? []);
       const hasAffiliatedSlugs = slugs.length > 0;
-      const affiliatedFilter = hasAffiliatedSlugs ? `OR LOWER(PROJECT_SLUG) IN (${slugs.map(() => '?').join(', ')})` : '';
+      const affiliatedFilter = hasAffiliatedSlugs
+        ? `OR (LOWER(PROJECT_SLUG) IN (${slugs.map(() => '?').join(', ')}) AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE)`
+        : '';
 
       sql = `
         SELECT DISTINCT PROJECT_NAME

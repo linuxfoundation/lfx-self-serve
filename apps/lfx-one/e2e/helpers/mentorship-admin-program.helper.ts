@@ -9,10 +9,14 @@
 
 import {
   MentorshipAdminMenteesResponse,
+  MentorshipAdminMentorsResponse,
   MentorshipAdminProgramPage,
+  MentorshipAdminTermsResponse,
   MentorshipApplicantTask,
   MentorshipMenteeStatus,
   MentorshipProgramApplicant,
+  MentorshipProgramMentor,
+  MentorshipProgramTermRow,
 } from '@lfx-one/shared/interfaces';
 import { Page, Route } from '@playwright/test';
 
@@ -25,6 +29,8 @@ export const ADMIN_MENTEES_PAGE_SIZE = 10;
 
 const PROGRAM_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}`;
 const MENTEES_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentees*`;
+const MENTORS_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentors*`;
+const TERMS_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/terms*`;
 const TASKS_ROUTE = '**/api/mentorship/admin/applications/*/tasks';
 
 /** The id of the n-th synthetic application, from 1. */
@@ -79,6 +85,69 @@ const ADMIN_APPLICATIONS: MentorshipProgramApplicant[] = Array.from({ length: AD
   };
 });
 
+/** The closed-term applications the Past Mentees tab reads (`type=past`). */
+export const ADMIN_PAST_APPLICATIONS: MentorshipProgramApplicant[] = [
+  { name: 'Test Graduate One', status: 'graduated' },
+  { name: 'Test Declined Two', status: 'declined' },
+  { name: 'Test Withdrawn Three', status: 'withdrawn' },
+].map(({ name, status }, index) => ({
+  id: adminApplicationId(100 + index),
+  name,
+  email: `test.past.${index + 1}@example.com`,
+  status: status as MentorshipMenteeStatus,
+  termId: '67777777-7777-4777-8777-777777777777',
+  termName: 'Test Term Closed',
+  createdOn: '2026-01-10',
+  updatedOn: '2026-05-02',
+}));
+
+/** One mentor per upstream status worth telling apart; ids are `adminMentorId(n)`. */
+export const adminMentorId = (n: number): string => `8${String(n).padStart(7, '0')}-8888-4888-8888-888888888888`;
+
+export const ADMIN_MENTORS: MentorshipProgramMentor[] = [
+  { name: 'Test Mentor Active', status: 'active', profileCreated: true },
+  { name: 'Test Mentor Invited', status: 'invited', profileCreated: false },
+  { name: 'Test Mentor Declined', status: 'declined', profileCreated: false },
+].map(({ name, status, profileCreated }, index) => ({
+  id: adminMentorId(index + 1),
+  name,
+  email: `test.mentor.${index + 1}@example.com`,
+  status: status as MentorshipProgramMentor['status'],
+  invitedOn: '2026-03-04',
+  profileCreated,
+}));
+
+export const adminTermId = (n: number): string => `9${String(n).padStart(7, '0')}-9999-4999-8999-999999999999`;
+
+export const ADMIN_TERMS: MentorshipProgramTermRow[] = [
+  {
+    id: adminTermId(1),
+    name: ADMIN_OPEN_TERM_NAME,
+    status: 'open',
+    pending: 3,
+    declined: 1,
+    accepted: 2,
+    graduated: 0,
+    startDate: '2099-09-01',
+    endDate: '2099-12-01',
+    applicationStartDate: '2099-06-01',
+    applicationEndDate: '2099-08-01',
+  },
+  {
+    id: adminTermId(2),
+    name: 'Test Term Closed',
+    status: 'closed',
+    pending: 0,
+    declined: 2,
+    accepted: 0,
+    graduated: 5,
+    startDate: '2025-03-01',
+    endDate: '2025-06-01',
+    applicationStartDate: '2025-01-01',
+    applicationEndDate: '2025-02-01',
+  },
+];
+
 export interface AdminProgramRequests {
   /** Query strings of the mentees reads answered so far. */
   mentees: URLSearchParams[];
@@ -109,12 +178,34 @@ export async function stubAdminMentees(page: Page, requests: AdminProgramRequest
 
     const status = params.get('status');
     const search = params.get('search')?.toLowerCase();
-    const matching = ADMIN_APPLICATIONS.filter(
-      (application) => (!status || application.status === status) && (!search || application.name.toLowerCase().includes(search))
-    );
+    const source = params.get('type') === 'past' ? ADMIN_PAST_APPLICATIONS : ADMIN_APPLICATIONS;
+    const matching = source.filter((application) => (!status || application.status === status) && (!search || application.name.toLowerCase().includes(search)));
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? ADMIN_MENTEES_PAGE_SIZE);
     return fulfillJson(route, { data: matching.slice(offset, offset + limit), total: matching.length } satisfies MentorshipAdminMenteesResponse);
+  });
+}
+
+/** Answers the mentors read from the synthetic mentors, honoring `status`; `failWith` answers every read with that error status. */
+export async function stubAdminMentors(page: Page, requests: URLSearchParams[], failWith?: number): Promise<void> {
+  await page.route(MENTORS_ROUTE, (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    requests.push(params);
+    if (failWith) return fulfillJson(route, { error: 'stubbed' }, failWith);
+
+    const status = params.get('status');
+    const search = params.get('search')?.toLowerCase();
+    const matching = ADMIN_MENTORS.filter((mentor) => (!status || mentor.status === status) && (!search || mentor.name.toLowerCase().includes(search)));
+    return fulfillJson(route, { data: matching, total: matching.length } satisfies MentorshipAdminMentorsResponse);
+  });
+}
+
+/** Answers the terms read with the synthetic terms; `failWith` answers every read with that error status. */
+export async function stubAdminTerms(page: Page, requests: URLSearchParams[], failWith?: number): Promise<void> {
+  await page.route(TERMS_ROUTE, (route) => {
+    requests.push(new URL(route.request().url()).searchParams);
+    if (failWith) return fulfillJson(route, { error: 'stubbed' }, failWith);
+    return fulfillJson(route, { data: ADMIN_TERMS, total: ADMIN_TERMS.length } satisfies MentorshipAdminTermsResponse);
   });
 }
 

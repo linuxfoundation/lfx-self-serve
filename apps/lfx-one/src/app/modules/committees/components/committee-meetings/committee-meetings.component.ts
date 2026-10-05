@@ -68,6 +68,12 @@ export class CommitteeMeetingsComponent {
   // Inputs
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
+  /**
+   * True when the viewer is a visitor (not a committee member). Visitors see the Meetings tab
+   * only when the group's calendar is public — votes and surveys are member-only and must not
+   * be fetched or rendered in calendar view for this audience.
+   */
+  public isVisitor = input<boolean>(false);
   public initialTimeFilter = input<TimeFilter>('upcoming');
   // Raw meetings list, fetched once by committee-view and shared with the Overview/About tabs —
   // avoids this tab firing its own duplicate /api/meetings request.
@@ -281,16 +287,17 @@ export class CommitteeMeetingsComponent {
   }
 
   private initCalendarEvents(): Signal<EventInput[]> {
-    // Lazy-load votes, surveys, and past meetings the first time calendar view is activated
+    // Lazy-load votes, surveys, and past meetings the first time calendar view is activated.
+    // Visitors (public-calendar audience) only receive meetings — votes and surveys are member-only.
     const externalData = toSignal(
-      toObservable(computed(() => ({ mode: this.viewMode(), uid: this.committee()?.uid }))).pipe(
+      toObservable(computed(() => ({ mode: this.viewMode(), uid: this.committee()?.uid, visitor: this.isVisitor() }))).pipe(
         filter(({ mode, uid }) => mode === 'calendar' && !!uid),
-        distinctUntilChanged((a, b) => a.uid === b.uid),
+        distinctUntilChanged((a, b) => a.uid === b.uid && a.visitor === b.visitor),
         tap(() => this.calendarLoading.set(true)),
-        switchMap(({ uid: committeeUid }) =>
+        switchMap(({ uid: committeeUid, visitor }) =>
           forkJoin({
-            votes: this.voteService.getVotesByCommittee(committeeUid!).pipe(catchError(() => of([] as Vote[]))),
-            surveys: this.surveyService.getSurveysByCommittee(committeeUid!).pipe(catchError(() => of([] as Survey[]))),
+            votes: visitor ? of([] as Vote[]) : this.voteService.getVotesByCommittee(committeeUid!).pipe(catchError(() => of([] as Vote[]))),
+            surveys: visitor ? of([] as Survey[]) : this.surveyService.getSurveysByCommittee(committeeUid!).pipe(catchError(() => of([] as Survey[]))),
             pastMeetings: this.meetingService
               .getPastMeetingsByCommittee(committeeUid!, PAST_MEETING_SORT.NAME_DESC)
               .pipe(catchError(() => of([] as PastMeeting[]))),

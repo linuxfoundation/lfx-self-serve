@@ -2380,6 +2380,75 @@ export interface CampaignStatusUpdateResult {
   serviceStatus?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Campaign Budget Change
+// ---------------------------------------------------------------------------
+
+/**
+ * The pacing a budget amount is expressed in. Mirrors the `budget_type` enum of campaign-service's
+ * `update-campaign-budget` (`design/brief.go`).
+ *
+ * It must name the pacing the campaign ALREADY has upstream: that endpoint changes the amount,
+ * never the pacing, and refuses a mismatch with 409 rather than translating it.
+ */
+export type CampaignBudgetType = 'daily' | 'lifetime';
+
+/**
+ * Body of `PATCH /api/campaigns/:campaignId/budget`.
+ *
+ * Every field is required, and there is nothing safe to default. campaign-service addresses the
+ * campaign by `(project, brief, campaign)` and requires `If-Match`. A defaulted `budgetType` would
+ * turn an omission into a 409 about a pacing the caller never named.
+ */
+export interface CampaignBudgetUpdateRequest {
+  /** Parent brief of the campaign being changed. */
+  briefId: string;
+  /** The campaign row's current ETag, sent as `If-Match`. A missing one is a 428 upstream and a stale one a 412. */
+  etag: string;
+  /**
+   * The new amount, in the AD ACCOUNT's own currency (not USD). Sent upstream exactly as given:
+   * this app never converts or rounds it. The platform's own floor (LinkedIn's minimums, Meta's
+   * minor unit) is enforced upstream, and a 400 from there names it.
+   */
+  budget: number;
+  budgetType: CampaignBudgetType;
+}
+
+/**
+ * Everything needed to address and authorize one budget change, as the server client takes it.
+ * Every field is required. A wrong one is a 404, 428 or 412 upstream rather than a type error.
+ */
+export interface CampaignBudgetUpdateParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+export interface CampaignBudgetUpdateResult {
+  /** The ROW's platform as campaign-service reports it. The request does not name one. */
+  platform: string;
+  campaignId: string;
+  /**
+   * The amount requested, which the platform accepted; the platform may hold it rounded to its
+   * smallest settable unit (LinkedIn cents, Meta the account currency's minor unit). A 200 is only
+   * returned after the platform accepted the write, but campaign-service persists the requested
+   * amount, not a readback of what the platform holds, and this is an echo of the request.
+   */
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /** The row's NEW ETag. The caller's own validator went stale when this write committed. */
+  etag?: string;
+  /**
+   * The row's status, which a budget change leaves exactly as found. This is how a
+   * `created_degraded` campaign keeps its reconciliation marker while its spend is cut.
+   */
+  serviceStatus: string;
+}
+
 /**
  * The reporting windows campaign-service accepts. Mirrors `metricsWindowEnum` in
  * `design/brief.go` — the seven values of `model.MetricsWindow`.

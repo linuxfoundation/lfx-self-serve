@@ -150,20 +150,24 @@ export class OrgEasyclaDetailComponent {
    *
    * EasyCLA writes the signature when DocuSign calls it back, and that callback races the
    * signatory's return trip — so a list that arrives without the row is "not yet", not "no". The
-   * budget bounds how long the page is willing to say that: three further attempts, two seconds
-   * apart.
+   * budget bounds how long the page is willing to say that: twelve further attempts, two seconds
+   * apart (about 24 seconds when each list returns quickly).
    *
    * `perAttemptTimeoutMs` bounds the poll in wall-clock time, not only in count. Without it a
    * stalled BFF can leave each attempt waiting the gateway timeout (`API_GW_TIMEOUT_MS`, 30s), and
-   * `concatMap` runs the attempts in series — so three stalled attempts would take about 90s
-   * against a doc comment that says "a few seconds". A timed-out attempt is treated the same as a
-   * failed one: another try if the budget still has one, otherwise the same exhausted-wait
-   * settlement. Sized well below the gateway timeout so one network stall cannot swallow the whole
-   * budget.
+   * `concatMap` runs the attempts in series — twelve of those would take about six minutes. The
+   * cap keeps each attempt to 3s. A timed-out attempt is treated the same as a failed one: another
+   * try if the budget still has one, otherwise the same exhausted-wait settlement. Sized well below
+   * the gateway timeout so one network stall cannot swallow the whole budget.
+   *
+   * `waitDeadlineMs` bounds the whole wait. The interval keeps ticking while `concatMap` is busy,
+   * so slow attempts queue behind each other and twelve near-timeout attempts would run to about
+   * 38s. The deadline ends the wait at 30s with whatever the last answer was.
    */
   private static readonly signedRowRetryDelayMs = 2000;
-  private static readonly signedRowRetries = 3;
+  private static readonly signedRowRetries = 12;
   private static readonly signedRowPerAttemptTimeoutMs = 3000;
+  private static readonly signedRowWaitDeadlineMs = 30_000;
 
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -247,6 +251,19 @@ export class OrgEasyclaDetailComponent {
 
   /** The copy shown under the skeleton while the just-signed agreement is still being confirmed. */
   protected readonly confirmingSignatureCopy = CCLA_SIGN_COPY.returnWait;
+
+  /**
+   * The flagged wait ended with a list in hand and no row for this group.
+   *
+   * Survives `settleReturn` stripping `signed=1`, so this visit does not fall through to the
+   * hasn't-signed empty state. A later load of the stripped address does not set it, and moving to
+   * another organization or agreement clears it — the component is reused across both.
+   */
+  protected readonly signatureStillUnlisted = signal(false);
+
+  protected readonly returnPendingTitle = CCLA_SIGN_COPY.returnPendingTitle;
+  protected readonly returnPendingSubtitle = CCLA_SIGN_COPY.returnPendingSubtitle;
+  protected readonly returnPendingRefresh = CCLA_SIGN_COPY.returnPendingRefresh;
 
   /** One hand-off at a time. Also what disables Start while a flow is open. */
   protected readonly signingOpen = signal(false);
@@ -661,6 +678,7 @@ export class OrgEasyclaDetailComponent {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
       this.designeeNotice.set(null);
+      this.signatureStillUnlisted.set(false);
       if (this.pendingDesigneeWrite) {
         this.pendingDesigneeWrite = null;
         this.signingOpen.set(false);
@@ -766,6 +784,12 @@ export class OrgEasyclaDetailComponent {
     // sending it to the list would contradict that. The organization-mismatch redirect above is a
     // different case and stays: there the page *has* a selection, made for a company the viewer has
     // since left, and re-rendering it under the new one would be wrong rather than merely empty.
+  }
+
+  /** Reloads the address `settleReturn` already stripped, so a copied link cannot reopen the wait. */
+  protected reloadPage(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    globalThis.location.reload();
   }
 
   protected selectTab(tab: OrgClaDetailTab): void {
@@ -1776,7 +1800,23 @@ export class OrgEasyclaDetailComponent {
       skipWhile((current) => current !== uid),
       filter((current) => current !== uid)
     );
-    movedOff$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
+
+    // The address picks out which agreement this return is about: `:claGroupId` names the group,
+    // `sig` the row within it. The component is reused when either changes, so a wait left running
+    // can complete after the page has moved to another agreement and set the still-confirming
+    // state on *that* visit — one nobody just signed. Watched here, independent of the retries,
+    // so the trip is torn down and settled regardless of which half of the wait is in flight.
+    const startClaGroupId = this.claGroupId();
+    const startSignatureId = this.signatureId();
+    const agreementChanged$ = combineLatest([
+      toObservable(this.claGroupId, { injector: this.injector }),
+      toObservable(this.signatureId, { injector: this.injector }),
+    ]).pipe(
+      skip(1),
+      filter(([group, sig]) => group !== startClaGroupId || sig !== startSignatureId)
+    );
+    const tripEnded$ = merge(movedOff$, agreementChanged$);
+    tripEnded$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
 
     const settled$ = toObservable(
       computed(() => ({
@@ -1789,7 +1829,7 @@ export class OrgEasyclaDetailComponent {
       // thing right up until they are not, and the moment they diverge is the moment this matters.
     ).pipe(filter(({ data, fetching, failed }) => failed || (data?.orgUid === uid && !fetching)));
 
-    settled$.pipe(takeUntil(movedOff$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+    settled$.pipe(takeUntil(tripEnded$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       // Nothing may be decided on a list that arrives after the trip is already over — acting on it
       // would flash the confirming line and spend a retry budget on a company nobody asked about.
       // The uid binding above and `movedOff$` are what close that window; this is the cheap check
@@ -1802,7 +1842,7 @@ export class OrgEasyclaDetailComponent {
       }
 
       this.confirmingSignature.set(true);
-      this.retryForSignedRow(uid, movedOff$);
+      this.retryForSignedRow(uid, startClaGroupId, startSignatureId, tripEnded$);
     });
   }
 
@@ -1818,11 +1858,12 @@ export class OrgEasyclaDetailComponent {
    * company they deliberately left. Giving up still spends the trip, so the address is cleaned up
    * rather than left to reopen the wait on reload.
    *
-   * `uid` and `movedOff$` are both handed down rather than rebuilt here: reading the selection
-   * again would ask the same question at a later moment and can get a different answer, which is
-   * the whole family of bug this keying exists to end.
+   * `uid`, the captured agreement ids, and `tripEnded$` are all handed down rather than rebuilt
+   * here: reading the selection or the address again would ask the same question at a later
+   * moment and can get a different answer, which is the whole family of bug this keying exists to
+   * end.
    */
-  private retryForSignedRow(uid: string, movedOff$: Observable<string | null | undefined>): void {
+  private retryForSignedRow(uid: string, startClaGroupId: string, startSignatureId: string, tripEnded$: Observable<unknown>): void {
     timer(OrgEasyclaDetailComponent.signedRowRetryDelayMs, OrgEasyclaDetailComponent.signedRowRetryDelayMs)
       .pipe(
         take(OrgEasyclaDetailComponent.signedRowRetries),
@@ -1849,11 +1890,23 @@ export class OrgEasyclaDetailComponent {
           this.fetchError.set(false);
         }),
         map(() => this.listedGroupForAddress()),
-        takeUntil(movedOff$),
+        takeUntil(tripEnded$),
+        takeUntil(timer(OrgEasyclaDetailComponent.signedRowWaitDeadlineMs)),
         first((found) => !!found, undefined),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.settleReturn());
+      .subscribe((found) => {
+        // A list that came back without the row is "still landing", not "hasn't signed". A hard
+        // failure leaves the load error in place, and leaving the organization — or opening
+        // another agreement in this component — must not stamp *that* visit with a confirmation
+        // state for one nobody just signed. The agreement check is the fence; `tripEnded$`
+        // already cancels in those cases, but a late emission that races the cancellation would
+        // still carry the stale ids without this guard.
+        const stillHere =
+          this.accountContext.selectedAccount()?.uid === uid && this.claGroupId() === startClaGroupId && this.signatureId() === startSignatureId;
+        if (!found && stillHere && !this.fetchError()) this.signatureStillUnlisted.set(true);
+        this.settleReturn();
+      });
   }
 
   /**
@@ -1866,10 +1919,12 @@ export class OrgEasyclaDetailComponent {
    * `replaceUrl` because the address being left behind is the return address, and a history entry
    * for it is one Back re-enters — spending the wait again and stripping the parameters all over.
    *
-   * Once the flag is gone the page settles through its ordinary discriminator: the row if the wait
-   * found one, otherwise `cannotPreview` on this group's own address. It stays here rather than
-   * redirecting to the list, because this address is the one the agreement will have once EasyCLA
-   * catches up, and a reload is then all it takes.
+   * Once the flag is gone the page settles on this group's own address. A wait that ended with a
+   * list and no row shows the still-confirming empty state for the rest of this visit. Every other
+   * ending uses the ordinary discriminator, including `cannotPreview` for an unflagged address. It
+   * stays here rather than redirecting to the list, because this address is the one the agreement
+   * will have once EasyCLA catches up, and a reload is then all it takes. A reload of the stripped
+   * address does not remember the trip: if the row is still absent, that load is `cannotPreview`.
    */
   private settleReturn(): void {
     // Once only. A switch away from the named organization and the wait's own answer can both land

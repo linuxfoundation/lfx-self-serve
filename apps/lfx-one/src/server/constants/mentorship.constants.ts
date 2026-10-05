@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
   MentorshipMentorProgramTermStatus,
@@ -96,6 +97,9 @@ export const MENTORSHIP_ADMIN_APPLICATION_STATUS_MAP: Readonly<Record<Mentorship
   graduated: 'graduated',
 };
 
+/** Upstream application statuses an admin may withdraw on the mentee's behalf; upstream's withdraw-for-mentee checks none. */
+export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'hold', 'accepted'];
+
 /**
  * How a program's own status reads on its page when the program is not published. A published program reads
  * `open` or `completed` from its terms. The header route has no `admin_status`, so this mirrors upstream's grouping.
@@ -116,6 +120,20 @@ export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string
   completed: 'completed',
   rejected: 'rejected',
   hidden: 'hidden',
+};
+
+/**
+ * How an upstream program member status reads on the admin Mentors tab. Upstream keeps `active` for an accepted
+ * mentor; `approved` is the older name for it and reads the same.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_STATUS_MAP: Readonly<Record<string, MentorshipAdminMentorStatus>> = {
+  requested: 'requested',
+  pending: 'pending',
+  invited: 'invited',
+  active: 'active',
+  approved: 'active',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
 };
 
 /** The order of the groups on mentor My Programs. */

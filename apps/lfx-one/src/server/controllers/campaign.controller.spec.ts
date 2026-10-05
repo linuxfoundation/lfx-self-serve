@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_BULK_KEYWORD_ACTIONS, MAX_HUBSPOT_BODY_HTML_LENGTH, MAX_SPONSORS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
-import { ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -22,6 +22,7 @@ const {
   legacyGetJobStatus,
   searchHubSpotEmails,
   toggleCampaignStatus,
+  updateCampaignBudget,
   listBriefCampaigns,
   getBriefMetrics,
   svcListAudiences,
@@ -50,6 +51,7 @@ const {
   legacyGetJobStatus: vi.fn(),
   searchHubSpotEmails: vi.fn(),
   toggleCampaignStatus: vi.fn(),
+  updateCampaignBudget: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
   svcListAudiences: vi.fn(),
@@ -85,6 +87,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getJobStatus = svcGetJobStatus;
       public searchHubSpotEmails = searchHubSpotEmails;
       public toggleCampaignStatus = toggleCampaignStatus;
+      public updateCampaignBudget = updateCampaignBudget;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
       public listAudiences = svcListAudiences;
@@ -2782,6 +2785,159 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(toggleCampaignStatus).not.toHaveBeenCalled();
     expect(legacyUpdateStatus).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The client spec pins what goes on the wire. What only this layer decides is which requests are
+ * refused before a round trip, and that an upstream refusal reaches `next` as the same error so
+ * `apiErrorHandler` renders its status and message unchanged.
+ */
+describe('CampaignController.updateCampaignBudget', () => {
+  const UUID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const validBody = { briefId: 'b-1', etag: '"1"', budget: 150.25, budgetType: 'daily' };
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function budgetReq(campaignId: string, body: unknown, query: Record<string, unknown> = { project: 'tlf' }): Request {
+    return { params: { campaignId }, body, query, path: `/api/campaigns/${campaignId}/budget` } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'google_ads', status: 'active', version: 2, etag: '"2"' });
+  });
+
+  it('sends the change to campaign-service and reports the row it answered with', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), {
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: UUID,
+      budget: 150.25,
+      budgetType: 'daily',
+      etag: '"1"',
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      platform: 'google_ads',
+      campaignId: UUID,
+      budget: 150.25,
+      budgetType: 'daily',
+      etag: '"2"',
+      serviceStatus: 'active',
+    });
+  });
+
+  // A budget change leaves the row's status as found, so a created_degraded campaign keeps its
+  // reconciliation marker. Reporting anything else would hide that.
+  it('reports the service status of a degraded campaign unchanged', async () => {
+    updateCampaignBudget.mockResolvedValue({ id: UUID, platform: 'meta', status: 'created_degraded', version: 5, etag: '"5"' });
+
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budgetType: 'lifetime' }), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ serviceStatus: 'created_degraded', budgetType: 'lifetime', etag: '"5"' }));
+  });
+
+  it.each([
+    ['a numeric string', '150'],
+    ['zero', 0],
+    ['a negative amount', -5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a missing amount', undefined],
+  ])('refuses %s as the budget', async (_label, budget) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budget }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([['DAILY'], ['monthly'], [undefined]])('refuses budgetType %s', async (budgetType) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, budgetType }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it.each([
+    ['briefId', { ...validBody, briefId: '   ' }],
+    ['etag', { ...validBody, etag: undefined }],
+  ])('refuses a request with no %s', async (_field, body) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, body), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // fetch rejects such a header before any network I/O, and that rejection would otherwise be
+  // reported as an UNCONFIRMED write although nothing left the BFF.
+  it.each([
+    ['an embedded newline', '"1"\r\nX-Injected: 1'],
+    ['a character above U+00FF', '"1☃"'],
+    ['a non-ASCII latin-1 character', '"café"'],
+    ['an internal space', '"1" "2"'],
+  ])('refuses an etag with %s, which cannot be sent as If-Match', async (_label, etag) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+  });
+
+  it.each([['"1"'], ['W/"1"'], ['abc-123']])('forwards the valid etag %s as given', async (etag) => {
+    await controller.updateCampaignBudget(budgetReq(UUID, { ...validBody, etag }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(updateCampaignBudget).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ etag }));
+  });
+
+  it('refuses a request with no project', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody, {}), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // Only campaign-service can change a budget, and it keys campaigns by UUID. A platform's numeric
+  // id has no row to address.
+  it.each([['123456'], ['not-an-id']])('refuses campaign id %s, which is not a campaign-service UUID', async (campaignId) => {
+    await controller.updateCampaignBudget(budgetReq(campaignId, validBody), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a body that is not a JSON object', async () => {
+    await controller.updateCampaignBudget(budgetReq(UUID, [validBody]), res, next);
+
+    expect(updateCampaignBudget).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  // The UI needs upstream's own status and words: the platform's minimum on a 400, the refusal on
+  // a 409, the precondition on a 412/428, and "verify upstream" on an unconfirmed 503.
+  it.each([
+    [400, 'LinkedIn requires a daily budget of at least 10.00'],
+    [409, "budget_type 'lifetime' does not match the campaign's current daily pacing"],
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+    [503, 'the budget change is unconfirmed: it may have been applied. Verify the campaign in Google Ads before retrying'],
+  ])('passes an upstream %s to the error handler unchanged', async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    updateCampaignBudget.mockRejectedValue(upstream);
+
+    await controller.updateCampaignBudget(budgetReq(UUID, validBody), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(upstream);
+    expect(logger.success).not.toHaveBeenCalled();
   });
 });
 

@@ -18,6 +18,7 @@ import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
+import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -27,7 +28,17 @@ import { filter, map, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-lens-switcher',
-  imports: [NgClass, RouterLink, TooltipModule, PopoverModule, AvatarComponent, ButtonComponent, ChangelogDrawerComponent, OpenIntercomDirective],
+  imports: [
+    NgClass,
+    RouterLink,
+    TooltipModule,
+    PopoverModule,
+    AvatarComponent,
+    ButtonComponent,
+    ChangelogDrawerComponent,
+    LogoutLinkDirective,
+    OpenIntercomDirective,
+  ],
   providers: [DialogService],
   templateUrl: './lens-switcher.component.html',
   styleUrl: './lens-switcher.component.scss',

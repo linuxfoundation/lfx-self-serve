@@ -53,6 +53,8 @@ router.get('/audience', (req, res, next) => campaignController.getAudience(req, 
 router.get('/audiences', (req, res, next) => campaignController.listAudiences(req, res, next));
 router.post('/keywords/actions', (req, res, next) => campaignController.executeKeywordActions(req, res, next));
 router.patch('/:campaignId/status', (req, res, next) => campaignController.updateCampaignStatus(req, res, next));
+// campaign-service only: the id must be a campaign-service UUID. Amount in the ad account's own currency.
+router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
 
 // --- Audience Builder ------------------------------------------------------
 //

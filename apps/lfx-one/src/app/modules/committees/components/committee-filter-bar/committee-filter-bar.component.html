@@ -54,4 +54,19 @@
       styleClass="w-full"
       data-testid="committee-voting-status-filter"></lfx-select>
   </div>
+
+  <!-- Join Mode Filter Dropdown (project/foundation lens only) -->
+  @if (showJoinModeFilter()) {
+    <div class="w-full sm:w-48">
+      <lfx-select
+        [form]="searchForm()"
+        control="joinModeFilter"
+        size="small"
+        [options]="joinModeOptions()"
+        placeholder="All Join Modes"
+        [showClear]="true"
+        styleClass="w-full"
+        data-testid="committee-join-mode-filter"></lfx-select>
+    </div>
+  }
 </div>

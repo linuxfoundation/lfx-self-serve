@@ -16,13 +16,13 @@ import {
   RejectCommitteeJoinApplicationRequest,
   UploadCommitteeDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { canViewCommitteeRoster, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import { canViewCommitteeRoster, isFileTypeAllowed, isSafeUploadFileName } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { getStringQueryParam, validateFoundationUidParameter } from '../helpers/validation.helper';
@@ -1151,8 +1151,10 @@ export class CommitteeController {
 
       // Reject path-traversal patterns in the filename so upstream can't be tricked into
       // writing or referencing files outside the committee scope. Frontend strips these
-      // already; the server enforces the same rule for direct callers.
-      if (/[/\\\0]/.test(trimmedFileName!) || trimmedFileName!.includes('..')) {
+      // already; the server enforces the same rule for direct callers. Control characters and
+      // quotes are rejected too — they would break out of the multipart part's Content-Disposition
+      // filename parameter.
+      if (!isSafeUploadFileName(trimmedFileName!)) {
         next(
           ServiceValidationError.forField('file_name', 'File name contains invalid characters', {
             operation: 'upload_committee_document',
@@ -1394,6 +1396,54 @@ export class CommitteeController {
 
       logger.success(req, 'join_committee', startTime, { committee_id: id });
       res.status(201).json(member);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/my-applications
+   * Returns all of the caller's own pending join applications across every committee.
+   * No writer guard — callers can only see their own applications.
+   */
+  public async getMyApplications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_committee_applications', {});
+
+    try {
+      res.set('Cache-Control', 'private, no-cache');
+      const applications = await this.committeeService.getMyApplications(req);
+      logger.success(req, 'get_my_committee_applications', startTime, { count: applications.length });
+      res.json(applications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/:id/my-applications
+   * Returns the caller's own pending join application, or 404 when none exists.
+   * No writer guard — callers can only see their own application.
+   */
+  public async getMyApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_committee_application', { committee_id: id });
+
+    try {
+      res.set('Cache-Control', 'private, no-cache');
+      const application = await this.committeeService.getMyApplication(req, id);
+
+      if (!application) {
+        return next(
+          new ResourceNotFoundError('Committee application', id, {
+            operation: 'get_my_committee_application',
+            service: 'committee_controller',
+            path: `/committees/${id}/my-applications`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_committee_application', startTime, { committee_id: id, found: true, application_uid: application.uid });
+      res.json(application);
     } catch (error) {
       next(error);
     }
