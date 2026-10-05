@@ -4,8 +4,13 @@
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, output, PLATFORM_ID, viewChildren } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { MENTORSHIP_PROGRAM_DETAIL_TABS, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
-import { MentorshipProgram, MentorshipProgramDetailTab, MentorshipProgramTabCounts } from '@lfx-one/shared/interfaces';
+import {
+  MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL,
+  MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
+  MENTORSHIP_PROGRAM_STATUS_LABELS,
+} from '@lfx-one/shared/constants';
+import { MentorshipAdminProgramTabCounts, MentorshipProgram, MentorshipProgramDetailTab } from '@lfx-one/shared/interfaces';
 
 /**
  * Admin program-detail header: title, season line, status, Edit Program, and
@@ -23,7 +28,8 @@ export class ProgramDetailHeaderComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   public readonly program = input.required<MentorshipProgram>();
-  public readonly tabCounts = input.required<MentorshipProgramTabCounts>();
+  /** A count is `null` when its read failed; the badge then shows a dash. */
+  public readonly tabCounts = input.required<MentorshipAdminProgramTabCounts>();
   public readonly activeTab = input.required<MentorshipProgramDetailTab>();
   public readonly tabChange = output<MentorshipProgramDetailTab>();
   public readonly editClick = output<void>();
@@ -39,7 +45,7 @@ export class ProgramDetailHeaderComponent {
   /** Each tab names the count it shows, since tab values are kebab-case and count keys camelCase. */
   protected readonly tabItems = computed(() => {
     const counts = this.tabCounts();
-    return MENTORSHIP_PROGRAM_DETAIL_TABS.map((tab) => ({ ...tab, count: counts[tab.countKey] }));
+    return MENTORSHIP_PROGRAM_DETAIL_TABS.map((tab) => ({ ...tab, count: counts[tab.countKey] ?? MENTORSHIP_ADMIN_COUNT_UNAVAILABLE_LABEL }));
   });
 
   protected onTabClick(tab: MentorshipProgramDetailTab): void {

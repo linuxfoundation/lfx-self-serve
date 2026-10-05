@@ -76,6 +76,39 @@ export const MENTORSHIP_MENTOR_PROGRAM_READ_CONCURRENCY = 5;
 /** Longest search text the admin reads send upstream; anything longer is cut. */
 export const MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH = 100;
 
+/** Most applications one upstream applications read returns; upstream resets a larger `limit` to 10. */
+export const MENTORSHIP_ADMIN_APPLICATIONS_MAX_LIMIT = 50;
+
+/** Most rows one upstream tasks or terms read returns; upstream resets a larger `limit` to 20. */
+export const MENTORSHIP_ADMIN_TASKS_MAX_LIMIT = 100;
+export const MENTORSHIP_ADMIN_TERMS_MAX_LIMIT = 100;
+
+/**
+ * How an upstream application status reads on the admin mentee tabs. `hold` is an administrator's hold on an
+ * application still under review, so it reads as pending.
+ */
+export const MENTORSHIP_ADMIN_APPLICATION_STATUS_MAP: Readonly<Record<MentorshipUpstreamApplicationStatus, MentorshipMenteeStatus>> = {
+  pending: 'pending',
+  hold: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  withdrawn: 'withdrawn',
+  graduated: 'graduated',
+};
+
+/**
+ * How a program's own status reads on its page when the program is not published. A published program reads
+ * `open` or `completed` from its terms. The header route has no `admin_status`, so this mirrors upstream's grouping.
+ */
+export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
+  draft: 'pending-review',
+  submitted: 'pending-review',
+  pending: 'pending-review',
+  rejected: 'rejected',
+  hidden: 'hidden',
+  archived: 'hidden',
+};
+
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */
 export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipProgramStatus>> = {
   open: 'open',

@@ -53,6 +53,16 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
     expect(tabText('terms')).toBe('Terms 3');
   });
 
+  it('shows a dash for a count whose read failed', () => {
+    render('open');
+    fixture.componentRef.setInput('tabCounts', { currentMentees: null, pastMentees: 7, mentors: null, terms: 3 });
+    fixture.detectChanges();
+
+    expect(tabText('current-mentees')).toBe('Current Mentees –');
+    expect(tabText('past-mentees')).toBe('Past Mentees 7');
+    expect(tabText('mentors')).toBe('Mentors –');
+  });
+
   it('keeps the same labels once the program is completed', () => {
     render('completed');
 
