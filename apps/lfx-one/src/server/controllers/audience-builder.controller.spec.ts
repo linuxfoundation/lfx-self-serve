@@ -455,6 +455,8 @@ describe('composeMaster', () => {
     ['too many ids', { listIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'listIds'],
     ['too many exclusions', { listIds: ['10'], excludeListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'excludeListIds'],
     ['an over-long exclusion id', { listIds: ['10'], excludeListIds: ['5'.repeat(65)] }, 'excludeListIds'],
+    // `?? []` replaced an explicit null before validation, so it composed with no exclusions.
+    ['a null exclusion list', { listIds: ['10'], excludeListIds: null }, 'excludeListIds'],
   ])('refuses %s', async (_label, body, field) => {
     await controller.composeMaster(buildReq({ eventName: 'Synthetic Summit', ...body }), buildRes(), next);
 
@@ -627,6 +629,8 @@ describe('attachExisting', () => {
     ['an over-long suppression id', { suppressionListIds: ['2'.repeat(65)] }, 'suppressionListIds'],
     ['an over-long master list id', { masterListId: '5'.repeat(65) }, 'masterListId'],
     ['an over-long inclusion summary', { inclusionSummary: 'x'.repeat(2_001) }, 'inclusionSummary'],
+    // `?? []` replaced an explicit null before validation, so it attached with no suppression.
+    ['a null suppression list', { suppressionListIds: null }, 'suppressionListIds'],
   ])('refuses %s', async (_label, overrides, field) => {
     await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', ...overrides }), buildRes(), next);
 
@@ -637,6 +641,7 @@ describe('attachExisting', () => {
   it.each([
     ['the largest allowed selection', Array.from({ length: 50 }, (_unused, i) => `${i}`)],
     ['the longest allowed id', ['2'.repeat(64)]],
+    ['an empty selection', []],
   ])('still accepts %s', async (_label, suppressionListIds) => {
     proxyMethods.attachExisting.mockResolvedValue(attached);
 
@@ -647,6 +652,21 @@ describe('attachExisting', () => {
       'tlf',
       expect.objectContaining({ suppressionListIds })
     );
+  });
+
+  it.each([
+    ['attach', 'suppressionListIds'],
+    ['compose', 'excludeListIds'],
+  ])('treats an OMITTED exclusion field on %s as none', async (kind, field) => {
+    // The counterpart of the null refusals: only `undefined` defaults, and it still does.
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+    if (kind === 'attach') {
+      await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501' }), buildRes(), next);
+      expect(proxyMethods.attachExisting).toHaveBeenCalledWith(expect.anything(), 'tlf', expect.objectContaining({ [field]: [] }));
+    } else {
+      await controller.composeMaster(buildReq({ listIds: ['10'], eventName: 'Synthetic Summit' }), buildRes(), next);
+      expect(proxyMethods.composeMaster).toHaveBeenCalledWith(expect.anything(), 'tlf', expect.objectContaining({ [field]: [] }));
+    }
   });
 
   it('forwards the trimmed request and answers 201', async () => {

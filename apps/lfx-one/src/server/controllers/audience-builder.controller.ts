@@ -409,7 +409,10 @@ export class AudienceBuilderController {
     // normalising it away, because composing a master with NO suppression when one was asked
     // for is worse than a 400 on a non-idempotent create. Stripping it here made that guard
     // unreachable through the UI and turned the same request into a silent 201.
-    const excludeListIds = strictStringArray(body.excludeListIds ?? []);
+    // Defaulted only when OMITTED. `?? []` also replaced an explicit `null` before the validator saw
+    // it, so a malformed body was read as "exclude nobody" -- the less-suppressed send this
+    // validation exists to refuse.
+    const excludeListIds = strictStringArray(body.excludeListIds === undefined ? [] : body.excludeListIds);
 
     // A PROVIDED optional field that is mistyped is a client bug, not an absent field. Dropping
     // it silently changed what the request means on a non-idempotent create — `{ name: {} }`
@@ -521,7 +524,8 @@ export class AudienceBuilderController {
 
     // Strict for the same reason compose is: a blank suppression id silently dropped would send
     // to a list with LESS suppression than the operator chose.
-    const suppressionListIds = strictStringArray(body.suppressionListIds ?? []);
+    // Defaulted only when OMITTED, for the reason given at compose: `?? []` read `null` as none.
+    const suppressionListIds = strictStringArray(body.suppressionListIds === undefined ? [] : body.suppressionListIds);
     if (!suppressionListIds) {
       next(
         invalid(
