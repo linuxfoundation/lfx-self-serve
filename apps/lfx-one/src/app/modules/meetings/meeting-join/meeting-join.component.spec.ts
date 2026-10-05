@@ -427,6 +427,27 @@ describe('MeetingJoinComponent', () => {
 
       expect(nextUrl(component)).toContain('password=secret');
     });
+
+    // Session Replay serializes link hrefs; a masked element's attributes stay out of the recording.
+    it('masks the passcode-bearing occurrence links and Sign In button from Session Replay', async () => {
+      authenticated.set(false);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ password: 'secret', recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE_A, OCCURRENCE_B] }),
+          project: buildProject(),
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      const page = fixture.nativeElement as HTMLElement;
+
+      const next = page.querySelector('[data-testid="occurrence-nav-next"]');
+      const signIn = page.querySelector('[data-testid="meeting-join-sign-in"]');
+      expect(next?.getAttribute('data-dd-privacy')).toBe('mask');
+      expect(signIn?.getAttribute('data-dd-privacy')).toBe('mask');
+      expect(signIn?.querySelector('a')?.getAttribute('href')).toContain('secret');
+    });
   });
 
   /**

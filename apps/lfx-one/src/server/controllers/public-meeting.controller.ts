@@ -59,6 +59,10 @@ export class PublicMeetingController {
       meeting_id: id,
     });
 
+    // The body depends on the passcode header and the session (host_key for organizers), neither of
+    // which is part of the URL a cache keys on, so no cache may keep it.
+    res.setHeader('Cache-Control', 'private, no-store');
+
     try {
       // Check if the meeting UID is provided
       if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next)) {
@@ -196,8 +200,8 @@ export class PublicMeetingController {
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      const { password } = req.query;
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
+      const password = this.getRequestMeetingPassword(req);
+      if (!this.validateMeetingPassword(password, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
         return;
       }
 
@@ -368,6 +372,9 @@ export class PublicMeetingController {
       meeting_id: id,
     });
 
+    // Gated by the passcode header and the session, not the URL — see getMeetingById.
+    res.setHeader('Cache-Control', 'private, no-store');
+
     try {
       if (!this.validateMeetingId(id, 'get_public_meeting_occurrences', req, next)) {
         return;
@@ -424,7 +431,7 @@ export class PublicMeetingController {
 
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const { password } = req.query;
+    const password = this.getRequestMeetingPassword(req);
     const bodyEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
     const email: string = bodyEmail || getEffectiveEmail(req) || '';
     const username = getEffectiveUsername(req);
@@ -449,7 +456,7 @@ export class PublicMeetingController {
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
+      if (!this.validateMeetingPassword(password, meeting.password as string, 'post_meeting_link', req, next)) {
         return;
       }
 
@@ -912,6 +919,19 @@ export class PublicMeetingController {
     }
 
     return false;
+  }
+
+  /**
+   * Reads the meeting passcode from the request header the client sends it in (keeping it out of
+   * request URLs), falling back to the legacy `?password=` query param for older client bundles.
+   */
+  private getRequestMeetingPassword(req: Request): string {
+    const fromHeader = req.headers[MEETING_PASSWORD_HEADER];
+    if (typeof fromHeader === 'string' && fromHeader) {
+      return fromHeader;
+    }
+    const fromQuery = req.query['password'];
+    return typeof fromQuery === 'string' ? fromQuery : '';
   }
 
   /**

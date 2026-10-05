@@ -55,6 +55,22 @@ describe('HostKeyPanelComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="host-key-copy"]')).not.toBeNull();
   });
 
+  it('masks the revealed key and its copy affordance in Session Replay', () => {
+    const fixture = createComponent();
+    reveal(fixture);
+
+    const wrapper = fixture.nativeElement.querySelector('[data-testid="meeting-host-key"]') as HTMLElement;
+    expect(wrapper.textContent).toContain(HOST_KEY);
+    expect(wrapper.getAttribute('data-dd-privacy')).toBe('mask');
+    expect(wrapper.contains(fixture.nativeElement.querySelector('[data-testid="host-key-copy"]'))).toBe(true);
+    // RUM click-action names ignore data-dd-privacy and fall back to element text; pin fixed names.
+    for (const testid of ['host-key-toggle', 'host-key-copy']) {
+      const actionName = fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.getAttribute('data-dd-action-name');
+      expect(actionName).toBeTruthy();
+      expect(actionName).not.toContain(HOST_KEY);
+    }
+  });
+
   it('shows a success toast when the copy succeeds', () => {
     copy.mockReturnValue(true);
     const fixture = createComponent();
