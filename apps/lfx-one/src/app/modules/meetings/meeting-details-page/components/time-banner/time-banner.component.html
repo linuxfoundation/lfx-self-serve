@@ -3,7 +3,7 @@
 
 <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
 @if (timeState(); as timeState) {
-  <section class="flex flex-col gap-[14px]" data-testid="meeting-time-banner" [attr.data-state]="timeState" aria-label="When">
+  <section class="flex flex-col gap-[14px]" data-testid="meeting-time-banner" [attr.data-state]="timeState" aria-label="Meeting time">
     @if (zonedDay(); as day) {
       <div class="flex items-start gap-[14px]">
         <span

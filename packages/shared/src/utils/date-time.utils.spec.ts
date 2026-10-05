@@ -8,6 +8,7 @@ import {
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
+  formatDisplayTimeInTimezone,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -358,6 +359,18 @@ describe('tryParseLocalDateString', () => {
 // zone: 2027-03-13T17:30Z is 2:30 AM on 2027-03-14 in Tokyo, a wall time that does not exist in
 // America/New_York (spring forward at 2:00 AM that day). toZonedTime's host-local carrier
 // normalized it to 3:30 — Intl DateTimeFormat parts with an explicit timeZone read it exactly.
+describe('formatDisplayTimeInTimezone', () => {
+  it('formats an unpadded 12-hour time in the given zone', () => {
+    const instant = new Date('2026-07-23T16:05:00Z');
+    expect(formatDisplayTimeInTimezone(instant, 'America/Los_Angeles')).toBe('9:05 AM');
+    expect(formatDisplayTimeInTimezone(instant, 'Europe/Lisbon')).toBe('5:05 PM');
+  });
+
+  it('falls back to the local zone for an invalid zone rather than throwing', () => {
+    expect(formatDisplayTimeInTimezone(new Date('2026-07-23T16:05:00Z'), 'Not/AZone')).toMatch(/^\d{1,2}:\d{2} [AP]M$/);
+  });
+});
+
 describe('formatTo12HourInTimezone', () => {
   it('formats the wall time in the target zone, host-TZ independent', () => {
     // 2025-06-01T06:59Z is 2:59 AM in New York (EDT, UTC-4).
