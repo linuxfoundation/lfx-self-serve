@@ -30,10 +30,12 @@
         [statusFilter]="statusFilter()"
         [hasMore]="hasMore()"
         [loadingMore]="loadingMore()"
+        [loadError]="programsLoadError()"
         (searchChange)="onSearchChange($event)"
         (statusChange)="onStatusChange($event)"
         (programClick)="onProgramClick($event)"
-        (loadMore)="onLoadMore()" />
+        (loadMore)="onLoadMore()"
+        (retry)="retryPrograms()" />
     }
   </div>
 </div>

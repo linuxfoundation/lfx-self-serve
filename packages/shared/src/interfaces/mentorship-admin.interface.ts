@@ -3,6 +3,7 @@
 
 import type { MENTORSHIP_PROGRAM_DETAIL_TABS, MENTORSHIP_PROGRAM_STATUSES, MENTORSHIP_TERM_ROW_STATUSES } from '../constants/mentorship.constants';
 import type { MentorshipMentorStatus, MentorshipProgramApplicant, MentorshipProgramPersonBase } from './mentorship.interface';
+import type { MentorshipUpstreamProgramTerm } from './mentorship-mentee.interface';
 
 /**
  * Enrollment / graduation counters shown on the admin program card.
@@ -79,6 +80,28 @@ export interface MentorshipProgramTermRow {
   endDate: string;
   applicationStartDate: string;
   applicationEndDate: string;
+}
+
+/**
+ * One row of upstream `GET /mentorship/v1/me/programs`: a program the caller administers, with the term and counts its card shows.
+ * `admin_status` stays a plain string: the BFF maps it to `MentorshipProgramStatus` and logs a value it does not know.
+ */
+export interface MentorshipUpstreamAdministeredProgram {
+  id: string;
+  slug?: string;
+  name: string;
+  /** The program's own status. The card shows `admin_status`, which also reads the program's terms. */
+  status: string;
+  admin_status: string;
+  project_uid?: string;
+  /** Name of the program's LF project; absent when the program has none. */
+  project_name?: string;
+  logo_url?: string;
+  /** The latest open term, else the latest closed one; absent when the program has no terms. */
+  term?: Pick<MentorshipUpstreamProgramTerm, 'id' | 'name' | 'status'>;
+  stats: MentorshipProgramStats;
+  created_on: string;
+  updated_on: string;
 }
 
 /** A program's raw lists, before its applications are split across the two mentee tabs. */

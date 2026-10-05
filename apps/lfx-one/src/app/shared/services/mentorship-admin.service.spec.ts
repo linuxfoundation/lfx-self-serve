@@ -4,7 +4,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipProgramDetail, MentorshipProgramsResponse } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,13 +39,12 @@ describe('MentorshipAdminService', () => {
     expect(total).toBe(3);
   });
 
-  it('falls back to an empty list when the program list fails', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    let response: MentorshipProgramsResponse | undefined;
-    service.getPrograms().subscribe((value) => (response = value));
+  it('lets a program list failure reach the caller', () => {
+    let status: number | undefined;
+    service.getPrograms().subscribe({ error: (err: { status: number }) => (status = err.status) });
 
     http.expectOne('/api/mentorship/admin/programs').flush('down', { status: 503, statusText: 'Service Unavailable' });
-    expect(response).toEqual(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE);
+    expect(status).toBe(503);
   });
 
   it('loads a program detail from the admin endpoint, encoding the id', () => {

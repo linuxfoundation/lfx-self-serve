@@ -25,7 +25,7 @@ export class ProgramCardComponent {
 
   protected readonly seasonLine = computed(() => {
     const p = this.program();
-    return `${p.projectName} · ${p.term}`;
+    return [p.projectName, p.term].filter((part) => part.length > 0).join(' · ');
   });
 
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);

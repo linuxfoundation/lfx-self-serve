@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
+import { MENTORSHIP_PROGRAM_PAGE_SIZE, MENTORSHIP_PROGRAM_STATUSES } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
+import { MENTORSHIP_ADMIN_PROGRAMS_MAX_LIMIT } from '../constants';
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { parseIntQuery, parseTrimmedString } from '../helpers/mentorship-params.helper';
+import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -31,14 +32,16 @@ export class MentorshipAdminController {
         });
       }
 
-      const programs = await this.mentorshipAdminService.getPrograms(req, {
-        search: parseTrimmedString(search),
-        status: rawStatus,
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
+      const { offset, limit } = parseMentorshipAdminPaging(req.query, {
+        defaultLimit: MENTORSHIP_PROGRAM_PAGE_SIZE,
+        maxLimit: MENTORSHIP_ADMIN_PROGRAMS_MAX_LIMIT,
+        operation: 'get_mentorship_admin_programs',
       });
 
-      logger.success(req, 'get_mentorship_admin_programs', startTime, { result_count: programs.data.length });
+      const programs = await this.mentorshipAdminService.getPrograms(req, { search: parseTrimmedString(search), status: rawStatus, offset, limit });
+
+      // The search text is left out of the log: it is user input.
+      logger.success(req, 'get_mentorship_admin_programs', startTime, { status: rawStatus, offset, limit, result_count: programs.data.length });
 
       res.json(programs);
     } catch (error) {

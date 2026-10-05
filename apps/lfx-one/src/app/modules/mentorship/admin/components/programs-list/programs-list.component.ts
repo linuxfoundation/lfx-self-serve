@@ -36,10 +36,13 @@ export class ProgramsListComponent {
   public readonly statusFilter = input<MentorshipProgramStatus | null>(null);
   public readonly hasMore = input<boolean>(false);
   public readonly loadingMore = input<boolean>(false);
+  /** True when the programs could not be read; shown in place of the cards with a Retry. */
+  public readonly loadError = input<boolean>(false);
   public readonly searchChange = output<string>();
   public readonly statusChange = output<MentorshipProgramStatus | null>();
   public readonly programClick = output<string>();
   public readonly loadMore = output<void>();
+  public readonly retry = output<void>();
 
   // ─── Form ──────────────────────────────────────────────────────────────────
   protected readonly form = new FormGroup({
@@ -89,5 +92,9 @@ export class ProgramsListComponent {
 
   protected onLoadMore(): void {
     this.loadMore.emit();
+  }
+
+  protected onRetry(): void {
+    this.retry.emit();
   }
 }

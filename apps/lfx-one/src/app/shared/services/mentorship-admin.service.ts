@@ -3,14 +3,13 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { EMPTY_MENTORSHIP_PROGRAMS_RESPONSE } from '@lfx-one/shared/constants';
 import { MentorshipProgramDetail, MentorshipProgramsResponse, MentorshipProgramStatus } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/admin/*` endpoints behind the admin pages.
  *
- * Reads degrade to an empty response on error so the admin surface never blocks on upstream faults.
+ * `getPrograms` lets a failure reach the caller, which shows a retryable error. `getProgram` still degrades to `null`.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipAdminService {
@@ -23,9 +22,7 @@ export class MentorshipAdminService {
     if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
     if (params?.limit !== undefined) httpParams = httpParams.set('limit', String(params.limit));
 
-    return this.http
-      .get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: httpParams })
-      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
+    return this.http.get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: httpParams });
   }
 
   /** Loads a program by id (default URL) or slug. */
@@ -35,11 +32,7 @@ export class MentorshipAdminService {
       .pipe(catchError(this.handleError(null, 'getProgram')));
   }
 
-  /**
-   * Never re-throws to the UI; a 404 is silently swallowed as `fallback`, other
-   * failures log to the console and also fall back so a transient BFF hiccup
-   * doesn't wipe out the whole admin page.
-   */
+  /** A 404 is silently swallowed as `fallback`; other failures log to the console and also fall back. */
   private handleError<T>(fallback: T, label: string) {
     return (err: HttpErrorResponse): Observable<T> => {
       if (err.status !== 404) {
