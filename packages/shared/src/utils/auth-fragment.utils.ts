@@ -90,10 +90,27 @@ function isMeetingPasswordParam(key: string): boolean {
   return (MEETING_PASSWORD_QUERY_PARAMS as readonly string[]).includes(key.toLowerCase());
 }
 
+const MEETING_PASSWORD_IN_TEXT_PATTERN = new RegExp(`([?&](?:${MEETING_PASSWORD_QUERY_PARAMS.join('|')})=)[^&#\\s"'<>]*`, 'gi');
+
+/**
+ * Replaces the value of any meeting passcode query param appearing anywhere in free text (an error
+ * message or stack that quotes a request URL) with a marker. For a field that holds a single URL,
+ * prefer {@link redactMeetingPassword}, which also handles nested URLs.
+ */
+export function redactMeetingPasswordInText(text: string): string {
+  return text.replace(MEETING_PASSWORD_IN_TEXT_PATTERN, '$1redacted');
+}
+
+/** A param value worth recursing into: a path or http(s) URL that has a query string of its own. */
+function isNestedUrlWithQuery(value: string): boolean {
+  return (value.startsWith('/') || /^https?:\/\//i.test(value)) && value.includes('?');
+}
+
 /**
  * Returns `url` with every meeting passcode query param (`password`, `passcode`) replaced by a
  * marker, on any path, or unchanged when none is present. A param value that is itself a URL
- * carrying a passcode (`returnTo` on the login redirect, for one) is redacted the same way.
+ * (`returnTo` on the login redirect, for one — including one nested again inside the auth-error
+ * redirect's `returnTo`) is redacted the same way, at any depth.
  *
  * Sibling of {@link redactInviteToken}, called from Datadog RUM `beforeSend` so the passcode for a
  * private/restricted meeting never reaches the analytics sink through `view.url`, `view.referrer`
@@ -106,7 +123,9 @@ export function redactMeetingPassword(url: string, base?: string): string {
     for (const [key, value] of parsed.searchParams) {
       if (isMeetingPasswordParam(key)) {
         updates.push([key, 'redacted']);
-      } else if (MEETING_PASSWORD_PARAM_PATTERN.test(value)) {
+      } else if (isNestedUrlWithQuery(value)) {
+        // Recurse on every nested URL, not only one whose decoded value already shows `?password=`:
+        // a doubly nested passcode is still percent-encoded at this level.
         const redactedValue = redactMeetingPassword(value, parsed.origin);
         if (redactedValue !== value) {
           updates.push([key, redactedValue]);

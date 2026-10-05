@@ -5,7 +5,7 @@ import { EnvironmentProviders, inject, provideAppInitializer, TransferState } fr
 import { datadogRum } from '@datadog/browser-rum';
 import { environment } from '@environments/environment';
 
-import { redactAuthFragment, redactInviteToken, redactMeetingPassword } from '@lfx-one/shared/utils';
+import { redactAuthFragment, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from '@lfx-one/shared/utils';
 
 import { getRuntimeConfig } from './runtime-config.provider';
 
@@ -52,15 +52,22 @@ async function initializeDataDogRum(): Promise<void> {
       // redactAuthFragment does not touch the query string, so redactInviteToken runs after it.
       //
       // Meeting join links carry the private/restricted-meeting passcode in `?password=` on any
-      // path, so redactMeetingPassword runs too — on resource URLs as well, since trackResources
-      // records the initial document load and any request URL that still carries one.
+      // path, so redactMeetingPassword runs too — on every other modifiable URL field as well
+      // (trackResources records the initial document load; LCP and long-task script attribution
+      // can name the page URL), and on free-text error/long-task fields that may quote a URL.
       beforeSend: (event) => {
         const redact = (url: string): string =>
           redactMeetingPassword(redactInviteToken(redactAuthFragment(url, window.location.origin), window.location.origin), window.location.origin);
-        const { view, resource, error } = event as {
-          view?: { url?: string; referrer?: string };
+        const {
+          view,
+          resource,
+          error,
+          long_task: longTask,
+        } = event as {
+          view?: { url?: string; referrer?: string; performance?: { lcp?: { resource_url?: string } } };
           resource?: { url?: string };
-          error?: { resource?: { url?: string } };
+          error?: { message?: string; stack?: string; resource?: { url?: string } };
+          long_task?: { scripts?: { source_url?: string; invoker?: string }[] };
         };
         if (view?.url) {
           view.url = redact(view.url);
@@ -68,11 +75,28 @@ async function initializeDataDogRum(): Promise<void> {
         if (view?.referrer) {
           view.referrer = redact(view.referrer);
         }
+        if (view?.performance?.lcp?.resource_url) {
+          view.performance.lcp.resource_url = redact(view.performance.lcp.resource_url);
+        }
         if (resource?.url) {
           resource.url = redact(resource.url);
         }
         if (error?.resource?.url) {
           error.resource.url = redact(error.resource.url);
+        }
+        if (error?.message) {
+          error.message = redactMeetingPasswordInText(error.message);
+        }
+        if (error?.stack) {
+          error.stack = redactMeetingPasswordInText(error.stack);
+        }
+        for (const script of longTask?.scripts ?? []) {
+          if (script.source_url) {
+            script.source_url = redact(script.source_url);
+          }
+          if (script.invoker) {
+            script.invoker = redactMeetingPasswordInText(script.invoker);
+          }
         }
         return true;
       },

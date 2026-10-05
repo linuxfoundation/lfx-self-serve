@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AUTH_FRAGMENT_KEYS, MEETING_PASSWORD_QUERY_PARAMS } from '../constants/auth-fragment.constants';
-import { hasAuthFragment, redactAuthFragment, redactInviteToken, redactMeetingPassword } from './auth-fragment.utils';
+import { hasAuthFragment, redactAuthFragment, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from './auth-fragment.utils';
 
 /**
  * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh
@@ -121,17 +121,45 @@ describe('redactMeetingPassword', () => {
     expect(new URL(redactMeetingPassword(login, ORIGIN), ORIGIN).searchParams.get('returnTo')).toBe(`${ORIGIN}/meetings/m-1?password=redacted`);
   });
 
+  it('redacts a login returnTo nested again in the auth-error redirect, where the passcode is double-encoded', () => {
+    const login = `/login?returnTo=${encodeURIComponent('/meetings/m-1?password=SUPER_SECRET')}`;
+    const authError = `${ORIGIN}/auth-error?reason=session&returnTo=${encodeURIComponent(login)}`;
+    const redacted = redactMeetingPassword(authError, ORIGIN);
+
+    expect(redacted).not.toContain('SUPER_SECRET');
+    const innerLogin = new URL(redacted).searchParams.get('returnTo') as string;
+    expect(new URL(innerLogin, ORIGIN).searchParams.get('returnTo')).toBe('/meetings/m-1?password=redacted');
+  });
+
   it.each([
     ['no query string', `${ORIGIN}/meetings/m-1`],
     ['unrelated params', `${ORIGIN}/meetings?token=keep-me&tab=past`],
     ['a param that merely contains the name', `${ORIGIN}/settings?password_reset=sent`],
     ['a returnTo with no passcode', `/login?returnTo=${encodeURIComponent('/meetings/m-1')}`],
+    ['a nested returnTo with an unrelated query', `/login?returnTo=${encodeURIComponent('/meetings?tab=past')}`],
+    ['a param value that is not a URL', `${ORIGIN}/search?q=${encodeURIComponent('a?b=1')}`],
   ])('leaves a URL with %s untouched', (_label, url) => {
     expect(redactMeetingPassword(url, ORIGIN)).toBe(url);
   });
 
   it('drops the query string when the URL cannot be parsed but still carries a passcode param', () => {
     expect(redactMeetingPassword('http://[not a url?password=SUPER_SECRET')).not.toContain('SUPER_SECRET');
+  });
+});
+
+describe('redactMeetingPasswordInText', () => {
+  it('redacts every passcode param quoted in free text, such as an HTTP error message', () => {
+    const message = 'Http failure response for https://lfx.example.com/meetings/m-1?tab=a&Password=AAA: 403. Retried /x?passcode=BBB#y';
+    const redacted = redactMeetingPasswordInText(message);
+
+    expect(redacted).not.toContain('AAA');
+    expect(redacted).not.toContain('BBB');
+    expect(redacted).toBe('Http failure response for https://lfx.example.com/meetings/m-1?tab=a&Password=redacted 403. Retried /x?passcode=redacted#y');
+  });
+
+  it('leaves text without a passcode param untouched', () => {
+    const text = 'Failed to reset password: password_reset=sent?ok';
+    expect(redactMeetingPasswordInText(text)).toBe(text);
   });
 });
 
