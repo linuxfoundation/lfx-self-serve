@@ -23,6 +23,7 @@ import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
+import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
@@ -343,6 +344,9 @@ if (sessionStoreEnabled) {
     next();
   });
 }
+
+// Also registered before auth(authConfig), for the same /logout reason as above.
+app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
 
 app.use(auth(authConfig));
 
