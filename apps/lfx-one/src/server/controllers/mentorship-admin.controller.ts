@@ -6,6 +6,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { parseMentorshipAdminPaging, parseTrimmedString } from '../helpers/mentorship-params.helper';
+import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { isMentorshipProgramStatus, MentorshipAdminService } from '../services/mentorship-admin.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -22,9 +23,9 @@ export class MentorshipAdminController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_admin_programs' });
       }
 
-      const { search, status } = req.query;
-
-      const rawStatus = parseTrimmedString(status);
+      // A repeated `search` or `status` is a 400, not silently dropped; a blank one means no filter.
+      const search = parseTrimmedString(getStrictStringQueryParam(req, 'search', 'get_mentorship_admin_programs'));
+      const rawStatus = parseTrimmedString(getStrictStringQueryParam(req, 'status', 'get_mentorship_admin_programs'));
       if (rawStatus !== undefined && !isMentorshipProgramStatus(rawStatus)) {
         throw ServiceValidationError.forField('status', `status must be one of: ${MENTORSHIP_PROGRAM_STATUSES.join(', ')}`, {
           operation: 'get_mentorship_admin_programs',
@@ -37,7 +38,7 @@ export class MentorshipAdminController {
         operation: 'get_mentorship_admin_programs',
       });
 
-      const programs = await this.mentorshipAdminService.getPrograms(req, { search: parseTrimmedString(search), status: rawStatus, offset, limit });
+      const programs = await this.mentorshipAdminService.getPrograms(req, { search, status: rawStatus, offset, limit });
 
       // The search text is left out of the log: it is user input.
       logger.success(req, 'get_mentorship_admin_programs', startTime, { status: rawStatus, offset, limit, result_count: programs.data.length });

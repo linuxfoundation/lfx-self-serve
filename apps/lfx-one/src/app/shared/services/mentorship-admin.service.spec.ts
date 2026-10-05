@@ -39,14 +39,15 @@ describe('MentorshipAdminService', () => {
     expect(total).toBe(3);
   });
 
-  it('logs a program list failure and lets it reach the caller', () => {
+  it('logs a program list failure by status only, never the search, and lets it reach the caller', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let status: number | undefined;
-    service.getPrograms().subscribe({ error: (err: { status: number }) => (status = err.status) });
+    service.getPrograms({ search: 'secret-name' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
 
-    http.expectOne('/api/mentorship/admin/programs').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    http.expectOne((r) => r.url === '/api/mentorship/admin/programs').flush('down', { status: 503, statusText: 'Service Unavailable' });
     expect(status).toBe(503);
-    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getPrograms failed', expect.anything());
+    expect(logged).toHaveBeenCalledWith('[MentorshipAdminService] getPrograms failed', { status: 503, statusText: 'Service Unavailable' });
+    expect(JSON.stringify(logged.mock.calls)).not.toContain('secret-name');
   });
 
   it('loads a program detail from the admin endpoint, encoding the id', () => {

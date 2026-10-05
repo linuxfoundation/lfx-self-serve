@@ -14,17 +14,17 @@ The program list reads the mentorship service in one call (see [Program list sou
 | GET    | `/api/mentorship/admin/programs`            | `getPrograms`     | Admin program list, and the import picker on Enroll    |
 | GET    | `/api/mentorship/admin/programs/:programId` | `getProgram`      | Admin program detail (tabs, counts and the four lists) |
 
-`programId` is the program's id or its slug. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12; a malformed or out-of-range value is a 400).
+`programId` is the program's id or its slug. The list accepts `search`, `status`, `offset` and `limit` (1–50, default 12). A malformed, blank, repeated or out-of-range `offset` or `limit` is a 400, and so is a repeated `search` or `status`.
 
 The program detail has four tabs: Current Mentees, Past Mentees, Mentors and Terms. `buildMentorshipProgramDetail` (shared utils) splits the program's applications by their term's status. Rows in an open term go to `currentMentees` and rows in a closed term go to `pastMentees`; the row's own status plays no part. A row whose term the program doesn't list stays current. `tabCounts` is built from the same lists, so a count always matches its tab.
 
 ## Program list sourcing
 
-`getPrograms` makes one call to upstream `GET /mentorship/v1/me/programs` (lfx-mentorship#243) with the caller's bearer token, so upstream decides what the caller may see:
+`getPrograms` reads upstream `GET /mentorship/v1/me/programs` (lfx-mentorship#243) once, through `proxyMentorshipRequest`, with the caller's bearer token, so upstream decides what the caller may see:
 
 - `search` is trimmed, cut to 100 characters, and its `\`, `%` and `_` are escaped. `status` is the chosen status with `-` written as `_`. `limit` is at most 50 here and `offset` is passed through. No `limit` above the upstream maximum is ever sent.
 - Upstream searches the program and project names, filters by status, sorts by name then id, pages, and returns each row with its latest open term (else the latest closed one), its counts and `admin_status`. The BFF maps each row and returns upstream's `meta.total`.
-- A not-provisioned error gives an empty page and a warn log with no user identifiers. Any other error propagates, and the page shows its failed-load state with Retry.
+- On a caller's first visit upstream answers not-provisioned, so `proxyMentorshipRequest` provisions them (`PUT /me`) and retries, as on the mentor and mentee pages. A not-provisioned error that still reaches the service (while impersonating, which never provisions, or when the retry is refused too) gives an empty page and a warn log with no user identifiers. Any other error propagates, and the page shows its failed-load state with Retry.
 - Upstream lists only direct `program_admin` memberships. Admins who only inherit access from the project are not listed yet.
 - The list now carries upstream program ids, while the program detail still resolves mock ids only, so opening a listed program shows the not-found state until the detail moves to the mentorship service (linuxfoundation/lfx-mentorship#233).
 - The Enroll form's "import from program" picker keeps only programs that have import details (`isMentorshipProgramImportable`). Those details are still keyed by mock ids, so the picker offers only "None" until import moves to the mentorship service.

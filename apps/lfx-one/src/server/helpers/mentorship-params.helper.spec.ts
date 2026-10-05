@@ -81,6 +81,12 @@ describe('parseMentorshipAdminPaging', () => {
     expect(() => parseMentorshipAdminPaging({ offset: '-1' }, options)).toThrow(expect.objectContaining({ statusCode: 400 }));
   });
 
+  it('rejects a repeated, blank or unrepresentable value with a 400', () => {
+    expect(() => parseMentorshipAdminPaging({ offset: ['12', '24'] }, options)).toThrow(expect.objectContaining({ statusCode: 400 }));
+    expect(() => parseMentorshipAdminPaging({ limit: ' ' }, options)).toThrow(expect.objectContaining({ statusCode: 400 }));
+    expect(() => parseMentorshipAdminPaging({ offset: '99999999999999999999' }, options)).toThrow(expect.objectContaining({ statusCode: 400 }));
+  });
+
   it('rejects a limit above the maximum or below 1 with a 400', () => {
     expect(() => parseMentorshipAdminPaging({ limit: '51' }, options)).toThrow(expect.objectContaining({ statusCode: 400 }));
     expect(() => parseMentorshipAdminPaging({ limit: '0' }, options)).toThrow(expect.objectContaining({ statusCode: 400 }));

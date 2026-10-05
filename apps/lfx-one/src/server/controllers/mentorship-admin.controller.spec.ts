@@ -91,6 +91,17 @@ describe('MentorshipAdminController', () => {
       expect(vi.mocked(next).mock.calls.every(([error]) => (error as { statusCode?: number }).statusCode === 400)).toBe(true);
     });
 
+    it('rejects a repeated search, status or offset with a 400', async () => {
+      const read = vi.spyOn(MentorshipAdminService.prototype, 'getPrograms');
+
+      await controller.getPrograms(buildReq({ search: ['a', 'b'] }), res, next);
+      await controller.getPrograms(buildReq({ status: ['open', 'hidden'] }), res, next);
+      await controller.getPrograms(buildReq({ offset: ['0', '12'] }), res, next);
+
+      expect(vi.mocked(next).mock.calls.map(([error]) => (error as { statusCode?: number }).statusCode)).toEqual([400, 400, 400]);
+      expect(read).not.toHaveBeenCalled();
+    });
+
     it('passes a service failure to next', async () => {
       const error = new Error('boom');
       vi.spyOn(MentorshipAdminService.prototype, 'getPrograms').mockRejectedValue(error);

@@ -43,18 +43,21 @@ export const escapeMentorshipSearch = (raw: unknown): string | undefined => {
   return trimmed.slice(0, MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH).replace(/[\\%_]/g, (match) => `\\${match}`);
 };
 
+// A repeated param arrives as an array, so only a single string of digits passes; reading anything else as absent would restart the paging.
 const readStrictInteger = (raw: unknown, field: 'offset' | 'limit', operation: string): number | undefined => {
-  const text = parseTrimmedString(raw);
-  if (text === undefined) return undefined;
-  if (!/^\d+$/.test(text)) {
-    throw ServiceValidationError.forField(field, `${field} must be a whole number.`, { operation });
+  if (raw === undefined) return undefined;
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  const value = Number(text);
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(value)) {
+    throw ServiceValidationError.forField(field, `${field} must be given once, as a whole number.`, { operation });
   }
-  return Number.parseInt(text, 10);
+  return value;
 };
 
 /**
  * Reads `offset` and `limit` from an admin list query. `offset` is a whole number from 0 and defaults to 0;
- * `limit` is a whole number from 1 to `maxLimit` and defaults to `defaultLimit`. Anything else is a 400.
+ * `limit` is a whole number from 1 to `maxLimit` and defaults to `defaultLimit`. Any other value, including a blank
+ * or repeated one, is a 400.
  */
 export const parseMentorshipAdminPaging = (
   query: Record<string, unknown>,

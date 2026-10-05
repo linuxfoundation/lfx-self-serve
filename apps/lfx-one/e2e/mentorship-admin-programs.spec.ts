@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Admin programs list — the real list, status badges, the failed-load state and Retry
+ * Admin programs list — the real list, status badges, search, the status filter, load more, the failed-load state and Retry
  * (linuxfoundation/lfx-mentorship#232).
  *
  * The page reads `/api/mentorship/admin/programs`, which the BFF serves from upstream `GET /me/programs`.
@@ -98,6 +98,51 @@ test.describe('Admin programs list — real programs', () => {
     await expect(page.getByTestId(`mentorship-program-card-${OPEN_ID}`)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
 
     await expect(page.getByTestId('mentorship-admin-programs-load-error')).toHaveCount(0);
+  });
+});
+
+test.describe('Admin programs list — search, status filter and load more', () => {
+  // Each read is answered by its query, so a test proves which request the control made.
+  const pageOf = (...data: MentorshipProgram[]): MentorshipProgramsResponse => ({ data, total: data.length });
+  const card = (page: Page, id: string) => page.getByTestId(`mentorship-program-card-${id}`);
+
+  test.beforeEach(async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await page.route(PROGRAMS_ROUTE, (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      if (params.get('search') === 'Hidden') return fulfillJson(route, pageOf(POPULATED.data[3]));
+      if (params.get('status') === 'rejected') return fulfillJson(route, pageOf(POPULATED.data[2]));
+      // An unfiltered list of two, served a page at a time: offset 0, then offset 12 (one page size on).
+      const second = params.get('offset') === '12';
+      return fulfillJson(route, { data: [POPULATED.data[second ? 1 : 0]], total: 2 });
+    });
+    await openMentorPage(page, ADMIN_URL);
+    await expect(card(page, OPEN_ID)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+  });
+
+  test('Load more appends the next page and goes once every program is listed', async ({ page }) => {
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(1);
+
+    await page.getByTestId('mentorship-programs-load-more').getByRole('button', { name: 'Load more' }).click();
+
+    await expect(card(page, PENDING_ID)).toBeVisible();
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(2);
+    await expect(page.getByTestId('mentorship-programs-load-more')).toHaveCount(0);
+  });
+
+  test('search replaces the page with the matching programs', async ({ page }) => {
+    await page.locator('[data-test="mentorship-programs-search"]').fill('Hidden');
+
+    await expect(card(page, HIDDEN_ID)).toBeVisible();
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(1);
+  });
+
+  test('the status filter replaces the page with programs in that status', async ({ page }) => {
+    await page.getByTestId('mentorship-programs-status-filter').locator('.p-select').first().click();
+    await page.getByRole('option', { name: 'Rejected', exact: true }).click();
+
+    await expect(card(page, REJECTED_ID)).toBeVisible();
+    await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(1);
   });
 });
 

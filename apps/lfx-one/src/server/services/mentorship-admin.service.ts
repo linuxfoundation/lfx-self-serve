@@ -38,8 +38,10 @@ export class MentorshipAdminService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   /**
-   * The programs the caller administers, from upstream `GET /me/programs` in one call: upstream searches, filters by
-   * the status shown, sorts by name and pages. A caller with no mentorship record has none.
+   * The programs the caller administers, from one upstream `GET /me/programs` read: upstream searches, filters by
+   * the status shown, sorts by name and pages. On a first visit `proxyMentorshipRequest` provisions the caller
+   * (`PUT /me`) and retries, as on the mentor and mentee pages. A caller still not provisioned after that, or one
+   * not provisioned while impersonating (which never provisions), has no programs.
    */
   public async getPrograms(
     req: Request,

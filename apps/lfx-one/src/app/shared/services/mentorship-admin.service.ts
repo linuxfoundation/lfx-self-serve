@@ -24,7 +24,8 @@ export class MentorshipAdminService {
 
     return this.http.get<MentorshipProgramsResponse>('/api/mentorship/admin/programs', { params: httpParams }).pipe(
       catchError((error: HttpErrorResponse) => {
-        console.error('[MentorshipAdminService] getPrograms failed', error);
+        // Log the status only: the error's URL carries the search text.
+        console.error('[MentorshipAdminService] getPrograms failed', { status: error.status, statusText: error.statusText });
         return throwError(() => error);
       })
     );
