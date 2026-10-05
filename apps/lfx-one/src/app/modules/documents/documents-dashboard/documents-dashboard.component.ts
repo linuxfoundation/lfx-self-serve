@@ -28,7 +28,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, take } from 'rxjs';
+import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -100,6 +100,11 @@ export class DocumentsDashboardComponent {
     { label: 'Meeting', value: 'meeting' },
     { label: 'Mailing List', value: 'mailing_list' },
   ];
+
+  // === Subjects ===
+  /** Emits immediately when the search box is programmatically cleared (e.g. on folder open),
+   *  bypassing the 300 ms debounce so `searchQuery()` resets in the same tick. */
+  private readonly clearSearch$ = new Subject<string>();
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -188,9 +193,10 @@ export class DocumentsDashboardComponent {
   protected onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('project_folder:') ? doc.id.slice('project_folder:'.length) : null;
     if (folderUid) {
-      // Clear the search query so the folder view activates immediately — using
-      // { emitEvent: false } avoids the 300ms debounce delay in initSearchQuery.
+      // Update the form control visually without going through the debounce pipeline,
+      // then immediately emit '' via clearSearch$ so searchQuery() resets in the same tick.
       this.filterForm.controls.search.setValue('', { emitEvent: false });
+      this.clearSearch$.next('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -215,10 +221,14 @@ export class DocumentsDashboardComponent {
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
     return toSignal(
-      this.filterForm.controls.search.valueChanges.pipe(
-        debounceTime(300),
+      merge(
+        this.filterForm.controls.search.valueChanges.pipe(
+          debounceTime(300),
+          map((v) => v ?? '')
+        ),
+        this.clearSearch$
+      ).pipe(
         distinctUntilChanged(),
-        map((v) => v ?? ''),
         startWith('')
       ),
       { initialValue: '' }

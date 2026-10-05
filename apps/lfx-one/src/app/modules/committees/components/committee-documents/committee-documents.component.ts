@@ -13,7 +13,7 @@ import { MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { Committee, CommitteeDocument, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, startWith, switchMap, take } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, startWith, Subject, switchMap, take } from 'rxjs';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
 
@@ -41,6 +41,11 @@ export class CommitteeDocumentsComponent {
     search: new FormControl<string>(''),
     source: new FormControl<MyDocumentSource | null>(null),
   });
+
+  // === Subjects ===
+  /** Emits immediately when the search box is programmatically cleared (e.g. on folder open),
+   *  bypassing the 300 ms debounce so `searchQuery()` resets in the same tick. */
+  private readonly clearSearch$ = new Subject<string>();
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
@@ -95,9 +100,10 @@ export class CommitteeDocumentsComponent {
   public onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('committee_folder:') ? doc.id.slice('committee_folder:'.length) : null;
     if (folderUid) {
-      // Clear the search query so the folder view activates immediately — using
-      // { emitEvent: false } avoids the 300ms debounce delay in initSearchQuery.
+      // Update the form control visually without going through the debounce pipeline,
+      // then immediately emit '' via clearSearch$ so searchQuery() resets in the same tick.
       this.filterForm.controls.search.setValue('', { emitEvent: false });
+      this.clearSearch$.next('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -160,10 +166,14 @@ export class CommitteeDocumentsComponent {
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
     return toSignal(
-      this.filterForm.controls.search.valueChanges.pipe(
-        debounceTime(300),
+      merge(
+        this.filterForm.controls.search.valueChanges.pipe(
+          debounceTime(300),
+          map((v) => v ?? '')
+        ),
+        this.clearSearch$
+      ).pipe(
         distinctUntilChanged(),
-        map((v) => v ?? ''),
         startWith('')
       ),
       { initialValue: '' }
