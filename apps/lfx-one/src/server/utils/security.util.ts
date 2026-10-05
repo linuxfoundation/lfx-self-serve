@@ -13,10 +13,14 @@ import { timingSafeEqual } from 'node:crypto';
  * This function uses Node.js's native crypto.timingSafeEqual which provides true constant-time
  * comparison at the native level, eliminating JavaScript engine and JIT optimization variance.
  *
- * The comparison runs over the raw bytes rather than a digest of them: a fast hash such as SHA-256
- * is the wrong primitive to put a password through, and nothing here needs one. When the lengths
- * differ, the first input is compared against itself, so the time taken depends only on the length
- * of `a` (the caller's input) and never on the length or content of `b` (the stored secret).
+ * The comparison runs over the UTF-8 bytes of both inputs directly; no digest is taken first, as
+ * `timingSafeEqual` needs only equal-length buffers. Used for meeting passwords and for Marketing OS
+ * session owner tokens (HMACs).
+ *
+ * The constant-time guarantee covers the native byte comparison of equal-length inputs only. On a
+ * length mismatch the function returns false after comparing the caller's input against itself, so
+ * no byte of `b` is compared; the string-to-buffer conversion and the branch are ordinary
+ * JavaScript and make no timing promise about `b`'s length.
  *
  * @param a - First string to compare (e.g., user input)
  * @param b - Second string to compare (e.g., stored secret)
@@ -27,10 +31,10 @@ import { timingSafeEqual } from 'node:crypto';
  * const isValid = constantTimeEquals(userPassword, storedPassword);
  * ```
  *
- * @security This function prevents timing attacks by:
- * - Using Node.js's native crypto.timingSafeEqual for guaranteed constant-time comparison
- * - Doing the same amount of work on a length mismatch, so the secret's length does not leak
- * - Operating at the native code level, immune to JavaScript JIT optimizations
+ * @security
+ * - Compares equal-length inputs with Node.js's native `crypto.timingSafeEqual`, whose time does
+ *   not depend on where the first differing byte is
+ * - On a length mismatch, compares no byte of `b`
  */
 export function constantTimeEquals(a: string | null | undefined, b: string | null | undefined): boolean {
   // Handle null/undefined cases - return false if either is null/undefined
