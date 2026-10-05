@@ -298,6 +298,16 @@ export class AudienceBuilderTabComponent {
   private readonly lastWriteWasAttach = signal<boolean>(false);
   protected readonly attachError = signal<string | null>(null);
   /** The brief a compose was dispatched with, so its `recorded` result is not read as another brief's. */
+  /**
+   * An attach is on the wire, from dispatch until its reply SETTLES -- whatever brief is on screen.
+   *
+   * Separate from `attachingId`, which is the spinner and is cleared on a brief switch so the new
+   * brief does not show the old one's. Gating writes on the spinner released the guard while the
+   * request was still running: switch A -> B -> A and a second attach for A could start, and if its
+   * reply landed first the older one then overwrote the record with the earlier selection. Writes
+   * are serialized on this instead, so there is never a second reply to arrive out of order.
+   */
+  private readonly attachInFlight = signal(false);
   protected readonly composeBriefId = signal('');
   /** The parent's `audienceScope` at the last compose's dispatch -- which SEND it belonged to. */
   private readonly composeScope = signal(0);
@@ -512,7 +522,7 @@ export class AudienceBuilderTabComponent {
    * and the second write is a real HubSpot record either way.
    */
   protected readonly canAttach = computed(
-    () => this.briefId() !== '' && !this.degraded() && !this.audienceUnknown() && !this.composing() && this.attachingId() === null
+    () => this.briefId() !== '' && !this.degraded() && !this.audienceUnknown() && !this.composing() && !this.attachInFlight()
   );
 
   /**
@@ -744,7 +754,7 @@ export class AudienceBuilderTabComponent {
       this.inclusion().size === 1 &&
       this.conflictingIds().length === 0 &&
       !this.composing() &&
-      this.attachingId() === null
+      !this.attachInFlight()
   );
 
   /**
@@ -772,8 +782,9 @@ export class AudienceBuilderTabComponent {
       // the one write here that creates something, so it is the one that must not run by default.
       this.blockingAudience() === null &&
       // The other half of the serialization above: an attach in flight is a write to this same
-      // brief's audience, and the later reply would decide the record.
-      this.attachingId() === null &&
+      // brief's audience, and the later reply would decide the record. `attachInFlight`, not the
+      // spinner: the spinner is cleared on a brief switch while the request is still running.
+      !this.attachInFlight() &&
       !this.suppressionFailed() &&
       !this.suppressionLoading() &&
       !this.composeAttempted() &&
@@ -1399,11 +1410,12 @@ export class AudienceBuilderTabComponent {
    */
   private attachExisting(busyId: string, masterListId: string, suppressionListIds: string[], summary: string): void {
     const briefId = this.briefId();
-    if (!this.canAttach() || briefId === '' || this.attachingId() !== null) {
+    if (!this.canAttach() || briefId === '' || this.attachInFlight()) {
       return;
     }
     const run = this.runGeneration;
     const sentExclusions = [...new Set(suppressionListIds)].filter((id) => id !== masterListId);
+    this.attachInFlight.set(true);
     this.attachingId.set(busyId);
     this.attachError.set(null);
     this.campaignService
@@ -1419,6 +1431,8 @@ export class AudienceBuilderTabComponent {
           if (run !== this.runGeneration) {
             return;
           }
+          // Settled, so the next write may start -- released here rather than on a brief switch.
+          this.attachInFlight.set(false);
           // The parent guards the emission on its own brief id, so it is safe to emit after a
           // brief switch; the local banner is not, because it would describe the previous brief.
           this.audienceAttached.emit(result.audience);
@@ -1430,7 +1444,11 @@ export class AudienceBuilderTabComponent {
           this.lastWriteWasAttach.set(true);
         },
         error: (httpErr: HttpErrorResponse) => {
-          if (run !== this.runGeneration || briefId !== this.briefId()) {
+          if (run !== this.runGeneration) {
+            return;
+          }
+          this.attachInFlight.set(false);
+          if (briefId !== this.briefId()) {
             return;
           }
           this.attachingId.set(null);
@@ -1577,6 +1595,8 @@ export class AudienceBuilderTabComponent {
     this.discoveryError.set(null);
     this.composeAttempted.set(false);
     this.replaceRequestedFor.set(null);
+    // The run generation discards the in-flight reply, so nothing else will release this.
+    this.attachInFlight.set(false);
     this.attachingId.set(null);
     this.attachResult.set(null);
     this.attachError.set(null);

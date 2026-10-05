@@ -11,6 +11,7 @@ import { AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS, AUDIENCE_UNION_EXACT_CAP } from '@
 import type {
   AudienceComposedList,
   AudienceComposeMasterPartial,
+  AudienceAttachExistingResult,
   AudienceComposeMasterResult,
   CampaignAudience,
   AudienceDiscoveredEvent,
@@ -1818,6 +1819,37 @@ describe('AudienceBuilderTabComponent', () => {
 
       expect(attachExistingAudience.mock.calls.at(-1)?.[1]).toMatchObject({ masterListId: '101', suppressionListIds: ['201'] });
       expect(composeAudienceMaster).not.toHaveBeenCalled();
+    });
+
+    it('keeps writes serialized across a brief switch away and back while an attach is outstanding', async () => {
+      // The brief-switch reset cleared the SPINNER, which was also the write guard. A -> B -> A then
+      // let a second attach for A start, and an out-of-order reply let the older one overwrite the
+      // record with the earlier selection.
+      await renderWithPastSend('brief-1');
+      click('audience-card-grid-toggle-101');
+      const first = new Subject<AudienceAttachExistingResult>();
+      attachExistingAudience.mockReturnValue(first);
+      click('campaigns-audience-use-direct');
+
+      fixture.componentRef.setInput('briefId', 'brief-2');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('briefId', 'brief-1');
+      fixture.detectChanges();
+      click('campaigns-audience-use-direct');
+      click('campaigns-audience-compose');
+
+      expect(attachExistingAudience, 'a second attach started while the first was on the wire').toHaveBeenCalledTimes(1);
+      expect(composeAudienceMaster, 'a compose started while an attach was on the wire').not.toHaveBeenCalled();
+
+      // Settling releases it: the guard is not permanently closed.
+      first.next({
+        master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+        suppressionListIds: [],
+        audience: ATTACHED_AUDIENCE,
+      } as AudienceAttachExistingResult);
+      first.complete();
+      fixture.detectChanges();
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-use-direct"]')?.disabled).toBe(false);
     });
 
     it('holds the direct attach while the suppression fetch has failed', async () => {
