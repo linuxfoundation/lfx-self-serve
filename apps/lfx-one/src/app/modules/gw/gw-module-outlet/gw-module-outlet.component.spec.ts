@@ -434,6 +434,19 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
+  describe('buildSignInReturnUrl (GH-3286)', () => {
+    // The composition startSignIn navigates with: state nonce + project-param guarantee.
+    // jsdom will not let window.location.assign be stubbed, so this pure method is the
+    // call-site coverage — deleting the ensureProjectParam wiring fails this spec.
+
+    it('carries both the sign-in state and the injected project slug', () => {
+      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
+      const out = new URL(callPrivate<string>('buildSignInReturnUrl', 'https://app.example/foundation/gw/newsletters', 'nonce-123'));
+      expect(out.searchParams.get(GW_EMBED_SIGNIN_STATE_PARAM)).toBe('nonce-123');
+      expect(out.searchParams.get('project')).toBe('agentic-ai-foundation');
+    });
+  });
+
   describe('ensureProjectParam (GH-3286)', () => {
     // The sign-in return is a full page load: without ?project= the tenant guard and the
     // newsletter guard's legacy chain fall back to a context service that has not rehydrated

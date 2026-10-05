@@ -179,12 +179,8 @@ export class GwModuleOutletComponent {
       // case is that sign-in does not complete — never that an unverified token is adopted.
     }
 
-    const returnWithState = new URL(returnUrl);
-    returnWithState.searchParams.set(GW_EMBED_SIGNIN_STATE_PARAM, state);
-    this.ensureProjectParam(returnWithState);
-
     const separator = lfidStartUrl.includes('?') ? '&' : '?';
-    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(returnWithState.toString())}`);
+    window.location.assign(`${lfidStartUrl}${separator}return_url=${encodeURIComponent(this.buildSignInReturnUrl(returnUrl, state))}`);
   }
 
   // 10. Private initializer
@@ -638,6 +634,19 @@ export class GwModuleOutletComponent {
     // only risks a later arrival looking like a fresh sign-in return.
     const url = new URL(`${window.location.origin}${this.routePrefix}${GW_EMBED_LANDING_PATH}${window.location.search}`);
     url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
+    return url.toString();
+  }
+
+  /**
+   * Composes the final sign-in return URL: the browser-binding state nonce plus the
+   * project-param guarantee. Pure URL-in/URL-out so the spec can cover the wiring —
+   * jsdom won't let `window.location.assign` be stubbed, so the composition is the
+   * testable unit, and startSignIn only encodes and navigates.
+   */
+  private buildSignInReturnUrl(returnUrl: string, state: string): string {
+    const url = new URL(returnUrl);
+    url.searchParams.set(GW_EMBED_SIGNIN_STATE_PARAM, state);
+    this.ensureProjectParam(url);
     return url.toString();
   }
 
