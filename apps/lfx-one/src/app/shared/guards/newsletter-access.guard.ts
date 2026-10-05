@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject } from '@angular/core';
+import { inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
 import { catchError, map, Observable, of } from 'rxjs';
 
@@ -36,6 +37,18 @@ import { ProjectService } from '../services/project.service';
  * the active project context without triggering a lens switch.
  */
 export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+  // SSR defers to the browser, mirroring gatewazeEmbedEnabledGuard on the same route family.
+  // The guard re-runs client-side after hydration, so enforcement is unchanged; what this
+  // removes is the server turning a transient writer-lookup failure into a real HTTP 302.
+  // That bit the Gatewaze embed's sign-in return (GH-3274): the return is a full page load,
+  // the legacy branch's non-strict lookup collapses any failure to null, and the resulting
+  // server redirect bounced a signed-in user to the overview page — carrying the sign-in
+  // return fragment onto a page that never consumes it, because browsers preserve fragments
+  // across HTTP redirects (unlike in-app Angular redirects).
+  if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+    return true;
+  }
+
   const personaService = inject(PersonaService);
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);

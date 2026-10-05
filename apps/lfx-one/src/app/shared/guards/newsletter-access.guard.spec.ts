@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
@@ -231,4 +231,16 @@ describe('newsletterAccessGuard', () => {
 
     expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'route-project', _notice: 'access' } } });
   });
+
+  it('defers to the browser during SSR without persona or project lookups (GH-3274)', async () => {
+    // On the server a transient lookup failure would become a real HTTP 302 that
+    // bounces the Gatewaze embed's sign-in return to overview. The guard must not
+    // evaluate anything during SSR; the client re-runs it after hydration.
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const result = await runGuard(route({ query: { project: 'agentic-ai-foundation' }, lens: 'foundation' }));
+    expect(result).toBe(true);
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
+  });
+
 });
