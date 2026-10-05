@@ -2993,6 +2993,65 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The wait is for the agreement the return names, so a mid-wait move to another CLA Group has
+     * to tear it down — otherwise its completion handler sets the still-confirming state on a
+     * visit nobody just signed for, and until it does, the new page stays stuck behind the
+     * confirming skeleton that owns the live region.
+     */
+    it('ends the wait when the page moves to another CLA Group mid-wait', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+        getClaGroups.mockClear();
+        getClaGroups.mockReturnValue(new Subject());
+
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).not.toBeNull();
+
+        // Serve a signed overview for the new group so the normal page can render immediately.
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [claGroup({ id: ELSEWHERE_GROUP_ID })] }));
+        paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+        await flush(fixture);
+
+        // Nothing survives on the new agreement — the old wait is torn down, the trip is settled.
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+
+        // Even if the stalled list wakes up later, the completion handler must not stamp the new
+        // page with a confirmation state for an agreement nobody just signed.
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
+     * The still-confirming state replaces an already-announced polite status, so screen-reader
+     * users have to hear the swap: without a live region on the new state, waiting ends silently
+     * and the Refresh action goes unannounced.
+     */
+    it('announces the still-confirming empty state politely for screen readers', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        const pending = byTestId(fixture, 'org-easycla-detail-signature-pending-state');
+        const liveRegion = pending?.closest('[role="status"]');
+        expect(liveRegion).not.toBeNull();
+        expect(liveRegion?.getAttribute('aria-live')).toBe('polite');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * This page survives an organization switch, so a wait left running would answer for a company
      * the viewer has deliberately left — and render that company's agreement under the name of the
      * one now selected.

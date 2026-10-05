@@ -1799,7 +1799,23 @@ export class OrgEasyclaDetailComponent {
       skipWhile((current) => current !== uid),
       filter((current) => current !== uid)
     );
-    movedOff$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
+
+    // The address picks out which agreement this return is about: `:claGroupId` names the group,
+    // `sig` the row within it. The component is reused when either changes, so a wait left running
+    // can complete after the page has moved to another agreement and set the still-confirming
+    // state on *that* visit — one nobody just signed. Watched here, independent of the retries,
+    // so the trip is torn down and settled regardless of which half of the wait is in flight.
+    const startClaGroupId = this.claGroupId();
+    const startSignatureId = this.signatureId();
+    const agreementChanged$ = combineLatest([
+      toObservable(this.claGroupId, { injector: this.injector }),
+      toObservable(this.signatureId, { injector: this.injector }),
+    ]).pipe(
+      skip(1),
+      filter(([group, sig]) => group !== startClaGroupId || sig !== startSignatureId)
+    );
+    const tripEnded$ = merge(movedOff$, agreementChanged$);
+    tripEnded$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
 
     const settled$ = toObservable(
       computed(() => ({
@@ -1812,7 +1828,7 @@ export class OrgEasyclaDetailComponent {
       // thing right up until they are not, and the moment they diverge is the moment this matters.
     ).pipe(filter(({ data, fetching, failed }) => failed || (data?.orgUid === uid && !fetching)));
 
-    settled$.pipe(takeUntil(movedOff$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+    settled$.pipe(takeUntil(tripEnded$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       // Nothing may be decided on a list that arrives after the trip is already over — acting on it
       // would flash the confirming line and spend a retry budget on a company nobody asked about.
       // The uid binding above and `movedOff$` are what close that window; this is the cheap check
@@ -1825,7 +1841,7 @@ export class OrgEasyclaDetailComponent {
       }
 
       this.confirmingSignature.set(true);
-      this.retryForSignedRow(uid, movedOff$);
+      this.retryForSignedRow(uid, startClaGroupId, startSignatureId, tripEnded$);
     });
   }
 
@@ -1841,11 +1857,12 @@ export class OrgEasyclaDetailComponent {
    * company they deliberately left. Giving up still spends the trip, so the address is cleaned up
    * rather than left to reopen the wait on reload.
    *
-   * `uid` and `movedOff$` are both handed down rather than rebuilt here: reading the selection
-   * again would ask the same question at a later moment and can get a different answer, which is
-   * the whole family of bug this keying exists to end.
+   * `uid`, the captured agreement ids, and `tripEnded$` are all handed down rather than rebuilt
+   * here: reading the selection or the address again would ask the same question at a later
+   * moment and can get a different answer, which is the whole family of bug this keying exists to
+   * end.
    */
-  private retryForSignedRow(uid: string, movedOff$: Observable<string | null | undefined>): void {
+  private retryForSignedRow(uid: string, startClaGroupId: string, startSignatureId: string, tripEnded$: Observable<unknown>): void {
     timer(OrgEasyclaDetailComponent.signedRowRetryDelayMs, OrgEasyclaDetailComponent.signedRowRetryDelayMs)
       .pipe(
         take(OrgEasyclaDetailComponent.signedRowRetries),
@@ -1872,16 +1889,20 @@ export class OrgEasyclaDetailComponent {
           this.fetchError.set(false);
         }),
         map(() => this.listedGroupForAddress()),
-        takeUntil(movedOff$),
+        takeUntil(tripEnded$),
         takeUntil(timer(OrgEasyclaDetailComponent.signedRowWaitDeadlineMs)),
         first((found) => !!found, undefined),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((found) => {
         // A list that came back without the row is "still landing", not "hasn't signed". A hard
-        // failure leaves the load error in place, and leaving the organization must not stamp this
-        // visit with a confirmation state for a company the viewer has already left.
-        const stillHere = this.accountContext.selectedAccount()?.uid === uid;
+        // failure leaves the load error in place, and leaving the organization — or opening
+        // another agreement in this component — must not stamp *that* visit with a confirmation
+        // state for one nobody just signed. The agreement check is the fence; `tripEnded$`
+        // already cancels in those cases, but a late emission that races the cancellation would
+        // still carry the stale ids without this guard.
+        const stillHere =
+          this.accountContext.selectedAccount()?.uid === uid && this.claGroupId() === startClaGroupId && this.signatureId() === startSignatureId;
         if (!found && stillHere && !this.fetchError()) this.signatureStillUnlisted.set(true);
         this.settleReturn();
       });
