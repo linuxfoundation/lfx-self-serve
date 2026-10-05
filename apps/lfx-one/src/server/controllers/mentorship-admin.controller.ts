@@ -40,7 +40,7 @@ export class MentorshipAdminController {
 
       const programs = await this.mentorshipAdminService.getPrograms(req, { search, status: rawStatus, offset, limit });
 
-      // The search text is left out of the log: it is user input.
+      // The search text stays out of this metadata; the request URL is logged as on every route.
       logger.success(req, 'get_mentorship_admin_programs', startTime, { status: rawStatus, offset, limit, result_count: programs.data.length });
 
       res.json(programs);

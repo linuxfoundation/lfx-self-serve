@@ -75,4 +75,4 @@ The Enroll form's lookups (program name availability, LF projects, invitable use
 - The program list forwards the caller's bearer token and only lists programs the caller administers. The detail route checks only that a user is signed in and serves mock data today. When a screen moves to the mentorship service, it must forward the caller's bearer token so upstream enforces admin access, or add a BFF-side admin guard, with a 403 test for a non-admin user.
 - The read routes stay available while impersonating. Admin write routes added later take `blockDuringImpersonation` (see [Impersonation](./impersonation.md)).
 - The app service lets a program-list failure reach the page, which shows an inline error with Retry. A detail failure falls back to `null`, and a 404 is not logged.
-- Logs carry ids, counts, flags and the list filters (never the `search` text). Names and emails never go in logs.
+- The admin code's own log metadata carries ids, counts, flags and the status filter, never the `search` text, names or emails. The request URL, query string included, is still logged by the shared request serializer and kept on upstream errors, as on every route.
