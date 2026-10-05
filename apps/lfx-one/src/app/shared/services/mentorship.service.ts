@@ -6,7 +6,6 @@ import { inject, Injectable } from '@angular/core';
 import {
   EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE,
   EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE,
-  EMPTY_MENTORSHIP_PROGRAMS_RESPONSE,
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
@@ -14,45 +13,24 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipLfxProfileFields,
   MentorshipNameAvailability,
   MentorshipProgramDecisionRequest,
-  MentorshipProgramDetail,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
-  MentorshipProgramsResponse,
-  MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
  *
- * Shape mirrors `CrowdfundingService` deliberately: list degrades to an empty
- * response on error so the admin surface never blocks on upstream faults.
- * The mentor pages' own reads live in `MentorshipMentorService`.
+ * Shape mirrors `CrowdfundingService` deliberately: lookups degrade to an empty
+ * response on error so the enroll flow never blocks on upstream faults.
+ * The admin pages' reads live in `MentorshipAdminService` and the mentor pages' in `MentorshipMentorService`.
  */
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
   private readonly http = inject(HttpClient);
-
-  public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number }): Observable<MentorshipProgramsResponse> {
-    let httpParams = new HttpParams();
-    if (params?.search) httpParams = httpParams.set('search', params.search);
-    if (params?.status) httpParams = httpParams.set('status', params.status);
-    if (params?.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
-    if (params?.limit !== undefined) httpParams = httpParams.set('limit', String(params.limit));
-
-    return this.http
-      .get<MentorshipProgramsResponse>('/api/mentorship/programs', { params: httpParams })
-      .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_PROGRAMS_RESPONSE, 'getPrograms')));
-  }
-
-  /** Loads a program by id (default URL) or slug. */
-  public getProgram(programId: string): Observable<MentorshipProgramDetail | null> {
-    return this.http
-      .get<MentorshipProgramDetail>(`/api/mentorship/programs/${encodeURIComponent(programId)}`)
-      .pipe(catchError(this.handleError(null, 'getProgram')));
-  }
 
   public isProgramNameAvailable(name: string): Observable<MentorshipNameAvailability> {
     return this.http.get<MentorshipNameAvailability>('/api/mentorship/programs/name-available', { params: new HttpParams().set('name', name) }).pipe(take(1));
@@ -95,6 +73,14 @@ export class MentorshipService {
   public submitProgramDecision(programId: string, decision: MentorshipProgramReviewDecision): Observable<MentorshipProgramReview> {
     const body: MentorshipProgramDecisionRequest = { decision };
     return this.http.post<MentorshipProgramReview>(`/api/mentorship/program-review/${encodeURIComponent(programId)}/decision`, body).pipe(take(1));
+  }
+
+  /**
+   * Copies the LFX profile's name, email, logo and GitHub link onto the caller's mentor and mentee
+   * profiles; the BFF resolves the email and the link. Not caught here: the profile card logs the failure and tells the user.
+   */
+  public syncLfxProfileFields(fields: MentorshipLfxProfileFields): Observable<void> {
+    return this.http.patch<void>('/api/mentorship/me/lfx-profile', fields).pipe(take(1));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {

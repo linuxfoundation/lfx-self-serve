@@ -4,7 +4,7 @@ description: Schedule, manage, and join project meetings with calendar integrati
 audience: [all]
 product_area: Meetings
 tags: [meetings, schedule, calendar, join, zoom, virtual]
-last_updated: 2026-08-10
+last_updated: 2026-10-04
 intercom_collection: Meetings
 ---
 
@@ -40,12 +40,26 @@ The left navigation label for this section depends on which lens you're in:
 - **Foundation or Project lens**: the sidebar item is **Meetings**, scoped to that foundation or project. This is where the **Create Meeting** button appears, if you have write access.
 - **Org lens**: the sidebar item is also labeled **Meetings**, but it opens a meeting analytics view for the org rather than the shared meetings dashboard — there's no Create Meeting button here.
 
-Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Time filters: **Upcoming** and **Past**. In the Me lens, an additional **Pending RSVP** filter (Upcoming only) and **Organized by me** filter (Upcoming and Past) are available.
+Me, Foundation, and Project lenses share the same dashboard, just scoped differently. Choose **Upcoming** or **Past** with the time control at the left of the filter bar. In the Me lens, these on/off filters sit beside it, each showing how many meetings it matches:
+
+- **Pending RSVP** (Upcoming only) — meetings that collect RSVPs and that you haven't answered yet.
+- **Organized by me** (Upcoming and Past) — meetings you created.
+- **Show declined** (Upcoming only) — My Meetings hides a meeting you declined for every date, because declining doesn't remove you from the guest list and only an organizer can do that. Turn this on to see those meetings again. Declining a single date keeps the meeting in your list, and a meeting you organized always stays in your list even if you declined every date. The filter appears only when you have declined meetings.
+
+At the top of My Meetings, the Upcoming stats show **Meetings in the Next 7 Days**, which counts each date (a weekly series adds one per week), and **Need Your RSVP**. Select **Need Your RSVP** to turn on the Pending RSVP filter. Both stats leave out meetings you declined for every date, except meetings you organized.
 
 Empty states differ by lens:
 
 - Me lens, no upcoming meetings: "No upcoming meetings — Meetings from your committees and projects will appear here."
+- Me lens, every upcoming meeting declined for all dates: "No upcoming meetings you're attending", with a **Show declined** button.
 - Foundation/Project/Org lens, no upcoming meetings: "No meetings yet — Schedule a meeting to get started."
+
+### On each meeting card
+
+- **Materials** lists the files and links for the meeting. On a recurring meeting, the "all dates" note means the same materials apply to every occurrence. Organizers see **Edit materials**.
+- **People Invited** (organizers) shows the RSVP summary and up to five faces, attending people first, plus a "+N" for everyone else. **View all** opens the full guest list, which you can search and filter. **Invite people** opens the same list with the Add Guest form already open. Adding a guest still invites them to every occurrence.
+- Invitees see the same faces and **View all** on the meeting card, but only when the organizer turned on **Show attendees to guests** for the meeting. This doesn't depend on RSVPs: the faces appear even when the meeting doesn't collect them. The same setting controls **Show Members** on the meeting's page: without it, invitees see how many people are invited, but not who. Board and restricted meetings never share their guest list.
+- For a past meeting, the participant list goes to organizers and to the people who were invited or attended, whatever that setting says. Anyone else signed in who can open the meeting sees the attendance numbers, but not who.
 
 ## Key concepts
 

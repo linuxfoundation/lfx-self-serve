@@ -502,6 +502,12 @@ export const COMMITTEE_FORM_STEPS = {
 };
 
 /**
+ * Inline note shown on feature toggles that gate-keep the org-name/URL join requirement.
+ * Extracted to avoid the two copies drifting if the wording ever changes.
+ */
+const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an organization name and URL.';
+
+/**
  * Committee settings features for Step 2 form
  * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
  */
@@ -511,6 +517,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-shield',
     title: 'Business Email Required',
     description: 'Require members to have a business email address',
+    note: ORG_REQUIRED_NOTE,
     color: lfxColors.blue[500],
   },
   {
@@ -518,6 +525,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-check-to-slot',
     title: 'Enable Voting',
     description: `Allow members to vote on ${COMMITTEE_LABEL.singular.toLowerCase()} matters`,
+    note: ORG_REQUIRED_NOTE,
     recommended: true,
     color: lfxColors.violet[500],
   },
@@ -548,7 +556,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      "Let guests see who else is invited, and who has accepted, in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
+      "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
     color: lfxColors.blue[500],
   },
 ];

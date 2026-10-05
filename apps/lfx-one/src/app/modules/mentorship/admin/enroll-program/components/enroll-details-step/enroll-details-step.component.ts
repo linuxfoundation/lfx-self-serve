@@ -32,6 +32,7 @@ import {
   MENTORSHIP_ENROLL_REPO_HELPER,
   MENTORSHIP_ENROLL_WEBSITE_HELPER,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
+  MENTORSHIP_PROGRAMS_MAX_LIMIT,
   MENTORSHIP_SKILL_OPTIONS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   mentorshipCiiBadgeImageUrl,
@@ -39,6 +40,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
 import { isMentorshipCiiProjectId, isMentorshipLogoFileName, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import {
   catchError,
@@ -71,6 +73,7 @@ export class EnrollDetailsStepComponent {
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
   private readonly mentorshipService = inject(MentorshipService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
   private readonly lfFilter$ = new Subject<string>();
   private readonly lfLoadMore$ = new Subject<void>();
   protected readonly lfProjectItemSize = 40;
@@ -207,8 +210,8 @@ export class EnrollDetailsStepComponent {
         if (found) this.selectedProject.set(found);
       });
 
-    this.mentorshipService
-      .getPrograms()
+    this.mentorshipAdminService
+      .getPrograms({ limit: MENTORSHIP_PROGRAMS_MAX_LIMIT })
       .pipe(takeUntilDestroyed())
       .subscribe({
         next: (response) => {

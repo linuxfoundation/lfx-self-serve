@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ProgramDetailHeaderComponent } from './program-detail-header.component';
 
-describe('ProgramDetailHeaderComponent — mentees tab label', () => {
+describe('ProgramDetailHeaderComponent — tabs', () => {
   const program = (status: MentorshipProgramStatus): MentorshipProgram => ({
     id: 'mp_1',
     slug: 'thanos-fan-out-query-observability',
@@ -26,8 +26,8 @@ describe('ProgramDetailHeaderComponent — mentees tab label', () => {
   const render = (status: MentorshipProgramStatus): void => {
     fixture = TestBed.createComponent(ProgramDetailHeaderComponent);
     fixture.componentRef.setInput('program', program(status));
-    fixture.componentRef.setInput('tabCounts', { mentees: 4, applicants: 0, mentors: 2, terms: 2 });
-    fixture.componentRef.setInput('activeTab', 'mentees');
+    fixture.componentRef.setInput('tabCounts', { currentMentees: 4, pastMentees: 7, mentors: 2, terms: 3 });
+    fixture.componentRef.setInput('activeTab', 'current-mentees');
     fixture.detectChanges();
   };
 
@@ -39,30 +39,24 @@ describe('ProgramDetailHeaderComponent — mentees tab label', () => {
     });
   });
 
-  const menteesTabText = (): string =>
-    ((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-program-detail-tab-mentees"]')?.textContent ?? '').trim();
+  const tabText = (value: string): string =>
+    ((fixture.nativeElement as HTMLElement).querySelector(`[data-testid="mentorship-program-detail-tab-${value}"]`)?.textContent ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-  it('labels the tab "Current Mentees" while the program is open', () => {
+  it('renders the four tabs in order, each with its own count', () => {
     render('open');
 
-    expect(menteesTabText()).toContain('Current Mentees');
+    expect(tabText('current-mentees')).toBe('Current Mentees 4');
+    expect(tabText('past-mentees')).toBe('Past Mentees 7');
+    expect(tabText('mentors')).toBe('Mentors 2');
+    expect(tabText('terms')).toBe('Terms 3');
   });
 
-  it('labels the tab "Past Mentees" once the program is completed, keeping its count', () => {
+  it('keeps the same labels once the program is completed', () => {
     render('completed');
 
-    expect(menteesTabText()).toContain('Past Mentees');
-    expect(menteesTabText()).not.toContain('Current Mentees');
-    // The tab keeps its `mentees` value, so the count badge is unaffected by the relabel.
-    expect(menteesTabText()).toContain('4');
-  });
-
-  it('leaves the other tab labels alone when completed', () => {
-    render('completed');
-    const element = fixture.nativeElement as HTMLElement;
-
-    expect(element.querySelector('[data-testid="mentorship-program-detail-tab-applicants"]')?.textContent).toContain('Applicants');
-    expect(element.querySelector('[data-testid="mentorship-program-detail-tab-mentors"]')?.textContent).toContain('Mentors');
-    expect(element.querySelector('[data-testid="mentorship-program-detail-tab-terms"]')?.textContent).toContain('Terms');
+    expect(tabText('current-mentees')).toBe('Current Mentees 4');
+    expect(tabText('past-mentees')).toBe('Past Mentees 7');
   });
 });

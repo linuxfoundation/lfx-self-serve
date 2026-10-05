@@ -15,17 +15,14 @@ import type {
 import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
-/**
- * Health Metrics tab bar. Overview, Engagement, Events and Members are routable today; the remaining
- * two render disabled so the bar does not reshuffle as their tabs land.
- */
+/** Health Metrics tab bar, in render order; every tab routes to its Level 2 page. */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
   { key: 'events', label: 'Events', route: 'events' },
   { key: 'members', label: 'Members', route: 'members' },
-  { key: 'non-members', label: 'Non-Members', route: null },
-  { key: 'training', label: 'Training', route: null },
+  { key: 'non-members', label: 'Non-Members', route: 'non-members' },
+  { key: 'training', label: 'Training', route: 'training' },
 ] as const;
 
 /** The query-param keys the sections and the Overview deep links share, tied to the typed param shape. */

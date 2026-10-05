@@ -28,15 +28,15 @@
         [id]="'mentorship-program-detail-tab-panel-' + activeTab()"
         [attr.aria-labelledby]="'mentorship-program-detail-tab-trigger-' + activeTab()">
         @switch (activeTab()) {
-          @case ('mentees') {
-            @if (isCompleted()) {
-              <lfx-mentorship-past-mentees-tab [mentees]="mentees()" />
-            } @else {
-              <lfx-mentorship-current-mentees-tab [mentees]="mentees()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
-            }
+          @case ('current-mentees') {
+            <lfx-mentorship-current-mentees-tab
+              [mentees]="currentMentees()"
+              [terms]="terms()"
+              [noteDrafts]="noteDrafts()"
+              (noteRequested)="onNoteRequested($event)" />
           }
-          @case ('applicants') {
-            <lfx-mentorship-applicants-tab [applicants]="applicants()" [noteDrafts]="noteDrafts()" (noteRequested)="onNoteRequested($event)" />
+          @case ('past-mentees') {
+            <lfx-mentorship-past-mentees-tab [mentees]="pastMentees()" [terms]="terms()" />
           }
           @case ('mentors') {
             <lfx-mentorship-mentors-tab [mentors]="mentors()" />

@@ -92,7 +92,7 @@
                 }
 
                 <!-- View Guests Button -->
-                @if (authenticated() && (meeting().organizer || meeting().invited)) {
+                @if (authenticated() && canViewGuests()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -102,7 +102,7 @@
                     styleClass="py-[0.15rem] text-xs"
                     data-testid="view-members-button">
                   </lfx-button>
-                } @else if (meeting().show_meeting_attendees) {
+                } @else if (attendeeListShared()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -115,17 +115,43 @@
                 }
               </div>
 
-              <!-- Right: Copy Link Button -->
-              <lfx-button
-                [icon]="'fa-light fa-copy'"
-                [rounded]="true"
-                size="small"
-                severity="secondary"
-                [text]="true"
-                (onClick)="handleCopyLink()"
-                [attr.data-testid]="'meeting-copy-link-button'"
-                [pTooltip]="'Copy meeting link'">
-              </lfx-button>
+              <!-- Right: Occurrence actions (organizers only) + Copy Link Button -->
+              <div class="flex items-center gap-1">
+                @if (canManageOccurrence()) {
+                  <lfx-button
+                    icon="fa-light fa-calendar-pen"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    ariaLabel="Edit this occurrence"
+                    (onClick)="rescheduleCurrentOccurrence()"
+                    data-testid="meeting-reschedule-occurrence-button"
+                    tooltip="Edit this occurrence">
+                  </lfx-button>
+                  <lfx-button
+                    icon="fa-light fa-ban"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    ariaLabel="Cancel this occurrence"
+                    (onClick)="cancelCurrentOccurrence()"
+                    data-testid="meeting-cancel-occurrence-button"
+                    tooltip="Cancel this occurrence">
+                  </lfx-button>
+                }
+                <lfx-button
+                  [icon]="'fa-light fa-copy'"
+                  [rounded]="true"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="handleCopyLink()"
+                  [attr.data-testid]="'meeting-copy-link-button'"
+                  [pTooltip]="'Copy meeting link'">
+                </lfx-button>
+              </div>
             </div>
 
             <!-- Content Row: Title/Details + Join Button (if immediate) -->
@@ -310,7 +336,7 @@
                   }
 
                   <!-- Total Invitees -->
-                  @if (registrants().length > 0 && !isPastMeeting()) {
+                  @if (totalInvitees() > 0 && !isPastMeeting()) {
                     <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
                       <i class="fa-light fa-users"></i>
                       <span>{{ totalInvitees() }} invited</span>
@@ -834,6 +860,7 @@
           [meeting]="meeting()"
           [pastMeeting]="isPastMeeting()"
           [showAddRegistrant]="!!meeting().organizer && !isPastMeeting()"
+          [occurrence]="currentOccurrence()"
           [myMeetingRegistrants]="true"
           [initialRegistrants]="registrants()"
           [initialRegistrantsLoading]="registrantsLoading()"

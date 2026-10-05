@@ -269,3 +269,48 @@ describe('ApiClientService.streamRequest — same classification, separate code 
     expect(err.toResponse()['transport']).toBeUndefined();
   });
 });
+
+/**
+ * Which methods carry a request body.
+ * @description DELETE used to drop its body like GET, which silently lost the note an organizer
+ * attaches to a cancelled occurrence. Every other DELETE caller passes no data, so sending one only
+ * when it's given leaves them unchanged.
+ */
+describe('ApiClientService.request — request bodies', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stubFetch = (): ReturnType<typeof vi.fn> => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 204, statusText: 'No Content', headers: new Headers(), text: () => Promise.resolve('') })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+  const bodyOf = (fetchMock: ReturnType<typeof vi.fn>): unknown => (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body;
+
+  it('sends a JSON body on DELETE when data is given', async () => {
+    const fetchMock = stubFetch();
+
+    await new ApiClientService({ retryAttempts: 1 }).request('DELETE', 'https://example.invalid/x', undefined, undefined, { note: 'Holiday week' });
+
+    expect(bodyOf(fetchMock)).toBe(JSON.stringify({ note: 'Holiday week' }));
+  });
+
+  it('sends no body on DELETE without data', async () => {
+    const fetchMock = stubFetch();
+
+    await new ApiClientService({ retryAttempts: 1 }).request('DELETE', 'https://example.invalid/x');
+
+    expect(bodyOf(fetchMock)).toBeUndefined();
+  });
+
+  it('still never sends a body on GET', async () => {
+    const fetchMock = stubFetch();
+
+    await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x', undefined, undefined, { ignored: true });
+
+    expect(bodyOf(fetchMock)).toBeUndefined();
+  });
+});

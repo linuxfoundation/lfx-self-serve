@@ -3,6 +3,7 @@
 
 import type {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKETS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_LEVELS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
@@ -318,15 +319,20 @@ export interface HealthMetricsMembersDirectoryCellView {
   tracked: boolean;
 }
 
-/** The directory's filter and page state in the URL. */
+/** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */
 export interface HealthMetricsMembersQueryParams {
-  memTier: string;
-  memNps: string;
-  memSearch: string;
-  memPage: string;
-  riskBucket: string;
-  riskPage: string;
-  renewalsPage: string;
+  memTier?: string | null;
+  memNps?: HealthMetricsMembersNpsCategory | null;
+  memSearch?: string | null;
+  memPage?: number | null;
+  riskBucket?: HealthMetricsMembersAtRiskBucket | null;
+  riskPage?: number | null;
+  renewalsPage?: number | null;
+  boardCohort?: HealthMetricsMembersBoardCohort | null;
+  boardPage?: number | null;
+  npsAudience?: string | null;
+  churnMode?: HealthMetricsMembersChurnMode | null;
+  churnPage?: number | null;
 }
 
 /** A `MEMBERSHIP_AT_RISK` aging bucket past 60 days; the section leaves out balances under 60 days. */
@@ -456,4 +462,333 @@ export interface HealthMetricsMembersRenewalRowView {
   renewalDateLabel: string;
   duesLabel: string;
   hasOutstandingBalance: boolean;
+}
+
+/** `MEMBERSHIP_BOARD_ATTENDANCE`'s `attendance_cohort` values. */
+export type HealthMetricsMembersBoardCohort = (typeof HEALTH_METRICS_MEMBERS_BOARD_COHORTS)[number];
+
+/** The Board / Voting members toggle. */
+export interface HealthMetricsMembersBoardCohortOption extends FilterPillOption {
+  id: HealthMetricsMembersBoardCohort;
+}
+
+/** `GET /api/analytics/members-board-attendance` — one cohort's meetings in the period, one page at a time. */
+export interface HealthMetricsMembersBoardAttendanceQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  cohort: HealthMetricsMembersBoardCohort;
+  offset: number;
+  pageSize: number;
+}
+
+/** One cohort's period figures as the view carries them; every field is `null` when the period held no meeting. */
+export interface HealthMetricsMembersBoardCohortSummary {
+  /** 0–1 share of the invited who attended the latest meeting in the period. */
+  latestAttendancePct: number | null;
+  latestAttendedCount: number | null;
+  latestInvitedCount: number | null;
+  meetingsInRangeCount: number | null;
+  neverAttendedCount: number | null;
+  /** The view's own level flag; the page never compares the share with a threshold. */
+  isBelowExpectedLevel: boolean | null;
+}
+
+/** One meeting occurrence of the cohort. `meetingDate` is ISO `YYYY-MM-DD`; `attendancePct` is 0–1. */
+export interface HealthMetricsMembersBoardMeeting {
+  meetingId: string;
+  committeeName: string | null;
+  meetingDate: string | null;
+  attendedCount: number | null;
+  invitedCount: number | null;
+  attendancePct: number | null;
+  /** The view's latest meeting in the period — the one the hero reports. */
+  isLatestMeeting: boolean;
+}
+
+/** `cohorts` carries both cohorts so the hero can show the other one; `null` when the foundation has no row for it. */
+export interface HealthMetricsMembersBoardAttendance {
+  cohorts: Record<HealthMetricsMembersBoardCohort, HealthMetricsMembersBoardCohortSummary | null>;
+  /** The selected cohort's latest meetings in the period, oldest first, for the chart. */
+  trend: HealthMetricsMembersBoardMeeting[];
+  /** One page of the selected cohort's meetings in the period, newest first. */
+  rows: HealthMetricsMembersBoardMeeting[];
+  totalRecords: number;
+}
+
+/** The board hero as the section renders it. */
+export interface HealthMetricsMembersBoardSummaryView {
+  meetingsLabel: string;
+  latestPctLabel: string;
+  latestCaption: string;
+  isBelowExpectedLevel: boolean;
+  otherCohortLabel: string;
+  otherCohortPctLabel: string;
+  attendedInvitedLabel: string;
+  neverAttendedLabel: string;
+  neverAttendedCount: number;
+}
+
+/** One meeting row as the table renders it; `ratePct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersBoardMeetingRowView {
+  meetingId: string;
+  committeeName: string;
+  dateLabel: string;
+  attendedLabel: string;
+  ratePct: number | null;
+  rateLabel: string;
+  rateFillClass: string;
+}
+
+/** One bar of the trend chart, oldest first; `pct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersBoardTrendBarView {
+  meetingId: string;
+  label: string;
+  dateLabel: string;
+  committeeName: string;
+  pct: number | null;
+  pctLabel: string;
+  isLatest: boolean;
+}
+
+/** `GET /api/analytics/members-nps` — one audience's survey figures for a period; `null` picks the first audience. */
+export interface HealthMetricsMembersNpsQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  audience: string | null;
+}
+
+/** One audience surveyed in the period. Scores are `null` when the view flags the sample too small to report. */
+export interface HealthMetricsMembersNpsAudience {
+  audience: string;
+  npsScore: number | null;
+  /** Points since the audience's previous survey wave. */
+  scoreChangePp: number | null;
+  recipientsCount: number | null;
+  responsesCount: number | null;
+  /** 0–1 share of recipients who responded. */
+  responseRatePct: number | null;
+  promotersCount: number | null;
+  passivesCount: number | null;
+  detractorsCount: number | null;
+  noResponseCount: number | null;
+  isSampleTooSmall: boolean;
+  /** The survey wave the figures come from, e.g. `Q2 2026`. */
+  lastUpdatedQuarter: string | null;
+}
+
+/** One survey wave of the selected audience; `quarterStartDate` is ISO `YYYY-MM-DD`, `responseRatePct` 0–1. */
+export interface HealthMetricsMembersNpsQuarter {
+  quarterStartDate: string;
+  quarterLabel: string | null;
+  npsScore: number | null;
+  responseRatePct: number | null;
+  isSampleTooSmall: boolean;
+}
+
+/** Audiences in toggle order, the one the figures belong to, and its waves up to the period's end, oldest first. */
+export interface HealthMetricsMembersNps {
+  audiences: HealthMetricsMembersNpsAudience[];
+  selectedAudience: string | null;
+  trend: HealthMetricsMembersNpsQuarter[];
+}
+
+/** The audience toggle over the hero; the id is the view's audience name. */
+export interface HealthMetricsMembersNpsAudienceOption extends FilterPillOption {
+  id: string;
+}
+
+/** The note under the response distribution; `lead` is the bolded opening, when there is one. */
+export interface HealthMetricsMembersNpsFooterView {
+  isBelowFloor: boolean;
+  lead: string | null;
+  text: string;
+}
+
+/** The NPS hero as the section renders it; a withheld score renders the dash and the not-enough caption. */
+export interface HealthMetricsMembersNpsSummaryView {
+  isWithheld: boolean;
+  scoreLabel: string;
+  /** `null` renders no change. */
+  changeLabel: string | null;
+  changeDirection: 'up' | 'down' | 'neutral';
+  caption: string;
+  respondedLabel: string;
+  rateLabel: string;
+  isRateBelowFloor: boolean;
+  /** The low-confidence banner, when the view flags the sample too small. */
+  lowSampleNote: string | null;
+  lastUpdatedLabel: string;
+  surveyedLabel: string;
+  footer: HealthMetricsMembersNpsFooterView;
+}
+
+/** One segment of the response distribution; `widthPct` is its share of everyone surveyed. */
+export interface HealthMetricsMembersNpsSegmentView {
+  key: string;
+  label: string;
+  countLabel: string;
+  widthPct: number;
+  colorClass: string;
+}
+
+/** One wave of the trend chart; `ratePct` is a whole percent, `null` when unmeasured. */
+export interface HealthMetricsMembersNpsTrendPointView {
+  quarterStartDate: string;
+  label: string;
+  score: number | null;
+  scoreLabel: string;
+  ratePct: number | null;
+  rateLabel: string;
+  isRateBelowFloor: boolean;
+}
+
+/** The sentence under the trend: a score rising on a falling rate, a rate below the floor, or a rate holding. */
+export interface HealthMetricsMembersNpsTrendNote {
+  kind: 'diverging' | 'below-floor' | 'holding';
+  scoreChangeLabel: string;
+  fromRateLabel: string;
+  toRateLabel: string;
+}
+
+/** `GET /api/analytics/members-churn` — every year's churn; the section re-projects it per period client-side. */
+export interface HealthMetricsMembersChurnQuery {
+  foundationSlug: string;
+}
+
+/** One all-tiers `MEMBERSHIP_CHURN` row. Rates are percentages (0–100); `null` is unmeasured, never zero. */
+export interface HealthMetricsMembersChurnYear {
+  year: number;
+  isPartialYear: boolean;
+  lostCount: number | null;
+  openingCount: number | null;
+  duesLostUsd: number | null;
+  duesLostPriorUsd: number | null;
+  revenueChurnRate: number | null;
+  revenueChurnRatePrior: number | null;
+  revenueChurnRateChangePp: number | null;
+  logoChurnRate: number | null;
+}
+
+/** One tier's `MEMBERSHIP_CHURN` row for a year. Rates are percentages (0–100). */
+export interface HealthMetricsMembersChurnTier {
+  year: number;
+  tier: string;
+  tierSortRank: number;
+  lostCount: number | null;
+  churnRate: number | null;
+  duesLostUsd: number | null;
+  shareOfLossPct: number | null;
+}
+
+export interface HealthMetricsMembersChurn {
+  /** Newest year first. */
+  years: HealthMetricsMembersChurnYear[];
+  /** Newest year first, then `tier_sort_rank`. */
+  tiers: HealthMetricsMembersChurnTier[];
+}
+
+/** `GET /api/analytics/members-churn-departures` — one page of the organizations that lapsed in a year. */
+export interface HealthMetricsMembersChurnDeparturesQuery {
+  foundationSlug: string;
+  year: number;
+  offset: number;
+  pageSize: number;
+}
+
+/** One churned `MEMBERSHIP_MOVEMENT_DETAIL` row. Dates are ISO `YYYY-MM-DD`. */
+export interface HealthMetricsMembersChurnDeparture {
+  accountId: string;
+  accountName: string;
+  membershipTier: string | null;
+  duesLostUsd: number | null;
+  lapsedDate: string | null;
+  lastEngagedDate: string | null;
+}
+
+export interface HealthMetricsMembersChurnDepartures {
+  rows: HealthMetricsMembersChurnDeparture[];
+  /** Every organization that lapsed in the year, so the table can check it against the churn count. */
+  totalRecords: number;
+}
+
+/** The toggle over the hero: revenue churn leads, logo churn counts each loss once. */
+export type HealthMetricsMembersChurnMode = 'revenue' | 'logo';
+
+export interface HealthMetricsMembersChurnModeOption extends FilterPillOption {
+  id: HealthMetricsMembersChurnMode;
+}
+
+/** One figure beside the hero; `note` is the muted aside after the value. */
+export interface HealthMetricsMembersChurnSideView {
+  key: string;
+  label: string;
+  value: string;
+  note: string | null;
+  isLoss: boolean;
+}
+
+/** One tier of "Where the loss sits"; `shareWidthPct` keeps a visible stub for a tiny share. */
+export interface HealthMetricsMembersChurnTierRowView {
+  tier: string;
+  lostLabel: string;
+  rateLabel: string;
+  isHighRate: boolean;
+  duesLabel: string;
+  shareLabel: string;
+  shareWidthPct: number;
+}
+
+/** The note under the tier table, set only when the tier that lost most members is not the one that lost most dues. */
+export interface HealthMetricsMembersChurnInversionView {
+  /** Bolded, e.g. "Silver lost 83 memberships". */
+  countLead: string;
+  /** Bolded, e.g. "Gold lost the money". */
+  duesLead: string;
+  text: string;
+}
+
+/** One year of the churn trend, oldest first; `value` is the mode's rate, `null` when unmeasured. */
+export interface HealthMetricsMembersChurnTrendPointView {
+  year: number;
+  label: string;
+  value: number | null;
+  valueLabel: string;
+  isSelected: boolean;
+}
+
+/** `#churn`, re-projected per period and mode from the every-year response. */
+export interface HealthMetricsMembersChurnView {
+  /** Any year has churn figures. */
+  measured: boolean;
+  /** The selected period's year has churn figures. */
+  yearMeasured: boolean;
+  year: number;
+  /** The year lost at least one membership. */
+  hasChurn: boolean;
+  lostCount: number;
+  metaLabel: string;
+  heroLabel: string;
+  /** `null` renders no change: the prior year is not in the read. */
+  changeLabel: string | null;
+  /** A rise in churn is bad, so it renders red. */
+  changeTone: 'bad' | 'good' | 'neutral';
+  caption: string;
+  sides: HealthMetricsMembersChurnSideView[];
+  tiers: HealthMetricsMembersChurnTierRowView[];
+  inversion: HealthMetricsMembersChurnInversionView | null;
+  trendTitle: string;
+  trendSubtitle: string;
+  trend: HealthMetricsMembersChurnTrendPointView[];
+  /** The selected year's churn rose on the year before, so its bar warns. */
+  trendRose: boolean;
+}
+
+/** One organization in "Who left". */
+export interface HealthMetricsMembersChurnDepartureRowView {
+  accountId: string;
+  accountName: string;
+  tierLabel: string;
+  duesLabel: string;
+  lapsedLabel: string;
+  lastEngagedLabel: string;
 }

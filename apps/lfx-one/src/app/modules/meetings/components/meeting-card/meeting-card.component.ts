@@ -33,6 +33,7 @@ import {
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { HostKeyPopoverComponent } from '@app/modules/meetings/components/host-key-popover/host-key-popover.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -45,6 +46,7 @@ import {
   COMMITTEE_LABEL,
   resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getActiveOccurrences,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getEntityCommands,
@@ -58,6 +60,8 @@ import {
   MeetingCancelOccurrenceResult,
   MeetingOccurrence,
   MeetingRecurrence,
+  MeetingRescheduleOccurrenceResult,
+  RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
   MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
@@ -69,7 +73,7 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -91,6 +95,8 @@ import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-o
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
+import { RecurringMeetingEditOptionsComponent } from '../../components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
+import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 
 @Component({
   selector: 'lfx-meeting-card',
@@ -111,6 +117,7 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    MeetingInviteeAttendeesComponent,
     MeetingMaterialsDrawerComponent,
     MeetingOrganizerComponent,
     HostKeyPopoverComponent,
@@ -140,6 +147,8 @@ export class MeetingCardComponent implements OnInit {
   public readonly showBorder = input<boolean>(false);
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
+  /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
+  public openRegistrantsOnAddForm: WritableSignal<boolean> = signal(false);
   public showMyRsvp: WritableSignal<boolean> = signal(false);
   // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
   // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
@@ -193,6 +202,7 @@ export class MeetingCardComponent implements OnInit {
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
+  public readonly meetingDuration: Signal<number> = computed(() => this.occurrence()?.duration || this.meeting().duration);
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
@@ -218,6 +228,7 @@ export class MeetingCardComponent implements OnInit {
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
   public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
+  public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -374,19 +385,23 @@ export class MeetingCardComponent implements OnInit {
             return;
           }
 
-          // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
-          // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
-          // full-page editor through the router, which is what this button did before v2.
-          if (!this.meetingsV2Enabled()) {
-            void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+          if (fresh.recurrence && this.isShownOccurrenceGone(fresh)) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Occurrence changed',
+              detail: 'This occurrence was moved or cancelled. The list has been refreshed.',
+            });
+            this.meetingDeleted.emit();
             return;
           }
 
-          this.composer.open({
-            mode: 'edit',
-            meetingUid: meeting.id,
-            projectUid: meeting.project_uid,
-          });
+          const occurrence = fresh.recurrence ? this.resolveEditOccurrence(fresh) : null;
+          if (occurrence) {
+            this.showEditScopeModal(fresh, occurrence);
+            return;
+          }
+
+          this.openSeriesEditor(meeting);
         },
         error: (error: unknown) => this.reportEditProbeFailure(error),
       });
@@ -403,6 +418,16 @@ export class MeetingCardComponent implements OnInit {
 
   public onRegistrantsToggle(): void {
     this.showRegistrants.set(!this.showRegistrants());
+  }
+
+  public onInvitePeople(): void {
+    this.openRegistrantsOnAddForm.set(true);
+    this.showRegistrants.set(true);
+  }
+
+  public onRegistrantsDrawerHide(): void {
+    this.drawerGuestCount.set(null);
+    this.openRegistrantsOnAddForm.set(false);
   }
 
   public onRsvpViewToggle(): void {
@@ -619,7 +644,7 @@ export class MeetingCardComponent implements OnInit {
       width: '450px',
       modal: true,
       closable: true,
-      dismissableMask: true,
+      dismissableMask: false,
       data: {
         meeting: meeting,
         occurrence: occurrenceToCancel,
@@ -641,6 +666,104 @@ export class MeetingCardComponent implements OnInit {
           detail: result.error,
         });
       }
+    });
+  }
+
+  private openSeriesEditor(meeting: Meeting): void {
+    // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
+    // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
+    // full-page editor through the router, which is what this button did before v2.
+    if (!this.meetingsV2Enabled()) {
+      void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+      return;
+    }
+
+    this.composer.open({
+      mode: 'edit',
+      meetingUid: meeting.id,
+      projectUid: meeting.project_uid,
+    });
+  }
+
+  /**
+   * The occurrence a recurring-meeting edit targets, read off the just-fetched meeting.
+   * @description `occurrence()` is derived from the payload the card rendered with, which another
+   * organizer may have moved or cancelled since. It still decides which slot is meant — the one the
+   * user is looking at — and its current values come from `fresh`. Falling back to the fresh next
+   * occurrence would silently retarget the edit onto a later slot once the shown one is cancelled, so
+   * callers rule that case out via `isShownOccurrenceGone` first.
+   */
+  private resolveEditOccurrence(fresh: Meeting): MeetingOccurrence | null {
+    const shown = this.occurrence();
+    if (shown) {
+      return this.findOccurrence(fresh, shown.occurrence_id);
+    }
+    return getCurrentOrNextOccurrence(fresh);
+  }
+
+  /** True when the occurrence this card shows is no longer active in the fresh read. */
+  private isShownOccurrenceGone(fresh: Meeting): boolean {
+    const shown = this.occurrence();
+    return !!shown && !this.findOccurrence(fresh, shown.occurrence_id);
+  }
+
+  private findOccurrence(meeting: Meeting, occurrenceId: string): MeetingOccurrence | null {
+    return (
+      getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences).find((candidate) =>
+        isSameOccurrenceId(candidate.occurrence_id, occurrenceId)
+      ) ?? null
+    );
+  }
+
+  private showEditScopeModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    const dialogRef = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
+      header: 'Edit Recurring Meeting',
+      width: '500px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: RecurringMeetingEditScopeResult | undefined) => {
+      if (!result?.proceed) {
+        return;
+      }
+
+      if (result.scope === 'series') {
+        this.openSeriesEditor(meeting);
+        return;
+      }
+
+      this.showRescheduleOccurrenceModal(meeting, occurrence);
+    });
+  }
+
+  private showRescheduleOccurrenceModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
+      header: 'Edit Occurrence',
+      width: '520px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+      if (!result?.confirmed) {
+        return;
+      }
+
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Occurrence updated',
+        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
+      });
+      // Not every host binds `meetingDeleted` (the committee meetings list doesn't), so the card
+      // re-reads the series itself to show the occurrence under its new start time (also its new id).
+      // The emit still lets a listening parent re-sort its list.
+      this.refreshMeeting();
+      this.meetingDeleted.emit();
     });
   }
 

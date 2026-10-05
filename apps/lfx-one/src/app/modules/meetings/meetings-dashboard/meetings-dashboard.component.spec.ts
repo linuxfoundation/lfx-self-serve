@@ -137,6 +137,91 @@ describe('MeetingsDashboardComponent', () => {
     expect(getUserMeetings).toHaveBeenCalledTimes(1);
     expect(clearPastMeetingRecordingCache).not.toHaveBeenCalled();
   });
+
+  describe('Me lens declined filter and stats', () => {
+    const inHours = (hours: number): string => new Date(Date.now() + hours * 60 * 60_000).toISOString();
+    const rsvp = (responseType: 'accepted' | 'declined', scope: 'all' | 'single') => ({ id: `r-${responseType}`, response_type: responseType, scope });
+    const declinedAll = {
+      id: 'declined',
+      title: 'Declined series',
+      start_time: inHours(2),
+      duration: 30,
+      is_invite_responses_enabled: true,
+      my_rsvp: rsvp('declined', 'all'),
+    };
+    const declinedOne = {
+      id: 'declined-one',
+      title: 'Skipping one date',
+      start_time: inHours(3),
+      duration: 30,
+      is_invite_responses_enabled: true,
+      my_rsvp: rsvp('declined', 'single'),
+    };
+    const pending = { id: 'pending', title: 'Needs a reply', start_time: inHours(4), duration: 30, is_invite_responses_enabled: true, my_rsvp: null };
+    const later = {
+      id: 'later',
+      title: 'Next month',
+      start_time: inHours(24 * 30),
+      duration: 30,
+      is_invite_responses_enabled: true,
+      my_rsvp: rsvp('accepted', 'all'),
+    };
+
+    beforeEach(() => {
+      getUserMeetings.mockReturnValue(of([declinedAll, declinedOne, pending, later] as unknown as Meeting[]));
+    });
+
+    const ids = (component: MeetingsDashboardComponent): string[] => component.filteredMeetings().map((m) => m.id);
+
+    it('hides meetings declined for every date until Show declined is on', () => {
+      const component = createComponent();
+      flush();
+
+      expect(ids(component)).toEqual(['declined-one', 'pending', 'later']);
+      expect(component['declinedCount']()).toBe(1);
+
+      component.showDeclined.set(true);
+      flush();
+      expect(ids(component)).toEqual(['declined', 'declined-one', 'pending', 'later']);
+
+      component.resetFilters();
+      flush();
+      expect(component.showDeclined()).toBe(false);
+    });
+
+    it('keeps a declined meeting the viewer organizes, and counts it under Organized by me', () => {
+      const organizedDeclined = { ...declinedAll, id: 'organized-declined', created_by: { username: 'viewer', name: 'Viewer' } };
+      getUserMeetings.mockReturnValue(of([organizedDeclined, declinedAll, pending] as unknown as Meeting[]));
+      const component = createComponent();
+      flush();
+
+      expect(ids(component)).toEqual(['organized-declined', 'pending']);
+      expect(component['declinedCount']()).toBe(1);
+      expect(component['organizerCount']()).toBe(1);
+    });
+
+    it('counts dates in the stats window and RSVPs still needed, excluding declined-for-all meetings', () => {
+      const component = createComponent();
+      flush();
+
+      expect(component['nextWindowCount']()).toBe(2);
+      expect(component['pendingRsvpCount']()).toBe(1);
+      expect(component['nextMeetingLabel']()).toContain('Skipping one date');
+    });
+
+    it('toggles the pending-RSVP filter from the stat', () => {
+      const component = createComponent();
+      flush();
+
+      component.onPendingRsvpStatClick();
+      flush();
+      expect(ids(component)).toEqual(['pending']);
+
+      component.onPendingRsvpStatClick();
+      flush();
+      expect(component.pendingRsvpOnly()).toBe(false);
+    });
+  });
 });
 
 /**

@@ -14,7 +14,6 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACES,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -48,7 +47,7 @@ import type {
   OrgProjectsWorkspaceId,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildHealthAriaLabel, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, downloadCsv, formatHealthLabel, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
@@ -1051,15 +1050,14 @@ export class OrgProjectsComponent {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
-  // Bare band label, plus " - Partial" when the BFF-sourced coveredCategoryCount marks a 2-of-3 score
-  // (never recomputed locally — see OrgLensProject.healthCoveredCategoryCount). Gated on available:
-  // an unavailable badge never carries the suffix.
+  // Band label, marked partial from the BFF-sourced covered count; an unavailable badge never gets the marker.
   private healthLabelFor(project: OrgLensProject): string {
-    const label = HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)];
-    if (project.health === 'unavailable') {
+    const health = this.normalizeHealth(project.health);
+    const label = HEALTH_SCORE_LABELS[health];
+    if (health === 'unavailable') {
       return label;
     }
-    return isPartialHealthScore(project.healthCoveredCategoryCount) ? `${label}${HEALTH_SCORE_PARTIAL_SUFFIX}` : label;
+    return formatHealthLabel(label, isPartialHealthScore(project.healthCoveredCategoryCount));
   }
 
   // Fallback rows (explicit health-only/unavailable, influence/trend "Unavailable") always sort after measured rows,

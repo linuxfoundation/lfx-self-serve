@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { MentorshipProgramMentee, MentorshipProgramTermRow } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -17,6 +17,20 @@ describe('PastMenteesTabComponent', () => {
     status: 'graduated',
     termName: 'Summer 2026',
     ...overrides,
+  });
+
+  const term = (name: string, status: MentorshipProgramTermRow['status']): MentorshipProgramTermRow => ({
+    id: `trm_${name}`,
+    name,
+    status,
+    pending: 0,
+    declined: 0,
+    accepted: 0,
+    graduated: 0,
+    startDate: '2026-03-01',
+    endDate: '2026-06-01',
+    applicationStartDate: '2026-01-01',
+    applicationEndDate: '2026-02-01',
   });
 
   let fixture: ComponentFixture<PastMenteesTabComponent>;
@@ -33,7 +47,10 @@ describe('PastMenteesTabComponent', () => {
       mentee(),
       mentee({ id: 'mnt_2', name: 'Omar Haddad', status: 'withdrawn' }),
       mentee({ id: 'mnt_3', name: 'Ines Duarte', status: 'declined', termName: 'Spring 2026' }),
+      // A closed term keeps the status an application was left in, pending included.
+      mentee({ id: 'mnt_4', name: 'Tomas Lindqvist', status: 'pending', termName: 'Spring 2026' }),
     ]);
+    fixture.componentRef.setInput('terms', [term('Summer 2026', 'closed'), term('Spring 2026', 'closed'), term('Fall 2026', 'open')]);
     fixture.detectChanges();
   });
 
@@ -60,17 +77,20 @@ describe('PastMenteesTabComponent', () => {
   });
 
   it('offers no note, task, or row-action controls', () => {
-    expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-tasks-mnt_1"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-create-task-mnt_1"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-actions-mnt_1"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-mnt_1"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-view-tasks-mnt_1"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-actions-mnt_1"]')).toBeNull();
+  });
+
+  it('offers every mentee status, and only the closed terms', () => {
+    const component = fixture.componentInstance;
+
+    expect(component['statusOptions'].map((option) => option.label)).toEqual(['All statuses', 'Pending', 'Accepted', 'Declined', 'Withdrawn', 'Graduated']);
+    expect(component['termOptions']().map((option) => option.label)).toEqual(['All closed terms', 'Summer 2026', 'Spring 2026']);
   });
 
   it('filters by both status and term', () => {
     const component = fixture.componentInstance;
-
-    expect(component['statusOptions'].map((option) => option.label)).toEqual(['All statuses', 'Withdrawn', 'Declined', 'Graduated']);
-    expect(component['termOptions']().map((option) => option.label)).toEqual(['All terms', 'Summer 2026', 'Spring 2026']);
 
     component['form'].controls.status.setValue('withdrawn');
     fixture.detectChanges();
@@ -79,6 +99,6 @@ describe('PastMenteesTabComponent', () => {
     component['form'].controls.status.reset(null);
     component['form'].controls.term.setValue('Spring 2026');
     fixture.detectChanges();
-    expect(component['rows']().map((row) => row.id)).toEqual(['mnt_3']);
+    expect(component['rows']().map((row) => row.id)).toEqual(['mnt_3', 'mnt_4']);
   });
 });

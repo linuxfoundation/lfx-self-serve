@@ -148,9 +148,7 @@ export class InitiativeSettingsDrawerComponent {
         input.sponsorshipTiers = sponsorshipTiers.sponsorshipTiers;
       }
 
-      const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input), { defaultValue: null });
-
-      if (!updated) return; // CF_UNAUTHENTICATED redirect in progress
+      const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input));
 
       this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Initiative updated successfully.' });
       this.initiativeSaved.emit(updated);

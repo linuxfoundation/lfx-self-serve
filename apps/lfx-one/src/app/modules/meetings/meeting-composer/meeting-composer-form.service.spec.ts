@@ -1910,8 +1910,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
         show_meeting_attendees: true,
         auto_email_reminder_enabled: true,
         auto_email_reminder_time: 150,
-      }),
-      'single'
+      })
     );
   });
 });

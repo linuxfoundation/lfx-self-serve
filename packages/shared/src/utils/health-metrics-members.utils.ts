@@ -2,18 +2,27 @@
 // SPDX-License-Identifier: MIT
 
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+  HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
   HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
   HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
   HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+  HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
-import { formatIsoDateLabel } from './date-time.utils';
+import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
+import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
@@ -24,11 +33,28 @@ import type {
   HealthMetricsMembersAtRiskRowView,
   HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersAtRiskSummaryView,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
+  HealthMetricsMembersBoardMeetingRowView,
+  HealthMetricsMembersBoardSummaryView,
+  HealthMetricsMembersBoardTrendBarView,
   HealthMetricsMembersBridge,
   HealthMetricsMembersBridgeBarView,
   HealthMetricsMembersBridgeStep,
   HealthMetricsMembersBridgeTone,
   HealthMetricsMembersBridgeView,
+  HealthMetricsMembersChurn,
+  HealthMetricsMembersChurnDeparture,
+  HealthMetricsMembersChurnDepartureRowView,
+  HealthMetricsMembersChurnInversionView,
+  HealthMetricsMembersChurnMode,
+  HealthMetricsMembersChurnSideView,
+  HealthMetricsMembersChurnTier,
+  HealthMetricsMembersChurnTierRowView,
+  HealthMetricsMembersChurnTrendPointView,
+  HealthMetricsMembersChurnView,
+  HealthMetricsMembersChurnYear,
   HealthMetricsMembersDirectoryCellView,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryRowView,
@@ -36,6 +62,13 @@ import type {
   HealthMetricsMembersMovement,
   HealthMetricsMembersMovementListType,
   HealthMetricsMembersMovementRowView,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsAudienceOption,
+  HealthMetricsMembersNpsQuarter,
+  HealthMetricsMembersNpsSegmentView,
+  HealthMetricsMembersNpsSummaryView,
+  HealthMetricsMembersNpsTrendNote,
+  HealthMetricsMembersNpsTrendPointView,
   HealthMetricsMembersRenewal,
   HealthMetricsMembersRenewalRowView,
   HealthMetricsMembersRenewalsSummary,
@@ -310,8 +343,402 @@ export function buildHealthMetricsMembersRenewalsCountLabel(totalRecords: number
   return pluralize(totalRecords, 'renewal');
 }
 
+/** The board hero for the selected cohort, with the other cohort's latest share beside it. */
+export function buildHealthMetricsMembersBoardSummary(
+  cohort: HealthMetricsMembersBoardCohort,
+  selected: HealthMetricsMembersBoardCohortSummary | null,
+  other: HealthMetricsMembersBoardCohortSummary | null
+): HealthMetricsMembersBoardSummaryView {
+  const isBelowExpectedLevel = selected?.isBelowExpectedLevel === true;
+  const neverAttendedCount = Math.max(0, selected?.neverAttendedCount ?? 0);
+  const noun = HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort];
+  const attended = selected?.latestAttendedCount ?? null;
+  const invited = selected?.latestInvitedCount ?? null;
+  const meetings = selected?.meetingsInRangeCount ?? null;
+  return {
+    meetingsLabel: meetings === null ? '—' : `${pluralize(meetings, 'meeting')} in range`,
+    latestPctLabel: formatPct(selected?.latestAttendancePct ?? null),
+    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ' · below the ~100% this should be' : ''}`,
+    isBelowExpectedLevel,
+    otherCohortLabel: HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS.find((option) => option.id !== cohort)?.label ?? '',
+    otherCohortPctLabel: formatPct(other?.latestAttendancePct ?? null),
+    attendedInvitedLabel: attended === null || invited === null ? '—' : `${formatCount(attended)} / ${formatCount(invited)}`,
+    neverAttendedLabel: formatCount(selected?.neverAttendedCount ?? null),
+    neverAttendedCount,
+  };
+}
+
+/** Meeting rows; the rate bar takes the Engagement attendance tones. */
+export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardMeetingRowView[] {
+  return rows.map((row) => {
+    const ratePct = toWholePct(row.attendancePct);
+    return {
+      meetingId: row.meetingId,
+      committeeName: row.committeeName ?? '—',
+      dateLabel: formatIsoDate(row.meetingDate),
+      attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct)],
+    };
+  });
+}
+
+/** Trend bars, labelled by short date; the rate is clamped like the table's. */
+export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
+  return trend.map((meeting) => {
+    const pct = toWholePct(meeting.attendancePct);
+    return {
+      meetingId: meeting.meetingId,
+      label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
+      dateLabel: formatIsoDate(meeting.meetingDate),
+      committeeName: meeting.committeeName ?? '—',
+      pct,
+      pctLabel: pct === null ? '—' : `${pct}%`,
+      isLatest: meeting.isLatestMeeting,
+    };
+  });
+}
+
+/** The sub-nav note, from the board cohort: unused seats first, else the latest share when below its level. */
+export function buildHealthMetricsMembersBoardNote(board: HealthMetricsMembersBoardCohortSummary | null): string {
+  if (!board) return '';
+  const never = board.neverAttendedCount ?? 0;
+  if (never > 0) return `${pluralize(never, 'seat')} unused`;
+  if (board.isBelowExpectedLevel === true && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
+  return '';
+}
+
+/** The "N meetings" line over the table. */
+export function buildHealthMetricsMembersBoardCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'meeting');
+}
+
+/** The audience toggle, in the read's order. */
+export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMetricsMembersNpsAudience[]): HealthMetricsMembersNpsAudienceOption[] {
+  return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
+}
+
+/** The NPS hero, banner and footer for one audience; a flagged sample withholds the score rather than showing it as precise. */
+export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
+  const isWithheld = !audience || audience.isSampleTooSmall || audience.npsScore === null;
+  const recipients = audience?.recipientsCount ?? null;
+  const responses = audience?.responsesCount ?? null;
+  const ratePct = toWholePct(audience?.responseRatePct ?? null);
+  const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+  const change = isWithheld ? null : (audience?.scoreChangePp ?? null);
+  const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
+  const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
+
+  return {
+    isWithheld,
+    scoreLabel: isWithheld ? '—' : formatSignedScore(audience?.npsScore ?? null),
+    changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
+    changeDirection: directionOf(change),
+    caption: isWithheld ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
+    respondedLabel,
+    rateLabel,
+    isRateBelowFloor,
+    lowSampleNote: audience?.isSampleTooSmall
+      ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold — the score is suppressed rather than shown as precise.`
+      : null,
+    lastUpdatedLabel: audience?.lastUpdatedQuarter ? `Last updated ${audience.lastUpdatedQuarter}` : '',
+    surveyedLabel: `out of ${formatCount(recipients)} surveyed`,
+    footer: isRateBelowFloor
+      ? {
+          isBelowFloor: true,
+          lead: `${formatCount(audience?.noResponseCount ?? null)} of ${formatCount(recipients)} did not respond.`,
+          text: `A score computed on ${pluralize(Math.max(0, responses ?? 0), 'reply', 'replies')} is not a foundation-wide signal.`,
+        }
+      : {
+          isBelowFloor: false,
+          lead: null,
+          text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
+        },
+  };
+}
+
+/** Promoters, passives, detractors and non-responses as shares of everyone surveyed. */
+export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSegmentView[] {
+  const counts: Record<(typeof HEALTH_METRICS_MEMBERS_NPS_SEGMENTS)[number]['key'], number | null> = {
+    promoters: audience?.promotersCount ?? null,
+    passives: audience?.passivesCount ?? null,
+    detractors: audience?.detractorsCount ?? null,
+    noResponse: audience?.noResponseCount ?? null,
+  };
+  const recipients = audience?.recipientsCount ?? 0;
+  return HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => {
+    const count = counts[segment.key];
+    return {
+      key: segment.key,
+      label: segment.label,
+      countLabel: formatCount(count),
+      widthPct: recipients > 0 && count !== null ? Math.min(100, Math.max(0, (count / recipients) * 100)) : 0,
+      colorClass: segment.colorClass,
+    };
+  });
+}
+
+/** Trend points, oldest first; a flagged wave keeps its response rate but withholds its score. */
+export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
+  return trend.map((quarter) => {
+    const score = quarter.isSampleTooSmall ? null : quarter.npsScore;
+    const ratePct = toWholePct(quarter.responseRatePct);
+    return {
+      quarterStartDate: quarter.quarterStartDate,
+      label: quarter.quarterLabel ?? '—',
+      score,
+      scoreLabel: score === null ? 'Withheld' : formatSignedScore(score),
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      isRateBelowFloor: ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+    };
+  });
+}
+
+/**
+ * The sentence under the trend: a rising score on a falling rate that fell materially or ended below the floor
+ * is flagged; else a below-floor rate, or a rate that moved under the drop threshold. `null` when neither applies.
+ */
+export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembersNpsTrendPointView[]): HealthMetricsMembersNpsTrendNote | null {
+  const rated = points.filter((point) => point.ratePct !== null);
+  const latest = rated.at(-1);
+  if (points.length < 2 || !latest) return null;
+
+  const scored = rated.filter((point) => point.score !== null);
+  const first = scored[0];
+  const last = scored.at(-1);
+  if (first && last && first !== last) {
+    const scoreUp = (last.score ?? 0) - (first.score ?? 0);
+    const rateDrop = (first.ratePct ?? 0) - (last.ratePct ?? 0);
+    if (scoreUp > 0 && rateDrop > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
+      return { kind: 'diverging', scoreChangeLabel: pluralize(scoreUp, 'point'), fromRateLabel: first.rateLabel, toRateLabel: last.rateLabel };
+    }
+  }
+
+  if (latest.isRateBelowFloor) return { kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
+  if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
+  return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+}
+
+/**
+ * The selected period's churn in one mode. A change against the year before needs that year in the read;
+ * without it the hero shows no change rather than one the data cannot back.
+ */
+export function buildHealthMetricsMembersChurnView(
+  churn: HealthMetricsMembersChurn,
+  range: HealthMetricsRange,
+  mode: HealthMetricsMembersChurnMode
+): HealthMetricsMembersChurnView {
+  const year = getYearForRange(range);
+  const current = churn.years.find((row) => row.year === year) ?? null;
+  const prior = churn.years.find((row) => row.year === year - 1) ?? null;
+  const lostCount = Math.max(0, Math.round(current?.lostCount ?? 0));
+  const rateOf = (row: HealthMetricsMembersChurnYear | null): number | null => (mode === 'revenue' ? row?.revenueChurnRate : row?.logoChurnRate) ?? null;
+  const rate = rateOf(current);
+  const priorRate = rateOf(prior);
+  const change = mode === 'revenue' ? churnRevenueChange(current, prior) : churnDifference(rate, priorRate);
+  const isCurrentYear = year === getYearForRange('YTD');
+  const changeTone = churnChangeTone(change);
+
+  return {
+    measured: churn.years.length > 0,
+    // A null count is unmeasured, so it must not read as "no churn".
+    yearMeasured: current !== null && current.lostCount !== null,
+    year,
+    hasChurn: lostCount > 0,
+    lostCount,
+    metaLabel:
+      current?.openingCount === null || current?.openingCount === undefined
+        ? `${pluralize(lostCount, 'membership')} lost`
+        : `${formatCount(lostCount)} of ${pluralize(Math.round(current.openingCount), 'membership')} lost`,
+    heroLabel: formatChurnRate(rate),
+    changeLabel: change === null ? null : `${formatChurnChange(change)} vs ${year - 1}`,
+    changeTone,
+    caption: buildChurnCaption(mode, year, isCurrentYear),
+    sides: buildChurnSides(current, mode, year, isCurrentYear),
+    tiers: buildChurnTierRows(churn.tiers.filter((row) => row.year === year)),
+    inversion: buildChurnInversion(churn.tiers.filter((row) => row.year === year)),
+    trendTitle: mode === 'revenue' ? 'Revenue churn trend' : 'Logo churn trend',
+    trendSubtitle: mode === 'revenue' ? 'share of dues not renewed, by year' : 'share of memberships lost, by year',
+    trend: buildChurnTrend(churn.years, year, rateOf),
+    // Follows the hero's change, so the bar and the hero never disagree on direction.
+    trendRose: changeTone === 'bad',
+  };
+}
+
+/** "Who left" rows: dues lost, the lapse and the last engagement, a dash where the model has none. */
+export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsMembersChurnDeparture[]): HealthMetricsMembersChurnDepartureRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    duesLabel: formatUsd(row.duesLostUsd),
+    lapsedLabel: formatIsoDate(row.lapsedDate),
+    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
+  }));
+}
+
+/** "Who left"'s subtitle; it claims the churn count only when the list carries exactly that many. */
+export function buildHealthMetricsMembersChurnDeparturesSubtitle(totalRecords: number, lostCount: number): string {
+  return totalRecords === lostCount ? `largest dues lost first · the same ${formatCount(lostCount)} as lost above` : 'largest dues lost first';
+}
+
+/** Shown when "Who left" and the churn count disagree, so the gap reads as a counting difference. */
+export function buildHealthMetricsMembersChurnCountNote(totalRecords: number, lostCount: number): string | null {
+  if (totalRecords === lostCount) return null;
+
+  return `${pluralize(totalRecords, 'organization')} listed, while churn counts ${formatCount(lostCount)} lost. The list and the churn count are counted separately, so they can differ slightly.`;
+}
+
+/** The view's own point change, read only when the year before is in the read to compare against. */
+function churnRevenueChange(current: HealthMetricsMembersChurnYear | null, prior: HealthMetricsMembersChurnYear | null): number | null {
+  return prior === null ? null : (current?.revenueChurnRateChangePp ?? null);
+}
+
+function churnDifference(current: number | null, previous: number | null): number | null {
+  return current === null || previous === null ? null : current - previous;
+}
+
+function buildChurnCaption(mode: HealthMetricsMembersChurnMode, year: number, isCurrentYear: boolean): string {
+  if (mode === 'logo')
+    return isCurrentYear ? 'of the memberships held at the start of the year lapsed' : `of the memberships held at the start of ${year} lapsed`;
+  return isCurrentYear ? "of last year's dues did not renew" : `of ${year - 1}'s dues did not renew`;
+}
+
+/** Dues lost this year and last, then the other mode's rate, so the toggle never hides a figure. */
+function buildChurnSides(
+  current: HealthMetricsMembersChurnYear | null,
+  mode: HealthMetricsMembersChurnMode,
+  year: number,
+  isCurrentYear: boolean
+): HealthMetricsMembersChurnSideView[] {
+  const lost = current?.lostCount ?? null;
+  const opening = current?.openingCount ?? null;
+  const other: HealthMetricsMembersChurnSideView =
+    mode === 'revenue'
+      ? {
+          key: 'logo',
+          label: 'Logo churn',
+          value: formatChurnRate(current?.logoChurnRate ?? null),
+          note: lost === null || opening === null ? null : `(${formatCount(lost)} of ${formatCount(opening)})`,
+          isLoss: false,
+        }
+      : { key: 'revenue', label: 'Revenue churn', value: formatChurnRate(current?.revenueChurnRate ?? null), note: null, isLoss: false };
+
+  return [
+    {
+      key: 'dues-lost',
+      label: isCurrentYear ? 'Dues lost this year' : `Dues lost in ${year}`,
+      value: formatUsd(current?.duesLostUsd ?? null),
+      note: null,
+      isLoss: true,
+    },
+    {
+      key: 'dues-lost-prior',
+      label: isCurrentYear ? 'Dues lost last year' : `Dues lost in ${year - 1}`,
+      value: formatUsd(current?.duesLostPriorUsd ?? null),
+      note: null,
+      isLoss: false,
+    },
+    other,
+  ];
+}
+
+/** Most dues lost first, then the model's tier order; a tiny share keeps a visible stub, a zero share none. */
+function buildChurnTierRows(tiers: HealthMetricsMembersChurnTier[]): HealthMetricsMembersChurnTierRowView[] {
+  return [...tiers]
+    .sort((a, b) => (b.duesLostUsd ?? -1) - (a.duesLostUsd ?? -1) || a.tierSortRank - b.tierSortRank || a.tier.localeCompare(b.tier, 'en-US'))
+    .map((row) => {
+      const raw = row.shareOfLossPct === null ? null : Math.min(100, Math.max(0, row.shareOfLossPct));
+      const share = raw === null ? null : Math.round(raw);
+      return {
+        tier: row.tier,
+        lostLabel: formatCount(row.lostCount),
+        rateLabel: formatChurnRate(row.churnRate),
+        isHighRate: row.churnRate !== null && row.churnRate >= HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+        duesLabel: formatUsd(row.duesLostUsd),
+        shareLabel: formatChurnShare(raw, share),
+        shareWidthPct: raw === null || raw === 0 ? 0 : Math.max(raw, 1),
+      };
+    });
+}
+
+/** Set only when one tier clearly lost the most memberships and another clearly lost the most dues. */
+function buildChurnInversion(tiers: HealthMetricsMembersChurnTier[]): HealthMetricsMembersChurnInversionView | null {
+  const lost = tiers.filter((row) => (row.lostCount ?? 0) > 0);
+  const byCount = soleTop(lost, (row) => row.lostCount ?? 0);
+  const byDues = soleTop(lost, (row) => row.duesLostUsd ?? 0);
+  if (!byCount || !byDues || byCount === byDues) return null;
+
+  const duesTierLost = Math.round(byDues.lostCount ?? 0);
+  return {
+    countLead: `${byCount.tier} lost ${pluralize(Math.round(byCount.lostCount ?? 0), 'membership')}`,
+    duesLead: `${byDues.tier} lost the money`,
+    text: `${formatCount(duesTierLost)} ${byDues.tier} ${duesTierLost === 1 ? 'departure' : 'departures'} cost ${formatUsd(byDues.duesLostUsd)} against ${byCount.tier}'s ${formatUsd(byCount.duesLostUsd)}. That inversion is the whole argument for leading on revenue churn rather than logo churn.`,
+  };
+}
+
+/** The row with the highest value, or `null` when none is positive or the top is tied. */
+function soleTop<T>(rows: T[], value: (row: T) => number): T | null {
+  const sorted = [...rows].sort((a, b) => value(b) - value(a));
+  const [first, second] = sorted;
+  if (!first || value(first) <= 0 || (second && value(second) === value(first))) return null;
+  return first;
+}
+
+/** The years up to the selected one, oldest first, capped to the trend's window. */
+function buildChurnTrend(
+  years: HealthMetricsMembersChurnYear[],
+  year: number,
+  rateOf: (row: HealthMetricsMembersChurnYear | null) => number | null
+): HealthMetricsMembersChurnTrendPointView[] {
+  return years
+    .filter((row) => row.year <= year && row.year > year - HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS)
+    .sort((a, b) => a.year - b.year)
+    .map((row) => {
+      const value = rateOf(row);
+      return {
+        year: row.year,
+        label: String(row.year),
+        value,
+        valueLabel: value === null ? '—' : `${Math.round(value)}%`,
+        isSelected: row.year === year,
+      };
+    });
+}
+
+/** A percentage to one decimal, dropping a trailing `.0`. */
+function formatChurnRate(pct: number | null): string {
+  return pct === null ? '—' : `${pct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
+
+/** A whole-percent share; a loss too small to round up still reads as one. */
+function formatChurnShare(raw: number | null, share: number | null): string {
+  if (raw === null || share === null) return '—';
+  return raw > 0 && share === 0 ? '<1%' : `${share}%`;
+}
+
+/** A point change to one decimal with its sign, e.g. `+1.4pp`. */
+function formatChurnChange(pp: number): string {
+  const rounded = Math.round(pp * 10) / 10;
+  if (rounded === 0) return '0.0pp';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}pp`;
+}
+
+/** A rise in churn is bad; a change that rounds to zero is neither. */
+function churnChangeTone(pp: number | null): HealthMetricsMembersChurnView['changeTone'] {
+  if (pp === null || Math.round(pp * 10) === 0) return 'neutral';
+  return pp > 0 ? 'bad' : 'good';
+}
+
 function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
   return { key, label: format(value), tracked: value !== null };
+}
+
+function toWholePct(share: number | null): number | null {
+  return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
 }
 
 function formatIsoDate(value: string | null): string {
@@ -463,6 +890,24 @@ function formatUsd(value: number | null): string {
   return value === null ? '—' : formatCurrency(value);
 }
 
-function pluralize(count: number, noun: string): string {
-  return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
+function formatPct(fraction: number | null): string {
+  const pct = toWholePct(fraction);
+  return pct === null ? '—' : `${pct}%`;
+}
+
+function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
+}
+
+/** A score or change with its sign; zero carries none. */
+function formatSignedScore(value: number | null): string {
+  if (value === null) return '—';
+  const rounded = Math.round(value);
+  if (rounded === 0) return '0';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}`;
+}
+
+function directionOf(value: number | null): 'up' | 'down' | 'neutral' {
+  if (value === null || Math.round(value) === 0) return 'neutral';
+  return value > 0 ? 'up' : 'down';
 }

@@ -13,6 +13,7 @@ import {
   getHttpErrorDetail,
   isBffValidationError,
   isTransientHttpError,
+  readBlobErrorCode,
   retryTransientHttpError,
   serverAuthoredMessage,
 } from './http-error.utils';
@@ -606,5 +607,28 @@ describe('committeeLeaveErrorMessage', () => {
 
     expect(shown).toBe('Failed to leave "TSC". Please try again.');
     expect(shown).not.toContain('Http failure response');
+  });
+});
+
+// A `responseType: 'blob'` request hands its error body back as a Blob, so the code has to be parsed out of it.
+describe('readBlobErrorCode', () => {
+  const blob = (text: string): Blob => new Blob([text], { type: 'application/json' });
+
+  it('reads the code from a JSON Blob body', async () => {
+    await expect(readBlobErrorCode(httpErrorWithBody(403, blob('{"error":"x","code":"VISA_LETTER_MANUAL"}')))).resolves.toBe('VISA_LETTER_MANUAL');
+  });
+
+  it.each([
+    ['invalid JSON', blob('<html>502</html>')],
+    ['a null body', blob('null')],
+    ['an array body', blob('["VISA_LETTER_MANUAL"]')],
+    ['a non-string code', blob('{"code":403}')],
+  ])('answers undefined for %s', async (_case, body) => {
+    await expect(readBlobErrorCode(httpErrorWithBody(403, body))).resolves.toBeUndefined();
+  });
+
+  it('answers undefined for a body that is not a Blob, or an error that is not HTTP', async () => {
+    await expect(readBlobErrorCode(httpErrorWithBody(403, { code: 'VISA_LETTER_MANUAL' }))).resolves.toBeUndefined();
+    await expect(readBlobErrorCode(new Error('boom'))).resolves.toBeUndefined();
   });
 });

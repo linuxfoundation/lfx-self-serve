@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FAVORITE_PROJECTS_MAX_VALUES } from '../constants/lens.constants';
+
 import type { Lens, LensGrantInputs } from '../interfaces/lens.interface';
 
 /**
@@ -51,4 +53,16 @@ export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
 export function isHybridLensUser(inputs: LensGrantInputs): boolean {
   const lenses = deriveAllowedLenses(inputs);
   return lenses.includes('foundation') && lenses.includes('project');
+}
+
+/** Parses the persisted favorite-project-uids payload (GH-2995): tolerates string/parsed input, drops non-strings, caps at the server limit; a corrupt doc yields `[]` so the user can re-favorite over it. */
+export function parseFavoriteProjectUids(raw: unknown): string[] {
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return (Array.isArray(parsed) ? parsed : [])
+      .filter((uid): uid is string => typeof uid === 'string' && uid.length > 0)
+      .slice(0, FAVORITE_PROJECTS_MAX_VALUES);
+  } catch {
+    return [];
+  }
 }

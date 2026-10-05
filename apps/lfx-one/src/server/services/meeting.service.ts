@@ -37,6 +37,7 @@ import {
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -44,6 +45,7 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  isMeetingAttendeeListShared,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
@@ -62,6 +64,7 @@ import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -587,7 +590,7 @@ export class MeetingService {
   /**
    * Updates a meeting directly via microservice proxy
    */
-  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
+  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest): Promise<ApiResponse<void>> {
     // Fetch existing meeting to merge organizers
     const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET');
 
@@ -627,17 +630,15 @@ export class MeetingService {
       updatePayload.show_meeting_attendees = false;
     }
 
-    const sanitizedPayload = logger.sanitize({ updatePayload, editType });
+    const sanitizedPayload = logger.sanitize({ updatePayload });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
-
-    const query = editType ? { editType } : undefined;
 
     return await this.microserviceProxy.proxyRequestWithResponse<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}`,
       'PUT',
-      query,
+      undefined,
       updatePayload
     );
   }
@@ -670,18 +671,54 @@ export class MeetingService {
 
   /**
    * Cancels a meeting occurrence directly via microservice proxy
+   * @description An optional note is sent as the DELETE body; upstream includes it in the cancellation
+   * emails to guests. Without one no body is sent, so the request is unchanged from before.
    */
-  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string, note?: string): Promise<void> {
     logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
+      has_note: !!note,
     });
 
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      note ? { note } : undefined
+    );
+  }
+
+  /**
+   * Edits a single occurrence of a recurring meeting directly via microservice proxy
+   * @description Upstream applies the change to this occurrence only; the rest of the series keeps its
+   * schedule, title and agenda. The occurrence id is its start time, so a new `start_time` also gives it
+   * a new id. LFX `title`/`description` map to upstream `topic`/`agenda`.
+   */
+  public async updateOccurrence(req: Request, meetingUid: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Promise<void> {
+    logger.debug(req, 'update_occurrence', 'Rescheduling meeting occurrence', {
+      meeting_id: meetingUid,
+      occurrence_id: occurrenceId,
+      start_time: payload.start_time,
+      duration: payload.duration,
+      title_changed: payload.title !== undefined,
+      agenda_changed: payload.description !== undefined,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'PUT',
+      undefined,
+      {
+        start_time: payload.start_time,
+        duration: payload.duration,
+        ...(payload.title !== undefined && { topic: payload.title }),
+        ...(payload.description !== undefined && { agenda: payload.description }),
+      }
     );
   }
 
@@ -786,7 +823,9 @@ export class MeetingService {
    *
    * The query-service applies FGA filtering so that any meeting viewer can read registrant records
    * on the tolerant listing — which is by design for community-facing meetings. The committee import
-   * flow imposes stricter business-logic constraints beyond viewer access: the caller must have
+   * flow imposes stricter business-logic constraints beyond viewer access: the caller must be an
+   * organizer of the meeting (#2827 — otherwise any eligible committee member could export the
+   * guest list of a meeting they merely can view), and must have
    * writer access on `committeeUid`, or be a member of it when it's invite_only
    * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
    * authorized to send invites for that committee upstream, via their own bearer token, so
@@ -796,18 +835,21 @@ export class MeetingService {
    * partial-failure states (this exact failure mode broke in PCC).
    *
    * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws MicroserviceError if the organizer check itself could not be resolved.
    * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
    */
   public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
-    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+    // Strict organizer probe on `v1_meeting`, for the reasons in `getAuthorizedCompleteRegistrants`.
+    const [committee, meeting, isCommitteeWriter, isMeetingOrganizer] = await Promise.all([
       this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
       this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
       this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+      this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' }),
     ]);
 
     const isCommitteeMember = !!committee.my_role;
     const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
-    if (!canImport || committee.project_uid !== meeting.project_uid) {
+    if (!isMeetingOrganizer || !canImport || committee.project_uid !== meeting.project_uid) {
       throw new AuthorizationError('Not authorized to import registrants for this meeting', {
         operation: 'get_authorized_registrants_for_import',
         service: 'meeting_service',
@@ -870,6 +912,52 @@ export class MeetingService {
     }
 
     return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+  }
+
+  /**
+   * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
+   * @description Organizers always may. Anyone else must be a registrant of the meeting, matched by
+   * email or username like `isUserInvitedToMeeting`, and the meeting must share its guest list
+   * (`isMeetingAttendeeListShared`), the same rule
+   * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
+   * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
+   * unresolvable access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewMeetingRoster(req: Request, meetingUid: string): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
+    const email = getEffectiveEmail(req) || undefined;
+    const username = (await getUsernameFromAuth(req)) ?? undefined;
+    if (!isMeetingAttendeeListShared(meeting) || (!email && !username)) {
+      return false;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    const ownRows = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+    return ownRows.length > 0;
+  }
+
+  /**
+   * Counts a meeting's registrants without reading any rows, under the M2M token so the total does
+   * not depend on what the caller may list. A count is not personal data, so callers may show it to
+   * invitees who cannot see the guest list itself.
+   */
+  public async getMeetingRegistrantCount(req: Request, meetingUid: string, m2mToken: string): Promise<number> {
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources/count',
+      'GET',
+      { type: 'v1_meeting_registrant', parent: `meeting:${meetingUid}` },
+      undefined,
+      undefined,
+      { bearerToken: m2mToken }
+    );
+    return count;
   }
 
   /**
@@ -1220,6 +1308,32 @@ export class MeetingService {
 
     const groups = Array.from(components.values()).flatMap((component) => this.splitConflictingComponent(component));
     return groups.map((group) => this.mergePastMeetingParticipantGroup(group));
+  }
+
+  /**
+   * Whether the caller may read a past meeting's participant rows (names, emails, attendance).
+   * @description Organizers always may. Anyone else must appear in `participants`, invited or
+   * attended, matched by email or username like `isUserPastMeetingParticipant`. Deliberately
+   * independent of `show_meeting_attendees`: it defaults off, so keying on it would blank the
+   * attendance of every meeting already held. The organizer probe is strict, so an unresolvable
+   * access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewPastMeetingParticipants(req: Request, pastMeetingUid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_past_meeting', id: pastMeetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const email = getEffectiveEmail(req)?.toLowerCase();
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername).toLowerCase() : null;
+    if (!email && !username) {
+      return false;
+    }
+
+    return participants.some(
+      (participant) => (!!email && participant.email?.toLowerCase() === email) || (!!username && participant.username?.toLowerCase() === username)
+    );
   }
 
   /**
@@ -1589,8 +1703,8 @@ export class MeetingService {
       // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
       // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
       // unlike username which is often null on RSVP records.
-      // Use getEffectiveUsername (returns LFID nickname) rather than getUsernameFromAuth
-      // (returns OIDC `sub`) since registrant.username stores the plain LFID.
+      // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
+      // username claim, or the impersonation target's username).
       const email = getEffectiveEmail(req) ?? undefined;
       const username = getEffectiveUsername(req) ?? undefined;
 

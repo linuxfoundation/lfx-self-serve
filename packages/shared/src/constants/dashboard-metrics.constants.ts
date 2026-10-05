@@ -212,7 +212,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     drawerType: DashboardDrawerType.TotalProjects,
   },
   {
-    title: 'Total Members',
+    title: 'Active Members',
     icon: 'fa-light fa-user-group',
     chartType: 'line',
     category: 'projects',

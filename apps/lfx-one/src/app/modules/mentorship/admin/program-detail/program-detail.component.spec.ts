@@ -5,7 +5,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE } from '@lfx-one/shared/constants';
-import { MentorshipProgramDetail } from '@lfx-one/shared/interfaces';
+import { MentorshipProgramApplicant, MentorshipProgramDetail } from '@lfx-one/shared/interfaces';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -16,33 +17,44 @@ import { MenteeNoteDialogComponent } from '../../components/mentee-note-dialog/m
 import { ProgramDetailComponent } from './program-detail.component';
 
 describe('ProgramDetailComponent', () => {
-  const detail = (status: MentorshipProgramDetail['program']['status'] = 'open'): MentorshipProgramDetail => ({
+  const application = (overrides: Partial<MentorshipProgramApplicant> = {}): MentorshipProgramApplicant => ({
+    id: 'app_1',
+    name: 'Ifeoma Adeyemi',
+    email: 'ifeoma.adeyemi@example.com',
+    status: 'pending',
+    termId: 'trm_fall26',
+    termName: 'Fall 2026',
+    createdOn: '2026-06-28',
+    updatedOn: '2026-07-02',
+    ...overrides,
+  });
+
+  const detail = (): MentorshipProgramDetail => ({
     program: {
       id: 'mp_gridflow_fall26',
       slug: 'gridflow-time-series-ingestion-pipeline',
       name: 'GridFlow: Time-Series Ingestion Pipeline',
       projectName: 'LF Energy',
       term: 'Fall 2026',
-      status,
+      status: 'open',
       stats: { mentors: 2, mentees: 1, graduated: 0 },
       createdOn: '2026-05-01',
       updatedOn: '2026-07-02',
     },
-    mentees: [{ id: 'mnt_1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted', termName: 'Fall 2026' }],
-    applicants: [
-      {
-        id: 'app_1',
-        name: 'Ifeoma Adeyemi',
-        email: 'ifeoma.adeyemi@example.com',
-        status: 'pending',
-        termName: 'Fall 2026',
-        createdOn: '2026-06-28',
-        updatedOn: '2026-07-02',
-      },
+    currentMentees: [application(), application({ id: 'app_2', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted' })],
+    pastMentees: [
+      application({
+        id: 'app_3',
+        name: 'Dilan Ferreira',
+        email: 'dilan.ferreira@example.com',
+        status: 'graduated',
+        termId: 'trm_spring26',
+        termName: 'Spring 2026',
+      }),
     ],
     mentors: [],
     terms: [],
-    tabCounts: { mentees: 1, applicants: 1, mentors: 0, terms: 0 },
+    tabCounts: { currentMentees: 2, pastMentees: 1, mentors: 0, terms: 0 },
   });
 
   let fixture: ComponentFixture<ProgramDetailComponent>;
@@ -61,11 +73,12 @@ describe('ProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
+        { provide: MentorshipAdminService, useValue: { getProgram: () => of(program) } },
         {
           provide: MentorshipService,
           // The Mentors tab loads its invite picker on construction, and the persistence
           // test renders that tab to prove notes survive one being destroyed.
-          useValue: { getProgram: () => of(program), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
+          useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
         },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
@@ -82,85 +95,81 @@ describe('ProgramDetailComponent', () => {
     fixture.componentInstance['activeTab'].set(tab as never);
     fixture.detectChanges();
   };
+  const noteText = (id: string): string | undefined => element().querySelector(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.textContent?.trim();
+  const clickNote = (id: string): void => {
+    element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-current-mentee-note-${id}"]`)?.click();
+    fixture.detectChanges();
+  };
 
   beforeEach(() => build());
 
+  it('opens on the Current Mentees tab', () => {
+    expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-past-mentees-tab"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-row-app_1"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-row-app_3"]')).toBeNull();
+  });
+
+  it('shows the closed-term rows on the Past Mentees tab, without the write affordances', () => {
+    showTab('past-mentees');
+
+    expect(element().querySelector('[data-testid="mentorship-past-mentee-row-app_3"]')).not.toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-past-mentee-row-app_1"]')).toBeNull();
+    // Past mentees are history, so none of the current tab's write affordances come with them.
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_3"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-actions-app_3"]')).toBeNull();
+  });
+
   it('keeps a reviewer note when the admin leaves the tab and comes back', () => {
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
-    fixture.detectChanges();
+    clickNote('app_1');
 
     expect(dialogOpen).toHaveBeenCalledTimes(1);
-    expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('a saved note');
+    expect(noteText('app_1')).toBe('a saved note');
 
     // The tab panel is an `@switch`, so this destroys the tab component outright.
     showTab('mentors');
-    showTab('mentees');
+    showTab('current-mentees');
 
-    expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('a saved note');
+    expect(noteText('app_1')).toBe('a saved note');
   });
 
-  it('holds notes per person, across both tabs that have them', () => {
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
-    fixture.detectChanges();
+  it('holds notes per person', () => {
+    clickNote('app_1');
 
-    showTab('applicants');
-    expect(element().querySelector('[data-testid="mentorship-applicant-note-app_1"]')?.textContent?.trim()).toBe('Add note');
+    expect(noteText('app_2')).toBe('Add note');
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-applicant-note-app_1"]')?.click();
-    fixture.detectChanges();
+    clickNote('app_2');
 
-    expect(fixture.componentInstance['noteDrafts']()).toEqual({ mnt_1: 'a saved note', app_1: 'a saved note' });
+    expect(fixture.componentInstance['noteDrafts']()).toEqual({ app_1: 'a saved note', app_2: 'a saved note' });
   });
 
   it('leaves the note untouched when the dialog is dismissed', () => {
     buildWith(of(undefined));
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
-    fixture.detectChanges();
+    clickNote('app_1');
 
     expect(fixture.componentInstance['noteDrafts']()).toEqual({});
-    expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')?.textContent?.trim()).toBe('Add note');
-  });
-
-  it('swaps the mentees tab for past mentees once the program is completed', () => {
-    const completed = detail('completed');
-    completed.mentees = [{ id: 'mnt_1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'withdrawn', termName: 'Fall 2026' }];
-    buildWith(of('a saved note'), completed);
-
-    expect(element().querySelector('[data-testid="mentorship-past-mentees-tab"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).toBeNull();
-    // Past mentees are history, so none of the live tab's write affordances come with them.
-    expect(element().querySelector('[data-testid="mentorship-mentee-note-mnt_1"]')).toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-mentee-actions-mnt_1"]')).toBeNull();
-  });
-
-  it('renders the live mentees tab while the program is open', () => {
-    expect(element().querySelector('[data-testid="mentorship-current-mentees-tab"]')).not.toBeNull();
-    expect(element().querySelector('[data-testid="mentorship-past-mentees-tab"]')).toBeNull();
+    expect(noteText('app_1')).toBe('Add note');
   });
 
   it('seeds the dialog with the row note, then with the draft once one exists', () => {
     const withNote = detail();
-    withNote.mentees = [
-      { id: 'mnt_1', name: 'Alex Rivera', email: 'alex.rivera@example.com', status: 'accepted', termName: 'Fall 2026', note: 'from the server' },
-    ];
+    withNote.currentMentees = [application({ note: 'from the server' })];
     buildWith(of('a saved note'), withNote);
 
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
-    fixture.detectChanges();
+    clickNote('app_1');
 
     expect(dialogOpen).toHaveBeenLastCalledWith(
       MenteeNoteDialogComponent,
-      expect.objectContaining({ data: { personName: 'Alex Rivera', note: 'from the server' } })
+      expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'from the server' } })
     );
 
     // Reopening the same row must offer the draft, not the note it started with.
-    element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
-    fixture.detectChanges();
+    clickNote('app_1');
 
     expect(dialogOpen).toHaveBeenLastCalledWith(
       MenteeNoteDialogComponent,
-      expect.objectContaining({ data: { personName: 'Alex Rivera', note: 'a saved note' } })
+      expect.objectContaining({ data: { personName: 'Ifeoma Adeyemi', note: 'a saved note' } })
     );
   });
 
@@ -177,10 +186,8 @@ describe('ProgramDetailComponent', () => {
         provideRouter([]),
         MessageService,
         { provide: DialogService, useValue: { open: dialogOpen } },
-        {
-          provide: MentorshipService,
-          useValue: { getProgram: () => of(detail()), getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) },
-        },
+        { provide: MentorshipAdminService, useValue: { getProgram: () => of(detail()) } },
+        { provide: MentorshipService, useValue: { getInvitableUsers: () => of(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE) } },
         { provide: ActivatedRoute, useValue: { paramMap: of(new Map([['programId', 'mp_gridflow_fall26']]) as never) } },
       ],
     });
@@ -188,10 +195,7 @@ describe('ProgramDetailComponent', () => {
     fixture = TestBed.createComponent(ProgramDetailComponent);
     fixture.detectChanges();
 
-    expect(() => {
-      element().querySelector<HTMLButtonElement>('[data-testid="mentorship-mentee-note-mnt_1"]')?.click();
-      fixture.detectChanges();
-    }).not.toThrow();
+    expect(() => clickNote('app_1')).not.toThrow();
 
     expect(fixture.componentInstance['noteDrafts']()).toEqual({});
   });

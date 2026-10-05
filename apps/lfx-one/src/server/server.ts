@@ -6,6 +6,7 @@ import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
+import { redactInviteToken } from '@lfx-one/shared/utils/auth-fragment.utils';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';
@@ -14,9 +15,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
-import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
-import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
@@ -257,7 +256,7 @@ app.use(httpLogger);
 
 // LFXV2-2666: move the session bundle out of the encrypted `appSession` cookie and into Valkey,
 // keyed by an opaque session id, so cookie size stays flat as more tokens (impersonation,
-// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when
+// API-gateway, profile) are added onto req.appSession. Only wired up when
 // SESSION_STORE_ENABLED is set and VALKEY_URL is present — without VALKEY_URL every store
 // read/write would degrade to "session missing" (ValkeyService's fail-soft behavior) and silently
 // log everyone out. Note: this only gates on URL presence, not live reachability — a Valkey outage
@@ -461,11 +460,6 @@ app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallback
 // GitHub/LinkedIn OAuth redirect target. Same in-handler impersonation guard as above.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
-const crowdfundingCallbackController = new CrowdfundingController();
-app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
-
-const crowdfundingAuthService = new CrowdfundingAuthService();
-
 // Minimal frame protection for the embedded Gatewaze admin pilot pages only — NOT applied
 // globally. Scoped narrowly because the rest of the app's framing behavior is out of scope for
 // this pilot; a global change here would be a much bigger blast radius than this task calls for.
@@ -507,17 +501,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
-  }
-
-  if (
-    auth.authenticated &&
-    req.originalUrl.startsWith('/crowdfunding') &&
-    !req.query['error'] &&
-    crowdfundingAuthService.isConfigured() &&
-    !crowdfundingAuthService.hasValidToken(req)
-  ) {
-    res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
-    return;
   }
 
   if (auth.authenticated) {
@@ -620,7 +603,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {
         error_message: error.message,
         code: error.code,
-        url: req.url,
+        url: redactInviteToken(req.url, 'http://localhost'),
         method: req.method,
         user_agent: req.get('User-Agent'),
       });

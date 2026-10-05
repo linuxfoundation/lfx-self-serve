@@ -14,8 +14,11 @@ import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
+import { MembersBoardAttendanceComponent } from './components/members-board-attendance/members-board-attendance.component';
 import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
+import { MembersChurnComponent } from './components/members-churn/members-churn.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
 import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 
@@ -31,8 +34,11 @@ import type { HealthMetricsMembersSubNavItem } from '@lfx-one/shared/interfaces'
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
     MembersAtRiskComponent,
+    MembersBoardAttendanceComponent,
     MembersBridgeComponent,
+    MembersChurnComponent,
     MembersDirectoryComponent,
+    MembersNpsComponent,
     MembersRenewalsComponent,
     MembersTiersComponent,
   ],
@@ -47,7 +53,8 @@ export class HealthMetricsMembersComponent {
   protected readonly listCount = signal<number | null>(null);
   protected readonly riskNote = signal<string>('');
   protected readonly renewalsCount = signal<number | null>(null);
+  protected readonly boardNote = signal<string>('');
   protected readonly subNavItems = computed<HealthMetricsMembersSubNavItem[]>(() =>
-    buildHealthMetricsMembersSubNavItems({ list: this.listCount(), renewals: this.renewalsCount() }, { risk: this.riskNote() })
+    buildHealthMetricsMembersSubNavItems({ list: this.listCount(), renewals: this.renewalsCount() }, { risk: this.riskNote(), board: this.boardNote() })
   );
 }

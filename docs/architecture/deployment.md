@@ -199,6 +199,21 @@ All images are pushed to the GitHub Container Registry (GHCR) under
 `ghcr.io/linuxfoundation/lfx-self-serve`. Image visibility follows the
 repository's package settings.
 
+### Retention
+
+A weekly scheduled workflow
+([`ghcr-image-cleanup.yaml`](../../.github/workflows/ghcr-image-cleanup.yaml),
+Sundays 00:00 UTC) deletes image versions of the `lfx-self-serve` package that
+are older than 30 days. It is a thin caller of the
+[shared GHCR cleanup workflow](https://github.com/linuxfoundation/lfx-public-workflows/tree/main/docs/ghcr-image-cleanup)
+in `lfx-public-workflows`, which owns the selection, deletion, and summary logic.
+
+Versions carrying any of these tags are never deleted: `development`, `latest`,
+release tags (`x.y.z` and `x.y`), the default-branch tag, and `ui-pr-<N>` for
+pull requests that are still open with the `deploy-preview` label. Manual runs
+default to a dry-run that deletes nothing and accept a custom cut-off; scheduled
+runs always delete.
+
 ## Helm Chart
 
 The chart source lives at `charts/lfx-self-serve/` in this repo. See

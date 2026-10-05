@@ -11,8 +11,6 @@ const PROFILE: MentorshipMenteeProfileDetails = {
   aboutMe: '<p>Test introduction</p>',
   skillsHave: ['Go', 'Python'],
   skillsWant: ['Kubernetes'],
-  resumeFileName: 'resume.pdf',
-  resumeUrl: 'https://example.com/resume.pdf',
 };
 
 describe('MenteeProfileEditDrawerService', () => {
