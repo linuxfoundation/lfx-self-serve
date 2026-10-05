@@ -147,6 +147,15 @@ describe('MeetingDetailsStateService', () => {
       expect(navigate).toHaveBeenCalledWith(['/meetings/not-found']);
     });
 
+    it('leaves logging an upcoming-endpoint failure to MeetingService', async () => {
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      create();
+
+      await settle();
+
+      expect(console.error).not.toHaveBeenCalled();
+    });
+
     it('shows the error branch on a 5xx, and recovers on retry', async () => {
       getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
       const state = create();
@@ -191,7 +200,8 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.status()).toBe('error');
       expect(navigate).not.toHaveBeenCalled();
-      expect(console.error).toHaveBeenCalledWith('Failed to load meeting details', MEETING_ID, { status: 500 });
+      expect(console.error).toHaveBeenCalledTimes(1);
+      expect(console.error).toHaveBeenCalledWith('Failed to load past meeting details', MEETING_ID, { status: 500 });
     });
 
     it('sends a route with no id to not-found', async () => {

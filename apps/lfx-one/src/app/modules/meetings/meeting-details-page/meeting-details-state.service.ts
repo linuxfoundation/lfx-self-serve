@@ -161,7 +161,11 @@ export class MeetingDetailsStateService {
         this.pastMeetingFullAccess.set(res.full_access);
       }),
       map((res: PublicPastMeetingResponse) => ({ meeting: res.meeting, project: res.project })),
-      catchError((error) => this.handleLookupError(meetingId, error, [400, 403, 404]))
+      catchError((error) => {
+        // `getPublicMeeting` logs its own failures; `getPublicPastMeeting` does not, so this path logs here.
+        console.error('Failed to load past meeting details', meetingId, error);
+        return this.handleLookupError(error, [400, 403, 404]);
+      })
     );
   }
 
@@ -172,14 +176,12 @@ export class MeetingDetailsStateService {
         this.pastMeetingFullAccess.set(false);
       }),
       // An id with no hyphen may still be a past meeting: the upcoming endpoint 404s, the past one answers.
-      catchError((error) => (error.status === 404 ? this.fetchPast(meetingId) : this.handleLookupError(meetingId, error, [400, 403])))
+      catchError((error) => (error.status === 404 ? this.fetchPast(meetingId) : this.handleLookupError(error, [400, 403])))
     );
   }
 
-  private handleLookupError(meetingId: string, error: { status?: number }, notFoundStatuses: number[]): Observable<never> {
+  private handleLookupError(error: { status?: number }, notFoundStatuses: number[]): Observable<never> {
     this.retrying.set(false);
-    // `getPublicMeeting` logs its own failures; `getPublicPastMeeting` does not, so log here.
-    console.error('Failed to load meeting details', meetingId, error);
     if (notFoundStatuses.includes(error.status ?? 0)) {
       void this.router.navigate(['/meetings/not-found']);
       return EMPTY;

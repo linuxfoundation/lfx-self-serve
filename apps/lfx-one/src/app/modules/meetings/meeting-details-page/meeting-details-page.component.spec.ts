@@ -76,12 +76,13 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-rail')?.getAttribute('aria-label')).toBe('Meeting actions');
   });
 
-  it('keeps the section placeholders out of the accessibility tree', () => {
+  // Placeholder testids are temporary (testid-contract.md), so this asserts on whatever skeleton
+  // blocks remain rather than on their names or how many there are.
+  it('keeps every skeleton block out of the accessibility tree', () => {
     show('ready');
 
-    const placeholders = fixture.nativeElement.querySelectorAll('[data-testid^="meeting-section-placeholder-"]');
-    expect(placeholders.length).toBe(5);
-    placeholders.forEach((el: Element) => expect(el.getAttribute('aria-hidden')).toBe('true'));
+    const skeletons: NodeListOf<Element> = fixture.nativeElement.querySelectorAll('[data-testid="meeting-page-shell"] p-skeleton');
+    skeletons.forEach((el) => expect(el.getAttribute('aria-hidden')).toBe('true'));
   });
 
   it('renders the error state as an alert, with a retry that re-runs the lookup', () => {
