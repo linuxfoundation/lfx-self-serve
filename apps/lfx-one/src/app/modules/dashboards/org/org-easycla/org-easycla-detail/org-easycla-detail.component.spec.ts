@@ -2960,6 +2960,39 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
+     * The component is reused when the address moves to another CLA Group or the viewer picks
+     * another organization, so the still-confirming state has to go with the visit it described.
+     * Kept, the next unsigned group would claim a signature nobody made for it.
+     */
+    it.each([
+      ['another CLA Group', () => paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }))],
+      [
+        'another organization',
+        () => {
+          getClaGroups.mockReturnValue(of({ orgUid: ELSEWHERE.uid, claGroups: [] }));
+          selectedAccount.set(ELSEWHERE);
+        },
+      ],
+    ])('drops the still-confirming state when the page moves to %s', async (_label, move) => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+
+        move();
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    /**
      * This page survives an organization switch, so a wait left running would answer for a company
      * the viewer has deliberately left — and render that company's agreement under the name of the
      * one now selected.
@@ -2994,19 +3027,24 @@ describe('OrgEasyclaDetailComponent', () => {
      * A request that neither errors nor completes is what the fixture models: a Subject that is
      * never fed. Without the timeout `concatMap` waits for it for ever, and even a 30-second
      * advance cannot spend the budget.
+     *
+     * The interval keeps ticking while an attempt hangs, so twelve near-timeout attempts queue up
+     * and would run to about 38 seconds. The overall deadline ends the wait at 30.
      */
     it('bounds the wait in wall-clock time when each attempt hangs, not only in count', async () => {
       vi.useFakeTimers();
       try {
-        // One retry-delay plus one per-attempt timeout is (2000 + 3000)ms; twelve attempts is
-        // 60_000ms. Sized a beat past that, so a regression off by one attempt still fails.
-        const budgetMs = 12 * (2000 + 3000);
         const { fixture } = await renderReturn({ claGroups: [] });
         getClaGroups.mockReturnValue(new Subject());
 
-        await vi.advanceTimersByTimeAsync(budgetMs + 1000);
+        await vi.advanceTimersByTimeAsync(29_000);
+        await flush(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).not.toBeNull();
+
+        await vi.advanceTimersByTimeAsync(1_000);
         await flush(fixture);
 
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);

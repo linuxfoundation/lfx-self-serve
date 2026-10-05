@@ -156,14 +156,18 @@ export class OrgEasyclaDetailComponent {
    * `perAttemptTimeoutMs` bounds the poll in wall-clock time, not only in count. Without it a
    * stalled BFF can leave each attempt waiting the gateway timeout (`API_GW_TIMEOUT_MS`, 30s), and
    * `concatMap` runs the attempts in series — twelve of those would take about six minutes. The
-   * cap keeps each attempt to 3s, so a run of stalls is about 60s. A timed-out attempt is treated
-   * the same as a failed one: another try if the budget still has one, otherwise the same
-   * exhausted-wait settlement. Sized well below the gateway timeout so one network stall cannot
-   * swallow the whole budget.
+   * cap keeps each attempt to 3s. A timed-out attempt is treated the same as a failed one: another
+   * try if the budget still has one, otherwise the same exhausted-wait settlement. Sized well below
+   * the gateway timeout so one network stall cannot swallow the whole budget.
+   *
+   * `waitDeadlineMs` bounds the whole wait. The interval keeps ticking while `concatMap` is busy,
+   * so slow attempts queue behind each other and twelve near-timeout attempts would run to about
+   * 38s. The deadline ends the wait at 30s with whatever the last answer was.
    */
   private static readonly signedRowRetryDelayMs = 2000;
   private static readonly signedRowRetries = 12;
   private static readonly signedRowPerAttemptTimeoutMs = 3000;
+  private static readonly signedRowWaitDeadlineMs = 30_000;
 
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -252,7 +256,8 @@ export class OrgEasyclaDetailComponent {
    * The flagged wait ended with a list in hand and no row for this group.
    *
    * Survives `settleReturn` stripping `signed=1`, so this visit does not fall through to the
-   * hasn't-signed empty state. A later load of the stripped address does not set it.
+   * hasn't-signed empty state. A later load of the stripped address does not set it, and moving to
+   * another organization or agreement clears it — the component is reused across both.
    */
   protected readonly signatureStillUnlisted = signal(false);
 
@@ -673,6 +678,7 @@ export class OrgEasyclaDetailComponent {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
       this.designeeNotice.set(null);
+      this.signatureStillUnlisted.set(false);
       if (this.pendingDesigneeWrite) {
         this.pendingDesigneeWrite = null;
         this.signingOpen.set(false);
@@ -1867,6 +1873,7 @@ export class OrgEasyclaDetailComponent {
         }),
         map(() => this.listedGroupForAddress()),
         takeUntil(movedOff$),
+        takeUntil(timer(OrgEasyclaDetailComponent.signedRowWaitDeadlineMs)),
         first((found) => !!found, undefined),
         takeUntilDestroyed(this.destroyRef)
       )
