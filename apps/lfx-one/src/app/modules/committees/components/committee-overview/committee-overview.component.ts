@@ -218,8 +218,13 @@ export class CommitteeOverviewComponent {
   // convention the rest of this "data fetches" section uses.
   private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
 
-  // Computed: whether the caller may see the roster under member_visibility (gates the Chairs card)
+  // Computed: whether the caller may see the roster under member_visibility (gates the Chairs card
+  // and the roster-derived Organizations / Voting Reps stats)
   public canViewRoster: Signal<boolean> = computed(() => canViewCommitteeRoster(this.committee()));
+
+  // Computed: member count. A hidden roster is never fetched, so fall back to the committee's own
+  // total_members (the same figure the Members tab label shows) rather than reporting 0.
+  public memberCount: Signal<number | null> = computed(() => (this.canViewRoster() ? this.members().length : (this.committee()?.total_members ?? null)));
 
   // Computed: chairs derived from members
   public chairs: Signal<CommitteeMember[]> = this.initChairs();

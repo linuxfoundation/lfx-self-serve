@@ -349,8 +349,16 @@ export class CommitteeController {
         return;
       }
 
+      // Resolve a vanity slug to the canonical UID so the visibility, writer and auditor checks
+      // below run against the real committee object
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_committee_members',
+        service: 'committee_controller',
+        path: req.path,
+      });
+
       // Enforce member_visibility: hidden (or unset) rosters are readable only by writers/auditors
-      const committee = await this.committeeService.getCommitteeById(req, id, { includeAuditor: true });
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid, { includeAuditor: true });
       if (!canViewCommitteeRoster(committee)) {
         logger.success(req, 'get_committee_members', startTime, {
           committee_id: id,
@@ -362,7 +370,7 @@ export class CommitteeController {
       }
 
       // Get the committee members
-      const members = await this.committeeService.getCommitteeMembers(req, id, req.query);
+      const members = await this.committeeService.getCommitteeMembers(req, committeeUid, req.query);
 
       // Log the success
       logger.success(req, 'get_committee_members', startTime, {
@@ -417,8 +425,16 @@ export class CommitteeController {
         return;
       }
 
+      // Resolve a vanity slug to the canonical UID so the visibility, writer and auditor checks
+      // below run against the real committee object
+      const committeeUid = await this.committeeService.resolveCommitteeUid(req, id, {
+        operation: 'get_committee_member_by_id',
+        service: 'committee_controller',
+        path: req.path,
+      });
+
       // Enforce member_visibility: hidden (or unset) rosters are readable only by writers/auditors
-      const committee = await this.committeeService.getCommitteeById(req, id, { includeAuditor: true });
+      const committee = await this.committeeService.getCommitteeById(req, committeeUid, { includeAuditor: true });
       if (!canViewCommitteeRoster(committee)) {
         throw new AuthorizationError('You do not have permission to view members of this committee', {
           operation: 'get_committee_member_by_id',
@@ -428,7 +444,7 @@ export class CommitteeController {
       }
 
       // Get the committee member by ID
-      const member = await this.committeeService.getCommitteeMemberById(req, id, memberId);
+      const member = await this.committeeService.getCommitteeMemberById(req, committeeUid, memberId);
 
       // Log the success
       logger.success(req, 'get_committee_member_by_id', startTime, {

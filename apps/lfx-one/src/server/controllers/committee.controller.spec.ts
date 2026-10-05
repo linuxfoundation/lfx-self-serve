@@ -393,9 +393,14 @@ describe('CommitteeController roster reads — member_visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new CommitteeController();
+    committeeSvc.resolveCommitteeUid.mockImplementation((_req: unknown, id: string) => Promise.resolve(id));
     committeeSvc.getCommitteeMembers.mockResolvedValue(ROSTER);
     committeeSvc.getCommitteeMemberById.mockResolvedValue(ROSTER[0]);
   });
+
+  function buildSlugReq(): any {
+    return { params: { id: 'tsc', memberId: MEMBER_ID }, query: {}, path: '/test', log: {} };
+  }
 
   describe('getCommitteeMembers', () => {
     it.each([
@@ -455,6 +460,21 @@ describe('CommitteeController roster reads — member_visibility', () => {
       expect(committeeSvc.getCommitteeMembers).not.toHaveBeenCalled();
       expect(res.json).not.toHaveBeenCalled();
     });
+
+    it('resolves a vanity slug before checking access and reading the roster', async () => {
+      committeeSvc.resolveCommitteeUid.mockResolvedValueOnce(COMMITTEE_ID);
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'hidden', writer: true });
+      const req = buildSlugReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMembers(req, res as any, next);
+
+      expect(committeeSvc.resolveCommitteeUid).toHaveBeenCalledWith(req, 'tsc', expect.objectContaining({ operation: 'get_committee_members' }));
+      expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: true }));
+      expect(committeeSvc.getCommitteeMembers).toHaveBeenCalledWith(req, COMMITTEE_ID, req.query);
+      expect(res.json).toHaveBeenCalledWith(ROSTER);
+    });
   });
 
   describe('getCommitteeMemberById', () => {
@@ -491,6 +511,21 @@ describe('CommitteeController roster reads — member_visibility', () => {
 
       await controller.getCommitteeMemberById(req, res as any, next);
 
+      expect(res.json).toHaveBeenCalledWith(ROSTER[0]);
+    });
+
+    it('resolves a vanity slug before checking access and reading the member', async () => {
+      committeeSvc.resolveCommitteeUid.mockResolvedValueOnce(COMMITTEE_ID);
+      committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_ID, member_visibility: 'hidden', auditor: true });
+      const req = buildSlugReq();
+      const res = { json: vi.fn() };
+      const next = vi.fn();
+
+      await controller.getCommitteeMemberById(req, res as any, next);
+
+      expect(committeeSvc.resolveCommitteeUid).toHaveBeenCalledWith(req, 'tsc', expect.objectContaining({ operation: 'get_committee_member_by_id' }));
+      expect(committeeSvc.getCommitteeById).toHaveBeenCalledWith(req, COMMITTEE_ID, expect.objectContaining({ includeAuditor: true }));
+      expect(committeeSvc.getCommitteeMemberById).toHaveBeenCalledWith(req, COMMITTEE_ID, MEMBER_ID);
       expect(res.json).toHaveBeenCalledWith(ROSTER[0]);
     });
   });
